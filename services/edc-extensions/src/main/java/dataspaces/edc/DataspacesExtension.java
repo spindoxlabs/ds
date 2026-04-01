@@ -1,5 +1,6 @@
 package dataspaces.edc;
 
+import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
 import org.eclipse.edc.policy.engine.spi.PolicyEngine;
 import org.eclipse.edc.policy.engine.spi.RuleBindingRegistry;
 import org.eclipse.edc.policy.model.Permission;
@@ -7,8 +8,6 @@ import org.eclipse.edc.runtime.metamodel.annotation.Extension;
 import org.eclipse.edc.runtime.metamodel.annotation.Inject;
 import org.eclipse.edc.spi.system.ServiceExtension;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
-
-import static org.eclipse.edc.connector.contract.spi.validation.ContractValidationService.NEGOTIATION_SCOPE;
 
 /**
  * EDC extension that registers custom ODRL ConstraintFunctions for the
@@ -43,25 +42,25 @@ public class DataspacesExtension implements ServiceExtension {
         );
 
         // Bind custom left-operands to negotiation scope
-        ruleBindingRegistry.bind("ds:accessScope",      NEGOTIATION_SCOPE);
-        ruleBindingRegistry.bind("ds:consentStatus",    NEGOTIATION_SCOPE);
-        ruleBindingRegistry.bind("ds:contractRequired", NEGOTIATION_SCOPE);
+        ruleBindingRegistry.bind("ds:accessScope",      "contract.negotiation");
+        ruleBindingRegistry.bind("ds:consentStatus",    "contract.negotiation");
+        ruleBindingRegistry.bind("ds:contractRequired", "contract.negotiation");
 
-        // Register constraint evaluator functions — all HTTP proxies to ds-connector
+        // Register constraint evaluator functions — context class replaces scope in 0.16 API
         policyEngine.registerFunction(
-            NEGOTIATION_SCOPE,
+            ParticipantAgentPolicyContext.class,
             Permission.class,
             "ds:accessScope",
             new AccessScopeFunction(connectorInternalUrl, cacheTtlSeconds, context.getMonitor())
         );
         policyEngine.registerFunction(
-            NEGOTIATION_SCOPE,
+            ParticipantAgentPolicyContext.class,
             Permission.class,
             "ds:consentStatus",
             new ConsentStatusFunction(connectorInternalUrl, context.getMonitor())
         );
         policyEngine.registerFunction(
-            NEGOTIATION_SCOPE,
+            ParticipantAgentPolicyContext.class,
             Permission.class,
             "ds:contractRequired",
             new ContractRequiredFunction()

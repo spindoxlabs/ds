@@ -6,8 +6,8 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.eclipse.edc.participant.spi.ParticipantAgent;
-import org.eclipse.edc.policy.engine.spi.AtomicConstraintFunction;
-import org.eclipse.edc.policy.engine.spi.PolicyContext;
+import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
+import org.eclipse.edc.policy.engine.spi.AtomicConstraintRuleFunction;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
  *
  * <p>Fails closed: if the connector is unreachable, returns {@code false}.
  */
-public class AccessScopeFunction implements AtomicConstraintFunction<Permission> {
+public class AccessScopeFunction implements AtomicConstraintRuleFunction<Permission, ParticipantAgentPolicyContext> {
 
     private record CacheEntry(boolean allowed, Instant expiresAt) {
         boolean isExpired() { return Instant.now().isAfter(expiresAt); }
@@ -42,7 +42,7 @@ public class AccessScopeFunction implements AtomicConstraintFunction<Permission>
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
     public AccessScopeFunction(String connectorBaseUrl, long cacheTtlSeconds, Monitor monitor) {
-        this.connectorBaseUrl = connectorBaseUrl.stripTrailing("/");
+        this.connectorBaseUrl = connectorBaseUrl.replaceAll("/+$", "");
         this.cacheTtl = Duration.ofSeconds(cacheTtlSeconds);
         this.http = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -53,12 +53,11 @@ public class AccessScopeFunction implements AtomicConstraintFunction<Permission>
     }
 
     @Override
-    public boolean evaluate(Operator operator, Object rightValue, Permission rule, PolicyContext context) {
+    public boolean evaluate(Operator operator, Object rightValue, Permission rule, ParticipantAgentPolicyContext context) {
         if (operator != Operator.EQ) return false;
 
-        String participantId = context.getContextData(ParticipantAgent.class)
-            .map(ParticipantAgent::getIdentity)
-            .orElse(null);
+        ParticipantAgent agent = context.participantAgent();
+        String participantId = agent != null ? agent.getIdentity() : null;
         if (participantId == null) return false;
 
         String scope = rightValue.toString();

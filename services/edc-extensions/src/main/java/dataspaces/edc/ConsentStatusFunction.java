@@ -6,25 +6,27 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 import org.eclipse.edc.participant.spi.ParticipantAgent;
-import org.eclipse.edc.policy.engine.spi.AtomicConstraintFunction;
-import org.eclipse.edc.policy.engine.spi.PolicyContext;
+import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
+import org.eclipse.edc.policy.engine.spi.AtomicConstraintRuleFunction;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
 
 import java.io.IOException;
 import java.time.Duration;
-import java.util.Optional;
 
 /**
  * Evaluates {@code ds:consentStatus eq "active"} by querying the
  * ds-connector internal consent check endpoint.
  *
+ * <p>The consumer participant ID is taken from the verified {@code ParticipantAgent}.
+ * Subject and dataset IDs are taken from {@code ParticipantAgent} attributes
+ * ({@code ds.subject_id}, {@code ds.dataset_id}) populated by the DCP token.
+ * Fails closed when either attribute is absent.
+ *
  * <p>Retries up to 3 times with exponential backoff (100 ms → 500 ms → 2 s).
- * Fails closed: returns {@code false} if the connector is unreachable after all
- * attempts — access is never granted on error.
  */
-public class ConsentStatusFunction implements AtomicConstraintFunction<Permission> {
+public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permission, ParticipantAgentPolicyContext> {
 
     private static final int[] BACKOFF_MS = {100, 500, 2000};
 
@@ -34,7 +36,7 @@ public class ConsentStatusFunction implements AtomicConstraintFunction<Permissio
     private final Monitor monitor;
 
     public ConsentStatusFunction(String connectorBaseUrl, Monitor monitor) {
-        this.connectorBaseUrl = connectorBaseUrl.stripTrailing("/");
+        this.connectorBaseUrl = connectorBaseUrl.replaceAll("/+$", "");
         this.http = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(5))
             .readTimeout(Duration.ofSeconds(5))
@@ -44,22 +46,23 @@ public class ConsentStatusFunction implements AtomicConstraintFunction<Permissio
     }
 
     @Override
-    public boolean evaluate(Operator operator, Object rightValue, Permission rule, PolicyContext context) {
+    public boolean evaluate(Operator operator, Object rightValue, Permission rule, ParticipantAgentPolicyContext context) {
         if (operator != Operator.EQ) return false;
         if (!"active".equals(rightValue.toString())) return false;
 
-        String participantId = context.getContextData(ParticipantAgent.class)
-            .map(ParticipantAgent::getIdentity)
-            .orElse(null);
-        String assetId = context.getContextData(String.class);
-        String subjectId = Optional.ofNullable(context.getContextData(String.class)).orElse("");
+        ParticipantAgent agent = context.participantAgent();
+        if (agent == null) return false;
 
-        if (subjectId.isEmpty() || assetId == null) {
-            // Cannot evaluate without subject/asset context — fail closed
+        String consumerId = agent.getIdentity();
+        String subjectId = agent.getAttributes().getOrDefault("ds.subject_id", "");
+        String datasetId = agent.getAttributes().getOrDefault("ds.dataset_id", "");
+
+        if (subjectId.isEmpty() || datasetId.isEmpty()) {
+            monitor.warning("ConsentStatusFunction: ds.subject_id or ds.dataset_id missing from participant attributes — failing closed");
             return false;
         }
 
-        return checkConsent(subjectId, assetId, participantId != null ? participantId : "");
+        return checkConsent(subjectId, datasetId, consumerId != null ? consumerId : "");
     }
 
     private boolean checkConsent(String subjectId, String datasetId, String consumerId) {
