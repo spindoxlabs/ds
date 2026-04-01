@@ -1,0 +1,32 @@
+services:
+  sts-provider:
+    build:
+      context: .
+    image: ds-sts:local
+    ports:
+      - "38080:8080"
+    environment:
+      STS_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
+      STS_PRIVATE_KEY_PATH: /config/provider-key.json
+      STS_CLIENT_ID: did:web:provider.dataspaces.localhost
+      STS_CLIENT_SECRET: ${STS_PROVIDER_SECRET:-insecure-dev-secret}
+    volumes:
+      - ../connector/config:/config:ro
+    labels:
+      traefik.enable: "false"
+
+  sts-consumer:
+    build:
+      context: .
+    image: ds-sts:local
+    ports:
+      - "38081:8080"
+    environment:
+      STS_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      STS_PRIVATE_KEY_PATH: /config/consumer-key.json
+      STS_CLIENT_ID: did:web:consumer.dataspaces.localhost
+      STS_CLIENT_SECRET: ${STS_CONSUMER_SECRET:-insecure-dev-secret}
+    volumes:
+      - ../connector/config:/config:ro
+    labels:
+      traefik.enable: "false"

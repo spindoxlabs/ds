@@ -1,0 +1,37 @@
+replicaCount: 1
+
+image:
+  repository: ds-portal
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 30004
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  host: portal.dataspaces.localhost
+  tls: []
+
+config:
+  connectorUrl: "http://ds-connector:30001"
+  provenanceUrl: "http://ds-provenance:30000"
+  catalogueUrl: "http://dataset-api:30002"
+  keycloakIssuer: "http://keycloak:8080/realms/celine"
+  keycloakClientId: "ds-portal"
+  origin: "https://portal.dataspaces.localhost"
+
+secrets:
+  authSecret: "change-me"
+  keycloakClientSecret: ""
+
+resources:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi

@@ -1,0 +1,13 @@
+node_modules
+.svelte-kit
+build
+.env
+*.env
+data/
+.git
+.gitignore
+*.md
+!README.md
+**/*.test.ts
+**/*.spec.ts
+docs/

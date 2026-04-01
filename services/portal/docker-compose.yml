@@ -1,0 +1,26 @@
+networks:
+  dataspaces:
+    name: dataspaces
+    external: true
+
+services:
+  ds-portal:
+    build:
+      context: ../..
+      dockerfile: services/portal/Dockerfile
+    image: ds-portal:local
+    ports: ["30004:30004"]
+    env_file:
+      - path: ../../.env
+        required: false
+    environment:
+      CONNECTOR_URL: http://ds-connector:30001
+      CATALOGUE_URL: http://dataset-api:30002
+      FEDERATED_CATALOG_URL: http://ds-federated-catalog:30003
+      PROVENANCE_URL: http://ds-provenance:30000
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-in-production}
+      AUTH_KEYCLOAK_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-}
+      AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-https://keycloak.dataspaces.localhost/realms/dataspaces}
+      KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-ds-portal}
+    networks: [dataspaces]

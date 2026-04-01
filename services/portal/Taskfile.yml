@@ -1,0 +1,32 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install Node dependencies (idempotent)
+    cmds:
+      - npm ci
+    sources: [package.json, package-lock.json]
+    generates: [node_modules/.package-lock.json]
+
+  run:
+    desc: Start SvelteKit dev server on :30004
+    cmds:
+      - npm run dev
+
+  debug:
+    desc: (noop — attach debugger manually)
+    cmds:
+      - echo "debug not configured"
+
+  release:
+    desc: (noop — managed by CI/CD)
+    cmds:
+      - echo "release not configured"
+
+  check:
+    cmds:
+      - npm run check
+
+  lint:
+    cmds:
+      - npm run lint

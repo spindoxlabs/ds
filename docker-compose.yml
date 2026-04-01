@@ -1,0 +1,50 @@
+# Shared infrastructure — start this first, then bring up individual service stacks.
+#
+#   docker compose up -d          # start caddy + postgres
+#   task services:start           # start all service stacks
+
+networks:
+  dataspaces:
+    name: dataspaces
+    driver: bridge
+
+volumes:
+  postgres_data:
+
+services:
+  # ── Reverse proxy + local HTTPS ──────────────────────────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/caddy/did:/did:ro
+      - ./data/caddy/data:/data
+      - ./data/caddy/config:/config
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
+  postgres:
+    image: postgres:17.4-alpine
+    restart: unless-stopped
+    ports:
+      - "35432:5432"
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]

@@ -1,0 +1,18 @@
+apiVersion: v2
+name: provenance
+description: W3C PROV-O compatible provenance service for the dataspaces platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - prov-o
+  - provenance
+  - dataspaces
+  - dssc
+maintainers:
+  - name: spindoxlabs
+dependencies:
+  - name: postgresql
+    version: ">=13.0.0"
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled

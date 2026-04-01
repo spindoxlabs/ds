@@ -1,0 +1,124 @@
+{
+	# Use local CA for all *.dataspaces.localhost certificates
+	local_certs
+	# Disable automatic HTTPS redirect on port 80 — we handle TLS per-site
+	auto_https off
+}
+
+# ── Python services ───────────────────────────────────────────────────────────
+
+provenance.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30000
+}
+
+connector.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30001
+}
+
+dataset-api.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30002
+}
+
+federated-catalog.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30003
+}
+
+portal.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30004
+}
+
+# ── EDC provider ──────────────────────────────────────────────────────────────
+
+# DSP protocol endpoint (edc.dsp.callback.address)
+edc-provider.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:19194
+}
+
+# Management API
+edc-provider-mgmt.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:19191
+}
+
+# Data plane public endpoint (EDR edr.endpoint base)
+edc-provider-public.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:19291
+}
+
+# ── EDC consumer ──────────────────────────────────────────────────────────────
+
+edc-consumer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:29194
+}
+
+edc-consumer-mgmt.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:29191
+}
+
+edc-consumer-public.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:29291
+}
+
+# ── DID:web document hosting ──────────────────────────────────────────────────
+# Each participant DID resolves to https://<name>/.well-known/did.json.
+# Static files served from caddy/did/<name>/did.json (mounted at /did in container).
+
+provider.dataspaces.localhost {
+	tls internal
+	root * /did/provider.dataspaces.localhost
+	rewrite /.well-known/did.json /did.json
+	file_server
+}
+
+consumer.dataspaces.localhost {
+	tls internal
+	root * /did/consumer.dataspaces.localhost
+	rewrite /.well-known/did.json /did.json
+	file_server
+}
+
+trust-anchor.dataspaces.localhost {
+	tls internal
+	root * /did/trust-anchor.dataspaces.localhost
+	rewrite /.well-known/did.json /did.json
+	file_server
+}
+
+# ── DCP services (Iteration 5) ────────────────────────────────────────────────
+
+sts-provider.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:38080
+}
+
+sts-consumer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:38081
+}
+
+vc-wallet-provider.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:38082
+}
+
+vc-wallet-consumer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:38083
+}
+
+# ── Platform ──────────────────────────────────────────────────────────────────
+
+keycloak.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:8080
+}

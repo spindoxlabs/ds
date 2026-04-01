@@ -1,0 +1,141 @@
+version: "3"
+
+# ── Root Taskfile ────────────────────────────────────────────────────────────
+#
+# Shared infrastructure (caddy, postgres) is managed by the root docker-compose.yml.
+# Each service has its own docker-compose.yml under services/<name>/.
+#
+# Quick start:
+#   docker compose up -d     # start shared infra
+#   task services:start      # start all service stacks
+#
+# Local dev (pick a service):
+#   docker compose up -d
+#   task services:start
+#   docker compose -f services/connector/docker-compose.yml stop ds-connector
+#   cd services/connector && task run
+
+env:
+  COMPOSE_PROJECT_NAME: dataspaces
+
+tasks:
+  # ── Idempotent workspace setup ────────────────────────────────────────────
+  setup:
+    desc: Prepare local dev environment (installs deps in each service, no host alterations)
+    cmds:
+      - |
+        for dir in services/*/; do
+          if [ -f "${dir}Taskfile.yml" ]; then
+            echo "→ setup ${dir}"
+            task -d "${dir}" setup 2>/dev/null || true
+          fi
+        done
+
+  # ── Service stacks ────────────────────────────────────────────────────────
+  services:start:
+    desc: Start all service docker stacks (shared infra must be up first)
+    cmds:
+      - |
+        for dir in services/*/; do
+          if [ -f "${dir}docker-compose.yml" ]; then
+            echo "→ up ${dir}"
+            docker compose -f "${dir}docker-compose.yml" up -d
+          fi
+        done
+
+  services:stop:
+    desc: Stop all service docker stacks
+    cmds:
+      - |
+        for dir in services/*/; do
+          if [ -f "${dir}docker-compose.yml" ]; then
+            echo "→ down ${dir}"
+            docker compose -f "${dir}docker-compose.yml" down
+          fi
+        done
+
+  # ── Full stack convenience ─────────────────────────────────────────────────
+  start:
+    desc: Start shared infra + all services
+    cmds:
+      - docker compose up -d
+      - task: services:start
+
+  stop:
+    desc: Stop all services + shared infra
+    cmds:
+      - task: services:stop
+      - docker compose down
+
+  # ── Utilities (require explicit invocation / user consent implied by sudo) ─
+  proxy:hosts:
+    desc: Add service hostnames to /etc/hosts (requires sudo)
+    cmds:
+      - |
+        HOSTS=(
+          "127.0.0.1 connector.dataspaces.localhost"
+          "127.0.0.1 provider.dataspaces.localhost"
+          "127.0.0.1 consumer.dataspaces.localhost"
+          "127.0.0.1 trust-anchor.dataspaces.localhost"
+          "127.0.0.1 provenance.dataspaces.localhost"
+          "127.0.0.1 portal.dataspaces.localhost"
+          "127.0.0.1 dataset-api.dataspaces.localhost"
+          "127.0.0.1 federated-catalog.dataspaces.localhost"
+          "127.0.0.1 keycloak.dataspaces.localhost"
+          "127.0.0.1 sts-provider.dataspaces.localhost"
+          "127.0.0.1 sts-consumer.dataspaces.localhost"
+          "127.0.0.1 vc-wallet-provider.dataspaces.localhost"
+          "127.0.0.1 vc-wallet-consumer.dataspaces.localhost"
+        )
+        for h in "${HOSTS[@]}"; do
+          grep -qF "$h" /etc/hosts || echo "$h" | sudo tee -a /etc/hosts
+        done
+        echo "✓ /etc/hosts updated"
+
+  proxy:trust-ca:
+    desc: Trust Caddy's local CA in the system store (requires sudo)
+    cmds:
+      - docker exec dataspaces-caddy-1 cat /data/caddy/pki/authorities/local/root.crt > /tmp/caddy-root.crt
+      - sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt 2>/dev/null ||
+        sudo cp /tmp/caddy-root.crt /usr/local/share/ca-certificates/caddy.crt && sudo update-ca-certificates
+      - rm /tmp/caddy-root.crt
+      - echo "✓ Caddy root CA trusted"
+
+  keys:generate:
+    desc: Regenerate all EC P-256 key pairs (outputs to data/keys/)
+    cmds:
+      - mkdir -p data/keys
+      - bash scripts/gen-keys.sh
+
+  vcs:issue:
+    desc: Issue membership VCs for all participants (outputs to data/credentials/)
+    cmds:
+      - mkdir -p data/credentials/provider data/credentials/consumer
+      - python3 scripts/issue-vcs.py
+
+  edc:base:
+    desc: Build EDC base image with cached deps (run once per version bump)
+    cmds:
+      - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
+
+  edc:build:
+    desc: Build EDC connector fat JAR (requires Java 21 + Gradle)
+    cmds:
+      - gradle :edc-connector:shadowJar --no-daemon
+
+  edc:docker:
+    desc: Build EDC connector Docker image (requires ds-edc-base:0.16.0)
+    cmds:
+      - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
+
+  status:
+    desc: Show running container status
+    cmds:
+      - docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+  logs:
+    desc: Follow logs for all dataspaces containers
+    cmds:
+      - |
+        FILES=$(ls services/*/docker-compose.yml 2>/dev/null | sed 's/^/-f /')
+        docker compose -f docker-compose.yml $FILES logs -f

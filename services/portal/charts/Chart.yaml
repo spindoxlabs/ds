@@ -1,0 +1,13 @@
+apiVersion: v2
+name: portal
+description: Dataspace web frontend for the dataspaces platform
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - portal
+  - dataspaces
+  - frontend
+  - sveltekit
+maintainers:
+  - name: spindoxlabs

@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "provenance.fullname" . }}
+  labels:
+    {{- include "provenance.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "provenance.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "provenance.selectorLabels" . | nindent 8 }}
+    spec:
+      initContainers:
+        - name: db-migrate
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "provenance.fullname" . }}
+          env:
+            - name: PROVENANCE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "provenance.fullname" . }}-db
+                  key: url
+      containers:
+        - name: provenance
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 30000
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: {{ include "provenance.fullname" . }}
+          env:
+            - name: PROVENANCE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "provenance.fullname" . }}-db
+                  key: url
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

@@ -1,0 +1,36 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-brand-50: #eff6ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-500: #3b82f6;
+  --color-brand-600: #2563eb;
+  --color-brand-700: #1d4ed8;
+  --color-brand-900: #1e3a8a;
+
+  --color-prov-entity: #3b82f6;
+  --color-prov-activity: #22c55e;
+  --color-prov-agent: #f97316;
+}
+
+/* Custom utilities */
+@layer utilities {
+  .ds-card {
+    @apply bg-white rounded-xl border border-gray-200 shadow-sm p-4;
+  }
+  .ds-btn {
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
+  }
+  .ds-btn-primary {
+    @apply ds-btn bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-600;
+  }
+  .ds-btn-secondary {
+    @apply ds-btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50;
+  }
+  .ds-btn-danger {
+    @apply ds-btn bg-red-600 text-white hover:bg-red-700;
+  }
+  .ds-badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+}

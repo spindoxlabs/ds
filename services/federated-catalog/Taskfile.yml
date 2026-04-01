@@ -1,0 +1,24 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install Python dependencies (idempotent)
+    cmds:
+      - uv pip install -e .
+    sources: [pyproject.toml]
+    generates: [.venv/bin/uvicorn]
+
+  run:
+    desc: Run dev server with hot-reload on :30003
+    cmds:
+      - PYTHONPATH=src uvicorn federated_catalog.main:app --reload --port 30003
+
+  debug:
+    desc: (noop — attach debugger manually)
+    cmds:
+      - echo "debug not configured"
+
+  release:
+    desc: (noop — managed by CI/CD)
+    cmds:
+      - echo "release not configured"

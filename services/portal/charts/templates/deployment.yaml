@@ -1,0 +1,63 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "portal.fullname" . }}
+  labels:
+    {{- include "portal.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "portal.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "portal.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+        - name: portal
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 30004
+              protocol: TCP
+          env:
+            - name: PORT
+              value: "30004"
+            - name: ORIGIN
+              value: {{ .Values.config.origin | quote }}
+            - name: CONNECTOR_URL
+              value: {{ .Values.config.connectorUrl | quote }}
+            - name: PROVENANCE_URL
+              value: {{ .Values.config.provenanceUrl | quote }}
+            - name: CATALOGUE_URL
+              value: {{ .Values.config.catalogueUrl | quote }}
+            - name: AUTH_KEYCLOAK_ISSUER
+              value: {{ .Values.config.keycloakIssuer | quote }}
+            - name: AUTH_KEYCLOAK_ID
+              value: {{ .Values.config.keycloakClientId | quote }}
+            - name: AUTH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "portal.fullname" . }}-secret
+                  key: auth-secret
+            - name: AUTH_KEYCLOAK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "portal.fullname" . }}-secret
+                  key: keycloak-client-secret
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

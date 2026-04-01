@@ -1,0 +1,24 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install library in editable mode (idempotent)
+    cmds:
+      - uv sync
+    sources: [pyproject.toml]
+
+  test:
+    cmds:
+      - uv run pytest src/ds/governance/tests/ -v --cov=src/ds/governance --cov-report=term-missing
+
+  lint:
+    cmds:
+      - uv run ruff check src/ tests/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/
+
+  type-check:
+    cmds:
+      - uv run mypy src/

@@ -1,0 +1,26 @@
+# EDC dependency cache base image — build once, reuse in connector builds.
+# Gradle's local cache (~/.gradle/caches/) is baked in, keyed to the build files.
+#
+# Build (from repo root):
+#   docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
+#
+# Rebuild only when build.gradle.kts files or edcVersion change.
+
+FROM gradle:8.12-jdk21
+
+WORKDIR /cache
+
+# Copy only the build descriptor files — no source code
+COPY settings.gradle.kts build.gradle.kts ./
+COPY services/edc-extensions/build.gradle.kts services/edc-extensions/build.gradle.kts
+COPY services/edc-connector/build.gradle.kts  services/edc-connector/build.gradle.kts
+
+# Stub source roots so the dependency resolution task succeeds
+RUN mkdir -p services/edc-extensions/src/main/java \
+             services/edc-connector/src/main/java
+
+# Resolve and cache all runtime + compile dependencies
+RUN gradle \
+      :edc-connector:dependencies \
+      :edc-extensions:dependencies \
+      --no-daemon -q

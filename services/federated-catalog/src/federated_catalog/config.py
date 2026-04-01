@@ -1,0 +1,42 @@
+"""ds-federated-catalog configuration via pydantic-settings."""
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="CATALOG_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        populate_by_name=True,
+    )
+
+    # ds-connector base URL — all DSP catalog calls go through it
+    connector_url: str = "http://ds-connector:30001"
+
+    # Path to participants.yaml (shared with ds-connector)
+    participants_yaml: str = "governance/participants.yaml"
+
+    # Crawl interval in seconds
+    crawl_interval: int = 300
+
+    # Seconds to wait after startup before first crawl (allows connector to be ready)
+    startup_delay: int = 10
+
+    # Maximum datasets to store per provider (prevents memory bloat)
+    max_datasets_per_provider: int = 500
+
+    # Service identity
+    base_url: str = "https://federated-catalog.dataspaces.localhost"
+
+    port: int = 30003
+    debug: bool = False
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()

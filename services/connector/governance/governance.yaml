@@ -1,0 +1,51 @@
+defaults:
+  access_level: internal
+  classification: green
+  tags: []
+  retention_days: 365
+  dataspace:
+    expose: false
+
+sources:
+  # ── Open-Meteo Weather ML features ────────────────────────────────────────
+  datasets.gold.om_weather_features:
+    title: "Open-Meteo Weather ML Features (Gold)"
+    description: "29 ML features for energy consumption forecasting."
+    license: CC-BY-4.0
+    access_level: internal
+    classification: green
+    tags: [weather, gold, features]
+    source_system: Open-Meteo
+
+    dataspace:
+      expose: true
+      medallion: gold
+      asset:
+        id: "https://provider.dataspaces.localhost/datasets/om_weather_features"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        base_url: "http://dataset-api:30002/query"
+        proxy_path: false
+        proxy_query_params: true
+        query_params:
+          dataset_name: "datasets.gold.om_weather_features"
+
+  # ── Smart Meter Readings (silver, PII) ─────────────────────────────────────
+  datasets.silver.meters_15m:
+    title: "Smart Meter Readings 15-minute"
+    description: "Aggregated smart meter readings at 15-minute intervals."
+    access_level: restricted
+    classification: pii
+    user_filter_column: sub
+    tags: [meters, silver, pii, rec]
+
+    dataspace:
+      expose: true
+      medallion: silver
+      data_address:
+        type: HttpData
+        base_url: "http://dataset-api:30002/query"
+        proxy_query_params: true
+        query_params:
+          dataset_name: "datasets.silver.meters_15m"

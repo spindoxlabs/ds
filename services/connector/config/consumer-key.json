@@ -1,0 +1,9 @@
+{
+  "kty": "EC",
+  "crv": "P-256",
+  "x": "EGH2x6dZvvUayJjeXpDagOsjTmTiRlohxnHAfv52Iqc",
+  "y": "MlkdHk3kT6vSgKmJRYVwiXf7TJeCeunOQcvDdCjVYUI",
+  "d": "uBFnPD3U9Et8bjhC9AoYAput7X0tk08WVZneNmqCa5Q",
+  "kid": "did:web:consumer.dataspaces.localhost#key-1",
+  "use": "sig"
+}

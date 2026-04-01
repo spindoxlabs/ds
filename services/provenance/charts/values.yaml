@@ -1,0 +1,43 @@
+replicaCount: 1
+
+image:
+  repository: ds-provenance
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 30000
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  host: provenance.dataspaces.localhost
+  tls: []
+
+config:
+  databaseUrl: ""  # overridden by secret when postgresql.enabled=true
+  debug: "false"
+  baseUrl: "https://provenance.dataspaces.localhost"
+  contextUrl: "https://provenance.dataspaces.localhost/prov/context"
+  maxLineageDepth: "20"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+postgresql:
+  enabled: true
+  auth:
+    username: provenance
+    password: provenance
+    database: provenance
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi

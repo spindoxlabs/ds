@@ -1,0 +1,57 @@
+replicaCount: 1
+
+image:
+  repository: ds-connector
+  tag: "local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 30001
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  host: connector.dataspaces.localhost
+  tls: []
+
+config:
+  participantId: provider
+  participantBaseUrl: "https://provider.dataspaces.localhost"
+  edcProviderManagementUrl: "http://edc-provider:19193/management"
+  edcProviderProtocolUrl: "http://edc-provider:19194/protocol"
+  edcConsumerManagementUrl: "http://edc-consumer:29193/management"
+  edcConsumerProtocolUrl: "http://edc-consumer:29194/protocol"
+  datasetApiUrl: "http://dataset-api:30002"
+  provenanceUrl: "http://ds-provenance:30000"
+  negotiationTimeout: "120"
+  transferTimeout: "120"
+  databaseUrl: ""  # set via secret when postgresql.enabled=true
+
+secrets:
+  edcApiKey: "insecure-dev-key"
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+postgresql:
+  enabled: true
+  auth:
+    username: connector
+    password: connector
+    database: connector
+  primary:
+    persistence:
+      enabled: true
+      size: 2Gi
+
+governance:
+  # ConfigMap data for participants.yaml and governance.yaml
+  participantsYaml: ""
+  governanceYaml: ""

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "provenance.fullname" . }}
+  labels:
+    {{- include "provenance.labels" . | nindent 4 }}
+data:
+  PROVENANCE_DEBUG: {{ .Values.config.debug | quote }}
+  PROVENANCE_BASE_URL: {{ .Values.config.baseUrl | quote }}
+  PROVENANCE_CONTEXT_URL: {{ .Values.config.contextUrl | quote }}
+  PROVENANCE_MAX_LINEAGE_DEPTH: {{ .Values.config.maxLineageDepth | quote }}
