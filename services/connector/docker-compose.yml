@@ -12,8 +12,13 @@ services:
     build:
       context: ../..
       dockerfile: services/edc-connector/Dockerfile
-    image: ds-edc-connector:local
-    command: ["-Dedc.fs.config=/config/provider.properties", "-jar", "/connector.jar"]
+    command:
+      [
+        "sh",
+        "-c",
+        "java $JAVA_OPTS -Dedc.fs.config=/config/provider.properties -jar
+          /connector.jar",
+      ]
     volumes:
       - ./config:/config:ro
       - ./governance:/governance:ro
@@ -25,17 +30,23 @@ services:
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:19195/version/api || exit 1"]
+      test: [ "CMD-SHELL", "curl -sf http://localhost:19191/api/check/health || exit 1" ]
       interval: 10s
+      start_period: 60s
       retries: 15
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   edc-consumer:
     build:
       context: ../..
       dockerfile: services/edc-connector/Dockerfile
-    image: ds-edc-connector:local
-    command: ["-Dedc.fs.config=/config/consumer.properties", "-jar", "/connector.jar"]
+    command:
+      [
+        "sh",
+        "-c",
+        "java $JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar
+          /connector.jar",
+      ]
     volumes:
       - ./config:/config:ro
       - ./governance:/governance:ro
@@ -47,18 +58,18 @@ services:
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:29195/version/api || exit 1"]
+      test: [ "CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1" ]
       interval: 10s
+      start_period: 60s
       retries: 15
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   # ── STS instances ─────────────────────────────────────────────────────────────
   sts-provider:
     build:
       context: ../..
       dockerfile: services/sts/Dockerfile
-    image: ds-sts:local
-    ports: ["38080:8080"]
+    ports: [ "38080:8080" ]
     env_file:
       - path: ../../.env
         required: false
@@ -69,14 +80,13 @@ services:
       STS_CLIENT_SECRET: ${STS_PROVIDER_SECRET:-insecure-dev-secret}
     volumes:
       - ./config:/config:ro
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   sts-consumer:
     build:
       context: ../..
       dockerfile: services/sts/Dockerfile
-    image: ds-sts:local
-    ports: ["38081:8080"]
+    ports: [ "38081:8080" ]
     env_file:
       - path: ../../.env
         required: false
@@ -87,55 +97,66 @@ services:
       STS_CLIENT_SECRET: ${STS_CONSUMER_SECRET:-insecure-dev-secret}
     volumes:
       - ./config:/config:ro
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   # ── VC wallet instances ────────────────────────────────────────────────────────
   vc-wallet-provider:
     build:
       context: ../..
       dockerfile: services/vc-wallet/Dockerfile
-    image: ds-vc-wallet:local
-    ports: ["38082:8081"]
+    ports: [ "38082:8081" ]
     environment:
       VC_WALLET_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
       VC_WALLET_CREDENTIALS_PATH: /credentials/provider
     volumes:
       - ../../data/credentials:/credentials:ro
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   vc-wallet-consumer:
     build:
       context: ../..
       dockerfile: services/vc-wallet/Dockerfile
-    image: ds-vc-wallet:local
-    ports: ["38083:8081"]
+    ports: [ "38083:8081" ]
     environment:
       VC_WALLET_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
       VC_WALLET_CREDENTIALS_PATH: /credentials/consumer
     volumes:
       - ../../data/credentials:/credentials:ro
-    networks: [dataspaces]
+    networks: [ dataspaces ]
+
+  # ── DB create — ensures the "connector" database exists ───────────────────────
+  connector-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -P 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [ dataspaces ]
 
   # ── DB init — runs alembic migrations, restarts until postgres is ready ───────
   connector-db-init:
     build:
       context: ../..
       dockerfile: services/connector/Dockerfile
-    image: ds-connector:local
-    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    command: [ "alembic", "--config", "alembic.ini", "upgrade", "head" ]
     working_dir: /app
     restart: on-failure
+    depends_on:
+      connector-db-create:
+        condition: service_completed_successfully
     environment:
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   # ── ds-connector (Python orchestration) ──────────────────────────────────────
   ds-connector:
     build:
       context: ../..
       dockerfile: services/connector/Dockerfile
-    image: ds-connector:local
-    ports: ["30001:30001"]
+    ports: [ "30001:30001" ]
     env_file:
       - path: ../../.env
         required: false
@@ -162,15 +183,14 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./governance:/governance:ro
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   # ── Federated catalog ─────────────────────────────────────────────────────────
   ds-federated-catalog:
     build:
       context: ../..
       dockerfile: services/federated-catalog/Dockerfile
-    image: ds-federated-catalog:local
-    ports: ["30003:30003"]
+    ports: [ "30003:30003" ]
     env_file:
       - path: ../../.env
         required: false
@@ -182,5 +202,5 @@ services:
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
     volumes:
       - ./governance:/governance:ro
-    depends_on: [ds-connector]
-    networks: [dataspaces]
+    depends_on: [ ds-connector ]
+    networks: [ dataspaces ]

@@ -8,11 +8,10 @@ WORKDIR /build
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 # Install governance library (local dep)
-COPY services/governance/src/governance/ /build/governance_lib/
-COPY services/governance/pyproject.toml  /build/governance_pyproject.toml
+COPY services/governance/ /build/governance/
 RUN uv venv /opt/venv && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      /build/governance_lib
+      /build/governance
 
 # Install connector dependencies
 COPY services/connector/pyproject.toml /build/
@@ -32,8 +31,9 @@ WORKDIR /app
 RUN groupadd -r app && useradd -r -g app -d /app app
 
 COPY --from=builder /opt/venv /opt/venv
-COPY --from=builder /build/governance_lib /opt/venv/lib/python3.12/site-packages/governance
 COPY services/connector/src/ src/
+COPY services/connector/alembic.ini alembic.ini
+COPY services/connector/alembic/ alembic/
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

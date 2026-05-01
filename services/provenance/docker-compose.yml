@@ -11,20 +11,18 @@ services:
     build:
       context: ../..
       dockerfile: services/provenance/Dockerfile
-    image: ds-provenance:local
-    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    command: [ "alembic", "--config", "alembic.ini", "upgrade", "head" ]
     working_dir: /app
     restart: on-failure
     environment:
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance
-    networks: [dataspaces]
+    networks: [ dataspaces ]
 
   ds-provenance:
     build:
       context: ../..
       dockerfile: services/provenance/Dockerfile
-    image: ds-provenance:local
-    ports: ["30000:30000"]
+    ports: [ "30000:30000" ]
     env_file:
       - path: ../../.env
         required: false
@@ -33,4 +31,4 @@ services:
     depends_on:
       provenance-db-init:
         condition: service_completed_successfully
-    networks: [dataspaces]
+    networks: [ dataspaces ]

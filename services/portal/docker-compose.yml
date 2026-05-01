@@ -8,8 +8,7 @@ services:
     build:
       context: ../..
       dockerfile: services/portal/Dockerfile
-    image: ds-portal:local
-    ports: ["30004:30004"]
+    ports: [ "30004:30004" ]
     env_file:
       - path: ../../.env
         required: false
@@ -23,4 +22,4 @@ services:
       AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-}
       AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-https://keycloak.dataspaces.localhost/realms/dataspaces}
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-ds-portal}
-    networks: [dataspaces]
+    networks: [ dataspaces ]

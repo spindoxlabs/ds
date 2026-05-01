@@ -2,7 +2,6 @@ services:
   vc-wallet-provider:
     build:
       context: .
-    image: ds-vc-wallet:local
     ports:
       - "38082:8081"
     environment:
@@ -16,7 +15,6 @@ services:
   vc-wallet-consumer:
     build:
       context: .
-    image: ds-vc-wallet:local
     ports:
       - "38083:8081"
     environment:
