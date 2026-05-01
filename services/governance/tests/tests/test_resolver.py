@@ -133,3 +133,45 @@ def test_resolve_empty_config():
     rule = resolver.resolve("any.dataset")
     assert isinstance(rule, GovernanceRuleV2)
     assert rule.access_level is None
+
+
+def test_row_filters_parsed(tmp_path):
+    yaml_path = _write_yaml(tmp_path, """
+        sources:
+          datasets.silver.meters_15m:
+            access_level: restricted
+            classification: pii
+            row_filters:
+              - handler: rec_registry
+                args:
+                  column: sub
+    """)
+    resolver = GovernanceResolver.from_file(yaml_path)
+    rule = resolver.resolve("datasets.silver.meters_15m")
+    assert len(rule.row_filters) == 1
+    assert rule.row_filters[0].handler == "rec_registry"
+    assert rule.row_filters[0].args.column == "sub"
+
+
+def test_row_filters_override_defaults(tmp_path):
+    """Override row_filters wins; empty override inherits from defaults."""
+    yaml_path = _write_yaml(tmp_path, """
+        defaults:
+          row_filters:
+            - handler: default_handler
+              args:
+                column: user_id
+        sources:
+          datasets.silver.meters:
+            row_filters:
+              - handler: rec_registry
+                args:
+                  column: sub
+          datasets.silver.other:
+            access_level: restricted
+    """)
+    resolver = GovernanceResolver.from_file(yaml_path)
+    meters = resolver.resolve("datasets.silver.meters")
+    assert meters.row_filters[0].handler == "rec_registry"
+    other = resolver.resolve("datasets.silver.other")
+    assert other.row_filters[0].handler == "default_handler"

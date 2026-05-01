@@ -4,8 +4,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from governance.models import GovernanceRuleV2
-from governance.resolver import GovernanceResolver
+from ds.governance.models import GovernanceRuleV2
+from ds.governance.resolver import GovernanceResolver
 
 from ..schemas.edc import AssetCreate, ContractDefCreate, DataAddress, PolicyCreate
 
@@ -85,7 +85,14 @@ class ConnectorGovernanceMapper:
                 "ds:classification": rule.classification or "",
                 "ds:sourceSystem": rule.source_system or "",
                 "ds:tags": ",".join(rule.tags),
-                "ds:userFilterColumn": rule.user_filter_column or "",
+                "ds:userFilterColumn": (
+                    rule.row_filters[0].args.column if rule.row_filters
+                    else rule.user_filter_column or ""
+                ),
+                "ds:rowFilters": [
+                    {"handler": f.handler, "column": f.args.column}
+                    for f in rule.row_filters
+                ] or None,
             },
             data_address=DataAddress(
                 type=ds.data_address.type,
@@ -101,7 +108,7 @@ class ConnectorGovernanceMapper:
         policy_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
 
         # Use GovernanceMapper (full ODRL v2) for the offer
-        from governance.mapper import GovernanceMapper
+        from ds.governance.mapper import GovernanceMapper
         gm = GovernanceMapper(participant_id=self.participant_id, base_url=self.base_url)
         odrl_offer = gm.to_odrl_offer(dataset_key, rule)
         odrl_set = {**odrl_offer, "@type": "odrl:Set"}

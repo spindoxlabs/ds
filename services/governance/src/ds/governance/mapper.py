@@ -117,9 +117,10 @@ class GovernanceMapper:
                 "odrl:rightOperand": {"@id": purpose},
             })
 
-        # Consent constraint (when user_filter_column triggers consent requirement)
+        # Consent constraint (when row_filters or user_filter_column triggers consent requirement)
         consent = policy.consent
-        if consent.required or rule.user_filter_column:
+        needs_consent = consent.required or bool(rule.row_filters) or bool(rule.user_filter_column)
+        if needs_consent:
             constraints.append({
                 "odrl:leftOperand": {"@id": "ds:consentStatus"},
                 "odrl:operator": {"@id": "odrl:eq"},
@@ -133,7 +134,7 @@ class GovernanceMapper:
             perm["odrl:constraint"] = constraints
 
         # Consent pre-duty
-        if consent.required or rule.user_filter_column:
+        if needs_consent:
             perm["odrl:duty"] = [{
                 "odrl:action": {"@id": "odrl:obtainConsent"},
                 "odrl:consentingParty": {"@id": "ds:role:DataSubject"},
@@ -209,7 +210,14 @@ class GovernanceMapper:
                 "ds:classification": rule.classification,
                 "ds:sourceSystem": rule.source_system,
                 "ds:tags": ",".join(rule.tags),
-                "ds:userFilterColumn": rule.user_filter_column,
+                "ds:userFilterColumn": (
+                    rule.row_filters[0].args.column if rule.row_filters
+                    else rule.user_filter_column
+                ),
+                "ds:rowFilters": [
+                    {"handler": f.handler, "column": f.args.column}
+                    for f in rule.row_filters
+                ] or None,
             },
             "dataAddress": data_address,
         }

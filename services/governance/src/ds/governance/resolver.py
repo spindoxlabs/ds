@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from .models import GovernanceOwner, GovernanceRuleV2, DataspacePolicy, DataspaceSpec
+from .models import GovernanceOwner, GovernanceRuleV2, DataspacePolicy, DataspaceSpec, RowFilter, RowFilterArgs
 
 
 class GovernanceConfig:
@@ -105,7 +105,7 @@ class GovernanceResolver:
             "title", "description", "license", "attribution", "ownership",
             "access_level", "access_requirements", "classification", "tags",
             "retention_days", "documentation_url", "source_system",
-            "user_filter_column",
+            "user_filter_column", "row_filters",
         }
 
         policy_raw = block.get("policy") or {}
@@ -125,6 +125,14 @@ class GovernanceResolver:
             documentation_url=block.get("documentation_url"),
             source_system=block.get("source_system"),
             user_filter_column=block.get("user_filter_column"),
+            row_filters=[
+                RowFilter(
+                    handler=f["handler"],
+                    args=RowFilterArgs(column=f["args"]["column"]),
+                )
+                for f in (block.get("row_filters") or [])
+                if isinstance(f, dict) and f.get("handler") and isinstance(f.get("args"), dict)
+            ],
             extra={k: v for k, v in block.items() if k not in v1_keys | {"policy", "dataspace"}},
             policy=DataspacePolicy.model_validate(policy_raw) if policy_raw else DataspacePolicy(),
             dataspace=DataspaceSpec.model_validate(dataspace_raw) if dataspace_raw else DataspaceSpec(),
@@ -150,6 +158,7 @@ class GovernanceResolver:
             documentation_url=pick(base.documentation_url, override.documentation_url),
             source_system=pick(base.source_system, override.source_system),
             user_filter_column=pick(base.user_filter_column, override.user_filter_column),
+            row_filters=override.row_filters if override.row_filters else base.row_filters,
             extra={**base.extra, **override.extra},
             # v2: override wins if explicitly set; otherwise base
             policy=override.policy if override.policy != DataspacePolicy() else base.policy,

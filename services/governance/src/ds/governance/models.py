@@ -18,6 +18,15 @@ class GovernanceOwner(BaseModel):
     type: str = "OWNER"
 
 
+class RowFilterArgs(BaseModel):
+    column: str
+
+
+class RowFilter(BaseModel):
+    handler: str
+    args: RowFilterArgs
+
+
 class GovernanceRule(BaseModel):
     """v1 governance rule — mirrors celine-utils GovernanceRule exactly."""
 
@@ -34,6 +43,7 @@ class GovernanceRule(BaseModel):
     documentation_url: str | None = None
     source_system: str | None = None
     user_filter_column: str | None = None
+    row_filters: list["RowFilter"] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
 
 

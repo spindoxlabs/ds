@@ -37,7 +37,10 @@ sources:
     description: "Aggregated smart meter readings at 15-minute intervals."
     access_level: restricted
     classification: pii
-    user_filter_column: sub
+    row_filters:
+      - handler: rec_registry
+        args:
+          column: sub
     tags: [meters, silver, pii, rec]
 
     dataspace:

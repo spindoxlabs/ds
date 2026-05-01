@@ -1,0 +1,163 @@
+# Consent & Data Sovereignty
+
+This document describes the consent management system: how data subjects grant and revoke consent, how consent gates data access at query time, and how revocation terminates active transfers.
+
+---
+
+## Overview
+
+The dataspace supports per-subject, per-dataset consent for datasets classified as PII or configured with row-level filtering. The consent lifecycle is:
+
+1. A consent request is created (by the provider or automatically)
+2. The data subject approves or rejects via the consent portal
+3. If approved, the consumer can access rows belonging to that subject
+4. The data subject can revoke at any time, which terminates linked transfers
+
+---
+
+## Consent model
+
+### Database schema
+
+The consent system uses PostgreSQL via async SQLAlchemy. Key tables in `services/connector/src/connector/db/models.py`:
+
+**ConsentRecord**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | UUID | Primary key |
+| `subject_id` | TEXT | Data subject identifier (e.g. email, user ID) |
+| `dataset_id` | TEXT | Asset ID of the dataset |
+| `consumer_did` | TEXT | DID of the requesting consumer |
+| `status` | TEXT | `pending`, `approved`, `rejected`, `revoked` |
+| `purpose` | TEXT | Stated purpose for data access |
+| `created_at` | TIMESTAMP | When the request was created |
+| `updated_at` | TIMESTAMP | Last status change |
+
+**TransferTracking**
+
+| Field | Type | Purpose |
+|-------|------|---------|
+| `id` | UUID | Primary key |
+| `consent_id` | UUID | FK to ConsentRecord |
+| `transfer_process_id` | TEXT | EDC transfer process ID |
+| `agreement_id` | TEXT | EDC contract agreement ID |
+| `active` | BOOLEAN | Whether the transfer is still running |
+
+---
+
+## Consent API
+
+All consent endpoints are on ds-connector under `/consent/`:
+
+### For data subjects
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /consent/my` | List my consent requests (filtered by authenticated subject) |
+| `POST /consent/my/{id}/approve` | Approve a pending consent request |
+| `POST /consent/my/{id}/reject` | Reject a pending consent request |
+| `POST /consent/my/{id}/revoke` | Revoke a previously approved consent |
+
+### For consumers/providers
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /consent/request` | Create a new consent request for a subject |
+
+### Internal (called by EDC extensions and dataset-api)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /internal/consent/check` | Check if active consent exists; returns consented subject IDs |
+| `POST /internal/consent/register-transfer` | Link a transfer process to a consent record |
+
+---
+
+## Consent enforcement flow
+
+### At negotiation time (ODRL constraint)
+
+When a dataset has `user_filter_column` set in `governance.yaml`, the `GovernanceMapper` adds a `ds:consentStatus eq "active"` constraint to the ODRL offer.
+
+During EDC negotiation, `ConsentStatusFunction` in `edc-extensions` calls `GET /internal/consent/check` to verify that at least one active consent record exists for the requesting participant.
+
+### At query time (row-level filtering)
+
+When the consumer queries data via the dataset API:
+
+1. dataset-api calls `GET /internal/consent/check?consumer_did=...&dataset_id=...`
+2. ds-connector returns the list of `subject_id` values with `status: approved`
+3. dataset-api adds `WHERE {user_filter_column} IN (subject_ids)` to the SQL query
+4. Only rows belonging to consenting subjects are returned
+
+This implements **attribute-based access control** at the row level — the consumer sees different data depending on which subjects have consented.
+
+---
+
+## Revocation flow
+
+When a data subject revokes consent:
+
+```
+Subject (Portal)          ds-connector              EDC Consumer
+  │                            │                         │
+  │  POST /consent/my/{id}/    │                         │
+  │  revoke                    │                         │
+  ├───────────────────────────→│                         │
+  │                            │  1. Set status=revoked  │
+  │                            │  2. Find linked transfers│
+  │                            │  3. For each transfer:  │
+  │                            │     POST /management/v3/│
+  │                            │     transferprocesses/  │
+  │                            │     {id}/terminate      │
+  │                            ├────────────────────────→│
+  │                            │                         │
+  │  { status: "revoked" }     │                         │
+  │←───────────────────────────┤                         │
+```
+
+After revocation:
+- The consent record status is set to `revoked`
+- All linked EDC transfer processes are terminated via the Management API
+- Future `consent/check` calls exclude this subject from the allowed list
+- The consumer can no longer access rows belonging to this subject
+
+---
+
+## Portal consent views
+
+### Data subject view (`/consent`)
+
+- Lists all consent requests for the authenticated subject
+- Each entry shows: dataset name, requesting consumer, purpose, status, timestamps
+- Actions: Approve, Reject (for pending), Revoke (for approved)
+- `ConsentBadge.svelte` renders status with color coding
+
+### Provider view
+
+The provider governance dashboard shows consent statistics per dataset.
+
+---
+
+## Notifications
+
+The consent service supports notifying data subjects when a consent request is created. Notification backends are configured via environment variables:
+
+| Backend | Config | Behavior |
+|---------|--------|----------|
+| `null` (default) | — | No-op; consent requests appear in portal only |
+| `smtp` | SMTP host/port/credentials | Sends email to the subject |
+| `webhook` | Webhook URL | POSTs to an external endpoint |
+
+The notification system is pluggable via the `Notifier` protocol in `services/connector/src/connector/notifications/base.py`.
+
+---
+
+## DSSC Blueprint alignment
+
+| Building Block | Implementation |
+|---------------|---------------|
+| BB09 (Data Sovereignty) | Per-subject consent with ABAC row filtering |
+| BB03 (Access & Usage Policies) | `ds:consentStatus` ODRL constraint in policy offers |
+| BB06 (Data Exchange) | Revocation terminates active EDC transfer processes |

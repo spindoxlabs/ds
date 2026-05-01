@@ -43,7 +43,7 @@ dataspaces/
 │   └── edc-extensions/         Java — custom ODRL constraint functions for EDC
 ├── data/                       runtime data (gitignored) — caddy PKI, keys, credentials
 ├── scripts/                    key generation, VC issuance
-└── docs/
+└── docs/                       architecture docs, DSSC blueprint reference
 ```
 
 Each service under `services/` has:
@@ -89,6 +89,50 @@ Java extensions for the EDC policy engine. Registers three `AtomicConstraintFunc
 ### edc-connector (`services/edc-connector`)
 
 Gradle project that assembles a fat JAR combining `controlplane-dcp-bom`, `dataplane-base-bom`, `configuration-filesystem`, `identity-did-web`, and `edc-extensions` against EDC v0.16.0. Built via a versioned base image (`ds-edc-base:0.16.0`) that pre-caches all Maven dependencies.
+
+---
+
+## How services interact
+
+```
+                                   ┌─────────────────────────┐
+                                   │     Portal (30004)      │
+                                   │     SvelteKit + Auth.js │
+                                   └────────┬───────┬────────┘
+                                            │       │
+                              ┌─────────────┘       └─────────────┐
+                              ▼                                   ▼
+                    ┌──────────────────┐               ┌──────────────────┐
+                    │  ds-connector    │               │  ds-provenance   │
+                    │  (30001)         │               │  (30000)         │
+                    │  FastAPI         │──events──────→│  FastAPI         │
+                    └──┬────┬────┬────┘               └──────────────────┘
+                       │    │    │
+          ┌────────────┘    │    └────────────┐
+          ▼                 ▼                 ▼
+  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
+  │ EDC Provider │  │ EDC Consumer │  │ Federated Catalog │
+  │ (19191-19291)│  │ (29191-29291)│  │ (30003)           │
+  └──┬───────┬───┘  └──┬───────┬──┘  └──────────────────┘
+     │       │         │       │
+     ▼       ▼         ▼       ▼
+  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
+  │ STS  │ │ VC   │ │ STS  │ │ VC   │
+  │38080 │ │Wallet│ │38081 │ │Wallet│
+  └──────┘ │38082 │ └──────┘ │38083 │
+           └──────┘          └──────┘
+```
+
+**Portal** is the user-facing frontend. All data operations go through **ds-connector**, which orchestrates EDC, consent, and governance. During DSP negotiation, EDC connectors call **STS** for identity tokens and **VC-wallet** for credential presentations. EDC also calls back to ds-connector's `/internal/*` endpoints for ODRL constraint evaluation (via **edc-extensions**). **ds-provenance** is a pure event sink — it receives lifecycle events from ds-connector and serves lineage queries to the portal. **Federated catalog** crawls participant DSP endpoints periodically. The external **dataset-api** (port 30002) validates agreements and consent via ds-connector before returning query results.
+
+For detailed interaction diagrams, see:
+
+- [Architecture overview](docs/architecture.md) — service map, network topology, port scheme
+- [Data exchange flow](docs/data-exchange-flow.md) — step-by-step negotiation and transfer sequence
+- [Identity & DCP](docs/identity-and-dcp.md) — DID, STS, VC-wallet, DCP verification flow
+- [Governance & ODRL](docs/governance-and-odrl.md) — YAML to ODRL pipeline and policy enforcement
+- [Provenance & lineage](docs/provenance-and-lineage.md) — event types, PROV-O model, graph traversal
+- [Consent & sovereignty](docs/consent-and-sovereignty.md) — consent lifecycle, row filtering, revocation
 
 ---
 
