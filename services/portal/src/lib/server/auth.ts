@@ -31,7 +31,7 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 			isAdmin: portalRoles.includes('admin') || realmRoles.includes('ds-admin'),
 			isDatasetAdmin:
 				portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin'),
-			canQuery: scopes.includes('dataspaces.query'),
+			canQuery: scopes.includes('dataspaces.query') || scopes.includes('dataset.query'),
 		};
 	} catch {
 		return { isAdmin: false, isDatasetAdmin: false, canQuery: false };

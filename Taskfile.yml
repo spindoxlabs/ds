@@ -35,24 +35,17 @@ tasks:
   services:start:
     desc: Start all service docker stacks (shared infra must be up first)
     cmds:
-      - |
-        for dir in services/*/; do
-          if [ -f "${dir}docker-compose.yml" ]; then
-            echo "→ up ${dir}"
-            docker compose -f "${dir}docker-compose.yml" up -d
-          fi
-        done
+      - task: edc:ensure-base
+      - docker compose -f services/provenance/docker-compose.yml up -d
+      - docker compose -f services/connector/docker-compose.yml up -d
+      - docker compose -f services/portal/docker-compose.yml up -d
 
   services:stop:
     desc: Stop all service docker stacks
     cmds:
-      - |
-        for dir in services/*/; do
-          if [ -f "${dir}docker-compose.yml" ]; then
-            echo "→ down ${dir}"
-            docker compose -f "${dir}docker-compose.yml" down
-          fi
-        done
+      - docker compose -f services/portal/docker-compose.yml down
+      - docker compose -f services/connector/docker-compose.yml down
+      - docker compose -f services/provenance/docker-compose.yml down
 
   # ── Full stack convenience ─────────────────────────────────────────────────
   start:
@@ -118,6 +111,11 @@ tasks:
     cmds:
       - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
 
+  edc:ensure-base:
+    desc: Build EDC base image only when missing
+    cmds:
+      - docker image inspect ds-edc-base:0.16.0 >/dev/null 2>&1 || task edc:base
+
   edc:build:
     desc: Build EDC connector fat JAR (requires Java 21 + Gradle)
     cmds:
@@ -139,3 +137,86 @@ tasks:
       - |
         FILES=$(ls services/*/docker-compose.yml 2>/dev/null | sed 's/^/-f /')
         docker compose -f docker-compose.yml $FILES logs -f
+
+  # ── CELINE local integration demo ─────────────────────────────────────────
+  celine:demo:start:
+    desc: Start the Dockerized dataspace demo wired to CELINE dataset-api and Keycloak
+    cmds:
+      - |
+        set -euo pipefail
+        env_file="${CELINE_ENV_FILE:-.env}"
+
+        if [ ! -f "$env_file" ]; then
+          echo "Missing env file: $env_file"
+          echo "Create /home/francesco/Desktop/ds/.env from .env.example or set CELINE_ENV_FILE to a CELINE env file."
+          exit 1
+        fi
+
+        env_value() {
+          name="$1"
+          current="${!name:-}"
+          if [ -n "$current" ]; then
+            printf '%s' "$current"
+            return
+          fi
+          awk -F= -v key="$name" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
+        }
+
+        if [ -z "$(env_value AUTH_SECRET)" ]; then
+          echo "Missing AUTH_SECRET in $env_file"
+          echo "Set a local Auth.js secret in /home/francesco/Desktop/ds/.env or export AUTH_SECRET."
+          exit 1
+        fi
+        if [ -z "$(env_value CELINE_OIDC_BASE_URL)" ] || \
+           [ -z "$(env_value CELINE_OIDC_CLIENT_ID)" ] || \
+           [ -z "$(env_value CELINE_OIDC_CLIENT_SECRET)" ]; then
+          echo "Missing Keycloak env in $env_file"
+          echo "Set CELINE_OIDC_BASE_URL, CELINE_OIDC_CLIENT_ID and CELINE_OIDC_CLIENT_SECRET in the env file or shell."
+          exit 1
+        fi
+
+        if ! curl -fsS http://localhost:8001/health >/dev/null; then
+          echo "CELINE dataset-api is not reachable at http://localhost:8001."
+          echo "Start CELINE first: cd /home/francesco/Desktop/celine-dev && task repo:start"
+          exit 1
+        fi
+
+        if docker network inspect dataspaces >/dev/null 2>&1; then
+          network_info=$(docker network inspect dataspaces | python3 -c 'import json,sys; n=json.load(sys.stdin)[0]; print(((n.get("Labels") or {}).get("com.docker.compose.network", "") or "-") + " " + str(len(n.get("Containers") or {})))')
+          label="${network_info% *}"
+          [ "$label" = "-" ] && label=""
+          containers="${network_info##* }"
+          if [ "$label" != "dataspaces" ] && [ "$containers" = "0" ]; then
+            docker network rm dataspaces >/dev/null
+          fi
+        fi
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" up -d postgres
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.celine-demo.yml up -d --build
+
+        echo ""
+        echo "✓ Dockerized CELINE dataspace demo started"
+        echo "  Portal:  http://localhost:30004/demo"
+        echo "  Status:  task celine:demo:status"
+        echo "  Logs:    task celine:demo:logs"
+        echo "  Stop:    task celine:demo:stop"
+
+  celine:demo:stop:
+    desc: Stop the Dockerized CELINE dataspace demo
+    cmds:
+      - |
+        env_file="${CELINE_ENV_FILE:-.env}"
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.celine-demo.yml down
+
+  celine:demo:status:
+    desc: Show status for Dockerized CELINE dataspace demo containers
+    cmds:
+      - |
+        env_file="${CELINE_ENV_FILE:-.env}"
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.celine-demo.yml ps
+
+  celine:demo:logs:
+    desc: Follow logs for Dockerized CELINE dataspace demo containers
+    cmds:
+      - |
+        env_file="${CELINE_ENV_FILE:-.env}"
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.celine-demo.yml logs -f

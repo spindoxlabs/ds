@@ -87,7 +87,7 @@ export function derivePersona(
 	const isAdmin = portalRoles.includes('admin') || realmRoles.includes('ds-admin');
 	const isDatasetAdmin =
 		portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin');
-	const canQuery = scopes.includes('dataspaces.query');
+	const canQuery = scopes.includes('dataspaces.query') || scopes.includes('dataset.query');
 
 	return {
 		isAuthenticated: true,

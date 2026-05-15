@@ -18,6 +18,8 @@ RUN groupadd -r app && useradd -r -g app -d /app app
 
 COPY --from=builder /opt/venv /opt/venv
 COPY services/provenance/src/ src/
+COPY services/provenance/alembic.ini alembic.ini
+COPY services/provenance/alembic/ alembic/
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

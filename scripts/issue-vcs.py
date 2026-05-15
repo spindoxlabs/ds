@@ -2,7 +2,7 @@
 """Issue membership Verifiable Credentials for dev participants.
 
 Signs VCs with the trust anchor's private key (ES256 + JWS proof).
-Output is written to src/credentials/{provider,consumer}/*.json.
+Output is written to data/credentials/{provider,consumer}/*.json.
 
 Usage:
     python3 scripts/issue-vcs.py
@@ -18,15 +18,18 @@ import uuid
 from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ec import (
+    ECDSA,
     EllipticCurvePrivateNumbers,
     EllipticCurvePublicNumbers,
     SECP256R1,
 )
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.hazmat.primitives import hashes
 
 REPO_ROOT = Path(__file__).parent.parent
 
-TRUST_ANCHOR_KEY_PATH = REPO_ROOT / "src/ds/connector/config/trust-anchor-key.json"
-CREDENTIALS_DIR = REPO_ROOT / "src/credentials"
+TRUST_ANCHOR_KEY_PATH = REPO_ROOT / "services/connector/config/trust-anchor-key.json"
+CREDENTIALS_DIR = REPO_ROOT / "data/credentials"
 
 PARTICIPANTS = [
     {
@@ -62,8 +65,6 @@ def load_private_key(jwk: dict):
 
 def sign_vc(vc: dict, private_key, kid: str) -> dict:
     """Attach a JWS proof to the VC (detached payload, compact serialisation)."""
-    from jose import jwt as jose_jwt
-
     now = int(time.time())
     payload = {
         "iss": "did:web:trust-anchor.dataspaces.localhost",
@@ -73,7 +74,15 @@ def sign_vc(vc: dict, private_key, kid: str) -> dict:
         "jti": vc["id"],
         "vc": vc,
     }
-    token = jose_jwt.encode(payload, private_key, algorithm="ES256", headers={"kid": kid})
+    header = {"alg": "ES256", "typ": "JWT", "kid": kid}
+    signing_input = ".".join([
+        b64url(json.dumps(header, separators=(",", ":")).encode()),
+        b64url(json.dumps(payload, separators=(",", ":")).encode()),
+    ]).encode()
+    der_signature = private_key.sign(signing_input, ECDSA(hashes.SHA256()))
+    r, s = decode_dss_signature(der_signature)
+    raw_signature = r.to_bytes(32, "big") + s.to_bytes(32, "big")
+    token = f"{signing_input.decode()}.{b64url(raw_signature)}"
     vc["proof"] = {
         "type": "JsonWebSignature2020",
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

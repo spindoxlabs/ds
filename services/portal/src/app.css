@@ -22,13 +22,13 @@
     @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none;
   }
   .ds-btn-primary {
-    @apply ds-btn bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-600;
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-brand-600 text-white hover:bg-brand-700 focus-visible:ring-brand-600;
   }
   .ds-btn-secondary {
-    @apply ds-btn bg-white text-gray-700 border border-gray-300 hover:bg-gray-50;
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-white text-gray-700 border border-gray-300 hover:bg-gray-50;
   }
   .ds-btn-danger {
-    @apply ds-btn bg-red-600 text-white hover:bg-red-700;
+    @apply inline-flex items-center justify-center rounded-lg px-4 py-2 text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none bg-red-600 text-white hover:bg-red-700;
   }
   .ds-badge {
     @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;

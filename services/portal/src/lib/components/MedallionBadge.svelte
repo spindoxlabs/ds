@@ -11,7 +11,7 @@
     silver: '🥈',
     gold:   '🥇',
   };
-  const t = (tier ?? '').toLowerCase();
+  const t = $derived((tier ?? '').toLowerCase());
 </script>
 
 {#if t && styles[t]}

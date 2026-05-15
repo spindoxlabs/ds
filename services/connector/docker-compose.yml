@@ -124,12 +124,24 @@ services:
       - ../../data/credentials:/credentials:ro
     networks: [ dataspaces ]
 
+  # ── Standalone mock dataset-api (replaces CELINE for local tests) ───────────
+  dataset-api:
+    build:
+      context: ../..
+      dockerfile: services/dataset-api-mock/Dockerfile
+    ports: [ "30002:30002" ]
+    environment:
+      DATASET_API_CONNECTOR_INTERNAL_URL: http://ds-connector:30001
+      DATASET_API_ENFORCE_CONSENT: "true"
+    depends_on: [ ds-connector ]
+    networks: [ dataspaces ]
+
   # ── DB create — ensures the "connector" database exists ───────────────────────
   connector-db-create:
     image: postgres:17
     command: |
       sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h 172.17.0.1 -P 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector'"'"'" |
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector'"'"'" |
       grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector"'
     environment:
       PGPASSWORD: postgres

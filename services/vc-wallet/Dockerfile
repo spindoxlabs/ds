@@ -18,7 +18,6 @@ RUN groupadd -r app && useradd -r -g app -d /app app
 
 COPY --from=builder /opt/venv /opt/venv
 COPY services/vc-wallet/src/ src/
-COPY data/credentials/ /credentials/
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \

@@ -23,6 +23,10 @@ async def create_consent_request(
     notification_url: str | None = None,
     notifier: ConsentNotifier | None = None,
 ) -> ConsentRequestORM:
+    latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    if latest and latest.status in ("pending", "granted"):
+        return latest
+
     consent = ConsentRequestORM(
         subject_id=subject_id,
         consumer_id=consumer_id,
@@ -42,6 +46,28 @@ async def create_consent_request(
         except Exception as exc:
             log.warning("notify_requested failed for consent %s: %s", consent.id, exc)
     return consent
+
+
+async def get_latest_consent(
+    session: AsyncSession,
+    subject_id: str,
+    dataset_id: str,
+    consumer_id: str,
+) -> ConsentRequestORM | None:
+    result = await session.execute(
+        select(ConsentRequestORM)
+        .where(
+            ConsentRequestORM.subject_id == subject_id,
+            ConsentRequestORM.dataset_id == dataset_id,
+            ConsentRequestORM.consumer_id == consumer_id,
+        )
+        .order_by(
+            ConsentRequestORM.requested_at.desc(),
+            ConsentRequestORM.revoked_at.desc(),
+            ConsentRequestORM.decided_at.desc(),
+        )
+    )
+    return result.scalars().first()
 
 
 async def get_consent_request(
@@ -156,15 +182,8 @@ async def check_consent(
     dataset_id: str,
     consumer_id: str,
 ) -> bool:
-    result = await session.execute(
-        select(ConsentRequestORM).where(
-            ConsentRequestORM.subject_id == subject_id,
-            ConsentRequestORM.dataset_id == dataset_id,
-            ConsentRequestORM.consumer_id == consumer_id,
-            ConsentRequestORM.status == "granted",
-        )
-    )
-    return result.scalar_one_or_none() is not None
+    latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    return latest is not None and latest.status == "granted"
 
 
 async def get_granted_subject_ids(
@@ -173,10 +192,23 @@ async def get_granted_subject_ids(
     consumer_id: str,
 ) -> list[str]:
     result = await session.execute(
-        select(ConsentRequestORM.subject_id).where(
+        select(ConsentRequestORM)
+        .where(
             ConsentRequestORM.dataset_id == dataset_id,
             ConsentRequestORM.consumer_id == consumer_id,
-            ConsentRequestORM.status == "granted",
+        )
+        .order_by(
+            ConsentRequestORM.subject_id.asc(),
+            ConsentRequestORM.requested_at.desc(),
+            ConsentRequestORM.revoked_at.desc(),
+            ConsentRequestORM.decided_at.desc(),
         )
     )
-    return [row[0] for row in result.fetchall()]
+    latest_by_subject: dict[str, ConsentRequestORM] = {}
+    for consent in result.scalars().all():
+        latest_by_subject.setdefault(consent.subject_id, consent)
+    return [
+        subject_id
+        for subject_id, consent in latest_by_subject.items()
+        if consent.status == "granted"
+    ]

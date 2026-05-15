@@ -9,7 +9,7 @@ tasks:
 
   test:
     cmds:
-      - uv run pytest src/ds/governance/tests/ -v --cov=src/ds/governance --cov-report=term-missing
+      - uv run pytest tests/tests/ -v --cov=src/ds/governance --cov-report=term-missing
 
   lint:
     cmds:
