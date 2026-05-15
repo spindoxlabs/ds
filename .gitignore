@@ -59,6 +59,8 @@ htmlcov
 
 .claude
 data
+logs/
+.run/
 docs/plans
 docs/status
 docs/AGENTS.md

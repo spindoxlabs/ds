@@ -6,6 +6,18 @@ networks:
     external: true
 
 services:
+  # ── DB create — ensures the "provenance" database exists ───────────────────
+  provenance-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE provenance"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [ dataspaces ]
+
   # ── DB init — runs alembic migrations, restarts until postgres is ready ───────
   provenance-db-init:
     build:
@@ -14,6 +26,9 @@ services:
     command: [ "alembic", "--config", "alembic.ini", "upgrade", "head" ]
     working_dir: /app
     restart: on-failure
+    depends_on:
+      provenance-db-create:
+        condition: service_completed_successfully
     environment:
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance
     networks: [ dataspaces ]

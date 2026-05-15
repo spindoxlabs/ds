@@ -48,7 +48,7 @@ async def ingest_event(
         event_type=event.event_type,
         event_id=event_id,
         occurred_at=event.occurred_at,
-        payload=event.model_dump(),
+        payload=event.model_dump(mode="json"),
         prov_node_id=prov_node.id if prov_node else None,
         agreement_id=getattr(event, "agreement_id", None),
         data_product_id=getattr(event, "data_product_id", None),

@@ -8,6 +8,7 @@
 
   const navItems = $derived([
     { href: '/', label: 'Catalog', always: true },
+    { href: '/demo', label: 'Demo', always: true },
     { href: '/consent', label: 'My Consents', show: persona.isSubject },
     { href: '/provider', label: 'Provider', show: persona.isProvider },
     { href: '/consumer', label: 'Consumer', show: persona.isConsumer },

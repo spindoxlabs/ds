@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import ProvNodeORM, ProvRelationORM
@@ -16,6 +15,16 @@ async def create_relation(
     """Insert a relation. Returns (relation, created). created=False means duplicate."""
     subject = await _require_node(session, data.subject_iri)
     object_ = await _require_node(session, data.object_iri)
+    result = await session.execute(
+        select(ProvRelationORM).where(
+            ProvRelationORM.relation_type == data.relation_type,
+            ProvRelationORM.subject_id == subject.id,
+            ProvRelationORM.object_id == object_.id,
+        )
+    )
+    existing = result.scalar_one_or_none()
+    if existing:
+        return existing, False
 
     relation = ProvRelationORM(
         relation_type=data.relation_type,
@@ -25,19 +34,8 @@ async def create_relation(
         extra=data.extra,
     )
     session.add(relation)
-    try:
-        await session.flush()
-        return relation, True
-    except IntegrityError:
-        await session.rollback()
-        result = await session.execute(
-            select(ProvRelationORM).where(
-                ProvRelationORM.relation_type == data.relation_type,
-                ProvRelationORM.subject_id == subject.id,
-                ProvRelationORM.object_id == object_.id,
-            )
-        )
-        return result.scalar_one(), False
+    await session.flush()
+    return relation, True
 
 
 async def get_relations_for_nodes(

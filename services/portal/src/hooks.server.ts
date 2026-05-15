@@ -1,5 +1,5 @@
 import { SvelteKitAuth } from '@auth/sveltekit';
-import Keycloak from '@auth/core/providers/keycloak';
+import Keycloak from '@auth/sveltekit/providers/keycloak';
 import { env } from '$env/dynamic/private';
 
 export const { handle, signIn, signOut } = SvelteKitAuth({
@@ -8,6 +8,11 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 			clientId: env.AUTH_KEYCLOAK_ID ?? 'ds-portal',
 			clientSecret: env.AUTH_KEYCLOAK_SECRET ?? '',
 			issuer: env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:8080/realms/celine',
+			authorization: {
+				params: {
+					scope: env.AUTH_KEYCLOAK_SCOPE ?? 'openid profile email dataset.query dataset.read groups organization',
+				},
+			},
 		}),
 	],
 	secret: env.AUTH_SECRET ?? 'dev-secret-change-in-prod',
@@ -28,9 +33,3 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 		},
 	},
 });
-
-declare module '@auth/core/types' {
-	interface Session {
-		accessToken?: string;
-	}
-}

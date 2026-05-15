@@ -20,7 +20,7 @@
     return String(d['dct:description'] ?? d['description'] ?? '');
   }
   function getId(d: Record<string, unknown>): string {
-    return String(d['@id'] ?? d['id'] ?? d['asset_id'] ?? '');
+    return String(d['dct:identifier'] ?? d['@id'] ?? d['id'] ?? d['asset_id'] ?? '');
   }
   function getMedallion(d: Record<string, unknown>): string {
     const tags: unknown[] = Array.isArray(d['dcat:keyword']) ? (d['dcat:keyword'] as unknown[]) : [];

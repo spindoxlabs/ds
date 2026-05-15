@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ds.connector.registry.participants import (
+from connector.registry.participants import (
     Participant,
     ParticipantRegistry,
     UnknownParticipantError,

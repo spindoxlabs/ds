@@ -28,8 +28,9 @@
     ]);
     const cytoscape = cytoscapeLib.default;
     cytoscapeDagre.default(cytoscape, dagre.default);
+    const createGraph = cytoscape as unknown as (options: Record<string, unknown>) => unknown;
 
-    cy = cytoscape({
+    cy = createGraph({
       container,
       elements: [
         ...graphData.nodes.map((n) => ({
@@ -72,10 +73,10 @@
           style: { 'border-width': 3, 'border-color': '#2563eb' },
         },
       ],
-      layout: { name: 'dagre', rankDir: 'LR', padding: 24 } as Record<string, unknown>,
+      layout: { name: 'dagre', rankDir: 'LR', padding: 24 },
     });
 
-    (cy as { on: (event: string, cb: (evt: { target: { data: (k: string) => string } }) => void) => void }).on('tap', 'node', (evt) => {
+    (cy as { on: (event: string, selector: string, cb: (evt: { target: { data: (k: string) => string } }) => void) => void }).on('tap', 'node', (evt) => {
       const d = evt.target.data;
       selectedNode = { id: d('id'), label: d('label'), type: d('type') };
     });

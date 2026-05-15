@@ -10,7 +10,6 @@ COPY services/portal/src ./src
 COPY services/portal/svelte.config.js ./
 COPY services/portal/vite.config.ts   ./
 COPY services/portal/tsconfig.json    ./
-COPY services/portal/tailwind.config.js ./  2>/dev/null || true
 
 RUN npm run build
 
@@ -22,6 +21,7 @@ RUN addgroup -S app && adduser -S -G app app
 
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./
+COPY --from=builder /app/package-lock.json ./
 # Only runtime deps
 RUN npm ci --omit=dev --ignore-scripts
 

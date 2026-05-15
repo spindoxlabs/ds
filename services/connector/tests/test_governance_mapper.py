@@ -1,7 +1,7 @@
 """Tests for ConnectorGovernanceMapper."""
 import pytest
 
-from ds.connector.services.governance import ConnectorGovernanceMapper, load_exposed_datasets
+from connector.services.governance import ConnectorGovernanceMapper, load_exposed_datasets
 from ds.governance.models import GovernanceRuleV2, DataspaceSpec, DataspaceDataAddress
 
 
@@ -29,7 +29,6 @@ def test_asset_create_basic():
 
 def test_asset_data_address_query_params():
     mapper = _mapper()
-    from ds.governance.models import DataspaceDataAddress
     rule = _rule(
         access_level="internal",
         classification="green",
