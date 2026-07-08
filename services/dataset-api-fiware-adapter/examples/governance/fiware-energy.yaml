@@ -1,0 +1,22 @@
+datasets:
+  fiware.energy.ACMeasurement:
+    title: AC Measurement Telemetry
+    backend_type: quantumleap
+    backend_config:
+      base_url: https://quantumleap.dataspace.local
+      fiware_service: energy
+      entity_type: ACMeasurement
+    expose: true
+    access_level: internal
+    lineage:
+      name: fiware.energy.ACMeasurement
+      facets:
+        governance:
+          owners: [energy]
+          accessLevel: internal
+          sourceSystem: fiware-quantumleap
+          rowFilters:
+            - handler: rec_registry
+              args:
+                column: entity_id
+                urn_template: "urn:ngsi-ld:ACMeasurement:energy:{device_id}"
