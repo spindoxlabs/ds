@@ -26,30 +26,25 @@ The portal makes the dataspace accessible without direct API interaction. It pro
 ### Public
 
 - `/` — landing page with dataspace overview and featured datasets from the catalogue
-- `/catalogue` — browse all exposed datasets with search and filter
-- `/catalogue/[id]` — dataset detail: description, access level, ODRL policy summary, download link if open
+- `/catalog/[id]` — dataset detail, policy summary and access request wizard
 
 ### Consumer (requires `dataspaces.query` scope)
 
-- `/consumer` — consumer dashboard
-- `/consumer/catalog` — fetch provider catalogue via `ds-connector`
-- `/consumer/negotiate` — negotiation wizard (select dataset → negotiate → transfer → get EDR → query)
-- `/consumer/negotiations` — list active negotiations with state badge
-- `/consumer/edr/[id]` — view or use an active EDR
+- `/consumer` — user-scoped requests, negotiations and active transfers
 
 ### Provider (requires `dataset.admin` role)
 
 - `/provider` — provider dashboard
-- `/provider/sync` — trigger governance sync (push assets/policies/contracts to EDC)
 - `/provider/assets` — list registered EDC assets
-- `/provider/transfers` — monitor active transfer processes
-- `/provider/governance` — governance YAML editor (CodeMirror inline, `PUT /admin/governance` on connector)
+- `/provider/assets/[id]` — asset detail and policy view
+- `/provider/contracts` — provider contract state
+- `/provider/governance` — governance and policy matrix view
 
 ### Consent portal (data subjects)
 
 - `/consent` — list all consent requests directed at the authenticated subject
 - `/consent/[id]` — consent request detail with full ODRL offer rendered via `PolicySummary`
-- `POST /consent/[id]/approve` — approve consent
+- `/my-data` — datasets owned by the authenticated data subject
 - `POST /consent/[id]/reject` — reject consent
 - `POST /consent/[id]/revoke` — revoke previously granted consent (terminates linked transfers)
 
@@ -118,10 +113,7 @@ docker compose -f docker-compose.yml up
 
 ---
 
-## Known gaps (tracked in Iteration 7)
+## Known gaps
 
-- `/consumer/negotiations` fetches active negotiations but does not yet join with local connector state
-- Governance YAML editor on `/provider/governance` is not yet connected to the connector `PUT /admin/governance` endpoint
-- Consent request detail on `/consent/[id]` does not yet render the full ODRL offer
 - No E2E tests (Playwright)
 - Mobile viewport not systematically tested below 375 px

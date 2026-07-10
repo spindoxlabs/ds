@@ -5,13 +5,19 @@
 
   let {
     assetId,
-    providerParticipantId,
+    counterPartyAddress,
+    offerId,
+    assigner,
+    odrlPolicy,
     policySummary,
     onClose,
     onComplete,
   }: {
     assetId: string;
-    providerParticipantId: string;
+    counterPartyAddress: string;
+    offerId: string;
+    assigner: string;
+    odrlPolicy: Record<string, unknown> | null;
     policySummary: PolicySummaryType | null;
     onClose: () => void;
     onComplete: (result: { agreementId: string; transferId: string }) => void;
@@ -56,8 +62,11 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider_participant_id: providerParticipantId,
+          counter_party_address: counterPartyAddress,
+          offer_id: offerId,
           asset_id: assetId,
+          assigner,
+          odrl_policy: odrlPolicy,
           purpose: selectedPurpose,
         }),
       });
@@ -87,8 +96,14 @@
           const data = await res.json();
           progressLabel = `Negotiating… (${data.state})`;
           if (data.state === 'FINALIZED') {
+            const agreementId = data.agreement_id ?? data.contract_agreement_id ?? data.contractAgreementId;
+            if (!agreementId) {
+              clearPoll();
+              reject(new Error('Negotiation finalized without a contract agreement id'));
+              return;
+            }
             clearPoll();
-            resolve(data.agreement_id);
+            resolve(agreementId);
           } else if (data.state === 'TERMINATED') {
             clearPoll();
             reject(new Error(data.error ?? 'Negotiation terminated by provider'));
@@ -113,9 +128,10 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          counter_party_address: counterPartyAddress,
+          connector_id: assigner,
           agreement_id: agreementId,
           asset_id: assetId,
-          provider_participant_id: providerParticipantId,
         }),
       });
       if (!res.ok) throw new Error(await res.text());

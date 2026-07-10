@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -25,6 +26,10 @@ _FINALIZED_STATES = {"FINALIZED", "VERIFIED", "AGREED"}
 _TERMINAL_STATES = {"TERMINATED", "ERROR"}
 _ACTIVE_TRANSFER_STATES = {"STARTED"}
 _TERMINAL_TRANSFER_STATES = {"COMPLETED", "TERMINATED", "ERROR", "DEPROVISIONING_REQUESTED"}
+
+
+def _path_id(value: str) -> str:
+    return quote(value, safe="")
 
 
 class EdcManagementClient:
@@ -49,17 +54,23 @@ class EdcManagementClient:
         return r.json()
 
     async def get_asset(self, asset_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/assets/{asset_id}")
+        r = await self._http.get(f"/v3/assets/{_path_id(asset_id)}")
         r.raise_for_status()
         return r.json()
 
     async def list_assets(self) -> list[dict[str, Any]]:
-        r = await self._http.post("/v3/assets/request", json={})
+        r = await self._http.post(
+            "/v3/assets/request",
+            json={
+                "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+                "@type": "QuerySpec",
+            },
+        )
         r.raise_for_status()
         return r.json()
 
     async def delete_asset(self, asset_id: str) -> None:
-        r = await self._http.delete(f"/v3/assets/{asset_id}")
+        r = await self._http.delete(f"/v3/assets/{_path_id(asset_id)}")
         if r.status_code not in (200, 204, 404):
             r.raise_for_status()
 
@@ -76,7 +87,7 @@ class EdcManagementClient:
         return r.json()
 
     async def delete_policy(self, policy_id: str) -> None:
-        r = await self._http.delete(f"/v3/policydefinitions/{policy_id}")
+        r = await self._http.delete(f"/v3/policydefinitions/{_path_id(policy_id)}")
         if r.status_code not in (200, 204, 404):
             r.raise_for_status()
 
@@ -93,7 +104,7 @@ class EdcManagementClient:
         return r.json()
 
     async def delete_contract_definition(self, cid: str) -> None:
-        r = await self._http.delete(f"/v3/contractdefinitions/{cid}")
+        r = await self._http.delete(f"/v3/contractdefinitions/{_path_id(cid)}")
         if r.status_code not in (200, 204, 404):
             r.raise_for_status()
 
@@ -112,7 +123,7 @@ class EdcManagementClient:
         return r.json()["@id"]
 
     async def get_negotiation(self, negotiation_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/contractnegotiations/{negotiation_id}")
+        r = await self._http.get(f"/v3/contractnegotiations/{_path_id(negotiation_id)}")
         r.raise_for_status()
         return r.json()
 
@@ -156,9 +167,23 @@ class EdcManagementClient:
         return r.json()["@id"]
 
     async def get_transfer(self, transfer_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/transferprocesses/{transfer_id}")
+        r = await self._http.get(f"/v3/transferprocesses/{_path_id(transfer_id)}")
         r.raise_for_status()
         return r.json()
+
+    async def terminate_transfer(self, transfer_id: str, reason: str | None = None) -> None:
+        r = await self._http.post(
+            f"/v3/transferprocesses/{_path_id(transfer_id)}/terminate",
+            json={
+                "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+                "@type": "TerminateTransfer",
+                "reason": reason or "Revoked by consumer",
+            },
+        )
+        if r.status_code in (404, 405):
+            log.warning("Transfer termination endpoint unavailable for %s: %s", transfer_id, r.text)
+            return
+        r.raise_for_status()
 
     async def poll_transfer(
         self,
@@ -187,20 +212,26 @@ class EdcManagementClient:
         )
 
     async def list_transfers(self) -> list[dict[str, Any]]:
-        r = await self._http.post("/v3/transferprocesses/request", json={})
+        r = await self._http.post(
+            "/v3/transferprocesses/request",
+            json={
+                "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+                "@type": "QuerySpec",
+            },
+        )
         r.raise_for_status()
         return r.json()
 
     # ── EDR ───────────────────────────────────────────────────────────────────
 
     async def get_edr(self, transfer_id: str) -> EdrResponse:
-        r = await self._http.get(f"/v3/edrs/{transfer_id}/dataaddress")
+        r = await self._http.get(f"/v3/edrs/{_path_id(transfer_id)}/dataaddress")
         r.raise_for_status()
         return EdrResponse.from_edc(r.json())
 
     # ── Contract Agreements ────────────────────────────────────────────────────
 
     async def get_contract_negotiation_agreement(self, negotiation_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/contractnegotiations/{negotiation_id}")
+        r = await self._http.get(f"/v3/contractnegotiations/{_path_id(negotiation_id)}")
         r.raise_for_status()
         return r.json()

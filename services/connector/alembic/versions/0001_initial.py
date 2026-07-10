@@ -47,8 +47,20 @@ def upgrade() -> None:
         sa.Column("notification_url", sa.Text(), nullable=True),
         sa.Column("transfer_ids", sa.JSON(), nullable=True),
     )
+    op.create_table(
+        "consumer_transfers",
+        sa.Column("id", sa.String(), primary_key=True, nullable=False),
+        sa.Column("transfer_id", sa.Text(), nullable=False),
+        sa.Column("subject_id", sa.Text(), nullable=False),
+        sa.Column("asset_id", sa.Text(), nullable=False),
+        sa.Column("contract_agreement_id", sa.Text(), nullable=False),
+        sa.Column("consumer_id", sa.Text(), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.UniqueConstraint("transfer_id"),
+    )
 
 
 def downgrade() -> None:
+    op.drop_table("consumer_transfers")
     op.drop_table("consent_requests")
     op.drop_table("contract_agreements")

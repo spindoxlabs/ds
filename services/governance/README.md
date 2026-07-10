@@ -8,12 +8,12 @@ Not a running service — imported as a library.
 
 ## Purpose
 
-`governance.yaml` files live in data pipeline repositories (under `celine-eu/celine-pipelines` and `celine-eu/demo3`). The same file is read by two consumers:
+`governance.yaml` files live in data pipeline repositories (in project-specific pipeline repositories). The same file is read by two consumers:
 
-- `celine-utils` `GovernanceResolver` — pipeline side, for OpenLineage facet injection
+- legacy pipeline `GovernanceResolver` — pipeline side, for OpenLineage facet injection
 - `ds-connector` via this library — EDC side, for ODRL policy and asset creation
 
-This library provides the EDC side of that shared contract. It is fully backward-compatible with `celine-utils` `GovernanceRule` v1 — files that don't use `dcat:` or `dataspace:` blocks load without errors.
+This library provides the EDC side of that shared contract. It is fully backward-compatible with legacy `GovernanceRule` v1 — files that don't use `dcat:` or `dataspace:` blocks load without errors.
 
 ---
 
@@ -60,7 +60,7 @@ Key methods:
 
 ## Resolver (`resolver.py`)
 
-`GovernanceResolver` wraps `celine-utils` `GovernanceResolver` with `GovernanceRuleV2` output. Reads a `governance.yaml` file and resolves per-source rules by merging defaults.
+`GovernanceResolver` wraps legacy pipeline `GovernanceResolver` with `GovernanceRuleV2` output. Reads a `governance.yaml` file and resolves per-source rules by merging defaults.
 
 ```python
 resolver = GovernanceResolver.from_file(Path("governance/governance.yaml"))

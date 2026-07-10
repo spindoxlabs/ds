@@ -1,9 +1,9 @@
 {
   "kty": "EC",
   "crv": "P-256",
-  "x": "9Al5Nzt8dhSL2FYNn1Wv1aXO5cboNkV16XLR6-GCImg",
-  "y": "-kPVrFJRbbkWAZqgNZ9W2DRzP2FbdNKue0zFezUJtwQ",
-  "d": "iAGRkyNRS0m0IdRh4roWVgUl3L9zgj8VodCnzMnC7AE",
+  "x": "y7Frxy7cdPT9aykp-hhELZj8JcIuFPIFAvnCqaYG4vM",
+  "y": "IJs-2OH1L9aAIMIMQ2EHO2rl5qYEMIJZ7IhXbquXgfU",
+  "d": "UBXlVbGDDiX-isPIRz8LwpIEfI_6nsWZVaXOBey0Sbc",
   "kid": "did:web:provider.dataspaces.localhost#key-1",
   "use": "sig"
 }

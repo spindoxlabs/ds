@@ -7,6 +7,8 @@ val edcVersion = "0.16.0"
 dependencies {
     api("org.eclipse.edc:policy-engine-spi:$edcVersion")
     api("org.eclipse.edc:participant-spi:$edcVersion")
+    api("org.eclipse.edc:data-plane-spi:$edcVersion")
+    api("org.eclipse.edc:verifiable-credentials-spi:$edcVersion")
     compileOnly("org.eclipse.edc:runtime-metamodel:$edcVersion")
 
     // HTTP client for consent check

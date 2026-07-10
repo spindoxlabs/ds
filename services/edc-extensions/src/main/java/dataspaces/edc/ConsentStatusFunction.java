@@ -21,8 +21,10 @@ import java.time.Duration;
  *
  * <p>The consumer participant ID is taken from the verified {@code ParticipantAgent}.
  * Subject and dataset IDs are taken from {@code ParticipantAgent} attributes
- * ({@code ds.subject_id}, {@code ds.dataset_id}) populated by the DCP token.
- * Fails closed when either attribute is absent.
+ * ({@code ds.subject_id}, {@code ds.dataset_id}) when present. For dataset-level
+ * negotiations without a subject attribute, the function accepts the negotiation
+ * when at least one subject has granted consent for the consumer+dataset pair.
+ * Fails closed when the dataset attribute is absent.
  *
  * <p>Retries up to 3 times with exponential backoff (100 ms → 500 ms → 2 s).
  */
@@ -48,7 +50,8 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
     @Override
     public boolean evaluate(Operator operator, Object rightValue, Permission rule, ParticipantAgentPolicyContext context) {
         if (operator != Operator.EQ) return false;
-        if (!"active".equals(rightValue.toString())) return false;
+        String expectedStatus = rightValue.toString();
+        if (!"active".equals(expectedStatus) && !"granted".equals(expectedStatus)) return false;
 
         ParticipantAgent agent = context.participantAgent();
         if (agent == null) return false;
@@ -57,8 +60,8 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
         String subjectId = agent.getAttributes().getOrDefault("ds.subject_id", "");
         String datasetId = agent.getAttributes().getOrDefault("ds.dataset_id", "");
 
-        if (subjectId.isEmpty() || datasetId.isEmpty()) {
-            monitor.warning("ConsentStatusFunction: ds.subject_id or ds.dataset_id missing from participant attributes — failing closed");
+        if (datasetId.isEmpty()) {
+            monitor.warning("ConsentStatusFunction: ds.dataset_id missing from participant attributes — failing closed");
             return false;
         }
 
@@ -66,13 +69,7 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
     }
 
     private boolean checkConsent(String subjectId, String datasetId, String consumerId) {
-        String url = String.format(
-            "%s/internal/consent/check?subject_id=%s&dataset_id=%s&consumer_id=%s",
-            connectorBaseUrl,
-            encode(subjectId),
-            encode(datasetId),
-            encode(consumerId)
-        );
+        String url = consentCheckUrl(subjectId, datasetId, consumerId);
         for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
             try {
                 Request request = new Request.Builder().url(url).get().build();
@@ -83,7 +80,10 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
                         return false;
                     }
                     JsonNode body = mapper.readTree(response.body().string());
-                    return body.path("consent_active").asBoolean(false);
+                    if (!subjectId.isEmpty()) {
+                        return body.path("consent_active").asBoolean(false);
+                    }
+                    return body.path("subject_ids").isArray() && !body.path("subject_ids").isEmpty();
                 }
             } catch (IOException e) {
                 monitor.warning("ConsentStatusFunction: attempt %d/%d failed: %s"
@@ -97,6 +97,19 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
             }
         }
         return false;
+    }
+
+    private String consentCheckUrl(String subjectId, String datasetId, String consumerId) {
+        StringBuilder url = new StringBuilder(String.format(
+            "%s/internal/consent/check?dataset_id=%s&consumer_id=%s",
+            connectorBaseUrl,
+            encode(datasetId),
+            encode(consumerId)
+        ));
+        if (!subjectId.isEmpty()) {
+            url.append("&subject_id=").append(encode(subjectId));
+        }
+        return url.toString();
     }
 
     private static String encode(String value) {

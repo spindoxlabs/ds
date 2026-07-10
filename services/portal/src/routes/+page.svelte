@@ -87,7 +87,7 @@
           </div>
 
           <a
-            href="/consumer/catalog/{encodeURIComponent(id)}"
+            href="/catalog/{encodeURIComponent(id)}"
             class="ds-btn-primary text-center text-sm mt-1"
           >
             View offer →

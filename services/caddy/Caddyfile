@@ -35,7 +35,7 @@ portal.dataspaces.localhost {
 # ── EDC provider ──────────────────────────────────────────────────────────────
 
 # DSP protocol endpoint (edc.dsp.callback.address)
-edc-provider.dataspaces.localhost {
+edc-provider.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:19194
 }
@@ -54,7 +54,7 @@ edc-provider-public.dataspaces.localhost {
 
 # ── EDC consumer ──────────────────────────────────────────────────────────────
 
-edc-consumer.dataspaces.localhost {
+edc-consumer.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:29194
 }
@@ -73,45 +73,52 @@ edc-consumer-public.dataspaces.localhost {
 # Each participant DID resolves to https://<name>/.well-known/did.json.
 # Static files served from caddy/did/<name>/did.json (mounted at /did in container).
 
-provider.dataspaces.localhost {
-	tls internal
-	root * /did/provider.dataspaces.localhost
+http://provider.dataspaces.test, provider.dataspaces.test {
+	root * /did/provider.dataspaces.test
 	rewrite /.well-known/did.json /did.json
 	file_server
 }
 
-consumer.dataspaces.localhost {
-	tls internal
-	root * /did/consumer.dataspaces.localhost
+http://consumer.dataspaces.test, consumer.dataspaces.test {
+	root * /did/consumer.dataspaces.test
 	rewrite /.well-known/did.json /did.json
 	file_server
 }
 
-trust-anchor.dataspaces.localhost {
-	tls internal
-	root * /did/trust-anchor.dataspaces.localhost
+http://trust-anchor.dataspaces.test, trust-anchor.dataspaces.test {
+	handle /credentials/* {
+		root * /credentials
+		uri strip_prefix /credentials
+		file_server
+	}
+	root * /did/trust-anchor.dataspaces.test
 	rewrite /.well-known/did.json /did.json
+	file_server
+}
+
+http://users.dataspaces.test, users.dataspaces.test {
+	root * /did/users.dataspaces.test
 	file_server
 }
 
 # ── DCP services (Iteration 5) ────────────────────────────────────────────────
 
-sts-provider.dataspaces.localhost {
+sts-provider.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:38080
 }
 
-sts-consumer.dataspaces.localhost {
+sts-consumer.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:38081
 }
 
-vc-wallet-provider.dataspaces.localhost {
+vc-wallet-provider.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:38082
 }
 
-vc-wallet-consumer.dataspaces.localhost {
+vc-wallet-consumer.dataspaces.test {
 	tls internal
 	reverse_proxy host.docker.internal:38083
 }

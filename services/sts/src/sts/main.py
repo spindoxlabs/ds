@@ -28,9 +28,11 @@ from fastapi import FastAPI, Form, HTTPException, status
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
+from .metrics import install_metrics
 from .token import create_si_token, get_public_jwk
 
 app = FastAPI(title="ds-sts", version="0.1.0")
+install_metrics(app, "ds-sts")
 
 
 @app.get("/health")
@@ -64,6 +66,8 @@ async def token(
     client_secret: Annotated[str, Form()],
     scope: Annotated[str | None, Form()] = None,
     audience: Annotated[str | None, Form()] = None,
+    bearer_access_scope: Annotated[str | None, Form()] = None,
+    token: Annotated[str | None, Form()] = None,
 ):
     """Issue a Self-Issued ID Token (ES256) for the registered client."""
     s = get_settings()
@@ -84,18 +88,20 @@ async def token(
     claims = {
         "iss": s.participant_did,
         "sub": s.participant_did,
-        "aud": audience or "https://w3id.org/dspace/2024/1/dsp",
+        "aud": [audience or "https://w3id.org/dspace/2024/1/dsp"],
         "iat": now,
         "exp": now + s.token_ttl,
         "jti": str(uuid.uuid4()),
     }
-    if scope:
-        claims["bearerAccessScope"] = scope
-
+    requested_scope = bearer_access_scope or scope
+    if requested_scope:
+        claims["bearer_access_scope"] = requested_scope
+        claims["bearerAccessScope"] = requested_scope
+    claims["token"] = token or str(uuid.uuid4())
     token_str = create_si_token(claims)
     return JSONResponse({
         "access_token": token_str,
         "token_type": "bearer",
         "expires_in": s.token_ttl,
-        "scope": scope or "",
+        "scope": requested_scope or "",
     })

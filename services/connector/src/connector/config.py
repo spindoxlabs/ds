@@ -2,8 +2,9 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -17,8 +18,9 @@ class Settings(BaseSettings):
     )
 
     participant_id: str = "provider"
-    participant_base_url: str = "https://provider.dataspaces.localhost"
-    participant_did: str = "did:web:provider.dataspaces.localhost"
+    participant_base_url: str = "https://provider.dataspaces.test"
+    participant_did: str = "did:web:provider.dataspaces.test"
+    consumer_participant_did: str = "did:web:consumer.dataspaces.test"
 
     # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix)
     edc_provider_management_url: str = Field(
@@ -26,7 +28,7 @@ class Settings(BaseSettings):
         validation_alias="EDC_PROVIDER_MANAGEMENT_URL",
     )
     edc_provider_protocol_url: str = Field(
-        default="http://localhost:19194/protocol",
+        default="http://localhost:19194/protocol/2025-1",
         validation_alias="EDC_PROVIDER_PROTOCOL_URL",
     )
     edc_consumer_management_url: str = Field(
@@ -34,12 +36,16 @@ class Settings(BaseSettings):
         validation_alias="EDC_CONSUMER_MANAGEMENT_URL",
     )
     edc_consumer_protocol_url: str = Field(
-        default="http://localhost:29194/protocol",
+        default="http://localhost:29194/protocol/2025-1",
         validation_alias="EDC_CONSUMER_PROTOCOL_URL",
     )
     edc_api_key: str = Field(
         default="insecure-dev-key",
         validation_alias="EDC_API_KEY",
+    )
+    edc_api_key_file: str | None = Field(
+        default=None,
+        validation_alias="EDC_API_KEY_FILE",
     )
 
     dataset_api_url: str = "http://localhost:30002"
@@ -52,6 +58,11 @@ class Settings(BaseSettings):
 
     participants_registry_path: str = "governance/participants.yaml"
     governance_yaml_path: str = "governance/governance.yaml"
+    trust_anchor_did: str = "did:web:trust-anchor.dataspaces.test"
+    trust_anchor_key_path: str = "/config/trust-anchor-key.json"
+    credential_status_path: str | None = None
+    credential_status_url: str | None = None
+    allow_unknown_participants: bool = False
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/connector"
     debug: bool = False
@@ -67,6 +78,12 @@ class Settings(BaseSettings):
     notify_smtp_password: str | None = None
     notify_smtp_from: str | None = None
     notify_smtp_tls: bool = True
+
+    @model_validator(mode="after")
+    def load_file_secrets(self):
+        if self.edc_api_key_file:
+            self.edc_api_key = Path(self.edc_api_key_file).read_text().strip()
+        return self
 
 
 @lru_cache(maxsize=1)

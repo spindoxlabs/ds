@@ -1,1 +1,4 @@
 dataspaces.edc.DataspacesExtension
+dataspaces.edc.FilesystemVaultSeederExtension
+dataspaces.edc.DemoIdentityFallbackExtension
+dataspaces.edc.HttpDataEndpointExtension

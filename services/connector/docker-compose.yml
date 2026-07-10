@@ -124,7 +124,7 @@ services:
       - ../../data/credentials:/credentials:ro
     networks: [ dataspaces ]
 
-  # ── Standalone mock dataset-api (replaces CELINE for local tests) ───────────
+  # ── Standalone mock dataset-api for local tests ────────────────────────────
   dataset-api:
     build:
       context: ../..

@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     # OAuth2 client ID and secret for connector → STS requests
     client_id: str = Field(default="did:web:provider.dataspaces.localhost")
     client_secret: str = Field(default="insecure-dev-secret")
+    client_secret_file: str | None = None
     # JWT validity in seconds
     token_ttl: int = 300
     debug: bool = False
@@ -29,6 +30,12 @@ class Settings(BaseSettings):
     @property
     def private_key_jwk(self) -> dict:
         return json.loads(Path(self.private_key_path).read_text())
+
+    @model_validator(mode="after")
+    def load_file_secrets(self):
+        if self.client_secret_file:
+            self.client_secret = Path(self.client_secret_file).read_text().strip()
+        return self
 
 
 @lru_cache(maxsize=1)

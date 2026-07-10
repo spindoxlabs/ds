@@ -45,6 +45,12 @@ public class DataspacesExtension implements ServiceExtension {
         ruleBindingRegistry.bind("ds:accessScope",      "contract.negotiation");
         ruleBindingRegistry.bind("ds:consentStatus",    "contract.negotiation");
         ruleBindingRegistry.bind("ds:contractRequired", "contract.negotiation");
+        ruleBindingRegistry.bind("ds:query",            "contract.negotiation");
+        ruleBindingRegistry.bind("odrl:aggregate",      "contract.negotiation");
+        ruleBindingRegistry.bind("odrl:use",            "contract.negotiation");
+        ruleBindingRegistry.bind("https://dataspaces.localhost/ns/energy#query", "contract.negotiation");
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/aggregate",        "contract.negotiation");
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/use",              "contract.negotiation");
 
         // Register constraint evaluator functions — context class replaces scope in 0.16 API
         policyEngine.registerFunction(

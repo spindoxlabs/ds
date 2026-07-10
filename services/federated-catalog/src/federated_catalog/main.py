@@ -4,11 +4,12 @@ from __future__ import annotations
 import asyncio
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 
 from .cache import CatalogCache
 from .config import get_settings
 from .crawler import crawl_loop
+from .metrics import install_metrics
 from .api.catalog import router as catalog_router
 
 
@@ -41,7 +42,7 @@ def create_app() -> FastAPI:
     )
 
     @app.get("/health")
-    async def health(request):
+    async def health(request: Request):
         cache = request.app.state.cache
         age = cache.cache_age_seconds
         return {
@@ -49,6 +50,8 @@ def create_app() -> FastAPI:
             "version": "0.1.0",
             "cache_age_seconds": round(age, 1) if age is not None else None,
         }
+
+    install_metrics(app, "ds-federated-catalog")
 
     app.include_router(catalog_router)
 

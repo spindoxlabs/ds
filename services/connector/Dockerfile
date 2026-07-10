@@ -20,7 +20,7 @@ RUN sed -i '/ds-governance/d' /build/pyproject.toml && \
       -r /build/pyproject.toml 2>/dev/null || \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
       fastapi "uvicorn[standard]" httpx "pydantic>=2.7" pydantic-settings \
-      pyyaml tenacity "sqlalchemy[asyncio]" aiosqlite asyncpg alembic aiosmtplib
+      pyyaml tenacity "sqlalchemy[asyncio]" aiosqlite asyncpg alembic aiosmtplib cryptography
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime

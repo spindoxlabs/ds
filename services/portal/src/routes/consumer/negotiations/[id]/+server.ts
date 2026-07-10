@@ -21,5 +21,13 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 		const text = await res.text().catch(() => res.statusText);
 		throw error(res.status, text);
 	}
-	return json(await res.json());
+	const data = await res.json();
+	return json({
+		...data,
+		agreement_id:
+			data.agreement_id
+			?? data.contract_agreement_id
+			?? data.contractAgreementId
+			?? null,
+	});
 };

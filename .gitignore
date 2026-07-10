@@ -67,3 +67,10 @@ docs/AGENTS.md
 docs/next-phases.md
 
 .task
+
+# Generated reports
+reports/
+**/reports/
+
+tests/
+**/tests/

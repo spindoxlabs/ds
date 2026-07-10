@@ -15,6 +15,7 @@ from .models import (
 )
 from .resolver import GovernanceConfig, GovernanceResolver
 from .mapper import GovernanceMapper
+from .matrix import build_policy_matrix, build_policy_matrix_entry
 
 __all__ = [
     "GovernanceOwner",
@@ -31,4 +32,6 @@ __all__ = [
     "GovernanceConfig",
     "GovernanceResolver",
     "GovernanceMapper",
+    "build_policy_matrix",
+    "build_policy_matrix_entry",
 ]
