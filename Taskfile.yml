@@ -452,7 +452,7 @@ tasks:
 
         if [ ! -f "$env_file" ]; then
           echo "Missing env file: $env_file"
-          echo "Create /home/francesco/Desktop/ds/.env from .env.example or set DATASPACE_ENV_FILE."
+          echo "Create .env from .env.example in the repository root or set DATASPACE_ENV_FILE."
           exit 1
         fi
 
@@ -468,7 +468,7 @@ tasks:
 
         if [ -z "$(env_value AUTH_SECRET)" ]; then
           echo "Missing AUTH_SECRET in $env_file"
-          echo "Set a local Auth.js secret in /home/francesco/Desktop/ds/.env or export AUTH_SECRET."
+          echo "Set a local Auth.js secret in .env or export AUTH_SECRET."
           exit 1
         fi
 
