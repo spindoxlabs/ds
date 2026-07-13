@@ -24,7 +24,7 @@ caddy/
 |--------|--------|---------|
 | `provenance.dataspaces.localhost` | `host.docker.internal:30000` | ds-provenance |
 | `connector.dataspaces.localhost` | `host.docker.internal:30001` | ds-connector |
-| `dataset-api.dataspaces.localhost` | `host.docker.internal:30002` | CELINE dataset API |
+| `dataset-api.dataspaces.localhost` | `host.docker.internal:30002` | Dataset API adapter |
 | `federated-catalog.dataspaces.localhost` | `host.docker.internal:30003` | ds-federated-catalog |
 | `portal.dataspaces.localhost` | `host.docker.internal:30004` | ds-portal |
 | `provider.dataspaces.localhost` | varies by path | EDC provider + DID doc |

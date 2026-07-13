@@ -1,5 +1,10 @@
 <script lang="ts">
   let { data } = $props();
+
+  function scopesOf(participant: Record<string, unknown>): string {
+    const scopes = participant['allowed_scopes'] ?? participant['scopes'];
+    return Array.isArray(scopes) ? scopes.join(', ') : String(scopes ?? '—');
+  }
 </script>
 
 <svelte:head><title>Participants</title></svelte:head>
@@ -31,8 +36,8 @@
             {@const participant = p as Record<string, unknown>}
             <tr>
               <td class="py-2 pr-4 font-mono text-xs text-gray-700">{String(participant['id'] ?? participant['participant_id'] ?? '—')}</td>
-              <td class="py-2 pr-4 text-xs text-gray-600">{String(participant['dsp_endpoint'] ?? '—')}</td>
-              <td class="py-2 text-xs text-gray-600">{String(participant['scopes'] ?? '—')}</td>
+              <td class="py-2 pr-4 text-xs text-gray-600">{String(participant['dsp_endpoint'] ?? participant['dsp_address'] ?? '—')}</td>
+              <td class="py-2 text-xs text-gray-600">{scopesOf(participant)}</td>
             </tr>
           {/each}
         </tbody>

@@ -1,0 +1,13 @@
+[Unit]
+Description=Dataspace PostgreSQL backup evidence job
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/dataspaces
+Environment=PRODUCTION_ENV_FILE=/opt/dataspaces/.env.production
+ExecStart=/usr/bin/env bash scripts/postgres_backup.sh
+
+[Install]
+WantedBy=multi-user.target

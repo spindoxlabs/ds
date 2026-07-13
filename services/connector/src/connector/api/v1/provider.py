@@ -55,6 +55,23 @@ async def get_authorizations(
     return {"datasets": datasets}
 
 
+@router.get("/governance/matrix")
+async def governance_matrix(
+    settings: Settings = Depends(get_settings_dep),
+):
+    from ...services.governance import load_governance_policy_matrix
+
+    return {
+        "source": settings.governance_yaml_path,
+        "participant_id": settings.participant_id,
+        "matrix": load_governance_policy_matrix(
+            settings.governance_yaml_path,
+            settings.participant_id,
+            settings.participant_base_url,
+        ),
+    }
+
+
 @router.get("/assets")
 async def list_assets(edc=Depends(get_provider_edc)):
     return await edc.list_assets()

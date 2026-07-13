@@ -13,6 +13,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _did(value: str | None) -> str | None:
+    if not value:
+        return None
+    if value.startswith("did:"):
+        return value
+    return f"did:web:{value}"
+
+
 class ProvBridge:
     def __init__(self, client: ProvenanceClient, participant_id: str):
         self._prov = client
@@ -30,9 +38,119 @@ class ProvBridge:
             "event_id": event_id,
             "occurred_at": _now(),
             "data_product_id": data_product_id,
-            "provider_did": f"did:web:{self._participant_id}",
+            "provider_did": _did(self._participant_id),
             "title": title,
             "description": description,
+        })
+
+    async def catalog_viewed(
+        self,
+        provider_id: str,
+        consumer_id: str | None = None,
+        user_id: str | None = None,
+        counter_party_address: str | None = None,
+        dataset_count: int | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "CatalogViewed",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+            "counter_party_address": counter_party_address,
+            "dataset_count": dataset_count,
+        })
+
+    async def access_requested(
+        self,
+        request_id: str,
+        data_product_id: str,
+        provider_id: str,
+        consumer_id: str,
+        user_id: str,
+        purpose: list[str] | None = None,
+        offer_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "AccessRequested",
+            "event_id": event_id or f"access-request:{request_id}",
+            "occurred_at": _now(),
+            "request_id": request_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+            "purpose": purpose or [],
+            "offer_id": offer_id,
+        })
+
+    async def negotiation_started(
+        self,
+        negotiation_id: str,
+        data_product_id: str,
+        provider_id: str,
+        consumer_id: str,
+        user_id: str | None = None,
+        offer_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "NegotiationStarted",
+            "event_id": event_id or f"negotiation-started:{negotiation_id}",
+            "occurred_at": _now(),
+            "negotiation_id": negotiation_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+            "offer_id": offer_id,
+        })
+
+    async def negotiation_finalized(
+        self,
+        negotiation_id: str,
+        agreement_id: str,
+        data_product_id: str,
+        provider_id: str,
+        consumer_id: str,
+        user_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "NegotiationFinalized",
+            "event_id": event_id or f"negotiation-finalized:{negotiation_id}",
+            "occurred_at": _now(),
+            "negotiation_id": negotiation_id,
+            "agreement_id": agreement_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+        })
+
+    async def negotiation_terminated(
+        self,
+        negotiation_id: str,
+        data_product_id: str | None = None,
+        provider_id: str | None = None,
+        consumer_id: str | None = None,
+        user_id: str | None = None,
+        reason: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "NegotiationTerminated",
+            "event_id": event_id or f"negotiation-terminated:{negotiation_id}",
+            "occurred_at": _now(),
+            "negotiation_id": negotiation_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+            "reason": reason,
         })
 
     async def contract_agreement_signed(
@@ -50,9 +168,31 @@ class ProvBridge:
             "occurred_at": _now(),
             "agreement_id": agreement_id,
             "data_product_id": data_product_id,
-            "provider_did": f"did:web:{provider_id}",
-            "consumer_did": f"did:web:{consumer_id}",
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
             "policy_hash": policy_hash,
+        })
+
+    async def transfer_started(
+        self,
+        transfer_id: str,
+        agreement_id: str,
+        data_product_id: str,
+        provider_id: str,
+        consumer_id: str,
+        user_id: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "TransferStarted",
+            "event_id": event_id or f"transfer-started:{transfer_id}",
+            "occurred_at": _now(),
+            "transfer_id": transfer_id,
+            "agreement_id": agreement_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
         })
 
     async def data_transfer_completed(
@@ -73,10 +213,38 @@ class ProvBridge:
             "transfer_id": transfer_id,
             "agreement_id": agreement_id,
             "data_product_id": data_product_id,
-            "provider_did": f"did:web:{provider_id}",
-            "consumer_did": f"did:web:{consumer_id}",
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
             "bytes_transferred": bytes_transferred,
             "derived_dataset_iri": derived_dataset_iri,
+        })
+
+    async def query_executed(
+        self,
+        data_product_id: str,
+        provider_id: str | None = None,
+        consumer_id: str | None = None,
+        user_id: str | None = None,
+        subject_id: str | None = None,
+        agreement_id: str | None = None,
+        transfer_id: str | None = None,
+        row_count: int | None = None,
+        authorized_subject_ids: list[str] | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "QueryExecuted",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "user_did": _did(user_id),
+            "subject_id": subject_id,
+            "agreement_id": agreement_id,
+            "transfer_id": transfer_id,
+            "row_count": row_count,
+            "authorized_subject_ids": authorized_subject_ids,
         })
 
     async def usage_obligation_fulfilled(
@@ -91,6 +259,30 @@ class ProvBridge:
             "event_id": event_id,
             "occurred_at": _now(),
             "agreement_id": agreement_id,
-            "consumer_did": f"did:web:{consumer_id}",
+            "consumer_did": _did(consumer_id),
             "obligation_type": obligation_type,
+        })
+
+    async def access_revoked(
+        self,
+        data_product_id: str,
+        provider_id: str,
+        consumer_id: str,
+        subject_id: str,
+        agreement_id: str | None = None,
+        transfer_id: str | None = None,
+        reason: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "AccessRevoked",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "agreement_id": agreement_id,
+            "transfer_id": transfer_id,
+            "data_product_id": data_product_id,
+            "provider_did": _did(provider_id),
+            "consumer_did": _did(consumer_id),
+            "subject_id": subject_id,
+            "reason": reason,
         })

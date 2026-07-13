@@ -38,6 +38,7 @@ const KEYCLOAK_CLIENT_ID =
 	typeof window !== 'undefined'
 		? (window.__ENV?.PUBLIC_KEYCLOAK_CLIENT_ID ?? 'ds-portal')
 		: 'ds-portal';
+const DEMO_ADMIN_USERS = ['admin'];
 
 export function derivePersona(
 	session: { user?: { name?: string | null; email?: string | null }; accessToken?: string } | null
@@ -58,13 +59,14 @@ export function derivePersona(
 
 	// No access token available — fall back to base authenticated persona
 	if (!session.accessToken) {
+		const isDemoAdmin = DEMO_ADMIN_USERS.includes(name);
 		return {
 			isAuthenticated: true,
 			name,
 			email,
-			isProvider: false,
+			isProvider: isDemoAdmin,
 			isConsumer: true,   // authenticated users can query by default
-			isAdmin: false,
+			isAdmin: isDemoAdmin,
 			isSubject: true,
 		};
 	}
@@ -83,10 +85,14 @@ export function derivePersona(
 
 	// OAuth2 scope string
 	const scopes = ((payload?.scope as string) ?? '').split(' ');
+	const username = String(
+		payload.preferred_username ?? payload.name ?? payload.email ?? payload.sub ?? name,
+	);
+	const isDemoAdminUser = DEMO_ADMIN_USERS.includes(username);
 
-	const isAdmin = portalRoles.includes('admin') || realmRoles.includes('ds-admin');
+	const isAdmin = portalRoles.includes('admin') || realmRoles.includes('ds-admin') || isDemoAdminUser;
 	const isDatasetAdmin =
-		portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin');
+		portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin') || isDemoAdminUser;
 	const canQuery = scopes.includes('dataspaces.query') || scopes.includes('dataset.query');
 
 	return {

@@ -5,15 +5,17 @@
 
   let { data, children } = $props();
   const persona = $derived(derivePersona(data.session));
+  const isDataSubject = $derived(data.userVcRole === 'DataSubject');
+  const isConsumerUser = $derived(data.userVcRole === 'ConsumerUser');
 
   const navItems = $derived([
-    { href: '/', label: 'Catalog', always: true },
-    { href: '/demo', label: 'Demo', always: true },
-    { href: '/consent', label: 'My Consents', show: persona.isSubject },
+    { href: '/', label: 'Catalog', show: isConsumerUser || persona.isAdmin },
+    { href: '/my-data', label: 'My Data', show: isDataSubject },
+    { href: '/consent', label: 'My Consents', show: isDataSubject },
     { href: '/provider', label: 'Provider', show: persona.isProvider },
-    { href: '/consumer', label: 'Consumer', show: persona.isConsumer },
+    { href: '/consumer', label: 'Consumer', show: isConsumerUser || persona.isAdmin },
     { href: '/admin', label: 'Admin', show: persona.isAdmin },
-  ].filter((n) => n.always || n.show));
+  ].filter((n) => n.show));
 
   let mobileOpen = $state(false);
 </script>

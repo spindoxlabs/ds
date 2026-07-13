@@ -20,6 +20,7 @@ dependencies = [
     "asyncpg>=0.29",
     "alembic>=1.13",
     "aiosmtplib>=3.0",
+    "cryptography>=42",
     "ds-governance",
 ]
 

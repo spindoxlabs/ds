@@ -52,7 +52,7 @@
                 {#if consent.purpose?.length}
                   <p class="text-sm text-gray-600">Purpose: {consent.purpose.join(', ')}</p>
                 {/if}
-                <p class="text-xs text-gray-400 mt-1">Requested: {timeAgo(consent.created_at)}</p>
+                <p class="text-xs text-gray-400 mt-1">Requested: {timeAgo(consent.requested_at)}</p>
               </div>
               <ConsentBadge status={consent.status} />
             </div>
@@ -79,7 +79,9 @@
               <div>
                 <p class="font-medium text-gray-900">{consent.consumer_id}</p>
                 <p class="text-sm text-gray-600">Dataset: {consent.dataset_id}</p>
-                <p class="text-xs text-gray-400 mt-1">Since: {new Date(consent.updated_at).toLocaleDateString()}</p>
+                <p class="text-xs text-gray-400 mt-1">
+                  Since: {new Date(consent.decided_at ?? consent.requested_at).toLocaleDateString()}
+                </p>
               </div>
               <ConsentBadge status={consent.status} />
             </div>

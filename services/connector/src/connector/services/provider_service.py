@@ -33,10 +33,11 @@ async def sync_governance(
                 key, rule, policy_id=policy_create.id, asset_id=asset_create.id
             )
 
-            # Upsert: delete + recreate (EDC does not support PATCH)
-            await edc.delete_asset(asset_create.id)
-            await edc.delete_policy(policy_create.id)
+            # Upsert: delete dependants first because EDC policy definitions
+            # can be referenced by contract definitions.
             await edc.delete_contract_definition(contract_create.id)
+            await edc.delete_policy(policy_create.id)
+            await edc.delete_asset(asset_create.id)
 
             await edc.create_asset(asset_create)
             await edc.create_policy(policy_create)

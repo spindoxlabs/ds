@@ -8,6 +8,7 @@ from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
 from .config import get_settings
 from .db.engine import init_db
+from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
@@ -18,6 +19,7 @@ from .api.v1.webhooks import router as webhooks_router
 from .api.v1.internal import router as internal_router
 from .api.v1.namespace import router as namespace_router
 from .api.v1.consent import router as consent_router
+from .api.v1.admin import router as admin_router
 
 
 @asynccontextmanager
@@ -61,6 +63,8 @@ async def lifespan(app: FastAPI):
         negotiation_timeout=settings.negotiation_timeout,
         transfer_timeout=settings.transfer_timeout,
         participant_id=settings.participant_id,
+        provider_id=settings.participant_did,
+        allow_unknown_participants=settings.allow_unknown_participants,
     )
 
     # Notifier
@@ -94,12 +98,15 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "version": "0.1.0"}
 
+    install_metrics(app, "ds-connector")
+
     app.include_router(provider_router)
     app.include_router(consumer_router)
     app.include_router(webhooks_router)
     app.include_router(internal_router)
     app.include_router(namespace_router)
     app.include_router(consent_router)
+    app.include_router(admin_router)
 
     return app
 

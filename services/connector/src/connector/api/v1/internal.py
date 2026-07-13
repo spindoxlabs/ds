@@ -4,15 +4,30 @@ from __future__ import annotations
 from typing import Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import get_settings
+from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
 from ...dependencies import get_db, get_participant_registry
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
 
 router = APIRouter(prefix="/internal", tags=["internal"])
+
+
+class QueryAuditRequest(BaseModel):
+    dataset_id: str
+    provider_id: str | None = None
+    consumer_id: str | None = None
+    user_id: str | None = None
+    subject_id: str | None = None
+    agreement_id: str | None = None
+    transfer_id: str | None = None
+    row_count: int | None = None
+    authorized_subject_ids: list[str] | None = None
 
 
 @router.get("/agreements/{agreement_id}/status")
@@ -24,6 +39,51 @@ async def agreement_status(
     if status is None:
         raise HTTPException(404, f"Agreement {agreement_id!r} not found")
     return status
+
+
+@router.get("/transfers/{transfer_id}/status")
+async def transfer_status(
+    transfer_id: str,
+    agreement_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Return whether a consumer transfer is still active for data access.
+
+    Dataset APIs use this as a PEP back-channel so a stale EDR cannot keep
+    querying data after the consumer revokes access.
+    """
+    result = await db.execute(
+        select(ConsumerTransferORM).where(ConsumerTransferORM.transfer_id == transfer_id)
+    )
+    transfer = result.scalar_one_or_none()
+    if not transfer:
+        return {"active": False, "reason": "transfer_not_found"}
+
+    if agreement_id and transfer.contract_agreement_id != agreement_id:
+        return {"active": False, "reason": "agreement_mismatch"}
+
+    request_result = await db.execute(
+        select(ConsumerAccessRequestORM).where(
+            ConsumerAccessRequestORM.transfer_id == transfer_id,
+            ConsumerAccessRequestORM.subject_id == transfer.subject_id,
+        )
+    )
+    request = request_result.scalar_one_or_none()
+    if request and request.status == "revoked":
+        return {"active": False, "reason": "request_revoked"}
+
+    agreement = await get_agreement_status(db, transfer.contract_agreement_id)
+    if agreement is not None and not agreement["active"]:
+        return {"active": False, "reason": "agreement_terminated"}
+
+    return {
+        "active": True,
+        "transfer_id": transfer.transfer_id,
+        "agreement_id": transfer.contract_agreement_id,
+        "asset_id": transfer.asset_id,
+        "subject_id": transfer.subject_id,
+        "consumer_id": transfer.consumer_id,
+    }
 
 
 @router.get("/consent/check")
@@ -78,6 +138,29 @@ async def participants_check(
         return {"participant_id": participant_id, "scope": scope, "allowed": False}
     allowed = scope in participant.allowed_scopes
     return {"participant_id": participant_id, "scope": scope, "allowed": allowed}
+
+
+@router.post("/audit/query", status_code=202)
+async def audit_query(
+    req: QueryAuditRequest,
+    request: Request,
+):
+    """Emit a QueryExecuted provenance event from a data adapter/PEP."""
+    settings = get_settings()
+    prov = getattr(request.app.state, "prov", None)
+    if prov:
+        await prov.query_executed(
+            data_product_id=req.dataset_id,
+            provider_id=req.provider_id or settings.participant_did,
+            consumer_id=req.consumer_id,
+            user_id=req.user_id or req.subject_id,
+            subject_id=req.subject_id,
+            agreement_id=req.agreement_id,
+            transfer_id=req.transfer_id,
+            row_count=req.row_count,
+            authorized_subject_ids=req.authorized_subject_ids,
+        )
+    return {"status": "accepted"}
 
 
 @router.get("/edr-jwks")

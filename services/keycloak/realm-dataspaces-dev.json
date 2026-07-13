@@ -1,0 +1,111 @@
+{
+  "realm": "dataspaces",
+  "enabled": true,
+  "displayName": "Dataspaces",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "verifyEmail": false,
+  "sslRequired": "external",
+  "roles": {
+    "realm": [
+      {
+        "name": "ds-admin",
+        "description": "Dataspace platform administrator"
+      },
+      {
+        "name": "dataset.admin",
+        "description": "Dataset provider administrator"
+      }
+    ],
+    "client": {
+      "ds-portal": [
+        {
+          "name": "admin",
+          "description": "Portal administrator"
+        },
+        {
+          "name": "dataset.admin",
+          "description": "Portal dataset administrator"
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "ds-portal",
+      "name": "DS Portal",
+      "enabled": true,
+      "protocol": "openid-connect",
+      "publicClient": false,
+      "secret": "change-me-local-client-secret",
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": false,
+      "redirectUris": [
+        "http://localhost:30004/auth/callback/keycloak"
+      ],
+      "webOrigins": [
+        "http://localhost:30004"
+      ],
+      "defaultClientScopes": [
+        "web-origins",
+        "acr",
+        "profile",
+        "roles",
+        "email"
+      ],
+      "optionalClientScopes": [
+        "address",
+        "phone",
+        "offline_access",
+        "microprofile-jwt"
+      ]
+    }
+  ],
+  "users": [
+    {
+      "username": "admin@example.test",
+      "email": "admin@example.test",
+      "firstName": "DS",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin",
+          "temporary": false
+        }
+      ],
+      "realmRoles": [
+        "ds-admin",
+        "dataset.admin"
+      ],
+      "clientRoles": {
+        "ds-portal": [
+          "admin",
+          "dataset.admin"
+        ]
+      }
+    },
+    {
+      "username": "test@test.it",
+      "email": "test@test.it",
+      "firstName": "Test",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test",
+          "temporary": false
+        }
+      ],
+      "requiredActions": []
+    }
+  ]
+}

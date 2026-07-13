@@ -68,12 +68,30 @@ export interface AuditEntry {
 	consumer_did?: string;
 }
 
+function stringValue(value: unknown): string {
+	return typeof value === 'string' ? value : '';
+}
+
+function normalizeEvent(event: Record<string, unknown>): AuditEntry {
+	const eventType = stringValue(event.event_type ?? event['@type']).replace(/^ds:/, '');
+	const occurredAt = stringValue(event.occurred_at ?? event['ds:occurredAt']);
+	return {
+		id: stringValue(event.id ?? event['@id']).replace(/^urn:event:/, ''),
+		event_type: eventType,
+		occurred_at: occurredAt,
+		agreement_id: stringValue(event.agreement_id ?? event['ds:agreementId']) || undefined,
+		data_product_id: stringValue(event.data_product_id ?? event['ds:dataProductId']) || undefined,
+		provider_did: stringValue(event.provider_did ?? event['ds:providerDid']) || undefined,
+		consumer_did: stringValue(event.consumer_did ?? event['ds:consumerDid']) || undefined,
+	};
+}
+
 export async function queryEvents(params: Record<string, string> = {}): Promise<AuditEntry[]> {
 	const qs = new URLSearchParams(params).toString();
-	const raw = await apiFetch<{ '@graph': AuditEntry[] }>(
+	const raw = await apiFetch<{ '@graph': Array<Record<string, unknown>> }>(
 		provUrl(`/prov/events${qs ? '?' + qs : ''}`),
 	);
-	return raw['@graph'] ?? [];
+	return (raw['@graph'] ?? []).map(normalizeEvent);
 }
 
 export async function getHealth(): Promise<{ status: string }> {

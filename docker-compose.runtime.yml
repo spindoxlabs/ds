@@ -1,0 +1,377 @@
+networks:
+  dataspaces:
+    name: dataspaces
+    external: true
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    volumes:
+      - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/caddy/did:/did:ro
+      - ./data/credentials:/credentials:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      dataspaces:
+        aliases:
+          - provider.dataspaces.test
+          - consumer.dataspaces.test
+          - trust-anchor.dataspaces.test
+          - users.dataspaces.test
+          - vc-wallet-provider.dataspaces.test
+          - vc-wallet-consumer.dataspaces.test
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - ./services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro
+    networks: [dataspaces]
+
+  edc-provider:
+    build:
+      context: .
+      dockerfile: services/edc-connector/Dockerfile
+    command:
+      [
+        "sh",
+        "-c",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/provider.properties -jar /connector.jar",
+      ]
+    volumes:
+      - ./services/connector/config:/config:ro
+      - ./services/connector/governance:/governance:ro
+    ports:
+      - "19193:19193"
+      - "19194:19194"
+      - "19291:19291"
+      - "19195:19195"
+    environment:
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+    depends_on:
+      caddy:
+        condition: service_started
+      sts-provider:
+        condition: service_healthy
+      vc-wallet-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:19191/api/check/health || exit 1"]
+      interval: 10s
+      start_period: 60s
+      retries: 15
+    networks: [dataspaces]
+
+  edc-consumer:
+    build:
+      context: .
+      dockerfile: services/edc-connector/Dockerfile
+    command:
+      [
+        "sh",
+        "-c",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar /connector.jar",
+      ]
+    volumes:
+      - ./services/connector/config:/config:ro
+      - ./services/connector/governance:/governance:ro
+    ports:
+      - "29193:29193"
+      - "29194:29194"
+      - "29291:29291"
+      - "29195:29195"
+    environment:
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+    depends_on:
+      caddy:
+        condition: service_started
+      sts-consumer:
+        condition: service_healthy
+      vc-wallet-consumer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
+      interval: 10s
+      start_period: 60s
+      retries: 15
+    networks: [dataspaces]
+
+  sts-provider:
+    build:
+      context: .
+      dockerfile: services/sts/Dockerfile
+    ports:
+      - "38080:8080"
+    environment:
+      STS_PARTICIPANT_DID: did:web:provider.dataspaces.test
+      STS_PRIVATE_KEY_PATH: /config/provider-key.json
+      STS_CLIENT_ID: did:web:provider.dataspaces.test
+      STS_CLIENT_SECRET: ${STS_PROVIDER_SECRET:-insecure-dev-secret}
+    volumes:
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  sts-consumer:
+    build:
+      context: .
+      dockerfile: services/sts/Dockerfile
+    ports:
+      - "38081:8080"
+    environment:
+      STS_PARTICIPANT_DID: did:web:consumer.dataspaces.test
+      STS_PRIVATE_KEY_PATH: /config/consumer-key.json
+      STS_CLIENT_ID: did:web:consumer.dataspaces.test
+      STS_CLIENT_SECRET: ${STS_CONSUMER_SECRET:-insecure-dev-secret}
+    volumes:
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  vc-wallet-provider:
+    build:
+      context: .
+      dockerfile: services/vc-wallet/Dockerfile
+    ports:
+      - "38082:8081"
+    environment:
+      VC_WALLET_PARTICIPANT_DID: did:web:provider.dataspaces.test
+      VC_WALLET_CREDENTIALS_PATH: /credentials/provider
+      VC_WALLET_PRIVATE_KEY_PATH: /config/provider-key.json
+      VC_WALLET_CREDENTIAL_STATUS_PATH: /credentials/status-list.json
+      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:-}
+    volumes:
+      - ./data/credentials:/credentials:ro
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  vc-wallet-consumer:
+    build:
+      context: .
+      dockerfile: services/vc-wallet/Dockerfile
+    ports:
+      - "38083:8081"
+    environment:
+      VC_WALLET_PARTICIPANT_DID: did:web:consumer.dataspaces.test
+      VC_WALLET_CREDENTIALS_PATH: /credentials/consumer
+      VC_WALLET_PRIVATE_KEY_PATH: /config/consumer-key.json
+      VC_WALLET_CREDENTIAL_STATUS_PATH: /credentials/status-list.json
+      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:-}
+    volumes:
+      - ./data/credentials:/credentials:ro
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  connector-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  connector-db-init:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      connector-db-create:
+        condition: service_completed_successfully
+    environment:
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector
+    networks: [dataspaces]
+
+  ds-connector:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    ports:
+      - "30001:30001"
+    environment:
+      EDC_PROVIDER_MANAGEMENT_URL: http://edc-provider:19193/management
+      EDC_PROVIDER_PROTOCOL_URL: http://edc-provider:19194/protocol/2025-1
+      EDC_CONSUMER_MANAGEMENT_URL: http://edc-consumer:29193/management
+      EDC_CONSUMER_PROTOCOL_URL: http://edc-consumer:29194/protocol/2025-1
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      CONNECTOR_PARTICIPANT_ID: provider
+      CONNECTOR_PARTICIPANT_BASE_URL: https://provider.dataspaces.test
+      CONNECTOR_PARTICIPANT_DID: did:web:provider.dataspaces.test
+      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.test
+      CONNECTOR_DATASET_API_URL: http://dataset-api:30002
+      CONNECTOR_PROVENANCE_URL: http://ds-provenance:30000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector
+      CONNECTOR_PARTICIPANTS_REGISTRY_PATH: /governance/participants.yaml
+      CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
+      CONNECTOR_TRUST_ANCHOR_KEY_PATH: /config/trust-anchor-key.json
+      CONNECTOR_CREDENTIAL_STATUS_PATH: /credentials/status-list.json
+      CONNECTOR_CREDENTIAL_STATUS_URL: ${CONNECTOR_CREDENTIAL_STATUS_URL:-}
+    depends_on:
+      edc-provider:
+        condition: service_healthy
+      edc-consumer:
+        condition: service_healthy
+      connector-db-init:
+        condition: service_completed_successfully
+      ds-provenance:
+        condition: service_healthy
+    volumes:
+      - ./services/connector/governance:/governance:ro
+      - ./services/connector/config:/config:ro
+      - ./data/credentials:/credentials:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  dataset-api:
+    build:
+      context: .
+      dockerfile: services/dataset-api-mock/Dockerfile
+    ports:
+      - "30002:30002"
+    environment:
+      DATASET_API_CONNECTOR_INTERNAL_URL: http://ds-connector:30001
+      DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
+      DATASET_API_ENFORCE_CONSENT: "true"
+    depends_on:
+      ds-connector:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  ds-portal:
+    build:
+      context: .
+      dockerfile: services/portal/Dockerfile
+    ports:
+      - "30004:30004"
+    environment:
+      CONNECTOR_URL: http://ds-connector:30001
+      DATASET_API_URL: http://dataset-api:30002
+      CATALOGUE_URL: http://dataset-api:30002
+      FEDERATED_CATALOG_URL: http://ds-federated-catalog:30003
+      PROVENANCE_URL: http://ds-provenance:30000
+      USER_CREDENTIALS_PATH: /credentials/users
+      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: ${CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS:-http://edc-provider:19194/protocol/2025-1}
+      CONSUMER_DEFAULT_ASSIGNER: ${CONSUMER_DEFAULT_ASSIGNER:-did:web:provider.dataspaces.test}
+      ORIGIN: http://localhost:30004
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in DATASPACE_ENV_FILE or .env}
+      AUTH_URL: http://localhost:30004
+      NEXTAUTH_URL: http://localhost:30004
+      AUTH_TRUST_HOST: "true"
+      AUTH_KEYCLOAK_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-dev-secret}
+      AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-http://keycloak.dataspaces.localhost:8080/realms/dataspaces}
+      AUTH_KEYCLOAK_SCOPE: ${AUTH_KEYCLOAK_SCOPE:-openid profile email}
+      KEYCLOAK_CLIENT_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
+    volumes:
+      - ./data/credentials:/credentials:ro
+      - ./docs:/docs:ro
+      - ./reports:/reports:ro
+    depends_on:
+      dataset-api:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "keycloak.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  provenance-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE provenance"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  provenance-db-init:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      provenance-db-create:
+        condition: service_completed_successfully
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance
+    networks: [dataspaces]
+
+  ds-provenance:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    ports:
+      - "30000:30000"
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance
+    depends_on:
+      provenance-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30000/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  ds-federated-catalog:
+    build:
+      context: .
+      dockerfile: services/federated-catalog/Dockerfile
+    ports:
+      - "30003:30003"
+    environment:
+      CATALOG_CONNECTOR_URL: http://ds-connector:30001
+      CATALOG_PARTICIPANTS_YAML: /governance/participants.yaml
+      CATALOG_BASE_URL: https://federated-catalog.dataspaces.test
+    volumes:
+      - ./services/connector/governance:/governance:ro
+    depends_on:
+      ds-connector:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30003/health', timeout=2)\""]
+      interval: 10s
+      start_period: 20s
+      retries: 10
+    networks: [dataspaces]

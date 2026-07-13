@@ -47,6 +47,17 @@ public class DataspacesExtension implements ServiceExtension {
         String membershipOperand = namespace + "Membership";
         String consentOperand = namespace + "ConsentStatus";
 
+        // Bind well-known compact/full-IRI operands to negotiation scope
+        ruleBindingRegistry.bind("ds:accessScope",      "contract.negotiation");
+        ruleBindingRegistry.bind("ds:consentStatus",    "contract.negotiation");
+        ruleBindingRegistry.bind("ds:contractRequired", "contract.negotiation");
+        ruleBindingRegistry.bind("ds:query",            "contract.negotiation");
+        ruleBindingRegistry.bind("odrl:aggregate",      "contract.negotiation");
+        ruleBindingRegistry.bind("odrl:use",            "contract.negotiation");
+        ruleBindingRegistry.bind("https://dataspaces.localhost/ns/energy#query", "contract.negotiation");
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/aggregate",        "contract.negotiation");
+        ruleBindingRegistry.bind("http://www.w3.org/ns/odrl/2/use",              "contract.negotiation");
+
         // Bind custom left-operands to negotiation scope
         ruleBindingRegistry.bind(membershipOperand, "contract.negotiation");
         ruleBindingRegistry.bind(consentOperand,     "contract.negotiation");

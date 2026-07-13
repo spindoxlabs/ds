@@ -3,9 +3,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import GovernanceRuleV2, OdrlProfile
+from ds.governance.matrix import build_policy_matrix
 from ds.governance.resolver import GovernanceResolver
 
 from ..schemas.edc import AssetCreate, ContractDefCreate, DataAddress, PolicyCreate
@@ -73,7 +75,11 @@ class ConnectorGovernanceMapper:
         policy_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
 
         odrl_offer = self._mapper.to_odrl_offer(dataset_key, rule)
-        odrl_set = {**odrl_offer, "@type": "odrl:Set"}
+        odrl_set = self._to_edc_policy({**odrl_offer, "@type": "odrl:Set"})
+        odrl_set["@id"] = policy_id
+        odrl_set["odrl:assigner"] = {"@id": self.participant_id}
+        odrl_set.pop("odrl:obligation", None)
+        odrl_set.pop("odrl:prohibition", None)
 
         return PolicyCreate(id=policy_id, policy=odrl_set)
 
@@ -105,6 +111,31 @@ class ConnectorGovernanceMapper:
                 return level
         return "unknown"
 
+    @classmethod
+    def _to_edc_policy(cls, value):
+        """Compact ODRL term objects where EDC's v3 policy validator expects strings."""
+        if isinstance(value, list):
+            return [cls._to_edc_policy(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+
+        result = {key: cls._to_edc_policy(item) for key, item in value.items()}
+        result.pop("odrl:duty", None)
+        for key in ("odrl:leftOperand",):
+            nested = result.get(key)
+            if isinstance(nested, dict) and "@id" in nested:
+                result[key] = nested["@id"]
+        constraints = result.get("odrl:constraint")
+        if isinstance(constraints, list):
+            result["odrl:constraint"] = [
+                constraint for constraint in constraints
+                if not (
+                    isinstance(constraint, dict)
+                    and constraint.get("odrl:leftOperand") in {"odrl:purpose", "ds:consentStatus"}
+                )
+            ]
+        return result
+
 
 def load_exposed_datasets(governance_yaml_path: str) -> dict[str, GovernanceRuleV2]:
     """Load governance.yaml and return datasets where expose: true and access_level != secret."""
@@ -116,3 +147,14 @@ def load_exposed_datasets(governance_yaml_path: str) -> dict[str, GovernanceRule
         if rule.dataspace.expose and rule.access_level != "secret":
             result[key] = rule
     return result
+
+
+def load_governance_policy_matrix(
+    governance_yaml_path: str,
+    participant_id: str,
+    participant_base_url: str,
+) -> list[dict[str, Any]]:
+    """Load exposed datasets and return the explainable governance matrix."""
+    datasets = load_exposed_datasets(governance_yaml_path)
+    mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url)
+    return build_policy_matrix(datasets, mapper)

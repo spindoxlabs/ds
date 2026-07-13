@@ -1,0 +1,54 @@
+{
+	email ops@dataspaces.example.org
+}
+
+portal.dataspaces.example.org {
+	reverse_proxy ds-portal:30004
+}
+
+provider.dataspaces.example.org {
+	handle /.well-known/did.json {
+		root * /did/provider.dataspaces.example.org
+		rewrite * /did.json
+		file_server
+	}
+	handle /protocol/* {
+		reverse_proxy edc-provider:19194
+	}
+	handle /public/* {
+		reverse_proxy edc-provider:19291
+	}
+}
+
+consumer.dataspaces.example.org {
+	handle /.well-known/did.json {
+		root * /did/consumer.dataspaces.example.org
+		rewrite * /did.json
+		file_server
+	}
+	handle /protocol/* {
+		reverse_proxy edc-consumer:29194
+	}
+}
+
+trust-anchor.dataspaces.example.org {
+	handle /.well-known/did.json {
+		root * /did/trust-anchor.dataspaces.example.org
+		rewrite * /did.json
+		file_server
+	}
+	handle /credentials/* {
+		root * /credentials
+		uri strip_prefix /credentials
+		file_server
+	}
+}
+
+users.dataspaces.example.org {
+	root * /did/users.dataspaces.example.org
+	file_server
+}
+
+federated-catalog.dataspaces.example.org {
+	reverse_proxy ds-federated-catalog:30003
+}

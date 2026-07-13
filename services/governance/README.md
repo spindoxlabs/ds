@@ -8,7 +8,7 @@ Not a running service — imported as a library.
 
 ## Purpose
 
-`governance.yaml` files live in data pipeline repositories. The same file is read by two consumers:
+`governance.yaml` files live in data pipeline repositories (in project-specific pipeline repositories). The same file is read by two consumers:
 
 - Pipeline-side `GovernanceResolver` — for OpenLineage facet injection
 - `ds-connector` via this library — EDC side, for ODRL policy and asset creation

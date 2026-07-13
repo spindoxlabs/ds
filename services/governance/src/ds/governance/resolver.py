@@ -1,6 +1,6 @@
 """Governance YAML loader and resolver.
 
-Drop-in replacement for celine-utils GovernanceResolver, extended to
+Drop-in replacement for the legacy GovernanceResolver, extended to
 produce GovernanceRuleV2 instances while remaining 100% backward-compatible
 with v1 YAML files.
 """

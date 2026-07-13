@@ -141,6 +141,15 @@ class GovernanceMapper:
                 "odrl:rightOperand": {"@value": "contract-agreed", "@type": "xsd:string"},
             })
 
+        # Contract gate for restricted datasets. The EDC extension evaluates
+        # this as the explicit policy acknowledgement performed by negotiation.
+        if access_level == "restricted" or policy.obligations.contract_required:
+            constraints.append({
+                "odrl:leftOperand": {"@id": "ds:contractRequired"},
+                "odrl:operator": {"@id": "odrl:eq"},
+                "odrl:rightOperand": "true",
+            })
+
         # Purpose constraint
         for purpose in purposes:
             constraints.append({

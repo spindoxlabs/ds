@@ -5,6 +5,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+DATASPACE_PROTOCOL = "dataspace-protocol-http:2025-1"
+
 
 # ── Assets ─────────────────────────────────────────────────────────────────
 
@@ -86,13 +88,15 @@ class ContractDefCreate(BaseModel):
 
 class CatalogRequest(BaseModel):
     counter_party_address: str
+    counter_party_id: str
     query_spec: dict[str, Any] | None = None
 
     def to_edc(self) -> dict[str, Any]:
         body: dict[str, Any] = {
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "counterPartyAddress": self.counter_party_address,
-            "protocol": "dataspace-protocol-http",
+            "counterPartyId": self.counter_party_id,
+            "protocol": DATASPACE_PROTOCOL,
         }
         if self.query_spec:
             body["querySpec"] = self.query_spec
@@ -110,18 +114,18 @@ class NegotiationRequest(BaseModel):
 
     def to_edc(self) -> dict[str, Any]:
         policy = self.odrl_policy or {
-            "@context": "http://www.w3.org/ns/odrl.jsonld",
-            "@type": "odrl:Offer",
+            "@context": ["http://www.w3.org/ns/odrl.jsonld"],
+            "@type": "Offer",
             "@id": self.offer_id,
-            "odrl:assigner": {"@id": self.assigner},
-            "odrl:target": {"@id": self.asset_id},
-            "odrl:permission": [],
+            "assigner": self.assigner,
+            "target": self.asset_id,
+            "permission": [],
         }
         return {
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "ContractRequest",
             "counterPartyAddress": self.counter_party_address,
-            "protocol": "dataspace-protocol-http",
+            "protocol": DATASPACE_PROTOCOL,
             "policy": policy,
         }
 
@@ -148,7 +152,7 @@ class TransferRequest(BaseModel):
             "@type": "TransferRequest",
             "contractId": self.contract_agreement_id,
             "counterPartyAddress": self.counter_party_address,
-            "protocol": "dataspace-protocol-http",
+            "protocol": DATASPACE_PROTOCOL,
             "assetId": self.asset_id,
             "connectorId": self.connector_id,
             "dataDestination": {"type": "HttpProxy"},

@@ -1,0 +1,13 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1"
+  ],
+  "id": "did:web:users.dataspaces.test:email-4013640cbdfdfcdbb6443301",
+  "service": [
+    {
+      "id": "did:web:users.dataspaces.test:email-4013640cbdfdfcdbb6443301#profile",
+      "type": "DataspaceUserProfile",
+      "serviceEndpoint": "http://localhost:30004/my-data"
+    }
+  ]
+}

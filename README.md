@@ -1,6 +1,6 @@
 # Dataspaces
 
-A DSSC-aligned dataspace implementation for energy communities, built on top of Eclipse Dataspace Connector and the CELINE open data platform.
+A DSSC-aligned dataspace implementation for energy communities, built on top of Eclipse Dataspace Connector.
 
 The project delivers the full consumer-pull data exchange flow: catalogue discovery, contract negotiation, EDR-gated data transfer, consent enforcement, and provenance tracking — all aligned to the DSSC Blueprint Building Blocks.
 
@@ -52,7 +52,8 @@ Each service under `services/` has:
 - `config/` — committed local defaults
 - `data/` — runtime data (gitignored)
 
-The DCAT-AP catalogue and governed query API live in the separate `celine-eu/celine-dev` repository under `repositories/dataset-api`, port 30002.
+Optional integrations live outside the reusable core and keep their own
+compose overlays, environment examples and governance profiles.
 
 ---
 
@@ -159,33 +160,22 @@ task proxy:hosts     # adds *.dataspaces.localhost entries (requires sudo)
 task proxy:trust-ca  # trusts Caddy root CA in system store (requires sudo)
 ```
 
-### Start the full stack
+### Start the Docker runtime
 
 ```bash
-# 1. Start shared infra (caddy + postgres on port 35432)
-docker compose up -d
+cp .env.example .env
+task repo:start
+```
 
-# 2. Start all service stacks
-task services:start
+Compatibility aliases:
 
-# Or both at once:
+```bash
 task start
-```
-
-### Local development (replace one container with a local process)
-
-```bash
-docker compose up -d
 task services:start
-
-# Stop just the service you want to develop
-docker compose -f services/connector/docker-compose.yml stop ds-connector
-
-# Run it locally (postgres still running in docker)
-cd services/connector
-task setup   # first time only
-task run
 ```
+
+Both aliases point to `task repo:start`. The supported runtime path is
+Docker-only through the root runtime compose files.
 
 ### Build the EDC connector image
 
@@ -245,7 +235,7 @@ Private keys live in `services/connector/config/*-key.json` (dev only — inject
 
 ## Governance and ODRL policies
 
-Datasets are described in `governance.yaml` files following the CELINE governance schema extended with `dcat:` and `dataspace:` blocks. The `GovernanceMapper` in `services/governance/` converts these into ODRL Offer policies attached to EDC assets.
+Datasets are described in governance YAML files extended with `dcat:` and `dataspace:` blocks. The reusable core uses `services/connector/governance/governance.yaml`. The `GovernanceMapper` in `services/governance/` converts these into ODRL Offer policies attached to EDC assets.
 
 Access levels map to ODRL as follows:
 
@@ -255,6 +245,24 @@ Access levels map to ODRL as follows:
 - `secret` — not exposed to EDC or the catalogue
 
 When `user_filter_column` is set on a dataset, a `ds:consentStatus eq active` constraint is added to the ODRL offer and consent-based row filtering is applied at query time.
+
+---
+
+## Compliance evidence
+
+Milestone 7 adds the evidence pack for stronger DSSC assessment:
+
+```bash
+task compliance:validate
+task compliance:test
+task compliance:e2e:smoke   # requires a running runtime
+```
+
+The main documents are `docs/rulebook.md`, `docs/trust-framework.md`,
+`docs/security-hardening.md`, `docs/gdpr-consent.md`,
+`docs/compliance-matrix-dssc.md` and `docs/production-checklist.md`.
+
+Optional integration evidence is kept with each integration.
 
 ---
 

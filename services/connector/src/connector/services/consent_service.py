@@ -140,6 +140,67 @@ async def reject_consent(
     return consent
 
 
+async def set_subject_data_sharing(
+    session: AsyncSession,
+    subject_id: str,
+    dataset_id: str,
+    consumer_id: str,
+    enabled: bool,
+    purpose: list[str] | None = None,
+    message: str | None = None,
+) -> ConsentRequestORM:
+    """Set a data subject's standing sharing decision for a dataset.
+
+    This is owner-driven consent: the subject can make their data available or
+    unavailable without waiting for a consumer-created pending request.
+    """
+    latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    now = datetime.now(timezone.utc)
+
+    if enabled:
+        if latest and latest.status == "granted":
+            return latest
+        consent = ConsentRequestORM(
+            subject_id=subject_id,
+            consumer_id=consumer_id,
+            dataset_id=dataset_id,
+            purpose=purpose or [],
+            message=message or "Data owner enabled sharing.",
+            status="granted",
+            requested_at=now,
+            decided_at=now,
+            transfer_ids=[],
+        )
+        session.add(consent)
+        await session.flush()
+        return consent
+
+    if latest and latest.status == "granted":
+        latest.status = "revoked"
+        latest.revoked_at = now
+        latest.revocation_reason = message or "Data owner disabled sharing."
+        return latest
+
+    if latest and latest.status in {"revoked", "rejected"}:
+        return latest
+
+    consent = ConsentRequestORM(
+        subject_id=subject_id,
+        consumer_id=consumer_id,
+        dataset_id=dataset_id,
+        purpose=purpose or [],
+        message=message or "Data owner disabled sharing.",
+        status="revoked",
+        requested_at=now,
+        revoked_at=now,
+        revocation_reason=message or "Data owner disabled sharing.",
+        transfer_ids=[],
+    )
+    session.add(consent)
+    await session.flush()
+    return consent
+
+
 async def revoke_consent(
     session: AsyncSession,
     consent_id: str,

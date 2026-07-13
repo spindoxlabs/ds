@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     participant_did: str = "did:web:provider.dataspaces.localhost"
     # Directory containing pre-issued VC JSON-LD files
     credentials_path: str = "/credentials"
+    private_key_path: str | None = None
+    credential_status_path: str | None = None
+    credential_status_url: str | None = None
     debug: bool = False
 
 

@@ -22,6 +22,7 @@ services:
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/caddy/did:/did:ro
+      - ./data/credentials:/credentials:ro
       - ./data/caddy/data:/data
       - ./data/caddy/config:/config
     extra_hosts:

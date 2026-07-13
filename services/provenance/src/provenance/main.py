@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .db.engine import init_db
+from .metrics import install_metrics
 from .schemas.context import PROV_CONTEXT
 from .api.v1.nodes import router as nodes_router
 from .api.v1.relations import router as relations_router
@@ -32,6 +33,8 @@ def create_app() -> FastAPI:
     @app.get("/health")
     async def health():
         return {"status": "ok", "version": "0.1.0"}
+
+    install_metrics(app, "ds-provenance")
 
     @app.get("/prov/context", response_class=JSONResponse)
     async def context():

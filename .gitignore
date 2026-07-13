@@ -71,3 +71,10 @@ docs/next-phases.md
 .env
 .env.*
 !.env.example
+
+# Generated reports
+reports/
+**/reports/
+
+tests/
+**/tests/

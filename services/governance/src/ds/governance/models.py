@@ -1,6 +1,6 @@
 """Governance v2 Pydantic models.
 
-Fully backward-compatible with celine-utils GovernanceRule (v1).
+Fully backward-compatible with the legacy GovernanceRule (v1).
 New fields are optional with safe defaults — v1 YAML files load unchanged.
 """
 from __future__ import annotations
@@ -33,7 +33,7 @@ class RowFilter(BaseModel):
 
 
 class GovernanceRule(BaseModel):
-    """v1 governance rule — mirrors celine-utils GovernanceRule exactly."""
+    """v1 governance rule — mirrors the legacy GovernanceRule exactly."""
 
     title: str | None = None
     description: str | None = None
