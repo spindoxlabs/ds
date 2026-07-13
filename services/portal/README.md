@@ -86,6 +86,19 @@ Keycloak OIDC. The portal client is `ds-portal`. Role-based access:
 
 JWT scope parsing is currently in dev mode (all roles granted to authenticated users). Production JWT parsing is tracked in Iteration 2c.
 
+### Subject identity
+
+The function `subjectFromAccessToken` in `src/routes/demo/+page.server.ts` extracts the data subject identity from the JWT for consent API calls. It uses the following priority chain:
+
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 | `DEMO_SUBJECT_ID` env var | Dev/test override; bypasses JWT entirely |
+| 2 | `dataspace_did` JWT claim | DID set by identity-registry Keycloak sync |
+| 3 | `preferred_username` claim | Keycloak display name (legacy fallback) |
+| 4 | `sub` claim | Keycloak user UUID (last resort) |
+
+The resolved subject ID is sent to ds-connector via the `X-Subject-Id` header on consent endpoints. This is backward compatible: if the `dataspace_did` claim is absent (before identity-registry onboarding), the existing claims are used as fallback.
+
 ---
 
 ## Configuration

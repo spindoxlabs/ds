@@ -6,7 +6,9 @@ This document describes the consent management system: how data subjects grant a
 
 ## Overview
 
-The dataspace supports per-subject, per-dataset consent for datasets classified as PII or configured with row-level filtering. The consent lifecycle is:
+The dataspace supports per-subject, per-dataset consent for datasets classified as PII or configured with row-level filtering. The consent system works across multi-participant dataspaces, including DSO (Data Space Operator) participants who can query authorization state without being party to the consent exchange.
+
+The consent lifecycle is:
 
 1. A consent request is created (by the provider or automatically)
 2. The data subject approves or rejects via the consent portal
@@ -151,6 +153,93 @@ The consent service supports notifying data subjects when a consent request is c
 | `webhook` | Webhook URL | POSTs to an external endpoint |
 
 The notification system is pluggable via the `Notifier` protocol in `services/connector/src/connector/notifications/base.py`.
+
+---
+
+## Authorizations query
+
+`GET /provider/authorizations` provides a read-only view of which subjects have consented to which datasets. This endpoint is intended for DSO and compliance tooling.
+
+### Behavior
+
+- Aggregates consent records across all consumers
+- Deduplicates by latest consent record per (dataset, subject) pair
+- Returns only public identifiers: dataset IDs and subject DIDs
+- Datasets with no consented subjects are excluded from the response
+
+### Example response
+
+```json
+{
+  "authorizations": [
+    {
+      "dataset_id": "energy-meters-v2",
+      "subject_dids": [
+        "did:web:subject1.dataspaces.localhost",
+        "did:web:subject2.dataspaces.localhost"
+      ]
+    }
+  ]
+}
+```
+
+### Access
+
+This endpoint is on the provider API group (`/provider/authorizations`). In the DSO topology, `ds-connector-dso` exposes this endpoint for the DSO participant to poll without participating in the consent exchange itself.
+
+---
+
+## Onboarding to consent flow
+
+The full lifecycle from user onboarding through consent-gated data access:
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant Onboarding
+    participant IR as identity-registry
+    participant KC as Keycloak
+    participant Portal as ds-portal
+    participant Conn as ds-connector
+    participant Consumer
+    participant DA as dataset-api
+
+    Note over User,IR: 1. Onboarding
+    User->>Onboarding: Register
+    Onboarding->>IR: Create participant + issue DataSubjectCredential
+    IR->>KC: POST /admin/keycloak/sync
+    Note over KC: Sets dataspace_did user attribute
+
+    Note over User,KC: 2. Login
+    User->>KC: Authenticate (OIDC)
+    KC-->>User: JWT with dataspace_did claim
+
+    Note over Consumer,Conn: 3. Consent request
+    Consumer->>Conn: POST /consent/request (subject DID, dataset, purpose)
+    Conn->>Conn: Create ConsentRecord (status: pending)
+
+    Note over User,Conn: 4. Subject approves
+    User->>Portal: View consent requests
+    Portal->>Conn: GET /consent/my (X-Subject-Id: did:web:...)
+    Conn-->>Portal: Pending consent requests
+    User->>Portal: Approve
+    Portal->>Conn: POST /consent/my/{id}/approve
+    Conn->>Conn: Set status: approved
+
+    Note over Consumer,DA: 5. Data query with row-level filtering
+    Consumer->>DA: Query dataset via EDR
+    DA->>Conn: GET /internal/consent/check?dataset_id=...&consumer_did=...
+    Conn-->>DA: { subject_ids: ["did:web:subject1"] }
+    DA->>DA: WHERE user_filter_column IN (subject_ids)
+    DA-->>Consumer: Filtered rows (only consented subjects)
+```
+
+Key points:
+
+- Subject identity flows from identity-registry through Keycloak into JWTs as the `dataspace_did` claim
+- The portal reads this claim to identify the subject on consent API calls
+- Row-level filtering at dataset-api uses the same subject DID that was stored in the consent record
+- See [consent-subject-id.md](../services/connector/docs/consent-subject-id.md) for detailed subject identity resolution
 
 ---
 

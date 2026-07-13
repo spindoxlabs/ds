@@ -6,7 +6,7 @@ This document describes how datasets are declared in `governance.yaml`, converte
 
 ## Governance YAML — source of truth
 
-Every dataset in the dataspace is declared in `services/connector/governance/governance.yaml`. The file follows the CELINE governance schema extended with `dataspace:` blocks for EDC integration.
+Every dataset in the dataspace is declared in `services/connector/governance/governance.yaml`. The file follows the governance schema extended with `dataspace:` blocks for EDC integration.
 
 ### Structure
 
@@ -54,23 +54,32 @@ sources:
 
 ## GovernanceMapper — YAML to ODRL
 
-The `GovernanceMapper` class in `services/governance/src/ds/governance/mapper.py` converts each `GovernanceRuleV2` into three EDC payloads:
+The `GovernanceMapper` class in `services/governance/src/ds/governance/mapper.py` converts each `GovernanceRuleV2` into three EDC payloads. It accepts an `OdrlProfile` (loaded via `load_odrl_profile()`) that defines the ODRL namespace, purpose taxonomy, and tag-to-purpose mapping. An optional `owner_did_resolver: Callable[[str], str | None]` resolves dataset owners for attribution duties.
 
 ### 1. ODRL Offer (Policy)
 
-Access level drives the constraint set:
+Access level determines which actions are permitted, while the `access_requirements` field drives membership and contract constraints:
 
 | Access level | ODRL constraints |
 |-------------|-----------------|
 | `open` | No constraints. `downloadURL` included in DCAT distribution |
-| `internal` | `ds:accessScope eq "dataspaces.query"` |
-| `restricted` | `ds:accessScope eq "dataspaces.query"` + `ds:contractRequired eq "true"` |
+| `internal` / `restricted` | Driven by `access_requirements` (see below) |
 | `secret` | Not exposed to EDC or the catalogue |
+
+The `access_requirements` field controls additional constraints:
+
+| `access_requirements` | Constraints added |
+|-----------------------|-------------------|
+| `all` | No extra constraint |
+| `partner` | `{ns}Membership` |
+| `contract` | `{ns}Membership` + `{ns}ContractRequired` |
+
+Where `{ns}` is the namespace from the loaded `OdrlProfile` (default `https://w3id.org/dsp/policy/`).
 
 Additional constraints:
 
-- When `user_filter_column` is set or `classification: pii`: adds `ds:consentStatus eq "active"`
-- Tags map to `odrl:purpose` constraints via a tag-to-purpose lookup table
+- When `user_filter_column` is set or `classification: pii`: adds `{ns}ConsentStatus eq "active"`
+- Tags map to `odrl:purpose` constraints via the profile's `tag_to_purpose` mapping (e.g. `meters` → `{ns}purpose:EnergyBalancing`)
 
 ### 2. EDC Asset
 
@@ -101,13 +110,14 @@ Links the asset to its policy definition, making it available for negotiation.
 When `POST /provider/sync` is called on ds-connector:
 
 1. `GovernanceResolver` loads `governance.yaml` → list of `GovernanceRuleV2`
-2. `GovernanceService` filters: only rules with `dataspace.expose: true` and `access_level != secret`
-3. For each exposed rule, `GovernanceMapper` generates:
+2. `OdrlProfile` is loaded via `load_odrl_profile()` (defaults to bundled `profiles/energy.yaml`)
+3. `GovernanceService` filters: only rules with `dataspace.expose: true` and `access_level != secret`
+4. For each exposed rule, `GovernanceMapper` (initialized with the loaded `OdrlProfile`) generates:
    - Asset creation payload → `POST /management/v3/assets`
    - Policy definition payload → `POST /management/v3/policydefinitions`
    - Contract definition payload → `POST /management/v3/contractdefinitions`
-4. `ProviderService` pushes all payloads to EDC via `EdcManagementClient`
-5. `ProvBridge` emits a `CataloguePublished` event to ds-provenance
+5. `ProviderService` pushes all payloads to EDC via `EdcManagementClient`
+6. `ProvBridge` emits a `CataloguePublished` event to ds-provenance
 
 ---
 
@@ -115,36 +125,31 @@ When `POST /provider/sync` is called on ds-connector:
 
 When a consumer negotiates for a dataset, EDC evaluates the ODRL constraints using custom `AtomicConstraintFunction` implementations in `edc-extensions`:
 
-### AccessScopeFunction (`ds:accessScope`)
+### AccessScopeFunction (`{ns}Membership`)
 
-1. Reads `governance/participants.yaml` to find the requesting participant
-2. Checks if the participant's `allowed_scopes` list contains the required scope
-3. Returns `true` (allow) or `false` (deny)
+1. Reads `governance/participants.yaml` to find the requesting participant (file-based fallback)
+2. When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, scope checks are forwarded to the identity-registry HTTP endpoint (with TTL cache) instead
+3. Checks if the participant satisfies the required membership constraint
+4. Returns `true` (allow) or `false` (deny)
 
-### ConsentStatusFunction (`ds:consentStatus`)
+### ConsentStatusFunction (`{ns}ConsentStatus`)
 
 1. Makes HTTP GET to `ds-connector /internal/consent/check`
 2. Passes the participant DID and asset ID as query parameters
 3. ds-connector queries the consent database for an active consent record
 4. Returns `true` if active consent exists
 
-### ContractRequiredFunction (`ds:contractRequired`)
-
-Currently a pass-through (always returns `true`). Intended for bilateral contract gate enforcement.
-
 ---
 
-## The `ds:` ODRL vocabulary
+## The dataspace ODRL vocabulary
 
-The dataspace defines custom ODRL terms under the `ds:` namespace prefix. The vocabulary is served as JSON-LD at `GET /ns/energy` on ds-connector.
+The dataspace defines custom ODRL terms under a configurable namespace prefix. The namespace is defined by the loaded `OdrlProfile` (default: `https://w3id.org/dsp/policy/`). The vocabulary is served as JSON-LD at `GET /ns/policy` on ds-connector, generated dynamically from the active profile.
 
-| Term | Type | Values |
-|------|------|--------|
-| `ds:accessScope` | Constraint | `dataspaces.query`, `dataspaces.admin` |
-| `ds:consentStatus` | Constraint | `active` |
-| `ds:contractRequired` | Constraint | `true` |
-| `ds:participantRole` | Constraint | `provider`, `consumer` |
-| `ds:purpose` | Constraint | Purpose URIs mapped from tags |
+| Term | Type | Description |
+|------|------|-------------|
+| `{ns}Membership` | Constraint | Membership check for the requesting participant |
+| `{ns}ConsentStatus` | Constraint | Active consent check (`active`) |
+| `{ns}purpose:{PurposeName}` | Constraint | Purpose URIs derived from `OdrlProfile.tag_to_purpose` (e.g. `{ns}purpose:EnergyBalancing`) |
 
 ---
 
@@ -165,7 +170,9 @@ participants:
     role: consumer
 ```
 
+When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, the HTTP-backed identity-registry (with TTL cache) replaces the file-based `participants.yaml` for participant lookups. File-based mode is preserved as a fallback when the environment variable is not configured.
+
 This file is consumed by:
-- `edc-extensions/AccessScopeFunction` — participant scope validation at negotiation time
+- `edc-extensions/AccessScopeFunction` — participant scope validation at negotiation time (file-based fallback)
 - `ds-connector/ParticipantRegistry` — catalog discovery and access control
 - `ds-federated-catalog` — endpoint discovery for catalog crawling

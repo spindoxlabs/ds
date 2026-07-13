@@ -14,7 +14,7 @@ EDC's Management API is low-level and stateless. This service adds:
 - A governance sync layer that reads `governance.yaml` and pushes assets, policies, and contract definitions to the EDC provider
 - A consumer flow abstraction that chains negotiate → poll → transfer → poll → EDR into a clean async API
 - A consent registry (PostgreSQL) with subject-level granularity: create, approve, reject, revoke; revocation terminates linked EDC transfer processes
-- A participant registry loaded from `governance/participants.yaml` used for access scope validation
+- A participant registry with file-based (`participants.yaml`) or HTTP-backed (identity-registry) resolution, used for access scope validation
 - Internal endpoints consumed by the EDC policy engine (`edc-extensions`) at constraint evaluation time
 - Provenance event emission to `ds-provenance` for all contract and transfer lifecycle events
 
@@ -29,6 +29,7 @@ EDC's Management API is low-level and stateless. This service adds:
 - `GET /provider/policies` — list all policy definitions
 - `GET /provider/contracts` — list all contract definitions
 - `GET /provider/transfers` — list active transfer processes on the provider side
+- `GET /provider/authorizations` — returns consented subject DIDs per dataset; aggregates across all consumers, deduplicates by latest consent record; datasets without consented subjects are excluded; response contains only public identifiers (dataset IDs, subject DIDs)
 
 ### Consumer
 
@@ -54,6 +55,7 @@ EDC's Management API is low-level and stateless. This service adds:
 - `GET /internal/consent/check` — check consent status for a (dataset, consumer) pair; returns subject IDs for row filtering
 - `POST /internal/consent/register-transfer` — link a transfer process ID to a consent record for revocation
 - `GET /internal/edr-jwks` — proxy the EDC provider's JWKS endpoint for JWT verification
+- `GET /internal/participants/check` — forwards scope checks to identity-registry when HTTP-backed; falls back to local file-based check otherwise
 
 ### Namespace
 
@@ -99,6 +101,26 @@ This ensures that revocation propagates to the EDC data plane within the next re
 
 ---
 
+## Participant registry
+
+The connector supports two participant registry backends:
+
+### File-based (default)
+
+Reads `governance/participants.yaml` at startup. This is the original behavior and requires no additional configuration beyond `CONNECTOR_PARTICIPANTS_REGISTRY_PATH`.
+
+### HTTP-backed (HttpParticipantRegistry)
+
+When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, the connector fetches participants from the identity-registry service instead of reading a local file:
+
+- Fetches from `GET {registry_url}/participants` with a configurable TTL cache (default 60s via `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`)
+- On fetch error, serves stale cached data (fail-open for reads)
+- `GET /internal/participants/check` forwards scope check requests to the identity-registry when HTTP-backed
+
+This mode is recommended for multi-participant deployments where participant records are managed centrally by the identity-registry.
+
+---
+
 ## Configuration
 
 All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
@@ -113,6 +135,8 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 - `CONNECTOR_PARTICIPANTS_REGISTRY_PATH` — path to `participants.yaml`
 - `CONNECTOR_GOVERNANCE_YAML_PATH` — path to `governance.yaml`
 - `CONNECTOR_PROVENANCE_URL` — URL of `ds-provenance` for event emission
+- `CONNECTOR_IDENTITY_REGISTRY_URL` — URL of identity-registry (e.g. `http://ds-identity-registry:30005`); when unset, falls back to file-based registry
+- `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL` — cache TTL in seconds for HTTP-backed participant registry (default `60`)
 - `CONNECTOR_NEGOTIATION_TIMEOUT` — seconds before a negotiation poll times out
 - `CONNECTOR_TRANSFER_TIMEOUT` — seconds before a transfer poll times out
 

@@ -8,12 +8,12 @@ Not a running service — imported as a library.
 
 ## Purpose
 
-`governance.yaml` files live in data pipeline repositories (under `celine-eu/celine-pipelines` and `celine-eu/demo3`). The same file is read by two consumers:
+`governance.yaml` files live in data pipeline repositories. The same file is read by two consumers:
 
-- `celine-utils` `GovernanceResolver` — pipeline side, for OpenLineage facet injection
+- Pipeline-side `GovernanceResolver` — for OpenLineage facet injection
 - `ds-connector` via this library — EDC side, for ODRL policy and asset creation
 
-This library provides the EDC side of that shared contract. It is fully backward-compatible with `celine-utils` `GovernanceRule` v1 — files that don't use `dcat:` or `dataspace:` blocks load without errors.
+This library provides the EDC side of that shared contract. It is fully backward-compatible with `GovernanceRule` v1 — files that don't use `dcat:` or `dataspace:` blocks load without errors.
 
 ---
 
@@ -29,6 +29,20 @@ This library provides the EDC side of that shared contract. It is fully backward
 
 `DcatConfig` and `DataspaceConfig` are parsed from the YAML but `DcatConfig` is primarily consumed by dataset-api, not by this library.
 
+### OdrlProfile
+
+`OdrlProfile` defines the ODRL vocabulary configuration used by `GovernanceMapper`:
+
+| Field | Description |
+|-------|-------------|
+| `namespace` | Base namespace URI (default: `https://w3id.org/dsp/policy/`) |
+| `prefix` | Short prefix for the namespace (e.g. `dsp`) |
+| `operand_names` | Names for custom left-operands (e.g. `Membership`, `ConsentStatus`) |
+| `purposes` | Purpose taxonomy — list of purpose terms available in the vocabulary |
+| `tag_to_purpose` | Mapping from dataset tags to purpose URIs (e.g. `meters` → `{ns}purpose:EnergyBalancing`) |
+
+`load_odrl_profile(path)` loads an `OdrlProfile` from a YAML file. When no path is given, it defaults to the bundled `profiles/energy.yaml`.
+
 ---
 
 ## ODRL mapper (`mapper.py`)
@@ -36,21 +50,26 @@ This library provides the EDC side of that shared contract. It is fully backward
 `GovernanceMapper` converts a `GovernanceRuleV2` into ODRL and EDC Management API payloads.
 
 Inputs:
+- `profile: OdrlProfile` — defines the ODRL namespace, purpose taxonomy, and tag-to-purpose mapping
 - `participant_id` — used as the `odrl:assigner` DID fragment (e.g. `provider` → `did:web:provider.dataspaces.localhost`)
 - `base_url` — base URL for asset IRI generation
+- `owner_did_resolver: Callable[[str], str | None]` (optional) — resolves dataset owners for attribution duties
 
 Key methods:
 
 `to_odrl_offer(dataset_key, rule)` — returns a full ODRL Offer dict:
 
 - `access_level` → permitted actions (`open`: query + aggregate + transfer; `internal`: query + aggregate; `restricted`: query only)
+- `access_requirements` → membership/contract constraints (`all`: none; `partner`: `{ns}Membership`; `contract`: `{ns}Membership` + `{ns}ContractRequired`)
 - `classification` → prohibited actions (PII datasets prohibit transfer, derive, distribute, sublicense)
-- `user_filter_column` or `consent.required` → `ds:consentStatus eq active` constraint + `odrl:obtainConsent` pre-duty
-- Tags → `odrl:purpose` via `_TAG_TO_PURPOSE` (e.g. `meters` → `ds:purpose:EnergyBalancing`)
-- `obligations.delete_after_days` → `odrl:delete` obligation
-- `obligations.attribution` → `odrl:attribute` obligation
+- `user_filter_column` or `consent.required` → `{ns}ConsentStatus eq active` constraint + `odrl:obtainConsent` pre-duty
+- Tags → `odrl:purpose` via `profile.tag_to_purpose` (e.g. `meters` → `{ns}purpose:EnergyBalancing`)
+- `obligations.delete_after_days` → `odrl:delete` obligation with `odrl:delayPeriod` refinement (`odrl:lteq`)
+- `obligations.attribution` → `odrl:attributeTo` duty
 
-`to_asset_create(dataset_key, rule)` — returns an EDC Asset with `HttpData` data address pointing to dataset-api, plus `ds:` property annotations (`medallion`, `classification`, `userFilterColumn`, `tags`).
+All constraint values use `@id` wrapping for consistent JSON-LD serialization. The namespace prefix and all term IRIs are derived from the loaded `OdrlProfile`.
+
+`to_asset_create(dataset_key, rule)` — returns an EDC Asset with `HttpData` data address pointing to dataset-api, plus namespace-prefixed property annotations (`medallion`, `classification`, `userFilterColumn`, `tags`).
 
 `to_policy_create(dataset_key, rule)` — returns an EDC `PolicyDefinition` wrapping the ODRL Offer as an ODRL Set.
 
@@ -60,7 +79,7 @@ Key methods:
 
 ## Resolver (`resolver.py`)
 
-`GovernanceResolver` wraps `celine-utils` `GovernanceResolver` with `GovernanceRuleV2` output. Reads a `governance.yaml` file and resolves per-source rules by merging defaults.
+`GovernanceResolver` wraps the upstream `GovernanceResolver` with `GovernanceRuleV2` output. Reads a `governance.yaml` file and resolves per-source rules by merging defaults.
 
 ```python
 resolver = GovernanceResolver.from_file(Path("governance/governance.yaml"))
@@ -73,11 +92,10 @@ rule = resolver.resolve("datasets.gold.meters_15m")
 
 ## DS namespace
 
-The `ds:` ODRL extension vocabulary is hosted at `GET /ns/energy` by `ds-connector`. The namespace URI is `https://dataspaces.localhost/ns/energy#`.
+The ODRL extension vocabulary is hosted at `GET /ns/policy` by `ds-connector`, generated dynamically from the active `OdrlProfile`. The namespace URI is configurable via the profile (default: `https://w3id.org/dsp/policy/`).
 
 Custom terms:
-- `ds:accessScope` — left-operand: participant scope check
-- `ds:consentStatus` — left-operand: active consent check
-- `ds:contractRequired` — left-operand: bilateral contract gate
-- `ds:purpose:EnergyBalancing`, `ds:purpose:GridMonitoring`, etc. — purpose values
-- `ds:role:DataSubject` — consent pre-duty role
+- `{ns}Membership` — left-operand: participant membership check
+- `{ns}ConsentStatus` — left-operand: active consent check
+- `{ns}purpose:{PurposeName}` — purpose values derived from `OdrlProfile.purposes` (e.g. `{ns}purpose:EnergyBalancing`)
+- `{ns}role:DataSubject` — consent pre-duty role
