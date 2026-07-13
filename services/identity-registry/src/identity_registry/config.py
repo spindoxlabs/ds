@@ -1,0 +1,78 @@
+from __future__ import annotations
+
+from functools import lru_cache
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="IDENTITY_REGISTRY_",
+        env_file=".env",
+        extra="ignore",
+    )
+
+    database_url: str = (
+        "postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry"
+    )
+    debug: bool = False
+
+    encryption_key: str = Field(
+        default="dev-encryption-key-change-in-production",
+        description="Fernet key for encrypting private keys at rest",
+    )
+
+    export_base_path: str = Field(
+        default="/data",
+        description="Base path for exporting keys and credentials to shared volume",
+    )
+
+    oidc_issuer_url: str | None = Field(
+        default=None,
+        description="OIDC issuer URL for JWT verification on admin endpoints",
+    )
+
+    admin_scope: str = Field(
+        default="identity-registry.admin",
+        description="Required JWT scope for admin endpoints",
+    )
+
+    keycloak_admin_url: str | None = Field(
+        default=None,
+        validation_alias="KEYCLOAK_ADMIN_URL",
+        description="Keycloak admin API base URL",
+    )
+
+    keycloak_client_id: str = Field(
+        default="ds-identity-registry",
+        validation_alias="KEYCLOAK_CLIENT_ID",
+    )
+
+    keycloak_client_secret: str = Field(
+        default="insecure-dev-secret",
+        validation_alias="KEYCLOAK_CLIENT_SECRET",
+    )
+
+    default_credential_ttl_days: int = 365
+    max_credential_ttl_days: int = 730
+
+    trust_anchor_domain: str = Field(
+        default="trust-anchor.dataspaces.localhost",
+        description="Domain for the trust-anchor DID",
+    )
+
+    credentials_context_url: str = Field(
+        default="https://dataspaces.localhost/ns/credentials/v1",
+        description="Credentials JSON-LD context URL",
+    )
+
+    dataspace_uri: str = Field(
+        default="https://dataspaces.localhost/dataspace",
+        description="Dataspace membership URI",
+    )
+
+
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    return Settings()

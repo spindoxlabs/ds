@@ -3,7 +3,7 @@ __pycache__/
 *.py[cod]
 *.pyo
 .venv/
-.env
+
 *.egg-info/
 dist/
 .pytest_cache/
@@ -67,3 +67,7 @@ docs/AGENTS.md
 docs/next-phases.md
 
 .task
+
+.env
+.env.*
+!.env.example
