@@ -20,13 +20,16 @@ async def sync(
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
 ):
+    from ds.governance.models import load_odrl_profile
+
     from ...services.governance import ConnectorGovernanceMapper, load_exposed_datasets
     from ...services.prov_bridge import ProvBridge
     from ...clients.provenance import ProvenanceClient
     from ...services.provider_service import sync_governance
 
     yaml_path = (req.governance_yaml_path if req else None) or settings.governance_yaml_path
-    mapper = ConnectorGovernanceMapper(settings.participant_id, settings.participant_base_url)
+    profile = load_odrl_profile(settings.odrl_profile_path)
+    mapper = ConnectorGovernanceMapper(settings.participant_id, settings.participant_base_url, profile=profile)
     prov_client = ProvenanceClient(settings.provenance_url)
     prov = ProvBridge(prov_client, settings.participant_id)
     try:

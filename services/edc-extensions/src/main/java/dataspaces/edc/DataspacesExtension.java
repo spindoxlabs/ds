@@ -11,14 +11,14 @@ import org.eclipse.edc.spi.system.ServiceExtensionContext;
 
 /**
  * EDC extension that registers custom ODRL ConstraintFunctions for the
- * dataspaces platform vocabulary ({@code ds:} namespace).
+ * dataspaces platform vocabulary.
  *
  * <p>Both {@link AccessScopeFunction} and {@link ConsentStatusFunction} are
  * thin HTTP proxies to ds-connector — no business logic lives in Java.
- * {@link ContractRequiredFunction} is stateless and requires no delegation.
  *
  * <p>Configuration properties:
  * <ul>
+ *   <li>{@code dataspaces.odrl.namespace} — ODRL profile namespace (default: {@code https://w3id.org/dsp/policy/})</li>
  *   <li>{@code ds.connector.internal.url} — ds-connector base URL (default: {@code http://ds-connector:30001})</li>
  *   <li>{@code ds.access.scope.cache.ttl.seconds} — TTL for scope check cache (default: {@code 60})</li>
  * </ul>
@@ -34,6 +34,9 @@ public class DataspacesExtension implements ServiceExtension {
 
     @Override
     public void initialize(ServiceExtensionContext context) {
+        String namespace = context.getSetting(
+            "dataspaces.odrl.namespace", "https://w3id.org/dsp/policy/"
+        );
         String connectorInternalUrl = context.getSetting(
             "ds.connector.internal.url", "http://ds-connector:30001"
         );
@@ -41,34 +44,30 @@ public class DataspacesExtension implements ServiceExtension {
             context.getSetting("ds.access.scope.cache.ttl.seconds", "60")
         );
 
-        // Bind custom left-operands to negotiation scope
-        ruleBindingRegistry.bind("ds:accessScope",      "contract.negotiation");
-        ruleBindingRegistry.bind("ds:consentStatus",    "contract.negotiation");
-        ruleBindingRegistry.bind("ds:contractRequired", "contract.negotiation");
+        String membershipOperand = namespace + "Membership";
+        String consentOperand = namespace + "ConsentStatus";
 
-        // Register constraint evaluator functions — context class replaces scope in 0.16 API
+        // Bind custom left-operands to negotiation scope
+        ruleBindingRegistry.bind(membershipOperand, "contract.negotiation");
+        ruleBindingRegistry.bind(consentOperand,     "contract.negotiation");
+
+        // Register constraint evaluator functions
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,
             Permission.class,
-            "ds:accessScope",
+            membershipOperand,
             new AccessScopeFunction(connectorInternalUrl, cacheTtlSeconds, context.getMonitor())
         );
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,
             Permission.class,
-            "ds:consentStatus",
+            consentOperand,
             new ConsentStatusFunction(connectorInternalUrl, context.getMonitor())
-        );
-        policyEngine.registerFunction(
-            ParticipantAgentPolicyContext.class,
-            Permission.class,
-            "ds:contractRequired",
-            new ContractRequiredFunction()
         );
 
         context.getMonitor().info(
-            "Dataspaces ODRL extensions registered: accessScope (TTL=%ds), consentStatus (retry×3), contractRequired"
-                .formatted(cacheTtlSeconds)
+            "Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus (retry×3), namespace=%s"
+                .formatted(namespace, cacheTtlSeconds, namespace, namespace)
         );
     }
 }

@@ -1,75 +1,40 @@
 """Governance YAML → EDC payload service."""
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
-from ds.governance.models import GovernanceRuleV2
+from ds.governance.mapper import GovernanceMapper
+from ds.governance.models import GovernanceRuleV2, OdrlProfile
 from ds.governance.resolver import GovernanceResolver
 
 from ..schemas.edc import AssetCreate, ContractDefCreate, DataAddress, PolicyCreate
 
 
-def _derive_odrl_set(
-    access_level: str | None,
-    retention_days: int | None,
-    classification: str | None,
-) -> dict[str, Any]:
-    """Auto-derive an ODRL Set from access_level + classification."""
-    level = access_level or "internal"
-
-    constraints: list[dict[str, Any]] = []
-    if level in ("internal", "restricted"):
-        constraints.append({
-            "odrl:leftOperand": "ds:accessScope",
-            "odrl:operator": {"@id": "odrl:eq"},
-            "odrl:rightOperand": "dataspaces.query",
-        })
-    if level == "restricted":
-        constraints.append({
-            "odrl:leftOperand": "ds:contractRequired",
-            "odrl:operator": {"@id": "odrl:eq"},
-            "odrl:rightOperand": "true",
-        })
-
-    prohibited: list[dict[str, Any]] = []
-    cls_ = classification or "green"
-    if cls_ in ("pii", "red"):
-        prohibited.append({"odrl:action": "odrl:distribute"})
-    if cls_ == "pii":
-        prohibited.append({"odrl:action": "odrl:sublicense"})
-
-    obligations: list[dict[str, Any]] = []
-    if retention_days:
-        obligations.append({
-            "odrl:action": "odrl:delete",
-            "odrl:constraint": [{
-                "odrl:leftOperand": "odrl:dateTime",
-                "odrl:operator": {"@id": "odrl:lteq"},
-                "odrl:rightOperand": f"P{retention_days}D",
-            }],
-        })
-
-    return {
-        "@context": "http://www.w3.org/ns/odrl.jsonld",
-        "@type": "Set",
-        "odrl:permission": [{"odrl:action": "odrl:use", "odrl:constraint": constraints}],
-        "odrl:prohibition": prohibited,
-        "odrl:obligation": obligations,
-    }
-
-
 class ConnectorGovernanceMapper:
     """Translates GovernanceRuleV2 into EDC Management API Pydantic objects."""
 
-    def __init__(self, participant_id: str, participant_base_url: str):
+    def __init__(
+        self,
+        participant_id: str,
+        participant_base_url: str,
+        profile: OdrlProfile | None = None,
+        owner_did_resolver: Callable[[str], str | None] | None = None,
+    ):
         self.participant_id = participant_id
         self.base_url = participant_base_url.rstrip("/")
+        self._mapper = GovernanceMapper(
+            participant_id=participant_id,
+            base_url=participant_base_url,
+            profile=profile,
+            owner_did_resolver=owner_did_resolver,
+        )
 
     def to_asset_create(self, dataset_key: str, rule: GovernanceRuleV2) -> AssetCreate:
         ds = rule.dataspace
         asset_id = ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
         medallion = ds.medallion or self._infer_medallion(dataset_key)
+        pfx = self._mapper.profile.prefix
 
         extra: dict[str, str] = {}
         for k, v in ds.data_address.query_params.items():
@@ -81,15 +46,15 @@ class ConnectorGovernanceMapper:
                 "name": rule.title or dataset_key,
                 "description": rule.description or "",
                 "contenttype": ds.asset.content_type,
-                "ds:medallion": medallion,
-                "ds:classification": rule.classification or "",
-                "ds:sourceSystem": rule.source_system or "",
-                "ds:tags": ",".join(rule.tags),
-                "ds:userFilterColumn": (
+                f"{pfx}:medallion": medallion,
+                f"{pfx}:classification": rule.classification or "",
+                f"{pfx}:sourceSystem": rule.source_system or "",
+                f"{pfx}:tags": ",".join(rule.tags),
+                f"{pfx}:userFilterColumn": (
                     rule.row_filters[0].args.column if rule.row_filters
                     else rule.user_filter_column or ""
                 ),
-                "ds:rowFilters": [
+                f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
                 ] or None,
@@ -107,10 +72,7 @@ class ConnectorGovernanceMapper:
         ds = rule.dataspace
         policy_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
 
-        # Use GovernanceMapper (full ODRL v2) for the offer
-        from ds.governance.mapper import GovernanceMapper
-        gm = GovernanceMapper(participant_id=self.participant_id, base_url=self.base_url)
-        odrl_offer = gm.to_odrl_offer(dataset_key, rule)
+        odrl_offer = self._mapper.to_odrl_offer(dataset_key, rule)
         odrl_set = {**odrl_offer, "@type": "odrl:Set"}
 
         return PolicyCreate(id=policy_id, policy=odrl_set)

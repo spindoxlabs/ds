@@ -19,8 +19,11 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Evaluates {@code ds:accessScope eq "dataspaces.query"} by calling
+ * Evaluates {@code {namespace}Membership eq "dataspaces.query"} by calling
  * {@code GET /internal/participants/check} on ds-connector.
+ *
+ * <p>The left-operand IRI is configured via {@code dataspaces.odrl.namespace}
+ * (default: {@code https://w3id.org/dsp/policy/}).
  *
  * <p>All participant registry logic lives in Python — this function is a thin
  * HTTP proxy. Results are cached with a configurable TTL (default 60 s) to

@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DCAT Catalogue Sources",
+  "description": "Declares external DCAT-AP catalogue sources for the federated catalog crawler.",
+  "type": "object",
+  "required": ["catalogues"],
+  "properties": {
+    "catalogues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "url"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique identifier for this catalogue source."
+          },
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the DCAT-AP catalogue endpoint."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["dcat-ap"],
+            "default": "dcat-ap",
+            "description": "Source type (currently only dcat-ap)."
+          },
+          "defaults": {
+            "type": "object",
+            "description": "Governance-like overrides applied to datasets from this source when ODRL is missing.",
+            "properties": {
+              "data_address": {
+                "type": "object",
+                "properties": {
+                  "base_url": { "type": "string", "format": "uri" },
+                  "type": { "type": "string", "default": "HttpData" },
+                  "proxy_path": { "type": "boolean" },
+                  "proxy_query_params": { "type": "boolean" }
+                }
+              },
+              "consent_required": { "type": "boolean" },
+              "access_level": { "type": "string" },
+              "access_requirements": { "type": "string" },
+              "classification": { "type": "string" },
+              "retention_days": { "type": "integer" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

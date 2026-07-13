@@ -1,47 +1,38 @@
 """ODRL custom namespace vocabulary endpoint."""
+from __future__ import annotations
+
+from functools import lru_cache
+
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from ds.governance.models import OdrlProfile, PurposeConcept, load_odrl_profile
+
 router = APIRouter(tags=["namespace"])
 
-DS_NAMESPACE = "https://dataspaces.localhost/ns/energy#"
 
-_ENERGY_VOCAB = {
-    "@context": {
-        "@vocab": DS_NAMESPACE,
-        "ds": DS_NAMESPACE,
-        "odrl": "http://www.w3.org/ns/odrl/2/",
-        "xsd": "http://www.w3.org/2001/XMLSchema#",
-        "skos": "http://www.w3.org/2004/02/skos/core#",
-    },
-    "@graph": [
-        # ── ODRL left-operands ─────────────────────────────────────────────
+def _build_vocab(profile: OdrlProfile) -> dict:
+    ns = profile.namespace
+    pfx = profile.prefix
+
+    graph: list[dict] = [
+        # ── ODRL left-operands ─────────────────────────────────────────
         {
-            "@id": "ds:accessScope",
+            "@id": profile.term(profile.membership_operand),
             "@type": "odrl:LeftOperand",
-            "skos:definition": "The OAuth scope required to access this dataset in the dataspace.",
+            "skos:definition": "Whether the consumer holds a valid membership credential for the dataspace.",
             "skos:example": "dataspaces.query",
         },
         {
-            "@id": "ds:consentStatus",
+            "@id": profile.term(profile.consent_operand),
             "@type": "odrl:LeftOperand",
             "skos:definition": "Whether the data subject has an active consent grant for the requesting consumer.",
             "skos:example": "active",
         },
-        {
-            "@id": "ds:contractRequired",
-            "@type": "odrl:LeftOperand",
-            "skos:definition": "Whether a bilateral contract agreement is required before access is granted.",
-        },
-        {
-            "@id": "ds:participantRole",
-            "@type": "odrl:LeftOperand",
-            "skos:definition": "The declared role of the consumer participant in the dataspace.",
-        },
 
-        # ── ODRL action ────────────────────────────────────────────────────
+        # ── ODRL action ────────────────────────────────────────────────
         {
-            "@id": "ds:query",
+            "@id": profile.term(profile.query_action),
             "@type": "odrl:Action",
             "skos:definition": (
                 "Execute a parameterised query against the dataset. "
@@ -50,89 +41,59 @@ _ENERGY_VOCAB = {
             "odrl:includedIn": {"@id": "odrl:use"},
         },
 
-        # ── Purpose concepts ───────────────────────────────────────────────
+        # ── Party roles ────────────────────────────────────────────────
         {
-            "@id": "ds:purpose:EnergyBalancing",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Energy Community Balancing",
-            "skos:definition": "Use of data for balancing energy production and consumption within an energy community.",
-        },
-        {
-            "@id": "ds:purpose:GridMonitoring",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Grid Monitoring",
-            "skos:definition": "Use of data for monitoring grid stability, load, and fault detection.",
-        },
-        {
-            "@id": "ds:purpose:UrbanPlanning",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Urban Planning",
-            "skos:definition": "Use of aggregated mobility or tourism data for urban infrastructure planning.",
-        },
-
-        # ── Party roles ────────────────────────────────────────────────────
-        {
-            "@id": "ds:role:DataSubject",
+            "@id": f"{pfx}:role:DataSubject",
             "@type": "odrl:PartyCollection",
             "skos:definition": "The set of natural persons whose personal data is contained in the dataset.",
         },
         {
-            "@id": "ds:role:Provider",
+            "@id": f"{pfx}:role:Provider",
             "@type": "odrl:PartyCollection",
             "skos:definition": "A participant that offers datasets in the dataspace.",
         },
         {
-            "@id": "ds:role:Consumer",
+            "@id": f"{pfx}:role:Consumer",
             "@type": "odrl:PartyCollection",
             "skos:definition": "A participant that requests access to datasets in the dataspace.",
         },
+    ]
 
-        # ── Dataset types ──────────────────────────────────────────────────
-        {
-            "@id": "ds:GridFrequencyDataset",
+    # ── Purpose concepts (deployer-configured) ─────────────────────────
+    for purpose in profile.purposes:
+        entry: dict = {
+            "@id": profile.purpose_iri(purpose.slug),
             "@type": "skos:Concept",
-            "skos:prefLabel": "Grid Frequency Dataset",
-        },
-        {
-            "@id": "ds:ConsumptionMeasurement",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Consumption Measurement",
-        },
-        {
-            "@id": "ds:GenerationMeasurement",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Generation Measurement",
-        },
+            "skos:prefLabel": purpose.label,
+        }
+        if purpose.definition:
+            entry["skos:definition"] = purpose.definition
+        graph.append(entry)
 
-        # ── Participant types ──────────────────────────────────────────────
-        {
-            "@id": "ds:DSO",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Distribution System Operator",
+    return {
+        "@context": {
+            "@vocab": ns,
+            pfx: ns,
+            "odrl": "http://www.w3.org/ns/odrl/2/",
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "skos": "http://www.w3.org/2004/02/skos/core#",
         },
-        {
-            "@id": "ds:Prosumer",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Prosumer",
-        },
-        {
-            "@id": "ds:Aggregator",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Aggregator",
-        },
-        {
-            "@id": "ds:EnergyCommunity",
-            "@type": "skos:Concept",
-            "skos:prefLabel": "Energy Community",
-        },
-    ],
-}
+        "@graph": graph,
+    }
 
 
-@router.get("/ns/energy")
-async def energy_namespace():
+@lru_cache(maxsize=1)
+def _get_vocab() -> dict:
+    """Load the ODRL profile and build the vocabulary once."""
+    import os
+    profile = load_odrl_profile(os.environ.get("CONNECTOR_ODRL_PROFILE_PATH"))
+    return _build_vocab(profile)
+
+
+@router.get("/ns/policy")
+async def policy_namespace():
     return JSONResponse(
-        content=_ENERGY_VOCAB,
+        content=_get_vocab(),
         media_type="application/ld+json",
         headers={"Cache-Control": "public, max-age=86400"},
     )

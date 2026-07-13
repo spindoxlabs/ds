@@ -52,6 +52,7 @@ class Settings(BaseSettings):
 
     participants_registry_path: str = "governance/participants.yaml"
     governance_yaml_path: str = "governance/governance.yaml"
+    odrl_profile_path: str | None = None
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/connector"
     debug: bool = False

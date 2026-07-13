@@ -16,7 +16,7 @@ import java.io.IOException;
 import java.time.Duration;
 
 /**
- * Evaluates {@code ds:consentStatus eq "active"} by querying the
+ * Evaluates {@code {namespace}ConsentStatus eq "active"} by querying the
  * ds-connector internal consent check endpoint.
  *
  * <p>The consumer participant ID is taken from the verified {@code ParticipantAgent}.

@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     # Service identity
     base_url: str = "https://federated-catalog.dataspaces.localhost"
 
+    # Path to catalogues.yaml — DCAT-AP sources to crawl
+    dcat_sources_yaml: str = ""
+
     port: int = 30003
     debug: bool = False
 
