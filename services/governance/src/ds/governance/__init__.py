@@ -12,6 +12,9 @@ from .models import (
     DataspaceAsset,
     DataspaceDataAddress,
     DataspaceContract,
+    OdrlProfile,
+    PurposeConcept,
+    load_odrl_profile,
 )
 from .resolver import GovernanceConfig, GovernanceResolver
 from .mapper import GovernanceMapper
@@ -28,6 +31,9 @@ __all__ = [
     "DataspaceAsset",
     "DataspaceDataAddress",
     "DataspaceContract",
+    "OdrlProfile",
+    "PurposeConcept",
+    "load_odrl_profile",
     "GovernanceConfig",
     "GovernanceResolver",
     "GovernanceMapper",

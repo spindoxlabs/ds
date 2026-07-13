@@ -1,27 +1,21 @@
 """GovernanceMapper — converts GovernanceRuleV2 to ODRL and EDC payloads."""
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Callable
 from typing import Any
 
-from .models import GovernanceRuleV2
+from .models import GovernanceRuleV2, OdrlProfile
 
-# ── Purpose auto-derivation from tags ─────────────────────────────────────────
-
-_TAG_TO_PURPOSE: dict[str, str] = {
-    "rec":      "ds:purpose:EnergyBalancing",
-    "meters":   "ds:purpose:EnergyBalancing",
-    "grid":     "ds:purpose:GridMonitoring",
-    "tourism":  "ds:purpose:UrbanPlanning",
-    "mobility": "ds:purpose:UrbanPlanning",
-}
+# No module-level tag→purpose mapping — deployers configure this via
+# OdrlProfile.tag_to_purpose so the platform stays domain-neutral.
 
 # ── Permitted actions by access_level ─────────────────────────────────────────
+# "{profile}" is replaced with the profile query-action IRI at runtime.
 
-_LEVEL_ACTIONS: dict[str, list[str]] = {
-    "open":       ["ds:query", "odrl:aggregate", "odrl:transfer"],
-    "internal":   ["ds:query", "odrl:aggregate"],
-    "restricted": ["ds:query"],
+_LEVEL_ACTION_KEYS: dict[str, list[str]] = {
+    "open":       ["{query}", "odrl:aggregate", "odrl:transfer"],
+    "internal":   ["{query}", "odrl:aggregate"],
+    "restricted": ["{query}"],
     "secret":     [],
 }
 
@@ -46,27 +40,49 @@ class GovernanceMapper:
         asset = mapper.to_asset_create("datasets.gold.meters_15m", rule)
     """
 
-    DS_NAMESPACE = "https://dataspaces.localhost/ns/energy#"
-
-    def __init__(self, participant_id: str, base_url: str):
+    def __init__(
+        self,
+        participant_id: str,
+        base_url: str,
+        profile: OdrlProfile | None = None,
+        owner_did_resolver: Callable[[str], str | None] | None = None,
+    ):
         self.participant_id = participant_id
         self.base_url = base_url.rstrip("/")
+        self.profile = profile or OdrlProfile()
+        self._resolve_owner_did = owner_did_resolver
+
+    def _resolve_actions(self, keys: list[str]) -> list[str]:
+        """Replace ``{query}`` placeholder with profile query-action IRI."""
+        query_iri = self.profile.term(self.profile.query_action)
+        return [query_iri if k == "{query}" else k for k in keys]
+
+    def _resolve_assigner(self, rule: GovernanceRuleV2) -> str:
+        """Resolve the ODRL assigner DID from rule ownership or fall back to participant DID."""
+        if self._resolve_owner_did and rule.ownership:
+            for owner in rule.ownership:
+                did = self._resolve_owner_did(owner.name)
+                if did:
+                    return did
+        return f"did:web:{self.participant_id}.dataspaces.localhost"
 
     # ── ODRL ──────────────────────────────────────────────────────────────────
 
     def to_odrl_offer(self, dataset_key: str, rule: GovernanceRuleV2) -> dict[str, Any]:
         """Return a full ODRL Offer dict for the given dataset."""
+        p = self.profile
         policy = rule.policy
         access_level = rule.access_level or "internal"
 
-        permitted = policy.permitted_actions or _LEVEL_ACTIONS.get(access_level, ["ds:query"])
+        action_keys = policy.permitted_actions or _LEVEL_ACTION_KEYS.get(access_level, ["{query}"])
+        permitted = self._resolve_actions(action_keys)
         prohibited = policy.prohibited_actions or _CLASS_PROHIBITIONS.get(rule.classification or "green", [])
         purposes = policy.purpose or self._derive_purposes(rule.tags)
 
         offer_id = f"urn:offer:{self.participant_id}:{dataset_key.replace('.', ':')}"
 
         permissions = [
-            self._build_permission(action, access_level, purposes, policy, rule)
+            self._build_permission(action, access_level, rule.access_requirements, purposes, policy, rule)
             for action in permitted
         ]
 
@@ -77,15 +93,19 @@ class GovernanceMapper:
 
         obligations = self._build_obligations(rule)
 
+        context: dict[str, Any] = {
+            "odrl": "http://www.w3.org/ns/odrl/2/",
+            p.prefix: p.namespace,
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+        }
+        if p.profile_iri:
+            context["odrl:profile"] = p.profile_iri
+
         return {
-            "@context": {
-                "odrl": "http://www.w3.org/ns/odrl/2/",
-                "ds": self.DS_NAMESPACE,
-                "xsd": "http://www.w3.org/2001/XMLSchema#",
-            },
+            "@context": context,
             "@type": "odrl:Offer",
             "@id": offer_id,
-            "odrl:assigner": {"@id": f"did:web:{self.participant_id}.dataspaces.localhost"},
+            "odrl:assigner": {"@id": self._resolve_assigner(rule)},
             "odrl:permission": permissions,
             "odrl:prohibition": prohibitions,
             "odrl:obligation": obligations,
@@ -95,18 +115,30 @@ class GovernanceMapper:
         self,
         action: str,
         access_level: str,
+        access_requirements: str | None,
         purposes: list[str],
         policy: Any,
         rule: GovernanceRuleV2,
     ) -> dict[str, Any]:
-        constraints: list[dict] = []
+        p = self.profile
+        constraints: list[dict[str, Any]] = []
 
-        # Scope constraint for non-open datasets
-        if access_level in ("internal", "restricted"):
+        # Membership constraint — driven by access_requirements when set, else by access_level
+        reqs = access_requirements or "all"
+        needs_membership = reqs in ("partner", "contract") or access_level in ("internal", "restricted")
+        if needs_membership:
             constraints.append({
-                "odrl:leftOperand": {"@id": "ds:accessScope"},
+                "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
                 "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": policy.audience.required_scope,
+                "odrl:rightOperand": {"@value": policy.audience.required_scope, "@type": "xsd:string"},
+            })
+
+        # Contract constraint — access_requirements = "contract"
+        if reqs == "contract":
+            constraints.append({
+                "odrl:leftOperand": {"@id": "odrl:industry"},
+                "odrl:operator": {"@id": "odrl:eq"},
+                "odrl:rightOperand": {"@value": "contract-agreed", "@type": "xsd:string"},
             })
 
         # Purpose constraint
@@ -117,14 +149,14 @@ class GovernanceMapper:
                 "odrl:rightOperand": {"@id": purpose},
             })
 
-        # Consent constraint (when row_filters or user_filter_column triggers consent requirement)
+        # Consent constraint
         consent = policy.consent
         needs_consent = consent.required or bool(rule.row_filters) or bool(rule.user_filter_column)
         if needs_consent:
             constraints.append({
-                "odrl:leftOperand": {"@id": "ds:consentStatus"},
+                "odrl:leftOperand": {"@id": p.term(p.consent_operand)},
                 "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": "active",
+                "odrl:rightOperand": {"@value": "active", "@type": "xsd:string"},
             })
 
         perm: dict[str, Any] = {
@@ -137,49 +169,47 @@ class GovernanceMapper:
         if needs_consent:
             perm["odrl:duty"] = [{
                 "odrl:action": {"@id": "odrl:obtainConsent"},
-                "odrl:consentingParty": {"@id": "ds:role:DataSubject"},
             }]
 
         return perm
 
-    def _build_obligations(self, rule: GovernanceRuleV2) -> list[dict]:
-        obligations: list[dict] = []
+    def _build_obligations(self, rule: GovernanceRuleV2) -> list[dict[str, Any]]:
+        obligations: list[dict[str, Any]] = []
         ob = rule.policy.obligations
 
         delete_days = ob.delete_after_days or rule.retention_days
         if delete_days:
             obligations.append({
-                "odrl:action": {"@id": "odrl:delete"},
-                "odrl:constraint": [{
-                    "odrl:leftOperand": "odrl:dateTime",
-                    "odrl:operator": {"@id": "odrl:lt"},
-                    "odrl:rightOperand": {
-                        "@type": "xsd:duration",
-                        "@value": f"P{delete_days}D",
-                    },
+                "odrl:action": [{"rdf:value": {"@id": "odrl:delete"},
+                    "odrl:refinement": [{
+                        "odrl:leftOperand": {"@id": "odrl:delayPeriod"},
+                        "odrl:operator": {"@id": "odrl:lteq"},
+                        "odrl:rightOperand": {
+                            "@value": f"P{delete_days}D",
+                            "@type": "xsd:duration",
+                        },
+                    }],
                 }],
             })
 
         if ob.attribution and rule.attribution:
             obligations.append({
-                "odrl:action": {"@id": "odrl:attribute"},
-                "odrl:attributedParty": {
-                    "@id": f"did:web:{self.participant_id}.dataspaces.localhost"
-                },
-                "odrl:attributeUrl": rule.attribution,
+                "odrl:action": {"@id": "odrl:attributeTo"},
+                "odrl:attributeTo": {"@id": self._resolve_assigner(rule)},
+                "odrl:target": rule.attribution,
             })
 
         return obligations
 
-    @staticmethod
-    def _derive_purposes(tags: list[str]) -> list[str]:
+    def _derive_purposes(self, tags: list[str]) -> list[str]:
+        tag_map = self.profile.tag_to_purpose
         seen: set[str] = set()
         purposes: list[str] = []
         for tag in tags:
-            purpose = _TAG_TO_PURPOSE.get(tag)
-            if purpose and purpose not in seen:
-                purposes.append(purpose)
-                seen.add(purpose)
+            slug = tag_map.get(tag)
+            if slug and slug not in seen:
+                purposes.append(self.profile.purpose_iri(slug))
+                seen.add(slug)
         return purposes
 
     # ── EDC Asset ─────────────────────────────────────────────────────────────
@@ -188,6 +218,7 @@ class GovernanceMapper:
         ds = rule.dataspace
         asset_id = ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
         medallion = ds.medallion or self._infer_medallion(dataset_key)
+        pfx = self.profile.prefix
 
         data_address: dict[str, Any] = {
             "type": ds.data_address.type,
@@ -206,15 +237,15 @@ class GovernanceMapper:
                 "name": rule.title or dataset_key,
                 "description": rule.description or "",
                 "contenttype": ds.asset.content_type,
-                "ds:medallion": medallion,
-                "ds:classification": rule.classification,
-                "ds:sourceSystem": rule.source_system,
-                "ds:tags": ",".join(rule.tags),
-                "ds:userFilterColumn": (
+                f"{pfx}:medallion": medallion,
+                f"{pfx}:classification": rule.classification,
+                f"{pfx}:sourceSystem": rule.source_system,
+                f"{pfx}:tags": ",".join(rule.tags),
+                f"{pfx}:userFilterColumn": (
                     rule.row_filters[0].args.column if rule.row_filters
                     else rule.user_filter_column
                 ),
-                "ds:rowFilters": [
+                f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
                 ] or None,

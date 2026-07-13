@@ -5,10 +5,15 @@ New fields are optional with safe defaults — v1 YAML files load unchanged.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date
+from pathlib import Path
 from typing import Any
 
+import yaml
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger(__name__)
 
 
 # ── v1 (unchanged) ────────────────────────────────────────────────────────────
@@ -111,3 +116,66 @@ class GovernanceRuleV2(GovernanceRule):
 
     policy: DataspacePolicy = Field(default_factory=DataspacePolicy)
     dataspace: DataspaceSpec = Field(default_factory=DataspaceSpec)
+
+
+# ── ODRL Profile ─────────────────────────────────────────────────────────────
+
+class PurposeConcept(BaseModel):
+    """A purpose concept in the ODRL profile taxonomy."""
+
+    slug: str
+    label: str
+    definition: str = ""
+
+
+class OdrlProfile(BaseModel):
+    """Configurable ODRL namespace profile.
+
+    Deployers override via environment or config file to use their own
+    namespace (e.g. Catena-X ``cx-policy:``), purpose taxonomy, and
+    tag→purpose mapping.  The default profile ships empty — no
+    domain-specific concepts are assumed.
+    """
+
+    namespace: str = "https://w3id.org/dsp/policy/"
+    prefix: str = "dsp-policy"
+
+    membership_operand: str = "Membership"
+    consent_operand: str = "ConsentStatus"
+
+    query_action: str = "Query"
+
+    purpose_base: str = "purpose:"
+
+    profile_iri: str | None = None
+
+    tag_to_purpose: dict[str, str] = Field(default_factory=dict)
+    purposes: list[PurposeConcept] = Field(default_factory=list)
+
+    def term(self, local_name: str) -> str:
+        """Build a full IRI from a local name."""
+        return f"{self.namespace}{local_name}"
+
+    def purpose_iri(self, slug: str) -> str:
+        """Build a purpose IRI from a slug (e.g. ``EnergyBalancing``)."""
+        return f"{self.namespace}{self.purpose_base}{slug}"
+
+
+_PROFILES_DIR = Path(__file__).parent / "profiles"
+_DEFAULT_PROFILE_PATH = _PROFILES_DIR / "energy.yaml"
+
+
+def load_odrl_profile(path: Path | str | None = None) -> OdrlProfile:
+    """Load an OdrlProfile from a YAML file.
+
+    When *path* is ``None``, loads the bundled energy profile (platform default).
+    When the file at *path* does not exist, falls back to the energy default.
+    """
+    p = Path(path) if path is not None else _DEFAULT_PROFILE_PATH
+    if not p.exists():
+        logger.debug("ODRL profile not found at %s — falling back to energy default", p)
+        p = _DEFAULT_PROFILE_PATH
+    with p.open("r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    logger.debug("Loaded ODRL profile from %s", p)
+    return OdrlProfile.model_validate(raw)

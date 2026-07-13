@@ -1,0 +1,39 @@
+# ODRL profile for energy dataspaces.
+#
+# Ships as the platform default.  Deployers override by pointing
+# ODRL_PROFILE_PATH to their own YAML (same schema).
+
+namespace: "https://w3id.org/dsp/policy/"
+prefix: "dsp-policy"
+
+membership_operand: Membership
+consent_operand: ConsentStatus
+query_action: Query
+purpose_base: "purpose:"
+
+# Tag-to-purpose mapping: governance.yaml tags → purpose slugs.
+# The mapper builds full IRIs as {namespace}{purpose_base}{slug}.
+tag_to_purpose:
+  rec: EnergyBalancing
+  meters: EnergyBalancing
+  grid: GridMonitoring
+  tourism: UrbanPlanning
+  mobility: UrbanPlanning
+
+# Purpose taxonomy — served by the /ns/policy vocabulary endpoint.
+purposes:
+  - slug: EnergyBalancing
+    label: Energy Community Balancing
+    definition: >-
+      Use of data for balancing energy production and consumption
+      within an energy community.
+
+  - slug: GridMonitoring
+    label: Grid Monitoring
+    definition: >-
+      Use of data for monitoring grid stability, load, and fault detection.
+
+  - slug: UrbanPlanning
+    label: Urban Planning
+    definition: >-
+      Use of aggregated mobility or tourism data for urban infrastructure planning.
