@@ -1,0 +1,7 @@
+version: "3"
+
+tasks:
+  run:
+    desc: Run dev server with hot-reload on :30002
+    cmds:
+      - PYTHONPATH=src uvicorn dataset_api_mock.main:app --reload --port 30002

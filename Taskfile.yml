@@ -488,6 +488,7 @@ tasks:
 
         echo ""
         echo "✓ Dockerized dataspace runtime started"
+        echo "  Gateway: http://localhost:9000"
         echo "  Portal:  http://localhost:30004"
         echo "  Status:  task repo:status"
         echo "  Logs:    task repo:logs"

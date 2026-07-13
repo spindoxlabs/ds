@@ -129,3 +129,27 @@ keycloak.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:8080
 }
+
+# ── Unified local gateway ────────────────────────────────────────────────────
+# Single entry point for all APIs + portal UI on port 9000.
+# Strips the /api/<service>/ prefix so backends receive root-relative paths.
+
+:9000 {
+	handle_path /api/connector/* {
+		reverse_proxy host.docker.internal:30001
+	}
+
+	handle_path /api/provenance/* {
+		reverse_proxy host.docker.internal:30000
+	}
+
+	handle_path /api/catalog/* {
+		reverse_proxy host.docker.internal:30003
+	}
+
+	handle_path /api/datasets/* {
+		reverse_proxy host.docker.internal:30002
+	}
+
+	reverse_proxy host.docker.internal:30004
+}

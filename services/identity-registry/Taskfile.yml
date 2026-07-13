@@ -1,0 +1,43 @@
+version: "3"
+
+vars:
+  SRC: src/identity_registry
+
+tasks:
+  setup:
+    desc: Install Python dependencies (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+    generates: [.venv/bin/uvicorn]
+
+  run:
+    desc: Run dev server with hot-reload on :30005
+    cmds:
+      - PYTHONPATH=src uvicorn identity_registry.main:app --reload --port 30005
+
+  db:migrate:
+    desc: Apply pending migrations (requires postgres)
+    cmds:
+      - PYTHONPATH=src uv run alembic upgrade head
+
+  db:revision:
+    desc: "Generate a new migration — pass MESSAGE=my_description"
+    cmds:
+      - PYTHONPATH=src uv run alembic revision --autogenerate -m "{{.MESSAGE | default "migration"}}"
+
+  test:
+    cmds:
+      - PYTHONPATH=src uv run pytest tests/ -v
+
+  lint:
+    cmds:
+      - uv run ruff check {{.SRC}} tests/
+
+  format:
+    cmds:
+      - uv run ruff format {{.SRC}} tests/
+
+  type-check:
+    cmds:
+      - PYTHONPATH=src uv run mypy {{.SRC}}
