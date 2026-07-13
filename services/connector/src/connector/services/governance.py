@@ -153,8 +153,9 @@ def load_governance_policy_matrix(
     governance_yaml_path: str,
     participant_id: str,
     participant_base_url: str,
+    profile: OdrlProfile | None = None,
 ) -> list[dict[str, Any]]:
     """Load exposed datasets and return the explainable governance matrix."""
     datasets = load_exposed_datasets(governance_yaml_path)
-    mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url)
+    mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url, profile=profile)
     return build_policy_matrix(datasets, mapper)
