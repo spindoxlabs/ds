@@ -9,7 +9,7 @@ from .clients.provenance import ProvenanceClient
 from .config import get_settings
 from .db.engine import init_db
 from .notifications.factory import build_notifier
-from .registry.participants import ParticipantRegistry
+from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.prov_bridge import ProvBridge
 from .api.v1.provider import router as provider_router
@@ -36,9 +36,17 @@ async def lifespan(app: FastAPI):
     )
 
     # Participant registry
-    registry = ParticipantRegistry.from_file(
-        Path(settings.participants_registry_path)
-    )
+    http_registry = None
+    if settings.identity_registry_url:
+        http_registry = HttpParticipantRegistry(
+            settings.identity_registry_url,
+            cache_ttl=settings.participant_registry_cache_ttl,
+        )
+        registry = http_registry
+    else:
+        registry = ParticipantRegistry.from_file(
+            Path(settings.participants_registry_path)
+        )
 
     # Provenance bridge
     prov_client = ProvenanceClient(settings.provenance_url)
@@ -67,6 +75,8 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    if http_registry is not None:
+        await http_registry.close()
     await provider_edc.close()
     await consumer_edc.close()
     await prov_client.close()

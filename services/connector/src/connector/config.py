@@ -50,6 +50,8 @@ class Settings(BaseSettings):
     transfer_poll_interval: float = 2.0
     transfer_timeout: float = 120.0
 
+    identity_registry_url: str | None = None
+    participant_registry_cache_ttl: float = 60.0
     participants_registry_path: str = "governance/participants.yaml"
     governance_yaml_path: str = "governance/governance.yaml"
     odrl_profile_path: str | None = None

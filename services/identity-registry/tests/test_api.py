@@ -167,6 +167,50 @@ async def test_delete_participant(client):
 
 
 @pytest.mark.asyncio
+async def test_list_active_participants_internal(client):
+    """GET /participants (internal, no auth) returns only active participants."""
+    await client.post(
+        "/admin/participants",
+        json={
+            "did": TEST_DID,
+            "dsp_address": "http://edc-rec:19194/protocol",
+            "role": "provider",
+            "allowed_scopes": ["dataspaces.query"],
+        },
+        headers=HEADERS,
+    )
+    inactive_did = "did:web:old.dataspaces.localhost"
+    await client.post(
+        "/admin/participants",
+        json={"did": inactive_did, "role": "consumer"},
+        headers=HEADERS,
+    )
+    await client.patch(
+        f"/admin/participants/{inactive_did}",
+        json={"active": False},
+        headers=HEADERS,
+    )
+
+    r = await client.get("/participants")
+    assert r.status_code == 200
+    data = r.json()
+    assert len(data) == 1
+    assert data[0]["did"] == TEST_DID
+    assert data[0]["dsp_address"] == "http://edc-rec:19194/protocol"
+    assert data[0]["allowed_scopes"] == ["dataspaces.query"]
+    assert "private" not in str(data).lower()
+    assert "key" not in str(data).lower()
+
+
+@pytest.mark.asyncio
+async def test_list_active_participants_empty(client):
+    """GET /participants returns empty list when no participants."""
+    r = await client.get("/participants")
+    assert r.status_code == 200
+    assert r.json() == []
+
+
+@pytest.mark.asyncio
 async def test_participant_check_allowed(client):
     await client.post(
         "/admin/participants",
@@ -377,7 +421,7 @@ async def test_keycloak_sync(client):
     assert r.status_code == 200
     assert r.json()["status"] == "synced"
 
-    r = await client.get(f"/keycloak/mapping/{TEST_DID}")
+    r = await client.get(f"/keycloak/mapping/{TEST_DID}", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["keycloak_user_id"] == "user-123"
 
@@ -399,7 +443,7 @@ async def test_keycloak_mapping_by_subject_id(client):
         headers=HEADERS,
     )
 
-    r = await client.get(f"/keycloak/mapping?subject_id={TEST_DID}")
+    r = await client.get(f"/keycloak/mapping?subject_id={TEST_DID}", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["did"] == TEST_DID
 

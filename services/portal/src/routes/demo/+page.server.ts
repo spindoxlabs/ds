@@ -70,10 +70,11 @@ function subjectFromAccessToken(accessToken: string | undefined): string {
 	if (!accessToken) return FALLBACK_SUBJECT_ID;
 	try {
 		const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf-8')) as {
+			dataspace_did?: string;
 			preferred_username?: string;
 			sub?: string;
 		};
-		return env.DEMO_SUBJECT_ID ?? payload.preferred_username ?? payload.sub ?? FALLBACK_SUBJECT_ID;
+		return env.DEMO_SUBJECT_ID ?? payload.dataspace_did ?? payload.preferred_username ?? payload.sub ?? FALLBACK_SUBJECT_ID;
 	} catch {
 		return FALLBACK_SUBJECT_ID;
 	}

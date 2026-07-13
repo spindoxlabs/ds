@@ -1,6 +1,7 @@
 """Consumer-side service: catalog → negotiate → transfer → EDR."""
 from __future__ import annotations
 
+import inspect
 import logging
 
 from ..clients.edc_management import EdcManagementClient
@@ -40,9 +41,10 @@ class ConsumerService:
         self._provider_id = provider_id
 
     async def request_catalog(self, counter_party_address: str) -> dict:
-        # Validate participant if registry is populated
         try:
-            self._registry.validate(counter_party_address)
+            result = self._registry.validate(counter_party_address)
+            if inspect.isawaitable(result):
+                await result
         except UnknownParticipantError:
             log.warning(
                 "Counter-party %s not in registry — proceeding anyway (open mode)",

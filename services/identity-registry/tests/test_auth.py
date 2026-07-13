@@ -36,3 +36,15 @@ async def test_internal_check_without_auth(client):
     r = await client.get("/participants/did:web:x/check?scope=test")
     assert r.status_code == 200
     assert r.json()["allowed"] is False
+
+
+@pytest.mark.asyncio
+async def test_keycloak_mapping_without_auth_returns_401(client):
+    r = await client.get("/keycloak/mapping/did:web:x")
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_keycloak_mapping_by_subject_without_auth_returns_401(client):
+    r = await client.get("/keycloak/mapping?subject_id=did:web:x")
+    assert r.status_code == 401

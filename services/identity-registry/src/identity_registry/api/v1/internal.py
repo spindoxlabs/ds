@@ -5,10 +5,34 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import KeycloakMapping, Participant
-from ...dependencies import get_db
-from ...schemas.responses import KeycloakMappingResponse, ParticipantCheckResponse
+from ...dependencies import get_db, require_admin_scope
+from ...schemas.responses import (
+    KeycloakMappingResponse,
+    ParticipantCheckResponse,
+    ParticipantResponse,
+)
 
 router = APIRouter(tags=["internal"])
+
+
+@router.get("/participants", response_model=list[ParticipantResponse])
+async def list_active_participants(
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Participant).where(Participant.active.is_(True))
+    )
+    return [
+        ParticipantResponse(
+            did=p.did,
+            dsp_address=p.dsp_address,
+            role=p.role,
+            allowed_scopes=p.allowed_scopes,
+            active=p.active,
+            registered_at=p.registered_at,
+        )
+        for p in result.scalars().all()
+    ]
 
 
 @router.get(
@@ -38,6 +62,7 @@ async def check_participant(
 async def get_keycloak_mapping_by_did(
     did: str,
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
 ):
     result = await db.execute(
         select(KeycloakMapping).where(KeycloakMapping.did == did)
@@ -62,6 +87,7 @@ async def get_keycloak_mapping_by_did(
 async def get_keycloak_mapping_by_subject(
     subject_id: str = Query(...),
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
 ):
     result = await db.execute(
         select(KeycloakMapping).where(KeycloakMapping.subject_id == subject_id)

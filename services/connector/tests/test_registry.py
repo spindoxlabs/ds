@@ -2,9 +2,12 @@
 import textwrap
 from pathlib import Path
 
+import httpx
 import pytest
+import respx
 
 from connector.registry.participants import (
+    HttpParticipantRegistry,
     Participant,
     ParticipantRegistry,
     UnknownParticipantError,
@@ -71,3 +74,134 @@ def test_empty_registry():
     assert registry.all() == []
     with pytest.raises(UnknownParticipantError):
         registry.validate("any")
+
+
+# ── HttpParticipantRegistry ─────────────────────────────────────
+
+
+REGISTRY_URL = "http://identity-registry:30005"
+
+PARTICIPANTS_RESPONSE = [
+    {
+        "did": "did:web:rec.ds.localhost",
+        "dsp_address": "http://edc-rec:19194/protocol",
+        "role": "provider",
+        "allowed_scopes": ["dataspaces.query", "identity-registry.admin"],
+        "active": True,
+        "registered_at": "2026-01-01T00:00:00Z",
+    },
+    {
+        "did": "did:web:dso.ds.localhost",
+        "dsp_address": "http://edc-dso:49194/protocol",
+        "role": "provider",
+        "allowed_scopes": ["dataspaces.query"],
+        "active": True,
+        "registered_at": "2026-01-01T00:00:00Z",
+    },
+]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_fetches_and_caches():
+    respx.get(f"{REGISTRY_URL}/participants").mock(
+        return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE)
+    )
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
+    try:
+        participants = await registry.all()
+        assert len(participants) == 2
+
+        p = await registry.get_by_id("did:web:rec.ds.localhost")
+        assert p is not None
+        assert p.role == "provider"
+        assert "dataspaces.query" in p.allowed_scopes
+
+        p2 = await registry.validate("http://edc-dso:49194/protocol")
+        assert p2.id == "did:web:dso.ds.localhost"
+
+        assert respx.calls.call_count == 1
+    finally:
+        await registry.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_unknown_raises():
+    respx.get(f"{REGISTRY_URL}/participants").mock(
+        return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE)
+    )
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
+    try:
+        with pytest.raises(UnknownParticipantError):
+            await registry.validate("http://unknown:9999/protocol")
+    finally:
+        await registry.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_uses_stale_cache_on_error():
+    route = respx.get(f"{REGISTRY_URL}/participants")
+    route.mock(return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE))
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=0)
+    try:
+        await registry.all()
+        assert respx.calls.call_count == 1
+
+        route.mock(return_value=httpx.Response(500))
+        participants = await registry.all()
+        assert len(participants) == 2
+    finally:
+        await registry.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_check_scope():
+    respx.get(
+        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
+        params={"scope": "dataspaces.query"},
+    ).mock(return_value=httpx.Response(200, json={"allowed": True}))
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
+    try:
+        allowed = await registry.check_scope("did:web:rec.ds.localhost", "dataspaces.query")
+        assert allowed is True
+    finally:
+        await registry.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_check_scope_denied():
+    respx.get(
+        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
+        params={"scope": "admin.secret"},
+    ).mock(return_value=httpx.Response(200, json={"allowed": False}))
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
+    try:
+        allowed = await registry.check_scope("did:web:rec.ds.localhost", "admin.secret")
+        assert allowed is False
+    finally:
+        await registry.close()
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_http_registry_check_scope_error_returns_false():
+    respx.get(
+        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
+        params={"scope": "dataspaces.query"},
+    ).mock(return_value=httpx.Response(500))
+
+    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
+    try:
+        allowed = await registry.check_scope("did:web:rec.ds.localhost", "dataspaces.query")
+        assert allowed is False
+    finally:
+        await registry.close()

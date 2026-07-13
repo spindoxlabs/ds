@@ -4,8 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ...config import Settings
-from ...dependencies import get_provider_edc, get_settings_dep
+from ...dependencies import get_db, get_provider_edc, get_settings_dep
+from ...services.authorization_service import get_authorized_datasets
 
 router = APIRouter(prefix="/provider", tags=["provider"])
 
@@ -37,6 +40,19 @@ async def sync(
         return result
     finally:
         await prov_client.close()
+
+
+@router.get("/authorizations")
+async def get_authorizations(
+    db: AsyncSession = Depends(get_db),
+):
+    """Return consented subject IDs per dataset.
+
+    Read-only query endpoint — external consumers (DSO, compliance tools)
+    poll it on their own schedule.
+    """
+    datasets = await get_authorized_datasets(db)
+    return {"datasets": datasets}
 
 
 @router.get("/assets")

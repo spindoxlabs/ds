@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import get_settings
 from ...dependencies import get_db, get_participant_registry
-from ...registry.participants import ParticipantRegistry
+from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
 
 router = APIRouter(prefix="/internal", tags=["internal"])
@@ -62,13 +62,17 @@ async def consent_check(
 async def participants_check(
     participant_id: str,
     scope: str,
-    registry: ParticipantRegistry = Depends(get_participant_registry),
+    registry=Depends(get_participant_registry),
 ):
     """Check whether a participant has a given scope.
 
     Called by edc-extensions AccessScopeFunction as an HTTP proxy — keeps all
     participant logic in Python so no YAML parsing happens in Java.
     """
+    if isinstance(registry, HttpParticipantRegistry):
+        allowed = await registry.check_scope(participant_id, scope)
+        return {"participant_id": participant_id, "scope": scope, "allowed": allowed}
+
     participant = registry.get_by_id(participant_id)
     if participant is None:
         return {"participant_id": participant_id, "scope": scope, "allowed": False}
@@ -96,5 +100,5 @@ async def edr_jwks():
             return resp.json()
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC JWKS fetch failed: {exc.response.status_code}") from exc
-    except httpx.RequestError as exc:
-        raise HTTPException(502, f"EDC unreachable: {exc}") from exc
+    except httpx.RequestError:
+        raise HTTPException(502, "EDC unreachable")
