@@ -154,41 +154,5 @@ services:
       retries: 10
     networks: [dataspaces]
 
-  # ── Portal (consumer UI) ────────────────────────────────────────────────────
-  ds-portal:
-    build:
-      context: .
-      dockerfile: services/portal/Dockerfile
-    ports:
-      - "30004:30004"
-    environment:
-      CONNECTOR_URL: http://host.docker.internal:31001
-      DATASET_API_URL: http://host.docker.internal:30002
-      CATALOGUE_URL: http://host.docker.internal:30002
-      FEDERATED_CATALOG_URL: http://host.docker.internal:30003
-      PROVENANCE_URL: http://host.docker.internal:31000
-      USER_CREDENTIALS_PATH: /credentials/users
-      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: ${CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS:-http://edc-provider:19194/protocol/2025-1}
-      CONSUMER_DEFAULT_ASSIGNER: ${CONSUMER_DEFAULT_ASSIGNER:-did:web:provider.dataspaces.localhost}
-      ORIGIN: http://localhost:30004
-      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env.consumer}
-      AUTH_URL: http://localhost:30004
-      NEXTAUTH_URL: http://localhost:30004
-      AUTH_TRUST_HOST: "true"
-      AUTH_KEYCLOAK_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
-      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}
-      AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-http://keycloak.dataspaces.localhost:8080/realms/dataspaces}
-      AUTH_KEYCLOAK_SCOPE: ${AUTH_KEYCLOAK_SCOPE:-openid profile email}
-      KEYCLOAK_CLIENT_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
-    volumes:
-      - ./data/credentials:/credentials:ro
-      - ./docs:/docs:ro
-    depends_on:
-      ds-connector-consumer:
-        condition: service_healthy
-      keycloak:
-        condition: service_started
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "keycloak.dataspaces.localhost:host-gateway"
-    networks: [dataspaces]
+  # Portal is not part of the consumer participant stack.
+  # Run it locally with: task consumer:portal:run

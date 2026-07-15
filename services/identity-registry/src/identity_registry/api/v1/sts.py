@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Participant
 from ...dependencies import get_db
+from ...services.crypto import verify_sts_secret
 from ...services.token import create_si_token
 
 router = APIRouter(prefix="/sts", tags=["sts"])
@@ -59,7 +60,7 @@ async def issue_token(
         )
 
     expected_secret = getattr(participant, "sts_client_secret", None)
-    if expected_secret and client_secret != expected_secret:
+    if expected_secret and not verify_sts_secret(client_secret, expected_secret):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_client"},

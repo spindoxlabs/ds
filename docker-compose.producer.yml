@@ -100,6 +100,7 @@ services:
     build:
       context: .
       dockerfile: services/connector/Dockerfile
+    command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "30001"]
     ports:
       - "30001:30001"
     environment:

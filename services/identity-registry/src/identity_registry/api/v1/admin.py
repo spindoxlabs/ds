@@ -34,6 +34,8 @@ from ...schemas.responses import (
     ParticipantResponse,
 )
 from ...services.crypto import (
+    decrypt_private_jwk,
+    encrypt_private_jwk,
     generate_credential_id,
     generate_key_pair,
     next_key_index,
@@ -107,7 +109,7 @@ async def create_participant(
         key = Key(
             owner_did=data.did,
             kid=kp.kid,
-            private_jwk=kp.private_jwk,
+            private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
             public_jwk=kp.public_jwk,
         )
         db.add(key)
@@ -286,7 +288,7 @@ async def create_did(
     key = Key(
         owner_did=data.did,
         kid=kp.kid,
-        private_jwk=kp.private_jwk,
+        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
         public_jwk=kp.public_jwk,
     )
     db.add(key)
@@ -424,7 +426,8 @@ async def issue_membership_credential(
         ttl_days=ttl,
     )
 
-    signed_vc = sign_credential(vc, trust_anchor_key.private_jwk, trust_anchor_key.kid)
+    ta_raw_jwk = decrypt_private_jwk(trust_anchor_key.private_jwk, settings.encryption_key)
+    signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
     cred = Credential(
         id=cred_id,
@@ -478,7 +481,7 @@ async def issue_data_subject_credential(
         key = Key(
             owner_did=subject_did,
             kid=kp.kid,
-            private_jwk=kp.private_jwk,
+            private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
             public_jwk=kp.public_jwk,
         )
         db.add(key)
@@ -510,7 +513,8 @@ async def issue_data_subject_credential(
         ttl_days=ttl,
     )
 
-    signed_vc = sign_credential(vc, trust_anchor_key.private_jwk, trust_anchor_key.kid)
+    ta_raw_jwk = decrypt_private_jwk(trust_anchor_key.private_jwk, settings.encryption_key)
+    signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
     cred = Credential(
         id=cred_id,
@@ -703,7 +707,7 @@ async def rotate_key(
     new_key = Key(
         owner_did=did,
         kid=kp.kid,
-        private_jwk=kp.private_jwk,
+        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
         public_jwk=kp.public_jwk,
     )
     db.add(new_key)

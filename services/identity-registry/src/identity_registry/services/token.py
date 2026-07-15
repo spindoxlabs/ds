@@ -8,8 +8,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db.models import Key, Participant
-from .crypto import create_jws, load_private_key
+from .crypto import create_jws, decrypt_private_jwk, load_private_key
 
 
 async def get_participant_key(
@@ -53,7 +54,9 @@ async def create_si_token(
     """
     key, _participant = await get_participant_key(db, participant_did)
 
-    private_key = load_private_key(key.private_jwk)
+    settings = get_settings()
+    raw_jwk = decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+    private_key = load_private_key(raw_jwk)
     now = int(time.time())
 
     claims: dict[str, Any] = {

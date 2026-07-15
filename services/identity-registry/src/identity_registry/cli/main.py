@@ -11,7 +11,13 @@ import typer
 from ..config import get_settings
 from ..db.engine import get_engine, get_session_factory, init_db
 from ..db.models import Credential, Did, Key, Participant, StatusList
-from ..services.crypto import generate_credential_id, generate_key_pair
+from ..services.crypto import (
+    decrypt_private_jwk,
+    encrypt_private_jwk,
+    generate_credential_id,
+    generate_key_pair,
+    hash_sts_secret,
+)
 from ..services.status_list import create_bitstring, next_available_index
 from ..services.vc import build_membership_credential, sign_credential
 
@@ -65,7 +71,7 @@ def bootstrap(
                 key = Key(
                     owner_did=trust_did,
                     kid=kp.kid,
-                    private_jwk=kp.private_jwk,
+                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
                     public_jwk=kp.public_jwk,
                 )
                 session.add(key)
@@ -127,7 +133,7 @@ def participant_add(
                     key = Key(
                         owner_did=did,
                         kid=kp.kid,
-                        private_jwk=kp.private_jwk,
+                        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
                         public_jwk=kp.public_jwk,
                     )
                     session.add(key)
@@ -163,7 +169,7 @@ def participant_add(
                     dsp_address=dsp_address,
                     role=role,
                     allowed_scopes=list(scope),
-                    sts_client_secret=sts_secret,
+                    sts_client_secret=hash_sts_secret(sts_secret),
                 )
                 session.add(participant)
 
@@ -207,7 +213,8 @@ def participant_add(
                         status_list_index=sl_index,
                         credential_id=cred_id,
                     )
-                    signed_vc = sign_credential(vc, ta_key.private_jwk, ta_key.kid)
+                    ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+                    signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
                     cred = Credential(
                         id=cred_id,
@@ -330,7 +337,8 @@ def credential_issue_membership(
                     credential_id=cred_id,
                     ttl_days=ttl_days,
                 )
-                signed_vc = sign_credential(vc, ta_key.private_jwk, ta_key.kid)
+                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
                 cred = Credential(
                     id=cred_id,
@@ -384,7 +392,8 @@ def credential_issue_data_subject(
                     kp = generate_key_pair(subject_did)
                     key = Key(
                         owner_did=subject_did, kid=kp.kid,
-                        private_jwk=kp.private_jwk, public_jwk=kp.public_jwk,
+                        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                        public_jwk=kp.public_jwk,
                     )
                     session.add(key)
                     await session.flush()
@@ -418,7 +427,8 @@ def credential_issue_data_subject(
                     credential_id=cred_id,
                     ttl_days=ttl_days,
                 )
-                signed_vc = sign_credential(vc, ta_key.private_jwk, ta_key.kid)
+                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
                 cred = Credential(
                     id=cred_id, credential_type="DataSubjectCredential",
@@ -533,7 +543,8 @@ def key_rotate(
                 kp = generate_key_pair(did, key_index=new_index)
                 new_key = Key(
                     owner_did=did, kid=kp.kid,
-                    private_jwk=kp.private_jwk, public_jwk=kp.public_jwk,
+                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                    public_jwk=kp.public_jwk,
                 )
                 session.add(new_key)
                 await session.flush()

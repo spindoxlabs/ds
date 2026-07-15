@@ -69,7 +69,9 @@ Three compose files form the full stack:
 |------|----------|---------|
 | `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
 | `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer | Producer participant |
-| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer, ds-portal | Consumer participant |
+| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
+
+The portal is not in any compose file — run it locally via `task consumer:portal:run`.
 
 All containers share the `dataspaces` bridge network.
 
@@ -95,7 +97,7 @@ All containers share the `dataspaces` bridge network.
 | 30001 | ds-connector (producer) |
 | 30002 | dataset-api (producer) |
 | 30003 | federated-catalog (producer) |
-| 30004 | portal (consumer) |
+| 30004 | portal (standalone, run locally) |
 | 30005 | identity-registry (shared infra) |
 | 31000 | ds-provenance (consumer) |
 | 31001 | ds-connector (consumer) |
@@ -113,12 +115,26 @@ The identity-registry is a centralized trust anchor service (DSSC BB02 — Ident
 
 **Key principle:** DID private keys never leave the identity-registry. The EDC vault contains only a separate EDR signing key used for Endpoint Data Reference tokens.
 
+**Encryption at rest:** Private keys are Fernet-encrypted in the database using `IDENTITY_REGISTRY_ENCRYPTION_KEY`. STS client secrets are PBKDF2-hashed (never stored in cleartext). The dev default key works out of the box; production deployments must set a strong key.
+
 How DID resolution works:
 1. EDC resolves `did:web:provider.dataspaces.localhost` by fetching `http://provider.dataspaces.localhost/.well-known/did.json`
 2. Caddy rewrites this to `/dids/did:web:provider.dataspaces.localhost/did.json` and proxies to identity-registry
 3. The identity-registry builds and returns the DID document from its database
 
 The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
+
+## Deployment / helm chart notes
+
+The following must be addressed when preparing the helm chart:
+
+- **IDENTITY_REGISTRY_ENCRYPTION_KEY**: Must be set to a strong random value. Used for Fernet encryption of DID private keys at rest. Losing this key means losing access to all stored private keys.
+- **IDENTITY_REGISTRY_OIDC_ISSUER_URL**: Must be set in production. Without it, admin endpoints accept unverified JWTs (acceptable in dev, critical vulnerability in production).
+- **IDENTITY_REGISTRY_ADMIN_SCOPE**: Defaults to `identity-registry.admin`. Configure in Keycloak realm.
+- **EDC vault properties** (`consumer-vault.properties`, `provider-vault.properties`): Contain EDR signing keys and STS client secrets. In dev, placeholder keys and `insecure-dev-secret` are used. Production deployments must generate real EC P-256 keys and strong STS secrets, injected via Kubernetes secrets.
+- **EDC_API_KEY**: Defaults to `insecure-dev-key`. Must be overridden with a strong random value.
+- **AUTH_SECRET**: Used by Auth.js for session encryption. Must be a strong random value.
+- `.env.production.example` is the authoritative reference for all production env vars.
 
 ## Coding conventions
 
@@ -183,7 +199,8 @@ task start
 task infra:start                  # shared infra (postgres, caddy, identity-registry, keycloak)
 task identity:bootstrap           # trust anchor + participant registration
 task producer:start               # producer stack (EDC + connector + provenance + dataset-api + catalog)
-task consumer:start               # consumer stack (EDC + connector + provenance + portal)
+task consumer:start               # consumer stack (EDC + connector + provenance)
+task consumer:portal:run          # portal (optional, run locally)
 ```
 
 ## Key documentation

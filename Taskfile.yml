@@ -3,8 +3,7 @@ version: "3"
 # ── Root Taskfile ────────────────────────────────────────────────────────────
 #
 # Quick start:
-#   cp .env.producer.example .env.producer
-#   cp .env.consumer.example .env.consumer
+#   cp .env.example .env
 #   task start
 #
 env:
@@ -64,8 +63,8 @@ tasks:
     deps: [edc:ensure-base]
     cmds:
       - |
-        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
-        [ -f "$env_file" ] || cp .env.producer.example "$env_file"
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || cp .env.example "$env_file"
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.producer.yml up -d --build
         echo "Waiting for producer connector..."
@@ -77,8 +76,8 @@ tasks:
     desc: Stop producer participant stack
     cmds:
       - |
-        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
-        [ -f "$env_file" ] || env_file=.env.producer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.producer.yml down
 
@@ -86,8 +85,8 @@ tasks:
     desc: Show producer container status
     cmds:
       - |
-        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
-        [ -f "$env_file" ] || env_file=.env.producer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.producer.yml ps
 
@@ -95,8 +94,8 @@ tasks:
     desc: Follow producer logs
     cmds:
       - |
-        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
-        [ -f "$env_file" ] || env_file=.env.producer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.producer.yml logs -f
 
@@ -106,18 +105,18 @@ tasks:
     deps: [edc:ensure-base]
     cmds:
       - |
-        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
-        [ -f "$env_file" ] || cp .env.consumer.example "$env_file"
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || cp .env.example "$env_file"
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.consumer.yml up -d --build
-        echo "Consumer started — portal http://localhost:30004 — gateway http://localhost:9000"
+        echo "Consumer started — gateway http://localhost:9000 — portal: task consumer:portal:run"
 
   consumer:stop:
     desc: Stop consumer participant stack
     cmds:
       - |
-        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
-        [ -f "$env_file" ] || env_file=.env.consumer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.consumer.yml down
 
@@ -125,8 +124,8 @@ tasks:
     desc: Show consumer container status
     cmds:
       - |
-        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
-        [ -f "$env_file" ] || env_file=.env.consumer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.consumer.yml ps
 
@@ -134,8 +133,8 @@ tasks:
     desc: Follow consumer logs
     cmds:
       - |
-        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
-        [ -f "$env_file" ] || env_file=.env.consumer.example
+        env_file="${ENV_FILE:-.env}"
+        [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.consumer.yml logs -f
 
@@ -296,16 +295,14 @@ tasks:
         uv run uvicorn provenance.main:app --reload --port 31000
 
   consumer:portal:run:
-    desc: Stop Docker container, run portal locally on :30004
+    desc: Run portal locally on :30004 (connects to consumer connector)
     cmds:
-      - docker stop dataspaces-ds-portal-1 2>/dev/null || true
       - |
         cd services/portal
         CONNECTOR_URL=http://localhost:31001 \
         PROVENANCE_URL=http://localhost:31000 \
-        DATASET_API_URL=http://localhost:30002 \
-        CATALOGUE_URL=http://localhost:30002 \
         FEDERATED_CATALOG_URL=http://localhost:30003 \
+        IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
         npm run dev
 
   # ── Utilities ────────────────────────────────────────────────────────────

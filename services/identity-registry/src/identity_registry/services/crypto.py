@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 import base64
+import hashlib
+import hmac
 import json
+import os
 import uuid
 from dataclasses import dataclass
 
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives.asymmetric import ec, utils as ec_utils
 from cryptography.hazmat.primitives.hashes import SHA256
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+_FERNET_SALT = b"ds-identity-registry-v1"
+_STS_HASH_ITERATIONS = 600_000
 
 
 def _b64url_encode(data: bytes) -> str:
@@ -98,3 +106,51 @@ def next_key_index(existing_kid: str | None) -> int:
 
 def generate_credential_id() -> str:
     return f"urn:uuid:{uuid.uuid4()}"
+
+
+# ── Private key encryption at rest ───────────────────────────────
+
+
+def _derive_fernet_key(passphrase: str) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=SHA256(),
+        length=32,
+        salt=_FERNET_SALT,
+        iterations=480_000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(passphrase.encode()))
+
+
+def encrypt_private_jwk(jwk: dict, encryption_key: str) -> dict:
+    fernet = Fernet(_derive_fernet_key(encryption_key))
+    plaintext = json.dumps(jwk, separators=(",", ":")).encode()
+    return {"_enc": fernet.encrypt(plaintext).decode()}
+
+
+def decrypt_private_jwk(stored: dict, encryption_key: str) -> dict:
+    if "_enc" not in stored:
+        return stored
+    fernet = Fernet(_derive_fernet_key(encryption_key))
+    plaintext = fernet.decrypt(stored["_enc"].encode())
+    return json.loads(plaintext)
+
+
+# ── STS client secret hashing ────────────────────────────────────
+
+
+def hash_sts_secret(secret: str) -> str:
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", secret.encode(), salt, _STS_HASH_ITERATIONS)
+    return f"pbkdf2:sha256:{salt.hex()}:{dk.hex()}"
+
+
+def verify_sts_secret(secret: str, stored: str) -> bool:
+    if not stored.startswith("pbkdf2:"):
+        return hmac.compare_digest(secret, stored)
+    parts = stored.split(":")
+    if len(parts) != 4:
+        return False
+    salt = bytes.fromhex(parts[2])
+    expected = bytes.fromhex(parts[3])
+    dk = hashlib.pbkdf2_hmac("sha256", secret.encode(), salt, _STS_HASH_ITERATIONS)
+    return hmac.compare_digest(dk, expected)

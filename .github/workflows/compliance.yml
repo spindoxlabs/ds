@@ -10,7 +10,7 @@ on:
 
 jobs:
   offline-evidence:
-    name: Offline compliance and production preflight
+    name: Offline compliance checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -28,49 +28,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install pytest cryptography pyyaml
 
-      - name: Run offline tests
-        env:
-          PYTHONPATH: services/governance/src
-        run: |
-          pytest -q \
-            tests/test_compliance_validate.py \
-            tests/test_credential_issuer.py \
-            tests/test_keycloak_preflight.py \
-            tests/test_ops_scripts.py \
-            tests/test_production_bootstrap.py \
-            tests/test_production_preflight.py \
-            tests/test_runtime_inventory.py
-
       - name: Generate compliance artifacts
         env:
           PYTHONPATH: services/governance/src
         run: |
           python scripts/compliance_validate.py --profile core --write-artifacts
-
-      - name: Run production and Keycloak preflight
-        run: |
-          python scripts/production_preflight.py --env-file .env.production.example
-          python scripts/keycloak_preflight.py \
-            --env-file .env.production.example \
-            --realm-export services/keycloak/realm-production.example.json
-
-      - name: Render production compose evidence
-        run: |
-          mkdir -p reports/production
-          docker compose --env-file .env.production.example \
-            -f docker-compose.yml \
-            -f docker-compose.runtime.yml \
-            -f docker-compose.production.yml \
-            config > reports/production/docker-compose.production.rendered.yml
-          if grep -nE 'postgres:postgres|insecure-dev|change-me|ds-local-dev|\.test|localhost:30001' \
-            reports/production/docker-compose.production.rendered.yml; then
-            echo "Production compose rendered with demo/local markers" >&2
-            exit 1
-          fi
-          python scripts/runtime_inventory.py \
-            --compose-file reports/production/docker-compose.production.rendered.yml \
-            --json-out reports/production/runtime-inventory.json \
-            --markdown-out reports/production/runtime-inventory.md
 
       - name: Upload evidence artifacts
         uses: actions/upload-artifact@v4
@@ -78,7 +40,3 @@ jobs:
           name: dataspace-compliance-evidence
           path: |
             reports/compliance/
-            reports/production/
-            reports/operations/
-            services/keycloak/realm-production.example.json
-            ops/

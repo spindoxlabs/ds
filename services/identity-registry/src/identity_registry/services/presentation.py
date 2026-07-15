@@ -8,8 +8,9 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ..config import get_settings
 from ..db.models import Credential, Key
-from .crypto import create_jws, load_private_key
+from .crypto import create_jws, decrypt_private_jwk, load_private_key
 
 
 def _extract_requested_types(presentation_definition: dict[str, Any]) -> list[str]:
@@ -64,7 +65,9 @@ async def build_presentation_response(
         if isinstance(vc.get("proof"), dict) and vc["proof"].get("jws")
     ]
 
-    private_key = load_private_key(key.private_jwk)
+    settings = get_settings()
+    raw_jwk = decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+    private_key = load_private_key(raw_jwk)
     now = int(time.time())
 
     vp_claims = {

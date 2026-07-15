@@ -13,6 +13,10 @@ function connectorUrl(path: string): string {
 	return `${base}${path}`;
 }
 
+function identityRegistryUrl(): string {
+	return env.IDENTITY_REGISTRY_URL ?? 'http://172.17.0.1:30005';
+}
+
 async function apiFetch<T>(
 	url: string,
 	options: RequestInit = {},
