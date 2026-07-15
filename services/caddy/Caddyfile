@@ -31,4 +31,7 @@
 	handle_path /api/datasets/* {
 		reverse_proxy 172.17.0.1:30002
 	}
+
+	# Portal (catch-all)
+	reverse_proxy 172.17.0.1:30004
 }

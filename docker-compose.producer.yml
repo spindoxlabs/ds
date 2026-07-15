@@ -162,6 +162,34 @@ services:
         condition: service_healthy
     networks: [dataspaces]
 
+  # ── Portal (SvelteKit) ────────────────────────────────────────────────────────
+  ds-portal:
+    build:
+      context: .
+      dockerfile: services/portal/Dockerfile
+    ports:
+      - "30004:30004"
+    environment:
+      CONNECTOR_URL: http://ds-connector-producer:30001
+      PROVENANCE_URL: http://ds-provenance-producer:30000
+      FEDERATED_CATALOG_URL: http://ds-federated-catalog-producer:30003
+      IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      AUTH_KEYCLOAK_ISSUER: http://keycloak:8080/realms/dataspaces
+      AUTH_KEYCLOAK_ID: ds-portal
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}
+      AUTH_KEYCLOAK_SCOPE: openid profile email
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-in-prod}
+      ORIGIN: http://localhost:9010
+    depends_on:
+      ds-connector-producer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:30004/', r => process.exit(r.statusCode < 500 ? 0 : 1))\""]
+      interval: 10s
+      start_period: 15s
+      retries: 10
+    networks: [dataspaces]
+
   # ── Federated catalog ────────────────────────────────────────────────────────
   ds-federated-catalog-producer:
     build:

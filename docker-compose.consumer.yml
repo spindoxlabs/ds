@@ -145,6 +145,3 @@ services:
       start_period: 10s
       retries: 10
     networks: [dataspaces]
-
-  # Portal is not part of the consumer participant stack.
-  # Run it locally with: task consumer:portal:run

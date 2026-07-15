@@ -294,13 +294,14 @@ tasks:
         PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer \
         uv run uvicorn provenance.main:app --reload --port 31000
 
-  consumer:portal:run:
-    desc: Run portal locally on :30004 (connects to consumer connector)
+  producer:portal:run:
+    desc: Stop Docker container, run portal locally on :30004
     cmds:
+      - docker stop dataspaces-ds-portal-1 2>/dev/null || true
       - |
         cd services/portal
-        CONNECTOR_URL=http://localhost:31001 \
-        PROVENANCE_URL=http://localhost:31000 \
+        CONNECTOR_URL=http://localhost:30001 \
+        PROVENANCE_URL=http://localhost:30000 \
         FEDERATED_CATALOG_URL=http://localhost:30003 \
         IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
         npm run dev
