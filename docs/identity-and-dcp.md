@@ -6,19 +6,21 @@ This document describes how participant identities are established, how Verifiab
 
 ## Participant identities
 
-Each participant in the dataspace is identified by a `did:web:` URI. DID documents are dynamically served by the identity-registry service (`services/identity-registry/`) at `GET /dids/{did}/did.json`.
+Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database via Caddy reverse proxy.
 
-| Participant | DID | DID document |
-|-------------|-----|-------------|
-| Provider | `did:web:provider.dataspaces.localhost` | `GET /dids/did:web:provider.dataspaces.localhost/did.json` |
-| Consumer | `did:web:consumer.dataspaces.localhost` | `GET /dids/did:web:consumer.dataspaces.localhost/did.json` |
-| Trust anchor | `did:web:trust-anchor.dataspaces.localhost` | `GET /dids/did:web:trust-anchor.dataspaces.localhost/did.json` |
+| Participant | DID | Resolution path |
+|-------------|-----|----------------|
+| Provider | `did:web:provider.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:provider.dataspaces.localhost/did.json` |
+| Consumer | `did:web:consumer.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:consumer.dataspaces.localhost/did.json` |
+| Trust anchor | `did:web:trust-anchor.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:trust-anchor.dataspaces.localhost/did.json` |
 
-Identity lifecycle:
+### DID lifecycle
 
-- The trust anchor DID is bootstrapped via `ir-cli bootstrap` (first-time setup, idempotent)
-- Participant DIDs are created via `ir-cli participant add` or `POST /admin/participants`
-- The identity-registry auto-generates EC P-256 key pairs when creating a DID
+- **Trust anchor bootstrap:** `ir-cli bootstrap` creates the trust anchor DID with an auto-generated EC P-256 key pair and a self-issued MembershipCredential (idempotent, first-time setup)
+- **Participant registration:** `ir-cli participant add` or `POST /admin/participants` creates a participant DID with an auto-generated EC P-256 key pair and an auto-issued MembershipCredential
+- **Key rotation:** `ir-cli key rotate` or `POST /admin/keys/rotate/{did}` deactivates the current key, generates a new one with an incremented key index, and updates the DID document
+
+Private keys are stored in the identity-registry's database and never leave the identity-registry process. EDC connectors access identity operations (STS signing, credential presentations) through the identity-registry's HTTP API.
 
 ### DID document structure
 
@@ -39,15 +41,6 @@ Each DID document contains an EC P-256 `JsonWebKey2020` verification method with
 }
 ```
 
-### Key generation
-
-Key generation is handled by the identity-registry's `crypto.py` service (EC P-256 via the `cryptography` library):
-
-- `ir-cli bootstrap` creates the trust-anchor key pair (stored in the database only, not exported to the filesystem)
-- `ir-cli participant add` creates a participant key pair and exports the private key to the shared `identity-data` volume
-- Key rotation via `ir-cli key rotate` or `POST /admin/keys/rotate/{did}` (deactivates the old key, generates a new one with incremented key index, and re-exports)
-- Private keys are exported to `{EXPORT_BASE_PATH}/keys/{name}-key.json` (default `EXPORT_BASE_PATH=/data`)
-
 ---
 
 ## Verifiable Credentials
@@ -56,13 +49,12 @@ Each participant holds a `MembershipCredential` VC issued by the trust anchor. T
 
 ### Issuance
 
-VCs are issued by the identity-registry service:
+VCs are issued by the identity-registry:
 
 - `MembershipCredential` VCs are auto-issued when registering a participant via `ir-cli participant add` or `POST /admin/participants`
 - Additional membership VCs can be issued via `ir-cli credential issue-membership` or `POST /admin/credentials/membership`
 - `DataSubjectCredential` VCs are issued via `ir-cli credential issue-data-subject` or `POST /admin/credentials/data-subject`
 - All credentials include a `StatusList2021Entry` for revocation tracking
-- Credentials are exported to the shared `identity-data` volume at `{EXPORT_BASE_PATH}/credentials/{name}/membership-vc.json`
 
 ### VC structure
 
@@ -103,17 +95,17 @@ VCs are issued by the identity-registry service:
 
 ---
 
-## Security Token Service (STS)
+## STS token signing
 
-Each participant runs their own STS instance (`services/sts/`). The STS issues ES256-signed Self-Issued JWTs consumed by EDC during DCP handshake.
-
-STS instances load private keys from the shared `identity-data` volume (exported by identity-registry) rather than from static key files.
+EDC connectors obtain Self-Issued (SI) tokens by calling the identity-registry directly. The identity-registry signs ES256 JWTs using the participant's database-stored private key.
 
 ### Token flow
 
 1. EDC needs to authenticate to a counterparty during DSP negotiation
-2. EDC calls `POST /token` on the participant's STS (OAuth2 `client_credentials`)
-3. STS returns an ES256 JWT with claims:
+2. EDC calls `POST /sts/{did}/token` on the identity-registry (OAuth2 `client_credentials` grant)
+3. The identity-registry looks up the participant's private key in its database, signs an ES256 JWT, and returns it
+
+### SI token claims
 
 ```json
 {
@@ -127,43 +119,18 @@ STS instances load private keys from the shared `identity-data` volume (exported
 }
 ```
 
-### STS endpoints
-
-| Endpoint | Purpose |
-|----------|---------|
-| `POST /token` | Issue SI token (client_credentials grant) |
-| `GET /jwks` | Public key (JWKS format) |
-| `GET /.well-known/openid-configuration` | OIDC discovery |
-| `GET /health` | Liveness check |
-
-### STS instances
-
-| Instance | Port | DID |
-|----------|------|-----|
-| `sts-provider` | 38080 | `did:web:provider.dataspaces.localhost` |
-| `sts-consumer` | 38081 | `did:web:consumer.dataspaces.localhost` |
-
 ---
 
-## VC Wallet (Credential Service)
+## Credential presentations
 
-Each participant runs a VC wallet instance (`services/vc-wallet/`) that holds their pre-issued VCs and returns them as Verifiable Presentations when queried by EDC.
-
-Wallets load credentials from the shared `identity-data` volume exported by identity-registry, rather than from static files.
+EDC connectors obtain Verifiable Presentations by calling the identity-registry directly. The identity-registry builds VPs from the participant's database-stored VCs.
 
 ### Presentation query flow
 
-1. During DSP negotiation, EDC calls `POST /api/v1/presentations/query`
-2. The wallet wraps all held VCs in a `VerifiablePresentation`
+1. During DSP negotiation, EDC calls `POST /credentials/{did}/presentations/query` on the identity-registry
+2. The identity-registry retrieves the participant's VCs from its database, wraps them in a `VerifiablePresentation`, and returns it
 3. EDC includes the VP in the DSP message
-4. The counterparty verifies the VP against the sender's DID document
-
-### Wallet instances
-
-| Instance | Port | DID | Credentials path |
-|----------|------|-----|-----------------|
-| `vc-wallet-provider` | 38082 | `did:web:provider.dataspaces.localhost` | `identity-data/credentials/provider/` |
-| `vc-wallet-consumer` | 38083 | `did:web:consumer.dataspaces.localhost` | `identity-data/credentials/consumer/` |
+4. The counterparty verifies the VP against the sender's DID document (resolved via Caddy -> identity-registry)
 
 ---
 
@@ -173,33 +140,49 @@ When a consumer requests a dataset from a provider, the full DCP verification se
 
 ```
 Consumer EDC                                     Provider EDC
-    │                                                 │
-    │  1. Get SI token from STS                       │
-    ├─→ sts-consumer POST /token                      │
-    │                                                 │
-    │  2. Get VP from wallet                          │
-    ├─→ vc-wallet-consumer POST /presentations/query  │
-    │                                                 │
-    │  3. Send DSP CatalogRequest with SI token + VP  │
-    ├────────────────────────────────────────────────→ │
-    │                                                 │
-    │                     4. Verify SI token signature │
-    │                        (resolve consumer DID)    │
-    │                     5. Verify VP + VC signatures │
-    │                        (check trust anchor DID)  │
-    │                     6. Check trusted issuer list │
-    │                     7. Evaluate ODRL constraints │
-    │                        (AccessScope, Consent)    │
-    │                                                 │
-    │  8. Return catalog / agreement                  │
-    │←────────────────────────────────────────────────┤
+    |                                                 |
+    |  1. Get SI token from identity-registry         |
+    |---> POST /sts/{consumer-did}/token              |
+    |                                                 |
+    |  2. Get VP from identity-registry               |
+    |---> POST /credentials/{consumer-did}/           |
+    |     presentations/query                         |
+    |                                                 |
+    |  3. Send DSP request with SI token + VP         |
+    |------------------------------------------------>|
+    |                                                 |
+    |                     4. Verify SI token signature |
+    |                        Caddy -> identity-reg    |
+    |                        GET /dids/{consumer-did}/|
+    |                        did.json                 |
+    |                                                 |
+    |                     5. Verify VC issuer          |
+    |                        Caddy -> identity-reg    |
+    |                        GET /dids/{trust-anchor- |
+    |                        did}/did.json            |
+    |                                                 |
+    |                     6. Check trusted issuer list |
+    |                                                 |
+    |                     7. Evaluate ODRL constraints |
+    |                        AccessScopeFunction -->  |
+    |                        ds-connector -->          |
+    |                        identity-registry        |
+    |                        /participants/{did}/check |
+    |                                                 |
+    |  8. Return DSP response                         |
+    |<------------------------------------------------|
 ```
 
-Notes on identity-registry integration:
+### Step details
 
-- **Step 4** (resolve consumer DID): the consumer's DID document is resolved from the identity-registry at `GET /dids/{did}/did.json`
-- **Step 5** (check trust anchor DID): the trust anchor's DID document is also served by identity-registry, allowing signature verification against the trust anchor's public key
-- Keys and VCs referenced throughout the flow are dynamically managed by identity-registry (creation, rotation, revocation)
+1. **SI token:** Consumer EDC calls `POST /sts/{consumer-did}/token` on the identity-registry. The identity-registry signs an ES256 JWT using the consumer's database-stored private key.
+2. **VP:** Consumer EDC calls `POST /credentials/{consumer-did}/presentations/query` on the identity-registry. The identity-registry builds a VP from the consumer's database-stored VCs.
+3. **DSP request:** Consumer EDC sends the DSP CatalogRequest (or negotiation message) with the SI token and VP attached.
+4. **SI token verification:** Provider EDC resolves the consumer's DID document via Caddy -> identity-registry (`GET /dids/{consumer-did}/did.json`) and verifies the SI token signature against the consumer's public key.
+5. **VC issuer verification:** Provider EDC resolves the trust anchor's DID document via Caddy -> identity-registry (`GET /dids/{trust-anchor-did}/did.json`) and verifies the VC signatures against the trust anchor's public key.
+6. **Trusted issuer check:** Provider EDC checks that the VC issuer DID is in its configured trusted issuer list.
+7. **ODRL constraint evaluation:** Provider EDC's AccessScopeFunction calls ds-connector, which calls the identity-registry at `/participants/{did}/check` for scope validation.
+8. **DSP response:** Provider EDC returns the catalog, agreement, or transfer response.
 
 ### EDC trust configuration
 
@@ -212,10 +195,17 @@ edc.iam.trustedissuer.0.id=did:web:trust-anchor.dataspaces.localhost
 
 ---
 
+## EDR signing key separation (DSSC BB05)
+
+EDR (Endpoint Data Reference) tokens use a separate non-DID key stored in the EDC vault, distinct from the DID-bound keys managed by the identity-registry. This separation ensures that BB05 (Data Exchange) signing is independent from BB02 (Identity & Attestation) key material.
+
+---
+
 ## DSSC Blueprint alignment
 
 | Building Block | Implementation |
 |---------------|---------------|
-| BB01 (Trust Framework) | Trust anchor issues membership VCs; EDC verifies issuer chain |
-| BB02 (Identity & Attestation) | `did:web:` URIs with `JsonWebKey2020`, ES256 SI tokens; identity-registry manages DID lifecycle, key generation, and VC issuance |
-| DCP | Full Dataspace Credential Protocol via EDC `controlplane-dcp-bom` |
+| BB01 (Trust Framework) | Local trust anchor created via `ir-cli bootstrap`; trust anchor issues MembershipCredentials; EDC verifies issuer chain |
+| BB02 (Identity & Attestation) | identity-registry: DID lifecycle, key management, VC issuance, STS token signing, credential presentation service; `did:web:` URIs with `JsonWebKey2020` and ES256 signatures |
+| BB05 (Data Exchange) | EDC connectors with DCP; separate EDR signing keys in EDC vault (independent from BB02 identity keys) |
+| DCP | Full Dataspace Credential Protocol: EDC connectors call identity-registry for SI tokens and VPs; Caddy proxies DID resolution to identity-registry |

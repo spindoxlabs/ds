@@ -8,7 +8,7 @@ RUN uv venv /opt/venv && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
       fastapi uvicorn[standard] httpx pydantic pydantic-settings \
       "sqlalchemy[asyncio]" asyncpg alembic \
-      cryptography pyjwt typer pyyaml
+      cryptography pyjwt typer pyyaml python-multipart
 
 # ---- Runtime ----
 FROM python:3.12-slim AS runtime

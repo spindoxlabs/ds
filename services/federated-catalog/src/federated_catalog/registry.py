@@ -1,11 +1,15 @@
-"""Participant registry — reads providers and DCAT sources from YAML."""
+"""Participant registry — reads providers from identity-registry API or YAML."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -20,6 +24,22 @@ class DcatSource:
     url: str
     type: str = "dcat-ap"
     defaults: dict[str, Any] = field(default_factory=dict)
+
+
+def load_providers_from_registry(identity_registry_url: str) -> list[Provider]:
+    """Fetch providers from the identity-registry /participants API."""
+    url = f"{identity_registry_url.rstrip('/')}/participants"
+    try:
+        resp = httpx.get(url, timeout=10.0)
+        resp.raise_for_status()
+        return [
+            Provider(id=p["did"], dsp_address=p.get("dsp_address") or "")
+            for p in resp.json()
+            if p.get("role") == "provider" and p.get("dsp_address")
+        ]
+    except httpx.HTTPError as exc:
+        log.error("Failed to fetch providers from identity-registry: %s", exc)
+        return []
 
 
 def load_providers(yaml_path: str) -> list[Provider]:

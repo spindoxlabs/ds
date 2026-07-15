@@ -23,11 +23,6 @@ class Settings(BaseSettings):
         description="Fernet key for encrypting private keys at rest",
     )
 
-    export_base_path: str = Field(
-        default="/data",
-        description="Base path for exporting keys and credentials to shared volume",
-    )
-
     oidc_issuer_url: str | None = Field(
         default=None,
         description="OIDC issuer URL for JWT verification on admin endpoints",

@@ -18,8 +18,11 @@ class Settings(BaseSettings):
     # ds-connector base URL — all DSP catalog calls go through it
     connector_url: str = "http://172.17.0.1:30001"
 
-    # Path to participants.yaml (shared with ds-connector)
-    participants_yaml: str = "governance/participants.yaml"
+    # Identity-registry URL for fetching participant list
+    identity_registry_url: str = "http://identity-registry:30005"
+
+    # Fallback: Path to participants.yaml (used only if identity_registry_url is empty)
+    participants_yaml: str = ""
 
     # Crawl interval in seconds
     crawl_interval: int = 300

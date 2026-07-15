@@ -11,41 +11,67 @@ Built on Eclipse Dataspace Connector (v0.16.0) with Python/FastAPI orchestration
 ```
 dataspaces/
 ├── services/
-│   ├── connector/          Python/FastAPI — EDC orchestration, consent, governance sync
-│   ├── provenance/         Python/FastAPI — W3C PROV-O event logging and lineage
-│   ├── portal/             SvelteKit — web frontend for all participant roles
-│   ├── governance/         Python library — GovernanceRuleV2, ODRL mapper
-│   ├── sts/                Python/FastAPI — Security Token Service (ES256 SI JWTs)
-│   ├── vc-wallet/          Python/FastAPI — DCP Credential Service (VP queries)
-│   ├── federated-catalog/  Python/FastAPI — DCAT-AP catalog crawler
-│   ├── edc-extensions/     Java — custom ODRL constraint functions for EDC
-│   ├── edc-connector/      Gradle — EDC fat JAR build (DCP-enabled, v0.16.0)
-│   └── caddy/              Config — reverse proxy, TLS, DID document hosting
-├── docs/                   Architecture docs, DSSC blueprint reference
-├── scripts/                Key generation, VC issuance
-├── data/                   Runtime data (gitignored) — keys, credentials, caddy PKI
-├── docker-compose.yml      Shared infra — caddy + postgres
-├── Taskfile.yml            Root orchestration
-├── build.gradle.kts        Gradle root for Java subprojects
-└── settings.gradle.kts     Includes edc-extensions + edc-connector
+│   ├── connector/              Python/FastAPI — EDC orchestration, consent, governance sync
+│   ├── provenance/             Python/FastAPI — W3C PROV-O event logging and lineage
+│   ├── portal/                 SvelteKit — web frontend for all participant roles
+│   ├── governance/             Python library — GovernanceRuleV2, ODRL mapper
+│   ├── identity-registry/      Python/FastAPI — DID lifecycle, STS, credential service, participant registry
+│   ├── federated-catalog/      Python/FastAPI — DCAT-AP catalog crawler
+│   ├── dataset-api-mock/       Python/FastAPI — mock dataset API for dev
+│   ├── dataset-api-fiware-adapter/  Python — FIWARE NGSI-LD adapter
+│   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
+│   ├── edc-connector/          Gradle — EDC fat JAR build (DCP-enabled, v0.16.0)
+│   ├── caddy/                  Config — reverse proxy, TLS, DID document routing
+│   └── keycloak/               Config — OIDC realm import for dev
+├── docs/                       Architecture docs, DSSC blueprint reference
+├── scripts/                    Bootstrap, compliance validation, backup
+├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
+├── docker-compose.yml          Shared infra — caddy, postgres, identity-registry, keycloak
+├── docker-compose.producer.yml Producer participant stack
+├── docker-compose.consumer.yml Consumer participant stack
+├── Taskfile.yml                Root orchestration
+├── build.gradle.kts            Gradle root for Java subprojects
+└── settings.gradle.kts         Includes edc-extensions + edc-connector
 ```
 
-Each service has its own `AGENTS.md`, `README.md`, `Dockerfile`, `docker-compose.yml`, and `Taskfile.yml`.
+Each service has its own `Taskfile.yml` and `Dockerfile`. Most have an `AGENTS.md` and `README.md`.
 
 ## Service interaction map
 
 ```
-Portal (30004) ──→ ds-connector (30001) ──→ EDC Provider/Consumer
-                                        ──→ ds-provenance (30000)
-                                        ──→ Federated Catalog (30003)
+Portal (30004) ──→ ds-connector (30001/31001) ──→ EDC Provider/Consumer
+                                               ──→ ds-provenance (30000/31000)
+                                               ──→ Federated Catalog (30003)
 
 EDC Provider ←──DSP──→ EDC Consumer
-  ├──→ STS (38080/38081)         SI token issuance
-  ├──→ VC-wallet (38082/38083)   VP queries
-  └──→ ds-connector /internal/*  ODRL constraint evaluation
+  ├──→ identity-registry (30005)   STS token issuance (/sts/{did}/token)
+  ├──→ identity-registry (30005)   VP queries (/credentials/{did}/presentations/query)
+  └──→ ds-connector /internal/*    ODRL constraint evaluation
+
+identity-registry (30005)
+  ├── DID documents      Caddy rewrites /.well-known/did.json → /dids/{did}/did.json
+  ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
+  ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
+  ├── Participant registry GET /participants, GET /participants/{did}/check
+  └── StatusList2021     GET /status/{list_id}
+
+Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
+ds-connector ──→ identity-registry /participants (HttpParticipantRegistry with TTL cache)
 
 dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + consent checks
 ```
+
+## Compose topology
+
+Three compose files form the full stack:
+
+| File | Services | Purpose |
+|------|----------|---------|
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
+| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer | Producer participant |
+| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer, ds-portal | Consumer participant |
+
+All containers share the `dataspaces` bridge network.
 
 ## Tech stack
 
@@ -53,12 +79,46 @@ dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + co
 |-------|-----------|
 | Python services | FastAPI, SQLAlchemy async, Alembic, Pydantic, httpx |
 | Frontend | SvelteKit 2.0, Svelte 5.0, Tailwind CSS 4.0, Cytoscape.js |
-| Identity | Eclipse EDC 0.16.0, `did:web:`, DCP, ES256 JWTs |
-| Database | PostgreSQL 17.4 (one DB per service) |
-| Proxy | Caddy 2 (local HTTPS, DID hosting) |
+| Identity (BB02) | identity-registry: DID lifecycle, STS (ES256 SI JWTs), DCP credential service, participant registry, StatusList2021 |
+| Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
+| Database | PostgreSQL 17.4 (one DB per service, all on port 35432) |
+| Proxy | Caddy 2 (local HTTPS, DID document routing to identity-registry) |
 | Auth | Keycloak OIDC via Auth.js |
 | Build | uv (Python), npm (Node), Gradle (Java), Taskfile |
 | Containers | Docker Compose, multi-stage Dockerfiles |
+
+## Port scheme
+
+| Port | Service |
+|------|---------|
+| 30000 | ds-provenance (producer) |
+| 30001 | ds-connector (producer) |
+| 30002 | dataset-api (producer) |
+| 30003 | federated-catalog (producer) |
+| 30004 | portal (consumer) |
+| 30005 | identity-registry (shared infra) |
+| 31000 | ds-provenance (consumer) |
+| 31001 | ds-connector (consumer) |
+| 35432 | PostgreSQL |
+| 8080 | Keycloak |
+| 9000 | Caddy consumer gateway |
+| 9010 | Caddy producer gateway |
+| 19xxx | EDC provider (management, protocol, public, control) |
+| 29xxx | EDC consumer (management, protocol, public, control) |
+| 30900+ | debugpy ports |
+
+## Identity architecture
+
+The identity-registry is a centralized trust anchor service (DSSC BB02 — Identity & Attestation). It replaces previously separate STS, VC-wallet, and static DID file services.
+
+**Key principle:** DID private keys never leave the identity-registry. The EDC vault contains only a separate EDR signing key used for Endpoint Data Reference tokens.
+
+How DID resolution works:
+1. EDC resolves `did:web:provider.dataspaces.localhost` by fetching `http://provider.dataspaces.localhost/.well-known/did.json`
+2. Caddy rewrites this to `/dids/did:web:provider.dataspaces.localhost/did.json` and proxies to identity-registry
+3. The identity-registry builds and returns the DID document from its database
+
+The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
 
 ## Coding conventions
 
@@ -90,7 +150,7 @@ dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + co
 ### General
 
 - Each service runs via `task run` (no global orchestration needed for dev)
-- Port scheme: 30000+ for services, 30900+ for debuggers, 19xxx/29xxx for EDC
+- Port scheme: 30000+ for Python services, 30900+ for debuggers, 19xxx/29xxx for EDC
 - All `*.dataspaces.localhost` domains resolve locally via Caddy
 - No `.env` files required — all defaults baked into settings classes
 - Docker network: `dataspaces` (bridge), all containers share it
@@ -113,17 +173,17 @@ See `docs/governance-and-odrl.md` for the full pipeline documentation.
 
 ```bash
 # One-time setup
-bash scripts/gen-keys.sh          # EC P-256 key pairs
-python3 scripts/issue-vcs.py      # membership VCs
 task proxy:hosts                  # /etc/hosts entries (sudo)
 task proxy:trust-ca               # trust Caddy CA (sudo)
 
-# Start everything
+# Start everything (infra + identity bootstrap + producer + consumer)
 task start
 
-# Or start shared infra + individual service stacks
-docker compose up -d
-task services:start
+# Or step by step:
+task infra:start                  # shared infra (postgres, caddy, identity-registry, keycloak)
+task identity:bootstrap           # trust anchor + participant registration
+task producer:start               # producer stack (EDC + connector + provenance + dataset-api + catalog)
+task consumer:start               # consumer stack (EDC + connector + provenance + portal)
 ```
 
 ## Key documentation
@@ -149,5 +209,7 @@ task services:start
 | Add a new portal page | `services/portal/src/routes/` |
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
 | Change consent behavior | `services/connector/src/connector/services/consent_service.py` |
-| Add a new participant | `services/connector/governance/participants.yaml` + `services/caddy/did/` + `scripts/` |
+| Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
+| Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
+| Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |

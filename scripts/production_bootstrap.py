@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Bootstrap local production-like secrets, DID documents and EDC config."""
+"""Bootstrap local production-like secrets, DID documents and EDC config.
+
+DEPRECATED: This script pre-dates the identity-registry consolidation.
+Keys, DIDs, and VCs are now managed by the identity-registry service.
+Use `ir-cli bootstrap` and `ir-cli participant add` instead.
+This script is retained for reference only and will be removed in a future release.
+"""
 from __future__ import annotations
 
 import argparse

@@ -1,14 +1,30 @@
 # ds-identity-registry
 
-Manages participant identities, DIDs, Verifiable Credentials, and key material for the dataspace. Replaces static key files and manual VC issuance scripts.
+Centralized identity service for the dataspace. Manages participant identities, DID lifecycle, Verifiable Credentials, key material, and token issuance. Provides STS and DCP Credential Service endpoints consumed by EDC connectors.
 
 Port: `30005`
+
+DSSC alignment: BB02 (Identity & Attestation) — participant identity management, DID resolution, VC lifecycle, trust anchor bootstrapping.
 
 ---
 
 ## Technology
 
-Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptography` / `pyjwt`
+Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptography` / `pyjwt` / EC P-256 / ES256
+
+---
+
+## What it does
+
+| Capability | Description |
+|------------|-------------|
+| DID lifecycle | Generates EC P-256 key pairs, creates `did:web` DIDs, serves DID documents at `GET /dids/{did}/did.json` |
+| VC issuance | Issues `MembershipCredential` and `DataSubjectCredential` VCs, signed by the trust anchor |
+| STS | OAuth2 `client_credentials` grant at `POST /sts/{did}/token` — signs ES256 Self-Issued JWTs for DCP authentication |
+| Credential Service (DCP) | `POST /credentials/{did}/presentations/query` — builds Verifiable Presentations for DCP negotiation |
+| Participant registry | Manages participants with roles, scopes, DSP addresses |
+| StatusList2021 | W3C StatusList2021 revocation at `GET /status/{list-id}` |
+| Key management | Key rotation, key deactivation. Private keys never leave the service. |
 
 ---
 
@@ -19,50 +35,28 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 - `keys` — EC P-256 key pairs (JSONB for private_jwk/public_jwk), owner_did, kid, active flag, rotation tracking
 - `dids` — DID records with type (participant/user), service_endpoints (JSONB), FK to keys
 - `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/revoked), StatusList2021 index
-- `participants` — participant registry with DID (FK), role, allowed_scopes (JSONB), dsp_address
+- `participants` — participant registry with DID (FK), role, allowed_scopes (JSONB), dsp_address, sts_client_secret
 - `keycloak_mappings` — DID-to-Keycloak user mappings (realm, user_id, email, subject_id)
 - `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose (revocation)
 
 ---
 
-## Services layer
+## REST API — 3 trust tiers
 
-### `crypto.py`
-
-EC P-256 key generation (`generate_key_pair`), JWK serialization, ES256 signing (`sign_es256`), JWS creation (`create_jws`), `generate_credential_id` (urn:uuid), `next_key_index` for rotation.
-
-### `did.py`
-
-`build_did_document` — W3C DID document builder. Supports participant and user types. Participant DIDs get an `authentication` array. Includes `assertionMethod`. Optional `service` entries from service_endpoints.
-
-### `vc.py`
-
-`build_membership_credential` + `build_data_subject_credential` builders. `sign_credential` adds `JsonWebSignature2020` proof using ES256 JWS. Includes `credentialStatus` with StatusList2021Entry.
-
-### `status_list.py`
-
-BITSTRING_SIZE = 16384 (16 KB = 131072 slots). Functions: `create_bitstring`, `set_bit`, `get_bit`, `encode_bitstring` (zlib + base64), `decode_bitstring`, `next_available_index`, `build_status_list_credential`.
-
-### `export.py`
-
-`export_private_key(base_path, participant_name, private_jwk)` writes to `{base_path}/keys/{name}-key.json`. `export_credential(base_path, participant_name, filename, credential_json)` writes to `{base_path}/credentials/{name}/{filename}`.
-
----
-
-## REST API — 3 trust levels
-
-### Public (no auth)
+### Public (no auth) — must be reachable for W3C did:web resolution
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/dids/{did}/did.json` | Resolve DID document (returns `application/did+ld+json`) |
-| `GET` | `/status/{list-id}` | StatusList2021 credential (returns `application/ld+json`) |
+| `GET` | `/dids/{did}/did.json` | Resolve DID document (`application/did+ld+json`) |
+| `GET` | `/status/{list-id}` | StatusList2021 credential (`application/ld+json`) |
 | `GET` | `/health` | Liveness check |
 
-### Internal (no auth, network-restricted)
+### Internal (no auth, Docker DNS only) — called by EDC connectors and ds-connector
 
 | Method | Path | Purpose |
 |--------|------|---------|
+| `POST` | `/sts/{did}/token` | Issue Self-Issued JWT (OAuth2 client_credentials, ES256) |
+| `POST` | `/credentials/{did}/presentations/query` | Build VP for DCP presentation query |
 | `GET` | `/participants` | List all active participants |
 | `GET` | `/participants/{did}/check?scope=` | Check if participant is allowed for scope |
 
@@ -109,13 +103,45 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 
 ---
 
+## Services layer
+
+### `crypto.py`
+
+EC P-256 key generation (`generate_key_pair`), JWK serialization, ES256 signing (`sign_es256`), JWS creation (`create_jws`), `generate_credential_id` (urn:uuid), `next_key_index` for rotation.
+
+### `did.py`
+
+`build_did_document` — W3C DID document builder. Supports participant and user types. Participant DIDs get `authentication` + `assertionMethod` arrays. Optional `service` entries (DSPEndpoint, CredentialService) from service_endpoints.
+
+### `vc.py`
+
+`build_membership_credential` + `build_data_subject_credential` builders. `sign_credential` adds `JsonWebSignature2020` proof using ES256 JWS. Includes `credentialStatus` with StatusList2021Entry.
+
+### `token.py`
+
+`create_si_token` — signs Self-Issued JWTs for DCP authentication. Loads the participant's private key from the DB, builds claims with `iss`, `sub`, `aud`, `bearer_access_scope`, signs with ES256. TTL: 300s.
+
+### `presentation.py`
+
+`build_presentation_response` — builds DCP PresentationResponseMessage containing a VP JWT. Matches requested credential types from `presentationDefinition.input_descriptors`, wraps matching VC JWS tokens in a VP, signs with the participant's key.
+
+### `status_list.py`
+
+BITSTRING_SIZE = 16384 (16 KB = 131072 slots). Functions: `create_bitstring`, `set_bit`, `get_bit`, `encode_bitstring` (zlib + base64), `decode_bitstring`, `next_available_index`, `build_status_list_credential`.
+
+### `export.py`
+
+`export_private_key(base_path, participant_name, private_jwk)` writes to `{base_path}/keys/{name}-key.json`. `export_credential(base_path, participant_name, filename, credential_json)` writes to `{base_path}/credentials/{name}/{filename}`.
+
+---
+
 ## Configuration
 
 Env prefix: `IDENTITY_REGISTRY_`
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `IDENTITY_REGISTRY_DATABASE_URL` | `postgresql+asyncpg://...` | PostgreSQL connection string |
+| `IDENTITY_REGISTRY_DATABASE_URL` | `postgresql+asyncpg://...172.17.0.1:35432/...` | PostgreSQL connection string |
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-...` | Fernet key for encrypting private keys at rest |
 | `IDENTITY_REGISTRY_EXPORT_BASE_PATH` | `/data` | Base path for key/credential export to shared volume |
 | `IDENTITY_REGISTRY_OIDC_ISSUER_URL` | `None` | OIDC issuer for JWT verification (admin endpoints) |
@@ -131,125 +157,18 @@ Env prefix: `IDENTITY_REGISTRY_`
 
 ---
 
-## DID document structure
-
-```json
-{
-  "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/suites/jws-2020/v1"],
-  "id": "did:web:provider.dataspaces.localhost",
-  "verificationMethod": [{
-    "id": "did:web:provider.dataspaces.localhost#key-1",
-    "type": "JsonWebKey2020",
-    "controller": "did:web:provider.dataspaces.localhost",
-    "publicKeyJwk": { "kty": "EC", "crv": "P-256", "x": "...", "y": "...", "kid": "...", "use": "sig" }
-  }],
-  "assertionMethod": ["did:web:provider.dataspaces.localhost#key-1"],
-  "authentication": ["did:web:provider.dataspaces.localhost#key-1"]
-}
-```
-
----
-
-## MembershipCredential structure
-
-```json
-{
-  "@context": [
-    "https://www.w3.org/2018/credentials/v1",
-    "https://w3id.org/security/suites/jws-2020/v1",
-    "https://dataspaces.localhost/ns/credentials/v1"
-  ],
-  "id": "urn:uuid:...",
-  "type": ["VerifiableCredential", "MembershipCredential"],
-  "issuer": "did:web:trust-anchor.dataspaces.localhost",
-  "issuanceDate": "2026-07-13T12:00:00Z",
-  "expirationDate": "2027-07-13T12:00:00Z",
-  "credentialSubject": {
-    "id": "did:web:provider.dataspaces.localhost",
-    "memberOf": "https://dataspaces.localhost/dataspace",
-    "role": "Provider",
-    "allowedScopes": ["dataspaces.query"]
-  },
-  "credentialStatus": {
-    "id": "https://trust-anchor.dataspaces.localhost/status/1#0",
-    "type": "StatusList2021Entry",
-    "statusPurpose": "revocation",
-    "statusListIndex": "0",
-    "statusListCredential": "https://trust-anchor.dataspaces.localhost/status/1"
-  },
-  "proof": {
-    "type": "JsonWebSignature2020",
-    "created": "2026-07-13T12:00:00Z",
-    "verificationMethod": "did:web:trust-anchor.dataspaces.localhost#key-1",
-    "proofPurpose": "assertionMethod",
-    "jws": "..."
-  }
-}
-```
-
----
-
-## Participant registration flow
-
-```mermaid
-sequenceDiagram
-    participant Admin
-    participant IR as identity-registry
-    participant DB as PostgreSQL
-    participant Vol as Shared Volume
-
-    Admin->>IR: ir-cli bootstrap
-    IR->>IR: generate_key_pair (EC P-256)
-    IR->>DB: INSERT trust-anchor key + DID
-    
-    Admin->>IR: ir-cli participant add --did did:web:provider...
-    IR->>IR: generate_key_pair (EC P-256)
-    IR->>DB: INSERT key + DID + participant
-    IR->>Vol: export private key to /data/keys/provider-key.json
-    IR->>IR: build_membership_credential
-    IR->>IR: sign_credential (ES256 JWS)
-    IR->>DB: INSERT credential
-    IR->>Vol: export VC to /data/credentials/provider/membership-vc.json
-```
-
----
-
-## Data-subject credential issuance + Keycloak sync
-
-```mermaid
-sequenceDiagram
-    participant Client
-    participant IR as identity-registry
-    participant DB as PostgreSQL
-    participant KC as Keycloak
-
-    Client->>IR: POST /admin/credentials/data-subject
-    IR->>DB: Lookup trust-anchor key
-    IR->>IR: Generate user DID (did:web:users.dataspaces.localhost:{subject_id})
-    IR->>IR: generate_key_pair (if new user)
-    IR->>DB: INSERT key + DID (if new)
-    IR->>IR: build_data_subject_credential
-    IR->>IR: sign_credential (ES256 JWS)
-    IR->>DB: INSERT credential + StatusList2021 index
-    IR-->>Client: 201 {subjectDid, credentialId}
-
-    Client->>IR: POST /admin/keycloak/sync
-    IR->>DB: UPSERT keycloak_mapping
-    IR->>KC: PUT /admin/realms/{realm}/users/{id}
-    Note over IR,KC: Sets dataspace_did user attribute
-    IR-->>Client: 200 {status: synced}
-```
-
----
-
 ## Development
 
 ```bash
 cd services/identity-registry
-uv sync
-uv run uvicorn identity_registry.main:create_app --factory --port 30005
-uv run alembic upgrade head
-uv run pytest
+task setup                # uv sync
+task db:migrate           # alembic upgrade head
+task run                  # uvicorn on :30005 with hot-reload
+task debug                # debugpy on :30905 + uvicorn on :30005
+task test                 # pytest
+task lint                 # ruff check
+task format               # ruff format
+task type-check           # mypy
 ```
 
 ---
@@ -259,15 +178,5 @@ uv run pytest
 Two-stage Dockerfile (builder + runtime). Port 30005, non-root `app` user. Healthcheck via `/health`.
 
 ```bash
-# Built as part of the connector stack
-docker compose -f services/connector/docker-compose.yml up -d
+docker compose -f services/identity-registry/docker-compose.yml up -d
 ```
-
----
-
-## DSSC Blueprint alignment
-
-| Building Block | Implementation |
-|---------------|---------------|
-| BB01 (Trust Framework) | Trust anchor bootstrapping, MembershipCredential issuance |
-| BB02 (Identity & Attestation) | `did:web:` lifecycle, EC P-256 keys, StatusList2021 revocation |

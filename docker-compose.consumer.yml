@@ -22,7 +22,6 @@ services:
       ]
     volumes:
       - ./services/connector/config:/config:ro
-      - ./services/connector/governance:/governance:ro
     ports:
       - "29193:29193"
       - "29194:29194"
@@ -31,11 +30,6 @@ services:
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       EDC_RECEIVER_HTTP_ENDPOINT: http://host.docker.internal:31001/webhooks/transfer-process
-    depends_on:
-      sts-consumer:
-        condition: service_healthy
-      vc-wallet-consumer:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
       interval: 10s
@@ -47,50 +41,6 @@ services:
       - "consumer.dataspaces.localhost:host-gateway"
       - "trust-anchor.dataspaces.localhost:host-gateway"
       - "users.dataspaces.localhost:host-gateway"
-    networks: [dataspaces]
-
-  # ── STS consumer ─────────────────────────────────────────────────────────────
-  sts-consumer:
-    build:
-      context: .
-      dockerfile: services/sts/Dockerfile
-    ports:
-      - "38081:8080"
-    environment:
-      STS_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
-      STS_PRIVATE_KEY_PATH: /config/consumer-key.json
-      STS_CLIENT_ID: did:web:consumer.dataspaces.localhost
-      STS_CLIENT_SECRET: ${STS_CONSUMER_SECRET:-insecure-dev-secret}
-    volumes:
-      - ./services/connector/config:/config:ro
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)\""]
-      interval: 10s
-      start_period: 10s
-      retries: 10
-    networks: [dataspaces]
-
-  # ── VC wallet consumer ───────────────────────────────────────────────────────
-  vc-wallet-consumer:
-    build:
-      context: .
-      dockerfile: services/vc-wallet/Dockerfile
-    ports:
-      - "38083:8081"
-    environment:
-      VC_WALLET_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
-      VC_WALLET_CREDENTIALS_PATH: /credentials/consumer
-      VC_WALLET_PRIVATE_KEY_PATH: /config/consumer-key.json
-      VC_WALLET_CREDENTIAL_STATUS_PATH: /credentials/status-list.json
-      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:-}
-    volumes:
-      - ./data/credentials:/credentials:ro
-      - ./services/connector/config:/config:ro
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)\""]
-      interval: 10s
-      start_period: 10s
-      retries: 10
     networks: [dataspaces]
 
   # ── Database init ────────────────────────────────────────────────────────────
@@ -164,9 +114,8 @@ services:
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
       CONNECTOR_PROVENANCE_URL: http://host.docker.internal:31000
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_consumer
-      CONNECTOR_PARTICIPANTS_REGISTRY_PATH: /governance/participants.yaml
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
-      CONNECTOR_TRUST_ANCHOR_KEY_PATH: /config/trust-anchor-key.json
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://identity-registry:30005
     depends_on:
       edc-consumer:
         condition: service_healthy
@@ -176,8 +125,6 @@ services:
         condition: service_healthy
     volumes:
       - ./services/connector/governance:/governance:ro
-      - ./services/connector/config:/config:ro
-      - ./data/credentials:/credentials:ro
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:31001/health', timeout=2)\""]
       interval: 10s

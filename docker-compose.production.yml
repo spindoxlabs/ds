@@ -6,10 +6,6 @@
 secrets:
   edc_api_key:
     file: ${EDC_API_KEY_FILE:?Set EDC_API_KEY_FILE}
-  sts_provider_secret:
-    file: ${STS_PROVIDER_SECRET_FILE:?Set STS_PROVIDER_SECRET_FILE}
-  sts_consumer_secret:
-    file: ${STS_CONSUMER_SECRET_FILE:?Set STS_CONSUMER_SECRET_FILE}
   auth_secret:
     file: ${AUTH_SECRET_FILE:?Set AUTH_SECRET_FILE}
   keycloak_client_secret:
@@ -24,12 +20,6 @@ secrets:
     file: ${EDC_PROVIDER_VAULT_FILE:?Set EDC_PROVIDER_VAULT_FILE}
   edc_consumer_vault:
     file: ${EDC_CONSUMER_VAULT_FILE:?Set EDC_CONSUMER_VAULT_FILE}
-  provider_private_key:
-    file: ${PROVIDER_PRIVATE_KEY_FILE:?Set PROVIDER_PRIVATE_KEY_FILE}
-  consumer_private_key:
-    file: ${CONSUMER_PRIVATE_KEY_FILE:?Set CONSUMER_PRIVATE_KEY_FILE}
-  trust_anchor_private_key:
-    file: ${TRUST_ANCHOR_PRIVATE_KEY_FILE:?Set TRUST_ANCHOR_PRIVATE_KEY_FILE}
 
 services:
   postgres:
@@ -44,8 +34,6 @@ services:
   caddy:
     volumes: !override
       - ${PRODUCTION_CADDYFILE:?Set PRODUCTION_CADDYFILE}:/etc/caddy/Caddyfile:ro
-      - ${DID_DOCUMENTS_DIR:?Set DID_DOCUMENTS_DIR}:/did:ro
-      - ${CREDENTIALS_DIR:?Set CREDENTIALS_DIR}:/credentials:ro
       - ./data/caddy/data:/data
       - ./data/caddy/config:/config
     networks: !override
@@ -55,6 +43,18 @@ services:
           - consumer.${PUBLIC_BASE_DOMAIN:?Set PUBLIC_BASE_DOMAIN}
           - trust-anchor.${PUBLIC_BASE_DOMAIN:?Set PUBLIC_BASE_DOMAIN}
           - users.${PUBLIC_BASE_DOMAIN:?Set PUBLIC_BASE_DOMAIN}
+
+  identity-registry:
+    ports: !override []
+    secrets:
+      - postgres_password
+    environment: !override []
+    command:
+      - sh
+      - -c
+      - |
+        export IDENTITY_REGISTRY_DATABASE_URL="postgresql+asyncpg://postgres:$$(cat /run/secrets/postgres_password)@postgres:5432/identity_registry"
+        exec uvicorn identity_registry.main:app --host 0.0.0.0 --port 30005 --workers 1
 
   edc-provider:
     ports: !override []
@@ -107,79 +107,27 @@ services:
         export CONNECTOR_DATABASE_URL="postgresql+asyncpg://postgres:$$(cat /run/secrets/postgres_password)@postgres:5432/connector"
         exec alembic --config alembic.ini upgrade head
 
-  sts-provider:
-    ports: !override []
-    secrets:
-      - sts_provider_secret
-      - provider_private_key
-    volumes: !override []
-    environment: !override
-      STS_CLIENT_SECRET_FILE: /run/secrets/sts_provider_secret
-      STS_PRIVATE_KEY_PATH: /run/secrets/provider_private_key
-      STS_PARTICIPANT_DID: ${PROVIDER_DID_WEB:?Set PROVIDER_DID_WEB}
-      STS_CLIENT_ID: ${PROVIDER_DID_WEB:?Set PROVIDER_DID_WEB}
-
-  sts-consumer:
-    ports: !override []
-    secrets:
-      - sts_consumer_secret
-      - consumer_private_key
-    volumes: !override []
-    environment: !override
-      STS_CLIENT_SECRET_FILE: /run/secrets/sts_consumer_secret
-      STS_PRIVATE_KEY_PATH: /run/secrets/consumer_private_key
-      STS_PARTICIPANT_DID: ${CONSUMER_DID_WEB:?Set CONSUMER_DID_WEB}
-      STS_CLIENT_ID: ${CONSUMER_DID_WEB:?Set CONSUMER_DID_WEB}
-
-  vc-wallet-provider:
-    ports: !override []
-    secrets:
-      - provider_private_key
-    volumes: !override
-      - ${CREDENTIALS_DIR:?Set CREDENTIALS_DIR}:/credentials:ro
-    environment: !override
-      VC_WALLET_PARTICIPANT_DID: ${PROVIDER_DID_WEB:?Set PROVIDER_DID_WEB}
-      VC_WALLET_CREDENTIALS_PATH: /credentials/provider
-      VC_WALLET_PRIVATE_KEY_PATH: /run/secrets/provider_private_key
-      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:?Set VC_WALLET_CREDENTIAL_STATUS_URL}
-
-  vc-wallet-consumer:
-    ports: !override []
-    secrets:
-      - consumer_private_key
-    volumes: !override
-      - ${CREDENTIALS_DIR:?Set CREDENTIALS_DIR}:/credentials:ro
-    environment: !override
-      VC_WALLET_PARTICIPANT_DID: ${CONSUMER_DID_WEB:?Set CONSUMER_DID_WEB}
-      VC_WALLET_CREDENTIALS_PATH: /credentials/consumer
-      VC_WALLET_PRIVATE_KEY_PATH: /run/secrets/consumer_private_key
-      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:?Set VC_WALLET_CREDENTIAL_STATUS_URL}
-
   ds-connector:
     ports: !override []
     secrets:
       - edc_api_key
-      - trust_anchor_private_key
       - postgres_password
     volumes: !override
       - ./services/connector/governance:/governance:ro
-      - ${CREDENTIALS_DIR:?Set CREDENTIALS_DIR}:/credentials:ro
     environment: !override
       EDC_PROVIDER_MANAGEMENT_URL: http://edc-provider:19193/management
       EDC_PROVIDER_PROTOCOL_URL: http://edc-provider:19194/protocol/2025-1
       EDC_CONSUMER_MANAGEMENT_URL: http://edc-consumer:29193/management
       EDC_CONSUMER_PROTOCOL_URL: http://edc-consumer:29194/protocol/2025-1
       EDC_API_KEY_FILE: /run/secrets/edc_api_key
-      CONNECTOR_CREDENTIAL_STATUS_URL: ${CONNECTOR_CREDENTIAL_STATUS_URL:?Set CONNECTOR_CREDENTIAL_STATUS_URL}
       CONNECTOR_PARTICIPANT_BASE_URL: https://provider.${PUBLIC_BASE_DOMAIN:?Set PUBLIC_BASE_DOMAIN}
       CONNECTOR_PARTICIPANT_DID: ${PROVIDER_DID_WEB:?Set PROVIDER_DID_WEB}
       CONNECTOR_CONSUMER_PARTICIPANT_DID: ${CONSUMER_DID_WEB:?Set CONSUMER_DID_WEB}
       CONNECTOR_TRUST_ANCHOR_DID: ${TRUST_ANCHOR_DID_WEB:?Set TRUST_ANCHOR_DID_WEB}
-      CONNECTOR_TRUST_ANCHOR_KEY_PATH: /run/secrets/trust_anchor_private_key
       CONNECTOR_PARTICIPANT_ID: provider
       CONNECTOR_DATASET_API_URL: http://dataset-api:30002
       CONNECTOR_PROVENANCE_URL: http://ds-provenance:30000
-      CONNECTOR_PARTICIPANTS_REGISTRY_PATH: /governance/participants.yaml
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://identity-registry:30005
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
     command:
       - sh
@@ -262,5 +210,5 @@ services:
     ports: !override []
     environment: !override
       CATALOG_CONNECTOR_URL: http://ds-connector:30001
-      CATALOG_PARTICIPANTS_YAML: /governance/participants.yaml
+      CATALOG_IDENTITY_REGISTRY_URL: http://identity-registry:30005
       CATALOG_BASE_URL: https://federated-catalog.${PUBLIC_BASE_DOMAIN:?Set PUBLIC_BASE_DOMAIN}

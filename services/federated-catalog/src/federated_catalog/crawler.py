@@ -8,7 +8,7 @@ import httpx
 
 from .cache import CatalogCache, CrawlError
 from .config import Settings
-from .registry import DcatSource, Provider, load_dcat_sources, load_providers
+from .registry import DcatSource, Provider, load_dcat_sources, load_providers, load_providers_from_registry
 
 log = logging.getLogger(__name__)
 
@@ -75,7 +75,10 @@ async def crawl_dcat_source(
 
 async def crawl_all(settings: Settings) -> tuple[dict[str, list[dict]], list[CrawlError]]:
     """Crawl all registered providers and DCAT sources. Returns (datasets_by_source, errors)."""
-    providers = load_providers(settings.participants_yaml)
+    if settings.identity_registry_url:
+        providers = load_providers_from_registry(settings.identity_registry_url)
+    else:
+        providers = load_providers(settings.participants_yaml)
     dcat_sources = load_dcat_sources(settings.dcat_sources_yaml)
 
     if not providers and not dcat_sources:

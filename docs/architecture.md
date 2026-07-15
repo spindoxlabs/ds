@@ -6,7 +6,7 @@ This document describes the overall architecture: how services are organized, ho
 
 ## Service map
 
-The dataspace uses a three-participant topology. Each participant runs its own EDC + STS + VC-wallet stack, while application services are scoped to the participant's role.
+The dataspace uses a multi-participant topology. Shared infrastructure services (PostgreSQL, Caddy, Keycloak, identity-registry) run once and serve all participants. Each participant runs its own EDC connector. Application services (portal, provenance, federated catalog) are scoped to the participant's role.
 
 ```mermaid
 flowchart TB
@@ -14,32 +14,26 @@ flowchart TB
         caddy["Caddy (80/443)"]
         pg["PostgreSQL (35432)"]
         kc["Keycloak (8080)"]
+        idreg["identity-registry (30005)"]
     end
 
     subgraph rec["REC Participant (provider)"]
         portal["ds-portal (30004)"]
         connector["ds-connector (30001)"]
-        idreg["ds-identity-registry (30005)"]
         provenance["ds-provenance (30000)"]
         fc["ds-federated-catalog (30003)"]
         dataset["dataset-api (30002)"]
         onboarding["onboarding"]
         edc_prov["EDC Provider (19191-19291)"]
-        sts_prov["STS (38080)"]
-        wallet_prov["VC-wallet (38082)"]
     end
 
     subgraph dso["DSO Participant"]
         connector_dso["ds-connector-dso (40001)"]
         edc_dso["EDC DSO (49193-49195)"]
-        sts_dso["STS DSO (48080)"]
-        wallet_dso["VC-wallet DSO (48082)"]
     end
 
     subgraph tp["Third Party (pure consumer)"]
         edc_tp["EDC TP (59193-59195)"]
-        sts_tp["STS TP (58080)"]
-        wallet_tp["VC-wallet TP (58082)"]
     end
 
     portal --> connector
@@ -48,20 +42,19 @@ flowchart TB
     connector --> provenance
     connector --> idreg
     onboarding --> idreg
-    fc --> connector
-    edc_prov --> sts_prov
-    edc_prov --> wallet_prov
+    fc --> idreg
+    edc_prov --> idreg
     edc_prov --> dataset
 
     connector_dso --> edc_dso
-    edc_dso --> sts_dso
-    edc_dso --> wallet_dso
+    edc_dso --> idreg
 
-    edc_tp --> sts_tp
-    edc_tp --> wallet_tp
+    edc_tp --> idreg
 
     edc_prov <-. "DSP" .-> edc_dso
     edc_prov <-. "DSP" .-> edc_tp
+
+    caddy --> idreg
 
     connector --> pg
     connector_dso --> pg
@@ -69,24 +62,45 @@ flowchart TB
     idreg --> pg
 ```
 
+### Service interaction map
+
+```
+Portal (30004) --> ds-connector (30001) --> EDC Provider/Consumer
+                                        --> ds-provenance (30000)
+                                        --> Federated Catalog (30003)
+
+EDC Provider <--DSP--> EDC Consumer
+  |-->  identity-registry (30005)      STS token signing (/sts/{did}/token)
+  |-->  identity-registry (30005)      VP queries (/credentials/{did}/presentations/query)
+  |-->  ds-connector /internal/*       ODRL constraint evaluation
+
+identity-registry (30005)
+  |-->  Caddy (DID resolution proxy)
+  |-->  ds-connector (participant registry)
+  |-->  federated-catalog (provider discovery)
+
+dataset-api (30002, external) --> ds-connector /internal/*  agreement + consent checks
+```
+
 ### Shared infrastructure (root docker-compose.yml)
 
 | Service | Image | Port | Purpose |
 |---------|-------|------|---------|
-| Caddy | `caddy:2-alpine` | 80, 443 | Reverse proxy, TLS termination, DID doc hosting |
+| Caddy | `caddy:2-alpine` | 80, 443 | Reverse proxy, TLS termination, DID resolution proxy (`*.dataspaces.localhost` to identity-registry) |
 | PostgreSQL | `postgres:17.4-alpine` | 35432 | Shared database (one DB per service) |
+| Keycloak | Keycloak | 8080 | OIDC provider for user authentication |
+| identity-registry | `ds-identity-registry` | 30005 | DID documents, STS token signing, credential presentations, participant registry, StatusList2021 |
 
 ### Application services
 
 | Service | Port | Stack | Purpose |
 |---------|------|-------|---------|
-| ds-connector | 30001 | FastAPI | EDC orchestration, consent, participant registry |
-| ds-identity-registry | 30005 | FastAPI | Participant identity, DID, and credential management |
+| ds-connector | 30001 | FastAPI | EDC orchestration, consent, participant registry (HttpParticipantRegistry backed by identity-registry) |
 | ds-provenance | 30000 | FastAPI | PROV-O lineage and audit trail |
-| ds-federated-catalog | 30003 | FastAPI | DCAT catalogue aggregation |
+| ds-federated-catalog | 30003 | FastAPI | DCAT catalogue aggregation, queries identity-registry for participant discovery |
 | ds-portal | 30004 | SvelteKit | Web frontend for all participant roles |
 | dataset-api | 30002 | FastAPI | Data access layer with row-level filtering |
-| onboarding | — | — | User onboarding and credential issuance |
+| onboarding | -- | -- | User onboarding and credential issuance |
 | ds-connector-dso | 40001 | FastAPI | DSO-specific connector (authorization queries) |
 
 ---
@@ -102,15 +116,16 @@ All inter-service communication uses HTTP REST:
 | Portal | ds-connector | HTTP (SSR) | All data operations |
 | Portal | ds-provenance | HTTP (SSR) | Lineage, audit queries |
 | ds-connector | EDC Provider/Consumer | EDC Management API v3 | Asset/policy CRUD, negotiation, transfer |
-| ds-connector | ds-identity-registry | HTTP | Participant registry, scope checks |
+| ds-connector | identity-registry | HTTP | Participant registry, scope checks |
 | ds-connector | ds-provenance | HTTP | Emit provenance events |
-| onboarding | ds-identity-registry | HTTP | Credential issuance, Keycloak sync |
-| EDC | STS | OAuth2 client_credentials | SI token issuance |
-| EDC | VC-wallet | DCP Credential Service API | VP queries |
-| EDC | ds-connector | HTTP | Internal constraint checks |
-| EDC Provider ↔ EDC Consumer/DSO/TP | DSP | Contract negotiation, transfer |
+| onboarding | identity-registry | HTTP | Credential issuance, Keycloak sync |
+| EDC | identity-registry | OAuth2 client_credentials | STS token signing (`POST /sts/{did}/token`) |
+| EDC | identity-registry | DCP Credential Service API | VP queries (`POST /credentials/{did}/presentations/query`) |
+| EDC | ds-connector | HTTP | Internal constraint checks (`/internal/*`) |
+| EDC Provider <-> EDC Consumer/DSO/TP | DSP | Contract negotiation, transfer |
 | dataset-api | ds-connector | HTTP | Agreement validation, consent check |
-| Federated catalog | ds-connector | HTTP | Catalog proxy, participant registry |
+| Federated catalog | identity-registry | HTTP | Participant discovery |
+| Caddy | identity-registry | HTTP reverse proxy | DID document resolution (`*.dataspaces.localhost`) |
 
 ### No message queues
 
@@ -139,6 +154,8 @@ Internet / Browser
        +---> host.docker.internal:8080   (keycloak)
 ```
 
+Caddy also proxies DID resolution requests: requests to `*.dataspaces.localhost` are forwarded to the identity-registry, which serves DID documents dynamically from its database.
+
 Services running locally (outside Docker) use `host.docker.internal` to reach containers. Services running inside Docker use container names directly.
 
 > **Overlay deployments** (e.g. demo3) create their own `dataspace` bridge network via their own `docker-compose.yml` rather than joining the `dataspaces` external network defined in this repo. This keeps the overlay self-contained and avoids port conflicts with the base platform network.
@@ -153,7 +170,7 @@ A single PostgreSQL instance hosts multiple databases:
 |----------|-------|--------|
 | `connector` | ds-connector | consent_records, transfer_tracking |
 | `connector_dso` | ds-connector-dso | consent_records, transfer_tracking (DSO instance) |
-| `identity_registry` | ds-identity-registry | participants, credentials, sync_state |
+| `identity_registry` | identity-registry | participants, credentials, sync_state |
 | `provenance` | ds-provenance | prov_nodes, prov_relations, domain_events |
 
 Each service manages its own schema via Alembic migrations. There are no cross-database queries.
@@ -165,19 +182,19 @@ Each service manages its own schema via Alembic migrations. There are no cross-d
 ### User authentication (Portal)
 
 ```
-Browser → Portal → Keycloak (OIDC)
+Browser -> Portal -> Keycloak (OIDC)
 ```
 
 Auth.js handles the OIDC flow. Keycloak issues JWTs with roles (`admin`, `dataset.admin`) and scopes (`dataspaces.query`). The portal derives a `UserPersona` to gate UI sections.
 
-### Machine authentication (EDC ↔ EDC)
+### Machine authentication (EDC <-> EDC)
 
 ```
-EDC → STS (SI token) → EDC
-EDC → VC-wallet (VP) → EDC
+EDC -> identity-registry (SI token)  -> EDC
+EDC -> identity-registry (VP)        -> EDC
 ```
 
-During DSP negotiation, each EDC instance obtains an SI token from its STS and a VP from its VC wallet. The counterparty verifies both against the sender's DID document. The identity-registry is the source of participant keys and verifiable credentials used in this flow.
+During DSP negotiation, each EDC instance obtains an SI token and a VP from the identity-registry. The identity-registry signs SI tokens using the participant's database-stored private key and builds VPs from database-stored VCs. The counterparty verifies both against the sender's DID document (also served by the identity-registry via Caddy). Private keys never leave the identity-registry process.
 
 ### Identity-registry admin authentication
 
@@ -197,12 +214,9 @@ ds-connector's `/internal/*` endpoints are called by EDC extensions and dataset-
 | 30900-30909 | Debug ports | provenance:30900, connector:30901 |
 | 19191-19291 | EDC provider (REC) | mgmt:19191, DSP:19194, data:19291 |
 | 29191-29291 | EDC consumer (REC) | mgmt:29191, DSP:29194, data:29291 |
-| 38080-38083 | DCP services (REC) | STS:38080-38081, wallet:38082-38083 |
 | 40001 | DSO connector | ds-connector-dso:40001 |
 | 49193-49195 | EDC DSO | mgmt:49193, DSP:49194, public:49195 |
-| 48080, 48082 | DCP services (DSO) | STS:48080, wallet:48082 |
 | 59193-59195 | EDC Third Party | mgmt:59193, DSP:59194, public:59195 |
-| 58080, 58082 | DCP services (TP) | STS:58080, wallet:58082 |
 | 35432 | PostgreSQL | shared instance |
 | 8080 | Keycloak | auth server |
 
@@ -286,8 +300,8 @@ Each service has a `Dockerfile` and optional `charts/` directory for Helm deploy
 
 | BB | Name | Service(s) |
 |----|------|-----------|
-| BB01 | Trust Framework | Trust anchor DID + VC issuance (scripts/) |
-| BB02 | Identity & Attestation | STS, VC-wallet, Caddy (DID docs), ds-identity-registry |
+| BB01 | Trust Framework | Trust anchor DID + VC issuance via identity-registry (`ir-cli bootstrap`) |
+| BB02 | Identity & Attestation | identity-registry (DID lifecycle, key management, VC issuance, STS token signing, credential presentations), Caddy (DID resolution proxy) |
 | BB03 | Access & Usage Policies | Governance lib, edc-extensions |
 | BB04 | Data Offerings & Descriptions | Federated catalog, governance.yaml |
 | BB05 | Publication & Discovery | EDC DSP, federated catalog |
@@ -295,4 +309,4 @@ Each service has a `Dockerfile` and optional `charts/` directory for Helm deploy
 | BB07 | Provenance & Traceability | ds-provenance |
 | BB08 | Vocabulary Hub | ds: namespace (connector /ns/energy) |
 | BB09 | Data Sovereignty | Consent system in ds-connector |
-| DCP | Dataspace Credential Protocol | EDC + STS + VC-wallet |
+| DCP | Dataspace Credential Protocol | EDC connectors + identity-registry (STS + credential service) |

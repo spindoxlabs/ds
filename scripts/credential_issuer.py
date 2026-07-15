@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Configurable VC issuer and credential status registry manager."""
+"""Configurable VC issuer and credential status registry manager.
+
+DEPRECATED: VCs are now issued and managed by the identity-registry service.
+Use `ir-cli credential issue-membership` or the identity-registry admin API instead.
+This script is retained for reference only.
+"""
 from __future__ import annotations
 
 import argparse

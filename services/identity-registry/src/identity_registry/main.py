@@ -5,8 +5,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from .api.v1.admin import router as admin_router
+from .api.v1.credentials import router as credentials_router
 from .api.v1.internal import router as internal_router
 from .api.v1.public import router as public_router
+from .api.v1.sts import router as sts_router
 from .config import get_settings
 from .db.engine import init_db
 
@@ -39,6 +41,8 @@ def create_app() -> FastAPI:
 
     app.include_router(public_router)
     app.include_router(internal_router)
+    app.include_router(sts_router)
+    app.include_router(credentials_router)
     app.include_router(admin_router)
 
     return app

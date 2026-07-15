@@ -63,13 +63,13 @@ class Settings(BaseSettings):
     transfer_poll_interval: float = 2.0
     transfer_timeout: float = 120.0
 
-    identity_registry_url: str | None = None
+    identity_registry_url: str = "http://identity-registry:30005"
     participant_registry_cache_ttl: float = 60.0
-    participants_registry_path: str = "governance/participants.yaml"
+    participants_registry_path: str | None = None
     governance_yaml_path: str = "governance/governance.yaml"
     odrl_profile_path: str | None = None
     trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
-    trust_anchor_key_path: str = "/config/trust-anchor-key.json"
+    trust_anchor_key_path: str | None = None
     credential_status_path: str | None = None
     credential_status_url: str | None = None
     allow_unknown_participants: bool = False

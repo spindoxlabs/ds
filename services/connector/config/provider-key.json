@@ -1,9 +1,0 @@
-{
-  "kty": "EC",
-  "crv": "P-256",
-  "x": "y7Frxy7cdPT9aykp-hhELZj8JcIuFPIFAvnCqaYG4vM",
-  "y": "IJs-2OH1L9aAIMIMQ2EHO2rl5qYEMIJZ7IhXbquXgfU",
-  "d": "UBXlVbGDDiX-isPIRz8LwpIEfI_6nsWZVaXOBey0Sbc",
-  "kid": "did:web:provider.dataspaces.localhost#key-1",
-  "use": "sig"
-}

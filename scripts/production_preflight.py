@@ -188,16 +188,11 @@ def validate(env_file: Path, compose_file: Path) -> PreflightResult:
     for marker in REQUIRED_COMPOSE_MARKERS:
         if marker not in compose:
             result.error("production-key-material", f"Production compose does not wire {marker}")
-    if "CONNECTOR_CREDENTIAL_STATUS_URL" not in compose or "VC_WALLET_CREDENTIAL_STATUS_URL" not in compose:
-        result.error("trust-registry", "Production compose does not wire credential status registry URLs")
     for service in (
         "postgres",
+        "identity-registry",
         "edc-provider",
         "edc-consumer",
-        "sts-provider",
-        "sts-consumer",
-        "vc-wallet-provider",
-        "vc-wallet-consumer",
         "ds-connector",
         "dataset-api",
         "ds-provenance",

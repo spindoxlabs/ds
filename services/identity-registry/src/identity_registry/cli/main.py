@@ -12,7 +12,6 @@ from ..config import get_settings
 from ..db.engine import get_engine, get_session_factory, init_db
 from ..db.models import Credential, Did, Key, Participant, StatusList
 from ..services.crypto import generate_credential_id, generate_key_pair
-from ..services.export import export_credential, export_private_key
 from ..services.status_list import create_bitstring, next_available_index
 from ..services.vc import build_membership_credential, sign_credential
 
@@ -94,6 +93,12 @@ def participant_add(
     scope: list[str] = typer.Option(
         [], help="Allowed scopes (repeatable)"
     ),
+    sts_secret: str = typer.Option(
+        "insecure-dev-secret", help="STS client secret for this participant"
+    ),
+    credential_service_url: str = typer.Option(
+        None, help="CredentialService endpoint URL for DID document"
+    ),
 ):
     """Register a participant (idempotent)."""
 
@@ -128,23 +133,28 @@ def participant_add(
                     session.add(key)
                     await session.flush()
 
+                    service_endpoints = []
+                    if dsp_address:
+                        service_endpoints.append(
+                            {"type": "DSPEndpoint", "serviceEndpoint": dsp_address}
+                        )
+                    if credential_service_url:
+                        service_endpoints.append(
+                            {
+                                "type": "CredentialService",
+                                "serviceEndpoint": credential_service_url,
+                            }
+                        )
+
                     did_record = Did(
                         did=did,
                         did_type="participant",
                         key_id=key.id,
-                        service_endpoints=(
-                            [{"type": "DSPEndpoint", "serviceEndpoint": dsp_address}]
-                            if dsp_address
-                            else None
-                        ),
+                        service_endpoints=service_endpoints or None,
                     )
                     session.add(did_record)
                     await session.flush()
 
-                    did_name = did.rsplit(":", 1)[-1].split(".")[0]
-                    export_private_key(
-                        settings.export_base_path, did_name, kp.private_jwk
-                    )
                     typer.echo(f"  Created DID: {did}")
                     typer.echo(f"  Key ID: {kp.kid}")
 
@@ -153,6 +163,7 @@ def participant_add(
                     dsp_address=dsp_address,
                     role=role,
                     allowed_scopes=list(scope),
+                    sts_client_secret=sts_secret,
                 )
                 session.add(participant)
 
@@ -208,14 +219,6 @@ def participant_add(
                         expires_at=datetime.now(UTC) + timedelta(days=365),
                     )
                     session.add(cred)
-
-                    did_name = did.rsplit(":", 1)[-1].split(".")[0]
-                    export_credential(
-                        settings.export_base_path,
-                        did_name,
-                        "membership-vc.json",
-                        signed_vc,
-                    )
                     typer.echo(f"  Issued MembershipCredential: {cred_id}")
 
             typer.echo(f"Participant registered: {did} ({role})")
@@ -339,11 +342,6 @@ def credential_issue_membership(
                     expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
                 )
                 session.add(cred)
-
-                did_name = subject_did.rsplit(":", 1)[-1].split(".")[0]
-                export_credential(
-                    settings.export_base_path, did_name, "membership-vc.json", signed_vc
-                )
 
             typer.echo(f"Issued MembershipCredential: {cred_id}")
             typer.echo(f"  Subject: {subject_did}")
@@ -541,9 +539,6 @@ def key_rotate(
                 await session.flush()
 
                 did_record.key_id = new_key.id
-
-                did_name = did.rsplit(":", 1)[-1].split(".")[0]
-                export_private_key(settings.export_base_path, did_name, kp.private_jwk)
 
             typer.echo(f"Key rotated for {did}")
             typer.echo(f"  New: {kp.kid}")

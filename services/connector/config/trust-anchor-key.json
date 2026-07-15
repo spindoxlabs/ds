@@ -1,9 +1,0 @@
-{
-  "kty": "EC",
-  "crv": "P-256",
-  "x": "lyAJdOb5aO2ne_7hpj-97h9cbPWbklw54-dmEmupAaA",
-  "y": "lOZtYRsxdqZsoLjlBarI-nLRFnAo1YOZDfIVdLAvkag",
-  "d": "kha9fRYTdWZnAqHhVG0Ev9SEcNdwSZhnuMsmPEP1vfw",
-  "kid": "did:web:trust-anchor.dataspaces.localhost#key-1",
-  "use": "sig"
-}

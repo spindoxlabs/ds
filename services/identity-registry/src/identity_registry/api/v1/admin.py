@@ -39,7 +39,6 @@ from ...services.crypto import (
     next_key_index,
 )
 from ...services.did import build_did_document
-from ...services.export import export_credential, export_private_key
 from ...services.status_list import (
     create_bitstring,
     next_available_index,
@@ -126,9 +125,6 @@ async def create_participant(
         )
         db.add(did_record)
         await db.flush()
-
-        did_name = data.did.rsplit(":", 1)[-1].split(".")[0]
-        export_private_key(settings.export_base_path, did_name, kp.private_jwk)
 
     participant = Participant(
         did=data.did,
@@ -441,14 +437,6 @@ async def issue_membership_credential(
     )
     db.add(cred)
 
-    did_name = data.subject_did.rsplit(":", 1)[-1].split(".")[0]
-    export_credential(
-        settings.export_base_path,
-        did_name,
-        "membership-vc.json",
-        signed_vc,
-    )
-
     await db.commit()
     await db.refresh(cred)
     return CredentialResponse(
@@ -722,9 +710,6 @@ async def rotate_key(
     await db.flush()
 
     did_record.key_id = new_key.id
-
-    did_name = did.rsplit(":", 1)[-1].split(".")[0]
-    export_private_key(settings.export_base_path, did_name, kp.private_jwk)
 
     await db.commit()
     return KeyRotationResponse(new_kid=kp.kid, old_kid=old_key.kid)

@@ -76,56 +76,29 @@ edc-consumer-public.dataspaces.localhost {
 	reverse_proxy host.docker.internal:29291
 }
 
-# ── DID:web document hosting (HTTP for local dev) ────────────────────────────
+# ── DID:web document resolution (proxied to identity-registry) ───────────────
 
 http://provider.dataspaces.localhost {
-	root * /did/provider.dataspaces.localhost
-	rewrite /.well-known/did.json /did.json
-	file_server
+	rewrite /.well-known/did.json /dids/did:web:provider.dataspaces.localhost/did.json
+	reverse_proxy identity-registry:30005
 }
 
 http://consumer.dataspaces.localhost {
-	root * /did/consumer.dataspaces.localhost
-	rewrite /.well-known/did.json /did.json
-	file_server
+	rewrite /.well-known/did.json /dids/did:web:consumer.dataspaces.localhost/did.json
+	reverse_proxy identity-registry:30005
 }
 
 http://trust-anchor.dataspaces.localhost {
-	handle /credentials/* {
-		root * /credentials
-		uri strip_prefix /credentials
-		file_server
+	handle_path /credentials/* {
+		rewrite * /status{uri}
+		reverse_proxy identity-registry:30005
 	}
-	root * /did/trust-anchor.dataspaces.localhost
-	rewrite /.well-known/did.json /did.json
-	file_server
+	rewrite /.well-known/did.json /dids/did:web:trust-anchor.dataspaces.localhost/did.json
+	reverse_proxy identity-registry:30005
 }
 
 http://users.dataspaces.localhost {
-	root * /did/users.dataspaces.localhost
-	file_server
-}
-
-# ── DCP services ─────────────────────────────────────────────────────────────
-
-sts-provider.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:38080
-}
-
-sts-consumer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:38081
-}
-
-vc-wallet-provider.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:38082
-}
-
-vc-wallet-consumer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:38083
+	reverse_proxy identity-registry:30005
 }
 
 # ── Platform ─────────────────────────────────────────────────────────────────

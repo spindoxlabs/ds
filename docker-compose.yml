@@ -25,12 +25,14 @@ services:
       - "9010:9010"
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./services/caddy/did:/did:ro
-      - ./data/credentials:/credentials:ro
       - ./data/caddy/data:/data
       - ./data/caddy/config:/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      identity-registry:
+        condition: service_healthy
+    networks: [dataspaces]
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
   postgres:
@@ -48,6 +50,59 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
+      retries: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  # ── Identity Registry — DID lifecycle, VC issuance, STS, credential service ─
+  identity-registry-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'identity_registry'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE identity_registry"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks: [dataspaces]
+
+  identity-registry-db-init:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      identity-registry-db-create:
+        condition: service_completed_successfully
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  identity-registry:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "30005:30005"
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+    depends_on:
+      identity-registry-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30005/health', timeout=2)\""]
+      interval: 10s
+      start_period: 15s
       retries: 10
     extra_hosts:
       - "host.docker.internal:host-gateway"

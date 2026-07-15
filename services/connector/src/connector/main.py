@@ -51,10 +51,12 @@ async def lifespan(app: FastAPI):
             cache_ttl=settings.participant_registry_cache_ttl,
         )
         registry = http_registry
-    else:
+    elif settings.participants_registry_path:
         registry = ParticipantRegistry.from_file(
             Path(settings.participants_registry_path)
         )
+    else:
+        registry = ParticipantRegistry.empty()
 
     # Provenance bridge
     prov_client = ProvenanceClient(settings.provenance_url)

@@ -113,6 +113,7 @@ class Participant(Base):
     allowed_scopes: Mapped[list] = mapped_column(
         JsonType, nullable=False, default=list
     )
+    sts_client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     registered_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
