@@ -35,27 +35,9 @@ tasks:
 
   # ── Identity Registry bootstrap ──────────────────────────────────────────
   identity:bootstrap:
-    desc: Bootstrap identity-registry (trust anchor + participants)
+    desc: Run identity bootstrap init container (trust anchor + participants + dev users)
     cmds:
-      - |
-        echo "Waiting for identity-registry..."
-        until curl -fsS http://localhost:30005/health >/dev/null 2>&1; do sleep 2; done
-        COMPOSE_PROJECT_NAME=dataspaces docker compose exec identity-registry ir-cli bootstrap
-        COMPOSE_PROJECT_NAME=dataspaces docker compose exec identity-registry ir-cli participant add \
-          --did did:web:provider.dataspaces.localhost \
-          --role provider \
-          --dsp-address http://edc-provider:19194/protocol/2025-1 \
-          --scope dataspaces.query --scope dataspaces.admin \
-          --sts-secret insecure-dev-secret \
-          --credential-service-url http://identity-registry:30005/credentials/did:web:provider.dataspaces.localhost
-        COMPOSE_PROJECT_NAME=dataspaces docker compose exec identity-registry ir-cli participant add \
-          --did did:web:consumer.dataspaces.localhost \
-          --role consumer \
-          --dsp-address http://edc-consumer:29194/protocol/2025-1 \
-          --scope dataspaces.query \
-          --sts-secret insecure-dev-secret \
-          --credential-service-url http://identity-registry:30005/credentials/did:web:consumer.dataspaces.localhost
-        echo "Identity-registry bootstrapped"
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-registry-bootstrap
 
   # ── Producer participant ─────────────────────────────────────────────────
   producer:start:
@@ -304,6 +286,8 @@ tasks:
         PROVENANCE_URL=http://localhost:30000 \
         FEDERATED_CATALOG_URL=http://localhost:30003 \
         IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
+        PORTAL_SERVICE_CLIENT_ID=svc-ds-portal \
+        PORTAL_SERVICE_CLIENT_SECRET=svc-ds-portal \
         npm run dev
 
   # ── Utilities ────────────────────────────────────────────────────────────

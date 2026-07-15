@@ -93,9 +93,58 @@ services:
       retries: 10
     networks: [dataspaces]
 
+  # ── Identity Registry bootstrap — trust anchor, participants, dev users ──────
+  identity-registry-bootstrap:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: "no"
+    depends_on:
+      identity-registry:
+        condition: service_healthy
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        ir-cli bootstrap
+        ir-cli participant add \
+          --did did:web:provider.dataspaces.localhost \
+          --role provider \
+          --dsp-address http://edc-provider:19194/protocol/2025-1 \
+          --scope dataspaces.query --scope dataspaces.admin \
+          --sts-secret insecure-dev-secret \
+          --credential-service-url http://identity-registry:30005/credentials/did:web:provider.dataspaces.localhost
+        ir-cli participant add \
+          --did did:web:consumer.dataspaces.localhost \
+          --role consumer \
+          --dsp-address http://edc-consumer:29194/protocol/2025-1 \
+          --scope dataspaces.query \
+          --sts-secret insecure-dev-secret \
+          --credential-service-url http://identity-registry:30005/credentials/did:web:consumer.dataspaces.localhost
+        ir-cli credential issue-data-subject \
+          --subject-id consumer-user --role ConsumerUser \
+          --linked-participant-did did:web:consumer.dataspaces.localhost
+        ir-cli keycloak sync \
+          --did did:web:users.dataspaces.localhost:consumer-user \
+          --realm dataspaces \
+          --user-id 00000000-0000-4000-a000-000000000002 \
+          --email consumer@example.test
+        ir-cli credential issue-data-subject \
+          --subject-id data-subject --role DataSubject \
+          --linked-participant-did did:web:provider.dataspaces.localhost
+        ir-cli keycloak sync \
+          --did did:web:users.dataspaces.localhost:data-subject \
+          --realm dataspaces \
+          --user-id 00000000-0000-4000-a000-000000000004 \
+          --email subject@example.test
+        echo "Identity bootstrap complete"
+    networks: [dataspaces]
+
   # ── Keycloak OIDC identity provider ──────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:26.0
+    image: quay.io/keycloak/keycloak:26.6.0
     command: ["start-dev", "--import-realm", "--http-port=8080"]
     restart: unless-stopped
     ports:
@@ -105,8 +154,10 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME_STRICT: "false"
+      KC_HOSTNAME: http://keycloak.dataspaces.localhost:9010
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
+      KC_SPI_LOGIN_DEFAULT_REALM_NAME: dataspaces
     volumes:
       - ./services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro
     healthcheck:

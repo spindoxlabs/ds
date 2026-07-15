@@ -67,11 +67,11 @@ Three compose files form the full stack:
 
 | File | Services | Purpose |
 |------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
-| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer | Producer participant |
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync | Shared infrastructure |
+| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer, ds-portal | Producer participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
-The portal is not in any compose file — run it locally via `task consumer:portal:run`.
+The portal runs in the producer compose. For local dev with hot-reload: `task producer:portal:run`.
 
 All containers share the `dataspaces` bridge network.
 
@@ -200,7 +200,7 @@ task infra:start                  # shared infra (postgres, caddy, identity-regi
 task identity:bootstrap           # trust anchor + participant registration
 task producer:start               # producer stack (EDC + connector + provenance + dataset-api + catalog)
 task consumer:start               # consumer stack (EDC + connector + provenance)
-task consumer:portal:run          # portal (optional, run locally)
+task producer:portal:run          # portal locally with hot-reload (optional)
 ```
 
 ## Key documentation
@@ -230,3 +230,11 @@ task consumer:portal:run          # portal (optional, run locally)
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
 | Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |
+
+## Gotchas
+
+- **Async SQLAlchemy sessions auto-begin.** Never call `session.begin()` inside `async with factory() as session:` — just do the work and `await session.commit()`.
+- **Dockerfiles use repo root as build context.** `COPY` paths in `services/*/Dockerfile` are relative to root, not the service directory. `.dockerignore` at root excludes `data/`, `.git`, `node_modules`, `.venv`.
+- **Python services must be installed as packages** in Dockerfiles (`uv pip install .`) so console script entry points (e.g., `ir-cli`) are created. Don't manually list deps.
+- **`172.17.0.1`** is the standard host-gateway address in all compose files.
+- `uv run` for python commands is generally better in the context of a service
