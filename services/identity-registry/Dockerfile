@@ -4,11 +4,10 @@ WORKDIR /build
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
 COPY services/identity-registry/pyproject.toml ./
+COPY services/identity-registry/src/ src/
+
 RUN uv venv /opt/venv && \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      fastapi uvicorn[standard] httpx pydantic pydantic-settings \
-      "sqlalchemy[asyncio]" asyncpg alembic \
-      cryptography pyjwt typer pyyaml python-multipart
+    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python .
 
 # ---- Runtime ----
 FROM python:3.12-slim AS runtime

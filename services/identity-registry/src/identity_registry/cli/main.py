@@ -66,24 +66,24 @@ def bootstrap(
                 typer.echo(f"Trust anchor already exists: {trust_did}")
                 return
 
-            async with session.begin():
-                kp = generate_key_pair(trust_did)
-                key = Key(
-                    owner_did=trust_did,
-                    kid=kp.kid,
-                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                    public_jwk=kp.public_jwk,
-                )
-                session.add(key)
-                await session.flush()
+            kp = generate_key_pair(trust_did)
+            key = Key(
+                owner_did=trust_did,
+                kid=kp.kid,
+                private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                public_jwk=kp.public_jwk,
+            )
+            session.add(key)
+            await session.flush()
 
-                did_record = Did(
-                    did=trust_did,
-                    did_type="participant",
-                    display_name="Trust Anchor",
-                    key_id=key.id,
-                )
-                session.add(did_record)
+            did_record = Did(
+                did=trust_did,
+                did_type="participant",
+                display_name="Trust Anchor",
+                key_id=key.id,
+            )
+            session.add(did_record)
+            await session.commit()
 
             typer.echo(f"Trust anchor bootstrapped: {trust_did}")
             typer.echo(f"  Key ID: {kp.kid}")
@@ -122,112 +122,112 @@ def participant_add(
                 typer.echo(f"Participant already exists: {did}")
                 return
 
-            async with session.begin():
-                did_result = await session.execute(
-                    select(Did).where(Did.did == did)
+            did_result = await session.execute(
+                select(Did).where(Did.did == did)
+            )
+            did_record = did_result.scalar_one_or_none()
+
+            if not did_record:
+                kp = generate_key_pair(did)
+                key = Key(
+                    owner_did=did,
+                    kid=kp.kid,
+                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                    public_jwk=kp.public_jwk,
                 )
-                did_record = did_result.scalar_one_or_none()
+                session.add(key)
+                await session.flush()
 
-                if not did_record:
-                    kp = generate_key_pair(did)
-                    key = Key(
-                        owner_did=did,
-                        kid=kp.kid,
-                        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                        public_jwk=kp.public_jwk,
+                service_endpoints = []
+                if dsp_address:
+                    service_endpoints.append(
+                        {"type": "DSPEndpoint", "serviceEndpoint": dsp_address}
                     )
-                    session.add(key)
-                    await session.flush()
-
-                    service_endpoints = []
-                    if dsp_address:
-                        service_endpoints.append(
-                            {"type": "DSPEndpoint", "serviceEndpoint": dsp_address}
-                        )
-                    if credential_service_url:
-                        service_endpoints.append(
-                            {
-                                "type": "CredentialService",
-                                "serviceEndpoint": credential_service_url,
-                            }
-                        )
-
-                    did_record = Did(
-                        did=did,
-                        did_type="participant",
-                        key_id=key.id,
-                        service_endpoints=service_endpoints or None,
+                if credential_service_url:
+                    service_endpoints.append(
+                        {
+                            "type": "CredentialService",
+                            "serviceEndpoint": credential_service_url,
+                        }
                     )
-                    session.add(did_record)
-                    await session.flush()
 
-                    typer.echo(f"  Created DID: {did}")
-                    typer.echo(f"  Key ID: {kp.kid}")
-
-                participant = Participant(
+                did_record = Did(
                     did=did,
-                    dsp_address=dsp_address,
+                    did_type="participant",
+                    key_id=key.id,
+                    service_endpoints=service_endpoints or None,
+                )
+                session.add(did_record)
+                await session.flush()
+
+                typer.echo(f"  Created DID: {did}")
+                typer.echo(f"  Key ID: {kp.kid}")
+
+            participant = Participant(
+                did=did,
+                dsp_address=dsp_address,
+                role=role,
+                allowed_scopes=list(scope),
+                sts_client_secret=hash_sts_secret(sts_secret),
+            )
+            session.add(participant)
+
+            trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
+            ta_key_result = await session.execute(
+                select(Key).where(
+                    Key.owner_did == trust_anchor_did,
+                    Key.active.is_(True),
+                )
+            )
+            ta_key = ta_key_result.scalar_one_or_none()
+
+            if ta_key:
+                sl_result = await session.execute(
+                    select(StatusList).where(StatusList.id == "1")
+                )
+                sl = sl_result.scalar_one_or_none()
+                if not sl:
+                    sl = StatusList(
+                        id="1",
+                        purpose="revocation",
+                        bitstring=create_bitstring(),
+                    )
+                    session.add(sl)
+                    await session.flush()
+
+                sl_index = next_available_index(sl.bitstring)
+                cred_id = generate_credential_id()
+                status_list_url = (
+                    f"https://{settings.trust_anchor_domain}/status/1"
+                )
+
+                vc = build_membership_credential(
+                    issuer_did=trust_anchor_did,
+                    subject_did=did,
                     role=role,
                     allowed_scopes=list(scope),
-                    sts_client_secret=hash_sts_secret(sts_secret),
+                    credentials_context_url=settings.credentials_context_url,
+                    dataspace_uri=settings.dataspace_uri,
+                    status_list_credential_url=status_list_url,
+                    status_list_index=sl_index,
+                    credential_id=cred_id,
                 )
-                session.add(participant)
+                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
-                trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-                ta_key_result = await session.execute(
-                    select(Key).where(
-                        Key.owner_did == trust_anchor_did,
-                        Key.active.is_(True),
-                    )
+                cred = Credential(
+                    id=cred_id,
+                    credential_type="MembershipCredential",
+                    issuer_did=trust_anchor_did,
+                    subject_did=did,
+                    credential_json=signed_vc,
+                    status_list_index=sl_index,
+                    expires_at=datetime.now(UTC) + timedelta(days=365),
                 )
-                ta_key = ta_key_result.scalar_one_or_none()
+                session.add(cred)
+                typer.echo(f"  Issued MembershipCredential: {cred_id}")
 
-                if ta_key:
-                    sl_result = await session.execute(
-                        select(StatusList).where(StatusList.id == "1")
-                    )
-                    sl = sl_result.scalar_one_or_none()
-                    if not sl:
-                        sl = StatusList(
-                            id="1",
-                            purpose="revocation",
-                            bitstring=create_bitstring(),
-                        )
-                        session.add(sl)
-                        await session.flush()
-
-                    sl_index = next_available_index(sl.bitstring)
-                    cred_id = generate_credential_id()
-                    status_list_url = (
-                        f"https://{settings.trust_anchor_domain}/status/1"
-                    )
-
-                    vc = build_membership_credential(
-                        issuer_did=trust_anchor_did,
-                        subject_did=did,
-                        role=role,
-                        allowed_scopes=list(scope),
-                        credentials_context_url=settings.credentials_context_url,
-                        dataspace_uri=settings.dataspace_uri,
-                        status_list_credential_url=status_list_url,
-                        status_list_index=sl_index,
-                        credential_id=cred_id,
-                    )
-                    ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
-                    signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
-
-                    cred = Credential(
-                        id=cred_id,
-                        credential_type="MembershipCredential",
-                        issuer_did=trust_anchor_did,
-                        subject_did=did,
-                        credential_json=signed_vc,
-                        status_list_index=sl_index,
-                        expires_at=datetime.now(UTC) + timedelta(days=365),
-                    )
-                    session.add(cred)
-                    typer.echo(f"  Issued MembershipCredential: {cred_id}")
-
+            await session.commit()
             typer.echo(f"Participant registered: {did} ({role})")
 
     _run(_add())
@@ -278,9 +278,9 @@ def participant_remove(
                 typer.echo(f"Participant not found: {did}", err=True)
                 raise typer.Exit(1)
 
-            async with session.begin():
-                participant.active = False
-                participant.deactivated_at = datetime.now(UTC)
+            participant.active = False
+            participant.deactivated_at = datetime.now(UTC)
+            await session.commit()
 
             typer.echo(f"Participant deactivated: {did}")
 
@@ -311,45 +311,45 @@ def credential_issue_membership(
                 typer.echo("Trust anchor not bootstrapped. Run: ir-cli bootstrap", err=True)
                 raise typer.Exit(1)
 
-            async with session.begin():
-                sl_result = await session.execute(
-                    select(StatusList).where(StatusList.id == "1")
-                )
-                sl = sl_result.scalar_one_or_none()
-                if not sl:
-                    sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
-                    session.add(sl)
-                    await session.flush()
+            sl_result = await session.execute(
+                select(StatusList).where(StatusList.id == "1")
+            )
+            sl = sl_result.scalar_one_or_none()
+            if not sl:
+                sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
+                session.add(sl)
+                await session.flush()
 
-                sl_index = next_available_index(sl.bitstring)
-                cred_id = generate_credential_id()
-                status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
+            sl_index = next_available_index(sl.bitstring)
+            cred_id = generate_credential_id()
+            status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
 
-                vc = build_membership_credential(
-                    issuer_did=ta_did,
-                    subject_did=subject_did,
-                    role=role,
-                    allowed_scopes=list(scope),
-                    credentials_context_url=settings.credentials_context_url,
-                    dataspace_uri=settings.dataspace_uri,
-                    status_list_credential_url=status_list_url,
-                    status_list_index=sl_index,
-                    credential_id=cred_id,
-                    ttl_days=ttl_days,
-                )
-                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
-                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
+            vc = build_membership_credential(
+                issuer_did=ta_did,
+                subject_did=subject_did,
+                role=role,
+                allowed_scopes=list(scope),
+                credentials_context_url=settings.credentials_context_url,
+                dataspace_uri=settings.dataspace_uri,
+                status_list_credential_url=status_list_url,
+                status_list_index=sl_index,
+                credential_id=cred_id,
+                ttl_days=ttl_days,
+            )
+            ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+            signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
-                cred = Credential(
-                    id=cred_id,
-                    credential_type="MembershipCredential",
-                    issuer_did=ta_did,
-                    subject_did=subject_did,
-                    credential_json=signed_vc,
-                    status_list_index=sl_index,
-                    expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
-                )
-                session.add(cred)
+            cred = Credential(
+                id=cred_id,
+                credential_type="MembershipCredential",
+                issuer_did=ta_did,
+                subject_did=subject_did,
+                credential_json=signed_vc,
+                status_list_index=sl_index,
+                expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
+            )
+            session.add(cred)
+            await session.commit()
 
             typer.echo(f"Issued MembershipCredential: {cred_id}")
             typer.echo(f"  Subject: {subject_did}")
@@ -384,59 +384,59 @@ def credential_issue_data_subject(
                 typer.echo("Trust anchor not bootstrapped.", err=True)
                 raise typer.Exit(1)
 
-            async with session.begin():
-                did_result = await session.execute(
-                    select(Did).where(Did.did == subject_did)
+            did_result = await session.execute(
+                select(Did).where(Did.did == subject_did)
+            )
+            if not did_result.scalar_one_or_none():
+                kp = generate_key_pair(subject_did)
+                key = Key(
+                    owner_did=subject_did, kid=kp.kid,
+                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                    public_jwk=kp.public_jwk,
                 )
-                if not did_result.scalar_one_or_none():
-                    kp = generate_key_pair(subject_did)
-                    key = Key(
-                        owner_did=subject_did, kid=kp.kid,
-                        private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                        public_jwk=kp.public_jwk,
-                    )
-                    session.add(key)
-                    await session.flush()
-                    did_record = Did(did=subject_did, did_type="user", key_id=key.id)
-                    session.add(did_record)
-                    await session.flush()
+                session.add(key)
+                await session.flush()
+                did_record = Did(did=subject_did, did_type="user", key_id=key.id)
+                session.add(did_record)
+                await session.flush()
 
-                sl_result = await session.execute(
-                    select(StatusList).where(StatusList.id == "1")
-                )
-                sl = sl_result.scalar_one_or_none()
-                if not sl:
-                    sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
-                    session.add(sl)
-                    await session.flush()
+            sl_result = await session.execute(
+                select(StatusList).where(StatusList.id == "1")
+            )
+            sl = sl_result.scalar_one_or_none()
+            if not sl:
+                sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
+                session.add(sl)
+                await session.flush()
 
-                sl_index = next_available_index(sl.bitstring)
-                cred_id = generate_credential_id()
+            sl_index = next_available_index(sl.bitstring)
+            cred_id = generate_credential_id()
 
-                from ..services.vc import build_data_subject_credential
+            from ..services.vc import build_data_subject_credential
 
-                vc = build_data_subject_credential(
-                    issuer_did=ta_did,
-                    subject_did=subject_did,
-                    role=role,
-                    linked_participant_did=linked_participant_did,
-                    credentials_context_url=settings.credentials_context_url,
-                    dataspace_uri=settings.dataspace_uri,
-                    status_list_credential_url=f"https://{settings.trust_anchor_domain}/status/1",
-                    status_list_index=sl_index,
-                    credential_id=cred_id,
-                    ttl_days=ttl_days,
-                )
-                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
-                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
+            vc = build_data_subject_credential(
+                issuer_did=ta_did,
+                subject_did=subject_did,
+                role=role,
+                linked_participant_did=linked_participant_did,
+                credentials_context_url=settings.credentials_context_url,
+                dataspace_uri=settings.dataspace_uri,
+                status_list_credential_url=f"https://{settings.trust_anchor_domain}/status/1",
+                status_list_index=sl_index,
+                credential_id=cred_id,
+                ttl_days=ttl_days,
+            )
+            ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+            signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
-                cred = Credential(
-                    id=cred_id, credential_type="DataSubjectCredential",
-                    issuer_did=ta_did, subject_did=subject_did,
-                    credential_json=signed_vc, status_list_index=sl_index,
-                    expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
-                )
-                session.add(cred)
+            cred = Credential(
+                id=cred_id, credential_type="DataSubjectCredential",
+                issuer_did=ta_did, subject_did=subject_did,
+                credential_json=signed_vc, status_list_index=sl_index,
+                expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
+            )
+            session.add(cred)
+            await session.commit()
 
             typer.echo(f"Issued DataSubjectCredential: {cred_id}")
             typer.echo(f"  Subject DID: {subject_did}")
@@ -464,17 +464,17 @@ def credential_revoke(
                 typer.echo(f"Credential not found: {credential_id}", err=True)
                 raise typer.Exit(1)
 
-            async with session.begin():
-                cred.status = "revoked"
-                cred.revoked_at = datetime.now(UTC)
-                if cred.status_list_index is not None:
-                    sl_result = await session.execute(
-                        select(StatusList).where(StatusList.id == "1")
-                    )
-                    sl = sl_result.scalar_one_or_none()
-                    if sl:
-                        sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-                        sl.updated_at = datetime.now(UTC)
+            cred.status = "revoked"
+            cred.revoked_at = datetime.now(UTC)
+            if cred.status_list_index is not None:
+                sl_result = await session.execute(
+                    select(StatusList).where(StatusList.id == "1")
+                )
+                sl = sl_result.scalar_one_or_none()
+                if sl:
+                    sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
+                    sl.updated_at = datetime.now(UTC)
+            await session.commit()
 
             typer.echo(f"Credential revoked: {credential_id}")
 
@@ -536,20 +536,20 @@ def key_rotate(
 
             new_index = next_key_index(old_key.kid)
 
-            async with session.begin():
-                old_key.active = False
-                old_key.rotated_at = datetime.now(UTC)
+            old_key.active = False
+            old_key.rotated_at = datetime.now(UTC)
 
-                kp = generate_key_pair(did, key_index=new_index)
-                new_key = Key(
-                    owner_did=did, kid=kp.kid,
-                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                    public_jwk=kp.public_jwk,
-                )
-                session.add(new_key)
-                await session.flush()
+            kp = generate_key_pair(did, key_index=new_index)
+            new_key = Key(
+                owner_did=did, kid=kp.kid,
+                private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                public_jwk=kp.public_jwk,
+            )
+            session.add(new_key)
+            await session.flush()
 
-                did_record.key_id = new_key.id
+            did_record.key_id = new_key.id
+            await session.commit()
 
             typer.echo(f"Key rotated for {did}")
             typer.echo(f"  New: {kp.kid}")

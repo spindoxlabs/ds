@@ -29,27 +29,21 @@ services:
       - "19195:19195"
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
-      EDC_RECEIVER_HTTP_ENDPOINT: http://host.docker.internal:30001/webhooks/transfer-process
+      EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:30001/webhooks/transfer-process
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:19191/api/check/health || exit 1"]
       interval: 10s
       start_period: 60s
       retries: 15
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "provider.dataspaces.localhost:host-gateway"
-      - "consumer.dataspaces.localhost:host-gateway"
-      - "trust-anchor.dataspaces.localhost:host-gateway"
-      - "users.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
   # ── Database init ────────────────────────────────────────────────────────────
   connector-db-create-producer:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_producer'"'"'" |
-      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector_producer"'
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_producer'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_producer"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
@@ -67,15 +61,15 @@ services:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: producer
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_producer
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer
     networks: [dataspaces]
 
   provenance-db-create-producer:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_producer'"'"'" |
-      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE provenance_producer"'
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_producer'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_producer"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
@@ -92,7 +86,7 @@ services:
       provenance-db-create-producer:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_producer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_producer
     networks: [dataspaces]
 
   # ── Producer connector (Python orchestration) ───────────────────────────────
@@ -105,18 +99,18 @@ services:
       - "30001:30001"
     environment:
       CONNECTOR_ROLE: producer
-      EDC_PROVIDER_MANAGEMENT_URL: http://edc-provider:19193/management
-      EDC_PROVIDER_PROTOCOL_URL: http://edc-provider:19194/protocol/2025-1
+      EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:19193/management
+      EDC_PROVIDER_PROTOCOL_URL: http://172.17.0.1:19194/protocol/2025-1
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       CONNECTOR_PARTICIPANT_ID: provider
       CONNECTOR_PARTICIPANT_BASE_URL: https://provider.dataspaces.localhost
       CONNECTOR_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
-      CONNECTOR_DATASET_API_URL: http://host.docker.internal:30002
-      CONNECTOR_PROVENANCE_URL: http://host.docker.internal:30000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_producer
+      CONNECTOR_DATASET_API_URL: http://172.17.0.1:30002
+      CONNECTOR_PROVENANCE_URL: http://172.17.0.1:30000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
-      CONNECTOR_IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
     depends_on:
       edc-provider:
         condition: service_healthy
@@ -131,8 +125,6 @@ services:
       interval: 10s
       start_period: 20s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Producer provenance ──────────────────────────────────────────────────────
@@ -143,7 +135,7 @@ services:
     ports:
       - "30000:30000"
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_producer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_producer
     depends_on:
       provenance-db-init-producer:
         condition: service_completed_successfully
@@ -152,8 +144,6 @@ services:
       interval: 10s
       start_period: 10s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Dataset API (mock, overridable via DATASET_API_EXTERNAL_QUERY_URL) ──────
@@ -164,14 +154,12 @@ services:
     ports:
       - "30002:30002"
     environment:
-      DATASET_API_CONNECTOR_INTERNAL_URL: http://host.docker.internal:30001
+      DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
       DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
       DATASET_API_ENFORCE_CONSENT: "true"
     depends_on:
       ds-connector-producer:
         condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Federated catalog ────────────────────────────────────────────────────────
@@ -182,8 +170,8 @@ services:
     ports:
       - "30003:30003"
     environment:
-      CATALOG_CONNECTOR_URL: http://host.docker.internal:30001
-      CATALOG_IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      CATALOG_CONNECTOR_URL: http://172.17.0.1:30001
+      CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
     depends_on:
       ds-connector-producer:
@@ -193,6 +181,4 @@ services:
       interval: 10s
       start_period: 20s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]

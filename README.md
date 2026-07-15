@@ -82,7 +82,7 @@ task start
 
 This brings up, in order:
 
-1. **Shared infrastructure** — postgres, caddy, identity-registry, keycloak
+1. **Shared infrastructure** — postgres, caddy, identity-registry, keycloak (+ keycloak-sync for scopes/clients)
 2. **Identity bootstrap** — trust anchor + provider/consumer participant registration
 3. **Producer stack** — EDC provider, ds-connector, ds-provenance, dataset-api, federated-catalog
 4. **Consumer stack** — EDC consumer, ds-connector, ds-provenance

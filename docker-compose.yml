@@ -14,24 +14,15 @@ volumes:
   postgres_data:
 
 services:
-  # ── Reverse proxy + local HTTPS + DID hosting ────────────────────────────────
+  # ── Reverse proxy — consumer (:9000) and producer (:9010) gateways ───────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
       - "9000:9000"
       - "9010:9010"
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./data/caddy/data:/data
-      - ./data/caddy/config:/config
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      identity-registry:
-        condition: service_healthy
     networks: [dataspaces]
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
@@ -51,17 +42,15 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Identity Registry — DID lifecycle, VC issuance, STS, credential service ─
   identity-registry-db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'identity_registry'"'"'" |
-      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE identity_registry"'
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'identity_registry'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE identity_registry"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
@@ -81,9 +70,7 @@ services:
       identity-registry-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
     networks: [dataspaces]
 
   identity-registry:
@@ -94,7 +81,7 @@ services:
     ports:
       - "30005:30005"
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
     depends_on:
       identity-registry-db-init:
@@ -104,8 +91,6 @@ services:
       interval: 10s
       start_period: 15s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Keycloak OIDC identity provider ──────────────────────────────────────────
@@ -119,8 +104,36 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
+      KC_HEALTH_ENABLED: "true"
       KC_HOSTNAME_STRICT: "false"
       KC_PROXY_HEADERS: xforwarded
     volumes:
       - ./services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+    networks: [dataspaces]
+
+  # ── Keycloak sync — scopes, service clients, audience mappers ───────────────
+  keycloak-sync:
+    image: ghcr.io/celine-eu/celine-policies:dev
+    restart: "no"
+    depends_on:
+      keycloak:
+        condition: service_healthy
+    volumes:
+      - ./services/keycloak/clients.yaml:/app/clients.yaml:ro
+    environment:
+      CELINE_KEYCLOAK_BASE_URL: http://172.17.0.1:8080
+      CELINE_KEYCLOAK_REALM: dataspaces
+      CELINE_KEYCLOAK_SECRETS_FILE: /tmp/.secrets.yaml
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        celine-policies keycloak bootstrap \
+          --admin-user admin --admin-password admin &&
+        celine-policies keycloak sync \
+          --secrets-file /tmp/.secrets.yaml
     networks: [dataspaces]

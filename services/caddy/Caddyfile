@@ -1,144 +1,34 @@
-{
-	local_certs
-	auto_https off
-}
-
-# ── Producer Python services ─────────────────────────────────────────────────
-
-connector.dataspaces.localhost, connector-producer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30001
-}
-
-provenance.dataspaces.localhost, provenance-producer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30000
-}
-
-dataset-api.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30002
-}
-
-federated-catalog.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30003
-}
-
-# ── Consumer Python services ─────────────────────────────────────────────────
-
-connector-consumer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:31001
-}
-
-provenance-consumer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:31000
-}
-
-portal.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30004
-}
-
-# ── EDC provider ─────────────────────────────────────────────────────────────
-
-edc-provider.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:19194
-}
-
-edc-provider-mgmt.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:19191
-}
-
-edc-provider-public.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:19291
-}
-
-# ── EDC consumer ─────────────────────────────────────────────────────────────
-
-edc-consumer.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:29194
-}
-
-edc-consumer-mgmt.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:29191
-}
-
-edc-consumer-public.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:29291
-}
-
-# ── DID:web document resolution (proxied to identity-registry) ───────────────
-
-http://provider.dataspaces.localhost {
-	rewrite /.well-known/did.json /dids/did:web:provider.dataspaces.localhost/did.json
-	reverse_proxy identity-registry:30005
-}
-
-http://consumer.dataspaces.localhost {
-	rewrite /.well-known/did.json /dids/did:web:consumer.dataspaces.localhost/did.json
-	reverse_proxy identity-registry:30005
-}
-
-http://trust-anchor.dataspaces.localhost {
-	handle_path /credentials/* {
-		rewrite * /status{uri}
-		reverse_proxy identity-registry:30005
-	}
-	rewrite /.well-known/did.json /dids/did:web:trust-anchor.dataspaces.localhost/did.json
-	reverse_proxy identity-registry:30005
-}
-
-http://users.dataspaces.localhost {
-	reverse_proxy identity-registry:30005
-}
-
-# ── Platform ─────────────────────────────────────────────────────────────────
-
-keycloak.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:8080
-}
-
 # ── Consumer gateway (:9000) ─────────────────────────────────────────────────
 
 :9000 {
 	handle_path /api/connector/* {
-		reverse_proxy host.docker.internal:31001
+		reverse_proxy 172.17.0.1:31001
 	}
 
 	handle_path /api/provenance/* {
-		reverse_proxy host.docker.internal:31000
+		reverse_proxy 172.17.0.1:31000
 	}
 
 	# Portal (consumer UI, catch-all)
-	reverse_proxy host.docker.internal:30004
+	reverse_proxy 172.17.0.1:30004
 }
 
 # ── Producer gateway (:9010) ─────────────────────────────────────────────────
 
 :9010 {
 	handle_path /api/connector/* {
-		reverse_proxy host.docker.internal:30001
+		reverse_proxy 172.17.0.1:30001
 	}
 
 	handle_path /api/provenance/* {
-		reverse_proxy host.docker.internal:30000
+		reverse_proxy 172.17.0.1:30000
 	}
 
 	handle_path /api/catalog/* {
-		reverse_proxy host.docker.internal:30003
+		reverse_proxy 172.17.0.1:30003
 	}
 
 	handle_path /api/datasets/* {
-		reverse_proxy host.docker.internal:30002
+		reverse_proxy 172.17.0.1:30002
 	}
 }

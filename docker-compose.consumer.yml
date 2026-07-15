@@ -29,27 +29,21 @@ services:
       - "29195:29195"
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
-      EDC_RECEIVER_HTTP_ENDPOINT: http://host.docker.internal:31001/webhooks/transfer-process
+      EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:31001/webhooks/transfer-process
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
       interval: 10s
       start_period: 60s
       retries: 15
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-      - "provider.dataspaces.localhost:host-gateway"
-      - "consumer.dataspaces.localhost:host-gateway"
-      - "trust-anchor.dataspaces.localhost:host-gateway"
-      - "users.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
   # ── Database init ────────────────────────────────────────────────────────────
   connector-db-create-consumer:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_consumer'"'"'" |
-      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector_consumer"'
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_consumer'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_consumer"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
@@ -67,15 +61,15 @@ services:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: consumer
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_consumer
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer
     networks: [dataspaces]
 
   provenance-db-create-consumer:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
-      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_consumer'"'"'" |
-      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE provenance_consumer"'
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_consumer'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_consumer"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
@@ -92,7 +86,7 @@ services:
       provenance-db-create-consumer:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_consumer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer
     networks: [dataspaces]
 
   # ── Consumer connector (Python orchestration) ───────────────────────────────
@@ -105,17 +99,17 @@ services:
       - "31001:31001"
     environment:
       CONNECTOR_ROLE: consumer
-      EDC_CONSUMER_MANAGEMENT_URL: http://edc-consumer:29193/management
-      EDC_CONSUMER_PROTOCOL_URL: http://edc-consumer:29194/protocol/2025-1
+      EDC_CONSUMER_MANAGEMENT_URL: http://172.17.0.1:29193/management
+      EDC_CONSUMER_PROTOCOL_URL: http://172.17.0.1:29194/protocol/2025-1
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       CONNECTOR_PARTICIPANT_ID: consumer
       CONNECTOR_PARTICIPANT_BASE_URL: https://consumer.dataspaces.localhost
       CONNECTOR_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
-      CONNECTOR_PROVENANCE_URL: http://host.docker.internal:31000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_consumer
+      CONNECTOR_PROVENANCE_URL: http://172.17.0.1:31000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
-      CONNECTOR_IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
     depends_on:
       edc-consumer:
         condition: service_healthy
@@ -130,8 +124,6 @@ services:
       interval: 10s
       start_period: 20s
       retries: 10
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     networks: [dataspaces]
 
   # ── Consumer provenance ──────────────────────────────────────────────────────
@@ -143,7 +135,7 @@ services:
     ports:
       - "31000:31000"
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_consumer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer
     depends_on:
       provenance-db-init-consumer:
         condition: service_completed_successfully
