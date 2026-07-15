@@ -26,38 +26,106 @@ The stack covers the following DSSC Blueprint building blocks:
 
 ```
 dataspaces/
-├── docker-compose.yml          shared infra — caddy, postgres (port 35432)
+├── docker-compose.yml          shared infra — caddy, postgres, identity-registry, keycloak
+├── docker-compose.producer.yml producer participant stack
+├── docker-compose.consumer.yml consumer participant stack
 ├── Taskfile.yml                root orchestration
 ├── build.gradle.kts            Gradle root (EDC subprojects)
 ├── settings.gradle.kts
 ├── services/
-│   ├── caddy/                  reverse proxy config + DID document hosting
-│   ├── connector/              port 30001 — EDC orchestrator (Python/FastAPI)
-│   ├── provenance/             port 30000 — PROV-O REST API (Python/FastAPI)
+│   ├── caddy/                  reverse proxy config + DID document routing
+│   ├── connector/              port 30001/31001 — EDC orchestrator (Python/FastAPI)
+│   ├── provenance/             port 30000/31000 — PROV-O REST API (Python/FastAPI)
 │   ├── portal/                 port 30004 — web frontend (SvelteKit)
 │   ├── governance/             shared Python library — GovernanceRuleV2 + ODRL mapper
-│   ├── sts/                    ports 38080/38081 — Security Token Service (Python/FastAPI)
-│   ├── vc-wallet/              ports 38082/38083 — Credential Service (Python/FastAPI)
+│   ├── identity-registry/      port 30005 — DID lifecycle, STS, credential service, participant registry
 │   ├── federated-catalog/      port 30003 — DCAT-AP catalog crawler (Python/FastAPI)
+│   ├── dataset-api-mock/       port 30002 — mock dataset API for dev
+│   ├── dataset-api-fiware-adapter/  FIWARE NGSI-LD adapter
 │   ├── edc-connector/          Gradle — DCP-enabled EDC connector fat JAR (v0.16.0)
-│   └── edc-extensions/         Java — custom ODRL constraint functions for EDC
-├── data/                       runtime data (gitignored) — caddy PKI, keys, credentials
-├── scripts/                    key generation, VC issuance
+│   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
+│   └── keycloak/               OIDC realm import for dev
+├── data/                       runtime data (gitignored) — caddy PKI, gradle cache
+├── scripts/                    compliance validation, backup
 └── docs/                       architecture docs, DSSC blueprint reference
 ```
 
-Each service under `services/` has:
-- `docker-compose.yml` — service containers (references shared infra network)
-- `Taskfile.yml` — `setup`, `run`, `debug`, `release` (+ `db:migrate`/`db:revision` for DB services)
-- `config/` — committed local defaults
-- `data/` — runtime data (gitignored)
+---
 
-Optional integrations live outside the reusable core and keep their own
-compose overlays, environment examples and governance profiles.
+## Quick start
+
+### Prerequisites
+
+- Docker with Compose v2
+- [Task](https://taskfile.dev) (v3+)
+- [uv](https://docs.astral.sh/uv/) (for local Python service overrides)
+- Node.js (for the portal)
+
+### One-time setup
+
+```bash
+# Copy the example env (all defaults work out of the box)
+cp .env.example .env
+
+# Add *.dataspaces.localhost entries to /etc/hosts (requires sudo)
+task proxy:hosts
+
+# Trust Caddy's local CA in the system certificate store (requires sudo)
+task proxy:trust-ca
+```
+
+### Start the full stack
+
+```bash
+task start
+```
+
+This brings up, in order:
+
+1. **Shared infrastructure** — postgres, caddy, identity-registry, keycloak
+2. **Identity bootstrap** — trust anchor + provider/consumer participant registration
+3. **Producer stack** — EDC provider, ds-connector, ds-provenance, dataset-api, federated-catalog
+4. **Consumer stack** — EDC consumer, ds-connector, ds-provenance
+
+Or step by step:
+
+```bash
+task infra:start          # shared infra (postgres, caddy, identity-registry, keycloak)
+task identity:bootstrap   # trust anchor + participant DIDs
+task producer:start       # producer participant stack
+task consumer:start       # consumer participant stack
+```
+
+### Portal (runs locally, not in Docker)
+
+```bash
+task consumer:portal:run  # SvelteKit dev server on http://localhost:30004
+```
+
+### Stop everything
+
+```bash
+task stop
+```
+
+### Verify the stack
+
+After services are up, the following should respond:
+
+- `https://provider.dataspaces.localhost/.well-known/did.json`
+- `https://consumer.dataspaces.localhost/.well-known/did.json`
+- `https://trust-anchor.dataspaces.localhost/.well-known/did.json`
+- `http://localhost:30001/health` (producer connector)
+- `http://localhost:31001/health` (consumer connector)
+- `http://localhost:30005/health` (identity-registry)
 
 ---
 
 ## Services
+
+### identity-registry (`services/identity-registry`)
+
+Centralized trust anchor service (DSSC BB02). Manages DID lifecycle, STS token issuance (ES256 SI JWTs), DCP credential service, participant registry, and StatusList2021. DID private keys never leave this service — they are Fernet-encrypted at rest.
 
 ### ds-connector (`services/connector`)
 
@@ -71,151 +139,96 @@ A W3C PROV-O compatible REST API that logs catalogue publication, contract negot
 
 A SvelteKit web application covering the full portal surface: catalogue browser, consumer negotiation wizard, provider governance management, consent portal for data subjects, and provenance lineage viewer.
 
-### ds-sts (`services/sts`)
-
-A minimal Security Token Service. Each participant runs their own instance (provider + consumer). Issues ES256-signed Self-Issued tokens (SI JWTs) with the participant DID as `sub` and `iss`, consumed by EDC during DCP handshake.
-
-### ds-vc-wallet (`services/vc-wallet`)
-
-A minimal DCP Credential Service. Holds pre-issued Verifiable Credentials and returns them as a `VerifiablePresentation` when queried by EDC during contract negotiation.
-
 ### ds-federated-catalog (`services/federated-catalog`)
 
 A DCAT-AP catalog crawler. Periodically queries participant connectors and builds an aggregated catalog. Backed by the connector's participant registry.
 
 ### edc-extensions (`services/edc-extensions`)
 
-Java extensions for the EDC policy engine. Registers three `AtomicConstraintFunction` implementations for the `ds:` ODRL vocabulary: `ds:accessScope` (participant allowlist), `ds:consentStatus` (consent registry check), and `ds:contractRequired` (bilateral contract gate).
+Java extensions for the EDC policy engine. Registers `AtomicConstraintFunction` implementations for the `ds:` ODRL vocabulary: `ds:accessScope`, `ds:consentStatus`, and `ds:contractRequired`.
 
 ### edc-connector (`services/edc-connector`)
 
-Gradle project that assembles a fat JAR combining `controlplane-dcp-bom`, `dataplane-base-bom`, `configuration-filesystem`, `identity-did-web`, and `edc-extensions` against EDC v0.16.0. Built via a versioned base image (`ds-edc-base:0.16.0`) that pre-caches all Maven dependencies.
+Gradle project that assembles a fat JAR combining EDC v0.16.0 modules with DCP support. Built via a versioned base image (`ds-edc-base:0.16.0`) that pre-caches all Maven dependencies.
 
 ---
 
 ## How services interact
 
 ```
-                                   ┌─────────────────────────┐
-                                   │     Portal (30004)      │
-                                   │     SvelteKit + Auth.js │
-                                   └────────┬───────┬────────┘
-                                            │       │
-                              ┌─────────────┘       └─────────────┐
-                              ▼                                   ▼
-                    ┌──────────────────┐               ┌──────────────────┐
-                    │  ds-connector    │               │  ds-provenance   │
-                    │  (30001)         │               │  (30000)         │
-                    │  FastAPI         │──events──────→│  FastAPI         │
-                    └──┬────┬────┬────┘               └──────────────────┘
-                       │    │    │
-          ┌────────────┘    │    └────────────┐
-          ▼                 ▼                 ▼
-  ┌──────────────┐  ┌──────────────┐  ┌──────────────────┐
-  │ EDC Provider │  │ EDC Consumer │  │ Federated Catalog │
-  │ (19191-19291)│  │ (29191-29291)│  │ (30003)           │
-  └──┬───────┬───┘  └──┬───────┬──┘  └──────────────────┘
-     │       │         │       │
-     ▼       ▼         ▼       ▼
-  ┌──────┐ ┌──────┐ ┌──────┐ ┌──────┐
-  │ STS  │ │ VC   │ │ STS  │ │ VC   │
-  │38080 │ │Wallet│ │38081 │ │Wallet│
-  └──────┘ │38082 │ └──────┘ │38083 │
-           └──────┘          └──────┘
+Portal (30004) ──→ ds-connector (30001/31001) ──→ EDC Provider/Consumer
+                                               ──→ ds-provenance (30000/31000)
+                                               ──→ Federated Catalog (30003)
+
+EDC Provider ←──DSP──→ EDC Consumer
+  ├──→ identity-registry (30005)   STS token issuance (/sts/{did}/token)
+  ├──→ identity-registry (30005)   VP queries (/credentials/{did}/presentations/query)
+  └──→ ds-connector /internal/*    ODRL constraint evaluation
+
+identity-registry (30005)
+  ├── DID documents      Caddy rewrites /.well-known/did.json → /dids/{did}/did.json
+  ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
+  ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
+  ├── Participant registry GET /participants, GET /participants/{did}/check
+  └── StatusList2021     GET /status/{list_id}
+
+Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
+ds-connector ──→ identity-registry /participants (HttpParticipantRegistry with TTL cache)
+
+dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + consent checks
 ```
-
-**Portal** is the user-facing frontend. All data operations go through **ds-connector**, which orchestrates EDC, consent, and governance. During DSP negotiation, EDC connectors call **STS** for identity tokens and **VC-wallet** for credential presentations. EDC also calls back to ds-connector's `/internal/*` endpoints for ODRL constraint evaluation (via **edc-extensions**). **ds-provenance** is a pure event sink — it receives lifecycle events from ds-connector and serves lineage queries to the portal. **Federated catalog** crawls participant DSP endpoints periodically. The external **dataset-api** (port 30002) validates agreements and consent via ds-connector before returning query results.
-
-For detailed interaction diagrams, see:
-
-- [Architecture overview](docs/architecture.md) — service map, network topology, port scheme
-- [Data exchange flow](docs/data-exchange-flow.md) — step-by-step negotiation and transfer sequence
-- [Identity & DCP](docs/identity-and-dcp.md) — DID, STS, VC-wallet, DCP verification flow
-- [Governance & ODRL](docs/governance-and-odrl.md) — YAML to ODRL pipeline and policy enforcement
-- [Provenance & lineage](docs/provenance-and-lineage.md) — event types, PROV-O model, graph traversal
-- [Consent & sovereignty](docs/consent-and-sovereignty.md) — consent lifecycle, row filtering, revocation
 
 ---
 
-## Getting started
+## Compose topology
 
-### Prerequisites
+Three compose files form the full stack:
 
-- Docker with Compose (v2.24+)
-- Python 3.12 (for key generation and VC issuance scripts)
+| File | Services | Purpose |
+|------|----------|---------|
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
+| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer | Producer participant |
+| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
-### One-time workspace setup
+The portal is not in any compose file — run it locally via `task consumer:portal:run`.
 
-Generate participant key pairs and issue membership VCs:
+All containers share the `dataspaces` bridge network.
 
-```bash
-bash scripts/gen-keys.sh     # EC P-256 key pairs → data/keys/
-python3 scripts/issue-vcs.py # MembershipCredential VCs → data/credentials/
-```
+## Port scheme
 
-Optionally add the local hostnames to `/etc/hosts` and trust Caddy's CA:
-
-```bash
-task proxy:hosts     # adds *.dataspaces.localhost entries (requires sudo)
-task proxy:trust-ca  # trusts Caddy root CA in system store (requires sudo)
-```
-
-### Start the Docker runtime
-
-```bash
-cp .env.example .env
-task repo:start
-```
-
-Compatibility aliases:
-
-```bash
-task start
-task services:start
-```
-
-Both aliases point to `task repo:start`. The supported runtime path is
-Docker-only through the root runtime compose files.
-
-### Build the EDC connector image
-
-```bash
-# Build the dependency cache base image (once per EDC version bump)
-task edc:base
-
-# Build the connector image
-task edc:docker
-```
-
-### Verify the stack
-
-After services are up, the following should respond:
-
-- `https://connector.dataspaces.localhost/health`
-- `https://provenance.dataspaces.localhost/health`
-- `https://portal.dataspaces.localhost`
-- `https://provider.dataspaces.localhost/.well-known/did.json`
-- `https://consumer.dataspaces.localhost/.well-known/did.json`
-- `https://trust-anchor.dataspaces.localhost/.well-known/did.json`
+| Port | Service |
+|------|---------|
+| 30000 | ds-provenance (producer) |
+| 30001 | ds-connector (producer) |
+| 30002 | dataset-api (producer) |
+| 30003 | federated-catalog (producer) |
+| 30004 | portal (run locally) |
+| 30005 | identity-registry (shared infra) |
+| 31000 | ds-provenance (consumer) |
+| 31001 | ds-connector (consumer) |
+| 35432 | PostgreSQL |
+| 8080 | Keycloak |
+| 9000 | Caddy consumer gateway |
+| 9010 | Caddy producer gateway |
+| 19xxx | EDC provider (management, protocol, public, control) |
+| 29xxx | EDC consumer (management, protocol, public, control) |
+| 30900+ | debugpy ports |
 
 ---
 
-## Infrastructure
+## Local dev overrides
 
-### Shared services (root `docker-compose.yml`)
+Any service can be run locally (with hot-reload) instead of in Docker. Stop the container first, then run the service with `task`:
 
-| Service | Image | Port | Notes |
-|---------|-------|------|-------|
-| caddy | `caddy:2-alpine` | 80, 443 | Reverse proxy, local HTTPS, DID document serving |
-| postgres | `postgres:17.4-alpine` | 35432 | One database per service (`connector`, `provenance`, …) |
+```bash
+# Example: run producer connector locally
+task producer:connector:run
 
-All services share the `dataspaces` Docker network. The `postgres` container is reachable as `postgres:5432` from within the network and as `host.docker.internal:35432` from the host.
+# Or with debugpy attached
+task producer:connector:debug
+```
 
-### Pydantic settings defaults
-
-All Python services use `pydantic-settings` with hard defaults pointing at the shared postgres. No `.env` file is required to run locally — override via environment variables when needed.
-
-`.env.example` files are documentation only.
+Available overrides: `task identity-registry:run`, `task producer:connector:run`, `task producer:provenance:run`, `task producer:dataset-api:run`, `task producer:federated-catalog:run`, `task consumer:connector:run`, `task consumer:provenance:run`.
 
 ---
 
@@ -227,15 +240,23 @@ Each participant is identified by a `did:web:` URI:
 - Consumer: `did:web:consumer.dataspaces.localhost`
 - Trust anchor: `did:web:trust-anchor.dataspaces.localhost`
 
-DID documents are static JSON files served by Caddy from `services/caddy/did/`. Each document contains an EC P-256 `JsonWebKey2020` verification method used for DCP identity proofs.
+DID documents are served dynamically by identity-registry. Caddy rewrites `/.well-known/did.json` requests to the identity-registry API.
 
-Private keys live in `services/connector/config/*-key.json` (dev only — inject via secrets manager in production).
+DID private keys are generated and stored inside identity-registry, encrypted at rest with Fernet. The `ir-cli` tool (inside the identity-registry container) handles bootstrap and participant registration — see `task identity:bootstrap`.
 
 ---
 
 ## Governance and ODRL policies
 
-Datasets are described in governance YAML files extended with `dcat:` and `dataspace:` blocks. The reusable core uses `services/connector/governance/governance.yaml`. The `GovernanceMapper` in `services/governance/` converts these into ODRL Offer policies attached to EDC assets.
+Datasets are described in `services/connector/governance/governance.yaml`. The pipeline:
+
+```
+governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
+  → ODRL Offer + EDC Asset + EDC PolicyDefinition + EDC ContractDefinition
+  → POST /provider/sync pushes to EDC Management API
+  → EDC serves to consumers via DSP
+  → edc-extensions evaluate constraints at negotiation time
+```
 
 Access levels map to ODRL as follows:
 
@@ -245,24 +266,6 @@ Access levels map to ODRL as follows:
 - `secret` — not exposed to EDC or the catalogue
 
 When `user_filter_column` is set on a dataset, a `ds:consentStatus eq active` constraint is added to the ODRL offer and consent-based row filtering is applied at query time.
-
----
-
-## Compliance evidence
-
-Milestone 7 adds the evidence pack for stronger DSSC assessment:
-
-```bash
-task compliance:validate
-task compliance:test
-task compliance:e2e:smoke   # requires a running runtime
-```
-
-The main documents are `docs/rulebook.md`, `docs/trust-framework.md`,
-`docs/security-hardening.md`, `docs/gdpr-consent.md`,
-`docs/compliance-matrix-dssc.md` and `docs/production-checklist.md`.
-
-Optional integration evidence is kept with each integration.
 
 ---
 
@@ -285,15 +288,31 @@ Consumer queries dataset-api
 
 ---
 
-## DCP identity verification
+## Compliance evidence
 
-During DSP negotiation, each connector presents a signed Verifiable Presentation containing a `MembershipCredential` issued by the trust anchor. The counterparty verifies:
+```bash
+task compliance:validate
+task compliance:test
+task compliance:e2e:smoke   # requires a running stack
+```
 
-1. The VP signature matches the holder's DID document public key
-2. The VC was issued by a trusted issuer (`edc.iam.trustedissuer.0.id`)
-3. ODRL constraints are evaluated against the verified participant identity
+See `docs/compliance-matrix-dssc.md` for the full DSSC assessment matrix.
 
-The STS service issues ES256 SI tokens on demand via OAuth2 `client_credentials`. The VC wallet returns held credentials when EDC queries the DCP Credential Service API.
+---
+
+## Useful task commands
+
+| Command | Description |
+|---------|-------------|
+| `task start` | Start everything |
+| `task stop` | Stop everything |
+| `task status` | Show all running containers |
+| `task producer:logs` | Follow producer logs |
+| `task consumer:logs` | Follow consumer logs |
+| `task reset-demo-state` | Clear runtime data (requests, consents, agreements, transfers, provenance) |
+| `task edc:base` | Build EDC base image (once per version bump) |
+
+Run `task --list` for all available commands.
 
 ---
 
