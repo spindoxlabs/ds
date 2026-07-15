@@ -2,16 +2,16 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { env } from '$env/dynamic/private';
 import { subjectCredentialHeaders } from '$lib/server/connector';
-import { consumerSubjectFromAccessToken } from '$lib/server/auth';
+import { getConsumerSubjectId } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals, fetch }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
-	const subjectId = consumerSubjectFromAccessToken(token);
+	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
 
 	const headers = {
-		...subjectCredentialHeaders(subjectId),
+		...subjectCredentialHeaders(subjectId, session?.userVcJws),
 		...(token ? { Authorization: `Bearer ${token}` } : {}),
 	};
 
@@ -44,7 +44,7 @@ export const actions: Actions = {
 	revoke: async ({ request, locals, fetch }) => {
 		const session = await locals.auth();
 		const token = session?.accessToken ?? '';
-		const subjectId = consumerSubjectFromAccessToken(token);
+		const subjectId = session ? getConsumerSubjectId(session) : '';
 		const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
 		const form = await request.formData();
 		const requestId = String(form.get('request_id') ?? '');
@@ -56,7 +56,7 @@ export const actions: Actions = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				...subjectCredentialHeaders(subjectId),
+				...subjectCredentialHeaders(subjectId, session?.userVcJws),
 				...(token ? { Authorization: `Bearer ${token}` } : {}),
 			},
 			body: JSON.stringify({ reason: 'Revoked by consumer user' }),

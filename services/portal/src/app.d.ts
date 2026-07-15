@@ -17,6 +17,10 @@ declare global {
 declare module '@auth/core/types' {
 	interface Session {
 		accessToken?: string;
+		userDid?: string | null;
+		userVcRole?: string | null;
+		userVcJws?: string | null;
+		userSubjectId?: string | null;
 	}
 }
 

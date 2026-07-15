@@ -18,6 +18,28 @@ scopes:
   # Dataspace Identity Registry
   - name: identity-registry.admin
     description: Admin access to dataspace identity-registry API
+  - name: identity-registry.read
+    description: Read participant registry and request credential presentations
+  - name: identity-registry.resolve
+    description: Resolve user identity by email
+
+  # Connector
+  - name: connector.admin
+    description: Provider management (sync, assets, policies, contracts)
+  - name: connector.internal
+    description: Internal API (agreement/transfer/consent checks, audit, JWKS)
+  - name: connector.webhook
+    description: Accept EDC webhook events (transfer-process, contract-negotiation)
+
+  # Provenance
+  - name: provenance.read
+    description: Query provenance lineage and audit log
+  - name: provenance.write
+    description: Write provenance events and audit log entries
+
+  # Federated Catalog
+  - name: catalog.read
+    description: Query federated catalog
 
 # =============================================================================
 # CLIENTS
@@ -43,8 +65,57 @@ clients:
   - client_id: svc-ds-portal
     name: Dataspace Portal
     secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
-    service_account_enabled: false
+    service_account_enabled: true
     scopes_prefix: null
     default_scopes:
       - dataset.query
       - dataset.read
+      - identity-registry.resolve
+      - connector.admin
+      - provenance.read
+      - catalog.read
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-connector
+      - svc-ds-provenance
+      - svc-ds-federated-catalog
+
+  - client_id: svc-ds-connector
+    name: Dataspace Connector
+    secret: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+    scopes_prefix: connector
+    default_scopes:
+      - identity-registry.read
+      - provenance.write
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-provenance
+
+  - client_id: svc-ds-federated-catalog
+    name: Dataspace Federated Catalog
+    secret: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
+    scopes_prefix: catalog
+    default_scopes:
+      - identity-registry.read
+    extra_audiences:
+      - svc-ds-identity-registry
+
+  - client_id: svc-ds-dataset-api
+    name: Dataspace Dataset API
+    secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
+    scopes_prefix: dataset
+    default_scopes:
+      - connector.internal
+    extra_audiences:
+      - svc-ds-connector
+
+  - client_id: svc-edc
+    name: Eclipse Dataspace Connector
+    secret: ${SVC_EDC_SECRET:-svc-edc}
+    scopes_prefix: null
+    default_scopes:
+      - identity-registry.read
+      - connector.webhook
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-connector

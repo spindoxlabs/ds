@@ -2,7 +2,6 @@ import type { PageServerLoad } from './$types';
 import { env } from '$env/dynamic/private';
 import { redirect } from '@sveltejs/kit';
 import { parseTokenRoles } from '$lib/server/auth';
-import { subjectFromAccessToken, userVcRoleForSubject } from '$lib/server/connector';
 
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const session = await locals.auth();
@@ -11,8 +10,7 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	}
 
 	const roles = parseTokenRoles(session.accessToken);
-	const subjectId = subjectFromAccessToken(session.accessToken);
-	const userVcRole = userVcRoleForSubject(subjectId);
+	const userVcRole = session.userVcRole ?? null;
 	if (!roles.isAdmin && userVcRole !== 'ConsumerUser') {
 		throw redirect(303, '/my-data');
 	}

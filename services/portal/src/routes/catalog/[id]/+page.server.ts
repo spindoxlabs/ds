@@ -1,13 +1,13 @@
 import type { PageServerLoad } from './$types';
 import { summarisePolicy } from '$lib/server/odrl';
 import { env } from '$env/dynamic/private';
-import { consumerSubjectFromAccessToken } from '$lib/server/auth';
+import { getConsumerSubjectId } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
-	const subjectId = consumerSubjectFromAccessToken(token);
+	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const assetId = decodeURIComponent(params.id);
 	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
 	const catalogueUrl = env.CATALOGUE_URL ?? 'http://dataset-api:30002';
@@ -78,7 +78,7 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 		try {
 			const requestsRes = await fetch(`${connectorUrl}/consumer/requests`, {
 				headers: {
-					...subjectCredentialHeaders(subjectId),
+					...subjectCredentialHeaders(subjectId, session?.userVcJws),
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
 			});

@@ -45,9 +45,11 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
+        "http://portal.dataspaces.localhost:9010/auth/callback/keycloak",
         "http://localhost:30004/auth/callback/keycloak"
       ],
       "webOrigins": [
+        "http://portal.dataspaces.localhost:9010",
         "http://localhost:30004"
       ],
       "defaultClientScopes": [
@@ -67,6 +69,7 @@
   ],
   "users": [
     {
+      "id": "00000000-0000-4000-a000-000000000001",
       "username": "admin@example.test",
       "email": "admin@example.test",
       "firstName": "DS",
@@ -92,9 +95,26 @@
       }
     },
     {
-      "username": "test@test.it",
-      "email": "test@test.it",
-      "firstName": "Test",
+      "id": "00000000-0000-4000-a000-000000000002",
+      "username": "consumer@example.test",
+      "email": "consumer@example.test",
+      "firstName": "Consumer",
+      "lastName": "User",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000003",
+      "username": "producer@example.test",
+      "email": "producer@example.test",
+      "firstName": "Producer",
       "lastName": "User",
       "enabled": true,
       "emailVerified": true,
@@ -105,7 +125,30 @@
           "temporary": false
         }
       ],
-      "requiredActions": []
+      "realmRoles": [
+        "dataset.admin"
+      ],
+      "clientRoles": {
+        "ds-portal": [
+          "dataset.admin"
+        ]
+      }
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000004",
+      "username": "subject@example.test",
+      "email": "subject@example.test",
+      "firstName": "Data",
+      "lastName": "Subject",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "test",
+          "temporary": false
+        }
+      ]
     }
   ]
 }

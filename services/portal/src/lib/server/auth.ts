@@ -4,7 +4,7 @@
  */
 import { redirect } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { subjectFromAccessToken, userVcForSubject, userVcRoleForSubject } from '$lib/server/connector';
+import type { Session } from '@auth/core/types';
 
 export interface ServerRoles {
 	isAdmin: boolean;
@@ -50,17 +50,12 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 	}
 }
 
-export function consumerSubjectFromAccessToken(accessToken: string | undefined): string {
-	const subjectId = subjectFromAccessToken(accessToken);
-	if (userVcForSubject(subjectId)) return subjectId;
-	if (parseTokenRoles(accessToken).isAdmin) return env.PORTAL_DEMO_CONSUMER_SUBJECT_ID ?? 'test';
-	return subjectId;
+export function getConsumerSubjectId(session: Session): string {
+	if (session.userDid && session.userVcJws) return session.userDid;
+	if (parseTokenRoles(session.accessToken).isAdmin) return env.PORTAL_DEMO_CONSUMER_SUBJECT_ID ?? 'test';
+	return session.userDid ?? '';
 }
 
-/**
- * Require authentication. Redirect to sign-in if not authenticated.
- * Returns the session (non-null guaranteed).
- */
 export async function requireAuth(event: { locals: App.Locals; url: URL }) {
 	const session = await event.locals.auth();
 	if (!session?.user) {
@@ -69,9 +64,6 @@ export async function requireAuth(event: { locals: App.Locals; url: URL }) {
 	return session;
 }
 
-/**
- * Require admin role. Redirect to home if authenticated but not admin.
- */
 export async function requireAdmin(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
@@ -81,9 +73,6 @@ export async function requireAdmin(event: { locals: App.Locals; url: URL }) {
 	return { session, roles };
 }
 
-/**
- * Require dataset.admin or admin role (provider access).
- */
 export async function requireProvider(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
@@ -93,14 +82,11 @@ export async function requireProvider(event: { locals: App.Locals; url: URL }) {
 	return { session, roles };
 }
 
-/**
- * Require a user VC with the ConsumerUser role.
- */
 export async function requireConsumer(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
-	const subjectId = consumerSubjectFromAccessToken(session.accessToken);
-	const userVcRole = userVcRoleForSubject(subjectId);
+	const subjectId = getConsumerSubjectId(session);
+	const userVcRole = session.userVcRole ?? null;
 	if (!subjectId || (!roles.isAdmin && userVcRole !== 'ConsumerUser')) {
 		throw redirect(303, '/');
 	}
@@ -109,8 +95,8 @@ export async function requireConsumer(event: { locals: App.Locals; url: URL }) {
 
 export async function requireDataSubject(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
-	const subjectId = subjectFromAccessToken(session.accessToken);
-	const userVcRole = userVcRoleForSubject(subjectId);
+	const subjectId = session.userDid ?? '';
+	const userVcRole = session.userVcRole ?? null;
 	if (!subjectId || userVcRole !== 'DataSubject') {
 		throw redirect(303, '/');
 	}

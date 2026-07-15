@@ -1,6 +1,7 @@
 import { SvelteKitAuth } from '@auth/sveltekit';
 import Keycloak from '@auth/sveltekit/providers/keycloak';
 import { env } from '$env/dynamic/private';
+import { resolveUserByEmail } from '$lib/server/identity-registry';
 
 export const { handle, signIn, signOut } = SvelteKitAuth({
 	providers: [
@@ -18,17 +19,26 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 	secret: env.AUTH_SECRET ?? 'dev-secret-change-in-prod',
 	trustHost: true,
 	callbacks: {
-		async jwt({ token, account }) {
-			// Persist access_token and scopes from Keycloak
+		async jwt({ token, account, profile }) {
 			if (account) {
 				token.accessToken = account.access_token;
 				token.idToken = account.id_token;
+
+				const email = (profile?.email ?? token.email ?? '') as string;
+				const identity = await resolveUserByEmail(email);
+				token.userDid = identity?.did ?? null;
+				token.userVcRole = identity?.role ?? null;
+				token.userVcJws = identity?.vcJws ?? null;
+				token.userSubjectId = identity?.subjectId ?? null;
 			}
 			return token;
 		},
 		async session({ session, token }) {
-			// Forward access token to client session (available in load functions only)
 			session.accessToken = token.accessToken as string | undefined;
+			session.userDid = (token.userDid as string) ?? null;
+			session.userVcRole = (token.userVcRole as string) ?? null;
+			session.userVcJws = (token.userVcJws as string) ?? null;
+			session.userSubjectId = (token.userSubjectId as string) ?? null;
 			return session;
 		},
 	},

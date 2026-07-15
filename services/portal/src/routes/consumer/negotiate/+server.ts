@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { consumerSubjectFromAccessToken } from '$lib/server/auth';
+import { getConsumerSubjectId } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 async function connectorErrorMessage(res: Response): Promise<string> {
@@ -21,7 +21,7 @@ async function connectorErrorMessage(res: Response): Promise<string> {
 export const POST: RequestHandler = async ({ request, locals }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
-	const subjectId = consumerSubjectFromAccessToken(token);
+	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const body = await request.json();
 	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
 	const payload = {
@@ -44,7 +44,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			...subjectCredentialHeaders(subjectId),
+			...subjectCredentialHeaders(subjectId, session?.userVcJws),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 		body: JSON.stringify(payload),

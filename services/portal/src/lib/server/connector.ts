@@ -4,17 +4,10 @@
  */
 import { env } from '$env/dynamic/private';
 import { env as pubEnv } from '$env/dynamic/public';
-import { createHash } from 'node:crypto';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
 
 function connectorUrl(path: string): string {
 	const base = env.CONNECTOR_URL ?? pubEnv.PUBLIC_CONNECTOR_URL ?? 'http://ds-connector:30001';
 	return `${base}${path}`;
-}
-
-function identityRegistryUrl(): string {
-	return env.IDENTITY_REGISTRY_URL ?? 'http://172.17.0.1:30005';
 }
 
 async function apiFetch<T>(
@@ -37,66 +30,10 @@ async function apiFetch<T>(
 	return res.json() as Promise<T>;
 }
 
-export function subjectFromAccessToken(accessToken: string | undefined): string {
-	if (env.DEFAULT_SUBJECT_ID) return env.DEFAULT_SUBJECT_ID;
-	if (!accessToken) return '';
-	try {
-		const payload = JSON.parse(Buffer.from(accessToken.split('.')[1], 'base64url').toString('utf-8')) as {
-			preferred_username?: string;
-			sub?: string;
-			email?: string;
-		};
-		const candidates = [
-			emailSubjectId(payload.email),
-			emailSubjectId(payload.preferred_username),
-			payload.preferred_username,
-			payload.email,
-			payload.sub,
-		].filter((value): value is string => Boolean(value));
-		return candidates.find((candidate) => Boolean(userVcForSubject(candidate))) ?? candidates[0] ?? '';
-	} catch {
-		return '';
-	}
-}
-
-export function emailSubjectId(email: string | undefined): string {
-	const normalized = email?.trim().toLowerCase() ?? '';
-	if (!normalized || !normalized.includes('@')) return '';
-	const digest = createHash('sha256').update(normalized).digest('hex').slice(0, 24);
-	return `email-${digest}`;
-}
-
-export function userVcForSubject(subjectId: string): string {
-	if (!subjectId) return '';
-	const base = env.USER_CREDENTIALS_PATH ?? '/credentials/users';
-	try {
-		const vc = JSON.parse(readFileSync(join(base, subjectId, 'user-vc.json'), 'utf-8')) as {
-			proof?: { jws?: string };
-		};
-		return vc.proof?.jws ?? '';
-	} catch {
-		return '';
-	}
-}
-
-export function userVcRoleForSubject(subjectId: string): string | null {
-	if (!subjectId) return null;
-	const base = env.USER_CREDENTIALS_PATH ?? '/credentials/users';
-	try {
-		const vc = JSON.parse(readFileSync(join(base, subjectId, 'user-vc.json'), 'utf-8')) as {
-			credentialSubject?: { role?: string };
-		};
-		return vc.credentialSubject?.role ?? null;
-	} catch {
-		return null;
-	}
-}
-
-export function subjectCredentialHeaders(subjectId: string): Record<string, string> {
-	return {
-		'X-Subject-Id': subjectId,
-		'X-User-VC': userVcForSubject(subjectId),
-	};
+export function subjectCredentialHeaders(subjectId: string, vcJws?: string | null): Record<string, string> {
+	const headers: Record<string, string> = { 'X-Subject-Id': subjectId };
+	if (vcJws) headers['X-User-VC'] = vcJws;
+	return headers;
 }
 
 // ── Consent ──────────────────────────────────────────────────────────────────
@@ -114,42 +51,42 @@ export interface ConsentRequest {
 	revoked_at?: string | null;
 }
 
-export async function getMyConsents(token: string, subjectId: string): Promise<ConsentRequest[]> {
+export async function getMyConsents(token: string, subjectId: string, vcJws?: string | null): Promise<ConsentRequest[]> {
 	return apiFetch<ConsentRequest[]>(
 		connectorUrl('/consent/my'),
-		{ headers: subjectCredentialHeaders(subjectId) },
+		{ headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
 
-export async function getMyConsent(id: string, token: string, subjectId: string): Promise<ConsentRequest> {
+export async function getMyConsent(id: string, token: string, subjectId: string, vcJws?: string | null): Promise<ConsentRequest> {
 	return apiFetch<ConsentRequest>(
 		connectorUrl(`/consent/my/${id}`),
-		{ headers: subjectCredentialHeaders(subjectId) },
+		{ headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
 
-export async function approveConsent(id: string, token: string, subjectId: string): Promise<void> {
+export async function approveConsent(id: string, token: string, subjectId: string, vcJws?: string | null): Promise<void> {
 	return apiFetch<void>(
 		connectorUrl(`/consent/my/${id}/approve`),
-		{ method: 'POST', headers: subjectCredentialHeaders(subjectId) },
+		{ method: 'POST', headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
 
-export async function rejectConsent(id: string, token: string, subjectId: string): Promise<void> {
+export async function rejectConsent(id: string, token: string, subjectId: string, vcJws?: string | null): Promise<void> {
 	return apiFetch<void>(
 		connectorUrl(`/consent/my/${id}/reject`),
-		{ method: 'POST', headers: subjectCredentialHeaders(subjectId) },
+		{ method: 'POST', headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
 
-export async function revokeConsent(id: string, token: string, subjectId: string): Promise<void> {
+export async function revokeConsent(id: string, token: string, subjectId: string, vcJws?: string | null): Promise<void> {
 	return apiFetch<void>(
 		connectorUrl(`/consent/my/${id}/revoke`),
-		{ method: 'POST', headers: subjectCredentialHeaders(subjectId) },
+		{ method: 'POST', headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
@@ -166,10 +103,10 @@ export interface OwnedDataset {
 
 export type DataShareDecision = ConsentRequest;
 
-export async function getMyDataShares(token: string, subjectId: string): Promise<DataShareDecision[]> {
+export async function getMyDataShares(token: string, subjectId: string, vcJws?: string | null): Promise<DataShareDecision[]> {
 	return apiFetch<DataShareDecision[]>(
 		connectorUrl('/consent/my/shares'),
-		{ headers: subjectCredentialHeaders(subjectId) },
+		{ headers: subjectCredentialHeaders(subjectId, vcJws) },
 		token,
 	);
 }
@@ -179,12 +116,13 @@ export async function setMyDataShare(
 	subjectId: string,
 	datasetId: string,
 	enabled: boolean,
+	vcJws?: string | null,
 ): Promise<DataShareDecision> {
 	return apiFetch<DataShareDecision>(
 		connectorUrl('/consent/my/shares'),
 		{
 			method: 'POST',
-			headers: subjectCredentialHeaders(subjectId),
+			headers: subjectCredentialHeaders(subjectId, vcJws),
 			body: JSON.stringify({
 				dataset_id: datasetId,
 				enabled,

@@ -19,11 +19,12 @@ async function loadOwnedDatasets(fetchFn: typeof fetch, subjectId: string): Prom
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const { session, subjectId } = await requireDataSubject({ locals, url });
 	const token = session.accessToken ?? '';
+	const vcJws = session.userVcJws;
 
 	try {
 		const [datasets, shares] = await Promise.all([
 			loadOwnedDatasets(fetch, subjectId),
-			getMyDataShares(token, subjectId),
+			getMyDataShares(token, subjectId, vcJws),
 		]);
 		return { subjectId, datasets, shares, error: null };
 	} catch (e) {
@@ -44,7 +45,7 @@ export const actions: Actions = {
 		const datasetId = String(form.get('dataset_id') ?? '');
 		if (!datasetId) return fail(400, { error: 'dataset_id is required' });
 		try {
-			await setMyDataShare(token, subjectId, datasetId, true);
+			await setMyDataShare(token, subjectId, datasetId, true, session.userVcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed to enable sharing' });
 		}
@@ -57,7 +58,7 @@ export const actions: Actions = {
 		const datasetId = String(form.get('dataset_id') ?? '');
 		if (!datasetId) return fail(400, { error: 'dataset_id is required' });
 		try {
-			await setMyDataShare(token, subjectId, datasetId, false);
+			await setMyDataShare(token, subjectId, datasetId, false, session.userVcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed to disable sharing' });
 		}

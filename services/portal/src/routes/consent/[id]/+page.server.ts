@@ -1,15 +1,15 @@
 import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
-import { getMyConsent, approveConsent, rejectConsent, revokeConsent, subjectFromAccessToken } from '$lib/server/connector';
+import { getMyConsent, approveConsent, rejectConsent, revokeConsent } from '$lib/server/connector';
 import { summarisePolicy } from '$lib/server/odrl';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
-	const subjectId = subjectFromAccessToken(token);
+	const subjectId = session?.userDid ?? '';
+	const vcJws = session?.userVcJws;
 	try {
-		const consent = await getMyConsent(params.id, token, subjectId);
-		// Policy is stored in consent.purpose as a list; no full ODRL here — use message field
+		const consent = await getMyConsent(params.id, token, subjectId, vcJws);
 		const policySummary = summarisePolicy(null);
 		return { consent, policySummary, subjectId, error: null };
 	} catch (e) {
@@ -21,9 +21,9 @@ export const actions: Actions = {
 	approve: async ({ params, locals }) => {
 		const session = await locals.auth();
 		const token = session?.accessToken ?? '';
-		const subjectId = subjectFromAccessToken(token);
+		const subjectId = session?.userDid ?? '';
 		try {
-			await approveConsent(params.id, token, subjectId);
+			await approveConsent(params.id, token, subjectId, session?.userVcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}
@@ -32,9 +32,9 @@ export const actions: Actions = {
 	reject: async ({ params, locals }) => {
 		const session = await locals.auth();
 		const token = session?.accessToken ?? '';
-		const subjectId = subjectFromAccessToken(token);
+		const subjectId = session?.userDid ?? '';
 		try {
-			await rejectConsent(params.id, token, subjectId);
+			await rejectConsent(params.id, token, subjectId, session?.userVcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}
@@ -43,9 +43,9 @@ export const actions: Actions = {
 	revoke: async ({ params, locals }) => {
 		const session = await locals.auth();
 		const token = session?.accessToken ?? '';
-		const subjectId = subjectFromAccessToken(token);
+		const subjectId = session?.userDid ?? '';
 		try {
-			await revokeConsent(params.id, token, subjectId);
+			await revokeConsent(params.id, token, subjectId, session?.userVcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}
