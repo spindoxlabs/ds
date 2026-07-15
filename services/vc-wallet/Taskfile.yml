@@ -4,19 +4,21 @@ tasks:
   setup:
     desc: Install Python dependencies (idempotent)
     cmds:
-      - uv pip install -e .
+      - uv sync
     sources: [pyproject.toml]
     generates: [.venv/bin/uvicorn]
 
   run:
     desc: Run dev server with hot-reload on :8081
+    deps: [setup]
     cmds:
-      - PYTHONPATH=src uvicorn vc_wallet.main:app --reload --port 8081
+      - uv run uvicorn vc_wallet.main:app --reload --port 8081
 
   debug:
-    desc: (noop — attach debugger manually)
+    desc: Run dev server with debugpy on :30909, waiting for attach
+    deps: [setup]
     cmds:
-      - echo "debug not configured"
+      - uv run python -m debugpy --listen 0.0.0.0:30909 --wait-for-client -m uvicorn vc_wallet.main:app --reload --port 8081
 
   release:
     desc: (noop — managed by CI/CD)

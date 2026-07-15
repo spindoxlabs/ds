@@ -37,3 +37,8 @@ asyncio_mode = "auto"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.21",
+]

@@ -4,6 +4,8 @@ from __future__ import annotations
 from functools import lru_cache
 from pathlib import Path
 
+from typing import Literal
+
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,10 +19,15 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
+    role: Literal["producer", "consumer"] = Field(
+        ...,
+        description="Participant role — determines which EDC client and routers are loaded",
+    )
+
     participant_id: str = "provider"
-    participant_base_url: str = "https://provider.dataspaces.test"
-    participant_did: str = "did:web:provider.dataspaces.test"
-    consumer_participant_did: str = "did:web:consumer.dataspaces.test"
+    participant_base_url: str = "https://provider.dataspaces.localhost"
+    participant_did: str = "did:web:provider.dataspaces.localhost"
+    consumer_participant_did: str = "did:web:consumer.dataspaces.localhost"
 
     # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix)
     edc_provider_management_url: str = Field(
@@ -61,13 +68,13 @@ class Settings(BaseSettings):
     participants_registry_path: str = "governance/participants.yaml"
     governance_yaml_path: str = "governance/governance.yaml"
     odrl_profile_path: str | None = None
-    trust_anchor_did: str = "did:web:trust-anchor.dataspaces.test"
+    trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
     trust_anchor_key_path: str = "/config/trust-anchor-key.json"
     credential_status_path: str | None = None
     credential_status_url: str | None = None
     allow_unknown_participants: bool = False
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/connector"
+    database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector"
     debug: bool = False
 
     # Notification backends — comma-separated: smtp, webhook (default: empty → null)

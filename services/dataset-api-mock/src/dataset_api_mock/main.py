@@ -14,7 +14,7 @@ from .metrics import install_metrics
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DATASET_API_", extra="ignore")
 
-    connector_internal_url: str = "http://ds-connector:30001"
+    connector_internal_url: str = "http://172.17.0.1:30001"
     enforce_consent: bool = True
     external_query_url: str | None = None
     extra_datasets_path: str | None = None

@@ -126,7 +126,7 @@ def validate(
         return result
 
     resolver = GovernanceResolver.from_file(governance_path)
-    mapper = GovernanceMapper("provider", "https://provider.dataspaces.test")
+    mapper = GovernanceMapper("provider", "https://provider.dataspaces.localhost")
 
     exposed: list[DatasetEvidence] = []
     for key in resolver.config.sources:
@@ -158,11 +158,11 @@ def validate(
 def _to_dcat_catalog(profile: str, datasets: list[DatasetEvidence]) -> dict[str, Any]:
     return {
         "@context": DCAT_CONTEXT,
-        "@id": f"https://dataspaces.test/catalog/{profile}",
+        "@id": f"https://dataspaces.localhost/catalog/{profile}",
         "@type": "dcat:Catalog",
         "dct:title": f"Dataspaces {profile} catalog",
         "dct:description": "Governance-derived DSSC evidence catalog.",
-        "dct:publisher": {"@id": "did:web:provider.dataspaces.test", "foaf:name": "Dataspace Provider"},
+        "dct:publisher": {"@id": "did:web:provider.dataspaces.localhost", "foaf:name": "Dataspace Provider"},
         "dct:issued": datetime.now(timezone.utc).date().isoformat(),
         "dcat:dataset": [item.dcat_dataset for item in datasets],
     }
@@ -172,14 +172,14 @@ def _to_dcat_dataset(dataset_key: str, rule: Any, offer: dict[str, Any]) -> dict
     asset_id = rule.dataspace.asset.id or dataset_key
     base_url = rule.dataspace.data_address.base_url
     media_type = rule.dataspace.asset.content_type or "application/octet-stream"
-    distribution_id = f"https://provider.dataspaces.test/dcat/distribution/{asset_id.replace('.', '/') }"
+    distribution_id = f"https://provider.dataspaces.localhost/dcat/distribution/{asset_id.replace('.', '/') }"
     dataset = {
-        "@id": f"https://provider.dataspaces.test/dcat/dataset/{asset_id.replace('.', '/')}",
+        "@id": f"https://provider.dataspaces.localhost/dcat/dataset/{asset_id.replace('.', '/')}",
         "@type": "dcat:Dataset",
         "dct:identifier": asset_id,
         "dct:title": rule.title or dataset_key,
         "dct:description": rule.description or "",
-        "dct:publisher": {"@id": "did:web:provider.dataspaces.test"},
+        "dct:publisher": {"@id": "did:web:provider.dataspaces.localhost"},
         "dcat:keyword": rule.tags,
         "dct:license": rule.license,
         "dct:source": rule.source_system,

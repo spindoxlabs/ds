@@ -19,3 +19,8 @@ dependencies = [
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/sts"]
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.21",
+]

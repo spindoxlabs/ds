@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
 
     # ds-connector base URL — all DSP catalog calls go through it
-    connector_url: str = "http://ds-connector:30001"
+    connector_url: str = "http://172.17.0.1:30001"
 
     # Path to participants.yaml (shared with ds-connector)
     participants_yaml: str = "governance/participants.yaml"

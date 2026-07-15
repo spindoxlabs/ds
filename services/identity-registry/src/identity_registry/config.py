@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     )
 
     database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@host.docker.internal:35432/identity_registry"
+        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"
     )
     debug: bool = False
 

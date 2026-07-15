@@ -27,15 +27,21 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     await init_db()
 
-    # EDC clients
-    provider_edc = EdcManagementClient(
-        base_url=settings.edc_provider_management_url,
-        api_key=settings.edc_api_key,
-    )
-    consumer_edc = EdcManagementClient(
-        base_url=settings.edc_consumer_management_url,
-        api_key=settings.edc_api_key,
-    )
+    provider_edc = None
+    consumer_edc = None
+    consumer_svc = None
+
+    if settings.role == "producer":
+        provider_edc = EdcManagementClient(
+            base_url=settings.edc_provider_management_url,
+            api_key=settings.edc_api_key,
+        )
+
+    if settings.role == "consumer":
+        consumer_edc = EdcManagementClient(
+            base_url=settings.edc_consumer_management_url,
+            api_key=settings.edc_api_key,
+        )
 
     # Participant registry
     http_registry = None
@@ -54,18 +60,18 @@ async def lifespan(app: FastAPI):
     prov_client = ProvenanceClient(settings.provenance_url)
     prov = ProvBridge(prov_client, settings.participant_id)
 
-    # Consumer service
-    consumer_svc = ConsumerService(
-        consumer_edc=consumer_edc,
-        registry=registry,
-        prov=prov,
-        poll_interval=settings.negotiation_poll_interval,
-        negotiation_timeout=settings.negotiation_timeout,
-        transfer_timeout=settings.transfer_timeout,
-        participant_id=settings.participant_id,
-        provider_id=settings.participant_did,
-        allow_unknown_participants=settings.allow_unknown_participants,
-    )
+    if consumer_edc is not None:
+        consumer_svc = ConsumerService(
+            consumer_edc=consumer_edc,
+            registry=registry,
+            prov=prov,
+            poll_interval=settings.negotiation_poll_interval,
+            negotiation_timeout=settings.negotiation_timeout,
+            transfer_timeout=settings.transfer_timeout,
+            participant_id=settings.participant_id,
+            provider_id=settings.participant_did,
+            allow_unknown_participants=settings.allow_unknown_participants,
+        )
 
     # Notifier
     notifier = build_notifier(settings)
@@ -81,12 +87,16 @@ async def lifespan(app: FastAPI):
 
     if http_registry is not None:
         await http_registry.close()
-    await provider_edc.close()
-    await consumer_edc.close()
+    if provider_edc is not None:
+        await provider_edc.close()
+    if consumer_edc is not None:
+        await consumer_edc.close()
     await prov_client.close()
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
+
     app = FastAPI(
         title="ds-connector",
         description="EDC control plane management for the dataspaces platform",
@@ -96,17 +106,23 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "role": settings.role, "version": "0.1.0"}
 
     install_metrics(app, "ds-connector")
 
-    app.include_router(provider_router)
-    app.include_router(consumer_router)
+    # Shared routers — always mounted
     app.include_router(webhooks_router)
     app.include_router(internal_router)
     app.include_router(namespace_router)
     app.include_router(consent_router)
     app.include_router(admin_router)
+
+    # Role-specific routers
+    if settings.role == "producer":
+        app.include_router(provider_router)
+
+    if settings.role == "consumer":
+        app.include_router(consumer_router)
 
     return app
 

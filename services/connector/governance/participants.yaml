@@ -1,10 +1,10 @@
 participants:
-  - id: did:web:provider.dataspaces.test
+  - id: did:web:provider.dataspaces.localhost
     dsp_address: http://edc-provider:19194/protocol/2025-1
     allowed_scopes: [dataspaces.query, dataspaces.admin]
     role: provider
 
-  - id: did:web:consumer.dataspaces.test
+  - id: did:web:consumer.dataspaces.localhost
     dsp_address: http://edc-consumer:29194/protocol/2025-1
     allowed_scopes: [dataspaces.query]
     role: consumer

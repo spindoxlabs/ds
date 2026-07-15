@@ -14,9 +14,9 @@ tasks:
       - npm run dev
 
   debug:
-    desc: (noop — attach debugger manually)
+    desc: Start SvelteKit dev server with Node inspector on :30904
     cmds:
-      - echo "debug not configured"
+      - node --inspect=0.0.0.0:30904 node_modules/.bin/vite dev --port 30004
 
   release:
     desc: (noop — managed by CI/CD)

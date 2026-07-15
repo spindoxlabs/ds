@@ -1,0 +1,107 @@
+{
+  "folders": [
+    { "path": ".", "name": "ds" },
+    { "path": "services/connector", "name": "connector" },
+    { "path": "services/provenance", "name": "provenance" },
+    { "path": "services/portal", "name": "portal" },
+    { "path": "services/federated-catalog", "name": "federated-catalog" },
+    { "path": "services/dataset-api-mock", "name": "dataset-api-mock" },
+    { "path": "services/identity-registry", "name": "identity-registry" },
+    { "path": "services/sts", "name": "sts" },
+    { "path": "services/vc-wallet", "name": "vc-wallet" },
+    { "path": "services/governance", "name": "governance" },
+    { "path": "services/edc-connector", "name": "edc-connector" },
+    { "path": "services/edc-extensions", "name": "edc-extensions" },
+    { "path": "services/caddy", "name": "caddy" },
+    { "path": "services/keycloak", "name": "keycloak" },
+    { "path": "services/dataset-api-fiware-adapter", "name": "dataset-api-fiware-adapter" }
+  ],
+  "settings": {
+    "python.analysis.extraPaths": [
+      "services/governance/src"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": [
+      {
+        "name": "Attach: producer connector (:30901)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 30901 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:connector}/src", "remoteRoot": "${workspaceFolder:connector}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: consumer connector (:31901)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 31901 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:connector}/src", "remoteRoot": "${workspaceFolder:connector}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: producer provenance (:30900)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 30900 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:provenance}/src", "remoteRoot": "${workspaceFolder:provenance}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: consumer provenance (:31900)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 31900 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:provenance}/src", "remoteRoot": "${workspaceFolder:provenance}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: dataset-api-mock (:30902)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 30902 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:dataset-api-mock}/src", "remoteRoot": "${workspaceFolder:dataset-api-mock}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: federated-catalog (:30903)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 30903 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:federated-catalog}/src", "remoteRoot": "${workspaceFolder:federated-catalog}/src" }
+        ],
+        "justMyCode": true
+      },
+      {
+        "name": "Attach: portal (:30904)",
+        "type": "node",
+        "request": "attach",
+        "port": 30904,
+        "restart": true,
+        "skipFiles": ["<node_internals>/**"]
+      },
+      {
+        "name": "Attach: identity-registry (:30905)",
+        "type": "debugpy",
+        "request": "attach",
+        "connect": { "host": "localhost", "port": 30905 },
+        "pathMappings": [
+          { "localRoot": "${workspaceFolder:identity-registry}/src", "remoteRoot": "${workspaceFolder:identity-registry}/src" }
+        ],
+        "justMyCode": true
+      }
+    ]
+  }
+}

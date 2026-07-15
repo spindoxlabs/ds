@@ -1,0 +1,247 @@
+# Consumer participant stack.
+# Requires shared infra (docker compose up -d) running first.
+#
+#   task consumer:start
+
+networks:
+  dataspaces:
+    name: dataspaces
+    external: true
+
+services:
+  # ── EDC consumer connector (Java, DCP-enabled) ──────────────────────────────
+  edc-consumer:
+    build:
+      context: .
+      dockerfile: services/edc-connector/Dockerfile
+    command:
+      [
+        "sh",
+        "-c",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar /connector.jar",
+      ]
+    volumes:
+      - ./services/connector/config:/config:ro
+      - ./services/connector/governance:/governance:ro
+    ports:
+      - "29193:29193"
+      - "29194:29194"
+      - "29291:29291"
+      - "29195:29195"
+    environment:
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      EDC_RECEIVER_HTTP_ENDPOINT: http://host.docker.internal:31001/webhooks/transfer-process
+    depends_on:
+      sts-consumer:
+        condition: service_healthy
+      vc-wallet-consumer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
+      interval: 10s
+      start_period: 60s
+      retries: 15
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "provider.dataspaces.localhost:host-gateway"
+      - "consumer.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+      - "users.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # ── STS consumer ─────────────────────────────────────────────────────────────
+  sts-consumer:
+    build:
+      context: .
+      dockerfile: services/sts/Dockerfile
+    ports:
+      - "38081:8080"
+    environment:
+      STS_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      STS_PRIVATE_KEY_PATH: /config/consumer-key.json
+      STS_CLIENT_ID: did:web:consumer.dataspaces.localhost
+      STS_CLIENT_SECRET: ${STS_CONSUMER_SECRET:-insecure-dev-secret}
+    volumes:
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── VC wallet consumer ───────────────────────────────────────────────────────
+  vc-wallet-consumer:
+    build:
+      context: .
+      dockerfile: services/vc-wallet/Dockerfile
+    ports:
+      - "38083:8081"
+    environment:
+      VC_WALLET_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      VC_WALLET_CREDENTIALS_PATH: /credentials/consumer
+      VC_WALLET_PRIVATE_KEY_PATH: /config/consumer-key.json
+      VC_WALLET_CREDENTIAL_STATUS_PATH: /credentials/status-list.json
+      VC_WALLET_CREDENTIAL_STATUS_URL: ${VC_WALLET_CREDENTIAL_STATUS_URL:-}
+    volumes:
+      - ./data/credentials:/credentials:ro
+      - ./services/connector/config:/config:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8081/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── Database init ────────────────────────────────────────────────────────────
+  connector-db-create-consumer:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_consumer'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE connector_consumer"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  connector-db-init-consumer:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      connector-db-create-consumer:
+        condition: service_completed_successfully
+    environment:
+      CONNECTOR_ROLE: consumer
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_consumer
+    networks: [dataspaces]
+
+  provenance-db-create-consumer:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h postgres -U postgres; do sleep 1; done &&
+      psql -h postgres -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_consumer'"'"'" |
+      grep -q 1 || psql -h postgres -U postgres -c "CREATE DATABASE provenance_consumer"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  provenance-db-init-consumer:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      provenance-db-create-consumer:
+        condition: service_completed_successfully
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_consumer
+    networks: [dataspaces]
+
+  # ── Consumer connector (Python orchestration) ───────────────────────────────
+  ds-connector-consumer:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "31001"]
+    ports:
+      - "31001:31001"
+    environment:
+      CONNECTOR_ROLE: consumer
+      EDC_CONSUMER_MANAGEMENT_URL: http://edc-consumer:29193/management
+      EDC_CONSUMER_PROTOCOL_URL: http://edc-consumer:29194/protocol/2025-1
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      CONNECTOR_PARTICIPANT_ID: consumer
+      CONNECTOR_PARTICIPANT_BASE_URL: https://consumer.dataspaces.localhost
+      CONNECTOR_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      CONNECTOR_PROVENANCE_URL: http://host.docker.internal:31000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/connector_consumer
+      CONNECTOR_PARTICIPANTS_REGISTRY_PATH: /governance/participants.yaml
+      CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
+      CONNECTOR_TRUST_ANCHOR_KEY_PATH: /config/trust-anchor-key.json
+    depends_on:
+      edc-consumer:
+        condition: service_healthy
+      connector-db-init-consumer:
+        condition: service_completed_successfully
+      ds-provenance-consumer:
+        condition: service_healthy
+    volumes:
+      - ./services/connector/governance:/governance:ro
+      - ./services/connector/config:/config:ro
+      - ./data/credentials:/credentials:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:31001/health', timeout=2)\""]
+      interval: 10s
+      start_period: 20s
+      retries: 10
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  # ── Consumer provenance ──────────────────────────────────────────────────────
+  ds-provenance-consumer:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["uvicorn", "provenance.main:app", "--host", "0.0.0.0", "--port", "31000"]
+    ports:
+      - "31000:31000"
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@postgres:5432/provenance_consumer
+    depends_on:
+      provenance-db-init-consumer:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:31000/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── Portal (consumer UI) ────────────────────────────────────────────────────
+  ds-portal:
+    build:
+      context: .
+      dockerfile: services/portal/Dockerfile
+    ports:
+      - "30004:30004"
+    environment:
+      CONNECTOR_URL: http://host.docker.internal:31001
+      DATASET_API_URL: http://host.docker.internal:30002
+      CATALOGUE_URL: http://host.docker.internal:30002
+      FEDERATED_CATALOG_URL: http://host.docker.internal:30003
+      PROVENANCE_URL: http://host.docker.internal:31000
+      USER_CREDENTIALS_PATH: /credentials/users
+      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: ${CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS:-http://edc-provider:19194/protocol/2025-1}
+      CONSUMER_DEFAULT_ASSIGNER: ${CONSUMER_DEFAULT_ASSIGNER:-did:web:provider.dataspaces.localhost}
+      ORIGIN: http://localhost:30004
+      AUTH_SECRET: ${AUTH_SECRET:?Set AUTH_SECRET in .env.consumer}
+      AUTH_URL: http://localhost:30004
+      NEXTAUTH_URL: http://localhost:30004
+      AUTH_TRUST_HOST: "true"
+      AUTH_KEYCLOAK_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}
+      AUTH_KEYCLOAK_ISSUER: ${AUTH_KEYCLOAK_ISSUER:-http://keycloak.dataspaces.localhost:8080/realms/dataspaces}
+      AUTH_KEYCLOAK_SCOPE: ${AUTH_KEYCLOAK_SCOPE:-openid profile email}
+      KEYCLOAK_CLIENT_ID: ${AUTH_KEYCLOAK_ID:-ds-portal}
+    volumes:
+      - ./data/credentials:/credentials:ro
+      - ./docs:/docs:ro
+    depends_on:
+      ds-connector-consumer:
+        condition: service_healthy
+      keycloak:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "keycloak.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]

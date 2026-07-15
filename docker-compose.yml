@@ -1,7 +1,9 @@
-# Shared infrastructure — start this first, then bring up individual service stacks.
+# Shared infrastructure — postgres, caddy, keycloak.
+# Start this first, then bring up producer and/or consumer stacks.
 #
-#   docker compose up -d          # start caddy + postgres
-#   task services:start           # start all service stacks
+#   docker compose up -d
+#   task producer:start
+#   task consumer:start
 
 networks:
   dataspaces:
@@ -12,7 +14,7 @@ volumes:
   postgres_data:
 
 services:
-  # ── Reverse proxy + local HTTPS ──────────────────────────────────────────────
+  # ── Reverse proxy + local HTTPS + DID hosting ────────────────────────────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -20,6 +22,7 @@ services:
       - "80:80"
       - "443:443"
       - "9000:9000"
+      - "9010:9010"
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./services/caddy/did:/did:ro
@@ -28,7 +31,6 @@ services:
       - ./data/caddy/config:/config
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    networks: [dataspaces]
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
   postgres:
@@ -49,4 +51,21 @@ services:
       retries: 10
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    networks: [dataspaces]
+
+  # ── Keycloak OIDC identity provider ──────────────────────────────────────────
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.0
+    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
+      KC_HTTP_ENABLED: "true"
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: xforwarded
+    volumes:
+      - ./services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro
     networks: [dataspaces]

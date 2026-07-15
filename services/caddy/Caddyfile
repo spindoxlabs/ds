@@ -1,20 +1,18 @@
 {
-	# Use local CA for all *.dataspaces.localhost certificates
 	local_certs
-	# Disable automatic HTTPS redirect on port 80 — we handle TLS per-site
 	auto_https off
 }
 
-# ── Python services ───────────────────────────────────────────────────────────
+# ── Producer Python services ─────────────────────────────────────────────────
 
-provenance.dataspaces.localhost {
-	tls internal
-	reverse_proxy host.docker.internal:30000
-}
-
-connector.dataspaces.localhost {
+connector.dataspaces.localhost, connector-producer.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:30001
+}
+
+provenance.dataspaces.localhost, provenance-producer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:30000
 }
 
 dataset-api.dataspaces.localhost {
@@ -27,34 +25,43 @@ federated-catalog.dataspaces.localhost {
 	reverse_proxy host.docker.internal:30003
 }
 
+# ── Consumer Python services ─────────────────────────────────────────────────
+
+connector-consumer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:31001
+}
+
+provenance-consumer.dataspaces.localhost {
+	tls internal
+	reverse_proxy host.docker.internal:31000
+}
+
 portal.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:30004
 }
 
-# ── EDC provider ──────────────────────────────────────────────────────────────
+# ── EDC provider ─────────────────────────────────────────────────────────────
 
-# DSP protocol endpoint (edc.dsp.callback.address)
-edc-provider.dataspaces.test {
+edc-provider.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:19194
 }
 
-# Management API
 edc-provider-mgmt.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:19191
 }
 
-# Data plane public endpoint (EDR edr.endpoint base)
 edc-provider-public.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:19291
 }
 
-# ── EDC consumer ──────────────────────────────────────────────────────────────
+# ── EDC consumer ─────────────────────────────────────────────────────────────
 
-edc-consumer.dataspaces.test {
+edc-consumer.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:29194
 }
@@ -69,72 +76,83 @@ edc-consumer-public.dataspaces.localhost {
 	reverse_proxy host.docker.internal:29291
 }
 
-# ── DID:web document hosting ──────────────────────────────────────────────────
-# Each participant DID resolves to https://<name>/.well-known/did.json.
-# Static files served from caddy/did/<name>/did.json (mounted at /did in container).
+# ── DID:web document hosting (HTTP for local dev) ────────────────────────────
 
-http://provider.dataspaces.test, provider.dataspaces.test {
-	root * /did/provider.dataspaces.test
+http://provider.dataspaces.localhost {
+	root * /did/provider.dataspaces.localhost
 	rewrite /.well-known/did.json /did.json
 	file_server
 }
 
-http://consumer.dataspaces.test, consumer.dataspaces.test {
-	root * /did/consumer.dataspaces.test
+http://consumer.dataspaces.localhost {
+	root * /did/consumer.dataspaces.localhost
 	rewrite /.well-known/did.json /did.json
 	file_server
 }
 
-http://trust-anchor.dataspaces.test, trust-anchor.dataspaces.test {
+http://trust-anchor.dataspaces.localhost {
 	handle /credentials/* {
 		root * /credentials
 		uri strip_prefix /credentials
 		file_server
 	}
-	root * /did/trust-anchor.dataspaces.test
+	root * /did/trust-anchor.dataspaces.localhost
 	rewrite /.well-known/did.json /did.json
 	file_server
 }
 
-http://users.dataspaces.test, users.dataspaces.test {
-	root * /did/users.dataspaces.test
+http://users.dataspaces.localhost {
+	root * /did/users.dataspaces.localhost
 	file_server
 }
 
-# ── DCP services (Iteration 5) ────────────────────────────────────────────────
+# ── DCP services ─────────────────────────────────────────────────────────────
 
-sts-provider.dataspaces.test {
+sts-provider.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:38080
 }
 
-sts-consumer.dataspaces.test {
+sts-consumer.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:38081
 }
 
-vc-wallet-provider.dataspaces.test {
+vc-wallet-provider.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:38082
 }
 
-vc-wallet-consumer.dataspaces.test {
+vc-wallet-consumer.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:38083
 }
 
-# ── Platform ──────────────────────────────────────────────────────────────────
+# ── Platform ─────────────────────────────────────────────────────────────────
 
 keycloak.dataspaces.localhost {
 	tls internal
 	reverse_proxy host.docker.internal:8080
 }
 
-# ── Unified local gateway ────────────────────────────────────────────────────
-# Single entry point for all APIs + portal UI on port 9000.
-# Strips the /api/<service>/ prefix so backends receive root-relative paths.
+# ── Consumer gateway (:9000) ─────────────────────────────────────────────────
 
 :9000 {
+	handle_path /api/connector/* {
+		reverse_proxy host.docker.internal:31001
+	}
+
+	handle_path /api/provenance/* {
+		reverse_proxy host.docker.internal:31000
+	}
+
+	# Portal (consumer UI, catch-all)
+	reverse_proxy host.docker.internal:30004
+}
+
+# ── Producer gateway (:9010) ─────────────────────────────────────────────────
+
+:9010 {
 	handle_path /api/connector/* {
 		reverse_proxy host.docker.internal:30001
 	}
@@ -150,6 +168,4 @@ keycloak.dataspaces.localhost {
 	handle_path /api/datasets/* {
 		reverse_proxy host.docker.internal:30002
 	}
-
-	reverse_proxy host.docker.internal:30004
 }

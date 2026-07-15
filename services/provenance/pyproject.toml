@@ -28,3 +28,8 @@ packages = ["src/provenance"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+
+[dependency-groups]
+dev = [
+    "debugpy>=1.8.21",
+]

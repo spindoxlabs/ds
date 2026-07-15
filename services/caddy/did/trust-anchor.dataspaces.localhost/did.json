@@ -1,0 +1,25 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1",
+    "https://w3id.org/security/suites/jws-2020/v1"
+  ],
+  "id": "did:web:trust-anchor.dataspaces.localhost",
+  "verificationMethod": [
+    {
+      "id": "did:web:trust-anchor.dataspaces.localhost#key-1",
+      "type": "JsonWebKey2020",
+      "controller": "did:web:trust-anchor.dataspaces.localhost",
+      "publicKeyJwk": {
+        "kty": "EC",
+        "crv": "P-256",
+        "x": "USvfCiMQg9Wc_rti3BeNWtS9-UWhoS1tQbAcVxbsH7k",
+        "y": "U94E_ChfOYe5ZaqlnLRKthSl3jhdg3B2y7pGMGMMPQ8",
+        "kid": "did:web:trust-anchor.dataspaces.localhost#key-1",
+        "use": "sig"
+      }
+    }
+  ],
+  "assertionMethod": [
+    "did:web:trust-anchor.dataspaces.localhost#key-1"
+  ]
+}

@@ -25,17 +25,17 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SAFE_SUBJECT_ID = re.compile(r"^[A-Za-z0-9._+-]{1,128}$")
 
 DEFAULTS = {
-    "issuer_did": "did:web:trust-anchor.dataspaces.test",
+    "issuer_did": "did:web:trust-anchor.dataspaces.localhost",
     "trust_anchor_key": str(REPO_ROOT / "services/connector/config/trust-anchor-key.json"),
     "credentials_dir": str(REPO_ROOT / "data/credentials"),
     "status_list_path": str(REPO_ROOT / "data/credentials/status-list.json"),
-    "status_list_url": "https://trust-anchor.dataspaces.test/credentials/status-list.json",
+    "status_list_url": "https://trust-anchor.dataspaces.localhost/credentials/status-list.json",
     "did_documents_dir": str(REPO_ROOT / "services/caddy/did"),
     "user_profile_endpoint": "http://localhost:30004/my-data",
     "dataspace_id": "https://dataspaces.localhost/dataspace",
-    "provider_did": "did:web:provider.dataspaces.test",
-    "consumer_did": "did:web:consumer.dataspaces.test",
-    "users_did_prefix": "did:web:users.dataspaces.test",
+    "provider_did": "did:web:provider.dataspaces.localhost",
+    "consumer_did": "did:web:consumer.dataspaces.localhost",
+    "users_did_prefix": "did:web:users.dataspaces.localhost",
 }
 
 USER_TEMPLATES = [

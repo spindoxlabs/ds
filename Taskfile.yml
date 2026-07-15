@@ -2,12 +2,10 @@ version: "3"
 
 # ── Root Taskfile ────────────────────────────────────────────────────────────
 #
-# The supported runtime is Docker Compose only.
-# Use docker-compose.runtime.yml for the reusable core.
-#
 # Quick start:
-#   cp .env.example .env
-#   task repo:start
+#   cp .env.producer.example .env.producer
+#   cp .env.consumer.example .env.consumer
+#   task start
 #
 env:
   COMPOSE_PROJECT_NAME: dataspaces
@@ -15,7 +13,7 @@ env:
 tasks:
   # ── Idempotent workspace setup ────────────────────────────────────────────
   setup:
-    desc: Prepare local dev environment (installs deps in each service, no host alterations)
+    desc: Prepare local dev environment (installs deps in each service)
     cmds:
       - |
         for dir in services/*/; do
@@ -25,42 +23,267 @@ tasks:
           fi
         done
 
-  # ── Compatibility aliases ─────────────────────────────────────────────────
-  services:start:
-    desc: Compatibility alias for repo:start
+  # ── Shared infrastructure ────────────────────────────────────────────────
+  infra:start:
+    desc: Start shared infrastructure (postgres, caddy, keycloak)
     cmds:
-      - task: repo:start
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d
 
-  services:stop:
-    desc: Compatibility alias for repo:stop
+  infra:stop:
+    desc: Stop shared infrastructure
     cmds:
-      - task: repo:stop
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose down
 
+  # ── Producer participant ─────────────────────────────────────────────────
+  producer:start:
+    desc: Start producer participant stack
+    deps: [edc:ensure-base]
+    cmds:
+      - |
+        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
+        [ -f "$env_file" ] || cp .env.producer.example "$env_file"
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.producer.yml up -d --build
+        echo "Waiting for producer connector..."
+        until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
+        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null
+        echo "Producer started — gateway http://localhost:9010"
+
+  producer:stop:
+    desc: Stop producer participant stack
+    cmds:
+      - |
+        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
+        [ -f "$env_file" ] || env_file=.env.producer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.producer.yml down
+
+  producer:status:
+    desc: Show producer container status
+    cmds:
+      - |
+        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
+        [ -f "$env_file" ] || env_file=.env.producer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.producer.yml ps
+
+  producer:logs:
+    desc: Follow producer logs
+    cmds:
+      - |
+        env_file="${PRODUCER_ENV_FILE:-.env.producer}"
+        [ -f "$env_file" ] || env_file=.env.producer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.producer.yml logs -f
+
+  # ── Consumer participant ─────────────────────────────────────────────────
+  consumer:start:
+    desc: Start consumer participant stack
+    deps: [edc:ensure-base]
+    cmds:
+      - |
+        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
+        [ -f "$env_file" ] || cp .env.consumer.example "$env_file"
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.consumer.yml up -d --build
+        echo "Consumer started — portal http://localhost:30004 — gateway http://localhost:9000"
+
+  consumer:stop:
+    desc: Stop consumer participant stack
+    cmds:
+      - |
+        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
+        [ -f "$env_file" ] || env_file=.env.consumer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.consumer.yml down
+
+  consumer:status:
+    desc: Show consumer container status
+    cmds:
+      - |
+        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
+        [ -f "$env_file" ] || env_file=.env.consumer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.consumer.yml ps
+
+  consumer:logs:
+    desc: Follow consumer logs
+    cmds:
+      - |
+        env_file="${CONSUMER_ENV_FILE:-.env.consumer}"
+        [ -f "$env_file" ] || env_file=.env.consumer.example
+        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file "$env_file" -f docker-compose.consumer.yml logs -f
+
+  # ── Full stack aliases ───────────────────────────────────────────────────
   start:
-    desc: Compatibility alias for repo:start
+    desc: Start everything (infra + producer + consumer)
     cmds:
-      - task: repo:start
+      - task: infra:start
+      - task: producer:start
+      - task: consumer:start
 
   stop:
-    desc: Compatibility alias for repo:stop
+    desc: Stop everything
     cmds:
-      - task: repo:stop
+      - task: consumer:stop
+      - task: producer:stop
+      - task: infra:stop
 
-  # ── Utilities (require explicit invocation / user consent implied by sudo) ─
+  status:
+    desc: Show all running containers
+    cmds:
+      - docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+  # ── Producer local dev overrides ─────────────────────────────────────────
+  producer:connector:run:
+    desc: Stop Docker container, run producer connector locally on :30001
+    cmds:
+      - docker stop dataspaces-ds-connector-producer-1 2>/dev/null || true
+      - |
+        cd services/connector
+        CONNECTOR_ROLE=producer \
+        EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
+        EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
+        EDC_API_KEY=insecure-dev-key \
+        CONNECTOR_PARTICIPANT_ID=provider \
+        CONNECTOR_PARTICIPANT_DID=did:web:provider.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
+        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer \
+        uv run uvicorn connector.main:app --reload --port 30001
+
+  producer:connector:debug:
+    desc: Stop Docker container, debug producer connector on :30001 (debugpy :30901)
+    cmds:
+      - docker stop dataspaces-ds-connector-producer-1 2>/dev/null || true
+      - |
+        cd services/connector
+        CONNECTOR_ROLE=producer \
+        EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
+        EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
+        EDC_API_KEY=insecure-dev-key \
+        CONNECTOR_PARTICIPANT_ID=provider \
+        CONNECTOR_PARTICIPANT_DID=did:web:provider.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
+        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer \
+        uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client \
+          -m uvicorn connector.main:app --reload --port 30001
+
+  producer:provenance:run:
+    desc: Stop Docker container, run producer provenance locally on :30000
+    cmds:
+      - docker stop dataspaces-ds-provenance-producer-1 2>/dev/null || true
+      - |
+        cd services/provenance
+        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_producer \
+        uv run uvicorn provenance.main:app --reload --port 30000
+
+  producer:dataset-api:run:
+    desc: Stop Docker container, run dataset-api locally on :30002
+    cmds:
+      - docker stop dataspaces-dataset-api-producer-1 2>/dev/null || true
+      - |
+        cd services/dataset-api-mock
+        DATASET_API_CONNECTOR_INTERNAL_URL=http://172.17.0.1:30001 \
+        uv run uvicorn dataset_api_mock.main:app --reload --port 30002
+
+  producer:federated-catalog:run:
+    desc: Stop Docker container, run federated-catalog locally on :30003
+    cmds:
+      - docker stop dataspaces-ds-federated-catalog-producer-1 2>/dev/null || true
+      - |
+        cd services/federated-catalog
+        CATALOG_CONNECTOR_URL=http://172.17.0.1:30001 \
+        uv run uvicorn federated_catalog.main:app --reload --port 30003
+
+  # ── Consumer local dev overrides ─────────────────────────────────────────
+  consumer:connector:run:
+    desc: Stop Docker container, run consumer connector locally on :31001
+    cmds:
+      - docker stop dataspaces-ds-connector-consumer-1 2>/dev/null || true
+      - |
+        cd services/connector
+        CONNECTOR_ROLE=consumer \
+        EDC_CONSUMER_MANAGEMENT_URL=http://172.17.0.1:29193/management \
+        EDC_CONSUMER_PROTOCOL_URL=http://172.17.0.1:29194/protocol/2025-1 \
+        EDC_API_KEY=insecure-dev-key \
+        CONNECTOR_PARTICIPANT_ID=consumer \
+        CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:31000 \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer \
+        uv run uvicorn connector.main:app --reload --port 31001
+
+  consumer:connector:debug:
+    desc: Stop Docker container, debug consumer connector on :31001 (debugpy :31901)
+    cmds:
+      - docker stop dataspaces-ds-connector-consumer-1 2>/dev/null || true
+      - |
+        cd services/connector
+        CONNECTOR_ROLE=consumer \
+        EDC_CONSUMER_MANAGEMENT_URL=http://172.17.0.1:29193/management \
+        EDC_CONSUMER_PROTOCOL_URL=http://172.17.0.1:29194/protocol/2025-1 \
+        EDC_API_KEY=insecure-dev-key \
+        CONNECTOR_PARTICIPANT_ID=consumer \
+        CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:31000 \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer \
+        uv run python -m debugpy --listen 0.0.0.0:31901 --wait-for-client \
+          -m uvicorn connector.main:app --reload --port 31001
+
+  consumer:provenance:run:
+    desc: Stop Docker container, run consumer provenance locally on :31000
+    cmds:
+      - docker stop dataspaces-ds-provenance-consumer-1 2>/dev/null || true
+      - |
+        cd services/provenance
+        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer \
+        uv run uvicorn provenance.main:app --reload --port 31000
+
+  consumer:portal:run:
+    desc: Stop Docker container, run portal locally on :30004
+    cmds:
+      - docker stop dataspaces-ds-portal-1 2>/dev/null || true
+      - |
+        cd services/portal
+        CONNECTOR_URL=http://localhost:31001 \
+        PROVENANCE_URL=http://localhost:31000 \
+        DATASET_API_URL=http://localhost:30002 \
+        CATALOGUE_URL=http://localhost:30002 \
+        FEDERATED_CATALOG_URL=http://localhost:30003 \
+        npm run dev
+
+  # ── Utilities ────────────────────────────────────────────────────────────
   proxy:hosts:
     desc: Add service hostnames to /etc/hosts (requires sudo)
     cmds:
       - |
         HOSTS=(
-          "127.0.0.1 connector.dataspaces.localhost"
           "127.0.0.1 provider.dataspaces.localhost"
           "127.0.0.1 consumer.dataspaces.localhost"
           "127.0.0.1 trust-anchor.dataspaces.localhost"
+          "127.0.0.1 users.dataspaces.localhost"
+          "127.0.0.1 connector.dataspaces.localhost"
+          "127.0.0.1 connector-producer.dataspaces.localhost"
+          "127.0.0.1 connector-consumer.dataspaces.localhost"
           "127.0.0.1 provenance.dataspaces.localhost"
+          "127.0.0.1 provenance-producer.dataspaces.localhost"
+          "127.0.0.1 provenance-consumer.dataspaces.localhost"
           "127.0.0.1 portal.dataspaces.localhost"
           "127.0.0.1 dataset-api.dataspaces.localhost"
           "127.0.0.1 federated-catalog.dataspaces.localhost"
           "127.0.0.1 keycloak.dataspaces.localhost"
+          "127.0.0.1 edc-provider.dataspaces.localhost"
+          "127.0.0.1 edc-consumer.dataspaces.localhost"
+          "127.0.0.1 edc-provider-mgmt.dataspaces.localhost"
+          "127.0.0.1 edc-consumer-mgmt.dataspaces.localhost"
+          "127.0.0.1 edc-provider-public.dataspaces.localhost"
+          "127.0.0.1 edc-consumer-public.dataspaces.localhost"
           "127.0.0.1 sts-provider.dataspaces.localhost"
           "127.0.0.1 sts-consumer.dataspaces.localhost"
           "127.0.0.1 vc-wallet-provider.dataspaces.localhost"
@@ -69,7 +292,7 @@ tasks:
         for h in "${HOSTS[@]}"; do
           grep -qF "$h" /etc/hosts || echo "$h" | sudo tee -a /etc/hosts
         done
-        echo "✓ /etc/hosts updated"
+        echo "Done"
 
   proxy:trust-ca:
     desc: Trust Caddy's local CA in the system store (requires sudo)
@@ -78,7 +301,37 @@ tasks:
       - sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt 2>/dev/null ||
         sudo cp /tmp/caddy-root.crt /usr/local/share/ca-certificates/caddy.crt && sudo update-ca-certificates
       - rm /tmp/caddy-root.crt
-      - echo "✓ Caddy root CA trusted"
+
+  reset-demo-state:
+    desc: Clear runtime requests, consents, agreements, transfers and provenance events
+    cmds:
+      - |
+        set -euo pipefail
+        compose() {
+          COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose "$@"
+        }
+        for db in connector_producer connector_consumer; do
+          compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
+            TRUNCATE TABLE
+              consumer_access_requests,
+              consumer_transfers,
+              contract_agreements,
+              consent_requests
+            RESTART IDENTITY CASCADE;
+          " 2>/dev/null || true
+        done
+        for db in provenance_producer provenance_consumer; do
+          compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
+            TRUNCATE TABLE
+              domain_events,
+              prov_relations,
+              prov_nodes,
+              access_log
+            RESTART IDENTITY CASCADE;
+          " 2>/dev/null || true
+        done
+        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null 2>&1 || true
+        echo "Demo state cleared"
 
   keys:generate:
     desc: Regenerate all EC P-256 key pairs (outputs to data/keys/)
@@ -92,7 +345,35 @@ tasks:
       - mkdir -p data/credentials/provider data/credentials/consumer
       - python3 scripts/issue-vcs.py
 
-  # ── DSSC compliance evidence ───────────────────────────────────────────────
+  # ── EDC build ────────────────────────────────────────────────────────────
+  edc:base:
+    desc: Build EDC base image with cached deps (run once per version bump)
+    cmds:
+      - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
+
+  edc:ensure-base:
+    desc: Build EDC base image only when missing
+    cmds:
+      - docker image inspect ds-edc-base:0.16.0 >/dev/null 2>&1 || task edc:base
+
+  edc:build:
+    desc: Build EDC connector fat JAR via Docker (caches in data/gradle)
+    cmds:
+      - mkdir -p data/gradle
+      - >-
+        docker run --rm
+        -v "{{.ROOT_DIR}}:/project"
+        -v "{{.ROOT_DIR}}/data/gradle:/home/gradle/.gradle"
+        -w /project
+        gradle:8.12-jdk21
+        gradle :edc-connector:shadowJar --no-daemon
+
+  edc:docker:
+    desc: Build EDC connector Docker image (requires ds-edc-base:0.16.0)
+    cmds:
+      - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
+
+  # ── Compliance (reference — may need updates for new compose structure) ──
   compliance:validate:
     desc: Validate core governance, DCAT-like shape, ODRL shape and compliance evidence
     cmds:
@@ -112,20 +393,6 @@ tasks:
           --dataset-api-url "${DATASET_API_URL:-http://localhost:30002}" \
           --provenance-url "${PROVENANCE_URL:-http://localhost:30000}"
 
-  compliance:e2e:full:
-    desc: Run full E2E compliance flow with reset and JSON/Markdown report artifacts
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/e2e_smoke.py \
-          --profile "${COMPLIANCE_PROFILE:-core}" \
-          --reset-state \
-          --write-report \
-          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
-          --dataset-api-url "${DATASET_API_URL:-http://localhost:30002}" \
-          --provenance-url "${PROVENANCE_URL:-http://localhost:30000}"
-
   compliance:test:
     desc: Run offline compliance validator tests
     cmds:
@@ -133,419 +400,3 @@ tasks:
         pytest_bin="${PYTEST:-services/connector/.venv/bin/pytest}"
         [ -x "$pytest_bin" ] || pytest_bin="pytest"
         PYTHONPATH=services/governance/src "$pytest_bin" -q tests/test_compliance_validate.py
-
-  compliance:ci:
-    desc: Generate core compliance JSON/Markdown/DCAT/ODRL reports for CI/audit
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        PYTHONPATH=services/governance/src "$py" scripts/compliance_validate.py --profile core --write-artifacts
-
-  ci:evidence:
-    desc: Run offline CI evidence checks and render production compose artifact
-    cmds:
-      - |
-        set -euo pipefail
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        pytest_bin="${PYTEST:-services/connector/.venv/bin/pytest}"
-        [ -x "$pytest_bin" ] || pytest_bin="pytest"
-        PYTHONPATH=services/governance/src "$pytest_bin" -q \
-          tests/test_compliance_validate.py \
-          tests/test_credential_issuer.py \
-          tests/test_keycloak_preflight.py \
-          tests/test_ops_scripts.py \
-          tests/test_production_bootstrap.py \
-          tests/test_production_preflight.py \
-          tests/test_runtime_inventory.py
-        PYTHONPATH=services/governance/src "$py" scripts/compliance_validate.py --profile core --write-artifacts
-        PRODUCTION_ENV_FILE="${PRODUCTION_ENV_FILE:-.env.production.example}" task production:preflight
-        mkdir -p reports/production
-        docker compose --env-file "${PRODUCTION_ENV_FILE:-.env.production.example}" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          config > reports/production/docker-compose.production.rendered.yml
-        if grep -nE 'postgres:postgres|insecure-dev|change-me|ds-local-dev|\.test|localhost:30001' \
-          reports/production/docker-compose.production.rendered.yml; then
-          echo "Production compose rendered with demo/local markers"
-          exit 1
-        fi
-        "$py" scripts/runtime_inventory.py \
-          --compose-file reports/production/docker-compose.production.rendered.yml \
-          --json-out reports/production/runtime-inventory.json \
-          --markdown-out reports/production/runtime-inventory.md
-
-  production:preflight:
-    desc: Validate production env/compose hardening evidence without starting the stack
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${PRODUCTION_ENV_FILE:-.env.production.example}"
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/production_preflight.py --env-file "$env_file"
-        realm_export="$("$py" - "$env_file" <<'PY'
-        import sys
-        from pathlib import Path
-        env = {}
-        for raw in Path(sys.argv[1]).read_text().splitlines():
-            line = raw.strip()
-            if line and not line.startswith("#") and "=" in line:
-                key, value = line.split("=", 1)
-                env[key.strip()] = value.strip()
-        print(env.get("KEYCLOAK_REALM_EXPORT", ""))
-        PY
-        )"
-        if [ -n "$realm_export" ]; then
-          "$py" scripts/keycloak_preflight.py --env-file "$env_file" --realm-export "$realm_export"
-        fi
-
-  production:bootstrap:
-    desc: Generate local production-like secrets, DID documents, EDC config and .env.production
-    cmds:
-      - |
-        set -euo pipefail
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        args=()
-        if [ -n "${PUBLIC_BASE_DOMAIN:-}" ]; then
-          args+=(--public-domain "$PUBLIC_BASE_DOMAIN")
-        fi
-        if [ "${FORCE:-false}" = "true" ]; then
-          args+=(--force)
-        fi
-        "$py" scripts/production_bootstrap.py "${args[@]}"
-
-  production:vcs:issue:
-    desc: Issue production-like membership/user VCs and status list from PRODUCTION_ENV_FILE
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        if [ ! -f "$env_file" ]; then
-          echo "Missing production env file: $env_file"
-          echo "Create it from .env.production.example and point it to real secret/key files."
-          exit 1
-        fi
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/credential_issuer.py issue \
-          --profile production \
-          --env-file "$env_file" \
-          --report-path "reports/credentials/production-credential-issuance.json"
-
-  production:vcs:revoke:
-    desc: Revoke a production-like VC by CREDENTIAL_ID=... or SUBJECT=...
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        if [ ! -f "$env_file" ]; then
-          echo "Missing production env file: $env_file"
-          exit 1
-        fi
-        set -a
-        . "$env_file"
-        set +a
-        selector=()
-        if [ -n "${CREDENTIAL_ID:-}" ]; then
-          selector=(--credential-id "$CREDENTIAL_ID")
-        elif [ -n "${SUBJECT:-}" ]; then
-          selector=(--subject "$SUBJECT")
-        else
-          echo "Set CREDENTIAL_ID=... or SUBJECT=..."
-          exit 1
-        fi
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/credential_issuer.py revoke \
-          --status-list-path "${CREDENTIAL_STATUS_LIST_FILE:?Set CREDENTIAL_STATUS_LIST_FILE in production env}" \
-          "${selector[@]}" \
-          --reason "${REASON:-operator-request}" \
-          --report-path "reports/credentials/production-credential-revocation.json"
-
-  production:start:
-    desc: Start the production-like stack
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        if [ ! -f "$env_file" ]; then
-          echo "Missing production env file: $env_file"
-          echo "Create it from .env.production.example and point it to real secret/key files."
-          exit 1
-        fi
-        PRODUCTION_ENV_FILE="$env_file" task production:preflight
-        task edc:ensure-base
-        set -a
-        . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          up -d --build
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          exec -T ds-connector python -c "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://localhost:30001/provider/sync', method='POST'), timeout=20).read()"
-        echo "✓ Production-like dataspace runtime started"
-        echo "  Status: task production:status"
-        echo "  Logs:   task production:logs"
-
-  production:stop:
-    desc: Stop the production-like stack
-    cmds:
-      - |
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        set -a
-        [ -f "$env_file" ] && . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          down
-
-  production:status:
-    desc: Show status for production-like runtime containers
-    cmds:
-      - |
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        set -a
-        [ -f "$env_file" ] && . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          ps
-
-  production:logs:
-    desc: Follow logs for production-like runtime containers
-    cmds:
-      - |
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        set -a
-        [ -f "$env_file" ] && . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          logs -f
-
-  ops:observability:start:
-    desc: Start Prometheus and Grafana observability overlay for production-like runtime
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        if [ ! -f "$env_file" ]; then
-          echo "Missing production env file: $env_file"
-          exit 1
-        fi
-        set -a
-        . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          -f docker-compose.observability.yml \
-          up -d prometheus grafana
-        echo "✓ Observability overlay started"
-        echo "  Prometheus: http://localhost:${PROMETHEUS_PORT:-39090}"
-        echo "  Grafana:    http://localhost:${GRAFANA_PORT:-33000}"
-
-  ops:observability:stop:
-    desc: Stop Prometheus and Grafana observability overlay
-    cmds:
-      - |
-        env_file="${PRODUCTION_ENV_FILE:-.env.production}"
-        set -a
-        [ -f "$env_file" ] && . "$env_file"
-        set +a
-        project="${COMPOSE_PROJECT_NAME:-dataspaces-prod}"
-        COMPOSE_PROJECT_NAME="$project" COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" \
-          -f docker-compose.yml \
-          -f docker-compose.runtime.yml \
-          -f docker-compose.production.yml \
-          -f docker-compose.observability.yml \
-          stop prometheus grafana
-
-  ops:restore:smoke:
-    desc: Run non-destructive PostgreSQL backup/restore smoke test for connector and provenance DBs
-    cmds:
-      - bash scripts/postgres_restore_smoke.sh connector
-      - bash scripts/postgres_restore_smoke.sh provenance
-
-  ops:backup:postgres:
-    desc: Create PostgreSQL dumps for connector/provenance and write backup evidence
-    cmds:
-      - |
-        set -euo pipefail
-        chmod +x scripts/postgres_backup.sh
-        PRODUCTION_ENV_FILE="${PRODUCTION_ENV_FILE:-.env.production}" scripts/postgres_backup.sh
-
-  ops:restore:drill:
-    desc: Restore a selected PostgreSQL dump into a temporary DB and write drill evidence
-    cmds:
-      - |
-        set -euo pipefail
-        chmod +x scripts/postgres_restore_drill.sh
-        PRODUCTION_ENV_FILE="${PRODUCTION_ENV_FILE:-.env.production}" scripts/postgres_restore_drill.sh
-
-  ops:retention:apply:
-    desc: Apply provenance/access-log retention policy and write evidence
-    cmds:
-      - |
-        set -euo pipefail
-        chmod +x scripts/provenance_retention.sh
-        PRODUCTION_ENV_FILE="${PRODUCTION_ENV_FILE:-.env.production}" scripts/provenance_retention.sh
-
-  edc:base:
-    desc: Build EDC base image with cached deps (run once per version bump)
-    cmds:
-      - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
-
-  edc:ensure-base:
-    desc: Build EDC base image only when missing
-    cmds:
-      - docker image inspect ds-edc-base:0.16.0 >/dev/null 2>&1 || task edc:base
-
-  edc:build:
-    desc: Build EDC connector fat JAR (requires Java 21 + Gradle)
-    cmds:
-      - gradle :edc-connector:shadowJar --no-daemon
-
-  edc:docker:
-    desc: Build EDC connector Docker image (requires ds-edc-base:0.16.0)
-    cmds:
-      - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
-
-  status:
-    desc: Show running container status
-    cmds:
-      - docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-
-  logs:
-    desc: Compatibility alias for repo:logs
-    cmds:
-      - task: repo:logs
-
-  # ── Dockerized reusable dataspace runtime ───────────────────────────────────
-  repo:start:
-    desc: Start the reusable Dockerized dataspace runtime
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${DATASPACE_ENV_FILE:-.env}"
-
-        if [ ! -f "$env_file" ]; then
-          echo "Missing env file: $env_file"
-          echo "Create .env from .env.example in the repository root or set DATASPACE_ENV_FILE."
-          exit 1
-        fi
-
-        env_value() {
-          name="$1"
-          current="${!name:-}"
-          if [ -n "$current" ]; then
-            printf '%s' "$current"
-            return
-          fi
-          awk -F= -v key="$name" '$1 == key { sub(/^[^=]*=/, ""); print; exit }' "$env_file"
-        }
-
-        if [ -z "$(env_value AUTH_SECRET)" ]; then
-          echo "Missing AUTH_SECRET in $env_file"
-          echo "Set a local Auth.js secret in .env or export AUTH_SECRET."
-          exit 1
-        fi
-
-        if docker network inspect dataspaces >/dev/null 2>&1; then
-          network_info=$(docker network inspect dataspaces | python3 -c 'import json,sys; n=json.load(sys.stdin)[0]; print(((n.get("Labels") or {}).get("com.docker.compose.network", "") or "-") + " " + str(len(n.get("Containers") or {})))')
-          label="${network_info% *}"
-          [ "$label" = "-" ] && label=""
-          containers="${network_info##* }"
-          if [ "$label" != "dataspaces" ] && [ "$containers" = "0" ]; then
-            docker network rm dataspaces >/dev/null
-          fi
-        fi
-        task edc:ensure-base
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" up -d postgres
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.runtime.yml up -d --build
-        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null
-
-        echo ""
-        echo "✓ Dockerized dataspace runtime started"
-        echo "  Gateway: http://localhost:9000"
-        echo "  Portal:  http://localhost:30004"
-        echo "  Status:  task repo:status"
-        echo "  Logs:    task repo:logs"
-        echo "  Stop:    task repo:stop"
-
-  repo:stop:
-    desc: Stop the reusable Dockerized dataspace runtime
-    cmds:
-      - |
-        env_file="${DATASPACE_ENV_FILE:-.env}"
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.runtime.yml down
-
-  repo:reset-demo-state:
-    desc: Clear runtime requests, consents, agreements, transfers and provenance events
-    cmds:
-      - |
-        set -euo pipefail
-        env_file="${DATASPACE_ENV_FILE:-.env}"
-
-        compose() {
-          COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" "$@"
-        }
-
-        if ! compose ps postgres >/dev/null 2>&1; then
-          echo "Postgres container is not available. Start the runtime first with task repo:start."
-          exit 1
-        fi
-
-        compose exec -T postgres psql -U postgres -d connector -v ON_ERROR_STOP=1 -c "
-          TRUNCATE TABLE
-            consumer_access_requests,
-            consumer_transfers,
-            contract_agreements,
-            consent_requests
-          RESTART IDENTITY CASCADE;
-        "
-        compose exec -T postgres psql -U postgres -d provenance -v ON_ERROR_STOP=1 -c "
-          TRUNCATE TABLE
-            domain_events,
-            prov_relations,
-            prov_nodes,
-            access_log
-          RESTART IDENTITY CASCADE;
-        "
-        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null
-        echo "✓ Demo runtime state cleared and provider governance re-synced"
-
-  repo:status:
-    desc: Show status for Dockerized dataspace runtime containers
-    cmds:
-      - |
-        env_file="${DATASPACE_ENV_FILE:-.env}"
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.runtime.yml ps
-
-  repo:logs:
-    desc: Follow logs for Dockerized dataspace runtime containers
-    cmds:
-      - |
-        env_file="${DATASPACE_ENV_FILE:-.env}"
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose --env-file "$env_file" -f docker-compose.runtime.yml logs -f

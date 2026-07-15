@@ -13,13 +13,15 @@ tasks:
 
   run:
     desc: Run dev server with hot-reload on :30000
+    deps: [setup]
     cmds:
-      - PYTHONPATH=src uvicorn provenance.main:app --reload --port 30000
+      - uv run uvicorn provenance.main:app --reload --port 30000
 
   debug:
-    desc: (noop — attach debugger manually)
+    desc: Run dev server with debugpy on :30900, waiting for attach
+    deps: [setup]
     cmds:
-      - echo "debug not configured"
+      - uv run python -m debugpy --listen 0.0.0.0:30900 --wait-for-client -m uvicorn provenance.main:app --reload --port 30000
 
   release:
     desc: (noop — managed by CI/CD)
@@ -29,16 +31,16 @@ tasks:
   db:migrate:
     desc: Apply pending migrations (requires postgres)
     cmds:
-      - PYTHONPATH=src uv run alembic upgrade head
+      - uv run alembic upgrade head
 
   db:revision:
     desc: "Generate a new migration — pass MESSAGE=my_description"
     cmds:
-      - PYTHONPATH=src uv run alembic revision --autogenerate -m "{{.MESSAGE | default "migration"}}"
+      - uv run alembic revision --autogenerate -m "{{.MESSAGE | default "migration"}}"
 
   test:
     cmds:
-      - PYTHONPATH=src uv run pytest tests/ -v
+      - uv run pytest tests/ -v
 
   lint:
     cmds:
@@ -50,4 +52,4 @@ tasks:
 
   type-check:
     cmds:
-      - PYTHONPATH=src uv run mypy {{.SRC}}
+      - uv run mypy {{.SRC}}
