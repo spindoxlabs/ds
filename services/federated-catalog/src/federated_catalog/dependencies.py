@@ -1,20 +1,10 @@
 from __future__ import annotations
 
-import logging
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import Callable
 
 from fastapi import Depends, HTTPException, Request
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
-from .db.engine import get_session_factory
-
-log = logging.getLogger(__name__)
-
-
-async def get_db() -> AsyncGenerator[AsyncSession, None]:
-    async with get_session_factory()() as session:
-        yield session
 
 
 def get_settings_dep() -> Settings:
@@ -54,14 +44,7 @@ async def _decode_jwt(request: Request, settings: Settings) -> dict:
     return claims
 
 
-def require_scope(
-    *scope_attrs: str,
-) -> Callable:
-    """Factory: returns a FastAPI dependency that requires at least one of the
-    named scopes.  Each *scope_attr* is an attribute name on ``Settings``
-    (e.g. ``"admin_scope"``, ``"read_scope"``).
-    """
-
+def require_scope(*scope_attrs: str) -> Callable:
     async def _dependency(
         request: Request,
         settings: Settings = Depends(get_settings_dep),
@@ -79,7 +62,4 @@ def require_scope(
     return _dependency
 
 
-require_admin_scope = require_scope("admin_scope")
 require_read_scope = require_scope("read_scope")
-require_resolve_scope = require_scope("resolve_scope")
-require_admin_or_read_scope = require_scope("admin_scope", "read_scope")

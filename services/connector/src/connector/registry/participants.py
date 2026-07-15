@@ -80,7 +80,7 @@ class HttpParticipantRegistry:
         if self._cache is not None and (now - self._cache_time) < self._cache_ttl:
             return self._cache
         try:
-            resp = await self._client.get("/participants")
+            resp = await self._client.get("/admin/participants")
             resp.raise_for_status()
             data = resp.json()
             participants = [
@@ -118,8 +118,8 @@ class HttpParticipantRegistry:
         """Forward scope check to identity-registry for authoritative answer."""
         try:
             resp = await self._client.get(
-                f"/participants/{participant_id}/check",
-                params={"scope": scope},
+                "/admin/participants/check",
+                params={"did": participant_id, "scope": scope},
             )
             resp.raise_for_status()
             return resp.json().get("allowed", False)

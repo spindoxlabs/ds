@@ -7,7 +7,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_provider_edc, get_settings_dep
+from ...dependencies import get_db, get_provider_edc, get_settings_dep, require_admin_scope
 from ...services.authorization_service import get_authorized_datasets
 
 router = APIRouter(prefix="/provider", tags=["provider"])
@@ -22,6 +22,7 @@ async def sync(
     req: SyncRequest | None = None,
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
+    _claims: dict = Depends(require_admin_scope),
 ):
     from ds.governance.models import load_odrl_profile
 
@@ -45,6 +46,7 @@ async def sync(
 @router.get("/authorizations")
 async def get_authorizations(
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
 ):
     """Return consented subject IDs per dataset.
 
@@ -81,12 +83,12 @@ async def get_authorizations(
 
 
 @router.get("/assets")
-async def list_assets(edc=Depends(get_provider_edc)):
+async def list_assets(edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     return await edc.list_assets()
 
 
 @router.get("/assets/{asset_id:path}")
-async def get_asset(asset_id: str, edc=Depends(get_provider_edc)):
+async def get_asset(asset_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     try:
         return await edc.get_asset(asset_id)
     except Exception:
@@ -94,35 +96,35 @@ async def get_asset(asset_id: str, edc=Depends(get_provider_edc)):
 
 
 @router.delete("/assets/{asset_id:path}", status_code=204)
-async def delete_asset(asset_id: str, edc=Depends(get_provider_edc)):
+async def delete_asset(asset_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     await edc.delete_asset(asset_id)
 
 
 @router.get("/policies")
-async def list_policies(edc=Depends(get_provider_edc)):
+async def list_policies(edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     return await edc.list_policies()
 
 
 @router.delete("/policies/{policy_id}", status_code=204)
-async def delete_policy(policy_id: str, edc=Depends(get_provider_edc)):
+async def delete_policy(policy_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     await edc.delete_policy(policy_id)
 
 
 @router.get("/contracts")
-async def list_contracts(edc=Depends(get_provider_edc)):
+async def list_contracts(edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     return await edc.list_contract_definitions()
 
 
 @router.delete("/contracts/{contract_id}", status_code=204)
-async def delete_contract(contract_id: str, edc=Depends(get_provider_edc)):
+async def delete_contract(contract_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     await edc.delete_contract_definition(contract_id)
 
 
 @router.get("/transfers")
-async def list_transfers(edc=Depends(get_provider_edc)):
+async def list_transfers(edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     return await edc.list_transfers()
 
 
 @router.get("/transfers/{transfer_id}")
-async def get_transfer(transfer_id: str, edc=Depends(get_provider_edc)):
+async def get_transfer(transfer_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_admin_scope)):
     return await edc.get_transfer(transfer_id)

@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import get_settings
 from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
-from ...dependencies import get_db, get_participant_registry
+from ...dependencies import get_db, get_participant_registry, require_internal_scope
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
 
@@ -34,6 +34,7 @@ class QueryAuditRequest(BaseModel):
 async def agreement_status(
     agreement_id: str,
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_internal_scope),
 ):
     status = await get_agreement_status(db, agreement_id)
     if status is None:
@@ -46,6 +47,7 @@ async def transfer_status(
     transfer_id: str,
     agreement_id: str | None = None,
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_internal_scope),
 ):
     """Return whether a consumer transfer is still active for data access.
 
@@ -92,6 +94,7 @@ async def consent_check(
     consumer_id: str,
     subject_id: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_internal_scope),
 ):
     """Check consent for a consumer+dataset pair.
 
@@ -123,6 +126,7 @@ async def participants_check(
     participant_id: str,
     scope: str,
     registry=Depends(get_participant_registry),
+    _claims: dict = Depends(require_internal_scope),
 ):
     """Check whether a participant has a given scope.
 
@@ -144,6 +148,7 @@ async def participants_check(
 async def audit_query(
     req: QueryAuditRequest,
     request: Request,
+    _claims: dict = Depends(require_internal_scope),
 ):
     """Emit a QueryExecuted provenance event from a data adapter/PEP."""
     settings = get_settings()
@@ -164,7 +169,9 @@ async def audit_query(
 
 
 @router.get("/edr-jwks")
-async def edr_jwks():
+async def edr_jwks(
+    _claims: dict = Depends(require_internal_scope),
+):
     """Proxy the EDC provider JWKS endpoint.
 
     Allows the Dataset API (or any other consumer) to fetch the provider's

@@ -37,7 +37,7 @@ class ConsentRequestORM(Base):
     __tablename__ = "consent_requests"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    subject_id: Mapped[str] = mapped_column(Text, nullable=False)   # Keycloak sub
+    subject_id: Mapped[str] = mapped_column(Text, nullable=False)   # User DID
     consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
     purpose: Mapped[list | None] = mapped_column(JSON)              # list[str]

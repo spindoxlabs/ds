@@ -15,7 +15,13 @@ from ...db.models import (
     Participant,
     StatusList,
 )
-from ...dependencies import get_db, get_settings_dep, require_admin_scope
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_admin_or_read_scope,
+    require_admin_scope,
+    require_read_scope,
+)
 from ...schemas.requests import (
     CreateDidRequest,
     CreateParticipantRequest,
@@ -29,7 +35,9 @@ from ...schemas.responses import (
     CredentialSummary,
     DataSubjectCredentialResponse,
     DidResponse,
+    KeycloakMappingResponse,
     KeyRotationResponse,
+    ParticipantCheckResponse,
     ParticipantDetailResponse,
     ParticipantResponse,
 )
@@ -150,10 +158,19 @@ async def create_participant(
 
 @router.get("/participants", response_model=list[ParticipantResponse])
 async def list_participants(
+    active_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    claims: dict = Depends(require_admin_or_read_scope),
+    settings: Settings = Depends(get_settings_dep),
 ):
-    result = await db.execute(select(Participant))
+    token_scopes = claims.get("scope", "").split()
+    has_admin = settings.admin_scope in token_scopes
+
+    stmt = select(Participant)
+    if active_only or not has_admin:
+        stmt = stmt.where(Participant.active.is_(True))
+
+    result = await db.execute(stmt)
     participants = result.scalars().all()
     return [
         ParticipantResponse(
@@ -166,6 +183,27 @@ async def list_participants(
         )
         for p in participants
     ]
+
+
+@router.get(
+    "/participants/check",
+    response_model=ParticipantCheckResponse,
+)
+async def check_participant(
+    did: str = Query(...),
+    scope: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_or_read_scope),
+):
+    result = await db.execute(
+        select(Participant).where(Participant.did == did, Participant.active.is_(True))
+    )
+    participant = result.scalar_one_or_none()
+    if not participant:
+        return ParticipantCheckResponse(allowed=False)
+
+    allowed = scope in participant.allowed_scopes
+    return ParticipantCheckResponse(allowed=allowed)
 
 
 @router.get("/participants/{did:path}", response_model=ParticipantDetailResponse)
@@ -717,3 +755,56 @@ async def rotate_key(
 
     await db.commit()
     return KeyRotationResponse(new_kid=kp.kid, old_kid=old_key.kid)
+
+
+# ── Keycloak mapping ─────────────────────────────────────────────
+
+
+@router.get(
+    "/keycloak/mapping/{did:path}",
+    response_model=KeycloakMappingResponse,
+)
+async def get_keycloak_mapping_by_did(
+    did: str,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
+):
+    result = await db.execute(
+        select(KeycloakMapping).where(KeycloakMapping.did == did)
+    )
+    mapping = result.scalar_one_or_none()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+
+    return KeycloakMappingResponse(
+        did=mapping.did,
+        keycloak_realm=mapping.keycloak_realm,
+        keycloak_user_id=mapping.keycloak_user_id,
+        email=mapping.email,
+        subject_id=mapping.subject_id,
+    )
+
+
+@router.get(
+    "/keycloak/mapping",
+    response_model=KeycloakMappingResponse,
+)
+async def get_keycloak_mapping_by_subject(
+    subject_id: str = Query(...),
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
+):
+    result = await db.execute(
+        select(KeycloakMapping).where(KeycloakMapping.subject_id == subject_id)
+    )
+    mapping = result.scalar_one_or_none()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Mapping not found")
+
+    return KeycloakMappingResponse(
+        did=mapping.did,
+        keycloak_realm=mapping.keycloak_realm,
+        keycloak_user_id=mapping.keycloak_user_id,
+        email=mapping.email,
+        subject_id=mapping.subject_id,
+    )

@@ -4,12 +4,15 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests import make_headers
 from connector.db.models import ConsentRequestORM
+
+HEADERS = make_headers(scope="connector.admin")
 
 
 @pytest.mark.asyncio
 async def test_authorizations_empty(client):
-    r = await client.get("/provider/authorizations")
+    r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
     assert r.json() == {"datasets": []}
 
@@ -42,7 +45,7 @@ async def test_authorizations_returns_granted(engine, client):
                 ),
             ])
 
-    r = await client.get("/provider/authorizations")
+    r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
     body = r.json()
     assert len(body["datasets"]) == 1
@@ -84,7 +87,7 @@ async def test_authorizations_excludes_revoked(engine, client):
                 ),
             ])
 
-    r = await client.get("/provider/authorizations")
+    r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
     assert r.json() == {"datasets": []}
 
@@ -117,7 +120,7 @@ async def test_authorizations_multiple_datasets(engine, client):
                 ),
             ])
 
-    r = await client.get("/provider/authorizations")
+    r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
     body = r.json()
     assert len(body["datasets"]) == 2
@@ -147,7 +150,7 @@ async def test_authorizations_no_private_data(engine, client):
                 ),
             )
 
-    r = await client.get("/provider/authorizations")
+    r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
     body = r.json()
 

@@ -104,7 +104,7 @@ PARTICIPANTS_RESPONSE = [
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_registry_fetches_and_caches():
-    respx.get(f"{REGISTRY_URL}/participants").mock(
+    respx.get(f"{REGISTRY_URL}/admin/participants").mock(
         return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE)
     )
 
@@ -129,7 +129,7 @@ async def test_http_registry_fetches_and_caches():
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_registry_unknown_raises():
-    respx.get(f"{REGISTRY_URL}/participants").mock(
+    respx.get(f"{REGISTRY_URL}/admin/participants").mock(
         return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE)
     )
 
@@ -144,7 +144,7 @@ async def test_http_registry_unknown_raises():
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_registry_uses_stale_cache_on_error():
-    route = respx.get(f"{REGISTRY_URL}/participants")
+    route = respx.get(f"{REGISTRY_URL}/admin/participants")
     route.mock(return_value=httpx.Response(200, json=PARTICIPANTS_RESPONSE))
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=0)
@@ -163,8 +163,8 @@ async def test_http_registry_uses_stale_cache_on_error():
 @respx.mock
 async def test_http_registry_check_scope():
     respx.get(
-        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
-        params={"scope": "dataspaces.query"},
+        f"{REGISTRY_URL}/admin/participants/check",
+        params={"did": "did:web:rec.ds.localhost", "scope": "dataspaces.query"},
     ).mock(return_value=httpx.Response(200, json={"allowed": True}))
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
@@ -179,8 +179,8 @@ async def test_http_registry_check_scope():
 @respx.mock
 async def test_http_registry_check_scope_denied():
     respx.get(
-        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
-        params={"scope": "admin.secret"},
+        f"{REGISTRY_URL}/admin/participants/check",
+        params={"did": "did:web:rec.ds.localhost", "scope": "admin.secret"},
     ).mock(return_value=httpx.Response(200, json={"allowed": False}))
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
@@ -195,8 +195,8 @@ async def test_http_registry_check_scope_denied():
 @respx.mock
 async def test_http_registry_check_scope_error_returns_false():
     respx.get(
-        f"{REGISTRY_URL}/participants/did:web:rec.ds.localhost/check",
-        params={"scope": "dataspaces.query"},
+        f"{REGISTRY_URL}/admin/participants/check",
+        params={"did": "did:web:rec.ds.localhost", "scope": "dataspaces.query"},
     ).mock(return_value=httpx.Response(500))
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)

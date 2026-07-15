@@ -1,10 +1,9 @@
 """Shared test fixtures for ds-connector."""
 from __future__ import annotations
 
-import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from connector.db.engine import Base
 from connector.dependencies import get_db

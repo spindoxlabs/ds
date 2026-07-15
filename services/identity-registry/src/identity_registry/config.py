@@ -28,9 +28,24 @@ class Settings(BaseSettings):
         description="OIDC issuer URL for JWT verification on admin endpoints",
     )
 
+    service_client_id: str = Field(
+        default="svc-ds-identity-registry",
+        description="Keycloak client ID for this service (used as JWT audience)",
+    )
+
     admin_scope: str = Field(
         default="identity-registry.admin",
         description="Required JWT scope for admin endpoints",
+    )
+
+    read_scope: str = Field(
+        default="identity-registry.read",
+        description="Required JWT scope for participant read endpoints",
+    )
+
+    resolve_scope: str = Field(
+        default="identity-registry.resolve",
+        description="Required JWT scope for user resolve endpoint",
     )
 
     keycloak_admin_url: str | None = Field(

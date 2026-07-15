@@ -63,3 +63,10 @@ class KeycloakMappingResponse(BaseModel):
     keycloak_user_id: str
     email: str | None
     subject_id: str
+
+
+class UserResolveResponse(BaseModel):
+    did: str
+    role: str | None = None
+    vc_jws: str | None = None
+    subject_id: str

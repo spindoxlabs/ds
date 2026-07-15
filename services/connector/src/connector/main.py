@@ -1,8 +1,11 @@
 """ds-connector — FastAPI application factory."""
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
+
+log = logging.getLogger(__name__)
 
 from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
@@ -26,6 +29,24 @@ from .api.v1.admin import router as admin_router
 async def lifespan(app: FastAPI):
     settings = get_settings()
     await init_db()
+
+    if not settings.oidc_issuer_url:
+        log.warning(
+            "CONNECTOR_OIDC_ISSUER_URL is not set — "
+            "JWT signature verification is DISABLED. "
+            "This is acceptable for local development only."
+        )
+    else:
+        import jwt as pyjwt
+
+        jwks_url = f"{settings.oidc_issuer_url}/.well-known/openid-configuration"
+        app.state.jwks_client = pyjwt.PyJWKClient(jwks_url)
+
+    if settings.edc_api_key == "insecure-dev-key":
+        log.warning(
+            "EDC_API_KEY is set to the default dev value — "
+            "set a strong key for production."
+        )
 
     provider_edc = None
     consumer_edc = None

@@ -1,8 +1,9 @@
 import pytest
 
-from conftest import make_admin_headers
+from conftest import make_headers
 
-HEADERS = make_admin_headers()
+HEADERS = make_headers()
+READ_HEADERS = make_headers(scope="identity-registry.read")
 TEST_DID = "did:web:rec.dataspaces.localhost"
 
 
@@ -167,8 +168,8 @@ async def test_delete_participant(client):
 
 
 @pytest.mark.asyncio
-async def test_list_active_participants_internal(client):
-    """GET /participants (internal, no auth) returns only active participants."""
+async def test_list_participants_read_scope_active_only(client):
+    """GET /admin/participants with read scope returns only active participants."""
     await client.post(
         "/admin/participants",
         json={
@@ -191,7 +192,7 @@ async def test_list_active_participants_internal(client):
         headers=HEADERS,
     )
 
-    r = await client.get("/participants")
+    r = await client.get("/admin/participants", headers=READ_HEADERS)
     assert r.status_code == 200
     data = r.json()
     assert len(data) == 1
@@ -203,9 +204,9 @@ async def test_list_active_participants_internal(client):
 
 
 @pytest.mark.asyncio
-async def test_list_active_participants_empty(client):
-    """GET /participants returns empty list when no participants."""
-    r = await client.get("/participants")
+async def test_list_participants_empty(client):
+    """GET /admin/participants returns empty list when no participants."""
+    r = await client.get("/admin/participants", headers=READ_HEADERS)
     assert r.status_code == 200
     assert r.json() == []
 
@@ -221,7 +222,10 @@ async def test_participant_check_allowed(client):
         },
         headers=HEADERS,
     )
-    r = await client.get(f"/participants/{TEST_DID}/check?scope=dataspaces.query")
+    r = await client.get(
+        f"/admin/participants/check?did={TEST_DID}&scope=dataspaces.query",
+        headers=READ_HEADERS,
+    )
     assert r.status_code == 200
     assert r.json()["allowed"] is True
 
@@ -237,7 +241,10 @@ async def test_participant_check_denied(client):
         },
         headers=HEADERS,
     )
-    r = await client.get(f"/participants/{TEST_DID}/check?scope=dataspaces.admin")
+    r = await client.get(
+        f"/admin/participants/check?did={TEST_DID}&scope=dataspaces.admin",
+        headers=READ_HEADERS,
+    )
     assert r.status_code == 200
     assert r.json()["allowed"] is False
 
@@ -421,7 +428,7 @@ async def test_keycloak_sync(client):
     assert r.status_code == 200
     assert r.json()["status"] == "synced"
 
-    r = await client.get(f"/keycloak/mapping/{TEST_DID}", headers=HEADERS)
+    r = await client.get(f"/admin/keycloak/mapping/{TEST_DID}", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["keycloak_user_id"] == "user-123"
 
@@ -443,7 +450,7 @@ async def test_keycloak_mapping_by_subject_id(client):
         headers=HEADERS,
     )
 
-    r = await client.get(f"/keycloak/mapping?subject_id={TEST_DID}", headers=HEADERS)
+    r = await client.get(f"/admin/keycloak/mapping?subject_id={TEST_DID}", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["did"] == TEST_DID
 

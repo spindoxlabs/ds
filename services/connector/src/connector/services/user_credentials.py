@@ -85,7 +85,7 @@ def verify_user_vc_jwt(
     payload: dict[str, Any] = json.loads(_b64url_decode(parts[1]))
     vc = payload.get("vc") or {}
     subject = vc.get("credentialSubject") or {}
-    subject_id = str(subject.get("subjectId") or "")
+    subject_id = str(subject.get("id") or payload.get("sub") or "")
     role = str(subject.get("role") or "")
     did = str(subject.get("id") or payload.get("sub") or "")
     issuer = str(payload.get("iss") or vc.get("issuer") or "")

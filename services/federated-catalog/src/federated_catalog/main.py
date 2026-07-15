@@ -2,15 +2,19 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 
 from .cache import CatalogCache
 from .config import get_settings
 from .crawler import crawl_loop
+from .dependencies import require_read_scope
 from .metrics import install_metrics
 from .api.catalog import router as catalog_router
+
+log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -21,7 +25,18 @@ async def lifespan(app: FastAPI):
     app.state.cache = cache
     app.state.settings = settings
 
-    # Start background crawler
+    if not settings.oidc_issuer_url:
+        log.warning(
+            "CATALOG_OIDC_ISSUER_URL is not set — "
+            "JWT signature verification is DISABLED. "
+            "This is acceptable for local development only."
+        )
+    else:
+        import jwt
+
+        jwks_url = f"{settings.oidc_issuer_url}/.well-known/openid-configuration"
+        app.state.jwks_client = jwt.PyJWKClient(jwks_url)
+
     task = asyncio.create_task(crawl_loop(cache, settings))
 
     yield
@@ -53,7 +68,10 @@ def create_app() -> FastAPI:
 
     install_metrics(app, "ds-federated-catalog")
 
-    app.include_router(catalog_router)
+    app.include_router(
+        catalog_router,
+        dependencies=[Depends(require_read_scope)],
+    )
 
     return app
 

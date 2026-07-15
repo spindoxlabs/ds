@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends
 
-from ...dependencies import get_participant_registry
+from ...dependencies import get_participant_registry, require_admin_scope
 from ...registry.participants import ParticipantRegistry
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -12,6 +12,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/participants")
 async def list_participants(
     registry: ParticipantRegistry = Depends(get_participant_registry),
+    _claims: dict = Depends(require_admin_scope),
 ):
     return [
         {

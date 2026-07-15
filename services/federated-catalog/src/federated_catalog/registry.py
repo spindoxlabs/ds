@@ -27,8 +27,8 @@ class DcatSource:
 
 
 def load_providers_from_registry(identity_registry_url: str) -> list[Provider]:
-    """Fetch providers from the identity-registry /participants API."""
-    url = f"{identity_registry_url.rstrip('/')}/participants"
+    """Fetch providers from the identity-registry /admin/participants API."""
+    url = f"{identity_registry_url.rstrip('/')}/admin/participants"
     try:
         resp = httpx.get(url, timeout=10.0)
         resp.raise_for_status()

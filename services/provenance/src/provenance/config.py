@@ -6,6 +6,11 @@ class Settings(BaseSettings):
 
     database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance"
     debug: bool = False
+
+    oidc_issuer_url: str | None = None
+    service_client_id: str = "svc-ds-provenance"
+    read_scope: str = "provenance.read"
+    write_scope: str = "provenance.write"
     base_url: str = "https://provenance.dataspaces.localhost"
     context_url: str = "https://provenance.dataspaces.localhost/prov/context"
     max_lineage_depth: int = 20

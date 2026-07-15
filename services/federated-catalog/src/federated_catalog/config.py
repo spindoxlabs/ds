@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     # Path to catalogues.yaml — DCAT-AP sources to crawl
     dcat_sources_yaml: str = ""
 
+    oidc_issuer_url: str | None = None
+    service_client_id: str = "svc-ds-federated-catalog"
+    read_scope: str = "catalog.read"
+
     port: int = 30003
     debug: bool = False
 

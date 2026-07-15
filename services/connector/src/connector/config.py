@@ -74,6 +74,18 @@ class Settings(BaseSettings):
     credential_status_url: str | None = None
     allow_unknown_participants: bool = False
 
+    oidc_issuer_url: str | None = Field(
+        default=None,
+        description="OIDC issuer URL for JWT verification (Keycloak realm URL)",
+    )
+    service_client_id: str = Field(
+        default="svc-ds-connector",
+        description="Keycloak client ID for this service (used as JWT audience)",
+    )
+    admin_scope: str = "connector.admin"
+    internal_scope: str = "connector.internal"
+    webhook_scope: str = "connector.webhook"
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector"
     debug: bool = False
 

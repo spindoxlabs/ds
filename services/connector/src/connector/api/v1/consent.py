@@ -9,7 +9,7 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_notifier, get_settings_dep
+from ...dependencies import get_db, get_notifier, get_settings_dep, require_internal_scope
 from ...notifications.base import ConsentNotifier
 from ...services import consent_service
 from ...services.user_credentials import verify_user_vc_jwt
@@ -297,6 +297,7 @@ async def revoke_consent(
 async def register_transfer(
     body: TransferRegisterRequest,
     db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_internal_scope),
 ):
     async with db.begin():
         ok = await consent_service.register_transfer(db, body.consent_request_id, body.transfer_id)

@@ -4,14 +4,17 @@ from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from tests import make_headers
 from connector.db.models import ConsentRequestORM
 from connector.services.agreement_service import upsert_agreement
 from connector.services.consent_service import create_consent_request
 
+HEADERS = make_headers(scope="connector.internal")
+
 
 @pytest.mark.asyncio
 async def test_agreement_status_not_found(client):
-    r = await client.get("/internal/agreements/nonexistent/status")
+    r = await client.get("/internal/agreements/nonexistent/status", headers=HEADERS)
     assert r.status_code == 404
 
 
@@ -30,7 +33,10 @@ async def test_agreement_status_found(engine, client):
                 agreed_at=datetime.now(timezone.utc),
             )
 
-    r = await client.get("/internal/agreements/urn:uuid:test-agreement-001/status")
+    r = await client.get(
+        "/internal/agreements/urn:uuid:test-agreement-001/status",
+        headers=HEADERS,
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["active"] is True
@@ -44,7 +50,7 @@ async def test_consent_check_no_consent(client):
         "subject_id": "sub-001",
         "dataset_id": "datasets.silver.meters",
         "consumer_id": "consumer",
-    })
+    }, headers=HEADERS)
     assert r.status_code == 200
     body = r.json()
     assert body["consent_active"] is False
@@ -83,14 +89,14 @@ async def test_consent_check_uses_latest_status(engine, client):
         "subject_id": "sub-001",
         "dataset_id": "datasets.silver.meters",
         "consumer_id": "consumer",
-    })
+    }, headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["consent_active"] is False
 
     r = await client.get("/internal/consent/check", params={
         "dataset_id": "datasets.silver.meters",
         "consumer_id": "consumer",
-    })
+    }, headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["subject_ids"] == []
 

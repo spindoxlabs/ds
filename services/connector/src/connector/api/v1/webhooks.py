@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_settings_dep
+from ...dependencies import get_db, get_settings_dep, require_webhook_scope
 from ...schemas.webhooks import ContractNegotiationEvent, TransferProcessEvent
 from ...services.agreement_service import upsert_agreement
 from ...services.prov_bridge import ProvBridge
@@ -23,6 +23,7 @@ async def transfer_process_event(
     event: TransferProcessEvent,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
+    _claims: dict = Depends(require_webhook_scope),
 ):
     event_type = event.type
     log.info("Transfer-process webhook: %s transfer=%s", event_type, event.transfer_id)
@@ -50,6 +51,7 @@ async def contract_negotiation_event(
     event: ContractNegotiationEvent,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
+    _claims: dict = Depends(require_webhook_scope),
 ):
     log.info(
         "Contract-negotiation webhook: %s negotiation=%s agreement=%s",

@@ -10,7 +10,7 @@ import typer
 
 from ..config import get_settings
 from ..db.engine import get_engine, get_session_factory, init_db
-from ..db.models import Credential, Did, Key, Participant, StatusList
+from ..db.models import Credential, Did, Key, KeycloakMapping, Participant, StatusList
 from ..services.crypto import (
     decrypt_private_jwk,
     encrypt_private_jwk,
@@ -27,10 +27,13 @@ credential_app = typer.Typer(help="Credential management")
 key_app = typer.Typer(help="Key management")
 status_app = typer.Typer(help="Status list management")
 
+keycloak_app = typer.Typer(help="Keycloak mapping management")
+
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
 app.add_typer(key_app, name="key")
 app.add_typer(status_app, name="status")
+app.add_typer(keycloak_app, name="keycloak")
 
 
 def _run(coro):
@@ -376,6 +379,17 @@ def credential_issue_data_subject(
         ta_did = f"did:web:{settings.trust_anchor_domain}"
 
         async with factory() as session:
+            existing_cred = await session.execute(
+                select(Credential).where(
+                    Credential.subject_did == subject_did,
+                    Credential.credential_type == "DataSubjectCredential",
+                    Credential.status == "active",
+                )
+            )
+            if existing_cred.scalar_one_or_none():
+                typer.echo(f"Active DataSubjectCredential already exists for {subject_did}")
+                return
+
             ta_key_result = await session.execute(
                 select(Key).where(Key.owner_did == ta_did, Key.active.is_(True))
             )
@@ -585,6 +599,58 @@ def status_export():
                 typer.echo(json.dumps(data, indent=2))
 
     _run(_export())
+
+
+@keycloak_app.command("sync")
+def keycloak_sync(
+    did: str = typer.Option(..., help="User DID to map"),
+    realm: str = typer.Option("dataspaces", help="Keycloak realm name"),
+    user_id: str = typer.Option(..., help="Keycloak user UUID"),
+    email: str = typer.Option(None, help="User email address"),
+):
+    """Create or update a Keycloak-to-DID mapping (idempotent)."""
+
+    async def _sync():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            did_result = await session.execute(
+                select(Did).where(Did.did == did)
+            )
+            if not did_result.scalar_one_or_none():
+                typer.echo(f"DID not found: {did}", err=True)
+                typer.echo("Issue a credential first to create the DID.", err=True)
+                raise typer.Exit(1)
+
+            result = await session.execute(
+                select(KeycloakMapping).where(KeycloakMapping.did == did)
+            )
+            existing = result.scalar_one_or_none()
+
+            if existing:
+                existing.keycloak_realm = realm
+                existing.keycloak_user_id = user_id
+                if email is not None:
+                    existing.email = email
+                existing.subject_id = did
+                existing.synced_at = datetime.now(UTC)
+                typer.echo(f"Updated Keycloak mapping for {did}")
+            else:
+                mapping = KeycloakMapping(
+                    did=did,
+                    keycloak_realm=realm,
+                    keycloak_user_id=user_id,
+                    email=email,
+                    subject_id=did,
+                    synced_at=datetime.now(UTC),
+                )
+                session.add(mapping)
+                typer.echo(f"Created Keycloak mapping for {did}")
+
+            await session.commit()
+
+    _run(_sync())
 
 
 def run():

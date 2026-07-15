@@ -10,6 +10,8 @@ from provenance.db.engine import Base
 from provenance.dependencies import get_db
 from provenance.main import create_app
 
+from tests import make_headers
+
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
@@ -42,7 +44,10 @@ async def client(engine):
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
 
+    default_headers = make_headers()
     async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+        headers=default_headers,
     ) as ac:
         yield ac

@@ -14,9 +14,12 @@ from identity_registry.main import create_app
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
-def make_admin_headers(scope: str = "identity-registry.admin") -> dict:
+def make_headers(scope: str = "identity-registry.admin") -> dict:
     token = pyjwt.encode({"scope": scope, "sub": "test"}, "secret", algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
+
+
+make_admin_headers = make_headers
 
 
 @pytest_asyncio.fixture(scope="function")
