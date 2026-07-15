@@ -72,6 +72,7 @@ docs/next-phases.md
 .env
 .env.*
 !.env.example
+!.env.*.example
 
 # Generated reports
 reports/
