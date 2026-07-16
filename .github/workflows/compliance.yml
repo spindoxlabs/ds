@@ -30,7 +30,7 @@ jobs:
 
       - name: Generate compliance artifacts
         env:
-          PYTHONPATH: services/governance/src
+          PYTHONPATH: libs/governance/src
         run: |
           python scripts/compliance_validate.py --profile core --write-artifacts
 

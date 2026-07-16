@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Attach: producer connector (:30901)",
+      "name": "Attach: provider connector (:30901)",
       "type": "debugpy",
       "request": "attach",
       "connect": { "host": "localhost", "port": 30901 },
@@ -22,7 +22,7 @@
       "justMyCode": true
     },
     {
-      "name": "Attach: producer provenance (:30900)",
+      "name": "Attach: provider provenance (:30900)",
       "type": "debugpy",
       "request": "attach",
       "connect": { "host": "localhost", "port": 30900 },

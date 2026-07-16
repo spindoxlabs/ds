@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / "services/governance/src"))
+sys.path.insert(0, str(ROOT / "libs/governance/src"))
 
 from ds.governance.mapper import GovernanceMapper  # noqa: E402
 from ds.governance.resolver import GovernanceResolver  # noqa: E402

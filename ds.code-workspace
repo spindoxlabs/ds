@@ -9,7 +9,7 @@
     { "path": "services/identity-registry", "name": "identity-registry" },
     { "path": "services/sts", "name": "sts" },
     { "path": "services/vc-wallet", "name": "vc-wallet" },
-    { "path": "services/governance", "name": "governance" },
+    { "path": "libs/governance", "name": "governance" },
     { "path": "services/edc-connector", "name": "edc-connector" },
     { "path": "services/edc-extensions", "name": "edc-extensions" },
     { "path": "services/caddy", "name": "caddy" },
@@ -18,14 +18,14 @@
   ],
   "settings": {
     "python.analysis.extraPaths": [
-      "services/governance/src"
+      "libs/governance/src"
     ]
   },
   "launch": {
     "version": "0.2.0",
     "configurations": [
       {
-        "name": "Attach: producer connector (:30901)",
+        "name": "Attach: provider connector (:30901)",
         "type": "debugpy",
         "request": "attach",
         "connect": { "host": "localhost", "port": 30901 },
@@ -45,7 +45,7 @@
         "justMyCode": true
       },
       {
-        "name": "Attach: producer provenance (:30900)",
+        "name": "Attach: provider provenance (:30900)",
         "type": "debugpy",
         "request": "attach",
         "connect": { "host": "localhost", "port": 30900 },

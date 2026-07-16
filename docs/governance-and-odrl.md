@@ -54,7 +54,7 @@ sources:
 
 ## GovernanceMapper — YAML to ODRL
 
-The `GovernanceMapper` class in `services/governance/src/ds/governance/mapper.py` converts each `GovernanceRuleV2` into three EDC payloads. It accepts an `OdrlProfile` (loaded via `load_odrl_profile()`) that defines the ODRL namespace, purpose taxonomy, and tag-to-purpose mapping. An optional `owner_did_resolver: Callable[[str], str | None]` resolves dataset owners for attribution duties.
+The `GovernanceMapper` class in `libs/governance/src/ds/governance/mapper.py` converts each `GovernanceRuleV2` into three EDC payloads. It accepts an `OdrlProfile` (loaded via `load_odrl_profile()`) that defines the ODRL namespace, purpose taxonomy, and tag-to-purpose mapping. An optional `owner_did_resolver: Callable[[str], str | None]` resolves dataset owners for attribution duties.
 
 ### 1. ODRL Offer (Policy)
 

@@ -27,7 +27,7 @@ The stack covers the following DSSC Blueprint building blocks:
 ```
 dataspaces/
 ├── docker-compose.yml          shared infra — caddy, postgres, identity-registry, keycloak
-├── docker-compose.producer.yml producer participant stack
+├── docker-compose.provider.yml provider participant stack
 ├── docker-compose.consumer.yml consumer participant stack
 ├── Taskfile.yml                root orchestration
 ├── build.gradle.kts            Gradle root (EDC subprojects)
@@ -84,7 +84,7 @@ This brings up, in order:
 
 1. **Shared infrastructure** — postgres, caddy, identity-registry, keycloak (+ keycloak-sync for scopes/clients)
 2. **Identity bootstrap** — trust anchor + provider/consumer participant registration
-3. **Producer stack** — EDC provider, ds-connector, ds-provenance, dataset-api, federated-catalog
+3. **Provider stack** — EDC provider, ds-connector, ds-provenance, dataset-api, federated-catalog
 4. **Consumer stack** — EDC consumer, ds-connector, ds-provenance
 
 Or step by step:
@@ -92,7 +92,7 @@ Or step by step:
 ```bash
 task infra:start          # shared infra (postgres, caddy, identity-registry, keycloak)
 task identity:bootstrap   # trust anchor + participant DIDs
-task producer:start       # producer participant stack
+task provider:start       # provider participant stack
 task consumer:start       # consumer participant stack
 ```
 
@@ -115,7 +115,7 @@ After services are up, the following should respond:
 - `https://provider.dataspaces.localhost/.well-known/did.json`
 - `https://consumer.dataspaces.localhost/.well-known/did.json`
 - `https://trust-anchor.dataspaces.localhost/.well-known/did.json`
-- `http://localhost:30001/health` (producer connector)
+- `http://localhost:30001/health` (provider connector)
 - `http://localhost:31001/health` (consumer connector)
 - `http://localhost:30005/health` (identity-registry)
 
@@ -187,7 +187,7 @@ Three compose files form the full stack:
 | File | Services | Purpose |
 |------|----------|---------|
 | `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
-| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer | Producer participant |
+| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
 The portal is not in any compose file — run it locally via `task consumer:portal:run`.
@@ -198,10 +198,10 @@ All containers share the `dataspaces` bridge network.
 
 | Port | Service |
 |------|---------|
-| 30000 | ds-provenance (producer) |
-| 30001 | ds-connector (producer) |
-| 30002 | dataset-api (producer) |
-| 30003 | federated-catalog (producer) |
+| 30000 | ds-provenance (provider) |
+| 30001 | ds-connector (provider) |
+| 30002 | dataset-api (provider) |
+| 30003 | federated-catalog (provider) |
 | 30004 | portal (run locally) |
 | 30005 | identity-registry (shared infra) |
 | 31000 | ds-provenance (consumer) |
@@ -209,7 +209,7 @@ All containers share the `dataspaces` bridge network.
 | 35432 | PostgreSQL |
 | 8080 | Keycloak |
 | 9000 | Caddy consumer gateway |
-| 9010 | Caddy producer gateway |
+| 9010 | Caddy provider gateway |
 | 19xxx | EDC provider (management, protocol, public, control) |
 | 29xxx | EDC consumer (management, protocol, public, control) |
 | 30900+ | debugpy ports |
@@ -221,14 +221,14 @@ All containers share the `dataspaces` bridge network.
 Any service can be run locally (with hot-reload) instead of in Docker. Stop the container first, then run the service with `task`:
 
 ```bash
-# Example: run producer connector locally
-task producer:connector:run
+# Example: run provider connector locally
+task provider:connector:run
 
 # Or with debugpy attached
-task producer:connector:debug
+task provider:connector:debug
 ```
 
-Available overrides: `task identity-registry:run`, `task producer:connector:run`, `task producer:provenance:run`, `task producer:dataset-api:run`, `task producer:federated-catalog:run`, `task consumer:connector:run`, `task consumer:provenance:run`.
+Available overrides: `task identity-registry:run`, `task provider:connector:run`, `task provider:provenance:run`, `task provider:dataset-api:run`, `task provider:federated-catalog:run`, `task consumer:connector:run`, `task consumer:provenance:run`.
 
 ---
 
@@ -307,7 +307,7 @@ See `docs/compliance-matrix-dssc.md` for the full DSSC assessment matrix.
 | `task start` | Start everything |
 | `task stop` | Stop everything |
 | `task status` | Show all running containers |
-| `task producer:logs` | Follow producer logs |
+| `task provider:logs` | Follow provider logs |
 | `task consumer:logs` | Follow consumer logs |
 | `task reset-demo-state` | Clear runtime data (requests, consents, agreements, transfers, provenance) |
 | `task edc:base` | Build EDC base image (once per version bump) |

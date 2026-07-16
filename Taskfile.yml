@@ -39,17 +39,17 @@ tasks:
     cmds:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-registry-bootstrap
 
-  # ── Producer participant ─────────────────────────────────────────────────
-  producer:start:
-    desc: Start producer participant stack
+  # ── Provider participant ─────────────────────────────────────────────────
+  provider:start:
+    desc: Start provider participant stack
     deps: [edc:ensure-base]
     cmds:
       - |
         env_file="${ENV_FILE:-.env}"
         [ -f "$env_file" ] || cp .env.example "$env_file"
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.producer.yml up -d --build
-        echo "Waiting for producer connector..."
+          docker compose --env-file "$env_file" -f docker-compose.provider.yml up -d --build
+        echo "Waiting for provider connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
         KC_URL="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
@@ -59,34 +59,34 @@ tasks:
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
-        echo "Producer started — gateway http://localhost:9010"
+        echo "Provider started — gateway http://localhost:9010 — portal: task provider:portal:run"
 
-  producer:stop:
-    desc: Stop producer participant stack
+  provider:stop:
+    desc: Stop provider participant stack
     cmds:
       - |
         env_file="${ENV_FILE:-.env}"
         [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.producer.yml down
+          docker compose --env-file "$env_file" -f docker-compose.provider.yml down
 
-  producer:status:
-    desc: Show producer container status
+  provider:status:
+    desc: Show provider container status
     cmds:
       - |
         env_file="${ENV_FILE:-.env}"
         [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.producer.yml ps
+          docker compose --env-file "$env_file" -f docker-compose.provider.yml ps
 
-  producer:logs:
-    desc: Follow producer logs
+  provider:logs:
+    desc: Follow provider logs
     cmds:
       - |
         env_file="${ENV_FILE:-.env}"
         [ -f "$env_file" ] || env_file=.env.example
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.producer.yml logs -f
+          docker compose --env-file "$env_file" -f docker-compose.provider.yml logs -f
 
   # ── Consumer participant ─────────────────────────────────────────────────
   consumer:start:
@@ -98,7 +98,7 @@ tasks:
         [ -f "$env_file" ] || cp .env.example "$env_file"
         COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file "$env_file" -f docker-compose.consumer.yml up -d --build
-        echo "Consumer started — gateway http://localhost:9000 — portal: task consumer:portal:run"
+        echo "Consumer started — gateway http://localhost:9000"
 
   consumer:stop:
     desc: Stop consumer participant stack
@@ -129,18 +129,18 @@ tasks:
 
   # ── Full stack aliases ───────────────────────────────────────────────────
   start:
-    desc: Start everything (infra + identity bootstrap + producer + consumer)
+    desc: Start everything (infra + identity bootstrap + provider + consumer)
     cmds:
       - task: infra:start
       - task: identity:bootstrap
-      - task: producer:start
+      - task: provider:start
       - task: consumer:start
 
   stop:
     desc: Stop everything
     cmds:
       - task: consumer:stop
-      - task: producer:stop
+      - task: provider:stop
       - task: infra:stop
 
   status:
@@ -168,14 +168,14 @@ tasks:
         uv run python -m debugpy --listen 0.0.0.0:30905 --wait-for-client \
           -m uvicorn identity_registry.main:app --reload --port 30005
 
-  # ── Producer local dev overrides ─────────────────────────────────────────
-  producer:connector:run:
-    desc: Stop Docker container, run producer connector locally on :30001
+  # ── Provider local dev overrides ─────────────────────────────────────────
+  provider:connector:run:
+    desc: Stop Docker container, run provider connector locally on :30001
     cmds:
-      - docker stop dataspaces-ds-connector-producer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-provider-1 2>/dev/null || true
       - |
         cd services/connector
-        CONNECTOR_ROLE=producer \
+        CONNECTOR_ROLE=provider \
         EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
         EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
         EDC_API_KEY=insecure-dev-key \
@@ -185,16 +185,16 @@ tasks:
         CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
         CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
         CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider \
         uv run uvicorn connector.main:app --reload --port 30001
 
-  producer:connector:debug:
-    desc: Stop Docker container, debug producer connector on :30001 (debugpy :30901)
+  provider:connector:debug:
+    desc: Stop Docker container, debug provider connector on :30001 (debugpy :30901)
     cmds:
-      - docker stop dataspaces-ds-connector-producer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-provider-1 2>/dev/null || true
       - |
         cd services/connector
-        CONNECTOR_ROLE=producer \
+        CONNECTOR_ROLE=provider \
         EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
         EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
         EDC_API_KEY=insecure-dev-key \
@@ -204,32 +204,32 @@ tasks:
         CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
         CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
         CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_producer \
+        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider \
         uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client \
           -m uvicorn connector.main:app --reload --port 30001
 
-  producer:provenance:run:
-    desc: Stop Docker container, run producer provenance locally on :30000
+  provider:provenance:run:
+    desc: Stop Docker container, run provider provenance locally on :30000
     cmds:
-      - docker stop dataspaces-ds-provenance-producer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-provenance-provider-1 2>/dev/null || true
       - |
         cd services/provenance
-        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_producer \
+        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_provider \
         uv run uvicorn provenance.main:app --reload --port 30000
 
-  producer:dataset-api:run:
+  provider:dataset-api:run:
     desc: Stop Docker container, run dataset-api locally on :30002
     cmds:
-      - docker stop dataspaces-dataset-api-producer-1 2>/dev/null || true
+      - docker stop dataspaces-dataset-api-provider-1 2>/dev/null || true
       - |
         cd services/dataset-api-mock
         DATASET_API_CONNECTOR_INTERNAL_URL=http://172.17.0.1:30001 \
         uv run uvicorn dataset_api_mock.main:app --reload --port 30002
 
-  producer:federated-catalog:run:
+  provider:federated-catalog:run:
     desc: Stop Docker container, run federated-catalog locally on :30003
     cmds:
-      - docker stop dataspaces-ds-federated-catalog-producer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-federated-catalog-provider-1 2>/dev/null || true
       - |
         cd services/federated-catalog
         CATALOG_CONNECTOR_URL=http://172.17.0.1:30001 \
@@ -283,7 +283,7 @@ tasks:
         PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer \
         uv run uvicorn provenance.main:app --reload --port 31000
 
-  producer:portal:run:
+  provider:portal:run:
     desc: Stop Docker container, run portal locally on :30004
     cmds:
       - docker stop dataspaces-ds-portal-1 2>/dev/null || true
@@ -313,10 +313,10 @@ tasks:
           "127.0.0.1 trust-anchor.dataspaces.localhost"
           "127.0.0.1 users.dataspaces.localhost"
           "127.0.0.1 connector.dataspaces.localhost"
-          "127.0.0.1 connector-producer.dataspaces.localhost"
+          "127.0.0.1 connector-provider.dataspaces.localhost"
           "127.0.0.1 connector-consumer.dataspaces.localhost"
           "127.0.0.1 provenance.dataspaces.localhost"
-          "127.0.0.1 provenance-producer.dataspaces.localhost"
+          "127.0.0.1 provenance-provider.dataspaces.localhost"
           "127.0.0.1 provenance-consumer.dataspaces.localhost"
           "127.0.0.1 portal.dataspaces.localhost"
           "127.0.0.1 dataset-api.dataspaces.localhost"
@@ -351,7 +351,7 @@ tasks:
         compose() {
           COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose "$@"
         }
-        for db in connector_producer connector_consumer; do
+        for db in connector_provider connector_consumer; do
           compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
             TRUNCATE TABLE
               consumer_access_requests,
@@ -361,7 +361,7 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        for db in provenance_producer provenance_consumer; do
+        for db in provenance_provider provenance_consumer; do
           compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
             TRUNCATE TABLE
               domain_events,
@@ -416,7 +416,7 @@ tasks:
       - |
         py="${PYTHON:-services/connector/.venv/bin/python}"
         [ -x "$py" ] || py="python3"
-        PYTHONPATH=services/governance/src "$py" scripts/compliance_validate.py --profile core
+        PYTHONPATH=libs/governance/src "$py" scripts/compliance_validate.py --profile core
 
   compliance:e2e:smoke:
     desc: Run runtime smoke checks against a started dataspace connector
@@ -435,4 +435,4 @@ tasks:
       - |
         pytest_bin="${PYTEST:-services/connector/.venv/bin/pytest}"
         [ -x "$pytest_bin" ] || pytest_bin="pytest"
-        PYTHONPATH=services/governance/src "$pytest_bin" -q tests/test_compliance_validate.py
+        PYTHONPATH=libs/governance/src "$pytest_bin" -q tests/test_compliance_validate.py

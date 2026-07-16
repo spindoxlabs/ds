@@ -14,7 +14,6 @@ dataspaces/
 │   ├── connector/              Python/FastAPI — EDC orchestration, consent, governance sync
 │   ├── provenance/             Python/FastAPI — W3C PROV-O event logging and lineage
 │   ├── portal/                 SvelteKit — web frontend for all participant roles
-│   ├── governance/             Python library — GovernanceRuleV2, ODRL mapper
 │   ├── identity-registry/      Python/FastAPI — DID lifecycle, STS, credential service, participant registry
 │   ├── federated-catalog/      Python/FastAPI — DCAT-AP catalog crawler
 │   ├── dataset-api-mock/       Python/FastAPI — mock dataset API for dev
@@ -23,11 +22,14 @@ dataspaces/
 │   ├── edc-connector/          Gradle — EDC fat JAR build (DCP-enabled, v0.16.0)
 │   ├── caddy/                  Config — reverse proxy, TLS, DID document routing
 │   └── keycloak/               Config — OIDC realm import for dev
+├── libs/                       Importable shared Python packages (no Dockerfile, no port)
+│   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper (import `ds.governance`)
+│   └── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
 ├── docs/                       Architecture docs, DSSC blueprint reference
 ├── scripts/                    Bootstrap, compliance validation, backup
 ├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
 ├── docker-compose.yml          Shared infra — caddy, postgres, identity-registry, keycloak
-├── docker-compose.producer.yml Producer participant stack
+├── docker-compose.provider.yml Provider participant stack
 ├── docker-compose.consumer.yml Consumer participant stack
 ├── Taskfile.yml                Root orchestration
 ├── build.gradle.kts            Gradle root for Java subprojects
@@ -37,6 +39,15 @@ dataspaces/
 Each service has its own `Taskfile.yml` and `Dockerfile`. Most have an `AGENTS.md` and `README.md`.
 
 **When working on a specific service, always load its `services/<name>/AGENTS.md` first.** It contains the source layout, key files, coding conventions, and integration points specific to that service.
+
+### Shared libraries: `libs/`
+
+Importable Python packages shared across services live under **`libs/`**, not `services/`. The rule:
+
+- **`libs/`** — a package with no `Dockerfile` and no port; consumed via an editable path dependency. Today: `libs/governance` (`ds-governance`, imported as `ds.governance`) and `libs/ds-auth` (`ds-auth`, imported as `ds_auth`).
+- **`services/`** — a deployable unit with a `Dockerfile` and a `task <participant>:<service>:run`.
+
+To depend on a lib, add it to the service's `pyproject.toml` `[project].dependencies` and point `[tool.uv.sources]` at it, e.g. `ds-auth = { path = "../../libs/ds-auth", editable = true }`. In the service `Dockerfile`, `COPY libs/<lib>/ /build/<lib>/`, `uv pip install` it, and strip its name from the copied `pyproject.toml` before installing the rest (see `services/connector/Dockerfile`). New shared code goes in `libs/`; never add a library under `services/`.
 
 ## Service interaction map
 
@@ -70,10 +81,10 @@ Three compose files form the full stack:
 | File | Services | Purpose |
 |------|----------|---------|
 | `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync | Shared infrastructure |
-| `docker-compose.producer.yml` | edc-provider, ds-connector-producer, ds-provenance-producer, dataset-api-producer, ds-federated-catalog-producer, ds-portal | Producer participant |
+| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
-The portal runs in the producer compose. For local dev with hot-reload: `task producer:portal:run`.
+The portal runs in the provider compose. For local dev with hot-reload: `task provider:portal:run`.
 
 All containers share the `dataspaces` bridge network.
 
@@ -95,10 +106,10 @@ All containers share the `dataspaces` bridge network.
 
 | Port | Service |
 |------|---------|
-| 30000 | ds-provenance (producer) |
-| 30001 | ds-connector (producer) |
-| 30002 | dataset-api (producer) |
-| 30003 | federated-catalog (producer) |
+| 30000 | ds-provenance (provider) |
+| 30001 | ds-connector (provider) |
+| 30002 | dataset-api (provider) |
+| 30003 | federated-catalog (provider) |
 | 30004 | portal (standalone, run locally) |
 | 30005 | identity-registry (shared infra) |
 | 31000 | ds-provenance (consumer) |
@@ -106,7 +117,7 @@ All containers share the `dataspaces` bridge network.
 | 35432 | PostgreSQL |
 | 8080 | Keycloak |
 | 9000 | Caddy consumer gateway |
-| 9010 | Caddy producer gateway |
+| 9010 | Caddy provider gateway |
 | 19xxx | EDC provider (management, protocol, public, control) |
 | 29xxx | EDC consumer (management, protocol, public, control) |
 | 30900+ | debugpy ports |
@@ -194,15 +205,15 @@ See `docs/governance-and-odrl.md` for the full pipeline documentation.
 task proxy:hosts                  # /etc/hosts entries (sudo)
 task proxy:trust-ca               # trust Caddy CA (sudo)
 
-# Start everything (infra + identity bootstrap + producer + consumer)
+# Start everything (infra + identity bootstrap + provider + consumer)
 task start
 
 # Or step by step:
 task infra:start                  # shared infra (postgres, caddy, identity-registry, keycloak)
 task identity:bootstrap           # trust anchor + participant registration
-task producer:start               # producer stack (EDC + connector + provenance + dataset-api + catalog)
+task provider:start               # provider stack (EDC + connector + provenance + dataset-api + catalog)
 task consumer:start               # consumer stack (EDC + connector + provenance)
-task producer:portal:run          # portal locally with hot-reload (optional)
+task provider:portal:run          # portal locally with hot-reload (optional)
 ```
 
 ## Key documentation
@@ -223,7 +234,7 @@ task producer:portal:run          # portal locally with hot-reload (optional)
 | Task | Where to start |
 |------|---------------|
 | Add a new dataset to the catalogue | `services/connector/governance/governance.yaml` |
-| Add a new ODRL constraint type | `services/governance/` (mapper) + `services/edc-extensions/` (function) |
+| Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function) |
 | Add a new API endpoint to connector | `services/connector/src/connector/api/v1/` |
 | Add a new portal page | `services/portal/src/routes/` |
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
@@ -255,7 +266,7 @@ Two address schemes depending on the call direction:
 
 Never use raw `localhost:<port>` for service URLs — it's ambiguous across host/container boundaries. Use `172.17.0.1` or the Caddy-proxied domain.
 
-Caddy gateway ports: `:9010` (producer), `:9000` (consumer).
+Caddy gateway ports: `:9010` (provider), `:9000` (consumer).
 
 ### Running services locally
 
@@ -270,7 +281,7 @@ All bootstrap and provisioning operations must be idempotent. `task identity:boo
 | User | Password | KC roles | VC role | Purpose |
 |------|----------|----------|---------|---------|
 | `admin@example.test` | `admin` | `ds-admin`, `dataset.admin`, portal `admin` | — | Platform admin |
-| `producer@example.test` | `producer` | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
+| `provider@example.test` | `provider` | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
 | `consumer@example.test` | `consumer` | — | `ConsumerUser` | Data consumer |
 | `subject@example.test` | `subject` | — | `DataSubject` | Consent management |
 
@@ -280,21 +291,31 @@ Service accounts are defined in `services/keycloak/clients.yaml`. Default secret
 
 ### Zero-trust internal APIs
 
-All inter-service API calls must be authenticated with JWT bearer tokens issued by Keycloak service accounts. There are no "internal-only" unprotected endpoints — every endpoint validates the JWT `scope` claim against the required scope for that operation.
+Every endpoint authenticates a JWT bearer and authorizes it with one unified guard from the shared `libs/ds-auth` library (`from ds_auth.fastapi import require_permission`). There are no "internal-only" unprotected endpoints.
 
-Service clients and their scopes are defined in `services/keycloak/clients.yaml`. The `keycloak-sync` init container provisions these in Keycloak on startup.
+`require_permission("service.resource.action", ...)` authorizes **both** principal kinds against the same permission vocabulary:
+
+- **Service tokens** (Keycloak client-credentials) authorize on their `scope` claim.
+- **User tokens** (OIDC login) authorize on their Keycloak **groups** (realm-level `groups` + org-level `organization.<alias>.groups`, merged by `ds_auth.extract_groups`). Group names mirror the scope names.
+- `{service}.admin` is a superset that satisfies any `{service}.*`.
+
+This mirrors the `celine-sdk` claim semantics on purpose (a compatible *approach*, not a code dependency) so a Keycloak realm synced from `clients.yaml` by the shared `celine-policies` CLI authorizes identically across projects.
+
+Verification is **fail-closed**: `ds_auth` verifies signature + audience + issuer via JWKS whenever an OIDC issuer is configured. Local dev without a reachable Keycloak requires the explicit, loud `*_OIDC_INSECURE_DEV=true` opt-in (default in dev settings); production sets the issuer, which enforces verification regardless.
+
+Service clients and their scopes are defined in `services/keycloak/clients.yaml`; user groups live in the realm import (`services/keycloak/realm-*.json`) / are provisioned by the `celine-policies` CLI. The `keycloak-sync` init container provisions clients on startup.
 
 When adding or modifying API endpoints:
-- Define the required scope in `clients.yaml` under the owning service's client
-- Add `Depends(require_scope("service.scope"))` (Python) or equivalent auth guard
+- Define the required permission (`service.resource.action`) in `clients.yaml` (as a scope) so service tokens can hold it, and ensure the matching group exists for user access
+- Add `Depends(require_permission("service.resource.action"))` (Python)
 - Ensure the calling service's client has the scope in its `default_scopes`
 - Never add unprotected endpoints that accept sensitive data or perform mutations
 
 ### Cross-checks on edits
 
 When modifying any service, verify:
-1. **Auth guards**: every new/changed endpoint has appropriate JWT scope validation
-2. **Scope alignment**: the calling service's KC client has the required scope in `clients.yaml`
+1. **Auth guards**: every new/changed endpoint uses `Depends(require_permission(...))` from `ds_auth`
+2. **Scope/group alignment**: the calling service's KC client has the required scope in `clients.yaml`; user access has a matching group in the realm
 3. **URL scheme**: new URLs use `172.17.0.1` (backend) or `*.dataspaces.localhost` (browser-facing), never raw `localhost`
 4. **Idempotency**: bootstrap/provisioning operations remain safe to re-run
 5. **Credential hygiene**: no hardcoded secrets outside dev-default settings; production must override via env vars
