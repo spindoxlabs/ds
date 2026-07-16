@@ -5,7 +5,7 @@
 - **Role**: W3C PROV-O provenance and audit logging
 - **Language**: Python 3.12, FastAPI
 - **Port**: 30000 (debug: 30900)
-- **URL**: `https://provenance.dataspaces.localhost`
+- **URL**: `http://portal.dataspaces.localhost:9010/api/provenance/` (via Caddy), direct `http://172.17.0.1:30000`
 - **Database**: PostgreSQL (`provenance` DB), async SQLAlchemy + Alembic
 
 ## Source layout

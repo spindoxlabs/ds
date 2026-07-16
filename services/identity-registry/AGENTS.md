@@ -38,7 +38,9 @@ src/identity_registry/
 ## API tiers
 
 - **Public** (no auth): `/dids/`, `/status/`, `/health` — must be publicly reachable for W3C did:web resolution
-- **Internal** (no auth, Docker DNS only): `/sts/`, `/credentials/`, `/participants/` — called by EDC connectors and ds-connector
+- **STS** (OAuth2 client_credentials): `/sts/{did}/token` — EDC connectors authenticate with STS client secret (PBKDF2-hashed, registered per participant)
+- **DCP** (SI token verification): `/credentials/{did}/presentations/query` — EDC connectors authenticate with Self-Issued JWT
+- **Internal** (JWT-authenticated): `/participants/`, `/users/resolve`, `/keycloak/mapping` — called by ds-connector, federated-catalog, portal (requires `identity-registry.read` or `identity-registry.resolve` scope)
 - **Admin** (JWT with `identity-registry.admin` scope): `/admin/` — full CRUD for participants, DIDs, keys, credentials
 
 ## Key flows

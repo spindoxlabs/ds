@@ -5,7 +5,7 @@
 - **Role**: DCAT-AP catalog crawler and aggregator
 - **Language**: Python 3.12, FastAPI
 - **Port**: 30003 (debug: 30903)
-- **URL**: `https://federated-catalog.dataspaces.localhost`
+- **URL**: `http://portal.dataspaces.localhost:9010/api/catalog/` (via Caddy), direct `http://172.17.0.1:30003`
 - **Database**: none (in-memory cache)
 
 ## Source layout
@@ -42,7 +42,7 @@ src/federated_catalog/
 | Env var | Default | Purpose |
 |---------|---------|---------|
 | `CATALOG_CONNECTOR_URL` | `http://ds-connector:30001` | ds-connector URL for catalog proxy |
-| `CATALOG_PARTICIPANTS_YAML` | — | Path to participants.yaml |
+| `CATALOG_IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | Identity registry URL for participant discovery |
 | `CATALOG_CRAWL_INTERVAL` | `300` | Seconds between crawls |
 | `CATALOG_STARTUP_DELAY` | `15` | Seconds before first crawl |
 | `CATALOG_BASE_URL` | `https://federated-catalog.dataspaces.localhost` | Public URL for self-references |
@@ -50,4 +50,4 @@ src/federated_catalog/
 ## Integration points
 
 - **Upstream**: Portal queries this service for aggregated catalog views
-- **Downstream**: reads participant registry, calls connector DSP endpoints for DCAT catalogs
+- **Downstream**: calls identity-registry `/participants` for provider discovery, calls connector DSP endpoints for DCAT catalogs

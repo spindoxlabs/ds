@@ -2,57 +2,49 @@
 
 ## Service identity
 
-- **Role**: Reverse proxy, local HTTPS termination, DID document hosting
+- **Role**: HTTP reverse proxy — gateway routing for producer (:9010) and consumer (:9000) stacks, Keycloak proxy
 - **Type**: Configuration-only (no application code)
-- **Ports**: 80, 443
+- **Ports**: 9000 (consumer gateway), 9010 (producer gateway)
 - **Image**: `caddy:2-alpine`
 
 ## File layout
 
 ```
 caddy/
-├── Caddyfile              Routing config for all services
-└── did/
-    ├── provider/did.json  DID document for did:web:provider.dataspaces.localhost
-    ├── consumer/did.json  DID document for did:web:consumer.dataspaces.localhost
-    └── trust-anchor/did.json  DID document for did:web:trust-anchor.dataspaces.localhost
+└── Caddyfile              Routing config for all services
 ```
 
 ## Caddyfile routing
 
-| Domain | Target | Purpose |
-|--------|--------|---------|
-| `provenance.dataspaces.localhost` | `host.docker.internal:30000` | ds-provenance |
-| `connector.dataspaces.localhost` | `host.docker.internal:30001` | ds-connector |
-| `dataset-api.dataspaces.localhost` | `host.docker.internal:30002` | Dataset API adapter |
-| `federated-catalog.dataspaces.localhost` | `host.docker.internal:30003` | ds-federated-catalog |
-| `portal.dataspaces.localhost` | `host.docker.internal:30004` | ds-portal |
-| `provider.dataspaces.localhost` | varies by path | EDC provider + DID doc |
-| `consumer.dataspaces.localhost` | varies by path | EDC consumer + DID doc |
-| `trust-anchor.dataspaces.localhost` | — | DID doc only |
-| `sts-provider.dataspaces.localhost` | `host.docker.internal:38080` | STS provider |
-| `sts-consumer.dataspaces.localhost` | `host.docker.internal:38081` | STS consumer |
-| `vc-wallet-provider.dataspaces.localhost` | `host.docker.internal:38082` | VC wallet provider |
-| `vc-wallet-consumer.dataspaces.localhost` | `host.docker.internal:38083` | VC wallet consumer |
-| `keycloak.dataspaces.localhost` | `host.docker.internal:8080` | Keycloak auth |
+Three site blocks:
+
+| Site block | Path | Upstream | Purpose |
+|-----------|------|----------|---------|
+| `keycloak.dataspaces.localhost:9010` | `/*` | `172.17.0.1:8080` | Keycloak OIDC |
+| `consumer.dataspaces.localhost:9000` | `/api/connector/*` | `172.17.0.1:31001` | Consumer connector API |
+| | `/api/provenance/*` | `172.17.0.1:31000` | Consumer provenance API |
+| `portal.dataspaces.localhost:9010` | `/api/connector/*` | `172.17.0.1:30001` | Producer connector API |
+| | `/api/provenance/*` | `172.17.0.1:30000` | Producer provenance API |
+| | `/api/catalog/*` | `172.17.0.1:30003` | Federated catalog API |
+| | `/api/datasets/*` | `172.17.0.1:30002` | Dataset API |
+| | `/*` (catch-all) | `172.17.0.1:30004` | Portal SvelteKit app |
+
+All upstreams use `172.17.0.1` (Docker host-gateway). `handle_path` strips the matched prefix before proxying.
 
 ## DID document hosting
 
-Each participant domain serves `/.well-known/did.json` by rewriting the path to the static DID document file. The DID documents contain EC P-256 `JsonWebKey2020` verification methods.
-
-Public keys in DID documents are updated by `scripts/gen-keys.sh`.
+DID documents (`/.well-known/did.json`) are served dynamically by the identity-registry service, not from static files. Caddy is not involved in DID routing — EDC resolves `did:web:` DIDs by fetching directly from the identity-registry via the `*.dataspaces.localhost` hostname which resolves to `127.0.0.1` via `/etc/hosts`.
 
 ## Key files for common tasks
 
 | Task | Files to touch |
 |------|---------------|
 | Add a new service route | `Caddyfile` |
-| Add a new participant identity | `Caddyfile` (domain + DID rewrite), `did/<name>/did.json` |
-| Change TLS settings | `Caddyfile` (tls directive per domain) |
+| Add a new participant gateway | `Caddyfile` (new site block) |
 
 ## Notes
 
-- All `*.dataspaces.localhost` domains use Caddy's local CA for TLS
-- Trust the CA with `task proxy:trust-ca` to avoid browser warnings
-- Add hostnames with `task proxy:hosts` (writes to `/etc/hosts`)
+- All `*.dataspaces.localhost` domains must be in `/etc/hosts` — run `task proxy:hosts`
 - Caddy runs as part of root `docker-compose.yml`, not per-service
+- Dev setup uses plain HTTP (no TLS) — ports 9000 and 9010
+- Upstream targets use `172.17.0.1`, never `localhost` or `host.docker.internal`

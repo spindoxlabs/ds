@@ -12,7 +12,12 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const roles = parseTokenRoles(session.accessToken);
 	const userVcRole = session.userVcRole ?? null;
 	if (!roles.isAdmin && userVcRole !== 'ConsumerUser') {
-		throw redirect(303, '/my-data');
+		if (roles.isDatasetAdmin) {
+			throw redirect(303, '/provider/assets');
+		}
+		if (userVcRole === 'DataSubject') {
+			throw redirect(303, '/my-data');
+		}
 	}
 
 	// Use federated catalog when configured; fall back to dataset-api catalogue.

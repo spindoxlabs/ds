@@ -51,7 +51,14 @@ tasks:
           docker compose --env-file "$env_file" -f docker-compose.producer.yml up -d --build
         echo "Waiting for producer connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
-        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null
+        KC_URL="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token"
+        TOKEN=$(curl -fsS -X POST "$KC_URL" \
+          -d grant_type=client_credentials \
+          -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \
+          -d "client_secret=${SVC_DS_PORTAL_SECRET:-svc-ds-portal}" \
+          | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+        curl -fsS -X POST http://localhost:30001/provider/sync \
+          -H "Authorization: Bearer $TOKEN" >/dev/null
         echo "Producer started — gateway http://localhost:9010"
 
   producer:stop:
@@ -282,10 +289,15 @@ tasks:
       - docker stop dataspaces-ds-portal-1 2>/dev/null || true
       - |
         cd services/portal
-        CONNECTOR_URL=http://localhost:30001 \
-        PROVENANCE_URL=http://localhost:30000 \
-        FEDERATED_CATALOG_URL=http://localhost:30003 \
+        CONNECTOR_URL=http://172.17.0.1:30001 \
+        PROVENANCE_URL=http://172.17.0.1:30000 \
+        FEDERATED_CATALOG_URL=http://172.17.0.1:30003 \
         IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
+        AUTH_KEYCLOAK_ISSUER=http://keycloak.dataspaces.localhost:9010/realms/dataspaces \
+        AUTH_KEYCLOAK_ID=ds-portal \
+        AUTH_KEYCLOAK_SECRET=change-me-local-client-secret \
+        AUTH_SECRET=dev-secret-change-in-prod \
+        ORIGIN=http://portal.dataspaces.localhost:9010 \
         PORTAL_SERVICE_CLIENT_ID=svc-ds-portal \
         PORTAL_SERVICE_CLIENT_SECRET=svc-ds-portal \
         npm run dev
@@ -359,7 +371,14 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        curl -fsS -X POST http://localhost:30001/provider/sync >/dev/null 2>&1 || true
+        KC_URL="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token"
+        TOKEN=$(curl -fsS -X POST "$KC_URL" \
+          -d grant_type=client_credentials \
+          -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \
+          -d "client_secret=${SVC_DS_PORTAL_SECRET:-svc-ds-portal}" \
+          | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || true
+        curl -fsS -X POST http://localhost:30001/provider/sync \
+          -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
         echo "Demo state cleared"
 
   # ── EDC build ────────────────────────────────────────────────────────────

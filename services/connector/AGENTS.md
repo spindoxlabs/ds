@@ -5,7 +5,7 @@
 - **Role**: EDC orchestration, consent management, governance sync
 - **Language**: Python 3.12, FastAPI
 - **Port**: 30001 (debug: 30901)
-- **URL**: `https://connector.dataspaces.localhost`
+- **URL**: `http://portal.dataspaces.localhost:9010/api/connector/` (via Caddy), direct `http://172.17.0.1:30001`
 - **Database**: PostgreSQL (`connector` DB), async SQLAlchemy + Alembic
 
 ## Source layout
@@ -95,29 +95,21 @@ The `GovernanceMapper` converts this to ODRL offers + EDC payloads. `secret` dat
 
 ## Participant registry
 
-`governance/participants.yaml` defines known participants:
+Participants are registered in the identity-registry service and discovered via `GET /participants`. The `ParticipantRegistry` class (`registry/participants.py`) implements an `HttpParticipantRegistry` that fetches participants from identity-registry with a TTL cache.
 
-```yaml
-participants:
-  - id: did:web:provider.dataspaces.localhost
-    dsp_address: http://edc-provider:19194/protocol
-    allowed_scopes: [dataspaces.query, dataspaces.admin]
-    role: provider
-```
-
-Used by `edc-extensions` `AccessScopeFunction` at negotiation time and by `ParticipantRegistry` for catalog discovery.
+Used by `edc-extensions` `AccessScopeFunction` at negotiation time and by the federated catalog for provider discovery.
 
 ## Docker stack
 
-This service's `docker-compose.yml` brings up the full connector stack:
-- `edc-provider` + `edc-consumer` (Java EDC fat JARs)
-- `sts-provider` + `sts-consumer` (Python STS instances)
-- `vc-wallet-provider` + `vc-wallet-consumer` (Python VC wallet instances)
-- `connector-db-init` (Alembic migration runner)
-- `ds-connector` (this service)
-- `ds-federated-catalog` (catalog crawler)
+This service runs as part of the producer (`docker-compose.producer.yml`) or consumer (`docker-compose.consumer.yml`) stacks:
+- `edc-provider` / `edc-consumer` (Java EDC fat JARs)
+- `ds-connector-producer` / `ds-connector-consumer` (this service)
+- `ds-provenance-producer` / `ds-provenance-consumer`
+- `dataset-api-producer` (producer only)
+- `ds-federated-catalog-producer` (producer only)
+- DB init containers (create DB + Alembic migrations)
 
-Shared infra (caddy, postgres) must be running first via root `docker compose up -d`.
+Shared infra (caddy, postgres, identity-registry, keycloak) must be running first via `task infra:start`.
 
 ## Testing
 
@@ -133,7 +125,7 @@ Tests use `pytest-asyncio` and `respx` for HTTP mocking. Test database is SQLite
 
 ## Integration points
 
-- **Upstream**: Portal calls this service's REST API
-- **Downstream**: calls EDC Management API, ds-provenance, STS, VC-wallet
-- **Internal API**: EDC extensions call `/internal/*` endpoints during policy evaluation
+- **Upstream**: Portal calls this service's REST API (JWT-authenticated via `svc-ds-portal` service account)
+- **Downstream**: calls EDC Management API, ds-provenance, identity-registry (`/participants` for registry, `/users/resolve` for user lookup)
+- **Internal API**: EDC extensions and dataset-api call `/internal/*` endpoints during policy evaluation (JWT-authenticated via `svc-edc` / `svc-ds-dataset-api` service accounts)
 - **Shared lib**: imports `ds-governance` (editable path dependency at `../governance`)

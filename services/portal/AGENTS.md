@@ -5,7 +5,7 @@
 - **Role**: Web frontend for all dataspace participant roles
 - **Language**: TypeScript, SvelteKit 2.0, Svelte 5.0, Tailwind CSS 4.0
 - **Port**: 30004 (debug: 30904)
-- **URL**: `https://portal.dataspaces.localhost`
+- **URL**: `http://portal.dataspaces.localhost:9010` (via Caddy), direct `http://172.17.0.1:30004`
 - **Auth**: Auth.js with Keycloak OIDC
 
 ## Source layout
@@ -17,27 +17,28 @@ src/
 │   ├── +layout.server.ts        Server-side session loading
 │   ├── +page.svelte             Landing page — catalogue browser with search
 │   ├── +page.server.ts          SSR data loading for catalogue
+│   ├── catalog/[id]/            Dataset detail view
 │   ├── consumer/
-│   │   ├── catalog/             Consumer catalog view
 │   │   ├── negotiate/           Negotiation wizard flow
-│   │   ├── negotiations/        Active negotiations list
-│   │   ├── transfers/           Transfer history
-│   │   └── edr/[id]/            EDR viewer (endpoint + token)
+│   │   ├── negotiations/        Active negotiations list + [id] detail
+│   │   ├── transfer/            Transfer initiation
+│   │   └── transfers/           Transfer history + [id] detail
 │   ├── provider/
-│   │   ├── +page.svelte         Provider dashboard
-│   │   ├── governance/          Governance YAML viewer/editor
-│   │   ├── assets/              EDC asset list
+│   │   ├── assets/              EDC asset list + [id] detail
 │   │   ├── contracts/           Contract definitions
-│   │   └── transfers/           Provider-side transfers
+│   │   └── governance/          Governance YAML viewer
 │   ├── consent/
 │   │   ├── +page.svelte         Data subject consent list
 │   │   └── [id]/                Individual consent detail
+│   ├── my-data/                 Data subject — owned datasets and sharing
+│   ├── lineage/[iri]/           Provenance graph viewer (Cytoscape)
+│   ├── metrics/                 Usage metrics
 │   └── admin/
-│       ├── +page.svelte         Operator dashboard
-│       ├── health/              Service health checks
 │       ├── audit/               Provenance event audit log
+│       ├── compliance/          Compliance checks
+│       ├── health/              Service health checks
 │       ├── participants/        Participant registry viewer
-│       └── lineage/             Provenance graph viewer (Cytoscape)
+│       └── rulebook/            Governance rulebook
 ├── lib/
 │   ├── components/
 │   │   ├── NegotiationWizard.svelte   Multi-step negotiate → transfer → EDR flow
@@ -50,8 +51,9 @@ src/
 │   ├── stores/
 │   │   └── session.ts           Client-side persona derivation from Keycloak JWT
 │   └── server/
-│       ├── auth.ts              Server-side route guards (requireAuth, requireAdmin, requireProvider)
+│       ├── auth.ts              Server-side route guards (requireAuth, requireAdmin, requireProvider, requireConsumer, requireDataSubject)
 │       ├── connector.ts         ds-connector API client (server-side fetch)
+│       ├── identity-registry.ts Identity-registry client (user resolution via service account)
 │       ├── provenance.ts        ds-provenance API client (server-side fetch)
 │       └── odrl.ts              ODRL JSON-LD → human-readable sentence converter
 ├── hooks.server.ts              SvelteKit request lifecycle (Auth.js handle)
@@ -95,12 +97,18 @@ Keycloak issues JWTs with roles in `resource_access` and scopes. The portal deri
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PUBLIC_KEYCLOAK_URL` | `https://keycloak.dataspaces.localhost` | Keycloak base URL |
 | `CONNECTOR_URL` | `http://ds-connector:30001` | ds-connector internal URL |
 | `PROVENANCE_URL` | `http://ds-provenance:30000` | ds-provenance internal URL |
-| `CATALOGUE_URL` | `http://ds-federated-catalog:30003` | Federated catalog URL |
-| `AUTH_SECRET` | — | Auth.js session secret |
-| `AUTH_KEYCLOAK_SECRET` | — | Keycloak client secret |
+| `FEDERATED_CATALOG_URL` | `http://ds-federated-catalog:30003` | Federated catalog URL |
+| `IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | Identity registry URL (user resolution) |
+| `AUTH_KEYCLOAK_ISSUER` | `http://keycloak:8080/realms/dataspaces` | OIDC issuer (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
+| `AUTH_KEYCLOAK_ID` | `ds-portal` | Keycloak client ID |
+| `AUTH_KEYCLOAK_SECRET` | — | Keycloak client secret (`change-me-local-client-secret` for dev) |
+| `AUTH_SECRET` | `dev-secret-change-in-prod` | Auth.js session encryption secret |
+| `ORIGIN` | — | SvelteKit ORIGIN for CSRF (`http://portal.dataspaces.localhost:9010` for dev) |
+| `PORTAL_SERVICE_CLIENT_ID` | `svc-ds-portal` | Service account for backend API calls |
+| `PORTAL_SERVICE_CLIENT_SECRET` | `svc-ds-portal` | Service account secret |
+| `PORTAL_DEMO_ADMIN_USERS` | `admin` | Comma-separated usernames treated as admin (dev fallback) |
 
 ## Testing
 
@@ -114,7 +122,8 @@ npm run test        # vitest
 
 ## Integration points
 
-- **Downstream**: calls ds-connector REST API (all data operations)
+- **Downstream**: calls ds-connector REST API (all data operations, JWT-authenticated via `svc-ds-portal`)
 - **Downstream**: calls ds-provenance REST API (lineage, audit)
-- **Auth**: Keycloak OIDC via Auth.js
+- **Downstream**: calls identity-registry `/users/resolve` (user DID/VC lookup on login, via `svc-ds-portal` service account)
+- **Auth**: Keycloak OIDC via Auth.js (`@auth/sveltekit`)
 - **No upstream callers** — this is the user-facing frontend

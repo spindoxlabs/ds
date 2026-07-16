@@ -36,6 +36,8 @@ dataspaces/
 
 Each service has its own `Taskfile.yml` and `Dockerfile`. Most have an `AGENTS.md` and `README.md`.
 
+**When working on a specific service, always load its `services/<name>/AGENTS.md` first.** It contains the source layout, key files, coding conventions, and integration points specific to that service.
+
 ## Service interaction map
 
 ```
@@ -84,7 +86,7 @@ All containers share the `dataspaces` bridge network.
 | Identity (BB02) | identity-registry: DID lifecycle, STS (ES256 SI JWTs), DCP credential service, participant registry, StatusList2021 |
 | Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
 | Database | PostgreSQL 17.4 (one DB per service, all on port 35432) |
-| Proxy | Caddy 2 (local HTTPS, DID document routing to identity-registry) |
+| Proxy | Caddy 2 (HTTP reverse proxy, DID document routing to identity-registry) |
 | Auth | Keycloak OIDC via Auth.js |
 | Build | uv (Python), npm (Node), Gradle (Java), Taskfile |
 | Containers | Docker Compose, multi-stage Dockerfiles |
@@ -237,4 +239,62 @@ task producer:portal:run          # portal locally with hot-reload (optional)
 - **Dockerfiles use repo root as build context.** `COPY` paths in `services/*/Dockerfile` are relative to root, not the service directory. `.dockerignore` at root excludes `data/`, `.git`, `node_modules`, `.venv`.
 - **Python services must be installed as packages** in Dockerfiles (`uv pip install .`) so console script entry points (e.g., `ir-cli`) are created. Don't manually list deps.
 - **`172.17.0.1`** is the standard host-gateway address in all compose files.
-- `uv run` for python commands is generally better in the context of a service
+- `uv run` for python commands is generally better in the context of a service.
+
+## Dev environment conventions
+
+### URL addressing
+
+Two address schemes depending on the call direction:
+
+| Context | Scheme | Example |
+|---------|--------|---------|
+| Browser-facing / OIDC issuer / ORIGIN / callback URLs | Caddy-proxied `*.dataspaces.localhost` | `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` |
+| Container-to-host or host-to-container backend calls | `172.17.0.1:<port>` | `http://172.17.0.1:30005` |
+| Container-to-container (inside compose) | Docker DNS service name | `http://identity-registry:30005` |
+
+Never use raw `localhost:<port>` for service URLs — it's ambiguous across host/container boundaries. Use `172.17.0.1` or the Caddy-proxied domain.
+
+Caddy gateway ports: `:9010` (producer), `:9000` (consumer).
+
+### Running services locally
+
+Every service has a `task <participant>:<service>:run` command in the root Taskfile that stops the Docker container and runs the service locally with hot-reload. Environment variables are set to use `172.17.0.1` for backend services and Caddy-proxied domains for browser-facing URLs. This allows running one service locally while the rest remain in Docker.
+
+### Idempotency
+
+All bootstrap and provisioning operations must be idempotent. `task identity:bootstrap` can be run repeatedly without duplicating participants or credentials. `ir-cli` commands use upsert semantics. Alembic migrations are tracked and skip already-applied revisions. Database init containers check for existing databases before creating them.
+
+### Dev credentials
+
+| User | Password | KC roles | VC role | Purpose |
+|------|----------|----------|---------|---------|
+| `admin@example.test` | `admin` | `ds-admin`, `dataset.admin`, portal `admin` | — | Platform admin |
+| `producer@example.test` | `producer` | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
+| `consumer@example.test` | `consumer` | — | `ConsumerUser` | Data consumer |
+| `subject@example.test` | `subject` | — | `DataSubject` | Consent management |
+
+Service accounts are defined in `services/keycloak/clients.yaml`. Default secret = client_id (e.g., `svc-ds-portal` / `svc-ds-portal`).
+
+## Security posture
+
+### Zero-trust internal APIs
+
+All inter-service API calls must be authenticated with JWT bearer tokens issued by Keycloak service accounts. There are no "internal-only" unprotected endpoints — every endpoint validates the JWT `scope` claim against the required scope for that operation.
+
+Service clients and their scopes are defined in `services/keycloak/clients.yaml`. The `keycloak-sync` init container provisions these in Keycloak on startup.
+
+When adding or modifying API endpoints:
+- Define the required scope in `clients.yaml` under the owning service's client
+- Add `Depends(require_scope("service.scope"))` (Python) or equivalent auth guard
+- Ensure the calling service's client has the scope in its `default_scopes`
+- Never add unprotected endpoints that accept sensitive data or perform mutations
+
+### Cross-checks on edits
+
+When modifying any service, verify:
+1. **Auth guards**: every new/changed endpoint has appropriate JWT scope validation
+2. **Scope alignment**: the calling service's KC client has the required scope in `clients.yaml`
+3. **URL scheme**: new URLs use `172.17.0.1` (backend) or `*.dataspaces.localhost` (browser-facing), never raw `localhost`
+4. **Idempotency**: bootstrap/provisioning operations remain safe to re-run
+5. **Credential hygiene**: no hardcoded secrets outside dev-default settings; production must override via env vars

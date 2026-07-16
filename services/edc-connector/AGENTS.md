@@ -75,5 +75,5 @@ task edc:docker
 
 - **Includes**: edc-extensions (compiled as project dependency)
 - **Called by**: ds-connector via EDC Management API
-- **Calls**: STS for token issuance, VC-wallet for credential queries, ds-connector for constraint evaluation
-- **Network**: runs on `dataspaces` Docker network, launched by `services/connector/docker-compose.yml`
+- **Calls**: identity-registry for STS token issuance (`/sts/{did}/token`) and DCP credential queries (`/credentials/{did}/presentations/query`), ds-connector `/internal/*` for constraint evaluation
+- **Network**: runs on `dataspaces` Docker network, launched by `docker-compose.producer.yml` / `docker-compose.consumer.yml`
