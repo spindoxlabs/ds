@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from ds_auth import Principal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -160,11 +161,10 @@ async def create_participant(
 async def list_participants(
     active_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
-    claims: dict = Depends(require_admin_or_read_scope),
+    principal: Principal = Depends(require_admin_or_read_scope),
     settings: Settings = Depends(get_settings_dep),
 ):
-    token_scopes = claims.get("scope", "").split()
-    has_admin = settings.admin_scope in token_scopes
+    has_admin = principal.grants(settings.admin_scope)
 
     stmt = select(Participant)
     if active_only or not has_admin:

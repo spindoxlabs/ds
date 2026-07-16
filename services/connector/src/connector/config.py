@@ -19,7 +19,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    role: Literal["producer", "consumer"] = Field(
+    role: Literal["provider", "consumer"] = Field(
         ...,
         description="Participant role — determines which EDC client and routers are loaded",
     )
@@ -77,6 +77,14 @@ class Settings(BaseSettings):
     oidc_issuer_url: str | None = Field(
         default=None,
         description="OIDC issuer URL for JWT verification (Keycloak realm URL)",
+    )
+    oidc_insecure_dev: bool = Field(
+        default=True,
+        description=(
+            "When True AND no issuer is configured, tokens are accepted WITHOUT "
+            "signature/audience verification (local dev only). Production MUST set "
+            "the issuer URL, which enforces verification regardless of this flag."
+        ),
     )
     service_client_id: str = Field(
         default="svc-ds-connector",

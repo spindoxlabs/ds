@@ -1,8 +1,8 @@
 # Shared infrastructure — postgres, caddy, keycloak.
-# Start this first, then bring up producer and/or consumer stacks.
+# Start this first, then bring up provider and/or consumer stacks.
 #
 #   docker compose up -d
-#   task producer:start
+#   task provider:start
 #   task consumer:start
 
 networks:
@@ -14,7 +14,7 @@ volumes:
   postgres_data:
 
 services:
-  # ── Reverse proxy — consumer (:9000) and producer (:9010) gateways ───────────
+  # ── Reverse proxy — consumer (:9000) and provider (:9010) gateways ───────────
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped

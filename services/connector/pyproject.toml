@@ -22,6 +22,7 @@ dependencies = [
     "aiosmtplib>=3.0",
     "cryptography>=42",
     "ds-governance",
+    "ds-auth",
     "pyjwt[crypto]>=2.9",
 ]
 
@@ -36,7 +37,8 @@ dev = [
 ]
 
 [tool.uv.sources]
-ds-governance = { path = "../governance", editable = true }
+ds-governance = { path = "../../libs/governance", editable = true }
+ds-auth = { path = "../../libs/ds-auth", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/connector"]

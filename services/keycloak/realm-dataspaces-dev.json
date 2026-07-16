@@ -64,8 +64,30 @@
         "phone",
         "offline_access",
         "microprofile-jwt"
+      ],
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "userinfo.token.claim": "true",
+            "claim.name": "groups"
+          }
+        }
       ]
     }
+  ],
+  "groups": [
+    { "name": "connector.admin" },
+    { "name": "connector.provider.read" },
+    { "name": "connector.provider.write" },
+    { "name": "provenance.read" },
+    { "name": "catalog.read" }
   ],
   "users": [
     {
@@ -92,7 +114,12 @@
           "admin",
           "dataset.admin"
         ]
-      }
+      },
+      "groups": [
+        "/connector.admin",
+        "/provenance.read",
+        "/catalog.read"
+      ]
     },
     {
       "id": "00000000-0000-4000-a000-000000000002",
@@ -112,16 +139,16 @@
     },
     {
       "id": "00000000-0000-4000-a000-000000000003",
-      "username": "producer@example.test",
-      "email": "producer@example.test",
-      "firstName": "Producer",
+      "username": "provider@example.test",
+      "email": "provider@example.test",
+      "firstName": "Provider",
       "lastName": "User",
       "enabled": true,
       "emailVerified": true,
       "credentials": [
         {
           "type": "password",
-          "value": "producer",
+          "value": "provider",
           "temporary": false
         }
       ],
@@ -132,7 +159,11 @@
         "ds-portal": [
           "dataset.admin"
         ]
-      }
+      },
+      "groups": [
+        "/connector.provider.read",
+        "/connector.provider.write"
+      ]
     },
     {
       "id": "00000000-0000-4000-a000-000000000004",

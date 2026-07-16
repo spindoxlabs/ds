@@ -26,6 +26,10 @@ scopes:
   # Connector
   - name: connector.admin
     description: Provider management (sync, assets, policies, contracts)
+  - name: connector.provider.read
+    description: Read provider assets, policies, contracts, transfers, authorizations
+  - name: connector.provider.write
+    description: Mutate provider config (sync, delete assets/policies/contracts)
   - name: connector.internal
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook

@@ -36,11 +36,6 @@ async def lifespan(app: FastAPI):
             "JWT signature verification is DISABLED. "
             "This is acceptable for local development only."
         )
-    else:
-        import jwt as pyjwt
-
-        jwks_url = f"{settings.oidc_issuer_url}/.well-known/openid-configuration"
-        app.state.jwks_client = pyjwt.PyJWKClient(jwks_url)
 
     if settings.edc_api_key == "insecure-dev-key":
         log.warning(
@@ -52,7 +47,7 @@ async def lifespan(app: FastAPI):
     consumer_edc = None
     consumer_svc = None
 
-    if settings.role == "producer":
+    if settings.role == "provider":
         provider_edc = EdcManagementClient(
             base_url=settings.edc_provider_management_url,
             api_key=settings.edc_api_key,
@@ -127,6 +122,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Auth config is static and must be available even without lifespan (tests).
+    from ds_auth import OidcConfig
+
+    app.state.oidc_config = OidcConfig(
+        issuer_url=settings.oidc_issuer_url,
+        audience=settings.service_client_id,
+        insecure_dev=settings.oidc_insecure_dev,
+    )
+
     @app.get("/health")
     async def health():
         return {"status": "ok", "role": settings.role, "version": "0.1.0"}
@@ -141,7 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
 
     # Role-specific routers
-    if settings.role == "producer":
+    if settings.role == "provider":
         app.include_router(provider_router)
 
     if settings.role == "consumer":

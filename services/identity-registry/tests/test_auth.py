@@ -125,9 +125,11 @@ async def test_resolve_without_auth_returns_401(client):
 
 @pytest.mark.asyncio
 async def test_resolve_with_wrong_scope_returns_403(client):
+    # Note: `identity-registry.admin` is a superset that also grants resolve,
+    # so a genuinely unrelated scope is used here to assert the 403 path.
     r = await client.get(
         "/users/resolve?email=test@example.com",
-        headers=make_headers(scope="identity-registry.admin"),
+        headers=make_headers(scope="some.other.scope"),
     )
     assert r.status_code == 403
 

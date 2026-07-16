@@ -2,9 +2,9 @@
 
 ## Service identity
 
-- **Role**: HTTP reverse proxy — gateway routing for producer (:9010) and consumer (:9000) stacks, Keycloak proxy
+- **Role**: HTTP reverse proxy — gateway routing for provider (:9010) and consumer (:9000) stacks, Keycloak proxy
 - **Type**: Configuration-only (no application code)
-- **Ports**: 9000 (consumer gateway), 9010 (producer gateway)
+- **Ports**: 9000 (consumer gateway), 9010 (provider gateway)
 - **Image**: `caddy:2-alpine`
 
 ## File layout
@@ -23,8 +23,8 @@ Three site blocks:
 | `keycloak.dataspaces.localhost:9010` | `/*` | `172.17.0.1:8080` | Keycloak OIDC |
 | `consumer.dataspaces.localhost:9000` | `/api/connector/*` | `172.17.0.1:31001` | Consumer connector API |
 | | `/api/provenance/*` | `172.17.0.1:31000` | Consumer provenance API |
-| `portal.dataspaces.localhost:9010` | `/api/connector/*` | `172.17.0.1:30001` | Producer connector API |
-| | `/api/provenance/*` | `172.17.0.1:30000` | Producer provenance API |
+| `portal.dataspaces.localhost:9010` | `/api/connector/*` | `172.17.0.1:30001` | Provider connector API |
+| | `/api/provenance/*` | `172.17.0.1:30000` | Provider provenance API |
 | | `/api/catalog/*` | `172.17.0.1:30003` | Federated catalog API |
 | | `/api/datasets/*` | `172.17.0.1:30002` | Dataset API |
 | | `/*` (catch-all) | `172.17.0.1:30004` | Portal SvelteKit app |

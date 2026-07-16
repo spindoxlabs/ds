@@ -19,10 +19,14 @@ dependencies = [
     "alembic>=1.13",
     "python-ulid>=2.0",
     "pyjwt[crypto]>=2.9",
+    "ds-auth",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.uv.sources]
+ds-auth = { path = "../../libs/ds-auth", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/provenance"]

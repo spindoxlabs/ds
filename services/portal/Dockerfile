@@ -22,8 +22,10 @@ RUN addgroup -S app && adduser -S -G app app
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/package-lock.json ./
-# Only runtime deps
-RUN npm ci --omit=dev --ignore-scripts
+# Reuse the modules already installed in the builder (no second registry
+# download), then drop dev dependencies for a lean runtime image.
+COPY --from=builder /app/node_modules ./node_modules
+RUN npm prune --omit=dev --ignore-scripts
 
 USER app
 EXPOSE 30004

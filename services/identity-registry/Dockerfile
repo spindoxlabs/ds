@@ -3,10 +3,16 @@ FROM python:3.12-slim AS builder
 WORKDIR /build
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Install shared libraries (local path deps)
+COPY libs/ds-auth/ /build/ds-auth/
+RUN uv venv /opt/venv && \
+    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
+      /build/ds-auth
+
 COPY services/identity-registry/pyproject.toml ./
 COPY services/identity-registry/src/ src/
 
-RUN uv venv /opt/venv && \
+RUN sed -i '/ds-auth/d' /build/pyproject.toml && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python .
 
 # ---- Runtime ----

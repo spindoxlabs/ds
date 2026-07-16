@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -40,6 +41,14 @@ class Settings(BaseSettings):
     dcat_sources_yaml: str = ""
 
     oidc_issuer_url: str | None = None
+    oidc_insecure_dev: bool = Field(
+        default=True,
+        description=(
+            "When True AND no issuer is configured, tokens are accepted WITHOUT "
+            "signature/audience verification (local dev only). Production MUST set "
+            "the issuer URL, which enforces verification regardless of this flag."
+        ),
+    )
     service_client_id: str = "svc-ds-federated-catalog"
     read_scope: str = "catalog.read"
 

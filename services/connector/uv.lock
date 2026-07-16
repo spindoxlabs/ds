@@ -380,6 +380,32 @@ wheels = [
 ]
 
 [[package]]
+name = "ds-auth"
+version = "0.1.0"
+source = { editable = "../../libs/ds-auth" }
+dependencies = [
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115" },
+    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pydantic-settings", specifier = ">=2.4" },
+    { name = "pyjwt", extras = ["crypto"], specifier = ">=2.9" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+]
+provides-extras = ["fastapi", "dev"]
+
+[[package]]
 name = "ds-connector"
 version = "0.1.0"
 source = { editable = "." }
@@ -389,6 +415,7 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "cryptography" },
+    { name = "ds-auth" },
     { name = "ds-governance" },
     { name = "fastapi" },
     { name = "httpx" },
@@ -423,7 +450,8 @@ requires-dist = [
     { name = "alembic", specifier = ">=1.13" },
     { name = "asyncpg", specifier = ">=0.29" },
     { name = "cryptography", specifier = ">=42" },
-    { name = "ds-governance", editable = "../governance" },
+    { name = "ds-auth", editable = "../../libs/ds-auth" },
+    { name = "ds-governance", editable = "../../libs/governance" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
@@ -448,7 +476,7 @@ dev = [{ name = "debugpy", specifier = ">=1.8.21" }]
 [[package]]
 name = "ds-governance"
 version = "0.1.0"
-source = { editable = "../governance" }
+source = { editable = "../../libs/governance" }
 dependencies = [
     { name = "pydantic" },
     { name = "pyyaml" },

@@ -47,7 +47,7 @@ src/connector/
 | Task | Files to touch |
 |------|---------------|
 | Add a new API endpoint | `api/v1/<group>.py`, register router in `main.py` |
-| Change governance-to-ODRL mapping | `../governance/src/ds/governance/mapper.py` (shared lib) |
+| Change governance-to-ODRL mapping | `../../libs/governance/src/ds/governance/mapper.py` (shared lib) |
 | Modify consent logic | `services/consent_service.py`, `db/models.py` |
 | Change EDC API calls | `clients/edc_management.py` |
 | Add a new provenance event | `services/prov_bridge.py`, `clients/provenance.py` |
@@ -101,12 +101,12 @@ Used by `edc-extensions` `AccessScopeFunction` at negotiation time and by the fe
 
 ## Docker stack
 
-This service runs as part of the producer (`docker-compose.producer.yml`) or consumer (`docker-compose.consumer.yml`) stacks:
+This service runs as part of the provider (`docker-compose.provider.yml`) or consumer (`docker-compose.consumer.yml`) stacks:
 - `edc-provider` / `edc-consumer` (Java EDC fat JARs)
-- `ds-connector-producer` / `ds-connector-consumer` (this service)
-- `ds-provenance-producer` / `ds-provenance-consumer`
-- `dataset-api-producer` (producer only)
-- `ds-federated-catalog-producer` (producer only)
+- `ds-connector-provider` / `ds-connector-consumer` (this service)
+- `ds-provenance-provider` / `ds-provenance-consumer`
+- `dataset-api-provider` (provider only)
+- `ds-federated-catalog-provider` (provider only)
 - DB init containers (create DB + Alembic migrations)
 
 Shared infra (caddy, postgres, identity-registry, keycloak) must be running first via `task infra:start`.
@@ -128,4 +128,4 @@ Tests use `pytest-asyncio` and `respx` for HTTP mocking. Test database is SQLite
 - **Upstream**: Portal calls this service's REST API (JWT-authenticated via `svc-ds-portal` service account)
 - **Downstream**: calls EDC Management API, ds-provenance, identity-registry (`/participants` for registry, `/users/resolve` for user lookup)
 - **Internal API**: EDC extensions and dataset-api call `/internal/*` endpoints during policy evaluation (JWT-authenticated via `svc-edc` / `svc-ds-dataset-api` service accounts)
-- **Shared lib**: imports `ds-governance` (editable path dependency at `../governance`)
+- **Shared lib**: imports `ds-governance` (editable path dependency at `../../libs/governance`)

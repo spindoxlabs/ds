@@ -15,7 +15,15 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 def make_headers(scope: str = "identity-registry.admin") -> dict:
-    token = pyjwt.encode({"scope": scope, "sub": "test"}, "secret", algorithm="HS256")
+    token = pyjwt.encode(
+        {
+            "scope": scope,
+            "sub": "test",
+            "preferred_username": "service-account-svc-ds-identity-registry",
+        },
+        "secret",
+        algorithm="HS256",
+    )
     return {"Authorization": f"Bearer {token}"}
 
 

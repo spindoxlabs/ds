@@ -28,11 +28,6 @@ async def lifespan(app: FastAPI):
             "JWT signature verification is DISABLED. "
             "This is acceptable for local development only."
         )
-    else:
-        import jwt
-
-        jwks_url = f"{settings.oidc_issuer_url}/.well-known/openid-configuration"
-        app.state.jwks_client = jwt.PyJWKClient(jwks_url)
 
     if settings.encryption_key == "dev-encryption-key-change-in-production":
         log.warning(
@@ -45,11 +40,22 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    settings = get_settings()
+
     app = FastAPI(
         title="ds-identity-registry",
         description="DID lifecycle, VC issuance, participant registry, StatusList2021",
         version="0.1.0",
         lifespan=lifespan,
+    )
+
+    # Auth config is static and must be available even without lifespan (tests).
+    from ds_auth import OidcConfig
+
+    app.state.oidc_config = OidcConfig(
+        issuer_url=settings.oidc_issuer_url,
+        audience=settings.service_client_id,
+        insecure_dev=settings.oidc_insecure_dev,
     )
 
     @app.get("/health")

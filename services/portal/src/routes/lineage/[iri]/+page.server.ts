@@ -1,13 +1,15 @@
 import type { PageServerLoad } from './$types';
 import { getLineage, type ProvNode, type LineageEdge } from '$lib/server/provenance';
 
-export const load: PageServerLoad = async ({ params, url }) => {
+export const load: PageServerLoad = async ({ params, url, locals }) => {
+	const session = await locals.auth();
+	const token = session?.accessToken ?? '';
 	const iri = decodeURIComponent(params.iri);
 	const direction = (url.searchParams.get('direction') ?? 'both') as string;
 	const maxDepth = parseInt(url.searchParams.get('max_depth') ?? '5', 10);
 
 	try {
-		const lineage = await getLineage(iri, { direction, maxDepth });
+		const lineage = await getLineage(iri, { direction, maxDepth }, token);
 		const graph = lineage['@graph'] ?? [];
 
 		// Split nodes and edges

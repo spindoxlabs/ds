@@ -16,7 +16,7 @@ http://consumer.dataspaces.localhost:9000 {
 	}
 }
 
-# ── Producer gateway (:9010) ─────────────────────────────────────────────────
+# ── Provider gateway (:9010) ─────────────────────────────────────────────────
 
 http://portal.dataspaces.localhost:9010 {
 	handle_path /api/connector/* {

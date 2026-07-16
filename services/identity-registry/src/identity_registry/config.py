@@ -28,6 +28,15 @@ class Settings(BaseSettings):
         description="OIDC issuer URL for JWT verification on admin endpoints",
     )
 
+    oidc_insecure_dev: bool = Field(
+        default=True,
+        description=(
+            "When True AND no issuer is configured, tokens are accepted WITHOUT "
+            "signature/audience verification (local dev only). Production MUST set "
+            "the issuer URL, which enforces verification regardless of this flag."
+        ),
+    )
+
     service_client_id: str = Field(
         default="svc-ds-identity-registry",
         description="Keycloak client ID for this service (used as JWT audience)",

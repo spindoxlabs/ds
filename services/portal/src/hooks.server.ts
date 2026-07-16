@@ -3,6 +3,19 @@ import Keycloak from '@auth/sveltekit/providers/keycloak';
 import { env } from '$env/dynamic/private';
 import { resolveUserByEmail } from '$lib/server/identity-registry';
 
+if (!env.AUTH_SECRET) {
+	console.warn(
+		'[ds-portal] AUTH_SECRET is not set — using the insecure default session ' +
+			'secret. Set a strong AUTH_SECRET in production.',
+	);
+}
+if (!env.AUTH_KEYCLOAK_SECRET) {
+	console.warn(
+		'[ds-portal] AUTH_KEYCLOAK_SECRET is not set for the login client ' +
+			`"${env.AUTH_KEYCLOAK_ID ?? 'ds-portal'}".`,
+	);
+}
+
 export const { handle, signIn, signOut } = SvelteKitAuth({
 	providers: [
 		Keycloak({

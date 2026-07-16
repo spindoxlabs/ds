@@ -5,6 +5,11 @@ function identityRegistryUrl(): string {
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;
+let warnedDefaultSecret = false;
+
+// Client id/secret come from env; the in-code defaults keep local dev working.
+// Using the default secret is insecure, so warn (once) when it falls back.
+const DEFAULT_SERVICE_CLIENT = 'svc-ds-portal';
 
 async function getServiceToken(): Promise<string> {
 	if (cachedToken && cachedToken.expiresAt > Date.now() + 30_000) {
@@ -13,8 +18,16 @@ async function getServiceToken(): Promise<string> {
 
 	const issuer = env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:8080/realms/dataspaces';
 	const tokenUrl = `${issuer}/protocol/openid-connect/token`;
-	const clientId = env.PORTAL_SERVICE_CLIENT_ID ?? 'svc-ds-portal';
-	const clientSecret = env.PORTAL_SERVICE_CLIENT_SECRET ?? 'svc-ds-portal';
+	const clientId = env.PORTAL_SERVICE_CLIENT_ID ?? DEFAULT_SERVICE_CLIENT;
+	const clientSecret = env.PORTAL_SERVICE_CLIENT_SECRET ?? DEFAULT_SERVICE_CLIENT;
+
+	if (!env.PORTAL_SERVICE_CLIENT_SECRET && !warnedDefaultSecret) {
+		warnedDefaultSecret = true;
+		console.warn(
+			`[ds-portal] PORTAL_SERVICE_CLIENT_SECRET is not set — using the insecure ` +
+				`default secret for client "${clientId}". Set a real secret in production.`,
+		);
+	}
 
 	try {
 		const res = await fetch(tokenUrl, {

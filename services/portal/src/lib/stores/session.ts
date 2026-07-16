@@ -1,5 +1,6 @@
 /**
- * Client-side session store — persona detection from Keycloak JWT scopes.
+ * Client-side session store — persona detection from Keycloak roles, groups,
+ * and scopes. UI display only; the server re-verifies and re-authorizes.
  * Populated by the root +layout.svelte from server-loaded session data.
  */
 
@@ -34,11 +35,34 @@ function parseJwtPayload(token: string): Record<string, unknown> {
 	}
 }
 
-const KEYCLOAK_CLIENT_ID =
-	typeof window !== 'undefined'
-		? (window.__ENV?.PUBLIC_KEYCLOAK_CLIENT_ID ?? 'ds-portal')
-		: 'ds-portal';
-const DEMO_ADMIN_USERS = ['admin'];
+/** All Keycloak roles: realm roles + every client's roles under resource_access. */
+function extractRoles(payload: Record<string, unknown>): string[] {
+	const roles: string[] = [];
+	const realm = (payload.realm_access as { roles?: string[] } | undefined)?.roles;
+	if (Array.isArray(realm)) roles.push(...realm);
+	const resource = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
+	if (resource && typeof resource === 'object') {
+		for (const client of Object.values(resource)) {
+			if (Array.isArray(client?.roles)) roles.push(...client.roles);
+		}
+	}
+	return roles;
+}
+
+/** Merge realm-level `groups` and org-level `organization.<alias>.groups`. */
+function extractGroups(payload: Record<string, unknown>): string[] {
+	const out: string[] = [];
+	const realm = payload.groups;
+	if (Array.isArray(realm)) out.push(...realm.filter((g): g is string => typeof g === 'string'));
+	const orgs = payload.organization;
+	if (orgs && typeof orgs === 'object') {
+		for (const org of Object.values(orgs as Record<string, unknown>)) {
+			const g = (org as { groups?: unknown })?.groups;
+			if (Array.isArray(g)) out.push(...g.filter((x): x is string => typeof x === 'string'));
+		}
+	}
+	return out.map((g) => g.replace(/^\/+/, ''));
+}
 
 export function derivePersona(
 	session: { user?: { name?: string | null; email?: string | null }; accessToken?: string } | null
@@ -59,41 +83,35 @@ export function derivePersona(
 
 	// No access token available — fall back to base authenticated persona
 	if (!session.accessToken) {
-		const isDemoAdmin = DEMO_ADMIN_USERS.includes(name);
 		return {
 			isAuthenticated: true,
 			name,
 			email,
-			isProvider: isDemoAdmin,
-			isConsumer: true,   // authenticated users can query by default
-			isAdmin: isDemoAdmin,
+			isProvider: false,
+			isConsumer: true, // authenticated users can query by default
+			isAdmin: false,
 			isSubject: true,
 		};
 	}
 
 	const payload = parseJwtPayload(session.accessToken);
 
-	// Keycloak resource_access roles for the ds-portal client
-	const portalRoles: string[] =
-		(payload?.resource_access as Record<string, { roles?: string[] }>)?.[
-			KEYCLOAK_CLIENT_ID
-		]?.roles ?? [];
-
-	// Realm-level roles (fallback for simpler Keycloak configurations)
-	const realmRoles: string[] =
-		(payload?.realm_access as { roles?: string[] })?.roles ?? [];
-
-	// OAuth2 scope string
+	// Dual-sourced authority: roles (realm + any client) AND groups, mirroring
+	// the server guard (src/lib/server/auth.ts) and the backend (ds-auth).
+	const authorities = new Set<string>([...extractRoles(payload), ...extractGroups(payload)]);
 	const scopes = ((payload?.scope as string) ?? '').split(' ');
-	const username = String(
-		payload.preferred_username ?? payload.name ?? payload.email ?? payload.sub ?? name,
-	);
-	const isDemoAdminUser = DEMO_ADMIN_USERS.includes(username);
 
-	const isAdmin = portalRoles.includes('admin') || realmRoles.includes('ds-admin') || isDemoAdminUser;
+	const isAdmin =
+		authorities.has('ds-admin') || authorities.has('admin') || authorities.has('connector.admin');
 	const isDatasetAdmin =
-		portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin') || isDemoAdminUser;
-	const canQuery = scopes.includes('dataspaces.query') || scopes.includes('dataset.query');
+		isAdmin ||
+		authorities.has('dataset.admin') ||
+		authorities.has('connector.provider.write') ||
+		authorities.has('connector.provider.read');
+	const canQuery =
+		scopes.includes('dataspaces.query') ||
+		scopes.includes('dataset.query') ||
+		authorities.has('dataset.query');
 
 	return {
 		isAuthenticated: true,

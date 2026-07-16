@@ -76,4 +76,4 @@ pytest
 ## Consumed by
 
 - **ds-connector**: `GovernanceMapper` and `GovernanceResolver` are imported directly
-- **pyproject.toml reference**: `ds-governance = { path = "../governance", editable = true }` in connector's pyproject.toml
+- **pyproject.toml reference**: `ds-governance = { path = "../../libs/governance", editable = true }` in connector's pyproject.toml

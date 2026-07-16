@@ -4,8 +4,14 @@ WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-COPY services/provenance/pyproject.toml ./
+# Install shared libraries (local path deps)
+COPY libs/ds-auth/ /build/ds-auth/
 RUN uv venv /opt/venv && \
+    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
+      /build/ds-auth
+
+COPY services/provenance/pyproject.toml ./
+RUN sed -i '/ds-auth/d' /build/pyproject.toml && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
       fastapi "uvicorn[standard]" httpx "pydantic>=2.7" pydantic-settings \
       "sqlalchemy[asyncio]" aiosqlite asyncpg alembic python-ulid

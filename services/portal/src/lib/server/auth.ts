@@ -1,9 +1,14 @@
 /**
  * Server-side auth utilities for SvelteKit route guards.
- * Parses Keycloak JWT claims from the session access token.
+ *
+ * Parses Keycloak authority from the session access token. Authority is
+ * dual-sourced, matching the backend (libs/ds-auth): a user may carry it as
+ * Keycloak roles (realm or client) AND/OR as groups whose names mirror the
+ * backend permission vocabulary (e.g. `connector.admin`,
+ * `connector.provider.write`). This is UI gating only — the backend re-verifies
+ * and re-authorizes every request.
  */
 import { redirect } from '@sveltejs/kit';
-import { env } from '$env/dynamic/private';
 import type { Session } from '@auth/core/types';
 
 export interface ServerRoles {
@@ -12,11 +17,40 @@ export interface ServerRoles {
 	canQuery: boolean;
 }
 
-function demoAdminUsers(): string[] {
-	return (env.PORTAL_DEMO_ADMIN_USERS ?? 'admin')
-		.split(',')
-		.map((item) => item.trim())
-		.filter(Boolean);
+/**
+ * All Keycloak roles: realm roles plus every client's roles under
+ * `resource_access` (so authority is not tied to one client id — "dual role").
+ */
+function extractRoles(payload: Record<string, unknown>): string[] {
+	const roles: string[] = [];
+	const realm = (payload.realm_access as { roles?: string[] } | undefined)?.roles;
+	if (Array.isArray(realm)) roles.push(...realm);
+	const resource = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
+	if (resource && typeof resource === 'object') {
+		for (const client of Object.values(resource)) {
+			if (Array.isArray(client?.roles)) roles.push(...client.roles);
+		}
+	}
+	return roles;
+}
+
+/**
+ * Merge Keycloak groups from realm-level `groups` and org-level
+ * `organization.<alias>.groups`, stripping leading slashes. Mirrors
+ * `ds_auth.extract_groups` so UI gating and backend authz share one vocabulary.
+ */
+function extractGroups(payload: Record<string, unknown>): string[] {
+	const out: string[] = [];
+	const realm = payload.groups;
+	if (Array.isArray(realm)) out.push(...realm.filter((g): g is string => typeof g === 'string'));
+	const orgs = payload.organization;
+	if (orgs && typeof orgs === 'object') {
+		for (const org of Object.values(orgs as Record<string, unknown>)) {
+			const g = (org as { groups?: unknown })?.groups;
+			if (Array.isArray(g)) out.push(...g.filter((x): x is string => typeof x === 'string'));
+		}
+	}
+	return out.map((g) => g.replace(/^\/+/, ''));
 }
 
 export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
@@ -28,23 +62,26 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 		const payload: Record<string, unknown> = JSON.parse(
 			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
 		);
-		const clientId = env.KEYCLOAK_CLIENT_ID ?? 'ds-portal';
-		const portalRoles: string[] =
-			(payload?.resource_access as Record<string, { roles?: string[] }>)?.[clientId]?.roles ?? [];
-		const realmRoles: string[] =
-			(payload?.realm_access as { roles?: string[] })?.roles ?? [];
-		const scopes = ((payload?.scope as string) ?? '').split(' ');
-		const username = String(
-			payload.preferred_username ?? payload.name ?? payload.email ?? payload.sub ?? '',
-		);
-		const isDemoAdmin = demoAdminUsers().includes(username);
 
-		return {
-			isAdmin: portalRoles.includes('admin') || realmRoles.includes('ds-admin') || isDemoAdmin,
-			isDatasetAdmin:
-				portalRoles.includes('dataset.admin') || realmRoles.includes('dataset.admin') || isDemoAdmin,
-			canQuery: scopes.includes('dataspaces.query') || scopes.includes('dataset.query'),
-		};
+		// Dual-sourced authority: roles (realm + any client) AND groups.
+		const authorities = new Set<string>([...extractRoles(payload), ...extractGroups(payload)]);
+		const scopes = ((payload?.scope as string) ?? '').split(' ');
+
+		const isAdmin =
+			authorities.has('ds-admin') || // realm role
+			authorities.has('admin') || // ds-portal client role
+			authorities.has('connector.admin'); // group (backend permission)
+		const isDatasetAdmin =
+			isAdmin ||
+			authorities.has('dataset.admin') ||
+			authorities.has('connector.provider.write') ||
+			authorities.has('connector.provider.read');
+		const canQuery =
+			scopes.includes('dataspaces.query') ||
+			scopes.includes('dataset.query') ||
+			authorities.has('dataset.query');
+
+		return { isAdmin, isDatasetAdmin, canQuery };
 	} catch {
 		return { isAdmin: false, isDatasetAdmin: false, canQuery: false };
 	}
@@ -52,7 +89,6 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 
 export function getConsumerSubjectId(session: Session): string {
 	if (session.userDid && session.userVcJws) return session.userDid;
-	if (parseTokenRoles(session.accessToken).isAdmin) return env.PORTAL_DEMO_CONSUMER_SUBJECT_ID ?? 'test';
 	return session.userDid ?? '';
 }
 

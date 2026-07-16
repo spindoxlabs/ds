@@ -16,6 +16,7 @@ dependencies = [
     "pyyaml>=6.0",
     "typer>=0.12",
     "pyjwt[crypto]>=2.9",
+    "ds-auth",
 ]
 
 [project.optional-dependencies]
@@ -27,6 +28,9 @@ test = [
 
 [project.scripts]
 fc-cli = "federated_catalog.cli.main:run"
+
+[tool.uv.sources]
+ds-auth = { path = "../../libs/ds-auth", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/federated_catalog"]

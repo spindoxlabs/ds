@@ -49,12 +49,15 @@ export interface LineageGraph {
 export async function getLineage(
 	iri: string,
 	opts: { direction?: string; maxDepth?: number } = {},
+	token?: string,
 ): Promise<LineageGraph> {
 	const params = new URLSearchParams();
 	params.set('direction', opts.direction ?? 'both');
 	params.set('max_depth', String(opts.maxDepth ?? 5));
 	return apiFetch<LineageGraph>(
 		provUrl(`/prov/lineage/${encodeURIComponent(iri)}?${params}`),
+		{},
+		token,
 	);
 }
 
@@ -86,10 +89,15 @@ function normalizeEvent(event: Record<string, unknown>): AuditEntry {
 	};
 }
 
-export async function queryEvents(params: Record<string, string> = {}): Promise<AuditEntry[]> {
+export async function queryEvents(
+	params: Record<string, string> = {},
+	token?: string,
+): Promise<AuditEntry[]> {
 	const qs = new URLSearchParams(params).toString();
 	const raw = await apiFetch<{ '@graph': Array<Record<string, unknown>> }>(
 		provUrl(`/prov/events${qs ? '?' + qs : ''}`),
+		{},
+		token,
 	);
 	return (raw['@graph'] ?? []).map(normalizeEvent);
 }

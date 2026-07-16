@@ -1,0 +1,216 @@
+# Provider participant stack.
+# Requires shared infra (docker compose up -d) running first.
+#
+#   task provider:start
+
+networks:
+  dataspaces:
+    name: dataspaces
+    external: true
+
+services:
+  # ── EDC provider connector (Java, DCP-enabled) ──────────────────────────────
+  edc-provider:
+    build:
+      context: .
+      dockerfile: services/edc-connector/Dockerfile
+    command:
+      [
+        "sh",
+        "-c",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/provider.properties -jar /connector.jar",
+      ]
+    volumes:
+      - ./services/connector/config:/config:ro
+    ports:
+      - "19193:19193"
+      - "19194:19194"
+      - "19291:19291"
+      - "19195:19195"
+    environment:
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:30001/webhooks/transfer-process
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:19191/api/check/health || exit 1"]
+      interval: 10s
+      start_period: 60s
+      retries: 15
+    networks: [dataspaces]
+
+  # ── Database init ────────────────────────────────────────────────────────────
+  connector-db-create-provider:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_provider'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_provider"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  connector-db-init-provider:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      connector-db-create-provider:
+        condition: service_completed_successfully
+    environment:
+      CONNECTOR_ROLE: provider
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider
+    networks: [dataspaces]
+
+  provenance-db-create-provider:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_provider'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_provider"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  provenance-db-init-provider:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      provenance-db-create-provider:
+        condition: service_completed_successfully
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_provider
+    networks: [dataspaces]
+
+  # ── Provider connector (Python orchestration) ───────────────────────────────
+  ds-connector-provider:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "30001"]
+    ports:
+      - "30001:30001"
+    environment:
+      CONNECTOR_ROLE: provider
+      EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:19193/management
+      EDC_PROVIDER_PROTOCOL_URL: http://172.17.0.1:19194/protocol/2025-1
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      CONNECTOR_PARTICIPANT_ID: provider
+      CONNECTOR_PARTICIPANT_BASE_URL: https://provider.dataspaces.localhost
+      CONNECTOR_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
+      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      CONNECTOR_DATASET_API_URL: http://172.17.0.1:30002
+      CONNECTOR_PROVENANCE_URL: http://172.17.0.1:30000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider
+      CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
+    depends_on:
+      edc-provider:
+        condition: service_healthy
+      connector-db-init-provider:
+        condition: service_completed_successfully
+      ds-provenance-provider:
+        condition: service_healthy
+    volumes:
+      - ./services/connector/governance:/governance:ro
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30001/health', timeout=2)\""]
+      interval: 10s
+      start_period: 20s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── Provider provenance ──────────────────────────────────────────────────────
+  ds-provenance-provider:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    ports:
+      - "30000:30000"
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_provider
+    depends_on:
+      provenance-db-init-provider:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30000/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── Dataset API (mock, overridable via DATASET_API_EXTERNAL_QUERY_URL) ──────
+  dataset-api-provider:
+    build:
+      context: .
+      dockerfile: services/dataset-api-mock/Dockerfile
+    ports:
+      - "30002:30002"
+    environment:
+      DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
+      DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
+      DATASET_API_ENFORCE_CONSENT: "true"
+    depends_on:
+      ds-connector-provider:
+        condition: service_healthy
+    networks: [dataspaces]
+
+  # ── Portal (SvelteKit) ────────────────────────────────────────────────────────
+  ds-portal:
+    build:
+      context: .
+      dockerfile: services/portal/Dockerfile
+    ports:
+      - "30004:30004"
+    environment:
+      CONNECTOR_URL: http://ds-connector-provider:30001
+      PROVENANCE_URL: http://ds-provenance-provider:30000
+      FEDERATED_CATALOG_URL: http://ds-federated-catalog-provider:30003
+      IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      AUTH_KEYCLOAK_ISSUER: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      AUTH_KEYCLOAK_ID: ds-portal
+      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}
+      AUTH_KEYCLOAK_SCOPE: openid profile email
+      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-in-prod}
+      ORIGIN: http://portal.dataspaces.localhost:9010
+      PORTAL_SERVICE_CLIENT_ID: svc-ds-portal
+      PORTAL_SERVICE_CLIENT_SECRET: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
+    depends_on:
+      ds-connector-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://localhost:30004/', r => process.exit(r.statusCode < 500 ? 0 : 1))\""]
+      interval: 10s
+      start_period: 15s
+      retries: 10
+    extra_hosts:
+      - "keycloak.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # ── Federated catalog ────────────────────────────────────────────────────────
+  ds-federated-catalog-provider:
+    build:
+      context: .
+      dockerfile: services/federated-catalog/Dockerfile
+    ports:
+      - "30003:30003"
+    environment:
+      CATALOG_CONNECTOR_URL: http://172.17.0.1:30001
+      CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
+      CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
+    depends_on:
+      ds-connector-provider:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30003/health', timeout=2)\""]
+      interval: 10s
+      start_period: 20s
+      retries: 10
+    networks: [dataspaces]

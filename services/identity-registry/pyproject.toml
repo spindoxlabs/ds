@@ -22,10 +22,14 @@ dependencies = [
     "typer>=0.12",
     "pyyaml>=6.0",
     "python-multipart>=0.0.20",
+    "ds-auth",
 ]
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
+
+[tool.uv.sources]
+ds-auth = { path = "../../libs/ds-auth", editable = true }
 
 [project.scripts]
 ir-cli = "identity_registry.cli.main:run"
