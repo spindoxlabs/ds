@@ -10,7 +10,7 @@ import typer
 
 from ..config import get_settings
 from ..db.engine import get_engine, get_session_factory, init_db
-from ..db.models import Credential, Did, Key, KeycloakMapping, Participant, StatusList
+from ..db.models import Credential, Did, Key, KeycloakMapping, Owner, Participant, StatusList
 from ..services.crypto import (
     decrypt_private_jwk,
     encrypt_private_jwk,
@@ -26,14 +26,15 @@ participant_app = typer.Typer(help="Participant management")
 credential_app = typer.Typer(help="Credential management")
 key_app = typer.Typer(help="Key management")
 status_app = typer.Typer(help="Status list management")
-
 keycloak_app = typer.Typer(help="Keycloak mapping management")
+owner_app = typer.Typer(help="Owner registry management")
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
 app.add_typer(key_app, name="key")
 app.add_typer(status_app, name="status")
 app.add_typer(keycloak_app, name="keycloak")
+app.add_typer(owner_app, name="owner")
 
 
 def _run(coro):
@@ -651,6 +652,151 @@ def keycloak_sync(
             await session.commit()
 
     _run(_sync())
+
+
+@owner_app.command("add")
+def owner_add(
+    id: str = typer.Option(..., help="Owner ID (kebab-case)"),
+    type: str = typer.Option("schema:Organization", help="Schema.org type CURIE"),
+    name: str = typer.Option(..., help="Human-readable display name"),
+    did: str = typer.Option(None, help="did:web: URI"),
+    url: str = typer.Option(None, help="Canonical homepage URI"),
+    alias: list[str] = typer.Option([], help="Alternative lookup keys (repeatable)"),
+):
+    """Register an owner (idempotent)."""
+
+    async def _add():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(select(Owner).where(Owner.id == id))
+            if result.scalar_one_or_none():
+                typer.echo(f"Owner already exists: {id}")
+                return
+
+            owner = Owner(
+                id=id,
+                type=type,
+                name=name,
+                did=did,
+                url=url,
+                aliases=list(alias),
+            )
+            session.add(owner)
+            await session.commit()
+            typer.echo(f"Owner registered: {id} ({name})")
+
+    _run(_add())
+
+
+@owner_app.command("list")
+def owner_list():
+    """List all owners."""
+
+    async def _list():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(select(Owner))
+            owners = result.scalars().all()
+
+            if not owners:
+                typer.echo("No owners registered.")
+                return
+
+            for o in owners:
+                uri = o.did or o.url or "-"
+                typer.echo(
+                    f"  {o.id}  name={o.name}  type={o.type}  "
+                    f"uri={uri}  aliases={o.aliases}"
+                )
+
+    _run(_list())
+
+
+@owner_app.command("remove")
+def owner_remove(
+    id: str = typer.Option(..., help="Owner ID to remove"),
+):
+    """Remove an owner."""
+
+    async def _remove():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(select(Owner).where(Owner.id == id))
+            owner = result.scalar_one_or_none()
+            if not owner:
+                typer.echo(f"Owner not found: {id}", err=True)
+                raise typer.Exit(1)
+
+            await session.delete(owner)
+            await session.commit()
+            typer.echo(f"Owner removed: {id}")
+
+    _run(_remove())
+
+
+@owner_app.command("import")
+def owner_import(
+    file: list[Path] = typer.Option(..., help="YAML seed file(s); later files shadow earlier"),
+):
+    """Bulk upsert owners from YAML seed file(s)."""
+
+    async def _import():
+        import yaml
+
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        entries: dict[str, dict] = {}
+        for f in file:
+            if not f.exists():
+                typer.echo(f"File not found: {f}", err=True)
+                raise typer.Exit(1)
+            with f.open("r", encoding="utf-8") as fh:
+                data = yaml.safe_load(fh) or {}
+            for entry in data.get("owners", []):
+                entries[entry["id"]] = entry
+
+        async with factory() as session:
+            count = 0
+            for oid, entry in entries.items():
+                result = await session.execute(
+                    select(Owner).where(Owner.id == oid)
+                )
+                existing = result.scalar_one_or_none()
+
+                if existing:
+                    existing.type = entry.get("type", existing.type)
+                    existing.name = entry.get("name", existing.name)
+                    existing.did = entry.get("did", existing.did)
+                    existing.url = entry.get("url", existing.url)
+                    existing.aliases = entry.get("aliases", existing.aliases)
+                    org = entry.get("organization")
+                    if org is not None:
+                        existing.organization_config = org
+                    existing.updated_at = datetime.now(UTC)
+                else:
+                    owner = Owner(
+                        id=oid,
+                        type=entry.get("type", "schema:Organization"),
+                        name=entry.get("name", oid),
+                        did=entry.get("did"),
+                        url=entry.get("url"),
+                        aliases=entry.get("aliases", []),
+                        organization_config=entry.get("organization"),
+                    )
+                    session.add(owner)
+                count += 1
+
+            await session.commit()
+            typer.echo(f"Imported {count} owner(s)")
+
+    _run(_import())
 
 
 def run():

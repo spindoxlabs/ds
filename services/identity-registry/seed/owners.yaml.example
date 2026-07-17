@@ -1,0 +1,14 @@
+owners:
+  - id: example-org
+    type: schema:NGO
+    name: Example Organization
+    did: did:web:provider.dataspaces.localhost
+    aliases: [example]
+    organization:
+      create: true
+      role: community
+
+  - id: open-data-provider
+    type: schema:Organization
+    name: Open Data Provider
+    url: https://open-data.example.org

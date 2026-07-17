@@ -7,6 +7,7 @@ from fastapi import FastAPI
 
 from .api.v1.admin import router as admin_router
 from .api.v1.credentials import router as credentials_router
+from .api.v1.owners import router as owners_router
 from .api.v1.public import router as public_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
@@ -66,6 +67,7 @@ def create_app() -> FastAPI:
     app.include_router(sts_router)
     app.include_router(credentials_router)
     app.include_router(admin_router)
+    app.include_router(owners_router)
     app.include_router(users_router)
 
     return app

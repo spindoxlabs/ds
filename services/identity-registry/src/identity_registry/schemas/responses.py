@@ -70,3 +70,16 @@ class UserResolveResponse(BaseModel):
     role: str | None = None
     vc_jws: str | None = None
     subject_id: str
+
+
+class OwnerResponse(BaseModel):
+    id: str
+    type: str
+    name: str
+    did: str | None
+    url: str | None
+    aliases: list[str]
+    organization_config: dict | None
+    canonical_uri: str | None = None
+    created_at: datetime
+    updated_at: datetime

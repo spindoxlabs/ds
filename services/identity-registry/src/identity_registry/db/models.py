@@ -140,6 +140,28 @@ class KeycloakMapping(Base):
     )
 
 
+class Owner(Base):
+    __tablename__ = "owners"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    type: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="schema:Organization"
+    )
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    did: Mapped[str | None] = mapped_column(Text, nullable=True)
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    aliases: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
+    organization_config: Mapped[dict | None] = mapped_column(
+        JsonType, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class StatusList(Base):
     __tablename__ = "status_lists"
 

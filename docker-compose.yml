@@ -105,6 +105,8 @@ services:
     environment:
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+    volumes:
+      - ./services/identity-registry/seed:/seed:ro
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |
@@ -139,6 +141,7 @@ services:
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000004 \
           --email subject@example.test
+        ir-cli owner import --file /seed/owners.dev.yaml
         echo "Identity bootstrap complete"
     networks: [dataspaces]
 

@@ -13,6 +13,7 @@ from .config import get_settings
 from .db.engine import init_db
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
+from ds.governance.owners import HttpOwnersRegistry
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.prov_bridge import ProvBridge
@@ -91,6 +92,14 @@ async def lifespan(app: FastAPI):
             allow_unknown_participants=settings.allow_unknown_participants,
         )
 
+    # Owners registry
+    owners_registry = None
+    if settings.identity_registry_url:
+        owners_registry = HttpOwnersRegistry(
+            settings.identity_registry_url,
+            cache_ttl=settings.owners_registry_cache_ttl,
+        )
+
     # Notifier
     notifier = build_notifier(settings)
 
@@ -98,11 +107,14 @@ async def lifespan(app: FastAPI):
     app.state.consumer_edc = consumer_edc
     app.state.consumer_service = consumer_svc
     app.state.registry = registry
+    app.state.owners_registry = owners_registry
     app.state.prov = prov
     app.state.notifier = notifier
 
     yield
 
+    if owners_registry is not None:
+        await owners_registry.close()
     if http_registry is not None:
         await http_registry.close()
     if provider_edc is not None:

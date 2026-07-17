@@ -19,6 +19,12 @@ from .models import (
 from .resolver import GovernanceConfig, GovernanceResolver
 from .mapper import GovernanceMapper
 from .matrix import build_policy_matrix, build_policy_matrix_entry
+from .owners import (
+    HttpOwnersRegistry,
+    OwnerEntry,
+    OwnersRegistry,
+    load_owners_yaml,
+)
 
 __all__ = [
     "GovernanceOwner",
@@ -40,4 +46,8 @@ __all__ = [
     "GovernanceMapper",
     "build_policy_matrix",
     "build_policy_matrix_entry",
+    "OwnerEntry",
+    "OwnersRegistry",
+    "HttpOwnersRegistry",
+    "load_owners_yaml",
 ]

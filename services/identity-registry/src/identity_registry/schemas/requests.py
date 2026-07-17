@@ -44,3 +44,22 @@ class KeycloakSyncRequest(BaseModel):
     keycloak_realm: str
     keycloak_user_id: str
     email: str | None = None
+
+
+class CreateOwnerRequest(BaseModel):
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    type: str = "schema:Organization"
+    name: str
+    did: str | None = None
+    url: str | None = None
+    aliases: list[str] = []
+    organization_config: dict | None = None
+
+
+class UpdateOwnerRequest(BaseModel):
+    type: str | None = None
+    name: str | None = None
+    did: str | None = None
+    url: str | None = None
+    aliases: list[str] | None = None
+    organization_config: dict | None = None
