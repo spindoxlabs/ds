@@ -6,13 +6,13 @@ This document describes how participant identities are established, how Verifiab
 
 ## Participant identities
 
-Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database via Caddy reverse proxy.
+Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database — EDC resolves them directly via the `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`), with `*.dataspaces.localhost` hostnames resolving to `127.0.0.1` via `/etc/hosts`.
 
 | Participant | DID | Resolution path |
 |-------------|-----|----------------|
-| Provider | `did:web:provider.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:provider.dataspaces.localhost/did.json` |
-| Consumer | `did:web:consumer.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:consumer.dataspaces.localhost/did.json` |
-| Trust anchor | `did:web:trust-anchor.dataspaces.localhost` | Caddy -> identity-registry `GET /dids/did:web:trust-anchor.dataspaces.localhost/did.json` |
+| Provider | `did:web:provider.dataspaces.localhost` | identity-registry `GET /dids/did:web:provider.dataspaces.localhost/did.json` |
+| Consumer | `did:web:consumer.dataspaces.localhost` | identity-registry `GET /dids/did:web:consumer.dataspaces.localhost/did.json` |
+| Trust anchor | `did:web:trust-anchor.dataspaces.localhost` | identity-registry `GET /dids/did:web:trust-anchor.dataspaces.localhost/did.json` |
 
 ### DID lifecycle
 
@@ -130,7 +130,7 @@ EDC connectors obtain Verifiable Presentations by calling the identity-registry 
 1. During DSP negotiation, EDC calls `POST /credentials/{did}/presentations/query` on the identity-registry
 2. The identity-registry retrieves the participant's VCs from its database, wraps them in a `VerifiablePresentation`, and returns it
 3. EDC includes the VP in the DSP message
-4. The counterparty verifies the VP against the sender's DID document (resolved via Caddy -> identity-registry)
+4. The counterparty verifies the VP against the sender's DID document (resolved directly from the identity-registry)
 
 ---
 
@@ -152,12 +152,12 @@ Consumer EDC                                     Provider EDC
     |------------------------------------------------>|
     |                                                 |
     |                     4. Verify SI token signature |
-    |                        Caddy -> identity-reg    |
+    |                        identity-registry        |
     |                        GET /dids/{consumer-did}/|
     |                        did.json                 |
     |                                                 |
     |                     5. Verify VC issuer          |
-    |                        Caddy -> identity-reg    |
+    |                        identity-registry        |
     |                        GET /dids/{trust-anchor- |
     |                        did}/did.json            |
     |                                                 |
@@ -178,8 +178,8 @@ Consumer EDC                                     Provider EDC
 1. **SI token:** Consumer EDC calls `POST /sts/{consumer-did}/token` on the identity-registry. The identity-registry signs an ES256 JWT using the consumer's database-stored private key.
 2. **VP:** Consumer EDC calls `POST /credentials/{consumer-did}/presentations/query` on the identity-registry. The identity-registry builds a VP from the consumer's database-stored VCs.
 3. **DSP request:** Consumer EDC sends the DSP CatalogRequest (or negotiation message) with the SI token and VP attached.
-4. **SI token verification:** Provider EDC resolves the consumer's DID document via Caddy -> identity-registry (`GET /dids/{consumer-did}/did.json`) and verifies the SI token signature against the consumer's public key.
-5. **VC issuer verification:** Provider EDC resolves the trust anchor's DID document via Caddy -> identity-registry (`GET /dids/{trust-anchor-did}/did.json`) and verifies the VC signatures against the trust anchor's public key.
+4. **SI token verification:** Provider EDC resolves the consumer's DID document directly from the identity-registry (`GET /dids/{consumer-did}/did.json`) via the `identity-did-web` module and verifies the SI token signature against the consumer's public key.
+5. **VC issuer verification:** Provider EDC resolves the trust anchor's DID document directly from the identity-registry (`GET /dids/{trust-anchor-did}/did.json`) and verifies the VC signatures against the trust anchor's public key.
 6. **Trusted issuer check:** Provider EDC checks that the VC issuer DID is in its configured trusted issuer list.
 7. **ODRL constraint evaluation:** Provider EDC's AccessScopeFunction calls ds-connector, which calls the identity-registry at `/participants/{did}/check` for scope validation.
 8. **DSP response:** Provider EDC returns the catalog, agreement, or transfer response.
@@ -208,4 +208,4 @@ EDR (Endpoint Data Reference) tokens use a separate non-DID key stored in the ED
 | BB01 (Trust Framework) | Local trust anchor created via `ir-cli bootstrap`; trust anchor issues MembershipCredentials; EDC verifies issuer chain |
 | BB02 (Identity & Attestation) | identity-registry: DID lifecycle, key management, VC issuance, STS token signing, credential presentation service; `did:web:` URIs with `JsonWebKey2020` and ES256 signatures |
 | BB05 (Data Exchange) | EDC connectors with DCP; separate EDR signing keys in EDC vault (independent from BB02 identity keys) |
-| DCP | Full Dataspace Credential Protocol: EDC connectors call identity-registry for SI tokens and VPs; Caddy proxies DID resolution to identity-registry |
+| DCP | Full Dataspace Credential Protocol: EDC connectors call identity-registry for SI tokens, VPs, and DID document resolution (directly, no proxy) |

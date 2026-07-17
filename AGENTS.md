@@ -32,7 +32,7 @@ dataspaces/
 │   ├── dataset-api-fiware-adapter/  Python — FIWARE NGSI-LD adapter
 │   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
 │   ├── edc-connector/          Gradle — EDC fat JAR build (DCP-enabled, v0.16.0)
-│   ├── caddy/                  Config — reverse proxy, TLS, DID document routing
+│   ├── caddy/                  Config — reverse proxy for portal, connector APIs, and Keycloak
 │   └── keycloak/               Config — OIDC realm import for dev
 ├── libs/                       Importable shared Python packages (no Dockerfile, no port)
 │   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper (import `ds.governance`)
@@ -74,7 +74,7 @@ EDC Provider ←──DSP──→ EDC Consumer
   └──→ ds-connector /internal/*    ODRL constraint evaluation
 
 identity-registry (30005)
-  ├── DID documents      Caddy rewrites /.well-known/did.json → /dids/{did}/did.json
+  ├── DID documents      GET /dids/{did}/did.json (EDC resolves directly via identity-did-web)
   ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
   ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
   ├── Participant registry GET /participants, GET /participants/{did}/check
@@ -109,7 +109,7 @@ All containers share the `dataspaces` bridge network.
 | Identity (BB02) | identity-registry: DID lifecycle, STS (ES256 SI JWTs), DCP credential service, participant registry, StatusList2021 |
 | Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
 | Database | PostgreSQL 17.4 (one DB per service, all on port 35432) |
-| Proxy | Caddy 2 (HTTP reverse proxy, DID document routing to identity-registry) |
+| Proxy | Caddy 2 (HTTP reverse proxy for portal, connector APIs, and Keycloak) |
 | Auth | Keycloak OIDC via Auth.js |
 | Build | uv (Python), npm (Node), Gradle (Java), Taskfile |
 | Containers | Docker Compose, multi-stage Dockerfiles |
@@ -143,8 +143,8 @@ The identity-registry is a centralized trust anchor service (DSSC BB02 — Ident
 **Encryption at rest:** Private keys are Fernet-encrypted in the database using `IDENTITY_REGISTRY_ENCRYPTION_KEY`. STS client secrets are PBKDF2-hashed (never stored in cleartext). The dev default key works out of the box; production deployments must set a strong key.
 
 How DID resolution works:
-1. EDC resolves `did:web:provider.dataspaces.localhost` by fetching `http://provider.dataspaces.localhost/.well-known/did.json`
-2. Caddy rewrites this to `/dids/did:web:provider.dataspaces.localhost/did.json` and proxies to identity-registry
+1. EDC resolves `did:web:provider.dataspaces.localhost` using its `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`)
+2. The request reaches the identity-registry directly at `GET /dids/did:web:provider.dataspaces.localhost/did.json` (`*.dataspaces.localhost` resolves to `127.0.0.1` via `/etc/hosts`)
 3. The identity-registry builds and returns the DID document from its database
 
 The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
