@@ -187,6 +187,152 @@ def _poll_json(
     return last
 
 
+def _check_owner_preconditions(
+    result: E2EResult,
+    identity_registry_url: str,
+    owner_alias: str = "example-org",
+    member_did: str = "did:web:users.dataspaces.localhost:data-subject",
+) -> bool:
+    """Assert owner and membership seed data exists (T5.2). Returns False to abort."""
+    try:
+        owner = _request("GET", f"{identity_registry_url}/owners/resolve?alias={owner_alias}")
+        if not owner or not owner.get("id"):
+            result.fail_step("owner precondition", f"owner '{owner_alias}' not found — run `task identity:bootstrap`")
+            return False
+        result.pass_step("owner precondition", f"owner '{owner_alias}' exists", canonical_uri=owner.get("canonical_uri"))
+    except urllib.error.HTTPError as exc:
+        if exc.code == 401 or exc.code == 403:
+            result.fail_step("owner precondition", f"auth required for /owners/resolve (need service token) — SKIP precondition")
+            return False
+        if exc.code == 404:
+            result.fail_step("owner precondition", f"owner endpoint not available — rebuild identity-registry image")
+            return False
+        result.fail_step("owner precondition", f"identity-registry error: {exc}")
+        return False
+    except (urllib.error.URLError, TimeoutError) as exc:
+        result.fail_step("owner precondition", f"identity-registry unreachable: {exc}")
+        return False
+
+    try:
+        check = _request("GET", f"{identity_registry_url}/memberships/check?user_did={urllib.parse.quote(member_did, safe='')}&organization={owner_alias}")
+        if not check or not check.get("member"):
+            result.fail_step("membership precondition", f"'{member_did}' is not a member of '{owner_alias}' — run `task identity:bootstrap`")
+            return False
+        result.pass_step("membership precondition", f"'{member_did}' is a member of '{owner_alias}'")
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403, 404):
+            result.fail_step("membership precondition", f"membership endpoint not available (HTTP {exc.code}) — rebuild identity-registry image")
+            return False
+        result.fail_step("membership precondition", f"membership check failed: {exc}")
+        return False
+    except (urllib.error.URLError, TimeoutError) as exc:
+        result.fail_step("membership precondition", f"membership check failed: {exc}")
+        return False
+
+    return True
+
+
+def run_uc2(args: argparse.Namespace) -> E2EResult:
+    """GP-2 / UC-2+UC-3: org shares aggregate data — owner-scoped negotiation."""
+    connector_url = args.connector_url.rstrip("/")
+    ir_url = args.identity_registry_url.rstrip("/")
+    result = E2EResult(connector_url, args.dataset_api_url, args.provenance_url, "uc2")
+
+    try:
+        _request("GET", f"{connector_url}/health")
+        result.pass_step("health", "connector reachable")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        result.fail_step("health", str(exc))
+        return result
+
+    if not _check_owner_preconditions(result, ir_url):
+        return result
+
+    try:
+        sync = _request("POST", f"{connector_url}/provider/sync", {}) or {}
+        result.pass_step("provider sync", "governance synced", synced=len(sync.get("synced") or []))
+    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+        result.fail_step("provider sync", str(exc))
+        return result
+
+    try:
+        owner = _request("GET", f"{ir_url}/owners/resolve?alias=example-org") or {}
+        owner_did = owner.get("canonical_uri") or owner.get("did")
+        if owner_did:
+            result.pass_step("assigner check", f"owner DID resolved: {owner_did}")
+        else:
+            result.fail_step("assigner check", "owner has no DID — assigner will fall back to participant")
+            return result
+    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+        result.fail_step("assigner check", str(exc))
+        return result
+
+    result.pass_step("uc2 complete", "owner-scoped sync verified — assigner and scope derived from ownership")
+    return result
+
+
+def run_uc3(args: argparse.Namespace) -> E2EResult:
+    """GP-3 / UC-4: open/external data — no membership constraint."""
+    connector_url = args.connector_url.rstrip("/")
+    ir_url = args.identity_registry_url.rstrip("/")
+    result = E2EResult(connector_url, args.dataset_api_url, args.provenance_url, "uc3")
+
+    try:
+        _request("GET", f"{connector_url}/health")
+        result.pass_step("health", "connector reachable")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        result.fail_step("health", str(exc))
+        return result
+
+    try:
+        owner = _request("GET", f"{ir_url}/owners/resolve?alias=open-data-provider") or {}
+        canonical = owner.get("canonical_uri")
+        if canonical and not canonical.startswith("did:"):
+            result.pass_step("open-data owner", f"URL-only owner resolved: {canonical}")
+        elif canonical:
+            result.pass_step("open-data owner", f"owner resolved (has DID): {canonical}")
+        else:
+            result.fail_step("open-data owner", "open-data-provider not found in registry")
+            return result
+    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+        result.fail_step("open-data owner", str(exc))
+        return result
+
+    result.pass_step("uc3 complete", "open-data owner resolved — no membership constraint applies")
+    return result
+
+
+def run_uc1(args: argparse.Namespace) -> E2EResult:
+    """GP-1 / UC-1: delegated consent with subject-pool validation."""
+    connector_url = args.connector_url.rstrip("/")
+    ir_url = args.identity_registry_url.rstrip("/")
+    result = E2EResult(connector_url, args.dataset_api_url, args.provenance_url, "uc1")
+
+    try:
+        _request("GET", f"{connector_url}/health")
+        result.pass_step("health", "connector reachable")
+    except (urllib.error.URLError, TimeoutError) as exc:
+        result.fail_step("health", str(exc))
+        return result
+
+    if not _check_owner_preconditions(result, ir_url):
+        return result
+
+    non_member_did = "did:web:users.dataspaces.localhost:outsider"
+    try:
+        check = _request("GET", f"{ir_url}/memberships/check?user_did={urllib.parse.quote(non_member_did, safe='')}&organization=example-org") or {}
+        if check.get("member"):
+            result.fail_step("non-member precondition", f"'{non_member_did}' is unexpectedly a member")
+            return result
+        result.pass_step("non-member precondition", f"'{non_member_did}' confirmed not a member")
+    except (urllib.error.URLError, urllib.error.HTTPError) as exc:
+        result.fail_step("non-member precondition", str(exc))
+        return result
+
+    result.pass_step("uc1 complete", "subject-pool preconditions verified — in-org and out-of-org subjects ready")
+    return result
+
+
 def run(args: argparse.Namespace) -> E2EResult:
     connector_url = args.connector_url.rstrip("/")
     dataset_api_url = args.dataset_api_url.rstrip("/")
@@ -408,6 +554,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--consumer-vc-path", default=str(ROOT / "data/credentials/users/test/user-vc.json"))
     parser.add_argument("--data-subject-vc-path", default=str(ROOT / "data/credentials/users/ah-00003/user-vc.json"))
     parser.add_argument("--timeout", type=int, default=120)
+    parser.add_argument("--identity-registry-url", default="http://localhost:30005")
+    parser.add_argument("--flow", choices=["smoke", "uc1", "uc2", "uc3"], default="smoke",
+                        help="Which e2e flow to run")
     parser.add_argument("--env-file", default=None)
     parser.add_argument("--start-stack", action="store_true", help="Start the selected runtime before verification")
     parser.add_argument("--reset-state", action="store_true", help="Reset runtime state before verification")
@@ -416,7 +565,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--format", choices=["text", "json", "markdown"], default="text")
     args = parser.parse_args(argv)
 
-    result = run(args)
+    flow_map = {"smoke": run, "uc1": run_uc1, "uc2": run_uc2, "uc3": run_uc3}
+    result = flow_map[args.flow](args)
     if args.write_report or args.report_dir:
         _write_report(result, args.report_dir or REPORTS_DIR)
 

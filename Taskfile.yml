@@ -429,6 +429,36 @@ tasks:
           --dataset-api-url "${DATASET_API_URL:-http://localhost:30002}" \
           --provenance-url "${PROVENANCE_URL:-http://localhost:30000}"
 
+  compliance:e2e:uc1:
+    desc: "E2E: UC-1 delegated consent with subject-pool validation"
+    cmds:
+      - |
+        py="${PYTHON:-services/connector/.venv/bin/python}"
+        [ -x "$py" ] || py="python3"
+        "$py" scripts/e2e_smoke.py --flow uc1 \
+          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
+          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
+
+  compliance:e2e:uc2:
+    desc: "E2E: UC-2+UC-3 owner-scoped negotiation"
+    cmds:
+      - |
+        py="${PYTHON:-services/connector/.venv/bin/python}"
+        [ -x "$py" ] || py="python3"
+        "$py" scripts/e2e_smoke.py --flow uc2 \
+          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
+          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
+
+  compliance:e2e:uc3:
+    desc: "E2E: UC-4 open/external data"
+    cmds:
+      - |
+        py="${PYTHON:-services/connector/.venv/bin/python}"
+        [ -x "$py" ] || py="python3"
+        "$py" scripts/e2e_smoke.py --flow uc3 \
+          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
+          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
+
   compliance:test:
     desc: Run offline compliance validator tests
     cmds:

@@ -14,9 +14,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "libs/governance/src"))
 
 from ds.governance.mapper import GovernanceMapper  # noqa: E402
+from ds.governance.models import OdrlProfile  # noqa: E402
 from ds.governance.owners import OwnersRegistry, load_owners_yaml  # noqa: E402
 from ds.governance.resolver import GovernanceResolver  # noqa: E402
 
+_DEFAULT_PROFILE = OdrlProfile()
 
 PROFILE_PATHS = {
     "core": ROOT / "services/connector/governance/governance.yaml",
@@ -36,7 +38,7 @@ DCAT_CONTEXT = {
 
 ODRL_CONTEXT = {
     "odrl": "http://www.w3.org/ns/odrl/2/",
-    "ds": GovernanceMapper.DS_NAMESPACE,
+    _DEFAULT_PROFILE.prefix: _DEFAULT_PROFILE.namespace,
     "xsd": "http://www.w3.org/2001/XMLSchema#",
 }
 
@@ -267,8 +269,8 @@ def _validate_odrl_offer(
     expanded_offer: dict[str, Any],
 ) -> None:
     context = offer.get("@context")
-    if not isinstance(context, dict) or "odrl" not in context or "ds" not in context:
-        result.error("odrl-jsonld-shape", "Missing ODRL/DS JSON-LD context", dataset_key)
+    if not isinstance(context, dict) or "odrl" not in context or _DEFAULT_PROFILE.prefix not in context:
+        result.error("odrl-jsonld-shape", "Missing ODRL/profile JSON-LD context", dataset_key)
     if offer.get("@type") != "odrl:Offer":
         result.error("odrl-jsonld-shape", "Generated policy is not an odrl:Offer", dataset_key)
     if not offer.get("@id"):
@@ -305,14 +307,19 @@ def _validate_policy_enforcement(result: ValidationResult, dataset_key: str, rul
         for item in (constraint.get("odrl:leftOperand") for constraint in constraints)
     }
 
-    if rule.access_level in {"internal", "restricted"} and "ds:accessScope" not in left_operands:
-        result.error("policy-enforcement-shape", "Missing ds:accessScope constraint", dataset_key)
-    if rule.access_level == "restricted" and "ds:contractRequired" not in left_operands:
-        result.error("policy-enforcement-shape", "Missing ds:contractRequired constraint", dataset_key)
+    p = _DEFAULT_PROFILE
+    membership_iri = p.term(p.membership_operand)
+    consent_iri = p.term(p.consent_operand)
+    contract_iri = "ds:contractRequired"
+
+    if rule.access_level in {"internal", "restricted"} and membership_iri not in left_operands:
+        result.error("policy-enforcement-shape", f"Missing {membership_iri} constraint", dataset_key)
+    if rule.access_level == "restricted" and contract_iri not in left_operands:
+        result.error("policy-enforcement-shape", f"Missing {contract_iri} constraint", dataset_key)
 
     requires_consent = bool(rule.user_filter_column or rule.row_filters or rule.policy.consent.required)
-    if requires_consent and "ds:consentStatus" not in left_operands:
-        result.error("policy-enforcement-shape", "Missing ds:consentStatus constraint", dataset_key)
+    if requires_consent and consent_iri not in left_operands:
+        result.error("policy-enforcement-shape", f"Missing {consent_iri} constraint", dataset_key)
     if rule.classification == "pii":
         prohibited = {
             item.get("odrl:action", {}).get("@id")
