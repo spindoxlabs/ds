@@ -6,6 +6,18 @@ A DSSC Blueprint-aligned dataspace platform for energy communities. Implements t
 
 Built on Eclipse Dataspace Connector (v0.16.0) with Python/FastAPI orchestration and a SvelteKit frontend.
 
+The approach should be generalizable and support different use-cases, ensure to not over specify or specialize on a domain. 
+
+Domain specific implementaion should be oriented toward modularization and extension of the platform.
+
+## Privacy
+
+Integration to data plane components should not expose private organizations references or cross-project requirements and references in this reposiotories.
+
+Ensure to not cite organizations, projects and datasets that are not public and not explicitly allowed by the user.
+
+This apply to all resource such as docs, tests, codebase, AGENTS.md, samples and dev defaults.
+
 ## Repository structure
 
 ```
