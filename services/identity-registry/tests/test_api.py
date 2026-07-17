@@ -419,7 +419,7 @@ async def test_keycloak_sync(client):
         "/admin/keycloak/sync",
         json={
             "did": TEST_DID,
-            "keycloak_realm": "celine",
+            "keycloak_realm": "dataspaces",
             "keycloak_user_id": "user-123",
             "email": "user@example.com",
         },
@@ -444,7 +444,7 @@ async def test_keycloak_mapping_by_subject_id(client):
         "/admin/keycloak/sync",
         json={
             "did": TEST_DID,
-            "keycloak_realm": "celine",
+            "keycloak_realm": "dataspaces",
             "keycloak_user_id": "user-123",
         },
         headers=HEADERS,
