@@ -123,6 +123,7 @@ services:
           --role consumer \
           --dsp-address http://edc-consumer:29194/protocol/2025-1 \
           --scope dataspaces.query \
+          --scope owner:example-org:member \
           --sts-secret insecure-dev-secret \
           --credential-service-url http://identity-registry:30005/credentials/did:web:consumer.dataspaces.localhost
         ir-cli credential issue-data-subject \
@@ -142,6 +143,14 @@ services:
           --user-id 00000000-0000-4000-a000-000000000004 \
           --email subject@example.test
         ir-cli owner import --file /seed/owners.dev.yaml
+        ir-cli membership add \
+          --user-did did:web:users.dataspaces.localhost:data-subject \
+          --organization example-org \
+          --role consumer
+        ir-cli membership add \
+          --user-did did:web:users.dataspaces.localhost:consumer-user \
+          --organization example-org \
+          --role consumer
         echo "Identity bootstrap complete"
     networks: [dataspaces]
 

@@ -127,10 +127,17 @@ class GovernanceMapper:
         reqs = access_requirements or "all"
         needs_membership = reqs in ("partner", "contract") or access_level in ("internal", "restricted")
         if needs_membership:
+            scope = policy.audience.required_scope
+            if rule.ownership:
+                owner_alias = rule.ownership[0].name
+                if reqs == "partner":
+                    scope = f"owner:{owner_alias}:partner"
+                else:
+                    scope = f"owner:{owner_alias}:member"
             constraints.append({
                 "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
                 "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": {"@value": policy.audience.required_scope, "@type": "xsd:string"},
+                "odrl:rightOperand": {"@value": scope, "@type": "xsd:string"},
             })
 
         # Contract constraint — access_requirements = "contract"

@@ -2,11 +2,11 @@
 import pytest
 
 from connector.services.governance import ConnectorGovernanceMapper, load_exposed_datasets
-from ds.governance.models import GovernanceRuleV2, DataspaceSpec, DataspaceDataAddress
+from ds.governance.models import GovernanceOwner, GovernanceRuleV2, DataspaceSpec, DataspaceDataAddress
 
 
-def _mapper():
-    return ConnectorGovernanceMapper("provider", "https://provider.dataspaces.localhost")
+def _mapper(**kwargs):
+    return ConnectorGovernanceMapper("provider", "https://provider.dataspaces.localhost", **kwargs)
 
 
 def _rule(**kwargs) -> GovernanceRuleV2:
@@ -58,6 +58,42 @@ def test_contract_definition_links_asset():
     contract = mapper.to_contract_definition("datasets.gold.test", rule, policy.id, asset.id)
     assert len(contract.assets_selector) == 1
     assert contract.assets_selector[0]["operandRight"] == asset.id
+
+
+def test_policy_assigner_uses_owner_did():
+    owner_did = "did:web:example-org.dataspaces.localhost"
+    mapper = _mapper(owner_did_resolver=lambda name: owner_did if name == "example-org" else None)
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        ownership=[GovernanceOwner(name="example-org")],
+        dataspace=DataspaceSpec(expose=True),
+    )
+    policy = mapper.to_policy_create("datasets.gold.test", rule)
+    assert policy.policy["odrl:assigner"]["@id"] == owner_did
+
+
+def test_policy_assigner_falls_back_to_participant():
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        dataspace=DataspaceSpec(expose=True),
+    )
+    policy = mapper.to_policy_create("datasets.gold.test", rule)
+    assert "provider" in policy.policy["odrl:assigner"]["@id"]
+
+
+def test_policy_assigner_unknown_owner_falls_back():
+    mapper = _mapper(owner_did_resolver=lambda name: None)
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        ownership=[GovernanceOwner(name="unknown-org")],
+        dataspace=DataspaceSpec(expose=True),
+    )
+    policy = mapper.to_policy_create("datasets.gold.test", rule)
+    assert "provider" in policy.policy["odrl:assigner"]["@id"]
 
 
 def test_load_exposed_datasets(tmp_path):

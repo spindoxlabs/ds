@@ -67,6 +67,7 @@ class Settings(BaseSettings):
     participant_registry_cache_ttl: float = 60.0
     participants_registry_path: str | None = None
     governance_yaml_path: str = "governance/governance.yaml"
+    governance_overlay_name: str | None = None
     owners_registry_cache_ttl: float = 60.0
     odrl_profile_path: str | None = None
     trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"

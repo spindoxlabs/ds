@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "libs/governance/src"))
 
 from ds.governance.mapper import GovernanceMapper  # noqa: E402
+from ds.governance.owners import OwnersRegistry, load_owners_yaml  # noqa: E402
 from ds.governance.resolver import GovernanceResolver  # noqa: E402
 
 
@@ -119,6 +120,8 @@ def validate(
         "policy-enforcement-shape",
         "dsp-compatibility-checklist",
         "profile-split",
+        "owner-inv-1",
+        "owner-inv-3",
     ])
 
     if not governance_path.exists():
@@ -149,6 +152,9 @@ def validate(
 
     _validate_profile_split(result, profile, exposed)
     _validate_dsp_static(result)
+
+    owners = _load_owners_registry(governance_path)
+    _validate_owner_invariants(result, exposed, owners)
 
     if write_artifacts or report_dir:
         _write_artifacts(result, catalog, exposed, report_dir or PROFILE_REPORT_DIRS.get(profile, REPORTS_DIR))
@@ -332,6 +338,57 @@ def _validate_dsp_static(result: ValidationResult) -> None:
     edc_connector = ROOT / "services/edc-connector/build.gradle.kts"
     if edc_connector.exists() and "0.16.0" not in edc_connector.read_text():
         result.warning("dsp-compatibility-checklist", "EDC version 0.16.0 not found in connector build file")
+
+
+def _load_owners_registry(governance_path: Path) -> OwnersRegistry:
+    """Load owners registry from seed file(s) near the governance directory."""
+    seed_dir = ROOT / "services/identity-registry/seed"
+    for name in ("owners.dev.yaml", "owners.yaml"):
+        candidate = seed_dir / name
+        if candidate.exists():
+            return load_owners_yaml(candidate)
+    return OwnersRegistry()
+
+
+def _validate_owner_invariants(
+    result: ValidationResult,
+    exposed: list[DatasetEvidence],
+    owners: OwnersRegistry,
+) -> None:
+    """inv-1: every governance ownership[].name resolves in owners registry."""
+    seen_aliases: set[str] = set()
+    for evidence in exposed:
+        for owner in evidence.rule.ownership:
+            if owner.name in seen_aliases:
+                continue
+            seen_aliases.add(owner.name)
+            entry = owners.by_id(owner.name)
+            if not entry:
+                result.error(
+                    "owner-inv-1",
+                    f"Ownership alias '{owner.name}' not found in owners registry",
+                    evidence.key,
+                )
+
+    # inv-3: owners with a DID should have that DID as a participant DID in the IR
+    # (checked at seed level — if a participant registry seed exists)
+    participants_yaml = ROOT / "services/connector/governance/participants.yaml"
+    participant_dids: set[str] = set()
+    if participants_yaml.exists():
+        import yaml as _yaml
+
+        with participants_yaml.open() as f:
+            pdata = _yaml.safe_load(f) or {}
+        for p in pdata.get("participants", []):
+            if isinstance(p, dict) and p.get("id"):
+                participant_dids.add(p["id"])
+
+    for entry in owners.all():
+        if entry.did and participant_dids and entry.did not in participant_dids:
+            result.warning(
+                "owner-inv-3",
+                f"Owner '{entry.id}' DID '{entry.did}' not found in participant registry seed",
+            )
 
 
 def _write_artifacts(

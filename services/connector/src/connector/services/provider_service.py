@@ -16,10 +16,11 @@ async def sync_governance(
     edc: EdcManagementClient,
     mapper: ConnectorGovernanceMapper,
     prov: ProvBridge,
+    overlay_name: str | None = None,
 ) -> SyncResult:
     result = SyncResult()
     try:
-        datasets = load_exposed_datasets(governance_yaml_path)
+        datasets = load_exposed_datasets(governance_yaml_path, overlay_name=overlay_name)
     except Exception as exc:
         result.errors.append({"error": f"Failed to load governance.yaml: {exc}"})
         return result

@@ -3,6 +3,9 @@ defaults:
   classification: green
   tags: []
   retention_days: 365
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
   dataspace:
     expose: false
 

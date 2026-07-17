@@ -34,3 +34,6 @@ require_resolve_scope = require_permission("identity-registry.resolve")
 require_admin_or_read_scope = require_permission(
     "identity-registry.admin", "identity-registry.read"
 )
+require_membership_read_scope = require_permission(
+    "identity-registry.admin", "identity-registry.membership.read"
+)

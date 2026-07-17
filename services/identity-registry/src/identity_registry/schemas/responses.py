@@ -72,6 +72,19 @@ class UserResolveResponse(BaseModel):
     subject_id: str
 
 
+class MembershipResponse(BaseModel):
+    user_did: str
+    organization_alias: str
+    role: str | None
+    status: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class MembershipCheckResponse(BaseModel):
+    member: bool
+
+
 class OwnerResponse(BaseModel):
     id: str
     type: str

@@ -1,7 +1,7 @@
 """Provider management routes."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,6 +29,7 @@ async def sync(
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
     _claims: dict = Depends(require_provider_write),
+    request: Request = None,
 ):
     from ds.governance.models import load_odrl_profile
 
@@ -39,11 +40,31 @@ async def sync(
 
     yaml_path = (req.governance_yaml_path if req else None) or settings.governance_yaml_path
     profile = load_odrl_profile(settings.odrl_profile_path)
-    mapper = ConnectorGovernanceMapper(settings.participant_id, settings.participant_base_url, profile=profile)
+
+    owner_did_resolver = None
+    owners_registry = getattr(request.app.state, "owners_registry", None) if request else None
+    if owners_registry is not None:
+        datasets = load_exposed_datasets(yaml_path, overlay_name=settings.governance_overlay_name)
+        owner_aliases = {
+            o.name
+            for rule in datasets.values()
+            for o in rule.ownership
+        }
+        resolved: dict[str, str | None] = {}
+        for alias in owner_aliases:
+            resolved[alias] = await owners_registry.canonical_uri(alias)
+        owner_did_resolver = resolved.get
+
+    mapper = ConnectorGovernanceMapper(
+        settings.participant_id,
+        settings.participant_base_url,
+        profile=profile,
+        owner_did_resolver=owner_did_resolver,
+    )
     prov_client = ProvenanceClient(settings.provenance_url)
     prov = ProvBridge(prov_client, settings.participant_id)
     try:
-        result = await sync_governance(yaml_path, edc, mapper, prov)
+        result = await sync_governance(yaml_path, edc, mapper, prov, overlay_name=settings.governance_overlay_name)
         return result
     finally:
         await prov_client.close()

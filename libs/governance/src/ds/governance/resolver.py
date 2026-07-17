@@ -138,6 +138,42 @@ class GovernanceResolver:
             dataspace=DataspaceSpec.model_validate(dataspace_raw) if dataspace_raw else DataspaceSpec(),
         )
 
+    @classmethod
+    def from_file_with_override(
+        cls,
+        base_path: Path,
+        overlay_name: str | None = None,
+    ) -> GovernanceResolver:
+        base = cls.from_file(base_path)
+        name = overlay_name or os.getenv("GOVERNANCE_OVERLAY_NAME")
+        if not name:
+            return base
+        overlay_path = base_path.parent / f"governance.{name}.yaml"
+        if not overlay_path.exists():
+            return base
+        overlay = cls.from_file(overlay_path)
+        merged = cls._merge_configs(base.config, overlay.config)
+        return cls(merged)
+
+    @classmethod
+    def _merge_configs(
+        cls, base: GovernanceConfig, override: GovernanceConfig
+    ) -> GovernanceConfig:
+        defaults = cls._merge_rule(base.defaults, override.defaults)
+        sources = dict(base.sources)
+        for key, rule in override.sources.items():
+            if key in sources:
+                sources[key] = cls._merge_rule(sources[key], rule)
+            else:
+                sources[key] = rule
+        return GovernanceConfig(defaults=defaults, sources=sources)
+
+    @classmethod
+    def _merge_rule(
+        cls, base: GovernanceRuleV2, override: GovernanceRuleV2
+    ) -> GovernanceRuleV2:
+        return cls._merge(base, override)
+
     @staticmethod
     def _merge(base: GovernanceRuleV2, override: GovernanceRuleV2) -> GovernanceRuleV2:
         def pick(a: Any, b: Any) -> Any:

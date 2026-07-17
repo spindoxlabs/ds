@@ -22,6 +22,8 @@ scopes:
     description: Read participant registry and request credential presentations
   - name: identity-registry.resolve
     description: Resolve user identity by email
+  - name: identity-registry.membership.read
+    description: Check organization membership
 
   # Connector
   - name: connector.admin
@@ -90,6 +92,7 @@ clients:
     scopes_prefix: connector
     default_scopes:
       - identity-registry.read
+      - identity-registry.membership.read
       - provenance.write
     extra_audiences:
       - svc-ds-identity-registry

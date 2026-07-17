@@ -79,3 +79,6 @@ reports/
 **/reports/
 
 .agents
+
+# Local governance overlays (contain deployment-specific org bindings)
+*.local.yaml

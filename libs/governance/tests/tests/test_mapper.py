@@ -9,6 +9,7 @@ from ds.governance.models import (
     GovernanceOwner,
     GovernanceRuleV2,
     OdrlProfile,
+    PolicyAudience,
     PolicyConsent,
     PolicyObligations,
     PurposeConcept,
@@ -43,6 +44,21 @@ def _mapper(**kwargs) -> GovernanceMapper:
 
 def _rule(**kwargs) -> GovernanceRuleV2:
     return GovernanceRuleV2(**kwargs)
+
+
+def _constraints(offer: dict) -> list[dict]:
+    return [
+        c
+        for perm in offer.get("odrl:permission", [])
+        for c in perm.get("odrl:constraint", [])
+    ]
+
+
+def _left_op(constraint: dict) -> str:
+    lo = constraint.get("odrl:leftOperand")
+    if isinstance(lo, dict):
+        return lo.get("@id", "")
+    return lo or ""
 
 
 # ── ODRL Offer ────────────────────────────────────────────────────────────────
@@ -290,6 +306,57 @@ def test_assigner_default_without_resolver():
     rule = _rule(access_level="open", classification="green")
     offer = mapper.to_odrl_offer("ds", rule)
     assert offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
+
+
+# ── Owner-relative scope generation ─────────────────────────────────────────
+
+def _membership_scope_values(offer: dict) -> list[str]:
+    """Extract all membership right-operand values across permissions."""
+    values = []
+    for perm in offer.get("odrl:permission", []):
+        for c in perm.get("odrl:constraint", []):
+            if _left_op(c) == _P.term(_P.membership_operand):
+                values.append(c["odrl:rightOperand"]["@value"])
+    return values
+
+
+def test_owner_scope_member_when_internal():
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        ownership=[GovernanceOwner(name="example-org")],
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    values = _membership_scope_values(offer)
+    assert len(values) >= 1
+    assert all(v == "owner:example-org:member" for v in values)
+
+
+def test_owner_scope_partner_when_partner_requirements():
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        access_requirements="partner",
+        classification="green",
+        ownership=[GovernanceOwner(name="example-org")],
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    values = _membership_scope_values(offer)
+    assert len(values) >= 1
+    assert all(v == "owner:example-org:partner" for v in values)
+
+
+def test_no_ownership_uses_required_scope():
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    values = _membership_scope_values(offer)
+    assert len(values) >= 1
+    assert all(v == "dataspaces.query" for v in values)
 
 
 # ── @id wrapping consistency ─────────────────────────────────────────────────

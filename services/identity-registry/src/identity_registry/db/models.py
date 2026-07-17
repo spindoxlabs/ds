@@ -162,6 +162,27 @@ class Owner(Base):
     )
 
 
+class OrganizationMembership(Base):
+    __tablename__ = "organization_memberships"
+
+    user_did: Mapped[str] = mapped_column(
+        Text, ForeignKey("dids.did"), primary_key=True
+    )
+    organization_alias: Mapped[str] = mapped_column(
+        String, primary_key=True
+    )
+    role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
 class StatusList(Base):
     __tablename__ = "status_lists"
 

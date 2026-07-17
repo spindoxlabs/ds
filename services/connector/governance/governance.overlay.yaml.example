@@ -1,0 +1,16 @@
+# Governance overlay example
+#
+# Copy this file to governance.<name>.yaml (e.g. governance.production.yaml)
+# and set CONNECTOR_GOVERNANCE_OVERLAY_NAME=production.
+#
+# The overlay merges on top of governance.yaml:
+# - defaults: field-level merge (non-empty lists fully replace base)
+# - sources: existing keys get rule-level merge, new keys are added
+#
+# This is the primary mechanism for binding generic owner aliases
+# to real organization identities without modifying the base file.
+
+defaults:
+  ownership:
+    - name: example-org
+      type: DATA_OWNER

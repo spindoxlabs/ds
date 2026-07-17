@@ -77,7 +77,8 @@ class ConnectorGovernanceMapper:
         odrl_offer = self._mapper.to_odrl_offer(dataset_key, rule)
         odrl_set = self._to_edc_policy({**odrl_offer, "@type": "odrl:Set"})
         odrl_set["@id"] = policy_id
-        odrl_set["odrl:assigner"] = {"@id": self.participant_id}
+        if "odrl:assigner" not in odrl_set:
+            odrl_set["odrl:assigner"] = {"@id": self.participant_id}
         odrl_set.pop("odrl:obligation", None)
         odrl_set.pop("odrl:prohibition", None)
 
@@ -137,10 +138,13 @@ class ConnectorGovernanceMapper:
         return result
 
 
-def load_exposed_datasets(governance_yaml_path: str) -> dict[str, GovernanceRuleV2]:
-    """Load governance.yaml and return datasets where expose: true and access_level != secret."""
+def load_exposed_datasets(
+    governance_yaml_path: str,
+    overlay_name: str | None = None,
+) -> dict[str, GovernanceRuleV2]:
+    """Load governance.yaml (with optional overlay) and return datasets where expose: true and access_level != secret."""
     path = Path(governance_yaml_path)
-    resolver = GovernanceResolver.from_file(path)
+    resolver = GovernanceResolver.from_file_with_override(path, overlay_name=overlay_name)
     result: dict[str, GovernanceRuleV2] = {}
     for key in resolver.config.sources:
         rule = resolver.resolve(key)
@@ -154,8 +158,9 @@ def load_governance_policy_matrix(
     participant_id: str,
     participant_base_url: str,
     profile: OdrlProfile | None = None,
+    overlay_name: str | None = None,
 ) -> list[dict[str, Any]]:
     """Load exposed datasets and return the explainable governance matrix."""
-    datasets = load_exposed_datasets(governance_yaml_path)
+    datasets = load_exposed_datasets(governance_yaml_path, overlay_name=overlay_name)
     mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url, profile=profile)
     return build_policy_matrix(datasets, mapper)

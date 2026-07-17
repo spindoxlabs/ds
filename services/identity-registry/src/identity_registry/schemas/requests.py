@@ -63,3 +63,9 @@ class UpdateOwnerRequest(BaseModel):
     url: str | None = None
     aliases: list[str] | None = None
     organization_config: dict | None = None
+
+
+class CreateMembershipRequest(BaseModel):
+    user_did: str
+    organization_alias: str
+    role: str | None = None

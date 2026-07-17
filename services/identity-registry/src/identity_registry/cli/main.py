@@ -10,7 +10,7 @@ import typer
 
 from ..config import get_settings
 from ..db.engine import get_engine, get_session_factory, init_db
-from ..db.models import Credential, Did, Key, KeycloakMapping, Owner, Participant, StatusList
+from ..db.models import Credential, Did, Key, KeycloakMapping, OrganizationMembership, Owner, Participant, StatusList
 from ..services.crypto import (
     decrypt_private_jwk,
     encrypt_private_jwk,
@@ -28,6 +28,7 @@ key_app = typer.Typer(help="Key management")
 status_app = typer.Typer(help="Status list management")
 keycloak_app = typer.Typer(help="Keycloak mapping management")
 owner_app = typer.Typer(help="Owner registry management")
+membership_app = typer.Typer(help="Organization membership management")
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
@@ -35,6 +36,7 @@ app.add_typer(key_app, name="key")
 app.add_typer(status_app, name="status")
 app.add_typer(keycloak_app, name="keycloak")
 app.add_typer(owner_app, name="owner")
+app.add_typer(membership_app, name="membership")
 
 
 def _run(coro):
@@ -795,6 +797,179 @@ def owner_import(
 
             await session.commit()
             typer.echo(f"Imported {count} owner(s)")
+
+    _run(_import())
+
+
+@membership_app.command("add")
+def membership_add(
+    user_did: str = typer.Option(..., help="Member's DID"),
+    organization: str = typer.Option(..., help="Owner alias"),
+    role: str = typer.Option(None, help="Role within the org"),
+):
+    """Register a user as member of an organization (idempotent)."""
+
+    async def _add():
+        factory = await _ensure_db()
+        from sqlalchemy import and_, select
+
+        async with factory() as session:
+            result = await session.execute(
+                select(OrganizationMembership).where(
+                    and_(
+                        OrganizationMembership.user_did == user_did,
+                        OrganizationMembership.organization_alias == organization,
+                    )
+                )
+            )
+            if result.scalar_one_or_none():
+                typer.echo(f"Membership already exists: {user_did} → {organization}")
+                return
+
+            membership = OrganizationMembership(
+                user_did=user_did,
+                organization_alias=organization,
+                role=role,
+            )
+            session.add(membership)
+            await session.commit()
+            typer.echo(f"Membership registered: {user_did} → {organization}")
+
+    _run(_add())
+
+
+@membership_app.command("list")
+def membership_list(
+    organization: str = typer.Option(..., help="Owner alias"),
+):
+    """List members of an organization."""
+
+    async def _list():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(
+                select(OrganizationMembership).where(
+                    OrganizationMembership.organization_alias == organization
+                )
+            )
+            memberships = result.scalars().all()
+            if not memberships:
+                typer.echo(f"No members in {organization}.")
+                return
+            for m in memberships:
+                typer.echo(
+                    f"  {m.user_did}  role={m.role or '-'}  status={m.status}"
+                )
+
+    _run(_list())
+
+
+@membership_app.command("remove")
+def membership_remove(
+    user_did: str = typer.Option(..., help="Member's DID"),
+    organization: str = typer.Option(..., help="Owner alias"),
+):
+    """Remove a membership."""
+
+    async def _remove():
+        factory = await _ensure_db()
+        from sqlalchemy import and_, select
+
+        async with factory() as session:
+            result = await session.execute(
+                select(OrganizationMembership).where(
+                    and_(
+                        OrganizationMembership.user_did == user_did,
+                        OrganizationMembership.organization_alias == organization,
+                    )
+                )
+            )
+            membership = result.scalar_one_or_none()
+            if not membership:
+                typer.echo(f"Membership not found", err=True)
+                raise typer.Exit(1)
+
+            await session.delete(membership)
+            await session.commit()
+            typer.echo(f"Membership removed: {user_did} → {organization}")
+
+    _run(_remove())
+
+
+@membership_app.command("import")
+def membership_import(
+    community_registry: Path = typer.Option(..., help="Community registry YAML path"),
+    organization: str = typer.Option(..., help="Owner alias"),
+    did_prefix: str = typer.Option(None, help="DID prefix for user_id → DID mapping"),
+):
+    """Import memberships from a community registry YAML file."""
+
+    async def _import():
+        import yaml
+
+        factory = await _ensure_db()
+        from sqlalchemy import and_, select
+
+        if not community_registry.exists():
+            typer.echo(f"File not found: {community_registry}", err=True)
+            raise typer.Exit(1)
+
+        with community_registry.open("r", encoding="utf-8") as f:
+            data = yaml.safe_load(f) or {}
+
+        members = data.get("members", {})
+        if not isinstance(members, dict):
+            typer.echo("No 'members' dict found in file", err=True)
+            raise typer.Exit(1)
+
+        count = 0
+        async with factory() as session:
+            for member_id, entry in members.items():
+                if not isinstance(entry, dict):
+                    continue
+                user_id = entry.get("user_id", member_id)
+                role = entry.get("role")
+                status = entry.get("status", "active")
+
+                if did_prefix:
+                    user_did_val = f"did:web:{did_prefix}:{user_id}"
+                else:
+                    kc_result = await session.execute(
+                        select(KeycloakMapping).where(
+                            KeycloakMapping.subject_id.contains(user_id)
+                        )
+                    )
+                    kc = kc_result.scalar_one_or_none()
+                    if kc:
+                        user_did_val = kc.did
+                    else:
+                        typer.echo(f"  Skipping {user_id}: no DID mapping found")
+                        continue
+
+                existing = await session.execute(
+                    select(OrganizationMembership).where(
+                        and_(
+                            OrganizationMembership.user_did == user_did_val,
+                            OrganizationMembership.organization_alias == organization,
+                        )
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    continue
+
+                membership = OrganizationMembership(
+                    user_did=user_did_val,
+                    organization_alias=organization,
+                    role=role,
+                    status=status,
+                )
+                session.add(membership)
+                count += 1
+
+            await session.commit()
+        typer.echo(f"Imported {count} membership(s) for {organization}")
 
     _run(_import())
 
