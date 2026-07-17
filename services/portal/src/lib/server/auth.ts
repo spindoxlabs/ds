@@ -15,6 +15,7 @@ export interface ServerRoles {
 	isAdmin: boolean;
 	isDatasetAdmin: boolean;
 	canQuery: boolean;
+	organizations: string[];
 }
 
 /**
@@ -36,8 +37,8 @@ function extractRoles(payload: Record<string, unknown>): string[] {
 
 /**
  * Merge Keycloak groups from realm-level `groups` and org-level
- * `organization.<alias>.groups`, stripping leading slashes. Mirrors
- * `ds_auth.extract_groups` so UI gating and backend authz share one vocabulary.
+ * `organization.<alias>.groups` (legacy) or `organization.<alias>.roles`
+ * (KC 26+ native organizations). Mirrors `ds_auth.extract_groups`.
  */
 function extractGroups(payload: Record<string, unknown>): string[] {
 	const out: string[] = [];
@@ -46,19 +47,34 @@ function extractGroups(payload: Record<string, unknown>): string[] {
 	const orgs = payload.organization;
 	if (orgs && typeof orgs === 'object') {
 		for (const org of Object.values(orgs as Record<string, unknown>)) {
-			const g = (org as { groups?: unknown })?.groups;
-			if (Array.isArray(g)) out.push(...g.filter((x): x is string => typeof x === 'string'));
+			if (!org || typeof org !== 'object') continue;
+			const o = org as Record<string, unknown>;
+			for (const key of ['groups', 'roles']) {
+				const entries = o[key];
+				if (Array.isArray(entries)) out.push(...entries.filter((x): x is string => typeof x === 'string'));
+			}
 		}
 	}
 	return out.map((g) => g.replace(/^\/+/, ''));
 }
 
+/**
+ * Extract the set of KC organization aliases the user belongs to from the
+ * `organization` JWT claim. Works with both legacy (celine-policies) and
+ * KC 26+ native organization claim structures.
+ */
+function extractOrganizations(payload: Record<string, unknown>): string[] {
+	const orgs = payload.organization;
+	if (!orgs || typeof orgs !== 'object') return [];
+	return Object.keys(orgs as Record<string, unknown>);
+}
+
 export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
-	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, canQuery: false };
+	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 
 	try {
 		const parts = accessToken.split('.');
-		if (parts.length !== 3) return { isAdmin: false, isDatasetAdmin: false, canQuery: false };
+		if (parts.length !== 3) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 		const payload: Record<string, unknown> = JSON.parse(
 			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
 		);
@@ -81,9 +97,11 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 			scopes.includes('dataset.query') ||
 			authorities.has('dataset.query');
 
-		return { isAdmin, isDatasetAdmin, canQuery };
+		const organizations = extractOrganizations(payload);
+
+		return { isAdmin, isDatasetAdmin, canQuery, organizations };
 	} catch {
-		return { isAdmin: false, isDatasetAdmin: false, canQuery: false };
+		return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 	}
 }
 

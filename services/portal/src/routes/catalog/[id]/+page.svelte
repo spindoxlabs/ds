@@ -48,6 +48,12 @@
         <MedallionBadge tier={medallion} />
       </div>
 
+      {#if negotiation?.assigner}
+        <p class="text-sm text-gray-500">
+          Data Owner: <span class="font-medium text-gray-700" title={negotiation.assigner}>{negotiation.assigner}</span>
+        </p>
+      {/if}
+
       {#if tags.length > 0}
         <div class="flex flex-wrap gap-1">
           {#each tags as tag}

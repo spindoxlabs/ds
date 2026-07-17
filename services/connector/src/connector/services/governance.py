@@ -42,6 +42,11 @@ class ConnectorGovernanceMapper:
         for k, v in ds.data_address.query_params.items():
             extra[f"queryParam:{k}"] = v
 
+        owner_alias = rule.ownership[0].name if rule.ownership else ""
+        owner_did = ""
+        if owner_alias and self._mapper.owner_did_resolver:
+            owner_did = self._mapper.owner_did_resolver(owner_alias) or ""
+
         return AssetCreate(
             id=asset_id,
             properties={
@@ -52,6 +57,8 @@ class ConnectorGovernanceMapper:
                 f"{pfx}:classification": rule.classification or "",
                 f"{pfx}:sourceSystem": rule.source_system or "",
                 f"{pfx}:tags": ",".join(rule.tags),
+                f"{pfx}:owner": owner_alias,
+                f"{pfx}:ownerDid": owner_did,
                 f"{pfx}:userFilterColumn": (
                     rule.row_filters[0].args.column if rule.row_filters
                     else rule.user_filter_column or ""

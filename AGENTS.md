@@ -96,7 +96,7 @@ Three compose files form the full stack:
 
 | File | Services | Purpose |
 |------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync | Shared infrastructure |
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync | Shared infrastructure |
 | `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
@@ -241,6 +241,10 @@ The `OrganizationMembership` table in identity-registry tracks which user DIDs b
 
 The connector's consent endpoint checks membership before accepting consent requests for datasets with ownership. The portal reads KC JWT claims for UX; data access decisions always go through the IR API.
 
+### KC organizations (portal UX gating)
+
+Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `scripts/keycloak_org_sync.py` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.roles`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
+
 ## Quick start
 
 ```bash
@@ -286,6 +290,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
 | Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
 | Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
+| Add/manage KC organizations | `services/keycloak/organizations.yaml` + `scripts/keycloak_org_sync.py` |
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
 | Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |

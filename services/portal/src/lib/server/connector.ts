@@ -142,6 +142,8 @@ export interface ProviderAsset {
 	medallion?: string;
 	access_level?: string;
 	tags?: string[];
+	owner?: string;
+	ownerDid?: string;
 	edc_synced?: boolean;
 }
 
@@ -165,6 +167,8 @@ export async function listProviderAssets(token: string): Promise<ProviderAsset[]
 			medallion: String(properties['ds:medallion'] ?? ''),
 			access_level: String(properties['ds:accessLevel'] ?? ''),
 			tags,
+			owner: String(properties['ds:owner'] ?? ''),
+			ownerDid: String(properties['ds:ownerDid'] ?? ''),
 			edc_synced: true,
 		};
 	});

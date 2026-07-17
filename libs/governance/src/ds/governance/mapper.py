@@ -52,6 +52,10 @@ class GovernanceMapper:
         self.profile = profile or OdrlProfile()
         self._resolve_owner_did = owner_did_resolver
 
+    @property
+    def owner_did_resolver(self) -> Callable[[str], str | None] | None:
+        return self._resolve_owner_did
+
     def _resolve_actions(self, keys: list[str]) -> list[str]:
         """Replace ``{query}`` placeholder with profile query-action IRI."""
         query_iri = self.profile.term(self.profile.query_action)

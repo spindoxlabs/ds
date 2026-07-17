@@ -294,3 +294,68 @@ Two independent systems, same upstream source, different consumers:
 | **Required?** | Yes, for consent and owner-relative policy | Optional — only for portal org-scoped UI |
 
 They never query each other. The consent path checks IR, never Keycloak. The portal checks JWT claims, never IR.
+
+---
+
+## KC Organization Provisioning (dev setup)
+
+In the dev environment, Keycloak native organizations (KC 24+ feature) are provisioned
+automatically by the `keycloak-org-sync` init container.
+
+### Configuration
+
+`services/keycloak/organizations.yaml` defines organizations, their members, and org-level roles:
+
+```yaml
+realm: dataspaces
+
+organizations:
+  - alias: example-org
+    name: Example Organization
+    domains: []
+    members:
+      - email: provider@example.test
+        roles: [dataset.admin]
+      - email: subject@example.test
+        roles: [consumer]
+```
+
+### Sync script
+
+`scripts/keycloak_org_sync.py` reads the config and provisions via the KC Admin REST API:
+- Creates KC native organizations (idempotent)
+- Looks up users by email and adds them as org members
+- Creates org-level roles and assigns them to members
+
+### Dev realm setup
+
+The dev realm (`realm-dataspaces-dev.json`) includes:
+- `organizationsEnabled: true` — enables the KC native organizations feature
+- `organization` client scope with `oidc-organization-membership-mapper` — maps org memberships to JWT claims
+- `ds-portal` client includes `organization` in its default scopes
+
+### JWT claim structure
+
+When a user logs in and belongs to a KC organization, the access token includes:
+
+```json
+{
+  "organization": {
+    "example-org": {
+      "roles": ["dataset.admin"]
+    }
+  }
+}
+```
+
+The portal and `ds_auth` library extract both `.groups` (legacy/celine-policies) and `.roles` (KC 26+ native) from the organization claim.
+
+### Portal gating
+
+The portal uses KC organization membership for UI-level gating:
+- **Provider assets list**: shows "Owned by: {org}" on each asset
+- **Sync button**: visible only to admins or users belonging to at least one owner org
+- **Per-asset management**: assets from orgs the user doesn't belong to are visually dimmed
+- **Catalog detail**: shows the ODRL assigner (owner DID) as "Data Owner"
+
+This is **UI gating only** — data access decisions always go through the IR API.

@@ -9,6 +9,7 @@
   "resetPasswordAllowed": true,
   "verifyEmail": false,
   "sslRequired": "external",
+  "organizationsEnabled": true,
   "roles": {
     "realm": [
       {
@@ -33,6 +34,26 @@
       ]
     }
   },
+  "clientScopes": [
+    {
+      "name": "organization",
+      "protocol": "openid-connect",
+      "protocolMappers": [
+        {
+          "name": "organization",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-organization-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "organization",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
   "clients": [
     {
       "clientId": "ds-portal",
@@ -57,7 +78,8 @@
         "acr",
         "profile",
         "roles",
-        "email"
+        "email",
+        "organization"
       ],
       "optionalClientScopes": [
         "address",

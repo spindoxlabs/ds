@@ -2,11 +2,16 @@
   import { enhance } from '$app/forms';
   import MedallionBadge from '$lib/components/MedallionBadge.svelte';
   import type { ProviderAsset } from '$lib/server/connector';
+  import type { ServerRoles } from '$lib/server/auth';
 
   let { data, form } = $props();
   let syncing = $state(false);
   let search = $state('');
   let filterMedallion = $state('');
+
+  const roles = $derived(data.roles as ServerRoles);
+  const userOrgs = $derived(new Set(roles?.organizations ?? []));
+  const canSync = $derived(roles?.isAdmin || userOrgs.size > 0);
 
   const assets = $derived(
     (data.assets as ProviderAsset[]).filter((a) => {
@@ -15,6 +20,12 @@
       return titleMatch && medalMatch;
     }),
   );
+
+  function canManageAsset(asset: ProviderAsset): boolean {
+    if (roles?.isAdmin) return true;
+    if (!asset.owner) return true;
+    return userOrgs.has(asset.owner);
+  }
 </script>
 
 <svelte:head>
@@ -23,22 +34,31 @@
 
 <div class="space-y-5">
   <div class="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
-    <h1 class="text-xl font-bold text-gray-900">Provider Assets</h1>
-    <form
-      method="POST"
-      action="?/sync"
-      use:enhance={() => {
-        syncing = true;
-        return async ({ update }) => {
-          syncing = false;
-          await update();
-        };
-      }}
-    >
-      <button type="submit" disabled={syncing} class="ds-btn-primary text-sm">
-        {syncing ? 'Syncing…' : 'Sync governance'}
-      </button>
-    </form>
+    <div>
+      <h1 class="text-xl font-bold text-gray-900">Provider Assets</h1>
+      {#if userOrgs.size > 0 && !roles?.isAdmin}
+        <p class="text-xs text-gray-500 mt-1">
+          You can manage datasets owned by: {[...userOrgs].join(', ')}
+        </p>
+      {/if}
+    </div>
+    {#if canSync}
+      <form
+        method="POST"
+        action="?/sync"
+        use:enhance={() => {
+          syncing = true;
+          return async ({ update }) => {
+            syncing = false;
+            await update();
+          };
+        }}
+      >
+        <button type="submit" disabled={syncing} class="ds-btn-primary text-sm">
+          {syncing ? 'Syncing…' : 'Sync governance'}
+        </button>
+      </form>
+    {/if}
   </div>
 
   {#if form?.error}
@@ -78,7 +98,7 @@
   {:else}
     <div class="space-y-3">
       {#each assets as asset}
-        <div class="ds-card flex items-start gap-3">
+        <div class="ds-card flex items-start gap-3" class:opacity-60={!canManageAsset(asset)}>
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <h2 class="font-mono font-medium text-gray-900">{asset.asset_id}</h2>
@@ -89,6 +109,14 @@
                 <span class="ds-badge bg-gray-100 text-gray-500">○ not synced</span>
               {/if}
             </div>
+            {#if asset.owner}
+              <p class="text-sm text-gray-500 mt-1">
+                Owned by <span class="font-medium text-gray-700">{asset.owner}</span>
+                {#if asset.ownerDid}
+                  <span class="text-xs text-gray-400 ml-1" title={asset.ownerDid}>({asset.ownerDid})</span>
+                {/if}
+              </p>
+            {/if}
             {#if asset.description}
               <p class="text-sm text-gray-600 mt-1">{asset.description}</p>
             {/if}

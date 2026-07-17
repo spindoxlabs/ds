@@ -41,8 +41,9 @@ def extract_groups(claims: dict) -> list[str]:
     """Merge realm-level and org-level groups into a flat, deduped list.
 
     Realm groups come from the top-level ``groups`` claim. Org groups come from
-    ``organization.<alias>.groups``. Leading slashes are stripped so
-    ``/managers`` and ``managers`` compare equal.
+    ``organization.<alias>.groups`` (legacy / celine-policies) or
+    ``organization.<alias>.roles`` (KC 26+ native organizations). Leading
+    slashes are stripped so ``/managers`` and ``managers`` compare equal.
     """
     raw: list[str] = []
 
@@ -54,9 +55,10 @@ def extract_groups(claims: dict) -> list[str]:
     if isinstance(orgs, dict):
         for org_data in orgs.values():
             if isinstance(org_data, dict):
-                org_groups = org_data.get("groups")
-                if isinstance(org_groups, list):
-                    raw.extend(org_groups)
+                for key in ("groups", "roles"):
+                    entries = org_data.get(key)
+                    if isinstance(entries, list):
+                        raw.extend(entries)
 
     seen: set[str] = set()
     result: list[str] = []

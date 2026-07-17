@@ -200,3 +200,24 @@ services:
         celine-policies keycloak sync \
           --secrets-file /tmp/.secrets.yaml
     networks: [dataspaces]
+
+  # ── Keycloak org sync — KC native organizations from organizations.yaml ────
+  keycloak-org-sync:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: "no"
+    depends_on:
+      keycloak-sync:
+        condition: service_completed_successfully
+    volumes:
+      - ./services/keycloak/organizations.yaml:/app/organizations.yaml:ro
+      - ./scripts/keycloak_org_sync.py:/app/keycloak_org_sync.py:ro
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        python /app/keycloak_org_sync.py \
+          --config /app/organizations.yaml \
+          --keycloak-url http://172.17.0.1:8080 \
+          --admin-user admin --admin-password admin
+    networks: [dataspaces]

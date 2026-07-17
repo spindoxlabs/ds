@@ -1,0 +1,13 @@
+realm: dataspaces
+
+organizations:
+  - alias: example-org
+    name: Example Organization
+    domains: []
+    members:
+      - email: provider@example.test
+        roles: [dataset.admin]
+      - email: subject@example.test
+        roles: [consumer]
+      - email: consumer@example.test
+        roles: [consumer]

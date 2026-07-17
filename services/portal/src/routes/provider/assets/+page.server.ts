@@ -1,6 +1,7 @@
 import { fail } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { listProviderAssets, syncGovernance } from '$lib/server/connector';
+import { requireProvider } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals }) => {
 	const session = await locals.auth();
@@ -14,9 +15,12 @@ export const load: PageServerLoad = async ({ locals }) => {
 };
 
 export const actions: Actions = {
-	sync: async ({ locals }) => {
-		const session = await locals.auth();
+	sync: async (event) => {
+		const { session, roles } = await requireProvider(event);
 		const token = session?.accessToken ?? '';
+		if (!roles.isAdmin && roles.organizations.length === 0) {
+			return fail(403, { error: 'You must belong to a dataset owner organization to sync' });
+		}
 		try {
 			const result = await syncGovernance(token);
 			return { synced: result.synced };

@@ -12,6 +12,7 @@ export interface UserPersona {
 	isConsumer: boolean;    // has dataspaces.query scope
 	isAdmin: boolean;       // has admin role in ds-portal client
 	isSubject: boolean;     // any authenticated user can be a data subject
+	organizations: string[];
 }
 
 /**
@@ -49,7 +50,7 @@ function extractRoles(payload: Record<string, unknown>): string[] {
 	return roles;
 }
 
-/** Merge realm-level `groups` and org-level `organization.<alias>.groups`. */
+/** Merge realm-level `groups` and org-level `.groups` / `.roles` (KC 26+ native orgs). */
 function extractGroups(payload: Record<string, unknown>): string[] {
 	const out: string[] = [];
 	const realm = payload.groups;
@@ -57,8 +58,12 @@ function extractGroups(payload: Record<string, unknown>): string[] {
 	const orgs = payload.organization;
 	if (orgs && typeof orgs === 'object') {
 		for (const org of Object.values(orgs as Record<string, unknown>)) {
-			const g = (org as { groups?: unknown })?.groups;
-			if (Array.isArray(g)) out.push(...g.filter((x): x is string => typeof x === 'string'));
+			if (!org || typeof org !== 'object') continue;
+			const o = org as Record<string, unknown>;
+			for (const key of ['groups', 'roles']) {
+				const entries = o[key];
+				if (Array.isArray(entries)) out.push(...entries.filter((x): x is string => typeof x === 'string'));
+			}
 		}
 	}
 	return out.map((g) => g.replace(/^\/+/, ''));
@@ -75,6 +80,7 @@ export function derivePersona(
 			isConsumer: false,
 			isAdmin: false,
 			isSubject: false,
+			organizations: [],
 		};
 	}
 
@@ -91,6 +97,7 @@ export function derivePersona(
 			isConsumer: true, // authenticated users can query by default
 			isAdmin: false,
 			isSubject: true,
+			organizations: [],
 		};
 	}
 
@@ -113,6 +120,11 @@ export function derivePersona(
 		scopes.includes('dataset.query') ||
 		authorities.has('dataset.query');
 
+	const orgs = payload.organization;
+	const organizations = (orgs && typeof orgs === 'object')
+		? Object.keys(orgs as Record<string, unknown>)
+		: [];
+
 	return {
 		isAuthenticated: true,
 		name,
@@ -123,5 +135,6 @@ export function derivePersona(
 		isConsumer: isAdmin || canQuery,
 		isAdmin,
 		isSubject: true,
+		organizations,
 	};
 }
