@@ -176,3 +176,38 @@ This file is consumed by:
 - `edc-extensions/AccessScopeFunction` — participant scope validation at negotiation time (file-based fallback)
 - `ds-connector/ParticipantRegistry` — catalog discovery and access control
 - `ds-federated-catalog` — endpoint discovery for catalog crawling
+
+## Ownership & owner resolution
+
+Governance rules can declare `ownership` blocks that bind datasets to named organizations:
+
+```yaml
+defaults:
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
+```
+
+Owners are stored in the identity-registry `Owner` table, seeded via `ir-cli owner import`. The connector resolves owner aliases at `/provider/sync` time through `HttpOwnersRegistry` (calls `GET /owners/resolve?alias=<name>`).
+
+The resolution chain:
+1. `governance.yaml` ownership alias → identity-registry Owner → `canonical_uri` (DID > URL)
+2. ODRL `assigner` = resolved owner DID (falls back to participant DID if unresolved)
+3. Membership constraint `rightOperand` = `owner:<alias>:member` (internal) or `owner:<alias>:partner`
+4. Consent subject-pool: the connector checks `GET /memberships/check` before creating consent records for datasets with ownership
+
+Ownership is opt-in per dataset. Without an `ownership` block, all flows behave as before (assigner = participant DID, scope = `required_scope`, no membership check).
+
+### Governance overlay
+
+A file named `governance.<name>.yaml` in the same directory as `governance.yaml` is merged on top of the base. Set `CONNECTOR_GOVERNANCE_OVERLAY_NAME=<name>` to activate. The overlay merges at two levels:
+- **defaults**: field-level merge (non-empty lists fully replace the base)
+- **sources**: existing keys get rule-level merge, new keys are added
+
+`*.local.yaml` is gitignored — use it for deployment-specific organization bindings without modifying the committed base file.
+
+### Organization memberships
+
+The `OrganizationMembership` table in identity-registry tracks which user DIDs belong to which owner organizations. Managed via `ir-cli membership add/remove/import` or the admin API.
+
+The connector checks membership at consent time: when a dataset has `ownership`, each subject in a consent request must be a member of the owner organization (checked via `GET /memberships/check`). Non-members receive a 403.

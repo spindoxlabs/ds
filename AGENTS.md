@@ -78,10 +78,14 @@ identity-registry (30005)
   ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
   ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
   ├── Participant registry GET /participants, GET /participants/{did}/check
+  ├── Owners registry    GET /owners/resolve?alias=<name>, CRUD /admin/owners
+  ├── Memberships        GET /memberships/check?user_did=&organization=, CRUD /admin/memberships
   └── StatusList2021     GET /status/{list_id}
 
 Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
 ds-connector ──→ identity-registry /participants (HttpParticipantRegistry with TTL cache)
+ds-connector ──→ identity-registry /owners/resolve (HttpOwnersRegistry with TTL cache)
+ds-connector ──→ identity-registry /memberships/check (consent-time subject-pool validation)
 
 dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + consent checks
 ```
@@ -210,6 +214,33 @@ governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
 
 See `docs/governance-and-odrl.md` for the full pipeline documentation.
 
+### Ownership & owner resolution
+
+Governance rules can declare an `ownership` block binding datasets to named organizations:
+
+```yaml
+defaults:
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
+```
+
+The **owners registry** lives in the identity-registry DB (`Owner` table), seeded by `ir-cli owner import --file owners.dev.yaml`. The connector resolves owner aliases at sync time via `HttpOwnersRegistry` (calls `GET /owners/resolve?alias=<name>`).
+
+Resolution chain:
+1. `governance.yaml` ownership alias → identity-registry `Owner` → `canonical_uri` (DID > URL)
+2. ODRL assigner = resolved owner DID (falls back to participant DID if unresolved)
+3. Membership constraint operand = `owner:<alias>:member` (for `internal`) or `owner:<alias>:partner`
+4. Consent subject-pool: connector checks `GET /memberships/check` before creating consent records
+
+**Governance overlay:** `governance.<name>.yaml` merges on top of the base file. Set `CONNECTOR_GOVERNANCE_OVERLAY_NAME` or pass `overlay_name`. `*.local.yaml` is gitignored for deployment-specific bindings.
+
+### Organization memberships
+
+The `OrganizationMembership` table in identity-registry tracks which user DIDs belong to which owner organizations. Seeded by `ir-cli membership add` or `ir-cli membership import --community-registry`.
+
+The connector's consent endpoint checks membership before accepting consent requests for datasets with ownership. The portal reads KC JWT claims for UX; data access decisions always go through the IR API.
+
 ## Quick start
 
 ```bash
@@ -252,6 +283,8 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
 | Change consent behavior | `services/connector/src/connector/services/consent_service.py` |
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
+| Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
+| Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
 | Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |

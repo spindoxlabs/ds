@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,6 +12,7 @@ from ...config import Settings
 from ...dependencies import get_db, get_notifier, get_settings_dep, require_internal_scope
 from ...notifications.base import ConsentNotifier
 from ...services import consent_service
+from ...services.membership_check import check_subject_membership, resolve_dataset_owner
 from ...services.user_credentials import verify_user_vc_jwt
 from ...clients.edc_management import EdcManagementClient
 
@@ -80,6 +81,7 @@ def _verify_user(
 @router.post("/request", status_code=201)
 async def create_consent_request(
     body: ConsentRequestCreate,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -88,6 +90,31 @@ async def create_consent_request(
 ):
     """Initiate consent requests for a set of data subjects."""
     _verify_user(x_user_vc, x_subject_id, settings, {"ConsumerUser"})
+
+    owner_alias = resolve_dataset_owner(
+        settings.governance_yaml_path,
+        body.dataset_id,
+        overlay_name=settings.governance_overlay_name,
+    )
+
+    if owner_alias and settings.identity_registry_url:
+        for subject_id in body.subject_ids:
+            subject_did = subject_id
+            if not subject_did.startswith("did:"):
+                users_domain = settings.trust_anchor_did.replace("did:web:", "").replace("trust-anchor.", "users.")
+                subject_did = f"did:web:{users_domain}:{subject_id}"
+
+            is_member = await check_subject_membership(
+                settings.identity_registry_url,
+                user_did=subject_did,
+                organization_alias=owner_alias,
+            )
+            if not is_member:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"Subject '{subject_id}' is not a member of dataset owner organization '{owner_alias}'",
+                )
+
     request_ids = []
     async with db.begin():
         for subject_id in body.subject_ids:

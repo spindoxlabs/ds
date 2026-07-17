@@ -243,10 +243,25 @@ Key points:
 
 ---
 
+## Subject-pool binding (UC-1)
+
+When a dataset has an `ownership` block in its governance rule, the consent endpoint validates that each subject is a member of the dataset owner's organization before creating a consent request.
+
+The check flow:
+1. `POST /consent/request` receives `dataset_id` and `subject_ids`
+2. Connector resolves the governance rule for `dataset_id`, extracts `ownership[0].name`
+3. For each subject, derives the subject DID and calls `GET /memberships/check?user_did=<did>&organization=<alias>` on the identity-registry
+4. If any subject is not a member → 403 ("subject not a member of dataset owner organization")
+5. Datasets without `ownership` skip the check (backward compatible)
+
+This ensures that consent can only be granted for subjects who actually belong to the data-owning organization — preventing out-of-pool consent requests.
+
+---
+
 ## DSSC Blueprint alignment
 
 | Building Block | Implementation |
 |---------------|---------------|
-| BB09 (Data Sovereignty) | Per-subject consent with ABAC row filtering |
+| BB09 (Data Sovereignty) | Per-subject consent with ABAC row filtering, subject-pool validation |
 | BB03 (Access & Usage Policies) | `ds:consentStatus` ODRL constraint in policy offers |
 | BB06 (Data Exchange) | Revocation terminates active EDC transfer processes |
