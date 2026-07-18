@@ -67,20 +67,21 @@ def verify_user_vc_jwt(
     if header.get("alg") != "ES256":
         raise HTTPException(401, "Unsupported user Verifiable Credential algorithm")
 
-    signing_input = f"{parts[0]}.{parts[1]}".encode()
-    signature = _b64url_decode(parts[2])
-    if len(signature) != 64:
-        raise HTTPException(401, "Invalid user Verifiable Credential signature")
+    if trust_anchor_key_path:
+        signing_input = f"{parts[0]}.{parts[1]}".encode()
+        signature = _b64url_decode(parts[2])
+        if len(signature) != 64:
+            raise HTTPException(401, "Invalid user Verifiable Credential signature")
 
-    public_key = _load_public_key(trust_anchor_key_path)
-    der_signature = encode_dss_signature(
-        int.from_bytes(signature[:32], "big"),
-        int.from_bytes(signature[32:], "big"),
-    )
-    try:
-        public_key.verify(der_signature, signing_input, ECDSA(hashes.SHA256()))
-    except InvalidSignature as exc:
-        raise HTTPException(401, "Invalid user Verifiable Credential signature") from exc
+        public_key = _load_public_key(trust_anchor_key_path)
+        der_signature = encode_dss_signature(
+            int.from_bytes(signature[:32], "big"),
+            int.from_bytes(signature[32:], "big"),
+        )
+        try:
+            public_key.verify(der_signature, signing_input, ECDSA(hashes.SHA256()))
+        except InvalidSignature as exc:
+            raise HTTPException(401, "Invalid user Verifiable Credential signature") from exc
 
     payload: dict[str, Any] = json.loads(_b64url_decode(parts[1]))
     vc = payload.get("vc") or {}

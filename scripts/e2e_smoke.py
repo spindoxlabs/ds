@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import subprocess
 import sys
@@ -129,6 +130,35 @@ def _load_vc(path: Path) -> str:
     if not token:
         raise ValueError(f"Missing proof.jws in {path}")
     return token
+
+
+def _fetch_vc_from_registry(ir_url: str, subject_did: str, cred_type: str) -> str:
+    """Fetch a VC JWT from the identity-registry DCP presentations/query endpoint."""
+    encoded_did = urllib.parse.quote(subject_did, safe="")
+    body = {
+        "presentationDefinition": {
+            "input_descriptors": [{"id": cred_type, "constraints": {
+                "fields": [{"path": ["$.type"], "filter": {"const": cred_type}}],
+            }}],
+        },
+    }
+    resp = _request("POST", f"{ir_url}/credentials/{encoded_did}/presentations/query", body) or {}
+    pres = resp.get("dcp:presentation") or resp.get("presentation") or {}
+    vp_list = pres.get("@value") if isinstance(pres, dict) else pres
+    if isinstance(vp_list, str):
+        vp_list = [vp_list]
+    if not vp_list:
+        return ""
+    # VP JWT → decode payload → extract inner VC JWT
+    vp_jwt = vp_list[0]
+    parts = vp_jwt.split(".")
+    if len(parts) != 3:
+        return vp_jwt
+    payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
+    vcs = (payload.get("vp") or {}).get("verifiableCredential") or []
+    if isinstance(vcs, str):
+        vcs = [vcs]
+    return vcs[0] if vcs else ""
 
 
 def _get_service_token(
@@ -423,10 +453,16 @@ def run(args: argparse.Namespace) -> E2EResult:
 
     consumer_vc_path = Path(args.consumer_vc_path)
     subject_vc_path = Path(args.data_subject_vc_path)
+    ir_url = args.identity_registry_url.rstrip("/")
+    svc_headers = _bearer(token)
     try:
         consumer_vc = _load_vc(consumer_vc_path) if consumer_vc_path.exists() else ""
         subject_vc = _load_vc(subject_vc_path) if subject_vc_path.exists() else ""
-    except (ValueError, KeyError) as exc:
+        if not consumer_vc:
+            consumer_vc = _fetch_vc_from_registry(ir_url, args.consumer_subject_id, "DataSubjectCredential")
+        if not subject_vc:
+            subject_vc = _fetch_vc_from_registry(ir_url, args.data_subject_id, "DataSubjectCredential")
+    except (ValueError, KeyError, urllib.error.URLError, urllib.error.HTTPError) as exc:
         result.fail_step("load credentials", str(exc))
         return result
     consumer_headers = _headers(args.consumer_subject_id, consumer_vc)
@@ -606,8 +642,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--provider-id", default="did:web:provider.dataspaces.localhost")
     parser.add_argument("--consumer-id", default="did:web:consumer.dataspaces.localhost")
     parser.add_argument("--asset-id", default="datasets.silver.meters_15m")
-    parser.add_argument("--consumer-subject-id", default="test")
-    parser.add_argument("--data-subject-id", default="ah-00003")
+    parser.add_argument("--consumer-subject-id", default="did:web:users.dataspaces.localhost:consumer-user")
+    parser.add_argument("--data-subject-id", default="did:web:users.dataspaces.localhost:data-subject")
     parser.add_argument("--consumer-vc-path", default=str(ROOT / "data/credentials/users/test/user-vc.json"))
     parser.add_argument("--data-subject-vc-path", default=str(ROOT / "data/credentials/users/ah-00003/user-vc.json"))
     parser.add_argument("--timeout", type=int, default=120)

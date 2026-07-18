@@ -70,7 +70,7 @@ def _verify_user(
         settings.trust_anchor_key_path,
         roles,
         expected_issuer=settings.trust_anchor_did,
-        expected_linked_participant=settings.consumer_participant_did,
+        expected_linked_participant=settings.participant_did,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
     )
