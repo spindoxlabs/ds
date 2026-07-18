@@ -97,6 +97,9 @@ services:
     command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "30001"]
     ports:
       - "30001:30001"
+    env_file:
+      - path: .env.celine
+        required: false
     environment:
       CONNECTOR_ROLE: provider
       EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:19193/management
@@ -111,7 +114,7 @@ services:
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
-      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token
+      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
     depends_on:
       edc-provider:
@@ -171,6 +174,9 @@ services:
       dockerfile: services/portal/Dockerfile
     ports:
       - "30004:30004"
+    env_file:
+      - path: .env.celine
+        required: false
     environment:
       CONNECTOR_URL: http://ds-connector-provider:30001
       PROVENANCE_URL: http://ds-provenance-provider:30000
@@ -203,11 +209,14 @@ services:
       dockerfile: services/federated-catalog/Dockerfile
     ports:
       - "30003:30003"
+    env_file:
+      - path: .env.celine
+        required: false
     environment:
       CATALOG_CONNECTOR_URL: http://172.17.0.1:30001
       CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
-      CATALOG_KEYCLOAK_TOKEN_URL: http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token
+      CATALOG_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CATALOG_SERVICE_CLIENT_SECRET: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
     depends_on:
       ds-connector-provider:

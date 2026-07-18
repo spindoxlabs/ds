@@ -1,3 +1,5 @@
+# Local dev realm. In production, ds clients are in the celine realm
+# via celine-policies/clients.yaml.
 realm: dataspaces
 
 # =============================================================================

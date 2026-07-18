@@ -7,7 +7,7 @@ Usage::
     from ds_auth.service_token import ServiceTokenProvider
 
     token_provider = ServiceTokenProvider(
-        token_url="http://keycloak:8080/realms/dataspaces/protocol/openid-connect/token",
+        token_url="http://keycloak:9080/realms/dataspaces/protocol/openid-connect/token",
         client_id="svc-ds-connector",
         client_secret="svc-ds-connector",
     )

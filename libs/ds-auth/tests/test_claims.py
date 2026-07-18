@@ -1,5 +1,5 @@
-from ds_auth import Principal, extract_groups, is_service_account
-from ds_auth.jwt import extract_scopes
+from ds_auth import Organization, Principal, extract_groups, is_service_account
+from ds_auth.jwt import extract_organizations, extract_scopes
 
 
 def test_extract_groups_realm_and_org():
@@ -67,3 +67,70 @@ def test_principal_user_authorizes_on_groups():
     assert not p.grants("connector.admin")
     # The OIDC scopes on the user token confer no permission.
     assert not p.grants("openid")
+
+
+# ── Organization parsing ─────────────────────────────────────────────────────
+
+
+def test_extract_organizations_from_claim():
+    claims = {
+        "organization": {
+            "example-dso": {
+                "type": ["dso"],
+                "attributes": {"region": ["EU"]},
+                "groups": ["admins"],
+            },
+            "example-rec": {
+                "type": ["rec"],
+                "groups": ["viewers"],
+            },
+        },
+    }
+    orgs = extract_organizations(claims)
+    assert len(orgs) == 2
+
+    dso = next(o for o in orgs if o.alias == "example-dso")
+    assert dso.type == "dso"
+    assert dso.attributes == {"region": ["EU"]}
+    assert dso.is_type("dso")
+    assert dso.has_attribute("region", "EU")
+    assert dso.get_attribute("region") == ["EU"]
+
+    rec = next(o for o in orgs if o.alias == "example-rec")
+    assert rec.type == "rec"
+    assert rec.attributes == {}
+
+
+def test_extract_organizations_empty():
+    assert extract_organizations({}) == []
+    assert extract_organizations({"organization": "not-a-dict"}) == []
+
+
+def test_principal_organizations():
+    claims = {
+        "sub": "u-1",
+        "email": "alice@example.test",
+        "organization": {
+            "acme": {"type": ["dso"], "groups": ["/admins"]},
+            "other": {"groups": ["viewers"]},
+        },
+    }
+    p = Principal.from_claims(claims)
+    assert p.organization_aliases == ["acme", "other"]
+    assert p.is_member_of("acme")
+    assert not p.is_member_of("unknown")
+    assert p.get_organization("acme") is not None
+    assert p.get_organization("acme").type == "dso"
+    assert p.get_organization("unknown") is None
+
+
+def test_extract_groups_ignores_org_roles():
+    """Org roles are NOT emitted by the KC organization membership mapper."""
+    claims = {
+        "organization": {
+            "org1": {"groups": ["admins"], "roles": ["should-be-ignored"]},
+        },
+    }
+    groups = extract_groups(claims)
+    assert "admins" in groups
+    assert "should-be-ignored" not in groups

@@ -613,7 +613,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--identity-registry-url", default="http://localhost:30005")
     parser.add_argument("--keycloak-token-url",
-                        default="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token")
+                        default="http://localhost:9080/realms/dataspaces/protocol/openid-connect/token")
     parser.add_argument("--service-client-id", default="svc-ds-portal")
     parser.add_argument("--service-client-secret", default="svc-ds-portal")
     parser.add_argument("--flow", choices=["smoke", "uc1", "uc2", "uc3"], default="smoke",

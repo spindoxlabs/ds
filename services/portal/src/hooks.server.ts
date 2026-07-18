@@ -21,7 +21,7 @@ export const { handle, signIn, signOut } = SvelteKitAuth({
 		Keycloak({
 			clientId: env.AUTH_KEYCLOAK_ID ?? 'ds-portal',
 			clientSecret: env.AUTH_KEYCLOAK_SECRET ?? '',
-			issuer: env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:8080/realms/dataspaces',
+			issuer: env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:9080/realms/dataspaces',
 			authorization: {
 				params: {
 					scope: env.AUTH_KEYCLOAK_SCOPE ?? 'openid profile email',

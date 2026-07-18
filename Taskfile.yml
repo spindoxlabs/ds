@@ -51,7 +51,7 @@ tasks:
           docker compose --env-file "$env_file" -f docker-compose.provider.yml up -d --build
         echo "Waiting for provider connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
-        KC_URL="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token"
+        KC_URL="http://localhost:9080/realms/dataspaces/protocol/openid-connect/token"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
           -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \
@@ -357,7 +357,7 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        KC_URL="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token"
+        KC_URL="http://localhost:9080/realms/dataspaces/protocol/openid-connect/token"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
           -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \

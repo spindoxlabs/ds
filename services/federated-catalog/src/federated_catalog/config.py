@@ -41,7 +41,7 @@ class Settings(BaseSettings):
     dcat_sources_yaml: str = ""
 
     keycloak_token_url: str = Field(
-        default="http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token",
+        default="http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",
         description="Keycloak token endpoint for service-to-service client-credentials grants",
     )
     service_client_secret: str = Field(

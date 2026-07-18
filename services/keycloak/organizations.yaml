@@ -4,10 +4,12 @@ organizations:
   - alias: example-org
     name: Example Organization
     domains: []
+    attributes:
+      type: ["dso"]
     members:
       - email: provider@example.test
-        roles: [dataset.admin]
+        groups: [dataset.admin]
       - email: subject@example.test
-        roles: [consumer]
+        groups: [consumer]
       - email: consumer@example.test
-        roles: [consumer]
+        groups: [consumer]

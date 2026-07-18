@@ -20,7 +20,7 @@ config:
   connectorUrl: "http://ds-connector:30001"
   provenanceUrl: "http://ds-provenance:30000"
   catalogueUrl: "http://dataset-api:30002"
-  keycloakIssuer: "http://keycloak:8080/realms/dataspaces"
+  keycloakIssuer: "http://keycloak:9080/realms/dataspaces"
   keycloakClientId: "ds-portal"
   origin: "https://portal.dataspaces.localhost"
 

@@ -17,6 +17,7 @@ from jwt import PyJWKClient
 
 from .config import OidcConfig
 from .errors import AuthConfigError, TokenInvalid, TokenMissing
+from .models import Organization
 
 logger = logging.getLogger(__name__)
 
@@ -41,9 +42,9 @@ def extract_groups(claims: dict) -> list[str]:
     """Merge realm-level and org-level groups into a flat, deduped list.
 
     Realm groups come from the top-level ``groups`` claim. Org groups come from
-    ``organization.<alias>.groups`` (legacy / celine-policies) or
-    ``organization.<alias>.roles`` (KC 26+ native organizations). Leading
-    slashes are stripped so ``/managers`` and ``managers`` compare equal.
+    ``organization.<alias>.groups`` (emitted by the KC 26
+    ``oidc-organization-membership-mapper``). Leading slashes are stripped so
+    ``/managers`` and ``managers`` compare equal.
     """
     raw: list[str] = []
 
@@ -55,10 +56,9 @@ def extract_groups(claims: dict) -> list[str]:
     if isinstance(orgs, dict):
         for org_data in orgs.values():
             if isinstance(org_data, dict):
-                for key in ("groups", "roles"):
-                    entries = org_data.get(key)
-                    if isinstance(entries, list):
-                        raw.extend(entries)
+                org_groups = org_data.get("groups")
+                if isinstance(org_groups, list):
+                    raw.extend(org_groups)
 
     seen: set[str] = set()
     result: list[str] = []
@@ -70,6 +70,18 @@ def extract_groups(claims: dict) -> list[str]:
             seen.add(normalized)
             result.append(normalized)
     return result
+
+
+def extract_organizations(claims: dict) -> list[Organization]:
+    """Parse the ``organization`` claim into structured objects."""
+    orgs = claims.get("organization")
+    if not isinstance(orgs, dict):
+        return []
+    return [
+        Organization._from_claim(alias, data)
+        for alias, data in orgs.items()
+        if isinstance(data, dict)
+    ]
 
 
 def extract_scopes(claims: dict) -> list[str]:

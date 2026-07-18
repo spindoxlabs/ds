@@ -25,7 +25,7 @@ class OidcConfig:
     was a production footgun).
     """
 
-    # Keycloak realm issuer, e.g. http://keycloak:8080/realms/dataspaces
+    # Keycloak realm issuer, e.g. http://keycloak:9080/realms/dataspaces
     issuer_url: str | None = None
     # Defaults to ``default_jwks_uri(issuer_url)`` when unset.
     jwks_uri: str | None = None

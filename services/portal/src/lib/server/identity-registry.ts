@@ -16,7 +16,7 @@ async function getServiceToken(): Promise<string> {
 		return cachedToken.token;
 	}
 
-	const issuer = env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:8080/realms/dataspaces';
+	const issuer = env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:9080/realms/dataspaces';
 	const tokenUrl = `${issuer}/protocol/openid-connect/token`;
 	const clientId = env.PORTAL_SERVICE_CLIENT_ID ?? DEFAULT_SERVICE_CLIENT;
 	const clientSecret = env.PORTAL_SERVICE_CLIENT_SECRET ?? DEFAULT_SERVICE_CLIENT;

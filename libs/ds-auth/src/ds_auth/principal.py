@@ -4,7 +4,8 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
-from .jwt import extract_groups, extract_scopes, is_service_account
+from .jwt import extract_groups, extract_organizations, extract_scopes, is_service_account
+from .models import Organization
 from .permissions import has_permission
 
 
@@ -26,6 +27,7 @@ class Principal:
     is_service: bool
     scopes: tuple[str, ...]
     groups: tuple[str, ...]
+    organizations: tuple[Organization, ...] = ()
     claims: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -36,8 +38,22 @@ class Principal:
             is_service=service,
             scopes=tuple(extract_scopes(claims)),
             groups=tuple(extract_groups(claims)),
+            organizations=tuple(extract_organizations(claims)),
             claims=claims,
         )
+
+    @property
+    def organization_aliases(self) -> list[str]:
+        return [o.alias for o in self.organizations]
+
+    def get_organization(self, alias: str) -> Organization | None:
+        for o in self.organizations:
+            if o.alias == alias:
+                return o
+        return None
+
+    def is_member_of(self, alias: str) -> bool:
+        return any(o.alias == alias for o in self.organizations)
 
     @property
     def authority(self) -> tuple[str, ...]:

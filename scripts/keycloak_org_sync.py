@@ -1,13 +1,13 @@
 #!/usr/bin/env python3
 """Provision Keycloak organizations from organizations.yaml.
 
-Creates KC native organizations, adds members, and assigns org-level roles.
+Creates KC native organizations, adds members, and assigns org-level groups.
 Idempotent — safe to re-run.
 
 Usage:
     python keycloak_org_sync.py \
         --config services/keycloak/organizations.yaml \
-        --keycloak-url http://172.17.0.1:8080 \
+        --keycloak-url http://172.17.0.1:9080 \
         --admin-user admin --admin-password admin
 """
 from __future__ import annotations
@@ -117,7 +117,13 @@ class KeycloakAdmin:
                     return org
         return None
 
-    def create_organization(self, alias: str, name: str, domains: list[str] | None = None) -> dict:
+    def create_organization(
+        self,
+        alias: str,
+        name: str,
+        domains: list[str] | None = None,
+        attributes: dict[str, list[str]] | None = None,
+    ) -> dict:
         existing = self.get_organization_by_alias(alias)
         if existing:
             log.info("Organization %s already exists (id=%s)", alias, existing["id"])
@@ -130,6 +136,8 @@ class KeycloakAdmin:
         }
         if domains:
             body["domains"] = [{"name": d, "verified": False} for d in domains]
+        if attributes:
+            body["attributes"] = attributes
 
         self._request("POST", "/organizations", body)
         created = self.get_organization_by_alias(alias)
@@ -148,40 +156,28 @@ class KeycloakAdmin:
             return
         self._request("POST", f"/organizations/{org_id}/members", {"id": user_id})
 
-    def get_org_roles(self, org_id: str) -> list[dict]:
-        roles = self._request("GET", f"/organizations/{org_id}/roles")
-        return roles if isinstance(roles, list) else []
+    # ── Organization groups ─────────────────────────────────────────────────
 
-    def create_org_role(self, org_id: str, role_name: str) -> dict:
-        existing = self.get_org_roles(org_id)
-        for r in existing:
-            if r.get("name") == role_name:
-                return r
-        self._request("POST", f"/organizations/{org_id}/roles", {"name": role_name})
-        for r in self.get_org_roles(org_id):
-            if r.get("name") == role_name:
-                return r
-        raise RuntimeError(f"Failed to create org role {role_name}")
+    def get_org_groups(self, org_id: str) -> list[dict]:
+        groups = self._request("GET", f"/organizations/{org_id}/groups", expect_404=True)
+        return groups if isinstance(groups, list) else []
 
-    def get_member_org_roles(self, org_id: str, user_id: str) -> list[dict]:
-        roles = self._request(
-            "GET",
-            f"/organizations/{org_id}/members/{user_id}/organizations/roles",
-            expect_404=True,
-        )
-        return roles if isinstance(roles, list) else []
+    def ensure_org_group(self, org_id: str, group_name: str) -> dict:
+        for g in self.get_org_groups(org_id):
+            if g.get("name") == group_name:
+                return g
+        self._request("POST", f"/organizations/{org_id}/groups", {"name": group_name})
+        for g in self.get_org_groups(org_id):
+            if g.get("name") == group_name:
+                return g
+        raise RuntimeError(f"Failed to create org group {group_name}")
 
-    def assign_org_role(self, org_id: str, user_id: str, role_name: str) -> None:
-        role = self.create_org_role(org_id, role_name)
-        existing = self.get_member_org_roles(org_id, user_id)
-        if any(r.get("name") == role_name for r in existing):
-            return
+    def ensure_user_in_org_group(self, org_id: str, group_id: str, user_id: str) -> None:
         self._request(
             "PUT",
-            f"/organizations/{org_id}/members/{user_id}/organizations/roles",
-            [role],
+            f"/organizations/{org_id}/groups/{group_id}/members/{user_id}",
+            expect_404=True,
         )
-        log.info("Assigned role %s to user %s in org %s", role_name, user_id, org_id)
 
 
 def sync_organizations(config_path: Path, kc: KeycloakAdmin) -> None:
@@ -192,8 +188,9 @@ def sync_organizations(config_path: Path, kc: KeycloakAdmin) -> None:
         alias = org_def["alias"]
         name = org_def.get("name", alias)
         domains = org_def.get("domains", [])
+        attributes = org_def.get("attributes")
 
-        org = kc.create_organization(alias, name, domains)
+        org = kc.create_organization(alias, name, domains, attributes)
         org_id = org["id"]
 
         for member_def in org_def.get("members", []):
@@ -207,8 +204,10 @@ def sync_organizations(config_path: Path, kc: KeycloakAdmin) -> None:
             kc.add_org_member(org_id, user_id)
             log.info("Added %s to organization %s", email, alias)
 
-            for role_name in member_def.get("roles", []):
-                kc.assign_org_role(org_id, user_id, role_name)
+            for group_name in member_def.get("groups", []):
+                group = kc.ensure_org_group(org_id, group_name)
+                kc.ensure_user_in_org_group(org_id, group["id"], user_id)
+                log.info("Assigned group %s to user %s in org %s", group_name, user_id, org_id)
 
     log.info("Organization sync complete")
 
@@ -223,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument(
         "--keycloak-url",
-        default="http://172.17.0.1:8080",
+        default="http://172.17.0.1:9080",
         help="Keycloak base URL",
     )
     parser.add_argument("--realm", default="dataspaces")

@@ -24,21 +24,25 @@ from .errors import (
 )
 from .jwt import (
     extract_groups,
+    extract_organizations,
     extract_scopes,
     get_bearer_token,
     is_service_account,
     verify_token,
 )
+from .models import Organization
 from .permissions import grant_satisfies, has_permission
 from .principal import Principal
 
 __all__ = [
     "OidcConfig",
     "default_jwks_uri",
+    "Organization",
     "Principal",
     "verify_token",
     "get_bearer_token",
     "extract_groups",
+    "extract_organizations",
     "extract_scopes",
     "is_service_account",
     "grant_satisfies",

@@ -97,6 +97,9 @@ services:
     command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "31001"]
     ports:
       - "31001:31001"
+    env_file:
+      - path: .env.celine
+        required: false
     environment:
       CONNECTOR_ROLE: consumer
       EDC_CONSUMER_MANAGEMENT_URL: http://172.17.0.1:29193/management
@@ -110,7 +113,7 @@ services:
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
-      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token
+      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
     depends_on:
       edc-consumer:

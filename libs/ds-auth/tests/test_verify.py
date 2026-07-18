@@ -8,7 +8,7 @@ import ds_auth.jwt as ds_jwt
 from ds_auth import OidcConfig, TokenInvalid, verify_token
 from ds_auth.errors import AuthConfigError
 
-ISSUER = "http://keycloak:8080/realms/dataspaces"
+ISSUER = "http://keycloak:9080/realms/dataspaces"
 AUD = "svc-ds-connector"
 
 

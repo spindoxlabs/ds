@@ -80,6 +80,9 @@ services:
     restart: unless-stopped
     ports:
       - "30005:30005"
+    env_file:
+      - path: .env.celine
+        required: false
     environment:
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
@@ -157,10 +160,10 @@ services:
   # ── Keycloak OIDC identity provider ──────────────────────────────────────────
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.0
-    command: ["start-dev", "--import-realm", "--http-port=8080"]
+    command: ["start-dev", "--import-realm", "--http-port=9080"]
     restart: unless-stopped
     ports:
-      - "8080:8080"
+      - "9080:9080"
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -189,7 +192,7 @@ services:
     volumes:
       - ./services/keycloak/clients.yaml:/app/clients.yaml:ro
     environment:
-      CELINE_KEYCLOAK_BASE_URL: http://172.17.0.1:8080
+      CELINE_KEYCLOAK_BASE_URL: http://172.17.0.1:9080
       CELINE_KEYCLOAK_REALM: dataspaces
       CELINE_KEYCLOAK_SECRETS_FILE: /tmp/.secrets.yaml
     entrypoint: ["/bin/sh", "-euc"]
@@ -218,6 +221,6 @@ services:
       - |
         python /app/keycloak_org_sync.py \
           --config /app/organizations.yaml \
-          --keycloak-url http://172.17.0.1:8080 \
+          --keycloak-url http://172.17.0.1:9080 \
           --admin-user admin --admin-password admin
     networks: [dataspaces]
