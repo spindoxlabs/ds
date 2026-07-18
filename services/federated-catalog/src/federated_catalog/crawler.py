@@ -110,8 +110,9 @@ async def crawl_all(
 
     for source_id, outcome in zip(source_ids, outcomes):
         if isinstance(outcome, Exception):
-            log.warning("Crawl failed for source %s: %s", source_id, outcome)
-            errors.append(CrawlError(provider_id=source_id, message=str(outcome)))
+            err_msg = str(outcome) or type(outcome).__name__
+            log.warning("Crawl failed for source %s: %s", source_id, err_msg)
+            errors.append(CrawlError(provider_id=source_id, message=err_msg))
         else:
             sid, datasets = outcome
             results[sid] = datasets

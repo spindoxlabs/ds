@@ -85,7 +85,7 @@ async def lifespan(app: FastAPI):
         registry = ParticipantRegistry.empty()
 
     # Provenance bridge
-    prov_client = ProvenanceClient(settings.provenance_url)
+    prov_client = ProvenanceClient(settings.provenance_url, token_provider=ir_token_provider)
     prov = ProvBridge(prov_client, settings.participant_id)
 
     if consumer_edc is not None:

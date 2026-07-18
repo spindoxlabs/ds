@@ -15,13 +15,13 @@ tasks:
     desc: Run dev server with hot-reload on :30005
     deps: [setup]
     cmds:
-      - uv run uvicorn identity_registry.main:app --reload --port 30005
+      - uv run uvicorn identity_registry.main:app --reload --host 0.0.0.0 --port 30005
 
   debug:
     desc: Run dev server with debugpy on :30905, waiting for attach
     deps: [setup]
     cmds:
-      - uv run python -m debugpy --listen 0.0.0.0:30905 --wait-for-client -m uvicorn identity_registry.main:app --reload --port 30005
+      - uv run python -m debugpy --listen 0.0.0.0:30905 --wait-for-client -m uvicorn identity_registry.main:app --reload --host 0.0.0.0 --port 30005
 
   db:migrate:
     desc: Apply pending migrations (requires postgres)

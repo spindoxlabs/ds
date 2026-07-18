@@ -46,11 +46,23 @@ class EdcManagementClient:
     async def close(self) -> None:
         await self._http.aclose()
 
+    @staticmethod
+    def _raise_with_body(r: httpx.Response, operation: str) -> None:
+        if r.is_success:
+            return
+        body = r.text[:500]
+        log.error("EDC %s failed (%s): %s", operation, r.status_code, body)
+        raise httpx.HTTPStatusError(
+            f"EDC {operation} {r.status_code}: {body}",
+            request=r.request,
+            response=r,
+        )
+
     # ── Assets ────────────────────────────────────────────────────────────────
 
     async def create_asset(self, asset: AssetCreate) -> dict[str, Any]:
         r = await self._http.post("/v3/assets", json=asset.to_edc())
-        r.raise_for_status()
+        self._raise_with_body(r, "create_asset")
         return r.json()
 
     async def get_asset(self, asset_id: str) -> dict[str, Any]:
@@ -78,7 +90,7 @@ class EdcManagementClient:
 
     async def create_policy(self, policy: PolicyCreate) -> dict[str, Any]:
         r = await self._http.post("/v3/policydefinitions", json=policy.to_edc())
-        r.raise_for_status()
+        self._raise_with_body(r, "create_policy")
         return r.json()
 
     async def list_policies(self) -> list[dict[str, Any]]:
@@ -95,7 +107,7 @@ class EdcManagementClient:
 
     async def create_contract_definition(self, cd: ContractDefCreate) -> dict[str, Any]:
         r = await self._http.post("/v3/contractdefinitions", json=cd.to_edc())
-        r.raise_for_status()
+        self._raise_with_body(r, "create_contract_definition")
         return r.json()
 
     async def list_contract_definitions(self) -> list[dict[str, Any]]:

@@ -15,13 +15,13 @@ tasks:
     desc: Run dev server with hot-reload on :30001
     deps: [setup]
     cmds:
-      - uv run uvicorn connector.main:app --reload --port 30001
+      - uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   debug:
     desc: Run dev server with debugpy on :30901, waiting for attach
     deps: [setup]
     cmds:
-      - uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client -m uvicorn connector.main:app --reload --port 30001
+      - uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   release:
     desc: (noop — managed by CI/CD)

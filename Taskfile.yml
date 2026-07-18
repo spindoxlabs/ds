@@ -3,9 +3,13 @@ version: "3"
 # ── Root Taskfile ────────────────────────────────────────────────────────────
 #
 # Quick start:
-#   cp .env.example .env
 #   task start
 #
+# All local dev defaults live in .env.local (committed).
+# Override per-machine in .env (gitignored).
+#
+dotenv: ['.env', '.env.local']
+
 env:
   COMPOSE_PROJECT_NAME: dataspaces
 
@@ -45,17 +49,15 @@ tasks:
     deps: [edc:ensure-base]
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || cp .env.example "$env_file"
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.provider.yml up -d --build
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml up -d --build
         echo "Waiting for provider connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
-        KC_URL="http://localhost:9080/realms/dataspaces/protocol/openid-connect/token"
+        KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \
-          -d "client_secret=${SVC_DS_PORTAL_SECRET:-svc-ds-portal}" \
+          -d "client_id=${SVC_DS_PORTAL_ID}" \
+          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
@@ -65,28 +67,22 @@ tasks:
     desc: Stop provider participant stack
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.provider.yml down
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml down
 
   provider:status:
     desc: Show provider container status
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.provider.yml ps
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml ps
 
   provider:logs:
     desc: Follow provider logs
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.provider.yml logs -f
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml logs -f
 
   # ── Consumer participant ─────────────────────────────────────────────────
   consumer:start:
@@ -94,38 +90,30 @@ tasks:
     deps: [edc:ensure-base]
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || cp .env.example "$env_file"
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.consumer.yml up -d --build
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml up -d --build
         echo "Consumer started — gateway http://localhost:9000"
 
   consumer:stop:
     desc: Stop consumer participant stack
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.consumer.yml down
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml down
 
   consumer:status:
     desc: Show consumer container status
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.consumer.yml ps
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml ps
 
   consumer:logs:
     desc: Follow consumer logs
     cmds:
       - |
-        env_file="${ENV_FILE:-.env}"
-        [ -f "$env_file" ] || env_file=.env.example
-        COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file "$env_file" -f docker-compose.consumer.yml logs -f
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml logs -f
 
   # ── Full stack aliases ───────────────────────────────────────────────────
   start:
@@ -155,8 +143,7 @@ tasks:
       - docker stop dataspaces-identity-registry-1 2>/dev/null || true
       - |
         cd services/identity-registry
-        IDENTITY_REGISTRY_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry \
-        uv run uvicorn identity_registry.main:app --reload --port 30005
+        uv run uvicorn identity_registry.main:app --reload --host 0.0.0.0 --port 30005
 
   identity-registry:debug:
     desc: Stop Docker container, debug identity-registry on :30005 (debugpy :30905)
@@ -164,9 +151,8 @@ tasks:
       - docker stop dataspaces-identity-registry-1 2>/dev/null || true
       - |
         cd services/identity-registry
-        IDENTITY_REGISTRY_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry \
         uv run python -m debugpy --listen 0.0.0.0:30905 --wait-for-client \
-          -m uvicorn identity_registry.main:app --reload --port 30005
+          -m uvicorn identity_registry.main:app --reload --host 0.0.0.0 --port 30005
 
   # ── Provider local dev overrides ─────────────────────────────────────────
   provider:connector:run:
@@ -176,17 +162,10 @@ tasks:
       - |
         cd services/connector
         CONNECTOR_ROLE=provider \
-        EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
-        EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
-        EDC_API_KEY=insecure-dev-key \
         CONNECTOR_PARTICIPANT_ID=provider \
-        CONNECTOR_PARTICIPANT_DID=did:web:provider.dataspaces.localhost \
-        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
-        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
-        CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider \
-        uv run uvicorn connector.main:app --reload --port 30001
+        CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
+        CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
+        uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   provider:connector:debug:
     desc: Stop Docker container, debug provider connector on :30001 (debugpy :30901)
@@ -195,18 +174,11 @@ tasks:
       - |
         cd services/connector
         CONNECTOR_ROLE=provider \
-        EDC_PROVIDER_MANAGEMENT_URL=http://172.17.0.1:19193/management \
-        EDC_PROVIDER_PROTOCOL_URL=http://172.17.0.1:19194/protocol/2025-1 \
-        EDC_API_KEY=insecure-dev-key \
         CONNECTOR_PARTICIPANT_ID=provider \
-        CONNECTOR_PARTICIPANT_DID=did:web:provider.dataspaces.localhost \
-        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_DATASET_API_URL=http://172.17.0.1:30002 \
-        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:30000 \
-        CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider \
+        CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
+        CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
         uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client \
-          -m uvicorn connector.main:app --reload --port 30001
+          -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   provider:provenance:run:
     desc: Stop Docker container, run provider provenance locally on :30000
@@ -214,8 +186,8 @@ tasks:
       - docker stop dataspaces-ds-provenance-provider-1 2>/dev/null || true
       - |
         cd services/provenance
-        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_provider \
-        uv run uvicorn provenance.main:app --reload --port 30000
+        PROVENANCE_DATABASE_URL=$PROVENANCE_DATABASE_URL_PROVIDER \
+        uv run uvicorn provenance.main:app --reload --host 0.0.0.0 --port 30000
 
   provider:dataset-api:run:
     desc: Stop Docker container, run dataset-api locally on :30002
@@ -223,8 +195,7 @@ tasks:
       - docker stop dataspaces-dataset-api-provider-1 2>/dev/null || true
       - |
         cd services/dataset-api-mock
-        DATASET_API_CONNECTOR_INTERNAL_URL=http://172.17.0.1:30001 \
-        uv run uvicorn dataset_api_mock.main:app --reload --port 30002
+        uv run uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port 30002
 
   provider:federated-catalog:run:
     desc: Stop Docker container, run federated-catalog locally on :30003
@@ -232,9 +203,7 @@ tasks:
       - docker stop dataspaces-ds-federated-catalog-provider-1 2>/dev/null || true
       - |
         cd services/federated-catalog
-        CATALOG_CONNECTOR_URL=http://172.17.0.1:30001 \
-        CATALOG_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        uv run uvicorn federated_catalog.main:app --reload --port 30003
+        uv run uvicorn federated_catalog.main:app --reload --host 0.0.0.0 --port 30003
 
   # ── Consumer local dev overrides ─────────────────────────────────────────
   consumer:connector:run:
@@ -244,16 +213,12 @@ tasks:
       - |
         cd services/connector
         CONNECTOR_ROLE=consumer \
-        EDC_CONSUMER_MANAGEMENT_URL=http://172.17.0.1:29193/management \
-        EDC_CONSUMER_PROTOCOL_URL=http://172.17.0.1:29194/protocol/2025-1 \
-        EDC_API_KEY=insecure-dev-key \
         CONNECTOR_PARTICIPANT_ID=consumer \
         CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
         CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:31000 \
-        CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer \
-        uv run uvicorn connector.main:app --reload --port 31001
+        CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
+        CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
+        uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 31001
 
   consumer:connector:debug:
     desc: Stop Docker container, debug consumer connector on :31001 (debugpy :31901)
@@ -262,17 +227,13 @@ tasks:
       - |
         cd services/connector
         CONNECTOR_ROLE=consumer \
-        EDC_CONSUMER_MANAGEMENT_URL=http://172.17.0.1:29193/management \
-        EDC_CONSUMER_PROTOCOL_URL=http://172.17.0.1:29194/protocol/2025-1 \
-        EDC_API_KEY=insecure-dev-key \
         CONNECTOR_PARTICIPANT_ID=consumer \
         CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
         CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_PROVENANCE_URL=http://172.17.0.1:31000 \
-        CONNECTOR_IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        CONNECTOR_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer \
+        CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
+        CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
         uv run python -m debugpy --listen 0.0.0.0:31901 --wait-for-client \
-          -m uvicorn connector.main:app --reload --port 31001
+          -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 31001
 
   consumer:provenance:run:
     desc: Stop Docker container, run consumer provenance locally on :31000
@@ -280,8 +241,8 @@ tasks:
       - docker stop dataspaces-ds-provenance-consumer-1 2>/dev/null || true
       - |
         cd services/provenance
-        PROVENANCE_DATABASE_URL=postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer \
-        uv run uvicorn provenance.main:app --reload --port 31000
+        PROVENANCE_DATABASE_URL=$PROVENANCE_DATABASE_URL_CONSUMER \
+        uv run uvicorn provenance.main:app --reload --host 0.0.0.0 --port 31000
 
   provider:portal:run:
     desc: Stop Docker container, run portal locally on :30004
@@ -290,41 +251,38 @@ tasks:
       - |
         cd services/portal
         CONNECTOR_URL=http://172.17.0.1:30001 \
-        PROVENANCE_URL=http://172.17.0.1:30000 \
+        PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         FEDERATED_CATALOG_URL=http://172.17.0.1:30003 \
-        IDENTITY_REGISTRY_URL=http://172.17.0.1:30005 \
-        AUTH_KEYCLOAK_ISSUER=http://keycloak.dataspaces.localhost:9010/realms/dataspaces \
-        AUTH_KEYCLOAK_ID=ds-portal \
-        AUTH_KEYCLOAK_SECRET=change-me-local-client-secret \
-        AUTH_SECRET=dev-secret-change-in-prod \
-        ORIGIN=http://portal.dataspaces.localhost:9010 \
-        PORTAL_SERVICE_CLIENT_ID=svc-ds-portal \
-        PORTAL_SERVICE_CLIENT_SECRET=svc-ds-portal \
+        IDENTITY_REGISTRY_URL=$CONNECTOR_IDENTITY_REGISTRY_URL \
         npm run dev
 
   # ── Local dev (all services) ──────────────────────────────────────────────
   dev:
-    desc: Start infra, then open 8 service shells in tmux
+    desc: Start infra, then open 10 service shells in tmux
     cmds:
       - task start
       - |
         tmux kill-session -t ds 2>/dev/null || true
-        tmux new-session -d -s ds -n identity-registry
-        tmux send-keys -t ds:identity-registry      'task identity-registry:run' Enter
+        tmux new-session -d -s ds -n edc-provider
+        tmux send-keys -t ds:edc-provider            'task edc-provider:run' Enter
+        tmux new-window -t ds -n edc-consumer
+        tmux send-keys -t ds:edc-consumer             'task edc-consumer:run' Enter
+        tmux new-window -t ds -n identity-registry
+        tmux send-keys -t ds:identity-registry        'task identity-registry:run' Enter
         tmux new-window -t ds -n provider-connector
-        tmux send-keys -t ds:provider-connector      'task provider:connector:run' Enter
+        tmux send-keys -t ds:provider-connector       'task provider:connector:run' Enter
         tmux new-window -t ds -n provider-provenance
-        tmux send-keys -t ds:provider-provenance     'task provider:provenance:run' Enter
+        tmux send-keys -t ds:provider-provenance      'task provider:provenance:run' Enter
         tmux new-window -t ds -n provider-dataset-api
-        tmux send-keys -t ds:provider-dataset-api    'task provider:dataset-api:run' Enter
+        tmux send-keys -t ds:provider-dataset-api     'task provider:dataset-api:run' Enter
         tmux new-window -t ds -n provider-fed-catalog
-        tmux send-keys -t ds:provider-fed-catalog    'task provider:federated-catalog:run' Enter
+        tmux send-keys -t ds:provider-fed-catalog     'task provider:federated-catalog:run' Enter
         tmux new-window -t ds -n provider-portal
-        tmux send-keys -t ds:provider-portal         'task provider:portal:run' Enter
+        tmux send-keys -t ds:provider-portal          'task provider:portal:run' Enter
         tmux new-window -t ds -n consumer-connector
-        tmux send-keys -t ds:consumer-connector      'task consumer:connector:run' Enter
+        tmux send-keys -t ds:consumer-connector       'task consumer:connector:run' Enter
         tmux new-window -t ds -n consumer-provenance
-        tmux send-keys -t ds:consumer-provenance     'task consumer:provenance:run' Enter
+        tmux send-keys -t ds:consumer-provenance      'task consumer:provenance:run' Enter
         tmux attach -t ds
 
   # ── Utilities ────────────────────────────────────────────────────────────
@@ -357,11 +315,11 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        KC_URL="http://localhost:9080/realms/dataspaces/protocol/openid-connect/token"
+        KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_PORTAL_ID:-svc-ds-portal}" \
-          -d "client_secret=${SVC_DS_PORTAL_SECRET:-svc-ds-portal}" \
+          -d "client_id=${SVC_DS_PORTAL_ID}" \
+          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || true
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
@@ -394,6 +352,59 @@ tasks:
     desc: Build EDC connector Docker image (requires ds-edc-base:0.16.0)
     cmds:
       - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
+
+  edc:restart:
+    desc: Rebuild EDC fat JAR + Docker image and force-recreate both EDC containers
+    deps: [edc:ensure-base]
+    cmds:
+      - task: edc:build
+      - task: edc:docker
+      - |
+        docker stop dataspaces-edc-provider-1 dataspaces-edc-consumer-1 2>/dev/null || true
+        docker rm -f dataspaces-edc-provider-1 dataspaces-edc-consumer-1 2>/dev/null || true
+        fuser -k 19193/tcp 19194/tcp 19195/tcp 19291/tcp 29193/tcp 29194/tcp 29195/tcp 29291/tcp 2>/dev/null || true
+        sleep 1
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml up -d --build --force-recreate --no-deps edc-provider
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml up -d --build --force-recreate --no-deps edc-consumer
+        echo "Waiting for EDC provider (timeout 90s)..."
+        timeout 90 bash -c 'until docker inspect dataspaces-edc-provider-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
+          && echo "EDC provider ready" || echo "EDC provider failed to start"
+        echo "Waiting for EDC consumer (timeout 90s)..."
+        timeout 90 bash -c 'until docker inspect dataspaces-edc-consumer-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
+          && echo "EDC consumer ready" || echo "EDC consumer failed to start"
+
+  # ── EDC local dev overrides ─────────────────────────────────────────────
+  edc-provider:run:
+    desc: Stop Docker container, run EDC provider locally from fat JAR
+    cmds:
+      - docker stop dataspaces-edc-provider-1 2>/dev/null || true
+      - |
+        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
+        if [ ! -f "$jar" ]; then
+          echo "No connector.jar found — building..."
+          task edc:build
+        fi
+        EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
+        exec java -Xms256m -Xmx512m \
+          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
+          -jar "$jar"
+
+  edc-consumer:run:
+    desc: Stop Docker container, run EDC consumer locally from fat JAR
+    cmds:
+      - docker stop dataspaces-edc-consumer-1 2>/dev/null || true
+      - |
+        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
+        if [ ! -f "$jar" ]; then
+          echo "No connector.jar found — building..."
+          task edc:build
+        fi
+        EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
+        exec java -Xms256m -Xmx512m \
+          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
+          -jar "$jar"
 
   # ── Compliance (reference — may need updates for new compose structure) ──
   compliance:validate:

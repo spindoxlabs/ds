@@ -12,13 +12,13 @@ tasks:
     desc: Run dev server with hot-reload on :30003
     deps: [setup]
     cmds:
-      - uv run uvicorn federated_catalog.main:app --reload --port 30003
+      - uv run uvicorn federated_catalog.main:app --reload --host 0.0.0.0 --port 30003
 
   debug:
     desc: Run dev server with debugpy on :30903, waiting for attach
     deps: [setup]
     cmds:
-      - uv run python -m debugpy --listen 0.0.0.0:30903 --wait-for-client -m uvicorn federated_catalog.main:app --reload --port 30003
+      - uv run python -m debugpy --listen 0.0.0.0:30903 --wait-for-client -m uvicorn federated_catalog.main:app --reload --host 0.0.0.0 --port 30003
 
   release:
     desc: (noop — managed by CI/CD)

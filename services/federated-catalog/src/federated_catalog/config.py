@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     )
 
     # ds-connector base URL — all DSP catalog calls go through it
-    connector_url: str = "http://172.17.0.1:30001"
+    connector_url: str = "http://172.17.0.1:31001"
 
     # Identity-registry URL for fetching participant list
     identity_registry_url: str = "http://identity-registry:30005"

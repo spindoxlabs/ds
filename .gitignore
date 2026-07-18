@@ -20,7 +20,6 @@ node_modules/
 .netlify/
 
 # Docker
-*.env.local
 
 # IDE
 .idea/
@@ -72,7 +71,8 @@ docs/next-phases.md
 .env
 .env.*
 !.env.example
-!.env.*.example
+!.env.celine.example
+!.env.local
 
 # Generated reports
 reports/

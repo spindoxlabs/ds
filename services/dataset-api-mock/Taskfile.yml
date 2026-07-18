@@ -12,10 +12,10 @@ tasks:
     desc: Run dev server with hot-reload on :30002
     deps: [setup]
     cmds:
-      - uv run uvicorn dataset_api_mock.main:app --reload --port 30002
+      - uv run uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port 30002
 
   debug:
     desc: Run dev server with debugpy on :30902, waiting for attach
     deps: [setup]
     cmds:
-      - uv run python -m debugpy --listen 0.0.0.0:30902 --wait-for-client -m uvicorn dataset_api_mock.main:app --reload --port 30002
+      - uv run python -m debugpy --listen 0.0.0.0:30902 --wait-for-client -m uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port 30002
