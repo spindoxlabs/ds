@@ -66,21 +66,29 @@ class ParticipantRegistry:
 class HttpParticipantRegistry:
     """Participant registry backed by identity-registry HTTP API with TTL cache."""
 
-    def __init__(self, identity_registry_url: str, cache_ttl: float = 60.0):
+    def __init__(self, identity_registry_url: str, cache_ttl: float = 60.0, token_provider=None):
         self._base_url = identity_registry_url.rstrip("/")
         self._cache_ttl = cache_ttl
         self._cache: ParticipantRegistry | None = None
         self._cache_time: float = 0.0
+        self._token_provider = token_provider
         self._client = httpx.AsyncClient(
             base_url=self._base_url, timeout=10.0
         )
+
+    async def _get_headers(self) -> dict[str, str]:
+        if self._token_provider:
+            token = await self._token_provider()
+            return {"Authorization": f"Bearer {token}"}
+        return {}
 
     async def _refresh_cache(self) -> ParticipantRegistry:
         now = time.monotonic()
         if self._cache is not None and (now - self._cache_time) < self._cache_ttl:
             return self._cache
         try:
-            resp = await self._client.get("/admin/participants")
+            headers = await self._get_headers()
+            resp = await self._client.get("/admin/participants", headers=headers)
             resp.raise_for_status()
             data = resp.json()
             participants = [
@@ -117,9 +125,11 @@ class HttpParticipantRegistry:
     async def check_scope(self, participant_id: str, scope: str) -> bool:
         """Forward scope check to identity-registry for authoritative answer."""
         try:
+            headers = await self._get_headers()
             resp = await self._client.get(
                 "/admin/participants/check",
                 params={"did": participant_id, "scope": scope},
+                headers=headers,
             )
             resp.raise_for_status()
             return resp.json().get("allowed", False)

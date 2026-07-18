@@ -48,4 +48,12 @@ __all__ = [
     "TokenInvalid",
     "TokenMissing",
     "PermissionDenied",
+    "ServiceTokenProvider",
 ]
+
+
+def __getattr__(name: str):
+    if name == "ServiceTokenProvider":
+        from .service_token import ServiceTokenProvider
+        return ServiceTokenProvider
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

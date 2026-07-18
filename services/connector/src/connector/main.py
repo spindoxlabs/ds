@@ -14,6 +14,7 @@ from .db.engine import init_db
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
+from ds_auth.service_token import ServiceTokenProvider
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.prov_bridge import ProvBridge
@@ -60,12 +61,20 @@ async def lifespan(app: FastAPI):
             api_key=settings.edc_api_key,
         )
 
+    # Service token for identity-registry calls
+    ir_token_provider = ServiceTokenProvider(
+        token_url=settings.keycloak_token_url,
+        client_id=settings.service_client_id,
+        client_secret=settings.service_client_secret,
+    )
+
     # Participant registry
     http_registry = None
     if settings.identity_registry_url:
         http_registry = HttpParticipantRegistry(
             settings.identity_registry_url,
             cache_ttl=settings.participant_registry_cache_ttl,
+            token_provider=ir_token_provider,
         )
         registry = http_registry
     elif settings.participants_registry_path:
@@ -98,6 +107,7 @@ async def lifespan(app: FastAPI):
         owners_registry = HttpOwnersRegistry(
             settings.identity_registry_url,
             cache_ttl=settings.owners_registry_cache_ttl,
+            token_provider=ir_token_provider,
         )
 
     # Notifier
@@ -110,6 +120,7 @@ async def lifespan(app: FastAPI):
     app.state.owners_registry = owners_registry
     app.state.prov = prov
     app.state.notifier = notifier
+    app.state.ir_token_provider = ir_token_provider
 
     yield
 

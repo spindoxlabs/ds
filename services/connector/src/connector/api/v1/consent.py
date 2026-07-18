@@ -108,6 +108,7 @@ async def create_consent_request(
                 settings.identity_registry_url,
                 user_did=subject_did,
                 organization_alias=owner_alias,
+                token_provider=request.app.state.ir_token_provider,
             )
             if not is_member:
                 raise HTTPException(

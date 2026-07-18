@@ -110,6 +110,12 @@ def is_service_account(claims: dict) -> bool:
     if claims.get("client_id") and not claims.get("email"):
         return True
 
+    # Fallback: azp present with no human indicators means a client_credentials
+    # token whose default scopes lack the protocol mappers for preferred_username
+    # and client_id (e.g. clients provisioned by celine-policies sync).
+    if claims.get("azp") and not claims.get("email") and not preferred_username:
+        return True
+
     return False
 
 

@@ -96,6 +96,15 @@ class Settings(BaseSettings):
     internal_scope: str = "connector.internal"
     webhook_scope: str = "connector.webhook"
 
+    keycloak_token_url: str = Field(
+        default="http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token",
+        description="Keycloak token endpoint for service-to-service client-credentials grants",
+    )
+    service_client_secret: str = Field(
+        default="svc-ds-connector",
+        description="Client secret for service_client_id (Keycloak client-credentials)",
+    )
+
     database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector"
     debug: bool = False
 

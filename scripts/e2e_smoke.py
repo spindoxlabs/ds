@@ -131,6 +131,26 @@ def _load_vc(path: Path) -> str:
     return token
 
 
+def _get_service_token(
+    keycloak_url: str,
+    client_id: str,
+    client_secret: str,
+) -> str:
+    data = urllib.parse.urlencode({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }).encode()
+    req = urllib.request.Request(keycloak_url, data=data, method="POST")
+    req.add_header("Content-Type", "application/x-www-form-urlencoded")
+    with urllib.request.urlopen(req, timeout=10) as resp:
+        return json.loads(resp.read().decode())["access_token"]
+
+
+def _bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
+
+
 def _headers(subject_id: str, vc_token: str) -> dict[str, str]:
     return {"X-Subject-Id": subject_id, "X-User-VC": vc_token}
 
@@ -192,10 +212,11 @@ def _check_owner_preconditions(
     identity_registry_url: str,
     owner_alias: str = "example-org",
     member_did: str = "did:web:users.dataspaces.localhost:data-subject",
+    headers: dict[str, str] | None = None,
 ) -> bool:
     """Assert owner and membership seed data exists (T5.2). Returns False to abort."""
     try:
-        owner = _request("GET", f"{identity_registry_url}/owners/resolve?alias={owner_alias}")
+        owner = _request("GET", f"{identity_registry_url}/owners/resolve?alias={owner_alias}", headers=headers)
         if not owner or not owner.get("id"):
             result.fail_step("owner precondition", f"owner '{owner_alias}' not found — run `task identity:bootstrap`")
             return False
@@ -214,7 +235,7 @@ def _check_owner_preconditions(
         return False
 
     try:
-        check = _request("GET", f"{identity_registry_url}/memberships/check?user_did={urllib.parse.quote(member_did, safe='')}&organization={owner_alias}")
+        check = _request("GET", f"{identity_registry_url}/memberships/check?user_did={urllib.parse.quote(member_did, safe='')}&organization={owner_alias}", headers=headers)
         if not check or not check.get("member"):
             result.fail_step("membership precondition", f"'{member_did}' is not a member of '{owner_alias}' — run `task identity:bootstrap`")
             return False
@@ -245,18 +266,24 @@ def run_uc2(args: argparse.Namespace) -> E2EResult:
         result.fail_step("health", str(exc))
         return result
 
-    if not _check_owner_preconditions(result, ir_url):
+    try:
+        token = _get_service_token(args.keycloak_token_url, args.service_client_id, args.service_client_secret)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
+        result.fail_step("service token", str(exc))
+        return result
+
+    if not _check_owner_preconditions(result, ir_url, headers=_bearer(token)):
         return result
 
     try:
-        sync = _request("POST", f"{connector_url}/provider/sync", {}) or {}
+        sync = _request("POST", f"{connector_url}/provider/sync", {}, _bearer(token)) or {}
         result.pass_step("provider sync", "governance synced", synced=len(sync.get("synced") or []))
     except (urllib.error.URLError, urllib.error.HTTPError) as exc:
         result.fail_step("provider sync", str(exc))
         return result
 
     try:
-        owner = _request("GET", f"{ir_url}/owners/resolve?alias=example-org") or {}
+        owner = _request("GET", f"{ir_url}/owners/resolve?alias=example-org", headers=_bearer(token)) or {}
         owner_did = owner.get("canonical_uri") or owner.get("did")
         if owner_did:
             result.pass_step("assigner check", f"owner DID resolved: {owner_did}")
@@ -285,7 +312,13 @@ def run_uc3(args: argparse.Namespace) -> E2EResult:
         return result
 
     try:
-        owner = _request("GET", f"{ir_url}/owners/resolve?alias=open-data-provider") or {}
+        token = _get_service_token(args.keycloak_token_url, args.service_client_id, args.service_client_secret)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
+        result.fail_step("service token", str(exc))
+        return result
+
+    try:
+        owner = _request("GET", f"{ir_url}/owners/resolve?alias=open-data-provider", headers=_bearer(token)) or {}
         canonical = owner.get("canonical_uri")
         if canonical and not canonical.startswith("did:"):
             result.pass_step("open-data owner", f"URL-only owner resolved: {canonical}")
@@ -315,12 +348,20 @@ def run_uc1(args: argparse.Namespace) -> E2EResult:
         result.fail_step("health", str(exc))
         return result
 
-    if not _check_owner_preconditions(result, ir_url):
+    try:
+        token = _get_service_token(args.keycloak_token_url, args.service_client_id, args.service_client_secret)
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
+        result.fail_step("service token", str(exc))
+        return result
+
+    svc_headers = _bearer(token)
+
+    if not _check_owner_preconditions(result, ir_url, headers=svc_headers):
         return result
 
     non_member_did = "did:web:users.dataspaces.localhost:outsider"
     try:
-        check = _request("GET", f"{ir_url}/memberships/check?user_did={urllib.parse.quote(non_member_did, safe='')}&organization=example-org") or {}
+        check = _request("GET", f"{ir_url}/memberships/check?user_did={urllib.parse.quote(non_member_did, safe='')}&organization=example-org", headers=svc_headers) or {}
         if check.get("member"):
             result.fail_step("non-member precondition", f"'{non_member_did}' is unexpectedly a member")
             return result
@@ -335,6 +376,7 @@ def run_uc1(args: argparse.Namespace) -> E2EResult:
 
 def run(args: argparse.Namespace) -> E2EResult:
     connector_url = args.connector_url.rstrip("/")
+    consumer_connector_url = args.consumer_connector_url.rstrip("/")
     dataset_api_url = args.dataset_api_url.rstrip("/")
     provenance_url = args.provenance_url.rstrip("/")
     result = E2EResult(connector_url, dataset_api_url, provenance_url, args.profile)
@@ -357,22 +399,36 @@ def run(args: argparse.Namespace) -> E2EResult:
 
     try:
         _request("GET", f"{connector_url}/health")
+        _request("GET", f"{consumer_connector_url}/health")
         _request("GET", f"{dataset_api_url}/health")
         _request("GET", f"{provenance_url}/health")
-        result.pass_step("health", "connector, dataset-api and provenance are reachable")
+        result.pass_step("health", "provider, consumer, dataset-api and provenance are reachable")
     except (urllib.error.URLError, TimeoutError) as exc:
         result.fail_step("health", str(exc))
         return result
 
     try:
-        sync = _request("POST", f"{connector_url}/provider/sync", {}) or {}
+        token = _get_service_token(args.keycloak_token_url, args.service_client_id, args.service_client_secret)
+        result.pass_step("service token", "acquired Keycloak service token")
+    except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
+        result.fail_step("service token", str(exc))
+        return result
+
+    try:
+        sync = _request("POST", f"{connector_url}/provider/sync", {}, _bearer(token)) or {}
         result.pass_step("provider sync", "governance published to provider EDC", synced=len(sync.get("synced") or []))
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError) as exc:
         result.fail_step("provider sync", str(exc))
         return result
 
-    consumer_vc = _load_vc(Path(args.consumer_vc_path))
-    subject_vc = _load_vc(Path(args.data_subject_vc_path))
+    consumer_vc_path = Path(args.consumer_vc_path)
+    subject_vc_path = Path(args.data_subject_vc_path)
+    try:
+        consumer_vc = _load_vc(consumer_vc_path) if consumer_vc_path.exists() else ""
+        subject_vc = _load_vc(subject_vc_path) if subject_vc_path.exists() else ""
+    except (ValueError, KeyError) as exc:
+        result.fail_step("load credentials", str(exc))
+        return result
     consumer_headers = _headers(args.consumer_subject_id, consumer_vc)
     subject_headers = _headers(args.data_subject_id, subject_vc)
 
@@ -381,7 +437,7 @@ def run(args: argparse.Namespace) -> E2EResult:
         "counter_party_id": args.provider_id,
     }
     try:
-        catalog = _request("POST", f"{connector_url}/consumer/catalog", catalog_body, consumer_headers) or {}
+        catalog = _request("POST", f"{consumer_connector_url}/consumer/catalog", catalog_body, consumer_headers) or {}
         dataset = _select_dataset(catalog, args.asset_id)
         if not dataset:
             result.fail_step("catalog discovery", "catalog has no datasets")
@@ -415,7 +471,7 @@ def run(args: argparse.Namespace) -> E2EResult:
         "odrl_policy": policy or None,
     }
     try:
-        negotiated = _request("POST", f"{connector_url}/consumer/negotiate", negotiate_body, consumer_headers) or {}
+        negotiated = _request("POST", f"{consumer_connector_url}/consumer/negotiate", negotiate_body, consumer_headers) or {}
         negotiation_id = negotiated["negotiation_id"]
         result.pass_step("request access", "access request persisted and negotiation started", negotiation_id=negotiation_id)
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
@@ -423,7 +479,7 @@ def run(args: argparse.Namespace) -> E2EResult:
         return result
 
     negotiation = _poll_json(
-        f"{connector_url}/consumer/negotiations/{urllib.parse.quote(negotiation_id, safe='')}",
+        f"{consumer_connector_url}/consumer/negotiations/{urllib.parse.quote(negotiation_id, safe='')}",
         lambda payload: payload.get("state") in FINAL_NEGOTIATION_STATES and bool(payload.get("contractAgreementId")),
         args.timeout,
     )
@@ -440,14 +496,14 @@ def run(args: argparse.Namespace) -> E2EResult:
         "connector_id": args.provider_id,
     }
     try:
-        transfer = _request("POST", f"{connector_url}/consumer/transfer", transfer_body, consumer_headers) or {}
+        transfer = _request("POST", f"{consumer_connector_url}/consumer/transfer", transfer_body, consumer_headers) or {}
         transfer_id = transfer["transfer_id"]
     except (urllib.error.URLError, urllib.error.HTTPError, TimeoutError, KeyError) as exc:
         result.fail_step("transfer EDR", str(exc))
         return result
 
     transfer_state = _poll_json(
-        f"{connector_url}/consumer/transfers/{urllib.parse.quote(transfer_id, safe='')}",
+        f"{consumer_connector_url}/consumer/transfers/{urllib.parse.quote(transfer_id, safe='')}",
         lambda payload: payload.get("state") in FINAL_TRANSFER_STATES,
         args.timeout,
         headers=consumer_headers,
@@ -470,7 +526,7 @@ def run(args: argparse.Namespace) -> E2EResult:
         return result
     result.pass_step("query consentita", "consent and active transfer allow data query", rows=query_payload.get("count"))
 
-    requests_payload = _request("GET", f"{connector_url}/consumer/requests", headers=consumer_headers) or []
+    requests_payload = _request("GET", f"{consumer_connector_url}/consumer/requests", headers=consumer_headers) or []
     request_id = None
     for item in requests_payload:
         if item.get("negotiation_id") == negotiation_id or item.get("transfer_id") == transfer_id:
@@ -481,7 +537,7 @@ def run(args: argparse.Namespace) -> E2EResult:
         return result
     revoke = _request(
         "POST",
-        f"{connector_url}/consumer/requests/{urllib.parse.quote(str(request_id), safe='')}/revoke",
+        f"{consumer_connector_url}/consumer/requests/{urllib.parse.quote(str(request_id), safe='')}/revoke",
         {"reason": "milestone-8-e2e"},
         consumer_headers,
     ) or {}
@@ -543,6 +599,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", default="core")
     parser.add_argument("--connector-url", default="http://localhost:30001")
+    parser.add_argument("--consumer-connector-url", default="http://localhost:31001")
     parser.add_argument("--dataset-api-url", default="http://localhost:30002")
     parser.add_argument("--provenance-url", default="http://localhost:30000")
     parser.add_argument("--counter-party-address", default="http://edc-provider:19194/protocol/2025-1")
@@ -555,6 +612,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--data-subject-vc-path", default=str(ROOT / "data/credentials/users/ah-00003/user-vc.json"))
     parser.add_argument("--timeout", type=int, default=120)
     parser.add_argument("--identity-registry-url", default="http://localhost:30005")
+    parser.add_argument("--keycloak-token-url",
+                        default="http://localhost:8080/realms/dataspaces/protocol/openid-connect/token")
+    parser.add_argument("--service-client-id", default="svc-ds-portal")
+    parser.add_argument("--service-client-secret", default="svc-ds-portal")
     parser.add_argument("--flow", choices=["smoke", "uc1", "uc2", "uc3"], default="smoke",
                         help="Which e2e flow to run")
     parser.add_argument("--env-file", default=None)

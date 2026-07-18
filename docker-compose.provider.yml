@@ -111,6 +111,8 @@ services:
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
+      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token
+      CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
     depends_on:
       edc-provider:
         condition: service_healthy

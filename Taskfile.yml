@@ -302,6 +302,31 @@ tasks:
         PORTAL_SERVICE_CLIENT_SECRET=svc-ds-portal \
         npm run dev
 
+  # ── Local dev (all services) ──────────────────────────────────────────────
+  dev:
+    desc: Start infra, then open 8 service shells in tmux
+    cmds:
+      - task start
+      - |
+        tmux kill-session -t ds 2>/dev/null || true
+        tmux new-session -d -s ds -n identity-registry
+        tmux send-keys -t ds:identity-registry      'task identity-registry:run;      cd services/identity-registry' Enter
+        tmux new-window -t ds -n provider-connector
+        tmux send-keys -t ds:provider-connector      'task provider:connector:run;     cd services/connector' Enter
+        tmux new-window -t ds -n provider-provenance
+        tmux send-keys -t ds:provider-provenance     'task provider:provenance:run;    cd services/provenance' Enter
+        tmux new-window -t ds -n provider-dataset-api
+        tmux send-keys -t ds:provider-dataset-api    'task provider:dataset-api:run;   cd services/dataset-api-mock' Enter
+        tmux new-window -t ds -n provider-fed-catalog
+        tmux send-keys -t ds:provider-fed-catalog    'task provider:federated-catalog:run; cd services/federated-catalog' Enter
+        tmux new-window -t ds -n provider-portal
+        tmux send-keys -t ds:provider-portal         'task provider:portal:run;        cd services/portal' Enter
+        tmux new-window -t ds -n consumer-connector
+        tmux send-keys -t ds:consumer-connector      'task consumer:connector:run;     cd services/connector' Enter
+        tmux new-window -t ds -n consumer-provenance
+        tmux send-keys -t ds:consumer-provenance     'task consumer:provenance:run;    cd services/provenance' Enter
+        tmux attach -t ds
+
   # ── Utilities ────────────────────────────────────────────────────────────
   proxy:hosts:
     desc: Add service hostnames to /etc/hosts (requires sudo)

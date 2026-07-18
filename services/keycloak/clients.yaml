@@ -77,6 +77,7 @@ clients:
       - dataset.query
       - dataset.read
       - identity-registry.resolve
+      - identity-registry.read
       - connector.admin
       - provenance.read
       - catalog.read
