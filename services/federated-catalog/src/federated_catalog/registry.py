@@ -26,11 +26,14 @@ class DcatSource:
     defaults: dict[str, Any] = field(default_factory=dict)
 
 
-def load_providers_from_registry(identity_registry_url: str) -> list[Provider]:
+def load_providers_from_registry(
+    identity_registry_url: str,
+    headers: dict[str, str] | None = None,
+) -> list[Provider]:
     """Fetch providers from the identity-registry /admin/participants API."""
     url = f"{identity_registry_url.rstrip('/')}/admin/participants"
     try:
-        resp = httpx.get(url, timeout=10.0)
+        resp = httpx.get(url, timeout=10.0, headers=headers or {})
         resp.raise_for_status()
         return [
             Provider(id=p["did"], dsp_address=p.get("dsp_address") or "")

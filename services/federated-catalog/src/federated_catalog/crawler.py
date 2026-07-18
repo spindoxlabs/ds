@@ -73,10 +73,17 @@ async def crawl_dcat_source(
     return source.id, datasets
 
 
-async def crawl_all(settings: Settings) -> tuple[dict[str, list[dict]], list[CrawlError]]:
+async def crawl_all(
+    settings: Settings,
+    token_provider=None,
+) -> tuple[dict[str, list[dict]], list[CrawlError]]:
     """Crawl all registered providers and DCAT sources. Returns (datasets_by_source, errors)."""
     if settings.identity_registry_url:
-        providers = load_providers_from_registry(settings.identity_registry_url)
+        headers: dict[str, str] | None = None
+        if token_provider:
+            token = await token_provider()
+            headers = {"Authorization": f"Bearer {token}"}
+        providers = load_providers_from_registry(settings.identity_registry_url, headers=headers)
     else:
         providers = load_providers(settings.participants_yaml)
     dcat_sources = load_dcat_sources(settings.dcat_sources_yaml)
@@ -113,7 +120,7 @@ async def crawl_all(settings: Settings) -> tuple[dict[str, list[dict]], list[Cra
     return results, errors
 
 
-async def crawl_loop(cache: CatalogCache, settings: Settings) -> None:
+async def crawl_loop(cache: CatalogCache, settings: Settings, token_provider=None) -> None:
     """Async background task: wait startup_delay, then crawl on interval."""
     log.info(
         "Federated catalog crawler starting (startup delay: %ds, interval: %ds)",
@@ -125,7 +132,7 @@ async def crawl_loop(cache: CatalogCache, settings: Settings) -> None:
     while True:
         log.info("Starting catalog crawl cycle…")
         try:
-            datasets_by_provider, errors = await crawl_all(settings)
+            datasets_by_provider, errors = await crawl_all(settings, token_provider=token_provider)
             cache.swap(datasets_by_provider, errors)
             total = sum(len(v) for v in datasets_by_provider.values())
             log.info(

@@ -13,6 +13,7 @@ from .crawler import crawl_loop
 from .dependencies import require_read_scope
 from .metrics import install_metrics
 from .api.catalog import router as catalog_router
+from ds_auth.service_token import ServiceTokenProvider
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +33,13 @@ async def lifespan(app: FastAPI):
             "This is acceptable for local development only."
         )
 
-    task = asyncio.create_task(crawl_loop(cache, settings))
+    ir_token_provider = ServiceTokenProvider(
+        token_url=settings.keycloak_token_url,
+        client_id=settings.service_client_id,
+        client_secret=settings.service_client_secret,
+    )
+
+    task = asyncio.create_task(crawl_loop(cache, settings, token_provider=ir_token_provider))
 
     yield
 

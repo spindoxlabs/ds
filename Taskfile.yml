@@ -310,63 +310,24 @@ tasks:
       - |
         tmux kill-session -t ds 2>/dev/null || true
         tmux new-session -d -s ds -n identity-registry
-        tmux send-keys -t ds:identity-registry      'task identity-registry:run;      cd services/identity-registry' Enter
+        tmux send-keys -t ds:identity-registry      'task identity-registry:run' Enter
         tmux new-window -t ds -n provider-connector
-        tmux send-keys -t ds:provider-connector      'task provider:connector:run;     cd services/connector' Enter
+        tmux send-keys -t ds:provider-connector      'task provider:connector:run' Enter
         tmux new-window -t ds -n provider-provenance
-        tmux send-keys -t ds:provider-provenance     'task provider:provenance:run;    cd services/provenance' Enter
+        tmux send-keys -t ds:provider-provenance     'task provider:provenance:run' Enter
         tmux new-window -t ds -n provider-dataset-api
-        tmux send-keys -t ds:provider-dataset-api    'task provider:dataset-api:run;   cd services/dataset-api-mock' Enter
+        tmux send-keys -t ds:provider-dataset-api    'task provider:dataset-api:run' Enter
         tmux new-window -t ds -n provider-fed-catalog
-        tmux send-keys -t ds:provider-fed-catalog    'task provider:federated-catalog:run; cd services/federated-catalog' Enter
+        tmux send-keys -t ds:provider-fed-catalog    'task provider:federated-catalog:run' Enter
         tmux new-window -t ds -n provider-portal
-        tmux send-keys -t ds:provider-portal         'task provider:portal:run;        cd services/portal' Enter
+        tmux send-keys -t ds:provider-portal         'task provider:portal:run' Enter
         tmux new-window -t ds -n consumer-connector
-        tmux send-keys -t ds:consumer-connector      'task consumer:connector:run;     cd services/connector' Enter
+        tmux send-keys -t ds:consumer-connector      'task consumer:connector:run' Enter
         tmux new-window -t ds -n consumer-provenance
-        tmux send-keys -t ds:consumer-provenance     'task consumer:provenance:run;    cd services/provenance' Enter
+        tmux send-keys -t ds:consumer-provenance     'task consumer:provenance:run' Enter
         tmux attach -t ds
 
   # ── Utilities ────────────────────────────────────────────────────────────
-  proxy:hosts:
-    desc: Add service hostnames to /etc/hosts (requires sudo)
-    cmds:
-      - |
-        HOSTS=(
-          "127.0.0.1 provider.dataspaces.localhost"
-          "127.0.0.1 consumer.dataspaces.localhost"
-          "127.0.0.1 trust-anchor.dataspaces.localhost"
-          "127.0.0.1 users.dataspaces.localhost"
-          "127.0.0.1 connector.dataspaces.localhost"
-          "127.0.0.1 connector-provider.dataspaces.localhost"
-          "127.0.0.1 connector-consumer.dataspaces.localhost"
-          "127.0.0.1 provenance.dataspaces.localhost"
-          "127.0.0.1 provenance-provider.dataspaces.localhost"
-          "127.0.0.1 provenance-consumer.dataspaces.localhost"
-          "127.0.0.1 portal.dataspaces.localhost"
-          "127.0.0.1 dataset-api.dataspaces.localhost"
-          "127.0.0.1 federated-catalog.dataspaces.localhost"
-          "127.0.0.1 keycloak.dataspaces.localhost"
-          "127.0.0.1 edc-provider.dataspaces.localhost"
-          "127.0.0.1 edc-consumer.dataspaces.localhost"
-          "127.0.0.1 edc-provider-mgmt.dataspaces.localhost"
-          "127.0.0.1 edc-consumer-mgmt.dataspaces.localhost"
-          "127.0.0.1 edc-provider-public.dataspaces.localhost"
-          "127.0.0.1 edc-consumer-public.dataspaces.localhost"
-          "127.0.0.1 identity-registry.dataspaces.localhost"
-        )
-        for h in "${HOSTS[@]}"; do
-          grep -qF "$h" /etc/hosts || echo "$h" | sudo tee -a /etc/hosts
-        done
-        echo "Done"
-
-  proxy:trust-ca:
-    desc: Trust Caddy's local CA in the system store (requires sudo)
-    cmds:
-      - docker exec dataspaces-caddy-1 cat /data/caddy/pki/authorities/local/root.crt > /tmp/caddy-root.crt
-      - sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain /tmp/caddy-root.crt 2>/dev/null ||
-        sudo cp /tmp/caddy-root.crt /usr/local/share/ca-certificates/caddy.crt && sudo update-ca-certificates
-      - rm /tmp/caddy-root.crt
 
   reset-demo-state:
     desc: Clear runtime requests, consents, agreements, transfers and provenance events

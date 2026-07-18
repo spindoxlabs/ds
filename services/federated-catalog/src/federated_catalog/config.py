@@ -40,6 +40,15 @@ class Settings(BaseSettings):
     # Path to catalogues.yaml — DCAT-AP sources to crawl
     dcat_sources_yaml: str = ""
 
+    keycloak_token_url: str = Field(
+        default="http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token",
+        description="Keycloak token endpoint for service-to-service client-credentials grants",
+    )
+    service_client_secret: str = Field(
+        default="svc-ds-federated-catalog",
+        description="Client secret for service_client_id (Keycloak client-credentials)",
+    )
+
     oidc_issuer_url: str | None = None
     oidc_insecure_dev: bool = Field(
         default=True,

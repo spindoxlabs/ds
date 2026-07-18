@@ -207,6 +207,8 @@ services:
       CATALOG_CONNECTOR_URL: http://172.17.0.1:30001
       CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
+      CATALOG_KEYCLOAK_TOKEN_URL: http://172.17.0.1:8080/realms/dataspaces/protocol/openid-connect/token
+      CATALOG_SERVICE_CLIENT_SECRET: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
     depends_on:
       ds-connector-provider:
         condition: service_healthy
