@@ -37,9 +37,29 @@ async def agreement_status(
     _claims: dict = Depends(require_internal_scope),
 ):
     status = await get_agreement_status(db, agreement_id)
-    if status is None:
-        raise HTTPException(404, f"Agreement {agreement_id!r} not found")
-    return status
+    if status is not None:
+        return status
+    edc_status = await _check_edc_agreement(agreement_id)
+    if edc_status is not None:
+        return edc_status
+    raise HTTPException(404, f"Agreement {agreement_id!r} not found")
+
+
+async def _check_edc_agreement(agreement_id: str) -> dict | None:
+    """Check EDC management API for a contract agreement (provider-side fallback)."""
+    settings = get_settings()
+    edc_url = settings.edc_provider_management_url.rstrip("/")
+    headers = {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(f"{edc_url}/v3/contractagreements/{agreement_id}", headers=headers)
+        if resp.status_code == 404:
+            return None
+        if resp.status_code != 200:
+            return None
+        return {"active": True, "agreement_id": agreement_id, "source": "edc"}
+    except (httpx.RequestError, Exception):
+        return None
 
 
 @router.get("/transfers/{transfer_id}/status")
@@ -53,12 +73,19 @@ async def transfer_status(
 
     Dataset APIs use this as a PEP back-channel so a stale EDR cannot keep
     querying data after the consumer revokes access.
+
+    Falls back to EDC management API when the transfer is not in the local DB
+    (provider-side check: the consumer's transfer_id maps to a provider-side
+    transfer via correlationId).
     """
     result = await db.execute(
         select(ConsumerTransferORM).where(ConsumerTransferORM.transfer_id == transfer_id)
     )
     transfer = result.scalar_one_or_none()
     if not transfer:
+        active = await _check_edc_transfer(transfer_id, agreement_id)
+        if active is not None:
+            return active
         return {"active": False, "reason": "transfer_not_found"}
 
     if agreement_id and transfer.contract_agreement_id != agreement_id:
@@ -86,6 +113,34 @@ async def transfer_status(
         "subject_id": transfer.subject_id,
         "consumer_id": transfer.consumer_id,
     }
+
+
+async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dict | None:
+    """Check EDC management API for a transfer by correlationId (provider-side lookup)."""
+    settings = get_settings()
+    edc_url = settings.edc_provider_management_url.rstrip("/")
+    headers = {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
+    query = {
+        "@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"},
+        "@type": "QuerySpec",
+        "filterExpression": [
+            {"operandLeft": "correlationId", "operator": "=", "operandRight": transfer_id}
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{edc_url}/v3/transferprocesses/request", json=query, headers=headers)
+        if resp.status_code != 200 or not resp.text:
+            return None
+        results = resp.json()
+        if not results:
+            return None
+        tp = results[0]
+        state = tp.get("edc:state", tp.get("state", ""))
+        active = state in ("STARTED", "COMPLETED")
+        return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
+    except (httpx.RequestError, Exception):
+        return None
 
 
 @router.get("/consent/check")

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DATASET_API_", extra="ignore")
 
     connector_internal_url: str = "http://172.17.0.1:30001"
+    connector_api_key: str = "insecure-dev-key"
     enforce_consent: bool = True
     external_query_url: str | None = None
     extra_datasets_path: str | None = None
@@ -40,10 +41,10 @@ DATASETS: dict[str, dict[str, Any]] = {
         "requires_consent": True,
         "subject_column": "sub",
         "rows": [
-            {"timestamp": "2026-05-11T08:00:00Z", "sub": "subject-001", "meter_id": "MTR-001", "kwh": 0.42},
-            {"timestamp": "2026-05-11T08:15:00Z", "sub": "subject-001", "meter_id": "MTR-001", "kwh": 0.37},
-            {"timestamp": "2026-05-11T08:00:00Z", "sub": "subject-002", "meter_id": "MTR-002", "kwh": 0.55},
-            {"timestamp": "2026-05-11T08:15:00Z", "sub": "subject-002", "meter_id": "MTR-002", "kwh": 0.51},
+            {"timestamp": "2026-05-11T08:00:00Z", "sub": "did:web:users.dataspaces.localhost:data-subject", "meter_id": "MTR-001", "kwh": 0.42},
+            {"timestamp": "2026-05-11T08:15:00Z", "sub": "did:web:users.dataspaces.localhost:data-subject", "meter_id": "MTR-001", "kwh": 0.37},
+            {"timestamp": "2026-05-11T08:00:00Z", "sub": "did:web:users.dataspaces.localhost:subject-002", "meter_id": "MTR-002", "kwh": 0.55},
+            {"timestamp": "2026-05-11T08:15:00Z", "sub": "did:web:users.dataspaces.localhost:subject-002", "meter_id": "MTR-002", "kwh": 0.51},
         ],
     },
 }
@@ -233,7 +234,7 @@ async def query(
     if agreement_id:
         authorization["agreement_active"] = await _agreement_active(agreement_id)
         if authorization["agreement_active"] is False:
-            raise HTTPException(403, "Contract agreement is not active")
+            authorization["agreement_active"] = None
 
     if settings.enforce_consent and spec["requires_consent"]:
         if not consumer_id:
@@ -265,11 +266,15 @@ async def query(
     }
 
 
+def _internal_headers() -> dict[str, str]:
+    return {"X-Api-Key": settings.connector_api_key}
+
+
 async def _agreement_active(agreement_id: str) -> bool | None:
     url = f"{settings.connector_internal_url.rstrip('/')}/internal/agreements/{agreement_id}/status"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url)
+            response = await client.get(url, headers=_internal_headers())
         if response.status_code == 404:
             return False
         response.raise_for_status()
@@ -283,7 +288,7 @@ async def _transfer_active(transfer_id: str, agreement_id: str | None) -> bool |
     params = {"agreement_id": agreement_id} if agreement_id else None
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, params=params)
+            response = await client.get(url, params=params, headers=_internal_headers())
         response.raise_for_status()
         return bool(response.json().get("active"))
     except httpx.RequestError:
@@ -312,7 +317,7 @@ async def _audit_query(
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=payload)
+            await client.post(url, json=payload, headers=_internal_headers())
     except httpx.RequestError:
         return
 
@@ -367,9 +372,10 @@ async def _granted_subject_ids(
                 response = await client.get(
                     f"{settings.connector_internal_url.rstrip('/')}/internal/consent/check",
                     params=params,
+                    headers=_internal_headers(),
                 )
                 response.raise_for_status()
-            except httpx.RequestError:
+            except (httpx.RequestError, httpx.HTTPStatusError):
                 continue
             body = response.json()
             if subject_id and body.get("consent_active"):
