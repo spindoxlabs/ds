@@ -406,7 +406,43 @@ tasks:
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
           -jar "$jar"
 
-  # ── Compliance (reference — may need updates for new compose structure) ──
+  # ── E2E verification ─────────────────────────────────────────────────────
+  e2e:
+    desc: Run E2E smoke test
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow smoke
+
+  e2e:clean:
+    desc: Reset runtime state for clean E2E run
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e clean
+
+  e2e:all:
+    desc: Run all E2E flows with cleanup
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow all --clean-first
+
+  e2e:uc1:
+    desc: "E2E: UC-1 delegated consent"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow uc1
+
+  e2e:uc2:
+    desc: "E2E: UC-2+UC-3 owner-scoped negotiation"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow uc2
+
+  e2e:uc3:
+    desc: "E2E: UC-4 open/external data"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow uc3
+
+  e2e:health:
+    desc: Check reachability of all platform services
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e health
+
+  # ── Compliance (offline validation) ─────────────────────────────────────────
   compliance:validate:
     desc: Validate core governance, DCAT-like shape, ODRL shape and compliance evidence
     cmds:
@@ -414,47 +450,6 @@ tasks:
         py="${PYTHON:-services/connector/.venv/bin/python}"
         [ -x "$py" ] || py="python3"
         PYTHONPATH=libs/governance/src "$py" scripts/compliance_validate.py --profile core
-
-  compliance:e2e:smoke:
-    desc: Run runtime smoke checks against a started dataspace connector
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/e2e_smoke.py \
-          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
-          --dataset-api-url "${DATASET_API_URL:-http://localhost:30002}" \
-          --provenance-url "${PROVENANCE_URL:-http://localhost:30000}"
-
-  compliance:e2e:uc1:
-    desc: "E2E: UC-1 delegated consent with subject-pool validation"
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/e2e_smoke.py --flow uc1 \
-          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
-          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
-
-  compliance:e2e:uc2:
-    desc: "E2E: UC-2+UC-3 owner-scoped negotiation"
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/e2e_smoke.py --flow uc2 \
-          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
-          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
-
-  compliance:e2e:uc3:
-    desc: "E2E: UC-4 open/external data"
-    cmds:
-      - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        "$py" scripts/e2e_smoke.py --flow uc3 \
-          --connector-url "${CONNECTOR_URL:-http://localhost:30001}" \
-          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://localhost:30005}"
 
   compliance:test:
     desc: Run offline compliance validator tests

@@ -132,21 +132,14 @@ class ConsumerService:
             if dataset.get("@id") != asset_id and dataset.get("id") != asset_id:
                 continue
             policies = dataset.get("hasPolicy") or dataset.get("odrl:hasPolicy") or []
-            policy = None
             if isinstance(policies, dict):
-                policy = policies
-            if policies:
-                policy = policies[0]
-            if not isinstance(policy, dict):
+                policies = [policies]
+            if not policies or not isinstance(policies[0], dict):
                 return None
-            return {
-                "@context": ["http://www.w3.org/ns/odrl.jsonld"],
-                "@type": "Offer",
-                "@id": policy.get("@id") or f"{asset_id}#offer",
-                "assigner": self._provider_id,
-                "target": asset_id,
-                "permission": policy.get("permission") or policy.get("odrl:permission") or [],
-            }
+            policy = dict(policies[0])
+            policy["@context"] = "http://www.w3.org/ns/odrl.jsonld"
+            policy["target"] = asset_id
+            return policy
         return None
 
     def _fallback_policy(self, policy: dict, offer_id: str, asset_id: str, assigner: str) -> dict:
