@@ -120,7 +120,8 @@ def health(
         "provider connector": settings.connector_url,
         "consumer connector": settings.consumer_connector_url,
         "dataset-api": settings.dataset_api_url,
-        "provenance": settings.provenance_url,
+        "provider provenance": settings.provenance_url,
+        "consumer provenance": settings.consumer_provenance_url,
         "identity-registry": settings.identity_registry_url,
     }
     all_ok = True

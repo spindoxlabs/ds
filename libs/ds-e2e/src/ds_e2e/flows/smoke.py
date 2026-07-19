@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import time
 import urllib.parse
 from typing import Any
 
@@ -213,21 +214,29 @@ class SmokeFlow(BaseFlow):
             return result
         result.pass_step("revoke access", "consumer access and agreement revoked", request_id=request_id)
 
-        # 13. Query blocked after revoke
-        blocked_status, _ = self.http.get_raw(f"{s.dataset_api_url}/query?{query_params}")
+        # 13. Query blocked after revoke (poll — DSP termination propagates async)
+        blocked_deadline = time.time() + s.poll_timeout
+        blocked_status = 0
+        while time.time() < blocked_deadline:
+            blocked_status, _ = self.http.get_raw(f"{s.dataset_api_url}/query?{query_params}")
+            if blocked_status == 403:
+                break
+            time.sleep(s.poll_interval)
         if blocked_status != 403:
             result.fail_step("query blocked after revoke", "expected 403", status_code=blocked_status)
             return result
         result.pass_step("query blocked after revoke", "stale transfer cannot query after revoke")
 
-        # 14. Provenance
-        events = self.http.get(f"{s.provenance_url}/prov/events?limit=200") or {}
-        graph = events.get("@graph") or []
-        event_types = {
-            str(item.get("@type", "")).removeprefix("ds:")
-            for item in graph
-            if isinstance(item, dict)
-        }
+        # 14. Provenance (merge events from provider + consumer instances)
+        event_types: set[str] = set()
+        for prov_url in (s.provenance_url, s.consumer_provenance_url):
+            events = self.http.get(f"{prov_url}/prov/events?limit=200", headers=svc_headers) or {}
+            graph = events.get("@graph") or []
+            event_types.update(
+                str(item.get("@type", "")).removeprefix("ds:")
+                for item in graph
+                if isinstance(item, dict)
+            )
         missing = sorted(REQUIRED_PROVENANCE_EVENTS - event_types)
         if missing:
             result.fail_step("provenance complete", "missing event types", missing=missing)
@@ -242,7 +251,8 @@ class SmokeFlow(BaseFlow):
             ("provider connector", s.connector_url),
             ("consumer connector", s.consumer_connector_url),
             ("dataset-api", s.dataset_api_url),
-            ("provenance", s.provenance_url),
+            ("provider provenance", s.provenance_url),
+            ("consumer provenance", s.consumer_provenance_url),
         ]
         for name, url in services:
             try:

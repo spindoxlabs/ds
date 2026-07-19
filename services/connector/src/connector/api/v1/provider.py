@@ -34,8 +34,6 @@ async def sync(
     from ds.governance.models import load_odrl_profile
 
     from ...services.governance import ConnectorGovernanceMapper, load_exposed_datasets
-    from ...services.prov_bridge import ProvBridge
-    from ...clients.provenance import ProvenanceClient
     from ...services.provider_service import sync_governance
 
     yaml_path = (req.governance_yaml_path if req else None) or settings.governance_yaml_path
@@ -61,13 +59,9 @@ async def sync(
         profile=profile,
         owner_did_resolver=owner_did_resolver,
     )
-    prov_client = ProvenanceClient(settings.provenance_url)
-    prov = ProvBridge(prov_client, settings.participant_id)
-    try:
-        result = await sync_governance(yaml_path, edc, mapper, prov, overlay_name=settings.governance_overlay_name)
-        return result
-    finally:
-        await prov_client.close()
+    prov = request.app.state.prov
+    result = await sync_governance(yaml_path, edc, mapper, prov, overlay_name=settings.governance_overlay_name)
+    return result
 
 
 @router.get("/authorizations")

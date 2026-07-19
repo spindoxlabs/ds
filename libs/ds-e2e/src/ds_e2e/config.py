@@ -26,6 +26,9 @@ class E2ESettings(BaseSettings):
     provenance_url: str = Field(
         "http://172.17.0.1:30000", validation_alias="CONNECTOR_PROVENANCE_URL_PROVIDER"
     )
+    consumer_provenance_url: str = Field(
+        "http://172.17.0.1:31000", validation_alias="CONNECTOR_PROVENANCE_URL_CONSUMER"
+    )
     identity_registry_url: str = Field(
         "http://172.17.0.1:30005", validation_alias="CONNECTOR_IDENTITY_REGISTRY_URL"
     )
