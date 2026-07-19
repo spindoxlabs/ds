@@ -23,7 +23,13 @@ services:
       - "9010:9010"
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-    networks: [dataspaces]
+    networks:
+      dataspaces:
+        aliases:
+          - provider.dataspaces.localhost
+          - consumer.dataspaces.localhost
+          - trust-anchor.dataspaces.localhost
+          - users.dataspaces.localhost
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
   postgres:

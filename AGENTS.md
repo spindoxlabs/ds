@@ -148,8 +148,11 @@ The identity-registry is a centralized trust anchor service (DSSC BB02 — Ident
 
 How DID resolution works:
 1. EDC resolves `did:web:provider.dataspaces.localhost` using its `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`)
-2. The request reaches the identity-registry directly at `GET /dids/did:web:provider.dataspaces.localhost/did.json` (`*.dataspaces.localhost` resolves to `127.0.0.1` via `/etc/hosts`)
-3. The identity-registry builds and returns the DID document from its database
+2. `*.dataspaces.localhost` resolves to Caddy via Docker network aliases (defined on the caddy service in `docker-compose.yml`)
+3. Caddy rewrites `GET /.well-known/did.json` → `GET /dids/did:web:{host}/did.json` and proxies to the identity-registry
+4. The identity-registry builds and returns the DID document from its database
+
+**When running EDC on the host** (`task edc-provider:run` / `task edc-consumer:run`), Docker network aliases are not available. Either add `*.dataspaces.localhost` entries to `/etc/hosts` and publish Caddy port 80, or rely on the `DemoIdentityFallbackExtension` (`ds.demo.identity.enabled=true` in EDC properties).
 
 The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
 

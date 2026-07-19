@@ -1,3 +1,21 @@
+# ── DID resolution (:80) — EDC did:web resolver fetches DID documents here ──
+#
+# did:web:provider.dataspaces.localhost → GET http://provider.dataspaces.localhost/.well-known/did.json
+# Caddy rewrites to the identity-registry at /dids/did:web:{host}/did.json
+# Resolved via Docker network aliases on the caddy service (no host port needed).
+#
+# NOTE: only works when EDC runs in Docker (same network as Caddy).
+# If running EDC on the host (task edc-provider:run), add /etc/hosts entries
+# and publish Caddy port 80, or use the DemoIdentityFallback.
+#
+http://*.dataspaces.localhost:80 {
+	handle /.well-known/did.json {
+		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy identity-registry:30005
+	}
+	respond 404
+}
+
 # ── Keycloak ─────────────────────────────────────────────────────────────────
 
 http://keycloak.dataspaces.localhost:9010 {
