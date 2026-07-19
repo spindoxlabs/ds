@@ -43,6 +43,8 @@ public class DataspacesExtension implements ServiceExtension {
         long cacheTtlSeconds = Long.parseLong(
             context.getSetting("ds.access.scope.cache.ttl.seconds", "60")
         );
+        String apiKey = context.getSetting("ds.connector.internal.api.key",
+            System.getenv().getOrDefault("EDC_API_KEY", ""));
 
         String membershipOperand = namespace + "Membership";
         String consentOperand = namespace + "ConsentStatus";
@@ -69,13 +71,13 @@ public class DataspacesExtension implements ServiceExtension {
             ParticipantAgentPolicyContext.class,
             Permission.class,
             membershipOperand,
-            new AccessScopeFunction(connectorInternalUrl, cacheTtlSeconds, context.getMonitor())
+            new AccessScopeFunction(connectorInternalUrl, cacheTtlSeconds, context.getMonitor(), apiKey)
         );
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,
             Permission.class,
             consentOperand,
-            new ConsentStatusFunction(connectorInternalUrl, context.getMonitor())
+            new ConsentStatusFunction(connectorInternalUrl, context.getMonitor(), apiKey)
         );
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,

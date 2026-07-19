@@ -38,14 +38,16 @@ public class AccessScopeFunction implements AtomicConstraintRuleFunction<Permiss
     }
 
     private final String connectorBaseUrl;
+    private final String apiKey;
     private final Duration cacheTtl;
     private final OkHttpClient http;
     private final ObjectMapper mapper;
     private final Monitor monitor;
     private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
 
-    public AccessScopeFunction(String connectorBaseUrl, long cacheTtlSeconds, Monitor monitor) {
+    public AccessScopeFunction(String connectorBaseUrl, long cacheTtlSeconds, Monitor monitor, String apiKey) {
         this.connectorBaseUrl = connectorBaseUrl.replaceAll("/+$", "");
+        this.apiKey = apiKey;
         this.cacheTtl = Duration.ofSeconds(cacheTtlSeconds);
         this.http = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(5))
@@ -86,7 +88,11 @@ public class AccessScopeFunction implements AtomicConstraintRuleFunction<Permiss
         int[] backoffMs = {100, 500, 2000};
         for (int attempt = 0; attempt <= backoffMs.length; attempt++) {
             try {
-                Request request = new Request.Builder().url(url).get().build();
+                Request.Builder rb = new Request.Builder().url(url).get();
+                if (apiKey != null && !apiKey.isEmpty()) {
+                    rb.header("X-Api-Key", apiKey);
+                }
+                Request request = rb.build();
                 try (Response response = http.newCall(request).execute()) {
                     if (!response.isSuccessful() || response.body() == null) {
                         monitor.warning("AccessScopeFunction: unexpected response %d for participant %s"

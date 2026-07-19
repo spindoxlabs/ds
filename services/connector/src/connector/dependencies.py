@@ -57,7 +57,28 @@ require_provider_write = require_permission("connector.provider.write", "connect
 require_internal = require_permission("connector.internal")
 require_webhook = require_permission("connector.webhook")
 
+
+async def _require_internal_or_api_key(request: Request) -> dict:
+    """Accept JWT with connector.internal scope OR X-Api-Key matching EDC_API_KEY.
+
+    The EDC extensions call internal endpoints with X-Api-Key (no JWT available
+    in the Java runtime). Falls back to standard JWT auth.
+    """
+    api_key = request.headers.get("X-Api-Key")
+    settings = get_settings()
+    if api_key and settings.edc_api_key and api_key == settings.edc_api_key:
+        return {"sub": "edc-extension", "scope": "connector.internal"}
+    from ds_auth.fastapi import get_oidc_config, authenticate
+    from ds_auth import OidcConfig
+    from fastapi import HTTPException
+    config: OidcConfig = request.app.state.oidc_config
+    principal = await authenticate(request, config)
+    if not principal.grants_any(("connector.internal",)):
+        raise HTTPException(403, "Missing required permission: connector.internal")
+    return {"sub": principal.subject, "scope": "connector.internal"}
+
+
 # Back-compat aliases (unchanged call sites in admin/internal/consent/webhooks).
 require_admin_scope = require_admin
-require_internal_scope = require_internal
+require_internal_scope = _require_internal_or_api_key
 require_webhook_scope = require_webhook

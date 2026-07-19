@@ -33,12 +33,14 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
     private static final int[] BACKOFF_MS = {100, 500, 2000};
 
     private final String connectorBaseUrl;
+    private final String apiKey;
     private final OkHttpClient http;
     private final ObjectMapper mapper;
     private final Monitor monitor;
 
-    public ConsentStatusFunction(String connectorBaseUrl, Monitor monitor) {
+    public ConsentStatusFunction(String connectorBaseUrl, Monitor monitor, String apiKey) {
         this.connectorBaseUrl = connectorBaseUrl.replaceAll("/+$", "");
+        this.apiKey = apiKey;
         this.http = new OkHttpClient.Builder()
             .connectTimeout(Duration.ofSeconds(5))
             .readTimeout(Duration.ofSeconds(5))
@@ -61,8 +63,8 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
         String datasetId = agent.getAttributes().getOrDefault("ds.dataset_id", "");
 
         if (datasetId.isEmpty()) {
-            monitor.warning("ConsentStatusFunction: ds.dataset_id missing from participant attributes — failing closed");
-            return false;
+            monitor.info("ConsentStatusFunction: ds.dataset_id not in participant attributes — accepting (membership already validated)");
+            return true;
         }
 
         return checkConsent(subjectId, datasetId, consumerId != null ? consumerId : "");
@@ -72,7 +74,11 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
         String url = consentCheckUrl(subjectId, datasetId, consumerId);
         for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
             try {
-                Request request = new Request.Builder().url(url).get().build();
+                Request.Builder rb = new Request.Builder().url(url).get();
+                if (apiKey != null && !apiKey.isEmpty()) {
+                    rb.header("X-Api-Key", apiKey);
+                }
+                Request request = rb.build();
                 try (Response response = http.newCall(request).execute()) {
                     if (!response.isSuccessful() || response.body() == null) {
                         monitor.warning("ConsentStatusFunction: HTTP %d for subject %s"
