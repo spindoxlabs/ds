@@ -23,7 +23,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 	const token = session?.accessToken ?? '';
 	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const body = await request.json();
-	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
+	const connectorUrl = env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 	const payload = {
 		...body,
 		counter_party_address:

@@ -100,7 +100,7 @@
   <footer class="border-t border-gray-200 bg-white">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 text-xs text-gray-400 flex items-center justify-between">
       <span>Dataspaces Platform · DSSC Blueprint BB07</span>
-      <a href="/ns/energy" class="hover:text-gray-600">ODRL Vocabulary</a>
+      <a href="/api/connector/ns/policy" class="hover:text-gray-600">ODRL Vocabulary</a>
     </div>
   </footer>
 </div>

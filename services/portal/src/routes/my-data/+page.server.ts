@@ -9,7 +9,7 @@ import {
 } from '$lib/server/connector';
 
 async function loadOwnedDatasets(fetchFn: typeof fetch, subjectId: string): Promise<OwnedDataset[]> {
-	const catalogueUrl = env.CATALOGUE_URL ?? 'http://dataset-api:30002';
+	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
 	const res = await fetchFn(`${catalogueUrl}/subjects/${encodeURIComponent(subjectId)}/datasets`);
 	if (!res.ok) throw new Error(`${res.status} ${await res.text().catch(() => res.statusText)}`);
 	const body = await res.json();

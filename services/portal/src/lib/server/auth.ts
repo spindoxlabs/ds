@@ -112,7 +112,7 @@ export function getConsumerSubjectId(session: Session): string {
 
 export async function requireAuth(event: { locals: App.Locals; url: URL }) {
 	const session = await event.locals.auth();
-	if (!session?.user) {
+	if (!session?.user || session.error === 'RefreshTokenError') {
 		throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(event.url.pathname)}`);
 	}
 	return session;

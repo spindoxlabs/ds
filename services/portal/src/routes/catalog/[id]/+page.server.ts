@@ -10,7 +10,7 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const assetId = decodeURIComponent(params.id);
 	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
-	const catalogueUrl = env.CATALOGUE_URL ?? 'http://dataset-api:30002';
+	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
 	const defaultCounterPartyAddress =
 		env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS ?? 'http://edc-provider:19194/protocol/2025-1';
 	const defaultAssigner =

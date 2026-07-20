@@ -21,6 +21,7 @@ declare module '@auth/core/types' {
 		userVcRole?: string | null;
 		userVcJws?: string | null;
 		userSubjectId?: string | null;
+		error?: string;
 	}
 }
 

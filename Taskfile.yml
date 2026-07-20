@@ -8,7 +8,7 @@ version: "3"
 # All local dev defaults live in .env.local (committed).
 # Override per-machine in .env (gitignored).
 #
-dotenv: ['.env', '.env.local']
+dotenv: [".env", ".env.local"]
 
 env:
   COMPOSE_PROJECT_NAME: dataspaces
@@ -27,6 +27,12 @@ tasks:
         done
 
   # ── Shared infrastructure ────────────────────────────────────────────────
+  keycloak:reload:
+    desc: Reset keycloak and reinitialize
+    cmds:
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose down -v keycloak
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d keycloak keycloak-org-sync keycloak-sync
+
   infra:start:
     desc: Start shared infrastructure (postgres, caddy, identity-registry, keycloak)
     cmds:

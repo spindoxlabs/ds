@@ -110,7 +110,8 @@ class KeycloakAdmin:
     # ── Organizations ────────────────────────────────────────────────────────
 
     def get_organization_by_alias(self, alias: str) -> dict | None:
-        orgs = self._request("GET", f"/organizations?search={urllib.parse.quote(alias)}&exact=true")
+        # KC 26 search matches on name, not alias — list all and filter.
+        orgs = self._request("GET", "/organizations")
         if isinstance(orgs, list):
             for org in orgs:
                 if org.get("alias") == alias:
@@ -154,7 +155,12 @@ class KeycloakAdmin:
         members = self.get_org_members(org_id)
         if any(m.get("id") == user_id for m in members):
             return
-        self._request("POST", f"/organizations/{org_id}/members", {"id": user_id})
+        # KC 26 expects the raw user UUID as the request body, not JSON.
+        url = f"{self.base_url}/admin/realms/{self.realm}/organizations/{org_id}/members"
+        req = urllib.request.Request(url, data=user_id.encode(), method="POST")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("Content-Type", "application/json")
+        urllib.request.urlopen(req)
 
     # ── Organization groups ─────────────────────────────────────────────────
 

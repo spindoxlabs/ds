@@ -22,7 +22,7 @@ export const load: PageServerLoad = async () => {
 	const services = [
 		{ name: 'ds-connector', url: env.CONNECTOR_URL ?? 'http://ds-connector:30001' },
 		{ name: 'ds-provenance', url: env.PROVENANCE_URL ?? 'http://ds-provenance:30000' },
-		{ name: 'dataset-api', url: env.CATALOGUE_URL ?? 'http://dataset-api:30002' },
+		{ name: 'dataset-api', url: env.CATALOGUE_URL ?? 'http://172.17.0.1:30002' },
 	];
 
 	const results = await Promise.all(services.map((s) => ping(s.name, s.url)));

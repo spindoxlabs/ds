@@ -5,7 +5,7 @@ import { parseTokenRoles } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const session = await locals.auth();
-	if (!session?.user) {
+	if (!session?.user || session.error === 'RefreshTokenError') {
 		throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(url.pathname)}`);
 	}
 
@@ -22,24 +22,32 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 
 	// Use federated catalog when configured; fall back to dataset-api catalogue.
 	const federatedUrl = env.FEDERATED_CATALOG_URL;
-	const catalogueUrl = env.CATALOGUE_URL ?? 'http://dataset-api:30002';
+	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
+	const token = session?.accessToken ?? '';
+	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-	try {
-		if (federatedUrl) {
-			const res = await fetch(`${federatedUrl}/catalog?limit=50`);
-			if (!res.ok) throw new Error(`federated-catalog: ${res.status}`);
+	if (federatedUrl) {
+		try {
+			const res = await fetch(`${federatedUrl}/catalog?limit=50`, { headers });
+			if (!res.ok) throw new Error(`${res.status}`);
 			const data = await res.json();
 			const datasets: unknown[] = data?.['dcat:dataset'] ?? [];
 			if (datasets.length > 0) {
 				return { datasets, federated: true, error: null };
 			}
+		} catch (e) {
+			console.error('[ds-portal] Federated catalog unavailable, falling back to dataset-api:', e instanceof Error ? e.message : e);
 		}
-		const res = await fetch(`${catalogueUrl}/catalogue`);
+	}
+
+	try {
+		const res = await fetch(`${catalogueUrl}/catalogue`, { headers });
 		if (!res.ok) throw new Error(`${res.status}`);
 		const data = await res.json();
 		const datasets: unknown[] = Array.isArray(data) ? data : (data?.datasets ?? data?.['dcat:dataset'] ?? []);
 		return { datasets, federated: false, error: null };
 	} catch (e) {
-		return { datasets: [], federated: false, error: e instanceof Error ? e.message : 'Failed to load catalogue' };
+		console.error('[ds-portal] Catalogue load failed:', e instanceof Error ? e.message : e);
+		return { datasets: [], federated: false, error: 'Catalogue is temporarily unavailable.' };
 	}
 };

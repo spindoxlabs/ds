@@ -8,7 +8,7 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
 	const subjectId = session ? getConsumerSubjectId(session) : '';
-	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
+	const connectorUrl = env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 
 	const headers = {
 		...subjectCredentialHeaders(subjectId, session?.userVcJws),
@@ -31,10 +31,11 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
 			revokeError: null,
 		};
 	} catch (e) {
+		console.error('[ds-portal] Consumer data load failed:', e instanceof Error ? e.message : e);
 		return {
 			requests: [],
 			transfers: [],
-			error: e instanceof Error ? e.message : 'Failed',
+			error: 'Consumer connector is temporarily unavailable.',
 			revokeError: null,
 		};
 	}
@@ -45,7 +46,7 @@ export const actions: Actions = {
 		const session = await locals.auth();
 		const token = session?.accessToken ?? '';
 		const subjectId = session ? getConsumerSubjectId(session) : '';
-		const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
+		const connectorUrl = env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 		const form = await request.formData();
 		const requestId = String(form.get('request_id') ?? '');
 		if (!requestId) {

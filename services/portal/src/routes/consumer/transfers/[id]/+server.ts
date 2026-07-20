@@ -9,12 +9,12 @@ import { getConsumerSubjectId } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 function connectorUrl(): string {
-	return env.CONNECTOR_URL ?? 'http://ds-connector:30001';
+	return env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 }
 
 function toInternalDataUrl(endpoint: string): URL {
 	const url = new URL(endpoint);
-	const catalogueUrl = env.CATALOGUE_URL ?? 'http://dataset-api:30002';
+	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
 	const internal = new URL(catalogueUrl);
 	if ((url.hostname === 'localhost' || url.hostname === '127.0.0.1') && url.port === '30002') {
 		url.protocol = internal.protocol;
