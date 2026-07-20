@@ -32,6 +32,11 @@ def get_consumer_edc(request: Request):
     return request.app.state.consumer_edc
 
 
+def get_edc(request: Request):
+    """Return whichever EDC client is configured (provider or consumer)."""
+    return request.app.state.provider_edc or request.app.state.consumer_edc
+
+
 def get_consumer_service(request: Request):
     return request.app.state.consumer_service
 
@@ -54,6 +59,7 @@ def get_notifier(request: Request):
 require_admin = require_permission("connector.admin")
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
 require_provider_write = require_permission("connector.provider.write", "connector.admin")
+require_history_read = require_permission("connector.history.read", "connector.admin")
 require_internal = require_permission("connector.internal")
 require_webhook = require_permission("connector.webhook")
 

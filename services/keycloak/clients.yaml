@@ -34,6 +34,8 @@ scopes:
     description: Read provider assets, policies, contracts, transfers, authorizations
   - name: connector.provider.write
     description: Mutate provider config (sync, delete assets/policies/contracts)
+  - name: connector.history.read
+    description: Read EDC negotiation, agreement and transfer history
   - name: connector.internal
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
@@ -81,6 +83,7 @@ clients:
       - identity-registry.resolve
       - identity-registry.read
       - connector.admin
+      - connector.history.read
       - provenance.read
       - catalog.read
     extra_audiences:

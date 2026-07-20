@@ -10,13 +10,14 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # Install shared libraries (local path deps)
 COPY libs/governance/ /build/governance/
 COPY libs/ds-auth/ /build/ds-auth/
+COPY libs/ds-edc/ /build/ds-edc/
 RUN uv venv /opt/venv && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      /build/governance /build/ds-auth
+      /build/governance /build/ds-auth /build/ds-edc
 
 # Install connector dependencies
 COPY services/connector/pyproject.toml /build/
-RUN sed -i '/ds-governance/d; /ds-auth/d' /build/pyproject.toml && \
+RUN sed -i '/ds-governance/d; /ds-auth/d; /ds-edc/d' /build/pyproject.toml && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
       -r /build/pyproject.toml 2>/dev/null || \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \

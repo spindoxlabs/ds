@@ -33,7 +33,13 @@ config/
 | Module | Purpose |
 |--------|---------|
 | `controlplane-dcp-bom` | DCP identity/trust + VP verification |
+| `control-plane-sql` | SQL-backed control plane stores (replaces in-memory) |
 | `dataplane-base-bom` | HTTP data plane for EDR-gated transfers |
+| `data-plane-store-sql` | SQL-backed data plane stores |
+| `sql-pool-apache-commons` | JDBC connection pool |
+| `edr-index-sql` | SQL-backed EDR index |
+| `transaction-local` | Local transaction manager for SQL stores |
+| `postgresql` (42.7.5) | PostgreSQL JDBC driver |
 | `configuration-filesystem` | Reads `.properties` config files |
 | `identity-did-web` | `did:web:` DID resolver |
 | `:edc-extensions` | Custom `ds:` ODRL constraint functions |
@@ -47,6 +53,17 @@ config/
 | Change connector properties | `services/connector/config/*.properties` |
 | Rebuild base image | `Dockerfile.base` |
 
+## Persistence
+
+EDC uses PostgreSQL SQL stores instead of in-memory. Schema is auto-created via Flyway on startup (`edc.sql.schema.autocreate=true`). Databases:
+
+| Database | Participant | Compose init container |
+|----------|------------|----------------------|
+| `edc_provider` | Provider | `edc-db-create-provider` |
+| `edc_consumer` | Consumer | `edc-db-create-consumer` |
+
+The init containers only create the database; Flyway within the EDC JVM creates all tables on first start. On `reset-demo-state`, the databases are dropped and recreated — Flyway re-runs on next EDC startup.
+
 ## Build commands
 
 ```bash
@@ -59,6 +76,10 @@ task edc:build
 
 # Build Docker image (requires ds-edc-base:0.16.0)
 task edc:docker
+
+# Watch mode — continuous rebuild + auto-restart (two terminals):
+task edc:watch-build      # Terminal 1: Gradle --continuous rebuild
+task edc-provider:watch   # Terminal 2: auto-restart EDC on JAR change
 ```
 
 ## EDC port scheme

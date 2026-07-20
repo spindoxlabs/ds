@@ -36,7 +36,8 @@ dataspaces/
 │   └── keycloak/               Config — OIDC realm import for dev
 ├── libs/                       Importable shared Python packages (no Dockerfile, no port)
 │   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper (import `ds.governance`)
-│   └── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
+│   ├── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
+│   └── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
 ├── docs/                       Architecture docs, DSSC blueprint reference
 ├── scripts/                    Bootstrap, compliance validation, backup
 ├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
@@ -56,7 +57,7 @@ Each service has its own `Taskfile.yml` and `Dockerfile`. Most have an `AGENTS.m
 
 Importable Python packages shared across services live under **`libs/`**, not `services/`. The rule:
 
-- **`libs/`** — a package with no `Dockerfile` and no port; consumed via an editable path dependency. Today: `libs/governance` (`ds-governance`, imported as `ds.governance`) and `libs/ds-auth` (`ds-auth`, imported as `ds_auth`).
+- **`libs/`** — a package with no `Dockerfile` and no port; consumed via an editable path dependency. Today: `libs/governance` (`ds-governance`, imported as `ds.governance`), `libs/ds-auth` (`ds-auth`, imported as `ds_auth`), and `libs/ds-edc` (`ds-edc`, imported as `ds_edc` — shared EDC Management API v3 client and Pydantic models).
 - **`services/`** — a deployable unit with a `Dockerfile` and a `task <participant>:<service>:run`.
 
 To depend on a lib, add it to the service's `pyproject.toml` `[project].dependencies` and point `[tool.uv.sources]` at it, e.g. `ds-auth = { path = "../../libs/ds-auth", editable = true }`. In the service `Dockerfile`, `COPY libs/<lib>/ /build/<lib>/`, `uv pip install` it, and strip its name from the copied `pyproject.toml` before installing the rest (see `services/connector/Dockerfile`). New shared code goes in `libs/`; never add a library under `services/`.
@@ -112,7 +113,7 @@ All containers share the `dataspaces` bridge network.
 | Frontend | SvelteKit 2.0, Svelte 5.0, Tailwind CSS 4.0, Cytoscape.js |
 | Identity (BB02) | identity-registry: DID lifecycle, STS (ES256 SI JWTs), DCP credential service, participant registry, StatusList2021 |
 | Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
-| Database | PostgreSQL 17.4 (one DB per service, all on port 35432) |
+| Database | PostgreSQL 17.4 (one DB per service, all on port 35432; EDC uses SQL stores with Flyway auto-migration) |
 | Proxy | Caddy 2 (HTTP reverse proxy for portal, connector APIs, and Keycloak) |
 | Auth | Keycloak OIDC via Auth.js |
 | Build | uv (Python), npm (Node), Gradle (Java), Taskfile |

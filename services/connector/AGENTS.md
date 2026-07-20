@@ -18,6 +18,7 @@ src/connector/
 │   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers}
 │   ├── consumer.py      GET /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
 │   ├── consent.py       POST /consent/request, GET /consent/my, POST /consent/my/{id}/{approve,reject,revoke}
+│   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
 │   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /internal/consent/register-transfer, GET /internal/edr-jwks
 │   └── namespace.py     GET /ns/energy — ds: ODRL vocabulary JSON-LD
 ├── services/
@@ -28,7 +29,7 @@ src/connector/
 │   ├── agreement_service.py  AgreementService — EDC contract agreement queries
 │   └── prov_bridge.py        ProvBridge — emit provenance events to ds-provenance
 ├── clients/
-│   ├── edc_management.py  EdcManagementClient — typed wrapper around EDC Management API v3
+│   ├── edc_management.py  Re-exports EdcManagementClient from shared libs/ds-edc
 │   └── provenance.py     ProvenanceClient — POST events to ds-provenance
 ├── registry/
 │   └── participants.py   ParticipantRegistry — loads participants.yaml
@@ -49,7 +50,7 @@ src/connector/
 | Add a new API endpoint | `api/v1/<group>.py`, register router in `main.py` |
 | Change governance-to-ODRL mapping | `../../libs/governance/src/ds/governance/mapper.py` (shared lib) |
 | Modify consent logic | `services/consent_service.py`, `db/models.py` |
-| Change EDC API calls | `clients/edc_management.py` |
+| Change EDC API calls | `../../libs/ds-edc/src/ds_edc/client.py` (shared lib) |
 | Add a new provenance event | `services/prov_bridge.py`, `clients/provenance.py` |
 | Add/change config settings | `config.py` (Pydantic settings with env vars) |
 | Database schema change | `db/models.py` → run `task db:revision MESSAGE=description` |
@@ -128,4 +129,4 @@ Tests use `pytest-asyncio` and `respx` for HTTP mocking. Test database is SQLite
 - **Upstream**: Portal calls this service's REST API (JWT-authenticated via `svc-ds-portal` service account)
 - **Downstream**: calls EDC Management API, ds-provenance, identity-registry (`/participants` for registry, `/users/resolve` for user lookup)
 - **Internal API**: EDC extensions and dataset-api call `/internal/*` endpoints during policy evaluation (JWT-authenticated via `svc-edc` / `svc-ds-dataset-api` service accounts)
-- **Shared lib**: imports `ds-governance` (editable path dependency at `../../libs/governance`)
+- **Shared libs**: imports `ds-governance` (governance rules/ODRL), `ds-auth` (JWT auth), `ds-edc` (EDC client + schemas) — all editable path dependencies under `../../libs/`

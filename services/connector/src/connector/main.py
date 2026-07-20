@@ -25,6 +25,7 @@ from .api.v1.internal import router as internal_router
 from .api.v1.namespace import router as namespace_router
 from .api.v1.consent import router as consent_router
 from .api.v1.admin import router as admin_router
+from .api.v1.history import router as history_router
 
 
 @asynccontextmanager
@@ -166,6 +167,7 @@ def create_app() -> FastAPI:
     app.include_router(namespace_router)
     app.include_router(consent_router)
     app.include_router(admin_router)
+    app.include_router(history_router)
 
     # Role-specific routers
     if settings.role == "provider":

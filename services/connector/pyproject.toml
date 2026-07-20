@@ -23,6 +23,7 @@ dependencies = [
     "cryptography>=42",
     "ds-governance",
     "ds-auth",
+    "ds-edc",
     "pyjwt[crypto]>=2.9",
 ]
 
@@ -39,6 +40,7 @@ dev = [
 [tool.uv.sources]
 ds-governance = { path = "../../libs/governance", editable = true }
 ds-auth = { path = "../../libs/ds-auth", editable = true }
+ds-edc = { path = "../../libs/ds-edc", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/connector"]

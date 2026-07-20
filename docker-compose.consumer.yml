@@ -30,11 +30,26 @@ services:
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:31001/webhooks/transfer-process
+    depends_on:
+      edc-db-create-consumer:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
       interval: 10s
       start_period: 60s
       retries: 15
+    networks: [dataspaces]
+
+  # ── EDC database init (Flyway auto-creates schema on startup) ───────────────
+  edc-db-create-consumer:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_consumer'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_consumer"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
     networks: [dataspaces]
 
   # ── Database init ────────────────────────────────────────────────────────────

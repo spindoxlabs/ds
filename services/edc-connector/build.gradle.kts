@@ -32,6 +32,14 @@ dependencies {
     // ── DID:web resolver ──────────────────────────────────────────────────────
     runtimeOnly("org.eclipse.edc:identity-did-web:${edcVersion}")
 
+    // ── PostgreSQL SQL stores (replaces in-memory) ────────────────────────────
+    runtimeOnly("org.eclipse.edc:control-plane-sql:${edcVersion}")
+    runtimeOnly("org.eclipse.edc:data-plane-store-sql:${edcVersion}")
+    runtimeOnly("org.eclipse.edc:sql-pool-apache-commons:${edcVersion}")
+    runtimeOnly("org.eclipse.edc:edr-index-sql:${edcVersion}")
+    runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
+    runtimeOnly("org.postgresql:postgresql:42.7.5")
+
     // ── Our custom ODRL constraint functions ─────────────────────────────────
     runtimeOnly(project(":edc-extensions"))
 }

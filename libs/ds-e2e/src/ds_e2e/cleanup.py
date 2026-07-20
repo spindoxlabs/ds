@@ -106,6 +106,17 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
         except psycopg.Error as exc:
             log.warning("Could not truncate %s: %s", db_name, exc)
 
+    for edc_db in ("edc_provider", "edc_consumer"):
+        pg_dsn = f"{base_url}/postgres"
+        try:
+            with psycopg.connect(pg_dsn, autocommit=True) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(f"DROP DATABASE IF EXISTS {edc_db}")
+                    cur.execute(f"CREATE DATABASE {edc_db}")
+            log.info("Reset EDC database %s", edc_db)
+        except psycopg.Error as exc:
+            log.warning("Could not reset %s: %s", edc_db, exc)
+
     edc_client = httpx.Client(timeout=10)
     try:
         for mgmt_url, label in [

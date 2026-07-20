@@ -264,15 +264,17 @@ tasks:
 
   # ── Local dev (all services) ──────────────────────────────────────────────
   dev:
-    desc: Start infra, then open 10 service shells in tmux
+    desc: Start infra, then open service shells in tmux (EDC with watch mode)
     cmds:
       - task start
       - |
         tmux kill-session -t ds 2>/dev/null || true
-        tmux new-session -d -s ds -n edc-provider
-        tmux send-keys -t ds:edc-provider            'task edc-provider:run' Enter
+        tmux new-session -d -s ds -n edc-watch-build
+        tmux send-keys -t ds:edc-watch-build          'task edc:watch-build' Enter
+        tmux new-window -t ds -n edc-provider
+        tmux send-keys -t ds:edc-provider             'task edc-provider:watch' Enter
         tmux new-window -t ds -n edc-consumer
-        tmux send-keys -t ds:edc-consumer             'task edc-consumer:run' Enter
+        tmux send-keys -t ds:edc-consumer             'task edc-consumer:watch' Enter
         tmux new-window -t ds -n identity-registry
         tmux send-keys -t ds:identity-registry        'task identity-registry:run' Enter
         tmux new-window -t ds -n provider-connector
@@ -319,6 +321,12 @@ tasks:
               prov_nodes,
               access_log
             RESTART IDENTITY CASCADE;
+          " 2>/dev/null || true
+        done
+        for db in edc_provider edc_consumer; do
+          compose exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -c "
+            DROP DATABASE IF EXISTS $db;
+            CREATE DATABASE $db;
           " 2>/dev/null || true
         done
         KC_URL="${KEYCLOAK_TOKEN_URL}"
@@ -411,6 +419,72 @@ tasks:
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
           -jar "$jar"
+
+  edc:watch-build:
+    desc: Continuously rebuild EDC fat JAR on source changes (Gradle --continuous)
+    cmds:
+      - mkdir -p data/gradle
+      - >-
+        docker run --rm -it
+        -v "{{.ROOT_DIR}}:/project"
+        -v "{{.ROOT_DIR}}/data/gradle:/home/gradle/.gradle"
+        -w /project
+        gradle:8.12-jdk21
+        gradle :edc-connector:shadowJar --continuous --no-daemon
+
+  edc-provider:watch:
+    desc: Run EDC provider locally, auto-restart on fat JAR rebuild
+    cmds:
+      - docker stop dataspaces-edc-provider-1 2>/dev/null || true
+      - |
+        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
+        if [ ! -f "$jar" ]; then
+          echo "No connector.jar found — building..."
+          task edc:build
+        fi
+        while true; do
+          MTIME=$(stat -c %Y "$jar")
+          echo "Starting EDC provider (JAR mtime: $MTIME)..."
+          EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
+          java -Xms256m -Xmx512m \
+            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
+            -jar "$jar" &
+          PID=$!
+          while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
+            sleep 2
+            kill -0 $PID 2>/dev/null || break
+          done
+          echo "JAR changed or process exited — restarting..."
+          kill $PID 2>/dev/null; wait $PID 2>/dev/null
+          sleep 1
+        done
+
+  edc-consumer:watch:
+    desc: Run EDC consumer locally, auto-restart on fat JAR rebuild
+    cmds:
+      - docker stop dataspaces-edc-consumer-1 2>/dev/null || true
+      - |
+        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
+        if [ ! -f "$jar" ]; then
+          echo "No connector.jar found — building..."
+          task edc:build
+        fi
+        while true; do
+          MTIME=$(stat -c %Y "$jar")
+          echo "Starting EDC consumer (JAR mtime: $MTIME)..."
+          EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
+          java -Xms256m -Xmx512m \
+            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
+            -jar "$jar" &
+          PID=$!
+          while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
+            sleep 2
+            kill -0 $PID 2>/dev/null || break
+          done
+          echo "JAR changed or process exited — restarting..."
+          kill $PID 2>/dev/null; wait $PID 2>/dev/null
+          sleep 1
+        done
 
   # ── E2E verification ─────────────────────────────────────────────────────
   e2e:
