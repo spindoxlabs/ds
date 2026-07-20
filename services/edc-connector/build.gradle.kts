@@ -36,6 +36,7 @@ dependencies {
     runtimeOnly("org.eclipse.edc:control-plane-sql:${edcVersion}")
     runtimeOnly("org.eclipse.edc:data-plane-store-sql:${edcVersion}")
     runtimeOnly("org.eclipse.edc:sql-pool-apache-commons:${edcVersion}")
+    runtimeOnly("org.eclipse.edc:sql-lease-core:${edcVersion}")
     runtimeOnly("org.eclipse.edc:edr-index-sql:${edcVersion}")
     runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
     runtimeOnly("org.postgresql:postgresql:42.7.5")

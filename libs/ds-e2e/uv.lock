@@ -101,6 +101,7 @@ name = "ds-e2e"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "ds-edc" },
     { name = "httpx" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
@@ -118,6 +119,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "ds-edc", editable = "../ds-edc" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.1" },
@@ -127,6 +129,27 @@ requires-dist = [
     { name = "rich", specifier = ">=13" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
     { name = "typer", specifier = ">=0.12" },
+]
+provides-extras = ["dev"]
+
+[[package]]
+name = "ds-edc"
+version = "0.1.0"
+source = { editable = "../ds-edc" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "httpx", specifier = ">=0.27" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pydantic", specifier = ">=2.7" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
 provides-extras = ["dev"]
 
