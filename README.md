@@ -46,7 +46,6 @@ dataspaces/
 │   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
 │   └── keycloak/               OIDC realm import for dev
 ├── data/                       runtime data (gitignored) — caddy PKI, gradle cache
-├── scripts/                    compliance validation, backup
 └── docs/                       architecture docs, DSSC blueprint reference
 ```
 

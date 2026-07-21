@@ -10,7 +10,7 @@ on:
 
 jobs:
   offline-evidence:
-    name: Offline compliance checks
+    name: Governance validation and audit evidence
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -18,21 +18,28 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.12"
 
-      - name: Install offline test dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install pytest cryptography pyyaml pydantic httpx
+      - name: Install ds-governance
+        working-directory: libs/governance
+        run: uv sync --extra dev
 
-      - name: Generate compliance artifacts
-        env:
-          PYTHONPATH: libs/governance/src
+      - name: Run governance validator tests
+        working-directory: libs/governance
+        run: uv run pytest tests/tests/ -q
+
+      - name: Validate governance and generate compliance artifacts
+        working-directory: libs/governance
         run: |
-          python scripts/compliance_validate.py --profile core --write-artifacts
+          uv run ds-governance evidence \
+            --file ../../services/connector/governance/governance.yaml \
+            --owners ../../services/identity-registry/seed/owners.dev.yaml \
+            --participants ../../services/connector/governance/participants.yaml \
+            --name core \
+            --out-dir ../../reports/compliance
 
       - name: Upload evidence artifacts
         uses: actions/upload-artifact@v4

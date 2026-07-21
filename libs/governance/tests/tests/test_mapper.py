@@ -544,3 +544,39 @@ def test_manufacturing_profile_produces_correct_purposes():
     ]
     assert "https://example.org/manufacturing/policy/purpose:QualityAssurance" in purpose_iris
     assert "https://example.org/manufacturing/policy/purpose:SupplyChain" in purpose_iris
+
+
+# ── Participant DID override (deployments outside the dev domain) ────────────
+
+def test_participant_did_override_used_as_assigner():
+    mapper = GovernanceMapper(
+        participant_id="acme",
+        base_url="https://acme.example",
+        participant_did="did:web:acme.example",
+    )
+    rule = _rule(access_level="open", classification="green")
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert offer["odrl:assigner"]["@id"] == "did:web:acme.example"
+
+
+def test_participant_did_override_is_the_fallback_not_an_owner_override():
+    """An owner DID still wins over the participant DID."""
+    mapper = GovernanceMapper(
+        participant_id="acme",
+        base_url="https://acme.example",
+        participant_did="did:web:acme.example",
+        owner_did_resolver=lambda name: "did:web:owner.example",
+    )
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        ownership=[GovernanceOwner(name="Someone")],
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert offer["odrl:assigner"]["@id"] == "did:web:owner.example"
+
+
+def test_participant_did_defaults_to_legacy_dev_domain():
+    """Backward compatibility: omitting participant_did keeps the old value."""
+    mapper = GovernanceMapper(participant_id="acme", base_url="https://acme.example")
+    assert mapper.participant_did == "did:web:acme.dataspaces.localhost"

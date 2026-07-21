@@ -266,10 +266,16 @@ tasks:
   dev:
     desc: Start infra, then open service shells in tmux (EDC with watch mode)
     cmds:
+      - |
+        command -v tmux >/dev/null 2>&1 || {
+          echo "tmux is not installed. Install it, e.g.:  sudo apt install tmux" >&2
+          exit 1
+        }
       - task start
       - |
         tmux kill-session -t ds 2>/dev/null || true
         tmux new-session -d -s ds -n edc-watch-build
+        tmux source-file "$(pwd)/dev.tmux.conf"
         tmux send-keys -t ds:edc-watch-build          'task edc:watch-build' Enter
         tmux new-window -t ds -n edc-provider
         tmux send-keys -t ds:edc-provider             'task edc-provider:watch' Enter
@@ -533,19 +539,35 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e health
 
-  # ── Compliance (offline validation) ─────────────────────────────────────────
+  # ── Compliance (governance validation + audit evidence) ─────────────────────
   compliance:validate:
-    desc: Validate core governance, DCAT-like shape, ODRL shape and compliance evidence
+    desc: Validate the governance file before importing it into a connector
     cmds:
       - |
-        py="${PYTHON:-services/connector/.venv/bin/python}"
-        [ -x "$py" ] || py="python3"
-        PYTHONPATH=libs/governance/src "$py" scripts/compliance_validate.py --profile core
+        cd libs/governance && uv run ds-governance validate \
+          --file ../../services/connector/governance/governance.yaml \
+          --owners ../../services/identity-registry/seed/owners.dev.yaml \
+          --participants ../../services/connector/governance/participants.yaml
+
+  compliance:validate:runtime:
+    desc: Validate governance against the running identity-registry (owners + participants)
+    cmds:
+      - |
+        cd libs/governance && uv run ds-governance validate \
+          --file ../../services/connector/governance/governance.yaml \
+          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://172.17.0.1:30005}"
+
+  compliance:evidence:
+    desc: Write DCAT-AP catalog and ODRL offers to reports/compliance
+    cmds:
+      - |
+        cd libs/governance && uv run ds-governance evidence \
+          --file ../../services/connector/governance/governance.yaml \
+          --owners ../../services/identity-registry/seed/owners.dev.yaml \
+          --participants ../../services/connector/governance/participants.yaml \
+          --name core --out-dir ../../reports/compliance
 
   compliance:test:
-    desc: Run offline compliance validator tests
+    desc: Run the governance validator test suite
     cmds:
-      - |
-        pytest_bin="${PYTEST:-services/connector/.venv/bin/pytest}"
-        [ -x "$pytest_bin" ] || pytest_bin="pytest"
-        PYTHONPATH=libs/governance/src "$pytest_bin" -q tests/test_compliance_validate.py
+      - cd libs/governance && uv run pytest tests/tests/ -q

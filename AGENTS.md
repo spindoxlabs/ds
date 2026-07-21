@@ -35,11 +35,11 @@ dataspaces/
 │   ├── caddy/                  Config — reverse proxy for portal, connector APIs, and Keycloak
 │   └── keycloak/               Config — OIDC realm import for dev
 ├── libs/                       Importable shared Python packages (no Dockerfile, no port)
-│   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper (import `ds.governance`)
+│   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper, `ds-governance` CLI (import `ds.governance`)
 │   ├── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
-│   └── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
+│   ├── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
+│   └── ds-e2e/                 ds-e2e — end-to-end verification framework (`ds-e2e` CLI)
 ├── docs/                       Architecture docs, DSSC blueprint reference
-├── scripts/                    Bootstrap, compliance validation, backup
 ├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
 ├── docker-compose.yml          Shared infra — caddy, postgres, identity-registry, keycloak
 ├── docker-compose.provider.yml Provider participant stack
@@ -218,6 +218,30 @@ governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
 
 See `docs/governance-and-odrl.md` for the full pipeline documentation.
 
+### Validating governance before import
+
+`ds-governance` (the CLI shipped by `libs/governance`) gates a governance file **before**
+`POST /provider/sync` pushes it into an EDC. It validates *input* — it deliberately does not
+re-assert the mapper's output, which is covered by `libs/governance/tests/tests/test_mapper.py`:
+
+- EDC asset/policy/contract id collisions between dataset keys (an import would silently clobber)
+- referential integrity of `ownership[].name` against the owners registry, and owner DIDs
+  against the participant registry
+- coherence of a rule's own declarations (consent vs row filters, retention, validity window)
+- `--deny-key <glob>` for keys that must not reach a given environment
+
+```bash
+task compliance:validate           # offline, against the YAML seeds
+task compliance:validate:runtime   # against a running identity-registry
+task compliance:evidence           # DCAT-AP catalog + ODRL offers → reports/compliance
+```
+
+Registries resolve either from YAML seeds (`--owners`, `--participants`) or from a live
+deployment (`--identity-registry-url`), so the same gate runs in CI and against production.
+Every deployment-specific value is a flag — `--participant-id`, `--base-url`,
+`--participant-did`, `--profile`. **Pass `--participant-did` outside dev**: without it the
+mapper's ODRL assigner fallback is `did:web:<participant-id>.dataspaces.localhost`.
+
 ### Ownership & owner resolution
 
 Governance rules can declare an `ownership` block binding datasets to named organizations:
@@ -247,7 +271,7 @@ The connector's consent endpoint checks membership before accepting consent requ
 
 ### KC organizations (portal UX gating)
 
-Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `scripts/keycloak_org_sync.py` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.roles`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
+Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `ir-cli keycloak org-sync` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.roles`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
 
 ## Quick start
 
@@ -294,7 +318,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
 | Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
 | Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
-| Add/manage KC organizations | `services/keycloak/organizations.yaml` + `scripts/keycloak_org_sync.py` |
+| Add/manage KC organizations | `services/keycloak/organizations.yaml` + `ir-cli keycloak org-sync` |
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
 | Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |

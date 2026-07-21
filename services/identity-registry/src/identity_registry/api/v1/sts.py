@@ -5,6 +5,7 @@ under /sts/ for clear provenance.
 """
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, status
@@ -15,6 +16,8 @@ from ...db.models import Participant
 from ...dependencies import get_db
 from ...services.crypto import verify_sts_secret
 from ...services.token import create_si_token
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sts", tags=["sts"])
 
@@ -59,8 +62,22 @@ async def issue_token(
             detail={"error": "invalid_client"},
         )
 
+    # Fail closed: a participant with no stored secret cannot authenticate.
+    # `sts_client_secret` is nullable (added by migration 0002) and participants
+    # created through POST /admin/participants do not set it — treating "unset"
+    # as "no check required" would mint a signed SI token for any caller.
     expected_secret = getattr(participant, "sts_client_secret", None)
-    if expected_secret and not verify_sts_secret(client_secret, expected_secret):
+    if not expected_secret:
+        log.error(
+            "STS token request for %s rejected: participant has no sts_client_secret. "
+            "Set one via `ir-cli participant set-secret` or POST /admin/participants.",
+            did,
+        )
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "invalid_client"},
+        )
+    if not verify_sts_secret(client_secret, expected_secret):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_client"},

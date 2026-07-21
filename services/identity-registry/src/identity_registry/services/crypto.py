@@ -75,6 +75,30 @@ def load_private_key(jwk: dict) -> ec.EllipticCurvePrivateKey:
     return private_numbers.private_key()
 
 
+def load_public_key(jwk: dict) -> ec.EllipticCurvePublicKey:
+    """Rebuild a P-256 public key from its JWK representation."""
+    x = _b64url_to_int(jwk["x"])
+    y = _b64url_to_int(jwk["y"])
+    return ec.EllipticCurvePublicNumbers(x, y, ec.SECP256R1()).public_key()
+
+
+def verify_es256(
+    payload: bytes, signature: bytes, public_key: ec.EllipticCurvePublicKey
+) -> bool:
+    """Verify a raw r‖s ES256 signature. Returns False rather than raising."""
+    if len(signature) != 64:
+        return False
+    der_sig = ec_utils.encode_dss_signature(
+        int.from_bytes(signature[:32], byteorder="big"),
+        int.from_bytes(signature[32:], byteorder="big"),
+    )
+    try:
+        public_key.verify(der_sig, payload, ec.ECDSA(SHA256()))
+    except Exception:
+        return False
+    return True
+
+
 def sign_es256(payload: bytes, private_key: ec.EllipticCurvePrivateKey) -> bytes:
     der_sig = private_key.sign(payload, ec.ECDSA(SHA256()))
     r, s = ec_utils.decode_dss_signature(der_sig)

@@ -221,11 +221,10 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./services/keycloak/organizations.yaml:/app/organizations.yaml:ro
-      - ./scripts/keycloak_org_sync.py:/app/keycloak_org_sync.py:ro
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |
-        python /app/keycloak_org_sync.py \
+        ir-cli keycloak org-sync \
           --config /app/organizations.yaml \
           --keycloak-url http://172.17.0.1:9080 \
           --admin-user admin --admin-password admin

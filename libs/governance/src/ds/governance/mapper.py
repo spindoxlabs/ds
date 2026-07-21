@@ -46,11 +46,17 @@ class GovernanceMapper:
         base_url: str,
         profile: OdrlProfile | None = None,
         owner_did_resolver: Callable[[str], str | None] | None = None,
+        participant_did: str | None = None,
     ):
         self.participant_id = participant_id
         self.base_url = base_url.rstrip("/")
         self.profile = profile or OdrlProfile()
         self._resolve_owner_did = owner_did_resolver
+        # Deployments outside the dev domain must pass participant_did explicitly;
+        # the fallback keeps the historical dev default.
+        self.participant_did = (
+            participant_did or f"did:web:{participant_id}.dataspaces.localhost"
+        )
 
     @property
     def owner_did_resolver(self) -> Callable[[str], str | None] | None:
@@ -68,7 +74,7 @@ class GovernanceMapper:
                 did = self._resolve_owner_did(owner.name)
                 if did:
                     return did
-        return f"did:web:{self.participant_id}.dataspaces.localhost"
+        return self.participant_did
 
     # ── ODRL ──────────────────────────────────────────────────────────────────
 

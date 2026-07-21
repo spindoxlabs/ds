@@ -322,7 +322,7 @@ organizations:
 
 ### Sync script
 
-`scripts/keycloak_org_sync.py` reads the config and provisions via the KC Admin REST API:
+`ir-cli keycloak org-sync` reads the config and provisions via the KC Admin REST API:
 - Creates KC native organizations (idempotent)
 - Looks up users by email and adds them as org members
 - Creates org-level roles and assigns them to members

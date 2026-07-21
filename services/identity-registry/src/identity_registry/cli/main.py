@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -602,6 +603,62 @@ def status_export():
                 typer.echo(json.dumps(data, indent=2))
 
     _run(_export())
+
+
+@keycloak_app.command("org-sync")
+def keycloak_org_sync(
+    config: Path = typer.Option(..., help="Path to organizations.yaml"),
+    keycloak_url: str = typer.Option("http://172.17.0.1:9080", help="Keycloak base URL"),
+    realm: str = typer.Option(None, help="Keycloak realm (default: realm from config)"),
+    admin_user: str = typer.Option("admin", help="KC master-realm admin user"),
+    admin_password: str = typer.Option("admin", help="KC master-realm admin password"),
+    strict: bool = typer.Option(
+        False, help="Exit non-zero if any configured member is missing from Keycloak"
+    ),
+):
+    """Provision Keycloak native organizations from organizations.yaml (idempotent)."""
+    from ..services.keycloak_admin import (
+        KeycloakAdminClient,
+        load_organizations_config,
+        sync_organizations,
+    )
+
+    if not config.exists():
+        typer.echo(f"Config file not found: {config}", err=True)
+        raise typer.Exit(1)
+
+    org_config = load_organizations_config(config)
+    target_realm = realm or org_config.realm
+    if not target_realm:
+        typer.echo("No realm given — pass --realm or set 'realm' in the config", err=True)
+        raise typer.Exit(1)
+
+    async def _sync():
+        kc = await KeycloakAdminClient.authenticate(
+            keycloak_url,
+            target_realm,
+            admin_user=admin_user,
+            admin_password=admin_password,
+        )
+        try:
+            return await sync_organizations(org_config, kc)
+        finally:
+            await kc.aclose()
+
+    logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
+    report = _run(_sync())
+
+    typer.echo(
+        f"Organization sync complete: "
+        f"{len(report.organizations_created)} created, "
+        f"{len(report.organizations_existing)} existing, "
+        f"{len(report.members_added)} members added, "
+        f"{len(report.groups_assigned)} group assignments"
+    )
+    for email in report.missing_users:
+        typer.echo(f"WARNING: user not found in Keycloak: {email}", err=True)
+    if strict and report.has_warnings:
+        raise typer.Exit(1)
 
 
 @keycloak_app.command("sync")
