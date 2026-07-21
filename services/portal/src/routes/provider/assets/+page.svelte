@@ -1,13 +1,11 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import MedallionBadge from '$lib/components/MedallionBadge.svelte';
   import type { ProviderAsset } from '$lib/server/connector';
   import type { ServerRoles } from '$lib/server/auth';
 
   let { data, form } = $props();
   let syncing = $state(false);
   let search = $state('');
-  let filterMedallion = $state('');
 
   const roles = $derived(data.roles as ServerRoles);
   const userOrgs = $derived(new Set(roles?.organizations ?? []));
@@ -15,9 +13,7 @@
 
   const assets = $derived(
     (data.assets as ProviderAsset[]).filter((a) => {
-      const titleMatch = !search || a.asset_id.toLowerCase().includes(search.toLowerCase());
-      const medalMatch = !filterMedallion || a.medallion?.toLowerCase() === filterMedallion;
-      return titleMatch && medalMatch;
+      return !search || a.asset_id.toLowerCase().includes(search.toLowerCase());
     }),
   );
 
@@ -81,15 +77,6 @@
       placeholder="Search assets…"
       class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none"
     />
-    <select
-      bind:value={filterMedallion}
-      class="border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none"
-    >
-      <option value="">All medallions</option>
-      <option value="bronze">Bronze</option>
-      <option value="silver">Silver</option>
-      <option value="gold">Gold</option>
-    </select>
   </div>
 
   <!-- Asset list -->
@@ -102,7 +89,6 @@
           <div class="flex-1 min-w-0">
             <div class="flex items-center gap-2 flex-wrap">
               <h2 class="font-mono font-medium text-gray-900">{asset.asset_id}</h2>
-              <MedallionBadge tier={asset.medallion} />
               {#if asset.edc_synced}
                 <span class="ds-badge bg-green-100 text-green-700">● active</span>
               {:else}

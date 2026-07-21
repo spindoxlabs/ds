@@ -46,7 +46,6 @@ src/
 │   │   ├── PolicySummary.svelte       ODRL policy → human-readable rendering
 │   │   ├── LineageGraph.svelte        Cytoscape DAG visualization
 │   │   ├── ConsentBadge.svelte        Consent status badge
-│   │   ├── MedallionBadge.svelte      Data quality tier badge (bronze/silver/gold)
 │   │   └── JsonLdViewer.svelte        JSON-LD document inspector
 │   ├── stores/
 │   │   └── session.ts           Client-side persona derivation from Keycloak JWT

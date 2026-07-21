@@ -139,7 +139,6 @@ export interface ProviderAsset {
 	asset_id: string;
 	name: string;
 	description?: string;
-	medallion?: string;
 	access_level?: string;
 	tags?: string[];
 	owner?: string;
@@ -164,7 +163,6 @@ export async function listProviderAssets(token: string): Promise<ProviderAsset[]
 			asset_id: id,
 			name: String(properties.name ?? id),
 			description: String(properties.description ?? ''),
-			medallion: String(properties['ds:medallion'] ?? ''),
 			access_level: String(properties['ds:accessLevel'] ?? ''),
 			tags,
 			owner: String(properties['ds:owner'] ?? ''),

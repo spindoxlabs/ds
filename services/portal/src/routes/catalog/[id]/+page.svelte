@@ -2,8 +2,6 @@
   import PolicySummary from '$lib/components/PolicySummary.svelte';
   import JsonLdViewer from '$lib/components/JsonLdViewer.svelte';
   import NegotiationWizard from '$lib/components/NegotiationWizard.svelte';
-  import MedallionBadge from '$lib/components/MedallionBadge.svelte';
-
   let { data } = $props();
   let wizardOpen = $state(false);
   let negotiationResult = $state<{ agreementId: string; transferId: string } | null>(null);
@@ -26,7 +24,7 @@
       ? existingRequest
       : null;
   });
-  const medallion = $derived(tags.find((t) => ['bronze', 'silver', 'gold'].includes(t)) ?? '');
+
 </script>
 
 <svelte:head><title>{title}</title></svelte:head>
@@ -38,14 +36,11 @@
     <div class="ds-card border-red-200 bg-red-50 text-red-700">{data.error ?? 'Dataset not found'}</div>
   {:else}
     <div class="ds-card space-y-4">
-      <div class="flex items-start gap-3 justify-between">
-        <div>
-          <h1 class="text-2xl font-bold text-gray-900">{title}</h1>
-          {#if desc}
-            <p class="text-gray-600 mt-1">{desc}</p>
-          {/if}
-        </div>
-        <MedallionBadge tier={medallion} />
+      <div>
+        <h1 class="text-2xl font-bold text-gray-900">{title}</h1>
+        {#if desc}
+          <p class="text-gray-600 mt-1">{desc}</p>
+        {/if}
       </div>
 
       {#if negotiation?.assigner}

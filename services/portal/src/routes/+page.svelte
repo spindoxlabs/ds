@@ -1,6 +1,4 @@
 <script lang="ts">
-  import MedallionBadge from '$lib/components/MedallionBadge.svelte';
-
   let { data } = $props();
 
   let search = $state('');
@@ -21,10 +19,6 @@
   }
   function getId(d: Record<string, unknown>): string {
     return String(d['dct:identifier'] ?? d['@id'] ?? d['id'] ?? d['asset_id'] ?? '');
-  }
-  function getMedallion(d: Record<string, unknown>): string {
-    const tags: unknown[] = Array.isArray(d['dcat:keyword']) ? (d['dcat:keyword'] as unknown[]) : [];
-    return tags.find((t) => ['bronze', 'silver', 'gold'].includes(String(t))) as string ?? '';
   }
   function getAccessLevel(d: Record<string, unknown>): string {
     return String(d['access_level'] ?? d['accessRights'] ?? '');
@@ -68,13 +62,9 @@
         {@const id = getId(dataset)}
         {@const title = getTitle(dataset)}
         {@const desc = getDesc(dataset)}
-        {@const medallion = getMedallion(dataset)}
         {@const access = getAccessLevel(dataset)}
         <div class="ds-card flex flex-col gap-3 hover:shadow-md transition-shadow">
-          <div class="flex items-start justify-between gap-2">
-            <h2 class="font-semibold text-gray-900 leading-snug">{title}</h2>
-            <MedallionBadge tier={medallion} />
-          </div>
+          <h2 class="font-semibold text-gray-900 leading-snug">{title}</h2>
 
           {#if desc}
             <p class="text-sm text-gray-600 line-clamp-2">{desc}</p>
