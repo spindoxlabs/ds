@@ -14,6 +14,7 @@ from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
 from .config import get_settings
 from .db.engine import init_db
+from ds_auth.production import ProductionGuard
 
 log = logging.getLogger(__name__)
 
@@ -24,19 +25,31 @@ async def lifespan(app: FastAPI):
 
     settings = get_settings()
 
-    if not settings.oidc_issuer_url:
-        log.warning(
-            "IDENTITY_REGISTRY_OIDC_ISSUER_URL is not set — "
-            "JWT signature verification is DISABLED. "
-            "This is acceptable for local development only."
-        )
-
-    if settings.encryption_key == "dev-encryption-key-change-in-production":
-        log.warning(
-            "IDENTITY_REGISTRY_ENCRYPTION_KEY is set to the default dev value — "
-            "private keys are NOT securely encrypted. "
-            "Set a strong Fernet key for production."
-        )
+    guard = ProductionGuard("identity-registry")
+    guard.require_set(
+        "IDENTITY_REGISTRY_OIDC_ISSUER_URL",
+        settings.oidc_issuer_url,
+        "Point at the Keycloak realm issuer so JWT signatures are verified.",
+    )
+    guard.forbid_true(
+        "IDENTITY_REGISTRY_OIDC_INSECURE_DEV",
+        settings.oidc_insecure_dev,
+        "Set IDENTITY_REGISTRY_OIDC_INSECURE_DEV=false and configure the issuer URL.",
+    )
+    guard.forbid_default(
+        "IDENTITY_REGISTRY_ENCRYPTION_KEY",
+        settings.encryption_key,
+        {"dev-encryption-key-change-in-production"},
+        "Generate with: python -c 'import secrets;print(secrets.token_urlsafe(32))'. "
+        "Losing this key means losing every stored DID private key.",
+    )
+    guard.forbid_default(
+        "KEYCLOAK_CLIENT_SECRET",
+        settings.keycloak_client_secret,
+        {"insecure-dev-secret"},
+        "Set the Keycloak client secret for the identity-registry admin client.",
+    )
+    guard.enforce()
 
     yield
 

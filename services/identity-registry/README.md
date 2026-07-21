@@ -58,7 +58,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `POST` | `/sts/{did}/token` | Issue Self-Issued JWT (OAuth2 client_credentials, ES256) |
 | `POST` | `/credentials/{did}/presentations/query` | Build VP for DCP presentation query |
 | `GET` | `/participants` | List all active participants |
-| `GET` | `/participants/{did}/check?scope=` | Check if participant is allowed for scope |
+| `GET` | `/admin/participants/check?did=&scope=` | Check if participant is allowed for scope |
 
 ### Admin (JWT with `identity-registry.admin` scope)
 

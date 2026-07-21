@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_settings_dep
+from ...dependencies import get_db, require_write_scope, get_settings_dep
 from ...db.models import DomainEventORM
 from ...schemas.context import JSONLDResponse
 from ...schemas.events import DomainEvent, EventIngestResponse
@@ -15,7 +15,7 @@ from ...services.event_service import ingest_event
 router = APIRouter()
 
 
-@router.post("/events", response_model=EventIngestResponse)
+@router.post("/events", response_model=EventIngestResponse, dependencies=[Depends(require_write_scope)])
 async def ingest(
     event: DomainEvent,
     response: Response,

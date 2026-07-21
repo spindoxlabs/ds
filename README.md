@@ -168,7 +168,7 @@ identity-registry (30005)
   ├── DID documents      Caddy rewrites /.well-known/did.json → /dids/{did}/did.json
   ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
   ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
-  ├── Participant registry GET /participants, GET /participants/{did}/check
+  ├── Participant registry GET /admin/participants, GET /admin/participants/check?did=&scope=
   └── StatusList2021     GET /status/{list_id}
 
 Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
@@ -206,7 +206,7 @@ All containers share the `dataspaces` bridge network.
 | 31000 | ds-provenance (consumer) |
 | 31001 | ds-connector (consumer) |
 | 35432 | PostgreSQL |
-| 8080 | Keycloak |
+| 9080 | Keycloak |
 | 9000 | Caddy consumer gateway |
 | 9010 | Caddy provider gateway |
 | 19xxx | EDC provider (management, protocol, public, control) |

@@ -78,7 +78,7 @@ identity-registry (30005)
   ├── DID documents      GET /dids/{did}/did.json (EDC resolves directly via identity-did-web)
   ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
   ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
-  ├── Participant registry GET /participants, GET /participants/{did}/check
+  ├── Participant registry GET /admin/participants, GET /admin/participants/check?did=&scope=
   ├── Owners registry    GET /owners/resolve?alias=<name>, CRUD /admin/owners
   ├── Memberships        GET /memberships/check?user_did=&organization=, CRUD /admin/memberships
   └── StatusList2021     GET /status/{list_id}
@@ -132,7 +132,7 @@ All containers share the `dataspaces` bridge network.
 | 31000 | ds-provenance (consumer) |
 | 31001 | ds-connector (consumer) |
 | 35432 | PostgreSQL |
-| 8080 | Keycloak |
+| 9080 | Keycloak |
 | 9000 | Caddy consumer gateway |
 | 9010 | Caddy provider gateway |
 | 19xxx | EDC provider (management, protocol, public, control) |
@@ -157,17 +157,49 @@ How DID resolution works:
 
 The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
 
-## Deployment / helm chart notes
+## Deployment / production configuration
 
-The following must be addressed when preparing the helm chart:
+**See `helm/AGENTS.md` for the full deployment contract.** The essentials:
 
-- **IDENTITY_REGISTRY_ENCRYPTION_KEY**: Must be set to a strong random value. Used for Fernet encryption of DID private keys at rest. Losing this key means losing access to all stored private keys.
-- **IDENTITY_REGISTRY_OIDC_ISSUER_URL**: Must be set in production. Without it, admin endpoints accept unverified JWTs (acceptable in dev, critical vulnerability in production).
-- **IDENTITY_REGISTRY_ADMIN_SCOPE**: Defaults to `identity-registry.admin`. Configure in Keycloak realm.
-- **EDC vault properties** (`consumer-vault.properties`, `provider-vault.properties`): Contain EDR signing keys and STS client secrets. In dev, placeholder keys and `insecure-dev-secret` are used. Production deployments must generate real EC P-256 keys and strong STS secrets, injected via Kubernetes secrets.
-- **EDC_API_KEY**: Defaults to `insecure-dev-key`. Must be overridden with a strong random value.
-- **AUTH_SECRET**: Used by Auth.js for session encryption. Must be a strong random value.
-- `.env.production.example` is the authoritative reference for all production env vars.
+### The `DS_ENV` production guard
+
+Dev is zero-config on purpose. The safety net is a single environment switch.
+
+Every Python service builds a `ProductionGuard` (`libs/ds-auth/src/ds_auth/production.py`) at startup and registers its dangerous defaults:
+
+| `DS_ENV` | Behaviour |
+|----------|-----------|
+| unset / `dev` | Logs a warning per violation, starts normally |
+| `production` | Logs **all** violations together and **refuses to start** |
+
+The Helm chart must set `DS_ENV=production` on every service container.
+
+**When you add a setting with a dev default, register it with the guard in the same change** — an unregistered insecure default is invisible to the chart.
+
+### Env file roles
+
+| File | Role |
+|------|------|
+| `.env.local` | Committed zero-config dev defaults. Makes `task start` and the e2e smoke tests work with no setup. Deliberately weak and public. |
+| `.env.example` | The documented reference for **every** variable — purpose, blast radius, generation command. Not a working config; the model the Helm chart is built from. |
+| `.env` | Per-machine overrides, gitignored. |
+
+### Secret bootstrap
+
+```bash
+task secrets:bootstrap   # generate .env.production + EC P-256 keys, idempotent
+task secrets:check       # fail if any dev default or CHANGE_ME remains
+```
+
+Both preserve existing values, so they are safe to re-run. `task secrets:check` belongs in the release pipeline.
+
+### Non-Python surfaces the guard cannot reach
+
+- **`DS_DEMO_IDENTITY_ENABLED`** — never set it in production. It makes the EDC accept self-issued DCP tokens *without signature verification*, bypassing DSP authentication entirely. Defaults to `false`; dev compose sets it `true` explicitly.
+- **EDC vault properties** (`services/connector/config/*-vault.properties`) — zero-config dev fixtures containing placeholder EC keys and `insecure-dev-secret`, in the same category as `.env.local`. Production renders them from `task secrets:keygen` output via Kubernetes secrets.
+- **`AUTH_SECRET`** (portal) — `hooks.server.ts` falls back to a literal when unset; the chart must always supply it.
+- **Keycloak realm** — the dev realm has four users whose password equals their username and `directAccessGrantsEnabled: true`. Production must select `realm-production.example.json` and run `start --optimized`, not `start-dev`.
+- **`IDENTITY_REGISTRY_ENCRYPTION_KEY`** — Fernet-encrypts all DID private keys at rest. Losing it makes them unrecoverable; back it up outside the cluster.
 
 ## Coding conventions
 
@@ -368,9 +400,23 @@ Service accounts are defined in `services/keycloak/clients.yaml`. Default secret
 
 ## Security posture
 
-### Zero-trust internal APIs
+### Three authentication mechanisms — know which one applies
 
-Every endpoint authenticates a JWT bearer and authorizes it with one unified guard from the shared `libs/ds-auth` library (`from ds_auth.fastapi import require_permission`). There are no "internal-only" unprotected endpoints.
+Most endpoints use the unified `ds_auth` guard, but **two other mechanisms exist**. Using the wrong one when adding an endpoint is the most common security mistake in this repo.
+
+| Mechanism | Where | How it authenticates |
+|-----------|-------|----------------------|
+| **`require_permission`** (default) | Everything except the two below | JWT bearer → scope (service) or groups (user) |
+| **`X-Api-Key`** | `/internal/*` on ds-connector | Static shared secret equal to `EDC_API_KEY`, used by the Java EDC extensions and dataset-api. See `connector/dependencies.py`. |
+| **VC-JWT headers** | `/consent/*` and `/consumer/*` on ds-connector | `X-Subject-Id` + `X-User-VC`, verified against the trust-anchor key by `services/user_credentials.py`. **Not** `require_permission`. |
+
+The DCP-facing identity-registry endpoints are a fourth case: `/sts/{did}/token` authenticates with the participant's STS client secret, and `/credentials/{did}/presentations/query` requires a self-issued DCP token signed by the requested DID's registered key.
+
+Public by design: `/dids/`, `/status/`, `/health`, and the connector's `/ns/policy` static vocabulary.
+
+> `/metrics` on ds-connector, ds-provenance, ds-federated-catalog and dataset-api is currently **unauthenticated** and reachable through Caddy. Treat it as a known gap, not a pattern to copy.
+
+### Zero-trust internal APIs
 
 `require_permission("service.resource.action", ...)` authorizes **both** principal kinds against the same permission vocabulary:
 

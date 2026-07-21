@@ -59,6 +59,7 @@ def _verify_consumer_user(
         expected_linked_participant=settings.consumer_participant_did,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
+        insecure_dev=settings.vc_insecure_dev,
     )
 
 

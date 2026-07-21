@@ -29,6 +29,9 @@ services:
       - "29195:29195"
     environment:
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # Dev-only: accepts self-issued DCP tokens without signature
+      # verification. Never set this in a production deployment.
+      DS_DEMO_IDENTITY_ENABLED: ${DS_DEMO_IDENTITY_ENABLED:-true}
       EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:31001/webhooks/transfer-process
     depends_on:
       edc-db-create-consumer:

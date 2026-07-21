@@ -73,6 +73,7 @@ def _verify_user(
         expected_linked_participant=settings.participant_did,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
+        insecure_dev=settings.vc_insecure_dev,
     )
 
 
@@ -144,6 +145,12 @@ async def get_consent_status(
     settings: Settings = Depends(get_settings_dep),
 ):
     _verify_user(x_user_vc, x_subject_id, settings, {"ConsumerUser", "DataSubject"})
+    # The `subject_id` query parameter is caller-supplied; without this check any
+    # authenticated holder could enumerate another subject's consent decisions.
+    if subject_id != x_subject_id:
+        raise HTTPException(
+            403, "Cannot read consent status for another subject"
+        )
     consents = await consent_service.list_subject_consents(
         session=db,
         subject_id=subject_id,

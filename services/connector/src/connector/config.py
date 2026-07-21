@@ -72,6 +72,14 @@ class Settings(BaseSettings):
     odrl_profile_path: str | None = None
     trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
     trust_anchor_key_path: str | None = None
+    vc_insecure_dev: bool = Field(
+        default=True,
+        description=(
+            "When True AND no trust-anchor key is configured, user Verifiable "
+            "Credentials are accepted WITHOUT signature verification (local dev "
+            "only). Production MUST set CONNECTOR_TRUST_ANCHOR_KEY_PATH."
+        ),
+    )
     credential_status_path: str | None = None
     credential_status_url: str | None = None
     allow_unknown_participants: bool = False

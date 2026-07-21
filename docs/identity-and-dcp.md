@@ -167,7 +167,7 @@ Consumer EDC                                     Provider EDC
     |                        AccessScopeFunction -->  |
     |                        ds-connector -->          |
     |                        identity-registry        |
-    |                        /participants/{did}/check |
+    |                        /admin/participants/check |
     |                                                 |
     |  8. Return DSP response                         |
     |<------------------------------------------------|
@@ -181,7 +181,7 @@ Consumer EDC                                     Provider EDC
 4. **SI token verification:** Provider EDC resolves the consumer's DID document directly from the identity-registry (`GET /dids/{consumer-did}/did.json`) via the `identity-did-web` module and verifies the SI token signature against the consumer's public key.
 5. **VC issuer verification:** Provider EDC resolves the trust anchor's DID document directly from the identity-registry (`GET /dids/{trust-anchor-did}/did.json`) and verifies the VC signatures against the trust anchor's public key.
 6. **Trusted issuer check:** Provider EDC checks that the VC issuer DID is in its configured trusted issuer list.
-7. **ODRL constraint evaluation:** Provider EDC's AccessScopeFunction calls ds-connector, which calls the identity-registry at `/participants/{did}/check` for scope validation.
+7. **ODRL constraint evaluation:** Provider EDC's AccessScopeFunction calls ds-connector, which calls the identity-registry at `/admin/participants/check` for scope validation.
 8. **DSP response:** Provider EDC returns the catalog, agreement, or transfer response.
 
 ### EDC trust configuration

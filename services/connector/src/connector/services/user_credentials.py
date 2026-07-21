@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,6 +20,8 @@ from cryptography.hazmat.primitives.asymmetric.ec import (
 )
 from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
 from fastapi import HTTPException
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -51,6 +54,7 @@ def verify_user_vc_jwt(
     expected_linked_participant: str | None = None,
     credential_status_path: str | None = None,
     credential_status_url: str | None = None,
+    insecure_dev: bool = False,
 ) -> UserCredential:
     if not token:
         raise HTTPException(401, "Missing user Verifiable Credential (X-User-VC header)")
@@ -67,7 +71,23 @@ def verify_user_vc_jwt(
     if header.get("alg") != "ES256":
         raise HTTPException(401, "Unsupported user Verifiable Credential algorithm")
 
-    if trust_anchor_key_path:
+    # Fail closed: without a trust-anchor key we cannot authenticate the holder,
+    # and every downstream ownership check reads its subject from this payload.
+    # The unsigned path is a local-dev affordance and must be opted into.
+    if not trust_anchor_key_path:
+        if not insecure_dev:
+            log.error(
+                "CONNECTOR_TRUST_ANCHOR_KEY_PATH is not set — refusing to accept an "
+                "unverified user Verifiable Credential."
+            )
+            raise HTTPException(
+                503, "User credential verification is not configured"
+            )
+        log.warning(
+            "Accepting user Verifiable Credential WITHOUT signature verification "
+            "(CONNECTOR_VC_INSECURE_DEV=true). Local development only."
+        )
+    else:
         signing_input = f"{parts[0]}.{parts[1]}".encode()
         signature = _b64url_decode(parts[2])
         if len(signature) != 64:

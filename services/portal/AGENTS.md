@@ -100,7 +100,7 @@ Keycloak issues JWTs with roles in `resource_access` and scopes. The portal deri
 | `PROVENANCE_URL` | `http://ds-provenance:30000` | ds-provenance internal URL |
 | `FEDERATED_CATALOG_URL` | `http://ds-federated-catalog:30003` | Federated catalog URL |
 | `IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | Identity registry URL (user resolution) |
-| `AUTH_KEYCLOAK_ISSUER` | `http://keycloak:8080/realms/dataspaces` | OIDC issuer (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
+| `AUTH_KEYCLOAK_ISSUER` | `http://keycloak:9080/realms/dataspaces` | OIDC issuer (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
 | `AUTH_KEYCLOAK_ID` | `ds-portal` | Keycloak client ID |
 | `AUTH_KEYCLOAK_SECRET` | — | Keycloak client secret (`change-me-local-client-secret` for dev) |
 | `AUTH_SECRET` | `dev-secret-change-in-prod` | Auth.js session encryption secret |

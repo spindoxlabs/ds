@@ -15,6 +15,7 @@ from .api.v1.relations import router as relations_router
 from .api.v1.events import router as events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
+from ds_auth.production import ProductionGuard
 
 log = logging.getLogger(__name__)
 
@@ -24,12 +25,19 @@ async def lifespan(app: FastAPI):
     await init_db()
 
     settings = get_settings()
-    if not settings.oidc_issuer_url:
-        log.warning(
-            "PROVENANCE_OIDC_ISSUER_URL is not set — "
-            "JWT signature verification is DISABLED. "
-            "This is acceptable for local development only."
-        )
+
+    guard = ProductionGuard("ds-provenance")
+    guard.require_set(
+        "PROVENANCE_OIDC_ISSUER_URL",
+        settings.oidc_issuer_url,
+        "Point at the Keycloak realm issuer so JWT signatures are verified.",
+    )
+    guard.forbid_true(
+        "PROVENANCE_OIDC_INSECURE_DEV",
+        settings.oidc_insecure_dev,
+        "Set PROVENANCE_OIDC_INSECURE_DEV=false and configure the issuer URL.",
+    )
+    guard.enforce()
 
     yield
 

@@ -539,6 +539,170 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e health
 
+  # ── Production secrets ──────────────────────────────────────────────────────
+  secrets:generate:
+    desc: Generate a production .env from .env.example (idempotent — never overwrites)
+    summary: |
+      Renders .env.production with every CHANGE_ME replaced by a freshly
+      generated secret, and every EC P-256 key material written under
+      secrets/.
+
+      Idempotent: existing values and existing key files are preserved, so
+      re-running only fills what is still missing. Nothing is ever overwritten
+      — rotate explicitly with `task secrets:rotate KEY=<VAR>`.
+
+      Output is gitignored. Feed it to the Helm chart, do not commit it.
+    vars:
+      OUT: '{{.OUT | default ".env.production"}}'
+    cmds:
+      - |
+        set -eu
+        OUT="{{.OUT}}"
+        mkdir -p secrets
+
+        if [ ! -f "$OUT" ]; then
+          echo "→ creating $OUT from .env.example"
+          cp .env.example "$OUT"
+        else
+          echo "→ $OUT exists; filling only missing values"
+        fi
+
+        gen() { openssl rand -hex 32; }
+
+        # Replace each remaining CHANGE_ME with a distinct generated secret.
+        # Non-secret CHANGE_ME placeholders (hostnames, DIDs) are left alone —
+        # they need human input, and the guard will name them at startup.
+        SECRET_VARS="EDC_API_KEY IDENTITY_REGISTRY_ENCRYPTION_KEY AUTH_SECRET \
+          KEYCLOAK_ADMIN_PASSWORD POSTGRES_PASSWORD \
+          SVC_DS_IDENTITY_REGISTRY_SECRET SVC_DS_ONBOARDING_SECRET \
+          SVC_DS_PORTAL_SECRET SVC_DS_CONNECTOR_SECRET \
+          SVC_DS_FEDERATED_CATALOG_SECRET SVC_DS_DATASET_API_SECRET \
+          SVC_EDC_SECRET KEYCLOAK_CLIENT_SECRET AUTH_KEYCLOAK_SECRET \
+          PORTAL_SERVICE_CLIENT_SECRET"
+
+        for var in $SECRET_VARS; do
+          if grep -qE "^${var}=CHANGE_ME$" "$OUT"; then
+            value="$(gen)"
+            tmp="$(mktemp)"
+            sed "s|^${var}=CHANGE_ME$|${var}=${value}|" "$OUT" > "$tmp"
+            mv "$tmp" "$OUT"
+            echo "  generated ${var}"
+          fi
+        done
+
+        # Usernames need a value but not entropy.
+        tmp="$(mktemp)"
+        sed -e "s|^KEYCLOAK_ADMIN_USERNAME=CHANGE_ME$|KEYCLOAK_ADMIN_USERNAME=ds-admin|" \
+            -e "s|^POSTGRES_USER=CHANGE_ME$|POSTGRES_USER=dataspaces|" "$OUT" > "$tmp"
+        mv "$tmp" "$OUT"
+
+        chmod 600 "$OUT"
+        echo
+        echo "✓ $OUT ready (mode 600)"
+        echo
+        remaining="$(grep -cF 'CHANGE_ME' "$OUT" || true)"
+        if [ "$remaining" -gt 0 ]; then
+          echo "  $remaining value(s) still need human input (hostnames, DIDs, URLs):"
+          grep -nF 'CHANGE_ME' "$OUT" | grep -v '^\s*#' | sed 's/^/    /'
+        fi
+
+  secrets:keygen:
+    desc: Generate EC P-256 keys for the EDC vaults and trust anchor (idempotent)
+    summary: |
+      Writes EC P-256 key material used by the EDC EDR signing path and the
+      trust anchor into secrets/. Existing files are never overwritten, so
+      this is safe to re-run as part of a bootstrap.
+
+      The dev stack ships placeholder keys in
+      services/connector/config/*-vault.properties. Those are zero-config dev
+      material; a production deployment mounts the files generated here (or
+      Kubernetes Secrets rendered from them) instead.
+    cmds:
+      - |
+        set -eu
+        mkdir -p secrets
+        for name in provider-edr consumer-edr trust-anchor; do
+          if [ -f "secrets/${name}.jwk.json" ]; then
+            echo "  secrets/${name}.jwk.json exists — leaving it alone"
+            continue
+          fi
+          uv run --with cryptography python - "$name" <<'PY'
+        import json, sys, base64
+        from cryptography.hazmat.primitives.asymmetric import ec
+
+        name = sys.argv[1]
+
+        def b64(n: int) -> str:
+            return base64.urlsafe_b64encode(n.to_bytes(32, "big")).rstrip(b"=").decode()
+
+        key = ec.generate_private_key(ec.SECP256R1())
+        pub = key.public_key().public_numbers()
+        priv = {
+            "kty": "EC", "crv": "P-256", "kid": f"{name}-key-1",
+            "x": b64(pub.x), "y": b64(pub.y),
+            "d": b64(key.private_numbers().private_value),
+        }
+        public = {k: v for k, v in priv.items() if k != "d"}
+
+        with open(f"secrets/{name}.jwk.json", "w") as fh:
+            json.dump(priv, fh, indent=2)
+        with open(f"secrets/{name}.public.jwk.json", "w") as fh:
+            json.dump(public, fh, indent=2)
+        print(f"  generated secrets/{name}.jwk.json (+ .public)")
+        PY
+        done
+        chmod 600 secrets/*.jwk.json 2>/dev/null || true
+        echo
+        echo "✓ key material in secrets/ (gitignored, mode 600)"
+        echo "  private keys → EDC vault / identity-registry"
+        echo "  *.public.jwk.json → CONNECTOR_TRUST_ANCHOR_KEY_PATH"
+
+  secrets:bootstrap:
+    desc: Full production secret bootstrap (env + keys), idempotent
+    cmds:
+      - task: secrets:generate
+      - task: secrets:keygen
+
+  secrets:check:
+    desc: Fail if any CHANGE_ME or known dev default remains in a production env file
+    vars:
+      FILE: '{{.FILE | default ".env.production"}}'
+    cmds:
+      - |
+        set -eu
+        FILE="{{.FILE}}"
+        [ -f "$FILE" ] || { echo "✗ $FILE not found — run: task secrets:bootstrap"; exit 1; }
+        rc=0
+        # Only inspect assignments; comment lines legitimately name the dev
+        # defaults they are warning about.
+        values="$(grep -vE '^\s*(#|$)' "$FILE" || true)"
+        if printf '%s\n' "$values" | grep -nF 'CHANGE_ME'; then
+          echo "✗ unresolved CHANGE_ME placeholders above"; rc=1
+        fi
+        for bad in insecure-dev-key dev-encryption-key-change-in-production \
+                   ds-local-dev-secret dev-secret-change-in-prod \
+                   change-me-local-client-secret insecure-dev-secret; do
+          if printf '%s\n' "$values" | grep -nE "=${bad}\$"; then
+            echo "✗ known dev default present: $bad"; rc=1
+          fi
+        done
+        # Dev sets every service client secret equal to its own client_id.
+        # Only *_SECRET vars matter here — *_CLIENT_ID legitimately holds that value.
+        if printf '%s\n' "$values" | grep -nE '^[A-Z_]*SECRET=svc-ds-[a-z-]+$'; then
+          echo "✗ service client secret still equals its client_id"; rc=1
+        fi
+        if printf '%s\n' "$values" | grep -nE '^(KEYCLOAK_ADMIN_PASSWORD|POSTGRES_PASSWORD)=(admin|postgres)$'; then
+          echo "✗ weak credential above"; rc=1
+        fi
+        if printf '%s\n' "$values" | grep -nE '^DS_DEMO_IDENTITY_ENABLED=true$'; then
+          echo "✗ EDC demo identity fallback enabled — this bypasses DSP authentication"; rc=1
+        fi
+        if ! grep -qE '^DS_ENV=production$' "$FILE"; then
+          echo "✗ DS_ENV=production is not set — services will only warn, not fail"; rc=1
+        fi
+        [ "$rc" -eq 0 ] && echo "✓ $FILE carries no dev defaults"
+        exit $rc
+
   # ── Compliance (governance validation + audit evidence) ─────────────────────
   compliance:validate:
     desc: Validate the governance file before importing it into a connector
@@ -546,8 +710,7 @@ tasks:
       - |
         cd libs/governance && uv run ds-governance validate \
           --file ../../services/connector/governance/governance.yaml \
-          --owners ../../services/identity-registry/seed/owners.dev.yaml \
-          --participants ../../services/connector/governance/participants.yaml
+          --owners ../../services/identity-registry/seed/owners.dev.yaml
 
   compliance:validate:runtime:
     desc: Validate governance against the running identity-registry (owners + participants)
@@ -564,7 +727,6 @@ tasks:
         cd libs/governance && uv run ds-governance evidence \
           --file ../../services/connector/governance/governance.yaml \
           --owners ../../services/identity-registry/seed/owners.dev.yaml \
-          --participants ../../services/connector/governance/participants.yaml \
           --name core --out-dir ../../reports/compliance
 
   compliance:test:

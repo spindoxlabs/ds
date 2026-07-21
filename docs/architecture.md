@@ -13,7 +13,7 @@ flowchart TB
     subgraph shared["Shared Infrastructure"]
         caddy["Caddy (80/443)"]
         pg["PostgreSQL (35432)"]
-        kc["Keycloak (8080)"]
+        kc["Keycloak (9080)"]
         idreg["identity-registry (30005)"]
     end
 
@@ -88,7 +88,7 @@ dataset-api (30002, external) --> ds-connector /internal/*  agreement + consent 
 |---------|-------|------|---------|
 | Caddy | `caddy:2-alpine` | 80, 443 | Reverse proxy, TLS termination, DID resolution proxy (`*.dataspaces.localhost` to identity-registry) |
 | PostgreSQL | `postgres:17.4-alpine` | 35432 | Shared database (one DB per service) |
-| Keycloak | Keycloak | 8080 | OIDC provider for user authentication |
+| Keycloak | Keycloak | 9080 | OIDC provider for user authentication |
 | identity-registry | `ds-identity-registry` | 30005 | DID documents, STS token signing, credential presentations, participant registry, StatusList2021 |
 
 ### Application services
@@ -143,20 +143,20 @@ Internet / Browser
        v
     Caddy (443)
        |
-       |---> host.docker.internal:30004  (portal)
-       |---> host.docker.internal:30001  (connector)
-       |---> host.docker.internal:30005  (identity-registry)
-       |---> host.docker.internal:30000  (provenance)
-       |---> host.docker.internal:30003  (federated-catalog)
+       |---> 172.17.0.1:30004  (portal)
+       |---> 172.17.0.1:30001  (connector)
+       |---> 172.17.0.1:30005  (identity-registry)
+       |---> 172.17.0.1:30000  (provenance)
+       |---> 172.17.0.1:30003  (federated-catalog)
        |---> edc-provider:19194          (DSP protocol)
        |---> edc-dso:49194               (DSP protocol)
        |---> edc-tp:59194                (DSP protocol)
-       +---> host.docker.internal:8080   (keycloak)
+       +---> 172.17.0.1:9080   (keycloak)
 ```
 
 Caddy also proxies DID resolution requests: requests to `*.dataspaces.localhost` are forwarded to the identity-registry, which serves DID documents dynamically from its database.
 
-Services running locally (outside Docker) use `host.docker.internal` to reach containers. Services running inside Docker use container names directly.
+Services running locally (outside Docker) use `172.17.0.1` to reach containers. Services running inside Docker use container names directly.
 
 > **Overlay deployments** (e.g. demo3) create their own `dataspace` bridge network via their own `docker-compose.yml` rather than joining the `dataspaces` external network defined in this repo. This keeps the overlay self-contained and avoids port conflicts with the base platform network.
 
@@ -218,7 +218,7 @@ ds-connector's `/internal/*` endpoints are called by EDC extensions and dataset-
 | 49193-49195 | EDC DSO | mgmt:49193, DSP:49194, public:49195 |
 | 59193-59195 | EDC Third Party | mgmt:59193, DSP:59194, public:59195 |
 | 35432 | PostgreSQL | shared instance |
-| 8080 | Keycloak | auth server |
+| 9080 | Keycloak | auth server |
 
 ---
 
@@ -284,7 +284,7 @@ docker compose -f services/connector/docker-compose.yml stop ds-connector
 cd services/connector && task run
 ```
 
-The local process connects to PostgreSQL via `host.docker.internal:35432` and to other services via their container ports.
+The local process connects to PostgreSQL via `172.17.0.1:35432` and to other services via their container ports.
 
 ### Production
 

@@ -74,6 +74,11 @@ docs/next-phases.md
 !.env.celine.example
 !.env.local
 
+# Generated production secrets — never commit.
+# `task secrets:bootstrap` writes these; feed them to the Helm chart instead.
+secrets/
+*.jwk.json
+
 # Generated reports
 reports/
 **/reports/

@@ -13,6 +13,7 @@ from .crawler import crawl_loop
 from .dependencies import require_read_scope
 from .metrics import install_metrics
 from .api.catalog import router as catalog_router
+from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 
 log = logging.getLogger(__name__)
@@ -26,12 +27,24 @@ async def lifespan(app: FastAPI):
     app.state.cache = cache
     app.state.settings = settings
 
-    if not settings.oidc_issuer_url:
-        log.warning(
-            "CATALOG_OIDC_ISSUER_URL is not set — "
-            "JWT signature verification is DISABLED. "
-            "This is acceptable for local development only."
-        )
+    guard = ProductionGuard("ds-federated-catalog")
+    guard.require_set(
+        "CATALOG_OIDC_ISSUER_URL",
+        settings.oidc_issuer_url,
+        "Point at the Keycloak realm issuer so JWT signatures are verified.",
+    )
+    guard.forbid_true(
+        "CATALOG_OIDC_INSECURE_DEV",
+        settings.oidc_insecure_dev,
+        "Set CATALOG_OIDC_INSECURE_DEV=false and configure the issuer URL.",
+    )
+    guard.forbid_default(
+        "CATALOG_SERVICE_CLIENT_SECRET",
+        settings.service_client_secret,
+        {"svc-ds-federated-catalog"},
+        "Set the Keycloak client secret for svc-ds-federated-catalog.",
+    )
+    guard.enforce()
 
     ir_token_provider = ServiceTokenProvider(
         token_url=settings.keycloak_token_url,

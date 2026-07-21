@@ -96,7 +96,7 @@ The `GovernanceMapper` converts this to ODRL offers + EDC payloads. `secret` dat
 
 ## Participant registry
 
-Participants are registered in the identity-registry service and discovered via `GET /participants`. The `ParticipantRegistry` class (`registry/participants.py`) implements an `HttpParticipantRegistry` that fetches participants from identity-registry with a TTL cache.
+Participants are registered in the identity-registry service and discovered via `GET /admin/participants`. The `ParticipantRegistry` class (`registry/participants.py`) implements an `HttpParticipantRegistry` that fetches participants from identity-registry with a TTL cache.
 
 Used by `edc-extensions` `AccessScopeFunction` at negotiation time and by the federated catalog for provider discovery.
 

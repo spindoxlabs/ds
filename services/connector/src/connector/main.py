@@ -14,6 +14,7 @@ from .db.engine import init_db
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
+from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
@@ -33,18 +34,41 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     await init_db()
 
-    if not settings.oidc_issuer_url:
-        log.warning(
-            "CONNECTOR_OIDC_ISSUER_URL is not set — "
-            "JWT signature verification is DISABLED. "
-            "This is acceptable for local development only."
-        )
-
-    if settings.edc_api_key == "insecure-dev-key":
-        log.warning(
-            "EDC_API_KEY is set to the default dev value — "
-            "set a strong key for production."
-        )
+    guard = ProductionGuard("ds-connector")
+    guard.require_set(
+        "CONNECTOR_OIDC_ISSUER_URL",
+        settings.oidc_issuer_url,
+        "Point at the Keycloak realm issuer so JWT signatures are verified.",
+    )
+    guard.forbid_true(
+        "CONNECTOR_OIDC_INSECURE_DEV",
+        settings.oidc_insecure_dev,
+        "Set CONNECTOR_OIDC_INSECURE_DEV=false and configure the issuer URL.",
+    )
+    guard.require_set(
+        "CONNECTOR_TRUST_ANCHOR_KEY_PATH",
+        settings.trust_anchor_key_path,
+        "Mount the trust-anchor public key so user Verifiable Credentials "
+        "are signature-verified.",
+    )
+    guard.forbid_true(
+        "CONNECTOR_VC_INSECURE_DEV",
+        settings.vc_insecure_dev,
+        "Set CONNECTOR_VC_INSECURE_DEV=false once the trust-anchor key is mounted.",
+    )
+    guard.forbid_default(
+        "EDC_API_KEY",
+        settings.edc_api_key,
+        {"insecure-dev-key"},
+        "Generate with: openssl rand -hex 32",
+    )
+    guard.forbid_default(
+        "CONNECTOR_SERVICE_CLIENT_SECRET",
+        settings.service_client_secret,
+        {"svc-ds-connector"},
+        "Set the Keycloak client secret for svc-ds-connector.",
+    )
+    guard.enforce()
 
     provider_edc = None
     consumer_edc = None

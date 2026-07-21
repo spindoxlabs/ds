@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_settings_dep
+from ...dependencies import get_db, require_write_scope, get_settings_dep
 from ...schemas.context import JSONLDResponse
 from ...schemas.prov import (
     ActivityCreate, AgentCreate, EntityCreate, NodeRead,
@@ -22,7 +22,7 @@ def _context_url(settings: Settings) -> str:
 
 # ── Entities ──────────────────────────────────────────────────────────────────
 
-@router.post("/entities", status_code=201)
+@router.post("/entities", status_code=201, dependencies=[Depends(require_write_scope)])
 async def create_entity(
     data: EntityCreate,
     db: AsyncSession = Depends(get_db),
@@ -56,7 +56,7 @@ async def get_entity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete("/entities/{iri:path}", status_code=204)
+@router.delete("/entities/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)])
 async def delete_entity(iri: str, db: AsyncSession = Depends(get_db)):
     async with db.begin():
         node = await prov_service.soft_delete_node(db, iri)
@@ -67,7 +67,7 @@ async def delete_entity(iri: str, db: AsyncSession = Depends(get_db)):
 
 # ── Activities ────────────────────────────────────────────────────────────────
 
-@router.post("/activities", status_code=201)
+@router.post("/activities", status_code=201, dependencies=[Depends(require_write_scope)])
 async def create_activity(
     data: ActivityCreate,
     db: AsyncSession = Depends(get_db),
@@ -103,7 +103,7 @@ async def get_activity(
 
 # ── Agents ────────────────────────────────────────────────────────────────────
 
-@router.post("/agents", status_code=201)
+@router.post("/agents", status_code=201, dependencies=[Depends(require_write_scope)])
 async def create_agent(
     data: AgentCreate,
     db: AsyncSession = Depends(get_db),

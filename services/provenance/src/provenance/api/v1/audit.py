@@ -7,14 +7,14 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...dependencies import get_db
+from ...dependencies import get_db, require_write_scope
 from ...db.models import AccessLogORM
 from ...schemas.audit import AccessLogEntry, AccessLogRead, AccessLogSummary
 
 router = APIRouter()
 
 
-@router.post("/audit/log", status_code=201, response_model=AccessLogRead)
+@router.post("/audit/log", status_code=201, response_model=AccessLogRead, dependencies=[Depends(require_write_scope)])
 async def write_log_entry(
     entry: AccessLogEntry,
     db: AsyncSession = Depends(get_db),
