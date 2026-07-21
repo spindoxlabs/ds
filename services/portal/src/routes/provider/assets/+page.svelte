@@ -94,6 +94,15 @@
               {:else}
                 <span class="ds-badge bg-gray-100 text-gray-500">○ not synced</span>
               {/if}
+              {#if asset.access_level}
+                <span class="ds-badge bg-blue-50 text-blue-700">{asset.access_level}</span>
+              {/if}
+              {#if asset.classification}
+                <span class="ds-badge bg-purple-50 text-purple-700">{asset.classification}</span>
+              {/if}
+              {#if asset.source_system}
+                <span class="ds-badge bg-teal-50 text-teal-700">{asset.source_system}</span>
+              {/if}
             </div>
             {#if asset.owner}
               <p class="text-sm text-gray-500 mt-1">

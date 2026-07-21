@@ -10,6 +10,21 @@
   const title = $derived(d ? String(d['dct:title'] ?? d['title'] ?? data.assetId) : data.assetId);
   const desc = $derived(d ? String(d['dct:description'] ?? d['description'] ?? '') : '');
   const tags = $derived(Array.isArray(d?.['dcat:keyword']) ? (d!['dcat:keyword'] as string[]) : []);
+
+  function dstr(...keys: string[]): string {
+    if (!d) return '';
+    for (const k of keys) {
+      const v = d[k];
+      if (v && typeof v === 'string') return v;
+      if (v && typeof v === 'object' && '@id' in (v as Record<string, unknown>))
+        return String((v as Record<string, unknown>)['@id']);
+    }
+    return '';
+  }
+  const accessLevel = $derived(dstr('ds:accessLevel', 'access_level', 'accessRights'));
+  const classification = $derived(dstr('ds:classification'));
+  const sourceSystem = $derived(dstr('ds:sourceSystem'));
+  const publisher = $derived(dstr('dct:publisher'));
   const negotiation = $derived(data.negotiation as {
     counterPartyAddress: string;
     offerId: string;
@@ -43,10 +58,29 @@
         {/if}
       </div>
 
-      {#if negotiation?.assigner}
-        <p class="text-sm text-gray-500">
-          Data Owner: <span class="font-medium text-gray-700" title={negotiation.assigner}>{negotiation.assigner}</span>
-        </p>
+      {#if accessLevel || classification || sourceSystem || publisher || negotiation?.assigner}
+        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
+          {#if negotiation?.assigner}
+            <dt class="text-gray-500">Data Owner</dt>
+            <dd class="font-medium text-gray-700" title={negotiation.assigner}>{negotiation.assigner}</dd>
+          {/if}
+          {#if accessLevel}
+            <dt class="text-gray-500">Access Level</dt>
+            <dd><span class="ds-badge bg-blue-50 text-blue-700">{accessLevel}</span></dd>
+          {/if}
+          {#if classification}
+            <dt class="text-gray-500">Classification</dt>
+            <dd><span class="ds-badge bg-purple-50 text-purple-700">{classification}</span></dd>
+          {/if}
+          {#if sourceSystem}
+            <dt class="text-gray-500">Source System</dt>
+            <dd class="text-gray-700">{sourceSystem}</dd>
+          {/if}
+          {#if publisher}
+            <dt class="text-gray-500">Publisher</dt>
+            <dd class="text-gray-700 break-all">{publisher}</dd>
+          {/if}
+        </dl>
       {/if}
 
       {#if tags.length > 0}

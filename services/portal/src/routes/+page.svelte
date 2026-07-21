@@ -21,7 +21,21 @@
     return String(d['dct:identifier'] ?? d['@id'] ?? d['id'] ?? d['asset_id'] ?? '');
   }
   function getAccessLevel(d: Record<string, unknown>): string {
-    return String(d['access_level'] ?? d['accessRights'] ?? '');
+    return String(d['ds:accessLevel'] ?? d['access_level'] ?? d['accessRights'] ?? '');
+  }
+  function getStr(d: Record<string, unknown>, ...keys: string[]): string {
+    for (const k of keys) {
+      const v = d[k];
+      if (v && typeof v === 'string') return v;
+      if (v && typeof v === 'object' && '@id' in (v as Record<string, unknown>))
+        return String((v as Record<string, unknown>)['@id']);
+    }
+    return '';
+  }
+  function getKeywords(d: Record<string, unknown>): string[] {
+    const kw = d['dcat:keyword'];
+    if (Array.isArray(kw)) return kw.map(String);
+    return [];
   }
 </script>
 
@@ -33,7 +47,7 @@
   <!-- Hero -->
   <div class="bg-gradient-to-br from-brand-700 to-brand-900 text-white rounded-2xl p-6 sm:p-8">
     <h1 class="text-2xl sm:text-3xl font-bold mb-2">Discover Datasets</h1>
-    <p class="text-brand-200 mb-5">Browse open and contract-gated data offerings from the energy dataspace.</p>
+    <p class="text-brand-200 mb-5">Browse open and contract-gated data offerings from the dataspace.</p>
     <div class="flex gap-2 max-w-lg">
       <input
         bind:value={search}
@@ -63,6 +77,10 @@
         {@const title = getTitle(dataset)}
         {@const desc = getDesc(dataset)}
         {@const access = getAccessLevel(dataset)}
+        {@const classification = getStr(dataset, 'ds:classification')}
+        {@const sourceSystem = getStr(dataset, 'ds:sourceSystem')}
+        {@const publisher = getStr(dataset, 'dct:publisher')}
+        {@const keywords = getKeywords(dataset)}
         <div class="ds-card flex flex-col gap-3 hover:shadow-md transition-shadow">
           <h2 class="font-semibold text-gray-900 leading-snug">{title}</h2>
 
@@ -70,9 +88,26 @@
             <p class="text-sm text-gray-600 line-clamp-2">{desc}</p>
           {/if}
 
-          <div class="flex items-center gap-2 mt-auto">
+          {#if keywords.length}
+            <div class="flex flex-wrap gap-1">
+              {#each keywords as kw}
+                <span class="ds-badge bg-gray-100 text-gray-600">{kw}</span>
+              {/each}
+            </div>
+          {/if}
+
+          <div class="flex items-center gap-2 flex-wrap mt-auto">
             {#if access}
               <span class="ds-badge bg-blue-50 text-blue-700">{access}</span>
+            {/if}
+            {#if classification}
+              <span class="ds-badge bg-purple-50 text-purple-700">{classification}</span>
+            {/if}
+            {#if sourceSystem}
+              <span class="ds-badge bg-teal-50 text-teal-700">{sourceSystem}</span>
+            {/if}
+            {#if publisher}
+              <span class="text-xs text-gray-400 truncate max-w-[10rem]" title={publisher}>{publisher}</span>
             {/if}
           </div>
 
