@@ -426,6 +426,7 @@ tasks:
       - mkdir -p data/gradle
       - >-
         docker run --rm -it
+        --init
         -v "{{.ROOT_DIR}}:/project"
         -v "{{.ROOT_DIR}}/data/gradle:/home/gradle/.gradle"
         -w /project
@@ -437,11 +438,15 @@ tasks:
     cmds:
       - docker stop dataspaces-edc-provider-1 2>/dev/null || true
       - |
+        set +e
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
         if [ ! -f "$jar" ]; then
           echo "No connector.jar found — building..."
           task edc:build
         fi
+        PID=
+        cleanup() { [ -n "$PID" ] && kill $PID 2>/dev/null && wait $PID 2>/dev/null; exit 0; }
+        trap cleanup INT TERM EXIT
         while true; do
           MTIME=$(stat -c %Y "$jar")
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
@@ -456,6 +461,7 @@ tasks:
           done
           echo "JAR changed or process exited — restarting..."
           kill $PID 2>/dev/null; wait $PID 2>/dev/null
+          PID=
           sleep 1
         done
 
@@ -464,11 +470,15 @@ tasks:
     cmds:
       - docker stop dataspaces-edc-consumer-1 2>/dev/null || true
       - |
+        set +e
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
         if [ ! -f "$jar" ]; then
           echo "No connector.jar found — building..."
           task edc:build
         fi
+        PID=
+        cleanup() { [ -n "$PID" ] && kill $PID 2>/dev/null && wait $PID 2>/dev/null; exit 0; }
+        trap cleanup INT TERM EXIT
         while true; do
           MTIME=$(stat -c %Y "$jar")
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
@@ -483,6 +493,7 @@ tasks:
           done
           echo "JAR changed or process exited — restarting..."
           kill $PID 2>/dev/null; wait $PID 2>/dev/null
+          PID=
           sleep 1
         done
 
