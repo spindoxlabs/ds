@@ -33,6 +33,17 @@ tasks:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose down -v keycloak
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d keycloak keycloak-org-sync keycloak-sync
 
+  build:
+    desc: Rebuild all Docker images (infra + provider + consumer)
+    cmds:
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose build
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.provider.yml build
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.consumer.yml build
+
   infra:start:
     desc: Start shared infrastructure (postgres, caddy, identity-registry, keycloak)
     cmds:
@@ -262,18 +273,75 @@ tasks:
         IDENTITY_REGISTRY_URL=$CONNECTOR_IDENTITY_REGISTRY_URL \
         npm run dev
 
-  # ── Local dev (all services) ──────────────────────────────────────────────
+  # ── Dev lifecycle ─────────────────────────────────────────────────────────
+  dev:stop:
+    desc: Stop everything (failsafe — exits 0 even if nothing is running)
+    cmds:
+      - |
+        set +e
+        DEV_PORTS="19191 19193 19194 19291 29191 29193 29194 29291 30000 30001 30002 30003 30004 30005 31000 31001"
+
+        # 1. Send C-c to every tmux window, wait for graceful shutdown, then kill session
+        if tmux has-session -t ds 2>/dev/null; then
+          for win in $(tmux list-windows -t ds -F '#W' 2>/dev/null); do
+            tmux send-keys -t "ds:${win}" C-c 2>/dev/null
+          done
+          sleep 3
+          tmux kill-session -t ds 2>/dev/null
+        fi
+
+        # 2. Kill process groups of anything on known ports
+        #    Kills the watcher parent + Java child together so nothing respawns
+        kill_port_holders() {
+          for port in $DEV_PORTS; do
+            for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
+              pgid=$(ps -o pgid= -p $pid 2>/dev/null | tr -d ' ')
+              [ -n "$pgid" ] && kill -9 -${pgid} 2>/dev/null
+              kill -9 $pid 2>/dev/null
+            done
+          done
+        }
+        kill_port_holders
+
+        # 3. Docker compose down on all stacks
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.consumer.yml down -v --remove-orphans 2>/dev/null
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.provider.yml down -v --remove-orphans 2>/dev/null
+        COMPOSE_PROJECT_NAME=dataspaces docker compose down -v --remove-orphans 2>/dev/null
+
+        # 4. Final sweep
+        kill_port_holders
+
+        # 5. Wait for ports to be free
+        for port in $DEV_PORTS; do
+          timeout 5 bash -c "while lsof -ti tcp:${port} >/dev/null 2>&1; do sleep 0.3; done" 2>/dev/null
+        done
+
+        echo "All stopped"
+        exit 0
+
+  dev:start:
+    desc: Build images, then start everything (infra + bootstrap + provider + consumer)
+    cmds:
+      - task: build
+      - task: start
+
+  dev:restart:
+    desc: Full restart (stop + start)
+    cmds:
+      - task: dev:stop
+      - task: dev:start
+
   dev:
-    desc: Start infra, then open service shells in tmux (EDC with watch mode)
+    desc: Restart all services, then open tmux shells
     cmds:
       - |
         command -v tmux >/dev/null 2>&1 || {
           echo "tmux is not installed. Install it, e.g.:  sudo apt install tmux" >&2
           exit 1
         }
-      - task start
+      - task: dev:stop
+      - task: dev:start
       - |
-        tmux kill-session -t ds 2>/dev/null || true
         tmux new-session -d -s ds -n edc-watch-build
         tmux source-file "$(pwd)/dev.tmux.conf"
         tmux send-keys -t ds:edc-watch-build          'task edc:watch-build' Enter
