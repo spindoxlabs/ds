@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import time
@@ -269,47 +268,24 @@ class SmokeFlow(BaseFlow):
     ) -> tuple[str | None, str | None]:
         s = self.settings
         try:
-            consumer_vc = self._fetch_vc_from_registry(s.consumer_subject_id, "DataSubjectCredential")
-            subject_vc = self._fetch_vc_from_registry(s.data_subject_id, "DataSubjectCredential")
+            consumer_vc = self._resolve_user_vc(s.consumer_email, svc_headers)
+            subject_vc = self._resolve_user_vc(s.data_subject_email, svc_headers)
             return consumer_vc, subject_vc
         except Exception as exc:
             result.fail_step("load credentials", str(exc))
             return None, None
 
-    def _fetch_vc_from_registry(self, subject_did: str, cred_type: str) -> str:
+    def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
-        encoded_did = urllib.parse.quote(subject_did, safe="")
-        body = {
-            "presentationDefinition": {
-                "input_descriptors": [
-                    {
-                        "id": cred_type,
-                        "constraints": {
-                            "fields": [{"path": ["$.type"], "filter": {"const": cred_type}}],
-                        },
-                    }
-                ],
-            },
-        }
-        resp = self.http.post(
-            f"{s.identity_registry_url}/credentials/{encoded_did}/presentations/query",
-            body,
+        encoded_email = urllib.parse.quote(email, safe="")
+        resp = self.http.get(
+            f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
+            headers=headers,
         ) or {}
-        pres = resp.get("dcp:presentation") or resp.get("presentation") or {}
-        vp_list = pres.get("@value") if isinstance(pres, dict) else pres
-        if isinstance(vp_list, str):
-            vp_list = [vp_list]
-        if not vp_list:
-            return ""
-        vp_jwt = vp_list[0]
-        parts = vp_jwt.split(".")
-        if len(parts) != 3:
-            return vp_jwt
-        payload = json.loads(base64.urlsafe_b64decode(parts[1] + "=="))
-        vcs = (payload.get("vp") or {}).get("verifiableCredential") or []
-        if isinstance(vcs, str):
-            vcs = [vcs]
-        return vcs[0] if vcs else ""
+        vc_jws = resp.get("vc_jws") or ""
+        if not vc_jws:
+            raise RuntimeError(f"No VC found for user {email}")
+        return vc_jws
 
     def _select_dataset(self, catalog: dict[str, Any]) -> dict[str, Any] | None:
         datasets = catalog.get("dataset") or catalog.get("dcat:dataset") or []

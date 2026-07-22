@@ -64,7 +64,9 @@ class E2ESettings(BaseSettings):
 
     # Test subjects
     consumer_subject_id: str = "did:web:users.dataspaces.localhost:consumer-user"
+    consumer_email: str = "consumer@example.test"
     data_subject_id: str = "did:web:users.dataspaces.localhost:data-subject"
+    data_subject_email: str = "subject@example.test"
     asset_id: str = "datasets.silver.meters_15m"
 
     # Timeouts
