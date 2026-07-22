@@ -85,5 +85,8 @@ reports/
 
 .agents
 
+# MkDocs build output
+site/
+
 # Local governance overlays (contain deployment-specific org bindings)
 *.local.yaml

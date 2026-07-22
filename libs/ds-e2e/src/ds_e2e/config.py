@@ -33,10 +33,11 @@ class E2ESettings(BaseSettings):
         "http://172.17.0.1:30005", validation_alias="CONNECTOR_IDENTITY_REGISTRY_URL"
     )
 
-    # Counter-party DSP address — must match the registered participant dsp_address
-    # in the identity-registry (Docker DNS, used for EDC-to-EDC communication)
+    # Counter-party DSP address — where the consumer EDC reaches the provider
+    # EDC's protocol endpoint. Uses 172.17.0.1 so it works both when EDCs run
+    # locally (task dev) and from Docker containers (host gateway).
     counter_party_address: str = Field(
-        "http://edc-provider:19194/protocol/2025-1",
+        "http://172.17.0.1:19194/protocol/2025-1",
         validation_alias="E2E_COUNTER_PARTY_ADDRESS",
     )
 

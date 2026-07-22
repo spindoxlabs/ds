@@ -123,14 +123,14 @@ services:
         ir-cli participant add \
           --did did:web:provider.dataspaces.localhost \
           --role provider \
-          --dsp-address http://edc-provider:19194/protocol/2025-1 \
+          --dsp-address http://172.17.0.1:19194/protocol/2025-1 \
           --scope dataspaces.query --scope dataspaces.admin \
           --sts-secret insecure-dev-secret \
           --credential-service-url http://identity-registry:30005/credentials/did:web:provider.dataspaces.localhost
         ir-cli participant add \
           --did did:web:consumer.dataspaces.localhost \
           --role consumer \
-          --dsp-address http://edc-consumer:29194/protocol/2025-1 \
+          --dsp-address http://172.17.0.1:29194/protocol/2025-1 \
           --scope dataspaces.query \
           --scope owner:example-org:member \
           --sts-secret insecure-dev-secret \

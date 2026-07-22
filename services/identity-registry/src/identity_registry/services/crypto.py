@@ -152,10 +152,16 @@ def encrypt_private_jwk(jwk: dict, encryption_key: str) -> dict:
     return {"_enc": fernet.encrypt(plaintext).decode(), "_salt": salt.hex()}
 
 
+_LEGACY_FERNET_SALT = b"ds-identity-registry-v1"
+
+
 def decrypt_private_jwk(stored: dict, encryption_key: str) -> dict:
     if "_enc" not in stored:
         return stored
-    salt = bytes.fromhex(stored["_salt"])
+    if "_salt" in stored:
+        salt = bytes.fromhex(stored["_salt"])
+    else:
+        salt = _LEGACY_FERNET_SALT
     fernet = Fernet(_derive_fernet_key(encryption_key, salt))
     plaintext = fernet.decrypt(stored["_enc"].encode())
     return json.loads(plaintext)

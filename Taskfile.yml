@@ -410,6 +410,7 @@ tasks:
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
+          -Dds.demo.identity.enabled=true \
           -jar "$jar"
 
   edc-consumer:run:
@@ -426,6 +427,7 @@ tasks:
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
+          -Dds.demo.identity.enabled=true \
           -jar "$jar"
 
   edc:watch-build:
@@ -462,6 +464,7 @@ tasks:
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
+            -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
           while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
@@ -495,6 +498,7 @@ tasks:
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
+            -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
           while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
