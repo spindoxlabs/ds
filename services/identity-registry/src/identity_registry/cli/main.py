@@ -19,7 +19,7 @@ from ..services.crypto import (
     generate_key_pair,
     hash_sts_secret,
 )
-from ..services.status_list import create_bitstring, next_available_index
+from ..services.status_list import create_bitstring, next_available_index, set_bit
 from ..services.vc import build_membership_credential, sign_credential
 
 app = typer.Typer(name="ir-cli", help="Identity Registry CLI")
