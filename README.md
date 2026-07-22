@@ -60,14 +60,14 @@ dataspaces/
 - [uv](https://docs.astral.sh/uv/) (for local Python service overrides)
 - Node.js (for the portal)
 
-### One-time setup
+### Start in local development mode
+
+Note: requires `tmux` installed (eg. `apt install tmux`)
 
 ```bash
-# Copy the example env (all defaults work out of the box)
-cp .env.example .env
+task dev
 ```
 
-No `/etc/hosts` entries are needed — `*.dataspaces.localhost` resolves via Docker network aliases on the Caddy service.
 
 ### Start the full stack
 
