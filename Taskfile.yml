@@ -409,6 +409,7 @@ tasks:
         EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
+          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
           -jar "$jar"
 
   edc-consumer:run:
@@ -424,6 +425,7 @@ tasks:
         EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
+          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
           -jar "$jar"
 
   edc:watch-build:
@@ -459,6 +461,7 @@ tasks:
           EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
+            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
             -jar "$jar" &
           PID=$!
           while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
@@ -491,6 +494,7 @@ tasks:
           EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
+            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
             -jar "$jar" &
           PID=$!
           while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
@@ -702,6 +706,25 @@ tasks:
         fi
         [ "$rc" -eq 0 ] && echo "✓ $FILE carries no dev defaults"
         exit $rc
+
+  # ── Documentation ────────────────────────────────────────────────────────
+  docs:serve:
+    desc: Serve docs locally with live reload (http://127.0.0.1:8000)
+    cmds:
+      - >-
+        uv run
+        --with mkdocs-material
+        --with mkdocs-awesome-pages-plugin
+        mkdocs serve
+
+  docs:build:
+    desc: Build docs site to site/
+    cmds:
+      - >-
+        uv run
+        --with mkdocs-material
+        --with mkdocs-awesome-pages-plugin
+        mkdocs build --strict
 
   # ── Compliance (governance validation + audit evidence) ─────────────────────
   compliance:validate:

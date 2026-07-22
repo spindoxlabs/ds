@@ -1,0 +1,11 @@
+nav:
+  - Home: index.md
+  - architecture.md
+  - identity-and-dcp.md
+  - data-exchange-flow.md
+  - governance-and-odrl.md
+  - consent-and-sovereignty.md
+  - owner-identity-and-ownership.md
+  - provenance-and-lineage.md
+  - DSSC Blueprint: dssc-blueprint-docs
+  - CEEDS Blueprint: ceeds-blueprint-docs

@@ -1,4 +1,4 @@
-# CEEDS Blueprint v2.0 vs DSSC Blueprint v3.0 — Deviation Benchmark
+# Benchmark of CEEDS Blueprint v2.0 and DSSC Blueprint v3.0 
 
 > **Purpose**: Identify key deviations between our DSSC-based approach and the CEEDS energy-domain specialisation to assess alignment and surface gaps.  
 > **CEEDS version**: Blueprint v2.0 (July 2024, based on DSSC v1.0)  
