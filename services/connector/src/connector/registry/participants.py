@@ -66,11 +66,13 @@ class ParticipantRegistry:
 class HttpParticipantRegistry:
     """Participant registry backed by identity-registry HTTP API with TTL cache."""
 
-    def __init__(self, identity_registry_url: str, cache_ttl: float = 60.0, token_provider=None):
+    def __init__(self, identity_registry_url: str, cache_ttl: float = 60.0, token_provider=None, max_staleness_factor: float = 5.0):
         self._base_url = identity_registry_url.rstrip("/")
         self._cache_ttl = cache_ttl
+        self._max_staleness = max(cache_ttl * max_staleness_factor, 300.0)
         self._cache: ParticipantRegistry | None = None
         self._cache_time: float = 0.0
+        self._last_success: float = 0.0
         self._token_provider = token_provider
         self._client = httpx.AsyncClient(
             base_url=self._base_url, timeout=10.0
@@ -102,9 +104,20 @@ class HttpParticipantRegistry:
             ]
             self._cache = ParticipantRegistry(participants)
             self._cache_time = now
+            self._last_success = now
         except httpx.HTTPError as exc:
             log.error("Failed to fetch participants from identity-registry: %s", exc)
             if self._cache is not None:
+                staleness = now - self._last_success
+                if self._last_success > 0 and staleness > self._max_staleness:
+                    raise UnknownParticipantError(
+                        f"Identity-registry unreachable for {staleness:.0f}s "
+                        f"(max {self._max_staleness:.0f}s) — refusing stale participant data"
+                    ) from exc
+                log.warning(
+                    "Serving stale participant cache (age %.0fs, max %.0fs)",
+                    staleness, self._max_staleness,
+                )
                 return self._cache
             self._cache = ParticipantRegistry.empty()
             self._cache_time = now

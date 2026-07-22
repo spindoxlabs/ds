@@ -298,7 +298,10 @@ async def get_negotiation(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
+    x_subject_id: str | None = Header(default=None),
+    x_user_vc: str | None = Header(default=None),
 ):
+    _verify_consumer_user(x_user_vc, x_subject_id, settings)
     try:
         data = await svc._edc.get_negotiation(negotiation_id)
         agreement_id = data.get("contractAgreementId")

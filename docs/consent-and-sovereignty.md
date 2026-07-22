@@ -23,7 +23,7 @@ The consent lifecycle is:
 
 The consent system uses PostgreSQL via async SQLAlchemy. Key tables in `services/connector/src/connector/db/models.py`:
 
-**ConsentRecord**
+**ConsentRequestORM**
 
 | Field | Type | Purpose |
 |-------|------|---------|
@@ -36,12 +36,12 @@ The consent system uses PostgreSQL via async SQLAlchemy. Key tables in `services
 | `created_at` | TIMESTAMP | When the request was created |
 | `updated_at` | TIMESTAMP | Last status change |
 
-**TransferTracking**
+**ConsumerTransferORM**
 
 | Field | Type | Purpose |
 |-------|------|---------|
 | `id` | UUID | Primary key |
-| `consent_id` | UUID | FK to ConsentRecord |
+| `consent_id` | UUID | FK to ConsentRequestORM |
 | `transfer_process_id` | TEXT | EDC transfer process ID |
 | `agreement_id` | TEXT | EDC contract agreement ID |
 | `active` | BOOLEAN | Whether the transfer is still running |
@@ -72,7 +72,7 @@ All consent endpoints are on ds-connector under `/consent/`:
 | Endpoint | Purpose |
 |----------|---------|
 | `GET /internal/consent/check` | Check if active consent exists; returns consented subject IDs |
-| `POST /internal/consent/register-transfer` | Link a transfer process to a consent record |
+| `POST /consent/register-transfer` | Link a transfer process to a consent record |
 
 ---
 
@@ -80,7 +80,7 @@ All consent endpoints are on ds-connector under `/consent/`:
 
 ### At negotiation time (ODRL constraint)
 
-When a dataset has `user_filter_column` set in `governance.yaml`, the `GovernanceMapper` adds a `ds:consentStatus eq "active"` constraint to the ODRL offer.
+When a dataset has `user_filter_column` set in `governance.yaml`, the `GovernanceMapper` adds a profile-namespaced `ConsentStatus eq "active"` constraint (e.g. `dsp-policy:ConsentStatus`) to the ODRL offer.
 
 During EDC negotiation, `ConsentStatusFunction` in `edc-extensions` calls `GET /internal/consent/check` to verify that at least one active consent record exists for the requesting participant.
 
@@ -216,7 +216,7 @@ sequenceDiagram
 
     Note over Consumer,Conn: 3. Consent request
     Consumer->>Conn: POST /consent/request (subject DID, dataset, purpose)
-    Conn->>Conn: Create ConsentRecord (status: pending)
+    Conn->>Conn: Create ConsentRequestORM (status: pending)
 
     Note over User,Conn: 4. Subject approves
     User->>Portal: View consent requests
@@ -263,5 +263,5 @@ This ensures that consent can only be granted for subjects who actually belong t
 | Building Block | Implementation |
 |---------------|---------------|
 | BB09 (Data Sovereignty) | Per-subject consent with ABAC row filtering, subject-pool validation |
-| BB03 (Access & Usage Policies) | `ds:consentStatus` ODRL constraint in policy offers |
+| BB03 (Access & Usage Policies) | Profile-namespaced `ConsentStatus` ODRL constraint in policy offers |
 | BB06 (Data Exchange) | Revocation terminates active EDC transfer processes |

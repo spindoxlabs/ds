@@ -136,6 +136,7 @@ class SmokeFlow(BaseFlow):
         negotiation = self.http.poll_until(
             f"{s.consumer_connector_url}/consumer/negotiations/{encoded_neg_id}",
             lambda p: p.get("state") in FINAL_NEGOTIATION_STATES and bool(p.get("contractAgreementId")),
+            headers=consumer_headers,
         )
         agreement_id = negotiation.get("contractAgreementId")
         if not agreement_id:

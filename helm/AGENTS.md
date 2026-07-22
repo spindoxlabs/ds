@@ -49,7 +49,7 @@ env:
 
 | Service | Registered checks |
 |---------|-------------------|
-| `ds-connector` | `CONNECTOR_OIDC_ISSUER_URL` set · `CONNECTOR_OIDC_INSECURE_DEV` false · `CONNECTOR_TRUST_ANCHOR_KEY_PATH` set · `CONNECTOR_VC_INSECURE_DEV` false · `EDC_API_KEY` not `insecure-dev-key` · `CONNECTOR_SERVICE_CLIENT_SECRET` not `svc-ds-connector` |
+| `ds-connector` | `CONNECTOR_OIDC_ISSUER_URL` set · `CONNECTOR_OIDC_INSECURE_DEV` false · `CONNECTOR_TRUST_ANCHOR_KEY_PATH` set · `CONNECTOR_VC_INSECURE_DEV` false · `EDC_API_KEY` not `insecure-dev-key` · `CONNECTOR_SERVICE_CLIENT_SECRET` not `svc-ds-connector` · `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhooks enabled |
 | `identity-registry` | `IDENTITY_REGISTRY_OIDC_ISSUER_URL` set · `IDENTITY_REGISTRY_OIDC_INSECURE_DEV` false · `IDENTITY_REGISTRY_ENCRYPTION_KEY` not the dev passphrase · `KEYCLOAK_CLIENT_SECRET` not `insecure-dev-secret` |
 | `ds-provenance` | `PROVENANCE_OIDC_ISSUER_URL` set · `PROVENANCE_OIDC_INSECURE_DEV` false |
 | `ds-federated-catalog` | `CATALOG_OIDC_ISSUER_URL` set · `CATALOG_OIDC_INSECURE_DEV` false · `CATALOG_SERVICE_CLIENT_SECRET` not `svc-ds-federated-catalog` |
@@ -167,10 +167,10 @@ key at rest. **Losing it makes every stored private key unrecoverable.** It
 belongs in a backed-up secret store, not only in a cluster Secret. Rotating it
 requires re-encrypting the key table — there is no automatic migration path today.
 
-Related known weakness: the KDF uses a hardcoded global salt
-(`services/identity-registry/src/identity_registry/services/crypto.py`), so the
-derived key is deterministic per passphrase across all deployments. A strong
-per-deployment passphrase mitigates this; fixing the salt is tracked separately.
+The KDF uses a per-key random salt stored alongside each ciphertext, so two
+deployments with the same passphrase produce different encrypted blobs. A strong
+per-deployment passphrase is still essential — the salt prevents precomputation
+but does not compensate for a weak passphrase.
 
 ## Networking and least privilege
 
@@ -193,19 +193,77 @@ Also expected of any production pod spec, none of which the dev compose sets:
 and set `USER`), `allowPrivilegeEscalation: false`, `capabilities.drop: [ALL]`,
 `readOnlyRootFilesystem` where feasible, and resource requests/limits.
 
+## Webhook SSRF protection
+
+`POST /consent/request` accepts an optional `notification_url`. The connector
+validates it against `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` — a comma-separated
+list of allowed hostnames. When the list is empty (the default), **all webhook
+URLs are rejected**. The chart must set it explicitly if webhook notifications
+are enabled (`CONNECTOR_NOTIFY_BACKENDS` includes `webhook`):
+
+```yaml
+- name: CONNECTOR_WEBHOOK_ALLOWED_HOSTS
+  value: "notifications.example.com,hooks.internal.example.com"
+```
+
+## Supply-chain integrity
+
+### Dockerfiles must use lockfiles
+
+Fifteen `uv.lock` files are committed and current; **no Dockerfile uses any of
+them**. `connector/Dockerfile:20-25` installs unpinned ranges with a
+`2>/dev/null ||` fallback that silently installs a *different* dependency set on
+resolution failure. Before building production images:
+
+- Switch all Dockerfiles to `uv sync --frozen` (uses the committed lockfile,
+  fails if it is stale rather than silently resolving different versions).
+- Digest-pin base images (`python:3.12-slim@sha256:...`).
+
+### CI security scanning
+
+The only CI workflow (`compliance.yml`) runs governance-semantic checks. There
+is no SAST, dependency scanning, container scanning, or secret scanning. Before
+production:
+
+- Enable Dependabot or `pip-audit` / `uv pip compile --audit` for dependency
+  vulnerability scanning.
+- Add a container-scan step (`trivy`, `grype`) to the image build pipeline.
+- Add `task secrets:check` as a required CI gate on the release branch.
+
 ## Observability obligations
 
 The platform currently has no log aggregation, no structured logging, and no
 authorization-decision logging. For NIS2 Art. 21(2)(b) and the Art. 23 reporting
-deadlines, a deployment needs retained, searchable evidence. The chart is the
-natural place to require:
+deadlines, a deployment needs retained, searchable evidence.
 
-- a logging sidecar or cluster log shipper with a defined retention window;
-- scrape configuration for the `/metrics` endpoints that exist on `ds-connector`,
-  `ds-provenance`, `ds-federated-catalog` and `dataset-api`
-  (note: these are currently **unauthenticated** — either gate them or keep them
-  off any public Ingress);
-- Keycloak audit events enabled and shipped.
+### What the chart must provide
+
+- **Log shipping with defined retention.** Container logs are lost on restart
+  without a cluster log shipper. The 24h/72h Art. 23 notification obligations
+  cannot be evidenced without retained, searchable logs.
+- **Prometheus scrape config** for the `/metrics` endpoints on `ds-connector`,
+  `ds-provenance`, `ds-federated-catalog` and `dataset-api`. These endpoints
+  are unauthenticated — expose them only to the in-cluster Prometheus, never
+  through an Ingress.
+- **Keycloak audit events** enabled and shipped (`eventsEnabled`,
+  `adminEventsEnabled`, `adminEventsDetailsEnabled`).
+
+### What the codebase needs before the chart can deliver
+
+These are application-level prereqs, not chart concerns, but they block
+meaningful observability:
+
+1. **Structured JSON logging** with correlation/request IDs across services.
+   There is exactly one `logging.basicConfig` in the whole repo
+   (`federated_catalog/cli/main.py`). Without structured output, log shipping
+   produces unsearchable text.
+2. **Authorization-decision logging** — log every grant and deny with principal,
+   permission, and resource. The natural home is
+   `ds_auth.fastapi.require_permission`. Without this, auth failures leave no
+   forensic trace.
+3. **Metrics on all services.** `identity-registry` and `provenance` have no
+   `metrics.py` — the two most security-relevant services are invisible to
+   Prometheus.
 
 ## Checklist before a chart is considered production-ready
 
@@ -218,10 +276,14 @@ natural place to require:
 - [ ] `edc.iam.did.web.use.https=true`, `edc.sql.schema.autocreate=false`
 - [ ] EDC vault rendered from generated keys, not the committed dev files
 - [ ] `IDENTITY_REGISTRY_ENCRYPTION_KEY` in a backed-up secret store
+- [ ] `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhook notifications enabled
 - [ ] TLS terminated for all browser- and DSP-facing endpoints
 - [ ] Per-service database roles
 - [ ] Pod `securityContext` hardening and resource limits
 - [ ] Log shipping with a defined retention window
+- [ ] `/metrics` endpoints reachable only from in-cluster Prometheus
+- [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned
+- [ ] CI includes dependency scanning and `task secrets:check`
 
 ## See also
 

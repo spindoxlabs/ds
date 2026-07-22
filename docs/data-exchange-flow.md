@@ -20,7 +20,7 @@ The dataspace implements the IDSA Dataspace Protocol (DSP) consumer-pull pattern
 ```
 Portal                    ds-connector              EDC Consumer        EDC Provider
   │                            │                         │                    │
-  │  GET /consumer/catalog     │                         │                    │
+  │  POST /consumer/catalog    │                         │                    │
   ├───────────────────────────→│                         │                    │
   │                            │  POST /management/v3/   │                    │
   │                            │  catalog/request         │                    │
@@ -114,15 +114,14 @@ The EDR contains an `endpoint` URL and a JWT `token`. The consumer uses these to
 Consumer App              dataset-api (30002)       ds-connector
   │                            │                         │
   │  POST /query               │                         │
-  │  Headers:                  │                         │
-  │    Edc-Contract-Agreement  │                         │
-  │    Edc-Bpn                 │                         │
-  │  Body: { dataset, ... }    │                         │
+  │  Body/Query: agreement_id, │                         │
+  │    transfer_id, dataset,   │                         │
+  │    consumer_id, subject_id │                         │
   ├───────────────────────────→│                         │
   │                            │  GET /internal/          │
   │                            │  agreements/{id}/status  │
   │                            ├────────────────────────→│
-  │                            │  { valid: true }        │
+  │                            │  { active: true }       │
   │                            │←────────────────────────┤
   │                            │                         │
   │                            │  GET /internal/          │

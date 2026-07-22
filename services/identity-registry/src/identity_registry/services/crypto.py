@@ -13,7 +13,7 @@ from cryptography.hazmat.primitives.asymmetric import ec, utils as ec_utils
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-_FERNET_SALT = b"ds-identity-registry-v1"
+_FERNET_KDF_ITERATIONS = 480_000
 _STS_HASH_ITERATIONS = 600_000
 
 
@@ -135,26 +135,28 @@ def generate_credential_id() -> str:
 # ── Private key encryption at rest ───────────────────────────────
 
 
-def _derive_fernet_key(passphrase: str) -> bytes:
+def _derive_fernet_key(passphrase: str, salt: bytes) -> bytes:
     kdf = PBKDF2HMAC(
         algorithm=SHA256(),
         length=32,
-        salt=_FERNET_SALT,
-        iterations=480_000,
+        salt=salt,
+        iterations=_FERNET_KDF_ITERATIONS,
     )
     return base64.urlsafe_b64encode(kdf.derive(passphrase.encode()))
 
 
 def encrypt_private_jwk(jwk: dict, encryption_key: str) -> dict:
-    fernet = Fernet(_derive_fernet_key(encryption_key))
+    salt = os.urandom(16)
+    fernet = Fernet(_derive_fernet_key(encryption_key, salt))
     plaintext = json.dumps(jwk, separators=(",", ":")).encode()
-    return {"_enc": fernet.encrypt(plaintext).decode()}
+    return {"_enc": fernet.encrypt(plaintext).decode(), "_salt": salt.hex()}
 
 
 def decrypt_private_jwk(stored: dict, encryption_key: str) -> dict:
     if "_enc" not in stored:
         return stored
-    fernet = Fernet(_derive_fernet_key(encryption_key))
+    salt = bytes.fromhex(stored["_salt"])
+    fernet = Fernet(_derive_fernet_key(encryption_key, salt))
     plaintext = fernet.decrypt(stored["_enc"].encode())
     return json.loads(plaintext)
 
@@ -170,7 +172,7 @@ def hash_sts_secret(secret: str) -> str:
 
 def verify_sts_secret(secret: str, stored: str) -> bool:
     if not stored.startswith("pbkdf2:"):
-        return hmac.compare_digest(secret, stored)
+        return False
     parts = stored.split(":")
     if len(parts) != 4:
         return False

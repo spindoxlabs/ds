@@ -128,7 +128,7 @@ governance.yaml  →  GovernanceResolver  →  GovernanceRuleV2
 | Governance field | Without ownership | With ownership |
 |-----------------|-------------------|----------------|
 | `odrl:assigner` | `did:web:provider.dataspaces.localhost` | `did:web:example-org.dataspaces.localhost` |
-| `ds:accessScope` right operand | `dataspaces.query` | `owner:example-org:member` |
+| `Membership` right operand | `dataspaces.query` | `owner:example-org:member` |
 | Consent subject-pool check | Skipped | Enforced via IR `/memberships/check` |
 
 ---
@@ -315,9 +315,9 @@ organizations:
     domains: []
     members:
       - email: provider@example.test
-        roles: [dataset.admin]
+        groups: [dataset.admin]
       - email: subject@example.test
-        roles: [consumer]
+        groups: [consumer]
 ```
 
 ### Sync script
@@ -325,7 +325,7 @@ organizations:
 `ir-cli keycloak org-sync` reads the config and provisions via the KC Admin REST API:
 - Creates KC native organizations (idempotent)
 - Looks up users by email and adds them as org members
-- Creates org-level roles and assigns them to members
+- Creates org-level groups and assigns them to members
 
 ### Dev realm setup
 
@@ -342,13 +342,13 @@ When a user logs in and belongs to a KC organization, the access token includes:
 {
   "organization": {
     "example-org": {
-      "roles": ["dataset.admin"]
+      "groups": ["dataset.admin"]
     }
   }
 }
 ```
 
-The portal and `ds_auth` library extract both `.groups` (legacy/celine-policies) and `.roles` (KC 26+ native) from the organization claim.
+`ds_auth.extract_groups` merges realm-level `groups` and org-level `organization.<alias>.groups` into a flat, deduped list used for authorization.
 
 ### Portal gating
 

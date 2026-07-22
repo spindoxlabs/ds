@@ -127,8 +127,8 @@ When a consumer negotiates for a dataset, EDC evaluates the ODRL constraints usi
 
 ### AccessScopeFunction (`{ns}Membership`)
 
-1. Reads `governance/participants.yaml` to find the requesting participant (file-based fallback)
-2. When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, scope checks are forwarded to the identity-registry HTTP endpoint (with TTL cache) instead
+1. Makes an HTTP POST to `ds-connector POST /internal/participants/check`, which forwards the check to the identity-registry service
+2. The ds-connector caches participant data from the identity-registry with a configurable TTL
 3. Checks if the participant satisfies the required membership constraint
 4. Returns `true` (allow) or `false` (deny)
 
@@ -155,27 +155,14 @@ The dataspace defines custom ODRL terms under a configurable namespace prefix. T
 
 ## Participant registry
 
-`services/connector/governance/participants.yaml` defines known dataspace participants:
+Dataspace participants are managed by the identity-registry service and served via `GET /admin/participants`. Each participant record includes `did`, `dsp_address`, `allowed_scopes`, and `role` fields.
 
-```yaml
-participants:
-  - id: did:web:provider.dataspaces.localhost
-    dsp_address: http://edc-provider:19194/protocol
-    allowed_scopes: [dataspaces.query, dataspaces.admin]
-    role: provider
+The ds-connector's `HttpParticipantRegistry` fetches participants from the identity-registry with a configurable TTL cache (set via `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`). When `CONNECTOR_IDENTITY_REGISTRY_URL` is not set, a file-based fallback reads from a local YAML file — this is intended for development or offline scenarios only.
 
-  - id: did:web:consumer.dataspaces.localhost
-    dsp_address: http://edc-consumer:29194/protocol
-    allowed_scopes: [dataspaces.query]
-    role: consumer
-```
-
-When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, the HTTP-backed identity-registry (with TTL cache) replaces the file-based `participants.yaml` for participant lookups. File-based mode is preserved as a fallback when the environment variable is not configured.
-
-This file is consumed by:
-- `edc-extensions/AccessScopeFunction` — participant scope validation at negotiation time (file-based fallback)
-- `ds-connector/ParticipantRegistry` — catalog discovery and access control
-- `ds-federated-catalog` — endpoint discovery for catalog crawling
+Participant data is consumed by:
+- `edc-extensions/AccessScopeFunction` — calls `POST /internal/participants/check` on ds-connector at negotiation time
+- `ds-connector/HttpParticipantRegistry` — catalog discovery and access control
+- `ds-federated-catalog` — endpoint discovery for catalog crawling (reads from identity-registry directly)
 
 ## Ownership & owner resolution
 

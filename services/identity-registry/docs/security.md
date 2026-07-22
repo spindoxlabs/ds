@@ -33,11 +33,18 @@ HTTP responses:
 > the `identity-registry.admin` scope despite being registered on the internal
 > router.
 
-### Internal endpoints (`/participants`, `/participants/{did}/check`)
+### DCP protocol endpoints (`/sts/*`, `/credentials/*`)
 
-Internal endpoints require no authentication. They rely on network-level trust:
-the service uses `expose:` rather than `ports:` in Docker Compose, so these
-endpoints are only reachable from within the container network.
+- `/sts/{did}/token` authenticates with the participant's STS client secret
+  (PBKDF2-hashed, verified via `verify_sts_secret`).
+- `/credentials/{did}/presentations/query` requires a DCP self-issued token
+  signed by the requested DID's registered key (`verify_si_token`).
+
+### Service-to-service endpoints (`/admin/participants`, `/admin/participants/check`)
+
+These require a JWT bearer token with `identity-registry.read` or
+`identity-registry.admin` scope. Port 30005 is published to the host, so
+network isolation alone is insufficient.
 
 ### Public endpoints (`/dids/{did}/did.json`, `/status/{list-id}`, `/health`)
 
@@ -60,11 +67,10 @@ meant to be publicly resolvable by design.
 
 ### Trust anchor vs. participant keys
 
-- The **trust anchor** private key stays in the database only -- it is NOT
-  exported to the shared volume (the bootstrap command does not call
-  `export_private_key`).
-- **Participant keys** can be exported to the shared volume (via `export.py`)
-  for STS consumption at `/data/keys/{name}-key.json`.
+- The **trust anchor** private key stays in the database only.
+- **Participant keys** are Fernet-encrypted at rest in the database (per-key
+  random salt, PBKDF2-HMAC-SHA256, 480k iterations). They are decrypted
+  in-memory only when signing.
 
 ### Key rotation
 
@@ -101,33 +107,24 @@ When a key is rotated:
 
 | Layer | Mechanism |
 |---|---|
-| Container isolation | `expose:` (not `ports:`) in Docker Compose -- service is only reachable from within the container network |
 | Admin endpoints | JWT scope validation (`identity-registry.admin`) |
-| Internal endpoints | Network-restricted (no auth, but not exposed to the host) |
+| DCP endpoints | Per-participant STS secret or DCP self-issued token |
+| Service endpoints | JWT scope validation (`identity-registry.read`) |
 | Public endpoints | Intentionally open -- DID resolution and status lists must be publicly accessible |
 | Health check | `GET /health` returns service status, no auth required |
 
-## Export and volume security
-
-- Private keys are exported to the shared volume at
-  `{EXPORT_BASE_PATH}/keys/{name}-key.json`.
-- Credentials are exported to
-  `{EXPORT_BASE_PATH}/credentials/{name}/{filename}`.
-- The shared volume (`identity-data`) is mounted by the STS and vc-wallet
-  containers.
-- The trust anchor private key is NOT exported -- it stays in the database only.
-- Exported files are plain JSON with no encryption at the filesystem level.
-  The volume itself should be secured at the infrastructure layer.
+Port 30005 is published to the host in Docker Compose. In production, use
+in-cluster DNS and do not expose the port externally.
 
 ## Production hardening checklist
 
-- [ ] Set `IDENTITY_REGISTRY_OIDC_ISSUER_URL` to enable JWT signature verification on admin endpoints
-- [ ] Replace the default `IDENTITY_REGISTRY_ENCRYPTION_KEY` with a strong Fernet key (default: `dev-encryption-key-change-in-production`)
-- [ ] Use external secret management (e.g. Vault, cloud KMS) for the encryption key
+All Python-service items are enforced by `ProductionGuard` when `DS_ENV=production`.
+See `helm/AGENTS.md` for the full deployment contract.
+
+- [ ] Set `DS_ENV=production` (fails closed on all items below)
+- [ ] Set `IDENTITY_REGISTRY_OIDC_ISSUER_URL` to enable JWT signature verification
+- [ ] Replace the default `IDENTITY_REGISTRY_ENCRYPTION_KEY` with a strong Fernet key; back it up outside the cluster
 - [ ] Replace default `KEYCLOAK_CLIENT_SECRET` (`insecure-dev-secret`)
-- [ ] Enable mTLS for internal endpoints in production
-- [ ] Review key rotation frequency -- currently manual via `ir-cli key rotate` or `POST /admin/keys/rotate/{did}`
-- [ ] Restrict shared volume permissions (`identity-data`)
-- [ ] Consider encrypting exported private keys on disk (currently plain JSON)
+- [ ] Review key rotation frequency -- manual via `ir-cli key rotate` or `POST /admin/keys/rotate/{did}`
 - [ ] Enable audit logging for admin operations
 - [ ] Set up monitoring for StatusList capacity (131072 slots)

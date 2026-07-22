@@ -15,7 +15,7 @@ This document describes the W3C PROV-O provenance system: how dataspace events a
 
 ## PROV-O data model
 
-The provenance graph uses three W3C PROV-O node types and six relation types:
+The provenance graph uses three W3C PROV-O node types and seven relation types:
 
 ### Node types
 
@@ -35,6 +35,7 @@ The provenance graph uses three W3C PROV-O node types and six relation types:
 | `wasAttributedTo` | Entity → Agent | This entity is attributed to this agent |
 | `wasDerivedFrom` | Entity → Entity | This entity was derived from another entity |
 | `actedOnBehalfOf` | Agent → Agent | This agent acted on behalf of another agent |
+| `wasInformedBy` | Activity → Activity | This activity was informed by another activity |
 
 ---
 
@@ -52,6 +53,45 @@ Creates:
 - Agent (the provider participant)
 - Relations: `wasGeneratedBy`, `wasAssociatedWith`, `wasAttributedTo`
 
+### CatalogViewed
+
+Emitted when a consumer browses a provider's catalog.
+
+Creates:
+- Activity (the view action)
+
+### AccessRequested
+
+Emitted when a consumer requests access to a dataset.
+
+Creates:
+- Activity (the access request)
+- Relations to the dataset entity and participant agents
+
+### NegotiationStarted
+
+Emitted when a contract negotiation begins.
+
+Creates:
+- Activity (the negotiation)
+- Relations to the dataset entity and participant agents
+
+### NegotiationFinalized
+
+Emitted when a contract negotiation reaches `FINALIZED` state.
+
+Creates:
+- Activity (the finalization)
+- Relations to the dataset entity and participant agents
+
+### NegotiationTerminated
+
+Emitted when a contract negotiation is terminated.
+
+Creates:
+- Activity (the termination)
+- Relations to the negotiation activity
+
 ### ContractAgreementSigned
 
 Emitted when a contract negotiation reaches `FINALIZED` state.
@@ -59,6 +99,14 @@ Emitted when a contract negotiation reaches `FINALIZED` state.
 Creates:
 - Activity (the agreement)
 - Relations to the dataset entity and both participant agents
+
+### TransferStarted
+
+Emitted when a data transfer begins.
+
+Creates:
+- Activity (the transfer start)
+- Relations to the agreement and participant agents
 
 ### DataTransferCompleted
 
@@ -69,6 +117,14 @@ Creates:
 - Entity (the EDR/data access)
 - Relations linking transfer to agreement and participants
 
+### QueryExecuted
+
+Emitted when a dataspace-originated query is executed.
+
+Creates:
+- Activity (the query execution)
+- Relations to the dataset, agreement, and participant agents
+
 ### UsageObligationFulfilled
 
 Emitted when a post-transfer obligation is met (e.g. audit logging, data deletion).
@@ -76,6 +132,14 @@ Emitted when a post-transfer obligation is met (e.g. audit logging, data deletio
 Creates:
 - Activity (the obligation fulfilment)
 - Relations linking to the original transfer
+
+### AccessRevoked
+
+Emitted when access to a dataset is revoked.
+
+Creates:
+- Activity (the revocation)
+- Relations to the dataset, agreement, and participant agents
 
 ---
 
@@ -156,7 +220,7 @@ Returns the full ancestry graph: which activities produced this entity, which en
 
 ## Portal visualization
 
-The portal's admin lineage view (`/admin/lineage`) renders the provenance graph using Cytoscape.js with a dagre (directed acyclic graph) layout.
+The portal's lineage view (`/lineage/[iri]`) renders the provenance graph using Cytoscape.js with a dagre (directed acyclic graph) layout.
 
 - **Entities** are shown as blue rectangles
 - **Activities** are shown as orange ellipses

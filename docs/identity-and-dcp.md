@@ -6,7 +6,7 @@ This document describes how participant identities are established, how Verifiab
 
 ## Participant identities
 
-Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database — EDC resolves them directly via the `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`), with `*.dataspaces.localhost` hostnames resolving to `127.0.0.1` via `/etc/hosts`.
+Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database — EDC resolves them directly via the `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`), with `*.dataspaces.localhost` hostnames resolving via Docker network aliases on the Caddy service.
 
 | Participant | DID | Resolution path |
 |-------------|-----|----------------|
@@ -190,7 +190,7 @@ Provider EDC is configured to trust the trust anchor as a VC issuer:
 
 ```properties
 # services/connector/config/provider.properties
-edc.iam.trustedissuer.0.id=did:web:trust-anchor.dataspaces.localhost
+edc.iam.trusted-issuer.0.id=did:web:trust-anchor.dataspaces.localhost
 ```
 
 ---

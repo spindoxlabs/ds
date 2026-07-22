@@ -307,6 +307,6 @@ Each service has a `Dockerfile` and optional `charts/` directory for Helm deploy
 | BB05 | Publication & Discovery | EDC DSP, federated catalog |
 | BB06 | Data Exchange | EDC connector, ds-connector |
 | BB07 | Provenance & Traceability | ds-provenance |
-| BB08 | Vocabulary Hub | ds: namespace (connector /ns/energy) |
+| BB08 | Vocabulary Hub | Profile-namespaced ODRL vocabulary (connector `GET /ns/policy`) |
 | BB09 | Data Sovereignty | Consent system in ds-connector |
 | DCP | Dataspace Credential Protocol | EDC connectors + identity-registry (STS + credential service) |

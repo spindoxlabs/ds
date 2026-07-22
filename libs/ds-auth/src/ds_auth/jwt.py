@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 @lru_cache(maxsize=16)
 def _jwks_client(jwks_uri: str) -> PyJWKClient:
     logger.info("ds-auth: loading JWKS from %s", jwks_uri)
-    return PyJWKClient(jwks_uri, cache_jwk_set=True, lifespan=3600)
+    return PyJWKClient(jwks_uri, cache_jwk_set=True, lifespan=3600, timeout=10)
 
 
 def get_bearer_token(authorization_header: str | None) -> str:
@@ -161,6 +161,7 @@ def verify_token(token: str, config: OidcConfig) -> dict:
                     "verify_nbf": True,
                     "verify_aud": bool(auds),
                     "verify_iss": True,
+                    "require": ["exp"],
                 },
             )
         except jwt.PyJWTError as exc:

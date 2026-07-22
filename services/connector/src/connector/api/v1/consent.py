@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
@@ -91,6 +92,19 @@ async def create_consent_request(
 ):
     """Initiate consent requests for a set of data subjects."""
     _verify_user(x_user_vc, x_subject_id, settings, {"ConsumerUser"})
+
+    if body.notification_url:
+        allowed_raw = settings.webhook_allowed_hosts.strip()
+        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()} if allowed_raw else set()
+        parsed = urlparse(body.notification_url)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in ("https", "http") or not host:
+            raise HTTPException(400, "notification_url must be an HTTP(S) URL")
+        if not allowed or host not in allowed:
+            raise HTTPException(
+                400,
+                f"notification_url host '{host}' is not in the allowed hosts list",
+            )
 
     owner_alias = resolve_dataset_owner(
         settings.governance_yaml_path,

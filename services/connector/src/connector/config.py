@@ -119,6 +119,11 @@ class Settings(BaseSettings):
     # Notification backends — comma-separated: smtp, webhook (default: empty → null)
     notify_backends: str = ""
     notify_portal_base_url: str = "https://portal.dataspaces.localhost"
+    webhook_allowed_hosts: str = Field(
+        default="",
+        description="Comma-separated host allowlist for webhook notification_url. "
+        "Empty = reject all webhook URLs (SSRF protection).",
+    )
 
     # SMTP settings (required when notify_backends contains "smtp")
     notify_smtp_host: str | None = None
