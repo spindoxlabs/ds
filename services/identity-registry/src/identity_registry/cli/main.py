@@ -101,7 +101,7 @@ def bootstrap(
 @participant_app.command("add")
 def participant_add(
     did: str = typer.Option(..., help="Participant DID"),
-    role: str = typer.Option("consumer", help="Role: provider or consumer"),
+    roles: str = typer.Option("consumer", help="Comma-separated roles: provider,consumer"),
     dsp_address: str = typer.Option(None, help="DSP protocol endpoint URL"),
     scope: list[str] = typer.Option(
         [], help="Allowed scopes (repeatable)"
@@ -170,10 +170,11 @@ def participant_add(
                 typer.echo(f"  Created DID: {did}")
                 typer.echo(f"  Key ID: {kp.kid}")
 
+            roles_list = [r.strip() for r in roles.split(",")]
             participant = Participant(
                 did=did,
                 dsp_address=dsp_address,
-                role=role,
+                roles=roles_list,
                 allowed_scopes=list(scope),
                 sts_client_secret=hash_sts_secret(sts_secret),
             )
@@ -202,40 +203,43 @@ def participant_add(
                     session.add(sl)
                     await session.flush()
 
-                sl_index = next_available_index(sl.bitstring)
-                cred_id = generate_credential_id()
                 status_list_url = (
                     f"https://{settings.trust_anchor_domain}/status/1"
                 )
-
-                vc = build_membership_credential(
-                    issuer_did=trust_anchor_did,
-                    subject_did=did,
-                    role=role,
-                    allowed_scopes=list(scope),
-                    credentials_context_url=settings.credentials_context_url,
-                    dataspace_uri=settings.dataspace_uri,
-                    status_list_credential_url=status_list_url,
-                    status_list_index=sl_index,
-                    credential_id=cred_id,
-                )
                 ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
-                signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
-                cred = Credential(
-                    id=cred_id,
-                    credential_type="MembershipCredential",
-                    issuer_did=trust_anchor_did,
-                    subject_did=did,
-                    credential_json=signed_vc,
-                    status_list_index=sl_index,
-                    expires_at=datetime.now(UTC) + timedelta(days=365),
-                )
-                session.add(cred)
-                typer.echo(f"  Issued MembershipCredential: {cred_id}")
+                for r in roles_list:
+                    sl_index = next_available_index(sl.bitstring)
+                    cred_id = generate_credential_id()
+
+                    vc = build_membership_credential(
+                        issuer_did=trust_anchor_did,
+                        subject_did=did,
+                        role=r,
+                        allowed_scopes=list(scope),
+                        credentials_context_url=settings.credentials_context_url,
+                        dataspace_uri=settings.dataspace_uri,
+                        status_list_credential_url=status_list_url,
+                        status_list_index=sl_index,
+                        credential_id=cred_id,
+                    )
+                    signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
+
+                    cred = Credential(
+                        id=cred_id,
+                        credential_type="MembershipCredential",
+                        issuer_did=trust_anchor_did,
+                        subject_did=did,
+                        credential_json=signed_vc,
+                        status_list_index=sl_index,
+                        expires_at=datetime.now(UTC) + timedelta(days=365),
+                    )
+                    session.add(cred)
+                    sl.bitstring = set_bit(sl.bitstring, sl_index)
+                    typer.echo(f"  Issued MembershipCredential ({r.capitalize()}): {cred_id}")
 
             await session.commit()
-            typer.echo(f"Participant registered: {did} ({role})")
+            typer.echo(f"Participant registered: {did} (roles={roles_list})")
 
     _run(_add())
 
@@ -259,7 +263,7 @@ def participant_list():
             for p in participants:
                 status = "active" if p.active else "inactive"
                 typer.echo(
-                    f"  {p.did}  role={p.role}  scopes={p.allowed_scopes}  "
+                    f"  {p.did}  roles={p.roles}  scopes={p.allowed_scopes}  "
                     f"status={status}"
                 )
 

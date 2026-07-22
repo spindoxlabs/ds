@@ -6,7 +6,7 @@ This document describes how participant identities are established, how Verifiab
 
 ## Participant identities
 
-Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database — EDC resolves them directly via the `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`), with `*.dataspaces.localhost` hostnames resolving via Docker network aliases on the Caddy service.
+Each participant in the dataspace is identified by a `did:web:` URI. The identity-registry (`services/identity-registry/`) is the single source of truth for all identity operations (DSSC BB02). DID documents are served dynamically from the identity-registry's database — EDC resolves them directly via the `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`), with `*.dataspaces.localhost` hostnames resolving via Docker network aliases on the Caddy service. DID resolution is also available on port 9010 for host-side development and testing.
 
 | Participant | DID | Resolution path |
 |-------------|-----|----------------|
@@ -14,10 +14,16 @@ Each participant in the dataspace is identified by a `did:web:` URI. The identit
 | Consumer | `did:web:consumer.dataspaces.localhost` | identity-registry `GET /dids/did:web:consumer.dataspaces.localhost/did.json` |
 | Trust anchor | `did:web:trust-anchor.dataspaces.localhost` | identity-registry `GET /dids/did:web:trust-anchor.dataspaces.localhost/did.json` |
 
+### Dual roles
+
+A participant can hold multiple roles (e.g. both provider and consumer). The `roles` field on the participant record is a JSON array (e.g. `["provider", "consumer"]`). One MembershipCredential VC is issued per role, each with a single `credentialSubject.role` value (e.g. `"Provider"` or `"Consumer"`). This aligns with the DSSC blueprint where Role VCs are separate credentials.
+
+Each connector instance still runs as a single role at runtime — a dual-role participant deploys two connector instances sharing the same DID.
+
 ### DID lifecycle
 
 - **Trust anchor bootstrap:** `ir-cli bootstrap` creates the trust anchor DID with an auto-generated EC P-256 key pair and a self-issued MembershipCredential (idempotent, first-time setup)
-- **Participant registration:** `ir-cli participant add` or `POST /admin/participants` creates a participant DID with an auto-generated EC P-256 key pair and an auto-issued MembershipCredential
+- **Participant registration:** `ir-cli participant add` or `POST /admin/participants` creates a participant DID with an auto-generated EC P-256 key pair and one MembershipCredential per role
 - **Key rotation:** `ir-cli key rotate` or `POST /admin/keys/rotate/{did}` deactivates the current key, generates a new one with an incremented key index, and updates the DID document
 
 Private keys are stored in the identity-registry's database and never leave the identity-registry process. EDC connectors access identity operations (STS signing, credential presentations) through the identity-registry's HTTP API.
@@ -209,3 +215,27 @@ EDR (Endpoint Data Reference) tokens use a separate non-DID key stored in the ED
 | BB02 (Identity & Attestation) | identity-registry: DID lifecycle, key management, VC issuance, STS token signing, credential presentation service; `did:web:` URIs with `JsonWebKey2020` and ES256 signatures |
 | BB05 (Data Exchange) | EDC connectors with DCP; separate EDR signing keys in EDC vault (independent from BB02 identity keys) |
 | DCP | Full Dataspace Credential Protocol: EDC connectors call identity-registry for SI tokens, VPs, and DID document resolution (directly, no proxy) |
+
+---
+
+## Multi-dataspace federation (future work)
+
+Cross-dataspace interaction (e.g. providers in dataspace X negotiating with consumers in dataspace Y) is architecturally supported but not yet implemented.
+
+### What works today
+
+- **`did:web` cross-domain resolution:** DID documents resolve via standard HTTP GET — a connector in dataspace X can resolve `did:web:participant.dataspace-y.example` if network-reachable
+- **StatusList revocation checks:** `statusListCredential` URLs are absolute HTTP URIs — any verifier from any dataspace can check revocation status
+- **EDC multi-trusted-issuer:** EDC supports multiple trusted issuers via indexed properties (`edc.iam.trusted-issuer.N.id`), allowing a connector to trust VCs from multiple trust anchors
+
+### Gaps
+
+- **Automated trust anchor discovery:** No trust anchor registry federation — trust anchors must be manually configured per connector
+- **Cross-dataspace participant registration:** The identity-registry's scope check (`/admin/participants/check`) only knows local participants — foreign participants would fail scope validation
+- **Catalogue federation:** DSSC BB05 describes harvestable DCAT catalogues for cross-space discovery, not yet implemented
+
+### DSSC blueprint references
+
+- BB01 (Trust Framework): supports multiple trust anchors per dataspace (§4.1)
+- BB05 (Publication & Discovery): standardised `GET /catalogue` for cross-space harvesting (§8.3)
+- Services Architecture: extensible to cross-data-space federation (§5.4)

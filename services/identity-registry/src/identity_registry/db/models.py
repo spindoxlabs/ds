@@ -109,7 +109,7 @@ class Participant(Base):
         Text, ForeignKey("dids.did"), primary_key=True
     )
     dsp_address: Mapped[str | None] = mapped_column(Text, nullable=True)
-    role: Mapped[str] = mapped_column(String(16), nullable=False)
+    roles: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
     allowed_scopes: Mapped[list] = mapped_column(
         JsonType, nullable=False, default=list
     )

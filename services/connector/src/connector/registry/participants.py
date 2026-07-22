@@ -17,7 +17,7 @@ class Participant(BaseModel):
     id: str
     dsp_address: str
     allowed_scopes: list[str] = []
-    role: str = "consumer"
+    roles: list[str] = ["consumer"]
 
 
 class UnknownParticipantError(ValueError):
@@ -98,7 +98,7 @@ class HttpParticipantRegistry:
                     id=p["did"],
                     dsp_address=p.get("dsp_address") or "",
                     allowed_scopes=p.get("allowed_scopes", []),
-                    role=p.get("role", "consumer"),
+                    roles=p.get("roles", [p.get("role", "consumer")]),
                 )
                 for p in data
             ]

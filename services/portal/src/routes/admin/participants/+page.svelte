@@ -27,6 +27,7 @@
         <thead>
           <tr class="text-left border-b border-gray-200 text-gray-500 text-xs uppercase">
             <th class="pb-2 pr-4">ID</th>
+            <th class="pb-2 pr-4">Roles</th>
             <th class="pb-2 pr-4">DSP Endpoint</th>
             <th class="pb-2">Scopes</th>
           </tr>
@@ -36,6 +37,7 @@
             {@const participant = p as Record<string, unknown>}
             <tr>
               <td class="py-2 pr-4 font-mono text-xs text-gray-700">{String(participant['id'] ?? participant['participant_id'] ?? '—')}</td>
+              <td class="py-2 pr-4 text-xs text-gray-600">{Array.isArray(participant['roles']) ? participant['roles'].join(', ') : String(participant['role'] ?? '—')}</td>
               <td class="py-2 pr-4 text-xs text-gray-600">{String(participant['dsp_endpoint'] ?? participant['dsp_address'] ?? '—')}</td>
               <td class="py-2 text-xs text-gray-600">{scopesOf(participant)}</td>
             </tr>

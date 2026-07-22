@@ -6,7 +6,7 @@ This document describes the overall architecture: how services are organized, ho
 
 ## Service map
 
-The dataspace uses a multi-participant topology. Shared infrastructure services (PostgreSQL, Caddy, Keycloak, identity-registry) run once and serve all participants. Each participant runs its own EDC connector. Application services (portal, provenance, federated catalog) are scoped to the participant's role.
+The dataspace uses a multi-participant topology. Shared infrastructure services (PostgreSQL, Caddy, Keycloak, identity-registry) run once and serve all participants. Each participant runs its own EDC connector. Application services (portal, provenance, federated catalog) are scoped to the participant's role. Participants can hold multiple roles (e.g. both provider and consumer) — each role is represented by a separate MembershipCredential VC and a separate connector instance sharing the same participant DID.
 
 ```mermaid
 flowchart TB

@@ -26,11 +26,11 @@ def test_from_file_loads_participants(tmp_path):
           - id: provider
             dsp_address: http://edc-provider:19194/protocol
             allowed_scopes: [dataspaces.query, dataspaces.admin]
-            role: provider
+            roles: [provider]
           - id: consumer
             dsp_address: http://edc-consumer:29194/protocol
             allowed_scopes: [dataspaces.query]
-            role: consumer
+            roles: [consumer]
     """)
     registry = ParticipantRegistry.from_file(p)
     assert len(registry.all()) == 2
@@ -42,7 +42,7 @@ def test_validate_known_participant(tmp_path):
           - id: consumer
             dsp_address: http://edc-consumer:29194/protocol
             allowed_scopes: [dataspaces.query]
-            role: consumer
+            roles: [consumer]
     """)
     registry = ParticipantRegistry.from_file(p)
     participant = registry.validate("http://edc-consumer:29194/protocol")
@@ -60,12 +60,12 @@ def test_get_by_id(tmp_path):
         participants:
           - id: provider
             dsp_address: http://edc-provider:19194/protocol
-            role: provider
+            roles: [provider]
     """)
     registry = ParticipantRegistry.from_file(p)
     participant = registry.get_by_id("provider")
     assert participant is not None
-    assert participant.role == "provider"
+    assert participant.roles == ["provider"]
     assert registry.get_by_id("nonexistent") is None
 
 
@@ -115,7 +115,7 @@ async def test_http_registry_fetches_and_caches():
 
         p = await registry.get_by_id("did:web:rec.ds.localhost")
         assert p is not None
-        assert p.role == "provider"
+        assert p.roles == ["provider"]
         assert "dataspaces.query" in p.allowed_scopes
 
         p2 = await registry.validate("http://edc-dso:49194/protocol")

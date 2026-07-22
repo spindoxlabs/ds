@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+VALID_ROLES = {"provider", "consumer"}
 
 
 class CreateDidRequest(BaseModel):
@@ -13,15 +15,35 @@ class CreateDidRequest(BaseModel):
 class CreateParticipantRequest(BaseModel):
     did: str
     dsp_address: str | None = None
-    role: str = Field(pattern=r"^(provider|consumer)$")
+    roles: list[str] = Field(min_length=1)
     allowed_scopes: list[str] = []
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, v: list[str]) -> list[str]:
+        invalid = set(v) - VALID_ROLES
+        if invalid:
+            raise ValueError(f"Invalid roles: {invalid}. Must be one of {VALID_ROLES}")
+        return sorted(set(v))
 
 
 class UpdateParticipantRequest(BaseModel):
     dsp_address: str | None = None
-    role: str | None = None
+    roles: list[str] | None = None
     allowed_scopes: list[str] | None = None
     active: bool | None = None
+
+    @field_validator("roles")
+    @classmethod
+    def validate_roles(cls, v: list[str] | None) -> list[str] | None:
+        if v is None:
+            return v
+        if not v:
+            raise ValueError("roles must not be empty")
+        invalid = set(v) - VALID_ROLES
+        if invalid:
+            raise ValueError(f"Invalid roles: {invalid}. Must be one of {VALID_ROLES}")
+        return sorted(set(v))
 
 
 class IssueMembershipRequest(BaseModel):

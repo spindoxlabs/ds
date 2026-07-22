@@ -5,7 +5,7 @@ from conftest import make_headers
 
 @pytest.mark.asyncio
 async def test_admin_without_token_returns_401(client):
-    r = await client.post("/admin/participants", json={"did": "did:web:x", "role": "consumer"})
+    r = await client.post("/admin/participants", json={"did": "did:web:x", "roles": ["consumer"]})
     assert r.status_code == 401
 
 
@@ -13,7 +13,7 @@ async def test_admin_without_token_returns_401(client):
 async def test_admin_with_wrong_scope_returns_403(client):
     r = await client.post(
         "/admin/participants",
-        json={"did": "did:web:x", "role": "consumer"},
+        json={"did": "did:web:x", "roles": ["consumer"]},
         headers=make_headers(scope="some.other.scope"),
     )
     assert r.status_code == 403
@@ -80,12 +80,12 @@ async def test_participant_list_read_scope_returns_active_only(client):
 
     await client.post(
         "/admin/participants",
-        json={"did": "did:web:active-one", "role": "consumer"},
+        json={"did": "did:web:active-one", "roles": ["consumer"]},
         headers=headers_admin,
     )
     await client.post(
         "/admin/participants",
-        json={"did": "did:web:inactive-one", "role": "consumer"},
+        json={"did": "did:web:inactive-one", "roles": ["consumer"]},
         headers=headers_admin,
     )
     await client.patch(

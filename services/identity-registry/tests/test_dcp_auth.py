@@ -23,7 +23,7 @@ OTHER_DID = "did:web:attacker.dataspaces.localhost"
 async def _create_participant(client, did: str = TEST_DID) -> None:
     r = await client.post(
         "/admin/participants",
-        json={"did": did, "role": "provider", "allowed_scopes": ["dataspaces.query"]},
+        json={"did": did, "roles": ["provider"], "allowed_scopes": ["dataspaces.query"]},
         headers=HEADERS,
     )
     assert r.status_code == 201

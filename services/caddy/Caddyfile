@@ -16,6 +16,20 @@ http://*.dataspaces.localhost:80 {
 	respond 404
 }
 
+# ── DID resolution (:9010) — enables host-side did:web resolution ───────────
+#
+# Specific hosts (portal, keycloak) take precedence over this wildcard.
+# This catches participant/trust-anchor/user subdomains for DID document serving.
+# Unlike :80, this port is published to the host so EDC on the host can resolve DIDs.
+#
+http://*.dataspaces.localhost:9010 {
+	handle /.well-known/did.json {
+		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy identity-registry:30005
+	}
+	respond 404
+}
+
 # ── Keycloak ─────────────────────────────────────────────────────────────────
 
 http://keycloak.dataspaces.localhost:9010 {

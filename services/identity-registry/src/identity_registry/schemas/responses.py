@@ -17,7 +17,7 @@ class DidResponse(BaseModel):
 class ParticipantResponse(BaseModel):
     did: str
     dsp_address: str | None
-    role: str
+    roles: list[str]
     allowed_scopes: list[str]
     active: bool
     registered_at: datetime

@@ -140,7 +140,7 @@ async def create_participant(
     participant = Participant(
         did=data.did,
         dsp_address=data.dsp_address,
-        role=data.role,
+        roles=data.roles,
         allowed_scopes=data.allowed_scopes,
     )
     db.add(participant)
@@ -150,7 +150,7 @@ async def create_participant(
     return ParticipantResponse(
         did=participant.did,
         dsp_address=participant.dsp_address,
-        role=participant.role,
+        roles=participant.roles,
         allowed_scopes=participant.allowed_scopes,
         active=participant.active,
         registered_at=participant.registered_at,
@@ -176,7 +176,7 @@ async def list_participants(
         ParticipantResponse(
             did=p.did,
             dsp_address=p.dsp_address,
-            role=p.role,
+            roles=p.roles,
             allowed_scopes=p.allowed_scopes,
             active=p.active,
             registered_at=p.registered_at,
@@ -225,7 +225,7 @@ async def get_participant(
     return ParticipantDetailResponse(
         did=participant.did,
         dsp_address=participant.dsp_address,
-        role=participant.role,
+        roles=participant.roles,
         allowed_scopes=participant.allowed_scopes,
         active=participant.active,
         registered_at=participant.registered_at,
@@ -256,8 +256,8 @@ async def update_participant(
 
     if data.dsp_address is not None:
         participant.dsp_address = data.dsp_address
-    if data.role is not None:
-        participant.role = data.role
+    if data.roles is not None:
+        participant.roles = data.roles
     if data.allowed_scopes is not None:
         participant.allowed_scopes = data.allowed_scopes
     if data.active is not None:
@@ -270,7 +270,7 @@ async def update_participant(
     return ParticipantResponse(
         did=participant.did,
         dsp_address=participant.dsp_address,
-        role=participant.role,
+        roles=participant.roles,
         allowed_scopes=participant.allowed_scopes,
         active=participant.active,
         registered_at=participant.registered_at,

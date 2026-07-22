@@ -85,7 +85,7 @@ async def test_create_participant(client):
         json={
             "did": TEST_DID,
             "dsp_address": "http://edc-rec:19194/protocol",
-            "role": "provider",
+            "roles": ["provider"],
             "allowed_scopes": ["dataspaces.query"],
         },
         headers=HEADERS,
@@ -93,8 +93,37 @@ async def test_create_participant(client):
     assert r.status_code == 201
     data = r.json()
     assert data["did"] == TEST_DID
-    assert data["role"] == "provider"
+    assert data["roles"] == ["provider"]
     assert data["allowed_scopes"] == ["dataspaces.query"]
+
+
+@pytest.mark.asyncio
+async def test_create_participant_dual_role(client):
+    r = await client.post(
+        "/admin/participants",
+        json={
+            "did": TEST_DID,
+            "roles": ["provider", "consumer"],
+            "allowed_scopes": ["dataspaces.query"],
+        },
+        headers=HEADERS,
+    )
+    assert r.status_code == 201
+    data = r.json()
+    assert set(data["roles"]) == {"provider", "consumer"}
+
+
+@pytest.mark.asyncio
+async def test_create_participant_invalid_role(client):
+    r = await client.post(
+        "/admin/participants",
+        json={
+            "did": TEST_DID,
+            "roles": ["invalid"],
+        },
+        headers=HEADERS,
+    )
+    assert r.status_code == 422
 
 
 @pytest.mark.asyncio
@@ -103,7 +132,7 @@ async def test_create_participant_creates_did(client):
         "/admin/participants",
         json={
             "did": TEST_DID,
-            "role": "provider",
+            "roles": ["provider"],
             "allowed_scopes": ["dataspaces.query"],
         },
         headers=HEADERS,
@@ -118,7 +147,7 @@ async def test_create_participant_creates_did(client):
 async def test_list_participants(client):
     await client.post(
         "/admin/participants",
-        json={"did": TEST_DID, "role": "provider"},
+        json={"did": TEST_DID, "roles": ["provider"]},
         headers=HEADERS,
     )
     r = await client.get("/admin/participants", headers=HEADERS)
@@ -130,7 +159,7 @@ async def test_list_participants(client):
 async def test_get_participant_detail(client):
     await client.post(
         "/admin/participants",
-        json={"did": TEST_DID, "role": "provider"},
+        json={"did": TEST_DID, "roles": ["provider"]},
         headers=HEADERS,
     )
     r = await client.get(f"/admin/participants/{TEST_DID}", headers=HEADERS)
@@ -143,16 +172,16 @@ async def test_get_participant_detail(client):
 async def test_update_participant(client):
     await client.post(
         "/admin/participants",
-        json={"did": TEST_DID, "role": "consumer"},
+        json={"did": TEST_DID, "roles": ["consumer"]},
         headers=HEADERS,
     )
     r = await client.patch(
         f"/admin/participants/{TEST_DID}",
-        json={"role": "provider", "allowed_scopes": ["dataspaces.admin"]},
+        json={"roles": ["provider"], "allowed_scopes": ["dataspaces.admin"]},
         headers=HEADERS,
     )
     assert r.status_code == 200
-    assert r.json()["role"] == "provider"
+    assert r.json()["roles"] == ["provider"]
     assert r.json()["allowed_scopes"] == ["dataspaces.admin"]
 
 
@@ -160,7 +189,7 @@ async def test_update_participant(client):
 async def test_delete_participant(client):
     await client.post(
         "/admin/participants",
-        json={"did": TEST_DID, "role": "consumer"},
+        json={"did": TEST_DID, "roles": ["consumer"]},
         headers=HEADERS,
     )
     r = await client.delete(f"/admin/participants/{TEST_DID}", headers=HEADERS)
@@ -175,7 +204,7 @@ async def test_list_participants_read_scope_active_only(client):
         json={
             "did": TEST_DID,
             "dsp_address": "http://edc-rec:19194/protocol",
-            "role": "provider",
+            "roles": ["provider"],
             "allowed_scopes": ["dataspaces.query"],
         },
         headers=HEADERS,
@@ -183,7 +212,7 @@ async def test_list_participants_read_scope_active_only(client):
     inactive_did = "did:web:old.dataspaces.localhost"
     await client.post(
         "/admin/participants",
-        json={"did": inactive_did, "role": "consumer"},
+        json={"did": inactive_did, "roles": ["consumer"]},
         headers=HEADERS,
     )
     await client.patch(
@@ -217,7 +246,7 @@ async def test_participant_check_allowed(client):
         "/admin/participants",
         json={
             "did": TEST_DID,
-            "role": "provider",
+            "roles": ["provider"],
             "allowed_scopes": ["dataspaces.query"],
         },
         headers=HEADERS,
@@ -236,7 +265,7 @@ async def test_participant_check_denied(client):
         "/admin/participants",
         json={
             "did": TEST_DID,
-            "role": "provider",
+            "roles": ["provider"],
             "allowed_scopes": ["dataspaces.query"],
         },
         headers=HEADERS,

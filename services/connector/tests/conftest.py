@@ -1,6 +1,10 @@
 """Shared test fixtures for ds-connector."""
 from __future__ import annotations
 
+import os
+
+os.environ.setdefault("CONNECTOR_ROLE", "provider")
+
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
