@@ -12,7 +12,7 @@ This project replaces that connector with one that:
 
 - Includes `controlplane-dcp-bom` — activates `IdentityAndTrustExtension`, `VerifiablePresentationVerifier`, and the DCP protocol handler
 - Adds `identity-did-web` for resolving `did:web:` DID documents during VP verification
-- Bundles `edc-extensions` so the custom ODRL constraint functions (`ds:accessScope`, `ds:consentStatus`, `ds:contractRequired`) are always present
+- Bundles `edc-extensions` so the profile-namespaced ODRL constraint functions (`Membership`, `ConsentStatus`) are always present
 - Packages everything as a single fat JAR via the Shadow plugin
 
 ---
@@ -43,7 +43,7 @@ The `Dockerfile` performs a multi-stage build:
 docker build -f edc-connector/Dockerfile -t ds-edc-connector:local .
 ```
 
-The `src/ds/connector/docker-compose.yml` builds this image automatically for the `edc-provider` and `edc-consumer` services.
+The root `docker-compose.provider.yml` and `docker-compose.consumer.yml` build this image automatically for the `edc-provider` and `edc-consumer` services.
 
 ---
 
@@ -55,7 +55,7 @@ EDC version: `0.10.1`
 - `org.eclipse.edc:dataplane-base-bom` — HTTP data plane for EDR-based transfers
 - `org.eclipse.edc:filesystem-configuration-bom` — reads `.properties` files as EDC configuration
 - `org.eclipse.edc:identity-did-web` — `did:web:` resolver used during counterparty VP verification
-- `project(":edc-extensions")` — custom ODRL constraint functions for `ds:` vocabulary
+- `project(":edc-extensions")` — custom ODRL constraint functions for profile-namespaced vocabulary
 
 ---
 
@@ -74,7 +74,7 @@ When connector A (consumer) initiates DSP negotiation with connector B (provider
 
 ## Related configuration
 
-EDC properties files for this connector are at `src/ds/connector/config/provider.properties` and `consumer.properties`. Key DCP properties:
+EDC properties files for this connector are at `services/connector/config/provider.properties` and `consumer.properties`. Key DCP properties:
 
 - `edc.participant.id` — participant DID URI
 - `edc.iam.issuer.id` — same DID URI (used in VP assertions)

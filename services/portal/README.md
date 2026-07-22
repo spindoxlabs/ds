@@ -3,7 +3,7 @@
 The dataspace web frontend. Covers the full portal surface for all participant roles: dataset consumer, dataset provider, operator, and data subject.
 
 Port: `30004`
-URL: `https://portal.dataspaces.localhost`
+URL: `http://portal.dataspaces.localhost:9010`
 
 Built with SvelteKit, targeting the latest stable release. Mobile-first component design.
 
@@ -52,7 +52,7 @@ The portal makes the dataspace accessible without direct API interaction. It pro
 
 - `/admin` — operator dashboard
 - `/admin/participants` — participant registry management
-- `/admin/lineage` — provenance lineage viewer (fetches from `ds-provenance`)
+- `/lineage/[iri]` — provenance lineage viewer (fetches from `ds-provenance`)
 
 ---
 
@@ -64,7 +64,7 @@ The portal makes the dataspace accessible without direct API interaction. It pro
 
 `LineageGraph.svelte` — renders PROV-O lineage as an interactive graph (nodes + edges) using the `ds-provenance` lineage API.
 
-`ConsentCard.svelte` — displays a consent request with subject data summary, requester identity, and approve/reject/revoke actions.
+`ConsentBadge.svelte` — displays consent status with visual indicators.
 
 `session.ts` — Keycloak-based session store. Parses access token claims for `resource_access.ds-portal.roles` and `realm_access.roles` to gate route access.
 
@@ -79,11 +79,11 @@ Keycloak OIDC. The portal client is `ds-portal`. Role-based access:
 - `admin` role — operator routes
 - No role — consent portal (data subject routes available to any authenticated user)
 
-JWT scope parsing is currently in dev mode (all roles granted to authenticated users). Production JWT parsing is tracked in Iteration 2c.
+Role-based guards are implemented in `src/lib/server/auth.ts`.
 
 ### Subject identity
 
-The function `subjectFromAccessToken` in `src/routes/demo/+page.server.ts` extracts the data subject identity from the JWT for consent API calls. It uses the following priority chain:
+The subject identity extraction uses the following priority chain:
 
 | Priority | Source | Notes |
 |----------|--------|-------|
@@ -112,7 +112,7 @@ Environment variables (set in `.env` or Docker):
 ## Development
 
 ```bash
-cd src/ds/portal
+cd services/portal
 task install     # npm install
 task dev         # vite dev server on :30004
 task build

@@ -3,7 +3,7 @@
 A W3C PROV-O compatible REST API for the dataspaces provenance logger (DSSC Blueprint BB07). Stores and queries provenance graphs as JSON-LD using a relational database — no triple store required.
 
 Port: `30000`
-URL: `https://provenance.dataspaces.localhost`
+URL: `http://portal.dataspaces.localhost:9010/api/provenance/`
 
 ---
 
@@ -133,7 +133,7 @@ Settings use the `PROVENANCE_` prefix:
 ## Development
 
 ```bash
-cd src/ds/provenance
+cd services/provenance
 task install
 task dev         # hot reload on :30000
 task db:migrate  # alembic upgrade head

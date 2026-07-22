@@ -13,10 +13,12 @@ src/identity_registry/
   dependencies.py      FastAPI deps: get_db, require_admin_scope
   api/v1/
     public.py          GET /dids/{did}/did.json, GET /status/{list-id}
-    internal.py        GET /participants, GET /participants/{did}/check, /keycloak/mapping
     sts.py             POST /sts/{did}/token (OAuth2 client_credentials, ES256 SI JWT)
     credentials.py     POST /credentials/{did}/presentations/query (DCP VP builder)
-    admin.py           /admin/* CRUD — participants, DIDs, keys, credentials, keycloak sync
+    admin.py           /admin/* CRUD — participants, DIDs, keys, credentials, owners, memberships, keycloak sync
+    users.py           GET /users/resolve — resolve user by email
+    owners.py          /admin/owners CRUD, GET /owners/resolve
+    memberships.py     /admin/memberships CRUD, GET /memberships/check
   services/
     crypto.py          EC P-256 keygen, JWK, ES256 signing, JWS
     did.py             build_did_document (W3C DID doc)
@@ -24,9 +26,9 @@ src/identity_registry/
     token.py           create_si_token — Self-Issued JWT for DCP auth
     presentation.py    build_presentation_response — VP JWT for DCP queries
     status_list.py     StatusList2021 bitstring ops (131072 slots)
-    export.py          Export keys/credentials to shared volume
+    keycloak_admin.py   Keycloak admin API integration
   db/
-    models.py          SQLAlchemy models: Key, Did, Credential, Participant, KeycloakMapping, StatusList
+    models.py          SQLAlchemy models: Key, Did, Credential, Participant, KeycloakMapping, Owner, OrganizationMembership, StatusList
     engine.py          Async engine + session factory
   schemas/
     requests.py        Pydantic request models
@@ -53,7 +55,7 @@ src/identity_registry/
 
 ## Database
 
-PostgreSQL, 6 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_mappings`, `status_lists`. Alembic for migrations.
+PostgreSQL, 8 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_mappings`, `owners`, `organization_memberships`, `status_lists`. Alembic for migrations.
 
 ## Common tasks
 

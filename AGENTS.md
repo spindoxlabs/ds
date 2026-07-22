@@ -303,15 +303,11 @@ The connector's consent endpoint checks membership before accepting consent requ
 
 ### KC organizations (portal UX gating)
 
-Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `ir-cli keycloak org-sync` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.roles`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
+Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `ir-cli keycloak org-sync` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.groups`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
 
 ## Quick start
 
 ```bash
-# One-time setup
-task proxy:hosts                  # /etc/hosts entries (sudo)
-task proxy:trust-ca               # trust Caddy CA (sudo)
-
 # Start everything (infra + identity bootstrap + provider + consumer)
 task start
 

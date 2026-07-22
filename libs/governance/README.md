@@ -1,6 +1,6 @@
 # ds-governance
 
-Shared Python library used by `ds-connector` and `edc-extensions`. Contains the `GovernanceRuleV2` Pydantic model, the `GovernanceMapper` that converts rules into ODRL and EDC Management API payloads, and the `GovernanceResolver` that reads and merges `governance.yaml` files.
+Shared Python library used by `ds-connector`. Contains the `GovernanceRuleV2` Pydantic model, the `GovernanceMapper` that converts rules into ODRL and EDC Management API payloads, the `GovernanceResolver` that reads and merges `governance.yaml` files, and the `ds-governance` CLI for offline validation.
 
 Not a running service — imported as a library.
 
@@ -37,7 +37,8 @@ This library provides the EDC side of that shared contract. It is fully backward
 |-------|-------------|
 | `namespace` | Base namespace URI (default: `https://w3id.org/dsp/policy/`) |
 | `prefix` | Short prefix for the namespace (e.g. `dsp`) |
-| `operand_names` | Names for custom left-operands (e.g. `Membership`, `ConsentStatus`) |
+| `membership_operand` | Left-operand name for membership constraint (default: `Membership`) |
+| `consent_operand` | Left-operand name for consent constraint (default: `ConsentStatus`) |
 | `purposes` | Purpose taxonomy — list of purpose terms available in the vocabulary |
 | `tag_to_purpose` | Mapping from dataset tags to purpose URIs (e.g. `meters` → `{ns}purpose:EnergyBalancing`) |
 

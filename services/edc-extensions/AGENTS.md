@@ -10,11 +10,13 @@
 ## Source layout
 
 ```
-src/main/java/it/spindox/dataspaces/extensions/
-├── DataspacesExtension.java      EDC ServiceExtension — registers all constraint functions
-├── AccessScopeFunction.java      ds:accessScope — participant allowlist check
-├── ConsentStatusFunction.java    ds:consentStatus — HTTP call to ds-connector consent check
-└── ContractRequiredFunction.java ds:contractRequired — bilateral contract gate (currently pass-through)
+src/main/java/dataspaces/edc/
+├── DataspacesExtension.java              EDC ServiceExtension — registers constraint functions + vault seeder
+├── AccessScopeFunction.java              Membership constraint — participant scope check via HTTP
+├── ConsentStatusFunction.java            ConsentStatus constraint — HTTP call to ds-connector consent check
+├── DemoIdentityFallbackExtension.java    Dev-only: accepts unsigned DCP tokens (DS_DEMO_IDENTITY_ENABLED)
+├── FilesystemVaultSeederExtension.java   Loads vault properties into EDC vault at boot
+└── HttpDataEndpointExtension.java        HTTP data plane endpoint
 ```
 
 ## Key files for common tasks
@@ -28,41 +30,34 @@ src/main/java/it/spindox/dataspaces/extensions/
 
 ## Constraint functions
 
-### AccessScopeFunction (`ds:accessScope`)
+The constraint functions use profile-namespaced operand names (e.g. `dsp-policy:Membership`, `dsp-policy:ConsentStatus`). The namespace prefix is configurable via the ODRL profile.
 
-Evaluates whether the requesting participant has the required scope. Loads `participants.yaml` from a path configured via `ds.participants.yaml.path` EDC property. Checks if the participant's `allowed_scopes` list contains the required scope value.
+### AccessScopeFunction (Membership)
 
-**Known limitation**: re-parses `participants.yaml` on every call (no TTL cache).
+Evaluates whether the requesting participant has the required scope. Makes an HTTP POST to `ds-connector /internal/participants/check`, which forwards the check to the identity-registry service. The connector URL is configured via `ds.connector.internal.url` EDC property. Results are cached with a configurable TTL. Retries up to 3 times on failure.
 
-### ConsentStatusFunction (`ds:consentStatus`)
+### ConsentStatusFunction (ConsentStatus)
 
 Makes an HTTP GET to `ds-connector /internal/consent/check` to verify active consent for the requesting participant. The connector URL is configured via `ds.connector.internal.url` EDC property.
 
-**Known limitation**: no retry or circuit-breaker on the HTTP call.
-
-### ContractRequiredFunction (`ds:contractRequired`)
-
-Placeholder for bilateral contract gate. Currently always returns `true` (pass-through).
-
 ## Coding conventions
 
-- Each function implements `AtomicConstraintFunction<Permission>` from EDC SPI
+- Each function implements `AtomicConstraintRuleFunction<Permission, ParticipantAgentPolicyContext>` from EDC SPI
 - Functions are registered in `DataspacesExtension.initialize()` for the `NEGOTIATION` scope
 - Use `Monitor` (EDC's logging abstraction) for logging, not SLF4J directly
 - HTTP calls use OkHttp (EDC's standard HTTP client)
-- The `ds:` namespace prefix corresponds to the dataspace's custom ODRL vocabulary
 
 ## Build
 
 ```bash
 # From repo root:
-gradle :edc-extensions:build      # compile + test
-gradle :edc-connector:shadowJar   # build fat JAR including extensions
+task edc:build                    # or: gradle :edc-extensions:build
+task edc:docker                   # build fat JAR + Docker image
 ```
 
 ## Integration points
 
 - **Compiled into**: edc-connector fat JAR
 - **Calls at runtime**: ds-connector `/internal/consent/check` endpoint
-- **Reads at runtime**: `governance/participants.yaml` file
+- **Calls at runtime**: ds-connector `POST /internal/participants/check` (which forwards to identity-registry)
 - **Registered by**: EDC ServiceExtension SPI

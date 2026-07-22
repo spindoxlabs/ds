@@ -48,12 +48,12 @@ src/provenance/
 
 ## Coding conventions
 
-- All IRI identifiers use ULID-based URNs: `urn:ds:entity:<ulid>`
+- All IRI identifiers use UUID-based URNs: `urn:ds:entity:<uuid>`
 - Domain events are idempotent — duplicate `event_id` values are silently ignored
 - BFS lineage uses raw SQL for graph traversal, not ORM queries
 - JSON-LD `@context` is cached for 1 day via `jsonld_service`
 - No triple store — relational tables with a `node_type` discriminator column
-- PROV-O relations: `wasGeneratedBy`, `used`, `wasAssociatedWith`, `wasAttributedTo`, `wasDerivedFrom`, `actedOnBehalfOf`
+- PROV-O relations: `wasGeneratedBy`, `used`, `wasAssociatedWith`, `wasAttributedTo`, `wasDerivedFrom`, `actedOnBehalfOf`, `wasInformedBy`
 
 ## Domain event types
 
@@ -62,9 +62,17 @@ These are the events emitted by ds-connector and ingested here:
 | Event | Trigger | Creates |
 |-------|---------|---------|
 | `CataloguePublished` | Provider syncs governance.yaml | Entity (dataset) + Activity (publish) |
+| `CatalogViewed` | Consumer browses provider catalog | Activity (view) |
+| `AccessRequested` | Consumer requests access to a dataset | Activity (request) + relations |
+| `NegotiationStarted` | Contract negotiation begins | Activity (negotiation) + relations |
+| `NegotiationFinalized` | Contract negotiation reaches FINALIZED | Activity (finalization) + relations |
+| `NegotiationTerminated` | Contract negotiation is terminated | Activity (termination) + relations |
 | `ContractAgreementSigned` | Negotiation finalized | Activity (agreement) + relations |
+| `TransferStarted` | Data transfer begins | Activity (transfer) + relations |
 | `DataTransferCompleted` | Transfer reaches STARTED state | Activity (transfer) + relations |
+| `QueryExecuted` | Dataspace-originated query executed | Activity (query) + relations |
 | `UsageObligationFulfilled` | Obligation met post-transfer | Activity (obligation) + relations |
+| `AccessRevoked` | Access to a dataset is revoked | Activity (revocation) + relations |
 
 ## Testing
 

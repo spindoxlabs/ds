@@ -16,9 +16,9 @@ src/federated_catalog/
 ├── config.py        Pydantic settings (CatalogSettings)
 ├── crawler.py       DSP catalog fetching logic — calls connector DSP endpoints
 ├── cache.py         In-memory TTL cache for crawled catalogs
-├── registry.py      Participant registry integration (reads participants.yaml)
+├── registry.py      Participant registry integration (reads from identity-registry API; file-based fallback)
 └── api/
-    └── catalog.py   REST endpoints — GET /catalog, GET /catalog/search
+    └── catalog.py   REST endpoints — GET /catalog, POST /catalog/search
 ```
 
 ## Key files for common tasks
@@ -41,10 +41,10 @@ src/federated_catalog/
 
 | Env var | Default | Purpose |
 |---------|---------|---------|
-| `CATALOG_CONNECTOR_URL` | `http://ds-connector:30001` | ds-connector URL for catalog proxy |
+| `CATALOG_CONNECTOR_URL` | `http://172.17.0.1:31001` | ds-connector URL for catalog proxy |
 | `CATALOG_IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | Identity registry URL for participant discovery |
 | `CATALOG_CRAWL_INTERVAL` | `300` | Seconds between crawls |
-| `CATALOG_STARTUP_DELAY` | `15` | Seconds before first crawl |
+| `CATALOG_STARTUP_DELAY` | `10` | Seconds before first crawl |
 | `CATALOG_BASE_URL` | `https://federated-catalog.dataspaces.localhost` | Public URL for self-references |
 
 ## Integration points

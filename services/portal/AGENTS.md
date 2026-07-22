@@ -107,7 +107,10 @@ Keycloak issues JWTs with roles in `resource_access` and scopes. The portal deri
 | `ORIGIN` | — | SvelteKit ORIGIN for CSRF (`http://portal.dataspaces.localhost:9010` for dev) |
 | `PORTAL_SERVICE_CLIENT_ID` | `svc-ds-portal` | Service account for backend API calls |
 | `PORTAL_SERVICE_CLIENT_SECRET` | `svc-ds-portal` | Service account secret |
-| `PORTAL_DEMO_ADMIN_USERS` | `admin` | Comma-separated usernames treated as admin (dev fallback) |
+| `CONNECTOR_URL` | `http://ds-connector:30001` | Provider connector base URL (used by `connector.ts`) |
+| `CONSUMER_CONNECTOR_URL` | `http://172.17.0.1:31001` | Consumer connector URL (used by consumer `+server.ts` routes) |
+| `CONSUMER_DEFAULT_ASSIGNER` | `did:web:provider.dataspaces.test` | Default ODRL assigner for consumer negotiations |
+| `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | `http://edc-provider:19194/protocol/2025-1` | Default DSP protocol address |
 
 ## Testing
 

@@ -16,11 +16,11 @@ src/connector/
 ├── config.py            Pydantic settings (ConnectorSettings)
 ├── api/v1/
 │   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers}
-│   ├── consumer.py      GET /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
+│   ├── consumer.py      POST /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
 │   ├── consent.py       POST /consent/request, GET /consent/my, POST /consent/my/{id}/{approve,reject,revoke}
 │   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
-│   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /internal/consent/register-transfer, GET /internal/edr-jwks
-│   └── namespace.py     GET /ns/energy — ds: ODRL vocabulary JSON-LD
+│   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /consent/register-transfer, GET /internal/edr-jwks
+│   └── namespace.py     GET /ns/policy — profile-namespaced ODRL vocabulary JSON-LD
 ├── services/
 │   ├── governance.py    GovernanceService — loads governance.yaml, filters by expose flag
 │   ├── provider_service.py   ProviderService — sync assets/policies/contracts to EDC
@@ -32,7 +32,7 @@ src/connector/
 │   ├── edc_management.py  Re-exports EdcManagementClient from shared libs/ds-edc
 │   └── provenance.py     ProvenanceClient — POST events to ds-provenance
 ├── registry/
-│   └── participants.py   ParticipantRegistry — loads participants.yaml
+│   └── participants.py   HttpParticipantRegistry — fetches participants from identity-registry API with TTL cache; file-based fallback when identity_registry_url is empty
 ├── notifications/
 │   ├── base.py           Notifier protocol
 │   ├── smtp.py           SMTP email notifier
@@ -40,7 +40,7 @@ src/connector/
 │   └── null.py           No-op notifier (default)
 └── db/
     ├── engine.py         async engine + session factory
-    └── models.py         ConsentRecord, TransferTracking ORM models
+    └── models.py         ContractAgreementORM, ConsentRequestORM, ConsumerTransferORM, ConsumerAccessRequestORM
 ```
 
 ## Key files for common tasks

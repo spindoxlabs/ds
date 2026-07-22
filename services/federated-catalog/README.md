@@ -3,7 +3,7 @@
 A DCAT-AP 3.0 catalog crawler that aggregates dataset offerings from all dataspace participants into a single federated view.
 
 Port: `30003`
-URL: `https://federated-catalog.dataspaces.localhost`
+URL: `http://portal.dataspaces.localhost:9010/api/catalog/`
 
 ---
 
@@ -11,7 +11,7 @@ URL: `https://federated-catalog.dataspaces.localhost`
 
 In a multi-participant dataspace, each provider publishes datasets through their own EDC connector. This service periodically crawls all known participant DSP endpoints, caches the resulting DCAT catalogs, and exposes a unified search API.
 
-- Discovers participants from `participants.yaml` (shared with ds-connector)
+- Discovers participants from the identity-registry service (`GET /admin/participants`); file-based fallback available
 - Crawls DCAT catalogs on a configurable interval (default: every 5 minutes)
 - Crawls external DCAT-AP catalogues directly (plain HTTP GET)
 - Caches results in memory with TTL — no persistent storage required
@@ -36,7 +36,7 @@ All settings use `pydantic-settings` with sensible defaults for local developmen
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `CATALOG_CONNECTOR_URL` | `http://ds-connector:30001` | ds-connector internal URL |
-| `CATALOG_PARTICIPANTS_YAML` | `/governance/participants.yaml` | Participant registry file path |
+| `CATALOG_PARTICIPANTS_YAML` | `/governance/participants.yaml` | Participant registry file path (fallback; only used when `CATALOG_IDENTITY_REGISTRY_URL` is not set) |
 | `CATALOG_DCAT_SOURCES_YAML` | `""` (empty) | Path to `catalogues.yaml` — external DCAT-AP sources (schema: `schemas/catalogues.schema.json`) |
 | `CATALOG_CRAWL_INTERVAL` | `300` | Seconds between crawl cycles |
 | `CATALOG_STARTUP_DELAY` | `10` | Seconds before first crawl after boot |

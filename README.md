@@ -65,13 +65,9 @@ dataspaces/
 ```bash
 # Copy the example env (all defaults work out of the box)
 cp .env.example .env
-
-# Add *.dataspaces.localhost entries to /etc/hosts (requires sudo)
-task proxy:hosts
-
-# Trust Caddy's local CA in the system certificate store (requires sudo)
-task proxy:trust-ca
 ```
+
+No `/etc/hosts` entries are needed — `*.dataspaces.localhost` resolves via Docker network aliases on the Caddy service.
 
 ### Start the full stack
 
@@ -95,10 +91,10 @@ task provider:start       # provider participant stack
 task consumer:start       # consumer participant stack
 ```
 
-### Portal (runs locally, not in Docker)
+### Portal (local dev with hot-reload)
 
 ```bash
-task consumer:portal:run  # SvelteKit dev server on http://localhost:30004
+task provider:portal:run  # SvelteKit dev server on http://localhost:30004
 ```
 
 ### Stop everything
@@ -111,12 +107,10 @@ task stop
 
 After services are up, the following should respond:
 
-- `https://provider.dataspaces.localhost/.well-known/did.json`
-- `https://consumer.dataspaces.localhost/.well-known/did.json`
-- `https://trust-anchor.dataspaces.localhost/.well-known/did.json`
 - `http://localhost:30001/health` (provider connector)
 - `http://localhost:31001/health` (consumer connector)
 - `http://localhost:30005/health` (identity-registry)
+- `http://localhost:30005/dids/did:web:provider.dataspaces.localhost/did.json` (DID document)
 
 ---
 
@@ -144,7 +138,7 @@ A DCAT-AP catalog crawler. Periodically queries participant connectors and build
 
 ### edc-extensions (`services/edc-extensions`)
 
-Java extensions for the EDC policy engine. Registers `AtomicConstraintFunction` implementations for the `ds:` ODRL vocabulary: `ds:accessScope`, `ds:consentStatus`, and `ds:contractRequired`.
+Java extensions for the EDC policy engine. Registers `AtomicConstraintFunction` implementations for the profile-namespaced ODRL constraints (e.g. `dsp-policy:Membership`, `dsp-policy:ConsentStatus`).
 
 ### edc-connector (`services/edc-connector`)
 
@@ -189,7 +183,7 @@ Three compose files form the full stack:
 | `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
-The portal is not in any compose file — run it locally via `task consumer:portal:run`.
+The portal runs in the provider compose. For local dev with hot-reload: `task provider:portal:run`.
 
 All containers share the `dataspaces` bridge network.
 
@@ -260,11 +254,10 @@ governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
 Access levels map to ODRL as follows:
 
 - `open` — no constraints; `downloadURL` included in DCAT distribution
-- `internal` — `ds:accessScope eq "dataspaces.query"` constraint
-- `restricted` — scope constraint plus `ds:contractRequired eq "true"`
+- `internal` / `restricted` — constraints driven by the `access_requirements` field; `partner` adds a profile-namespaced `Membership` constraint (e.g. `dsp-policy:Membership`)
 - `secret` — not exposed to EDC or the catalogue
 
-When `user_filter_column` is set on a dataset, a `ds:consentStatus eq active` constraint is added to the ODRL offer and consent-based row filtering is applied at query time.
+When `user_filter_column` is set on a dataset, a profile-namespaced `ConsentStatus` constraint (e.g. `dsp-policy:ConsentStatus eq "active"`) is added to the ODRL offer and consent-based row filtering is applied at query time.
 
 ---
 
@@ -295,7 +288,7 @@ task compliance:test
 task compliance:e2e:smoke   # requires a running stack
 ```
 
-See `docs/compliance-matrix-dssc.md` for the full DSSC assessment matrix.
+See `docs/dssc-blueprint-docs/` for the DSSC blueprint reference material.
 
 ---
 

@@ -51,13 +51,18 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `GET` | `/status/{list-id}` | StatusList2021 credential (`application/ld+json`) |
 | `GET` | `/health` | Liveness check |
 
-### Internal (no auth, Docker DNS only) — called by EDC connectors and ds-connector
+### DCP protocol — authenticated per-endpoint (called by EDC connectors)
+
+| Method | Path | Auth | Purpose |
+|--------|------|------|---------|
+| `POST` | `/sts/{did}/token` | STS client secret (participant-specific) | Issue Self-Issued JWT (OAuth2 client_credentials, ES256) |
+| `POST` | `/credentials/{did}/presentations/query` | DCP self-issued token signed by the DID's key | Build VP for DCP presentation query |
+
+### Service-to-service — JWT with `identity-registry.read` or `.admin` scope
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `POST` | `/sts/{did}/token` | Issue Self-Issued JWT (OAuth2 client_credentials, ES256) |
-| `POST` | `/credentials/{did}/presentations/query` | Build VP for DCP presentation query |
-| `GET` | `/participants` | List all active participants |
+| `GET` | `/admin/participants` | List all active participants |
 | `GET` | `/admin/participants/check?did=&scope=` | Check if participant is allowed for scope |
 
 ### Admin (JWT with `identity-registry.admin` scope)
@@ -129,10 +134,6 @@ EC P-256 key generation (`generate_key_pair`), JWK serialization, ES256 signing 
 
 BITSTRING_SIZE = 16384 (16 KB = 131072 slots). Functions: `create_bitstring`, `set_bit`, `get_bit`, `encode_bitstring` (zlib + base64), `decode_bitstring`, `next_available_index`, `build_status_list_credential`.
 
-### `export.py`
-
-`export_private_key(base_path, participant_name, private_jwk)` writes to `{base_path}/keys/{name}-key.json`. `export_credential(base_path, participant_name, filename, credential_json)` writes to `{base_path}/credentials/{name}/{filename}`.
-
 ---
 
 ## Configuration
@@ -143,7 +144,6 @@ Env prefix: `IDENTITY_REGISTRY_`
 |----------|---------|---------|
 | `IDENTITY_REGISTRY_DATABASE_URL` | `postgresql+asyncpg://...172.17.0.1:35432/...` | PostgreSQL connection string |
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-...` | Fernet key for encrypting private keys at rest |
-| `IDENTITY_REGISTRY_EXPORT_BASE_PATH` | `/data` | Base path for key/credential export to shared volume |
 | `IDENTITY_REGISTRY_OIDC_ISSUER_URL` | `None` | OIDC issuer for JWT verification (admin endpoints) |
 | `IDENTITY_REGISTRY_ADMIN_SCOPE` | `identity-registry.admin` | Required JWT scope for admin endpoints |
 | `KEYCLOAK_ADMIN_URL` | `None` | Keycloak admin API base URL |

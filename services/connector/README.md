@@ -3,7 +3,7 @@
 The EDC control-plane orchestration service. Wraps a provider-side and consumer-side Eclipse Dataspace Connector instance and exposes a unified REST API for governance sync, data flow management, consent sovereignty, and participant registry.
 
 Port: `30001`
-URL: `https://connector.dataspaces.localhost`
+URL: `http://portal.dataspaces.localhost:9010/api/connector/`
 
 ---
 
@@ -14,7 +14,7 @@ EDC's Management API is low-level and stateless. This service adds:
 - A governance sync layer that reads `governance.yaml` and pushes assets, policies, and contract definitions to the EDC provider
 - A consumer flow abstraction that chains negotiate → poll → transfer → poll → EDR into a clean async API
 - A consent registry (PostgreSQL) with subject-level granularity: create, approve, reject, revoke; revocation terminates linked EDC transfer processes
-- A participant registry with file-based (`participants.yaml`) or HTTP-backed (identity-registry) resolution, used for access scope validation
+- A participant registry backed by the identity-registry service (`HttpParticipantRegistry` with TTL cache), used for access scope validation; file-based fallback available when `CONNECTOR_IDENTITY_REGISTRY_URL` is not set
 - Internal endpoints consumed by the EDC policy engine (`edc-extensions`) at constraint evaluation time
 - Provenance event emission to `ds-provenance` for all contract and transfer lifecycle events
 
@@ -33,7 +33,7 @@ EDC's Management API is low-level and stateless. This service adds:
 
 ### Consumer
 
-- `GET /consumer/catalog` — fetch the provider's DCAT catalogue via DSP
+- `POST /consumer/catalog` — fetch the provider's DCAT catalogue via DSP
 - `POST /consumer/negotiate` — start a contract negotiation; returns `negotiation_id` immediately
 - `GET /consumer/negotiations/{id}` — poll negotiation state
 - `POST /consumer/transfer` — start a data transfer; returns `transfer_id`
@@ -53,27 +53,27 @@ EDC's Management API is low-level and stateless. This service adds:
 
 - `GET /internal/agreements/{id}/status` — check whether a contract agreement is active
 - `GET /internal/consent/check` — check consent status for a (dataset, consumer) pair; returns subject IDs for row filtering
-- `POST /internal/consent/register-transfer` — link a transfer process ID to a consent record for revocation
+- `POST /consent/register-transfer` — link a transfer process ID to a consent record for revocation
 - `GET /internal/edr-jwks` — proxy the EDC provider's JWKS endpoint for JWT verification
 - `GET /internal/participants/check` — forwards scope checks to identity-registry when HTTP-backed; falls back to local file-based check otherwise
 
 ### Namespace
 
-- `GET /ns/energy` — the `ds:` ODRL extension vocabulary as JSON-LD (`Cache-Control: public, max-age=86400`)
+- `GET /ns/policy` — the profile-namespaced ODRL vocabulary as JSON-LD (`Cache-Control: public, max-age=86400`)
 
 ---
 
 ## ODRL policy derivation
 
-The `GovernanceMapper` in `src/ds/governance/mapper.py` converts a `GovernanceRuleV2` into a full ODRL Offer:
+The `GovernanceMapper` in `libs/governance/src/ds/governance/mapper.py` converts a `GovernanceRuleV2` into a full ODRL Offer:
 
-- `access_level` → permitted actions (`ds:query`, `odrl:aggregate`, `odrl:transfer`)
+- `access_level` → permitted actions (profile-namespaced actions, `odrl:aggregate`, `odrl:transfer`)
 - `classification` → prohibited actions (PII datasets prohibit `odrl:distribute`, `odrl:sublicense`)
-- `user_filter_column` → `ds:consentStatus eq active` constraint + `odrl:obtainConsent` pre-duty
+- `user_filter_column` → profile-namespaced `ConsentStatus eq "active"` constraint + `odrl:obtainConsent` pre-duty
 - `policy.obligations.delete_after_days` → `odrl:delete` obligation
 - `policy.obligations.attribution` → `odrl:attribute` obligation with `attributeUrl`
 
-Tags are mapped to ODRL `odrl:purpose` using the `_TAG_TO_PURPOSE` table (e.g. `meters` → `ds:purpose:EnergyBalancing`).
+Tags are mapped to ODRL `odrl:purpose` via the profile's `tag_to_purpose` mapping (e.g. `meters` → `{ns}purpose:EnergyBalancing`).
 
 ---
 
@@ -103,21 +103,19 @@ This ensures that revocation propagates to the EDC data plane within the next re
 
 ## Participant registry
 
-The connector supports two participant registry backends:
+Participants are managed by the identity-registry service and fetched via `GET /admin/participants`.
 
-### File-based (default)
+### HTTP-backed (primary — `HttpParticipantRegistry`)
 
-Reads `governance/participants.yaml` at startup. This is the original behavior and requires no additional configuration beyond `CONNECTOR_PARTICIPANTS_REGISTRY_PATH`.
+The `HttpParticipantRegistry` fetches participants from the identity-registry service, configured via `CONNECTOR_IDENTITY_REGISTRY_URL`:
 
-### HTTP-backed (HttpParticipantRegistry)
-
-When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, the connector fetches participants from the identity-registry service instead of reading a local file:
-
-- Fetches from `GET {registry_url}/participants` with a configurable TTL cache (default 60s via `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`)
+- Fetches from `GET {registry_url}/admin/participants` with a configurable TTL cache (default 60s via `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`)
 - On fetch error, serves stale cached data (fail-open for reads)
-- `GET /internal/participants/check` forwards scope check requests to the identity-registry when HTTP-backed
+- `GET /internal/participants/check` forwards scope check requests to the identity-registry
 
-This mode is recommended for multi-participant deployments where participant records are managed centrally by the identity-registry.
+### File-based (fallback)
+
+When `CONNECTOR_IDENTITY_REGISTRY_URL` is not set, the connector falls back to reading a local YAML file via `CONNECTOR_PARTICIPANTS_REGISTRY_PATH`. This fallback exists for development or offline scenarios but is not the primary path.
 
 ---
 
@@ -132,7 +130,7 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 - `EDC_CONSUMER_MANAGEMENT_URL` — consumer EDC Management API URL
 - `EDC_API_KEY` — shared API key for EDC Management API auth
 - `CONNECTOR_DATABASE_URL` — PostgreSQL connection string
-- `CONNECTOR_PARTICIPANTS_REGISTRY_PATH` — path to `participants.yaml`
+- `CONNECTOR_PARTICIPANTS_REGISTRY_PATH` — path to participants YAML file (file-based fallback; only used when `CONNECTOR_IDENTITY_REGISTRY_URL` is not set)
 - `CONNECTOR_GOVERNANCE_YAML_PATH` — path to `governance.yaml`
 - `CONNECTOR_PROVENANCE_URL` — URL of `ds-provenance` for event emission
 - `CONNECTOR_IDENTITY_REGISTRY_URL` — URL of identity-registry (e.g. `http://ds-identity-registry:30005`); when unset, falls back to file-based registry
@@ -145,7 +143,7 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 ## Development
 
 ```bash
-cd src/ds/connector
+cd services/connector
 task install     # uv sync
 task dev         # uvicorn with hot reload on :30001
 task db:migrate  # alembic upgrade head
@@ -163,6 +161,5 @@ docker compose -f docker-compose.yml up
 
 ## Known limitations
 
-- `notify_subject()` in `consent_service.py` is a no-op placeholder. MQTT notification is tracked in Iteration 2a.
 - `POST /consumer/negotiate` and `/consumer/transfer` are thin wrappers; the main production path is `POST /consumer/flow`.
-- Webhook signature verification is not implemented — EDC API key is the only auth on the management plane.
+- Webhook notification URLs are validated against `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` (default empty = reject all).

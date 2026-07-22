@@ -16,7 +16,7 @@ At negotiation time, EDC calls each registered `AtomicConstraintFunction` to che
 
 ### `{ns}Membership` — `AccessScopeFunction`
 
-Checks that the counterparty participant satisfies the membership constraint. When `CONNECTOR_IDENTITY_REGISTRY_URL` is set, scope checks are forwarded to the HTTP-backed identity-registry (with TTL cache). Otherwise falls back to file-based `participants.yaml`.
+Checks that the counterparty participant satisfies the membership constraint. Makes an HTTP POST to `ds-connector POST /internal/participants/check`, which forwards the scope check to the identity-registry service. Results are cached with a configurable TTL.
 
 The constraint in ODRL:
 ```json
@@ -31,7 +31,7 @@ Where `{ns}` is the configured namespace (default `https://w3id.org/dsp/policy/`
 
 Participant identity is read from `ParticipantAgent.getIdentity()` in the EDC policy context. With DID-based identifiers, this is the full `did:web:` URI.
 
-In file-based mode, the function loads and parses `participants.yaml` at startup. With identity-registry integration, lookups are performed via HTTP with a TTL cache.
+The function calls `POST /internal/participants/check` on ds-connector (configured via `ds.connector.internal.url`), which forwards the check to the identity-registry service. Results are cached with a TTL to avoid per-request HTTP overhead.
 
 ### `{ns}ConsentStatus` — `ConsentStatusFunction`
 
@@ -74,7 +74,7 @@ The extension reads the following settings from the EDC properties file:
 
 - `dataspaces.odrl.namespace` — base namespace URI for ODRL terms (default `https://w3id.org/dsp/policy/`)
 - `ds.connector.internal.url` — base URL of `ds-connector` for consent checks (default `http://ds-connector:30001`)
-- `ds.participants.yaml.path` — path to `participants.yaml` (default `/governance/participants.yaml`)
+- `ds.participants.yaml.path` — (legacy) path to participants YAML file; only used in file-based fallback mode when identity-registry is not configured
 
 ---
 
