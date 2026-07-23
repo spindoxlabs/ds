@@ -1,0 +1,2 @@
+# A library chart has no values of its own. The keys the helpers read are
+# documented in templates/_helpers.tpl and set by the consuming service charts.

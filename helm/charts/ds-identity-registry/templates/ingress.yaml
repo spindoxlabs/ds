@@ -1,0 +1,134 @@
+{{- if .Values.ingress.enabled }}
+{{- $ta := include "ir.trustAnchorDomain" . }}
+{{- $fullname := include "ds.fullname" . }}
+{{- $port := .Values.service.port }}
+# =============================================================================
+# Public surface of the identity-registry — path-scoped, nothing else exposed.
+#
+# /admin/*, /sts/*, /memberships/*, /owners/* stay ClusterIP-only: they mutate
+# the trust anchor and read consent-relevant data.
+#
+# One Ingress object per rewrite behaviour, because nginx's rewrite-target is an
+# annotation on the object, not on the path.
+#
+# The PARTICIPANT DID hosts (<participant>.<baseDomain>/.well-known/did.json)
+# are NOT served here — that host also carries the EDC DSP and data-plane paths
+# from the participant namespace, so its Ingress lives in the ds-edc chart and
+# reaches this service through an ExternalName. One host, one Ingress owner.
+# =============================================================================
+
+# ── Trust anchor DID document ────────────────────────────────────────────────
+# did:web:<trust-anchor domain> resolves to https://<domain>/.well-known/did.json
+# over TLS on 443. The dev stack's plaintext :80 Caddy hack does not carry over:
+# a DID document carries the keys every trust decision rests on.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-did
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
+    nginx.ingress.kubernetes.io/rewrite-target: /dids/did:web:{{ $ta }}/did.json
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $ta)) | nindent 2 }}
+  rules:
+    - host: {{ $ta | quote }}
+      http:
+        paths:
+          - path: /.well-known/did.json
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
+---
+# ── StatusList2021 revocation lists ──────────────────────────────────────────
+# Must be publicly fetchable: a verifier that cannot reach the status list
+# cannot determine whether a credential has been revoked.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-status
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $ta)) | nindent 2 }}
+  rules:
+    - host: {{ $ta | quote }}
+      http:
+        paths:
+          - path: /status
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
+{{- if .Values.exposeUserDids }}
+---
+# ── User DID resolution ──────────────────────────────────────────────────────
+# did:web:users.<baseDomain>:<id> → https://users.<baseDomain>/<id>/did.json
+# Off by default: only needed when REMOTE verifiers resolve your user DIDs.
+{{- $users := include "ir.usersHost" . }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-user-dids
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/rewrite-target: /dids/did:web:{{ $users }}:$1/did.json
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $users)) | nindent 2 }}
+  rules:
+    - host: {{ $users | quote }}
+      http:
+        paths:
+          - path: /([^/]+)/did\.json$
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
+{{- end }}
+{{- if .Values.credentialService.expose }}
+---
+# ── DCP credential service ───────────────────────────────────────────────────
+# Off by default — in the EDC DCP flow the holder self-presents, so remote
+# verifiers do not query this endpoint. Enable only if yours do.
+# The endpoint authenticates callers with a self-issued DCP token signed by the
+# requested DID's registered key; it is not anonymous.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-credentials
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $ta)) | nindent 2 }}
+  rules:
+    - host: {{ $ta | quote }}
+      http:
+        paths:
+          - path: /credentials
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
+{{- end }}
+{{- end }}

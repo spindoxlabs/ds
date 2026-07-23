@@ -1,0 +1,13 @@
+apiVersion: v2
+name: ds-identity-registry
+description: |
+  Dataspace trust anchor (DSSC BB02) — DID lifecycle, STS, DCP credential
+  service, participant/owner/membership registry and StatusList2021.
+  Deployed once per dataspace, not once per participant.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

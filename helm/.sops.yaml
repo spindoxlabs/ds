@@ -1,0 +1,14 @@
+# SOPS configuration for helmfile secret decryption.
+#
+# Replace the age recipient with your deployment's public key (age or a KMS ARN).
+# Generate one with:  age-keygen -o keys.txt
+# Keep the PRIVATE key out of the repo; helmfile reads it via SOPS_AGE_KEY_FILE.
+#
+# creation_rules match by path so only secrets.sops.yaml is encrypted, and only
+# the values are encrypted (keys stay readable for review/diffing).
+creation_rules:
+  - path_regex: secrets\.sops\.yaml$
+    encrypted_regex: "^(secrets)$"
+    # age: age1CHANGE_ME_your_public_key
+    # kms: arn:aws:kms:...
+    # gcp_kms: projects/.../cryptoKeys/...

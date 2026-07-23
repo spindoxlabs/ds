@@ -1,0 +1,11 @@
+# SOPS-encrypted secrets are safe to commit; the decrypted staging file is not.
+secrets.dec.yaml
+secrets.yaml
+/tmp-secrets.yaml
+
+# Vendored chart dependencies (ds-common is a local file:// dep, re-resolved by
+# `helm dependency update`).
+charts/*/charts/
+charts/*/Chart.lock
+
+# secrets.sops.yaml IS intended to be committed (encrypted). It is NOT ignored.

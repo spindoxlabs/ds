@@ -1,0 +1,77 @@
+# ==============================================================================
+# Dataspace deployment — release composition
+# ==============================================================================
+#
+#   helmfile -e production diff
+#   helmfile -e production apply
+#
+# Two release groups:
+#   authority   — the dataspace trust anchor. Deployed ONCE per dataspace.
+#   participant — EDC + connector + provenance (+ catalog, + portal), one group
+#                 per entry in values.yaml `participants`.
+#
+# Configuration comes from values.yaml (operator-edited) and secrets.sops.yaml
+# (SOPS-encrypted). Nothing is configured in this file.
+# ==============================================================================
+
+environments:
+  production:
+    values:
+      - values.yaml
+    secrets:
+      - secrets.sops.yaml
+  # A second environment overlays values.yaml with environment-specific
+  # differences (different baseDomain, fewer replicas, staging issuer):
+  #   staging:
+  #     values: [values.yaml, environments/staging.yaml]
+  #     secrets: [secrets.sops.yaml]
+
+---
+
+helmDefaults:
+  wait: true
+  timeout: 600
+  atomic: true
+  createNamespace: true
+
+# The namespace label the identity-registry NetworkPolicy matches on. Applied by
+# helmfile so participant namespaces can reach the authority and nothing else
+# can. Keep this in sync with charts/ds-identity-registry/templates/networkpolicy.yaml.
+commonLabels:
+  app.kubernetes.io/part-of: dataspace
+
+releases:
+  # ── Dataspace authority ─────────────────────────────────────────────────────
+  - name: ds-identity-registry
+    namespace: {{ .Values.global.namespaces.authority }}
+    chart: ./charts/ds-identity-registry
+    condition: authority.enabled
+    values:
+      - global:
+          {{ toYaml .Values.global | nindent 10 }}
+      - trustAnchorDomain: {{ .Values.authority.identityRegistry.trustAnchorDomain | quote }}
+        replicaCount: {{ .Values.authority.identityRegistry.replicaCount }}
+        exposeUserDids: {{ .Values.authority.identityRegistry.exposeUserDids }}
+        credentialService:
+          expose: {{ .Values.authority.identityRegistry.credentialService.expose }}
+        bootstrap:
+          enabled: {{ .Values.authority.identityRegistry.bootstrap.enabled }}
+          seedConfigMap: {{ .Values.authority.identityRegistry.bootstrap.seedConfigMap | quote }}
+          seedMountPath: {{ .Values.authority.identityRegistry.bootstrap.seedMountPath | quote }}
+        keycloak:
+          sync:
+            enabled: {{ .Values.global.keycloak.sync.enabled }}
+            organizationsConfigMap: {{ .Values.global.keycloak.sync.organizationsConfigMap | quote }}
+        secrets:
+          identityRegistryEncryptionKey: {{ .Values.secrets.identityRegistryEncryptionKey | quote }}
+          keycloakClientSecret: {{ .Values.secrets.keycloakClientSecret | quote }}
+          dbPassword: {{ .Values.secrets.postgres.identity_registry | quote }}
+          keycloakAdminUsername: {{ .Values.secrets.keycloakAdminUsername | quote }}
+          keycloakAdminPassword: {{ .Values.secrets.keycloakAdminPassword | quote }}
+
+  # ── Participants ────────────────────────────────────────────────────────────
+  # Charts land in Phase 3-4. Each participant produces:
+  #   ds-edc-<name>, ds-connector-<name>, ds-provenance-<name>,
+  #   ds-federated-catalog-<name> (optional), ds-portal-<name> (optional)
+  # in namespace <global.namespaces.participantPrefix><name>, each release
+  # declaring `needs: [<authority ns>/ds-identity-registry]`.

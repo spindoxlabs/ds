@@ -1,0 +1,30 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# The public paths (/dids, /status) arrive through the ingress controller.
+{{ include "ds.networkPolicy.fromIngressController" (dict "ctx" . "ports" (list .Values.service.port)) }}
+---
+# In-cluster callers: every participant namespace reaches the registry for STS
+# token issuance, VP queries, participant/owner resolution and membership
+# checks. Restricted by namespace label, not open to the whole cluster.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-from-participants
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              dataspace.spindoxlabs.io/participant: "true"
+      ports:
+        - protocol: TCP
+          port: {{ .Values.service.port }}
+{{- end }}

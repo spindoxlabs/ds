@@ -1,0 +1,5 @@
+apiVersion: v2
+name: ds-common
+description: Library chart with the shared helpers every ds-* service chart uses
+type: library
+version: 0.1.0

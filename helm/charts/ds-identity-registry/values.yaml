@@ -1,0 +1,153 @@
+# Chart defaults. Operators configure via helm/values.yaml; helmfile maps that
+# file onto these keys. Everything here is a safe default.
+
+service:
+  name: identity-registry # → ghcr.io/spindoxlabs/ds-identity-registry
+  port: 30005
+  healthPath: /health
+
+replicaCount: 1
+
+image:
+  registry: ""
+  repository: ""
+  tag: ""
+  digest: ""
+  pullPolicy: ""
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  name: ""
+
+podSecurityContext:
+  runAsUser: 10001
+  runAsGroup: 10001
+  fsGroup: 10001
+
+containerSecurityContext:
+  readOnlyRootFilesystem: true
+
+resources: {}
+probes: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+env: {} # extra plain env vars
+
+# Reference a pre-created Secret instead of rendering one.
+existingSecret: ""
+
+networkPolicy:
+  egress: []
+
+# ── Identity-registry specifics ───────────────────────────────────────────────
+
+trustAnchorDomain: "" # defaults to trust-anchor.<global.baseDomain>
+
+# JSON-LD context and dataspace URI. Dev defaults point at *.localhost; these
+# are derived from global.baseDomain unless set explicitly.
+credentialsContextUrl: ""
+dataspaceUri: ""
+
+credentialTtl:
+  defaultDays: 365
+  maxDays: 730
+
+# did:web resolution for user DIDs (did:web:users.<baseDomain>:<id>).
+# Only needed if REMOTE verifiers resolve your user DIDs.
+exposeUserDids: false
+
+# DCP credential-service presentation query. Internal by default — the holder
+# self-presents. Enable only if remote verifiers query it directly.
+credentialService:
+  expose: false
+
+ingress:
+  enabled: true
+
+migration:
+  enabled: true
+  # initContainer runs per pod, so replicas > 1 serialises on an advisory lock.
+  # `job` mode is reserved for a later iteration.
+  mode: initContainer
+
+bootstrap:
+  enabled: true
+  seedConfigMap: ""
+  seedMountPath: /seed
+
+keycloak:
+  clientId: ds-identity-registry
+  # Optional realm/organization provisioning against an external Keycloak.
+  sync:
+    enabled: false
+    clientsConfigMap: ""
+    organizationsConfigMap: ""
+
+# The trust-anchor public JWK is served from the registry's own database; no
+# mount is required here. CONNECTOR_TRUST_ANCHOR_KEY_PATH is a connector concern.
+
+# ── Secret material ───────────────────────────────────────────────────────────
+# Supplied by helmfile from secrets.sops.yaml. Deliberately empty here: the
+# templates use `required`, so a missing value fails the render rather than
+# deploying something that starts with a default nobody chose.
+secrets:
+  identityRegistryEncryptionKey: ""
+  keycloakClientSecret: ""
+  dbUser: "" # defaults to the database name (its owner role)
+  dbPassword: ""
+  keycloakAdminUsername: ""
+  keycloakAdminPassword: ""
+
+# ── Global fallbacks ──────────────────────────────────────────────────────────
+# Real values come from helm/values.yaml via helmfile. These exist so the chart
+# renders standalone (helm lint / helm template) without a values file.
+global:
+  baseDomain: ds.example.org
+  hosts:
+    trustAnchor: trust-anchor
+    users: users
+  image:
+    registry: ghcr.io/spindoxlabs
+    prefix: ds-
+    tag: ""
+    pullPolicy: IfNotPresent
+    pullSecrets: []
+  ingress:
+    className: nginx
+    annotations: {}
+    tls:
+      clusterIssuer: ""
+      secretName: ""
+  postgres:
+    host: ds-pg-rw.database.svc.cluster.local
+    port: 5432
+    sslMode: require
+    databases:
+      identityRegistry: identity_registry
+  keycloak:
+    realm: dataspaces
+    issuerUrl: ""
+    adminUrl: ""
+    tokenUrl: ""
+  networkPolicy:
+    enabled: true
+  monitoring:
+    serviceMonitor: false
+    prometheusNamespace: monitoring
+  externalSecrets:
+    enabled: false
+    secretStoreRef: {}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi

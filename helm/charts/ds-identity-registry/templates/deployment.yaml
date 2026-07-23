@@ -1,0 +1,159 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: RollingUpdate
+  selector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ds.labels" . | nindent 8 }}
+      annotations:
+        # Roll the pods when the rendered secret changes.
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      initContainers:
+        {{- if .Values.migration.enabled }}
+        # Alembic tracks applied revisions, so this is a no-op on an up-to-date
+        # database. With replicas > 1 concurrent runs serialise on Postgres
+        # locks rather than conflicting.
+        - name: migrate
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+        {{- end }}
+        {{- if .Values.bootstrap.enabled }}
+        # Trust anchor + seed data. Every ir-cli command has upsert semantics,
+        # so re-running on each pod start is safe by design.
+        - name: bootstrap
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-euc"]
+          args:
+            - |
+              ir-cli bootstrap
+              SEED={{ .Values.bootstrap.seedMountPath }}
+              if [ -f "$SEED/owners.yaml" ]; then
+                ir-cli owner import --file "$SEED/owners.yaml"
+              fi
+              if [ -f "$SEED/bootstrap.sh" ]; then
+                sh "$SEED/bootstrap.sh"
+              fi
+              echo "identity bootstrap complete"
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+            {{- if .Values.bootstrap.seedConfigMap }}
+            - name: seed
+              mountPath: {{ .Values.bootstrap.seedMountPath }}
+              readOnly: true
+            {{- end }}
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+        {{- end }}
+        {{- if .Values.keycloak.sync.enabled }}
+        # Provisioning an externally-managed Keycloak is opt-in. Requires admin
+        # credentials in the namespace — prefer provisioning the realm
+        # out-of-band and leaving this disabled.
+        - name: keycloak-org-sync
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-euc"]
+          args:
+            - |
+              ir-cli keycloak org-sync \
+                --config /keycloak/organizations.yaml \
+                --keycloak-url "$KEYCLOAK_ADMIN_URL" \
+                --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
+                --admin-password "$KEYCLOAK_ADMIN_PASSWORD"
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+            - name: KEYCLOAK_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ds.secretName" . }}
+                  key: KEYCLOAK_ADMIN_USERNAME
+            - name: KEYCLOAK_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ds.secretName" . }}
+                  key: KEYCLOAK_ADMIN_PASSWORD
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+            - name: keycloak-config
+              mountPath: /keycloak
+              readOnly: true
+          resources:
+            {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
+        {{- end }}
+      containers:
+        - name: identity-registry
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          {{- include "ds.probes" . | nindent 10 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          {{- include "ds.resources" . | nindent 10 }}
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+        {{- if .Values.bootstrap.seedConfigMap }}
+        - name: seed
+          configMap:
+            name: {{ .Values.bootstrap.seedConfigMap }}
+        {{- end }}
+        {{- if .Values.keycloak.sync.enabled }}
+        - name: keycloak-config
+          configMap:
+            name: {{ .Values.keycloak.sync.organizationsConfigMap }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

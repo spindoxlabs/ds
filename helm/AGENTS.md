@@ -1,11 +1,92 @@
 # Helm deployment model — Agent Guide
 
-> **Status: design contract, no chart yet.** This document defines what the
-> chart must guarantee before any template is written. It is deliberately
-> scoped to the *security-oriented configuration* — the wrapping of secrets,
-> the production switch, and the trust material. Topology, autoscaling,
-> ingress shape and storage classes are out of scope and will be iterated
-> separately.
+> **Status: charts in progress.** The security contract below is the invariant
+> set; the sections after it describe *what exists on disk* and how to work in
+> this folder. The authority release (`ds-identity-registry`) and the shared
+> `ds-common` library chart are implemented; participant charts are planned. See
+> `.agents/helm/plan.md` for the full design and phasing.
+
+## Working in this folder
+
+### Layout
+
+```
+helm/
+├── AGENTS.md                    # this file — security contract + ops notes
+├── README.md                    # operator runbook (install / secrets / validate)
+├── helmfile.yaml.gotmpl         # release composition; MUST keep .gotmpl extension
+├── values.yaml                  # the ONE operator-edited file
+├── secrets.example.yaml         # template → copy to secrets.sops.yaml
+├── secrets.sops.yaml            # SOPS-encrypted, committed; plaintext NEVER committed
+├── .sops.yaml                   # SOPS creation rules (set your age/KMS recipient)
+├── docs/                        # prerequisites, CNPG example, Keycloak contract
+└── charts/
+    ├── ds-common/               # library chart — ALL shared helpers live here
+    └── ds-identity-registry/    # authority release
+```
+
+### Conventions that will bite you if ignored
+
+- **`helmfile.yaml.gotmpl`, not `helmfile.yaml`.** Helmfile v1 only templates
+  `{{ .Values.* }}` in the release list when the file carries the `.gotmpl`
+  extension. Plain `.yaml` fails with a cryptic map-key error.
+- **All boilerplate lives in `ds-common/templates/*.tpl`.** Naming, labels,
+  image composition, security contexts, the `DS_ENV` injection, secret-mode
+  switching, DB URL assembly, ingress TLS, probes, NetworkPolicy builders.
+  A service chart that hand-rolls any of these is doing it wrong — add or extend
+  a helper instead. Helpers are namespaced `ds.*`.
+- **Go-template comments cannot contain `*/`.** A literal `*/` (e.g. a glob like
+  `services/*/Dockerfile`) inside `{{/* ... */}}` closes the comment early and
+  breaks the parse. Reword.
+- **`ds-common` is a `file://` dependency.** After editing it, run
+  `helm dependency update ./charts/<service>` (or delete `charts/<service>/charts/`)
+  before re-rendering, or you test a stale vendored copy.
+- **One cert-manager Certificate per host.** Several Ingress objects can share a
+  host (each rewrite behaviour needs its own object, since `rewrite-target` is a
+  per-object annotation). Only ONE of them may carry the `cluster-issuer`
+  annotation — pass `issueCert true` to `ds.ingress.annotations` on exactly one,
+  `false` on the rest. `ds.ingress.tls` derives the secret name from the host so
+  they share the cert.
+- **Numeric UID is mandatory.** `runAsNonRoot` cannot be verified against an
+  image whose `USER` is a name; kubelet refuses to start the pod. All service
+  Dockerfiles pin uid/gid **10001** (`podSecurityContext.runAsUser`). If you add
+  a service, pin its uid the same way.
+
+### Validate before committing
+
+```bash
+helm dependency update ./charts/ds-identity-registry
+helm lint ./charts/ds-identity-registry \
+  --set secrets.identityRegistryEncryptionKey=x \
+  --set secrets.keycloakClientSecret=y --set secrets.dbPassword=z
+
+# full helmfile render through SOPS (needs SOPS_AGE_KEY_FILE)
+helmfile -e production template
+```
+
+Secret templates use `required`, so a render that succeeds proves every
+mandatory secret is wired. A render that fails names the missing key.
+
+### Adding a service chart
+
+1. `charts/ds-<svc>/` with `Chart.yaml` depending on `ds-common` (`file://../ds-common`).
+2. A `templates/_env.tpl` mapping the service's `pydantic-settings` env prefix
+   (grep `env_prefix=` in `services/<svc>/src/*/config.py`) onto values.
+3. Standard object set: deployment, service, serviceaccount, secret,
+   externalsecret, networkpolicy, pdb, and ingress *only if* §Exposure lists it.
+4. A `global:` fallback block in the chart's `values.yaml` so it renders
+   standalone under `helm lint`; real values arrive from `helm/values.yaml` via
+   helmfile.
+5. A release entry in `helmfile.yaml.gotmpl`, participant-scoped with
+   `needs: [<authority ns>/ds-identity-registry]`.
+6. Update the checklist in this file and the plan's phasing table.
+
+---
+
+> The remainder of this document is the **security contract** — the invariants
+> every chart must hold regardless of topology. It is deliberately scoped to the
+> security-oriented configuration: the wrapping of secrets, the production
+> switch, and the trust material.
 
 ## Why this exists
 
@@ -267,23 +348,33 @@ meaningful observability:
 
 ## Checklist before a chart is considered production-ready
 
-- [ ] `DS_ENV=production` on every service container
-- [ ] Every `CHANGE_ME` in `.env.example` mapped to a Secret or values entry
+Legend: `[x]` implemented in the charts · `[~]` implemented for the authority
+release, pending for participant charts · `[ ]` not yet.
+
+- [x] `DS_ENV=production` on every service container — hardcoded in `ds.env.common`, not a value
+- [~] Every `CHANGE_ME` in `.env.example` mapped to a Secret or values entry — done for identity-registry
 - [ ] `task secrets:check` passes in the release pipeline
-- [ ] `DS_DEMO_IDENTITY_ENABLED` absent from the chart entirely
-- [ ] `realm-production.example.json` selected; dev realm unreachable
-- [ ] EDC management/control ports ClusterIP-only, no Ingress
-- [ ] `edc.iam.did.web.use.https=true`, `edc.sql.schema.autocreate=false`
-- [ ] EDC vault rendered from generated keys, not the committed dev files
-- [ ] `IDENTITY_REGISTRY_ENCRYPTION_KEY` in a backed-up secret store
-- [ ] `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhook notifications enabled
-- [ ] TLS terminated for all browser- and DSP-facing endpoints
-- [ ] Per-service database roles
-- [ ] Pod `securityContext` hardening and resource limits
+- [x] `DS_DEMO_IDENTITY_ENABLED` absent from the chart entirely
+- [ ] `realm-production.example.json` selected; dev realm unreachable — external KC, see `docs/keycloak-requirements.md`
+- [ ] EDC management/control ports ClusterIP-only, no Ingress — pending `ds-edc`
+- [ ] `edc.iam.did.web.use.https=true`, `edc.sql.schema.autocreate=false` — pending `ds-edc`
+- [ ] EDC vault rendered from generated keys, not the committed dev files — pending `ds-edc`
+- [~] `IDENTITY_REGISTRY_ENCRYPTION_KEY` in a backed-up secret store — chart Secret + prominent backup warnings; the backup itself is operator-side
+- [ ] `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhook notifications enabled — pending `ds-connector`
+- [~] TLS terminated for all browser- and DSP-facing endpoints — cert-manager wired for authority ingress
+- [x] Per-service database roles — `docs/cnpg-cluster.example.yaml`; chart consumes one role per service
+- [~] Pod `securityContext` hardening and resource limits — enforced by `ds-common` for every chart
 - [ ] Log shipping with a defined retention window
-- [ ] `/metrics` endpoints reachable only from in-cluster Prometheus
-- [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned
+- [~] `/metrics` endpoints reachable only from in-cluster Prometheus — `ds.networkPolicy.metricsFromPrometheus` helper ready; wired per service
+- [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned — still unpinned (see §Supply-chain)
 - [ ] CI includes dependency scanning and `task secrets:check`
+
+### Change made to the service Dockerfiles
+
+Pinning `runAsNonRoot` required a numeric image UID. `services/*/Dockerfile`
+were updated to create their `app`/`edc` user with an explicit **uid/gid
+10001** (`useradd -u 10001` / `adduser -u 10001`). This is the only
+application-repo change the charts depend on; keep it if you rework a Dockerfile.
 
 ## See also
 

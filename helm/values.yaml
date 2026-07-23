@@ -1,0 +1,189 @@
+# ==============================================================================
+# Dataspace deployment — operator configuration
+# ==============================================================================
+#
+# This is the ONE file you edit. Helmfile loads it as environment values and
+# derives every per-release values document from it.
+#
+# Secrets do NOT live here — see secrets.example.yaml → secrets.sops.yaml.
+#
+# Anything absent from this file has a safe default inside the charts.
+# See .agents/helm/plan.md for the design, helm/AGENTS.md for the security
+# contract, and helm/docs/prerequisites.md for what must exist before install.
+# ==============================================================================
+
+global:
+  # ── Public addressing ───────────────────────────────────────────────────────
+  # Every public endpoint is a subdomain of baseDomain. Nothing else is exposed.
+  # Participant DIDs are derived: did:web:<participant.name>.<baseDomain>
+  baseDomain: ds.example.org
+
+  hosts:
+    portal: portal # portal.ds.example.org       — the only human-facing host
+    trustAnchor: trust-anchor # trust-anchor.ds.example.org — DID doc + StatusList2021
+    users: users # users.ds.example.org        — user DID resolution (see note)
+
+  # ── Namespaces ──────────────────────────────────────────────────────────────
+  # The authority is one trust boundary; each participant is another.
+  # Per-participant namespaces default to "<prefix><participant.name>".
+  namespaces:
+    authority: ds-authority
+    participantPrefix: ds-
+
+  # ── Images ──────────────────────────────────────────────────────────────────
+  # ghcr.io/spindoxlabs/ds-<service>. Assumed public; pullSecrets are optional.
+  image:
+    registry: ghcr.io/spindoxlabs
+    prefix: ds-
+    tag: "" # empty → each chart's appVersion
+    pullPolicy: IfNotPresent
+    pullSecrets: [] # e.g. [{name: ghcr-credentials}]
+
+  # ── Ingress / TLS ───────────────────────────────────────────────────────────
+  # cert-manager is assumed present. Set clusterIssuer to have certificates
+  # issued automatically, or secretName to use a pre-created certificate.
+  ingress:
+    className: nginx
+    annotations: {}
+    tls:
+      clusterIssuer: letsencrypt-prod
+      secretName: "" # set → used verbatim, clusterIssuer ignored
+
+  # ── PostgreSQL — provisioned externally with CloudNativePG ──────────────────
+  # See helm/docs/cnpg-cluster.example.yaml. One database AND one
+  # least-privilege role per service; credentials come from secrets.sops.yaml.
+  postgres:
+    host: ds-pg-rw.database.svc.cluster.local
+    port: 5432
+    sslMode: require
+    databases:
+      identityRegistry: identity_registry
+      # per-participant databases are suffixed with the participant name:
+      #   connector_<participant>, provenance_<participant>, edc_<participant>
+      connectorPrefix: connector
+      provenancePrefix: provenance
+      edcPrefix: edc
+
+  # ── Keycloak — externally managed, never installed by these charts ──────────
+  # See helm/docs/keycloak-requirements.md for the realm/client contract.
+  keycloak:
+    realm: dataspaces
+    issuerUrl: https://sso.example.org/realms/dataspaces
+    adminUrl: https://sso.example.org
+    tokenUrl: https://sso.example.org/realms/dataspaces/protocol/openid-connect/token
+    sync:
+      # Opt-in provisioning of service clients / organizations into the external
+      # Keycloak. Off by default: KC is not ours to mutate.
+      enabled: false
+      clientsConfigMap: "" # ConfigMap holding clients.yaml
+      organizationsConfigMap: "" # ConfigMap holding organizations.yaml
+
+  # ── Posture ─────────────────────────────────────────────────────────────────
+  networkPolicy:
+    enabled: true # default-deny ingress+egress, explicit allows only
+  monitoring:
+    serviceMonitor: false
+    prometheusNamespace: monitoring
+  externalSecrets:
+    enabled: false # true → emit ExternalSecret CRs instead of Secrets
+    secretStoreRef: {} # {name: vault-backend, kind: ClusterSecretStore}
+
+  # Resource profile applied to every service unless overridden per-service.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
+
+# ==============================================================================
+# Dataspace authority — deploy ONCE per dataspace
+# ==============================================================================
+authority:
+  enabled: true
+
+  identityRegistry:
+    replicaCount: 1
+    trustAnchorDomain: trust-anchor.ds.example.org
+
+    # did:web resolution for user DIDs (did:web:users.<baseDomain>:<id>).
+    # Only needed if REMOTE verifiers resolve your user DIDs. If all VC
+    # verification is local, leave this false and drop the users host.
+    exposeUserDids: false
+
+    # DCP credential-service presentation query. Internal by default — the
+    # holder self-presents. Enable only if remote verifiers query it directly.
+    credentialService:
+      expose: false
+
+    bootstrap:
+      # ir-cli bootstrap + participant/owner/membership seeding, as an init
+      # container. Idempotent (upsert semantics), safe on every pod start.
+      enabled: true
+      # Empty → the image's baked-in defaults are used.
+      seedConfigMap: "" # owners.yaml / participants.yaml / memberships
+      seedMountPath: /seed
+
+# ==============================================================================
+# Participants — one release group per participant
+# ==============================================================================
+# Public host per participant: <name>.<global.baseDomain>, serving exactly
+#   /.well-known/did.json   → identity-registry (rewritten)
+#   /protocol/2025-1/*      → EDC DSP
+#   /public/*               → EDC data plane
+# Everything else on that host returns 404.
+participants:
+  - name: provider
+    enabled: true
+    role: provider # provider | consumer
+
+    # did: "" → derived as did:web:<name>.<global.baseDomain>. Override to pin.
+    did: ""
+
+    # The dataset API is participant-operated and NOT deployed by these charts.
+    # It authenticates to the connector's /internal/* with the EDC API key.
+    datasetApi:
+      url: "" # e.g. https://datasets.internal.example.org
+
+    connector:
+      replicaCount: 1
+      # Webhook notifications are rejected unless the host is allowlisted.
+      notifyBackends: "null" # null | smtp | webhook (comma-separated)
+      webhookAllowedHosts: [] # required if notifyBackends includes webhook
+      governanceOverlayName: "" # merges governance.<name>.yaml
+      governanceConfigMap: "" # empty → image's baked-in governance.yaml
+
+    provenance:
+      replicaCount: 1
+
+    edc:
+      replicaCount: 1
+
+    federatedCatalog:
+      enabled: true
+      replicaCount: 1
+      crawlInterval: 300
+
+    portal:
+      # The portal is deployed alongside exactly one participant.
+      enabled: true
+      replicaCount: 1
+
+  - name: consumer
+    enabled: true
+    role: consumer
+    did: ""
+    datasetApi:
+      url: ""
+    connector:
+      replicaCount: 1
+      notifyBackends: "null"
+      webhookAllowedHosts: []
+    provenance:
+      replicaCount: 1
+    edc:
+      replicaCount: 1
+    federatedCatalog:
+      enabled: false
+    portal:
+      enabled: false

@@ -1,0 +1,104 @@
+# ==============================================================================
+# CloudNativePG Cluster — reference manifest
+# ==============================================================================
+# Not applied by the charts. Copy, adjust, and apply before installing.
+#
+# Provisions one database + one owner role per service. Each role owns exactly
+# its own database and has no rights on any other, replacing the single dev
+# superuser that backs all six databases in docker-compose.
+#
+# Participant-scoped databases are named <prefix>_<participant>; add a pair per
+# participant listed in helm/values.yaml.
+# ==============================================================================
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: ds-pg
+  namespace: database
+spec:
+  instances: 3
+  imageName: ghcr.io/cloudnative-pg/postgresql:17.4
+
+  primaryUpdateStrategy: unsupervised
+
+  postgresql:
+    parameters:
+      # Reject non-TLS connections. The charts connect with sslMode=require.
+      ssl: "on"
+    pg_hba:
+      - hostssl all all 10.0.0.0/8 scram-sha-256
+      - hostnossl all all all reject
+
+  storage:
+    size: 20Gi
+    storageClass: "" # cluster default
+
+  # ── Backups — NIS2 Art. 21(2)(c) expects tested restore, not just backup ────
+  backup:
+    retentionPolicy: 30d
+    barmanObjectStore:
+      destinationPath: s3://ds-pg-backups/
+      s3Credentials:
+        accessKeyId:
+          name: cnpg-backup-creds
+          key: ACCESS_KEY_ID
+        secretAccessKey:
+          name: cnpg-backup-creds
+          key: SECRET_ACCESS_KEY
+      wal:
+        compression: gzip
+
+  # ── Roles — one per service, passwords from pre-created Secrets ────────────
+  # Each Secret is kubernetes.io/basic-auth with username + password, and must
+  # match the corresponding entry in helm/secrets.sops.yaml.
+  managed:
+    roles:
+      - name: identity_registry
+        login: true
+        passwordSecret:
+          name: pg-identity-registry
+      - name: connector_provider
+        login: true
+        passwordSecret:
+          name: pg-connector-provider
+      - name: provenance_provider
+        login: true
+        passwordSecret:
+          name: pg-provenance-provider
+      - name: edc_provider
+        login: true
+        passwordSecret:
+          name: pg-edc-provider
+      - name: connector_consumer
+        login: true
+        passwordSecret:
+          name: pg-connector-consumer
+      - name: provenance_consumer
+        login: true
+        passwordSecret:
+          name: pg-provenance-consumer
+      - name: edc_consumer
+        login: true
+        passwordSecret:
+          name: pg-edc-consumer
+
+  bootstrap:
+    initdb:
+      database: identity_registry
+      owner: identity_registry
+      # One database per service, each owned by its own role. PUBLIC is revoked
+      # so a compromised service role cannot read another service's data.
+      postInitApplicationSQL:
+        - CREATE DATABASE connector_provider OWNER connector_provider;
+        - CREATE DATABASE provenance_provider OWNER provenance_provider;
+        - CREATE DATABASE edc_provider OWNER edc_provider;
+        - CREATE DATABASE connector_consumer OWNER connector_consumer;
+        - CREATE DATABASE provenance_consumer OWNER provenance_consumer;
+        - CREATE DATABASE edc_consumer OWNER edc_consumer;
+        - REVOKE ALL ON DATABASE connector_provider FROM PUBLIC;
+        - REVOKE ALL ON DATABASE provenance_provider FROM PUBLIC;
+        - REVOKE ALL ON DATABASE edc_provider FROM PUBLIC;
+        - REVOKE ALL ON DATABASE connector_consumer FROM PUBLIC;
+        - REVOKE ALL ON DATABASE provenance_consumer FROM PUBLIC;
+        - REVOKE ALL ON DATABASE edc_consumer FROM PUBLIC;
+        - REVOKE ALL ON DATABASE identity_registry FROM PUBLIC;
