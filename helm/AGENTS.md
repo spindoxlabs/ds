@@ -492,7 +492,7 @@ release, pending for participant charts · `[ ]` not yet.
 - [~] `/metrics` endpoints reachable only from in-cluster Prometheus — `ds.networkPolicy.metricsFromPrometheus` wired on `ds-connector`
 - [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned — still unpinned (see §Supply-chain)
 - [ ] CI includes dependency scanning and `task secrets:check`
-- [ ] **`ds-identity-registry` and `ds-provenance` egress to Keycloak (443).** Both verify JWTs against the JWKS endpoint, and the registry's optional `keycloak-org-sync` init container calls the admin API — but neither chart adds a 443 egress rule, so `ds.networkPolicy.defaultDeny` (DNS + Postgres only) denies those calls whenever `global.networkPolicy.enabled` is true. `ds-edc`, `ds-connector`, `ds-federated-catalog` and `ds-portal` all carry the rule; these two were missed. Workaround: set `.Values.networkPolicy.egress` on the release (it is appended verbatim to the default-deny policy). Fix: add the rule to both charts' `networkpolicy.yaml`.
+- [x] Every JWT-verifying service has egress to the Keycloak JWKS endpoint (443) — `ds.networkPolicy.defaultDeny` opens only DNS and Postgres, so each chart adds the rule itself. `ds-identity-registry` and `ds-provenance` were missing it and would have failed every authenticated request under the default `networkPolicy.enabled: true`.
 
 ### Change made to the service Dockerfiles
 

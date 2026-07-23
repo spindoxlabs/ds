@@ -120,34 +120,36 @@ Broad-CIDR egress rules all carry that metadata exclusion: a pod that can reach
 
 | Service | Ingress from | Egress beyond the default-deny baseline |
 |---------|--------------|------------------------------------------|
-| `ds-identity-registry` | ingress controller ns; any namespace labeled `dataspace.spindoxlabs.io/participant` | *(none — baseline only)* |
+| `ds-identity-registry` | ingress controller ns; any namespace labeled `dataspace.spindoxlabs.io/participant` | 443 (Keycloak JWKS, and the admin API when `keycloak-org-sync` runs) |
 | `ds-edc` | ingress controller ns → **only** `protocol` + `public`; `ds-connector` in the same ns → management, api, control; peer EDCs in participant-labeled namespaces → `protocol` + `public` | authority ns `:30005` (STS, VP queries); own connector; 443 |
 | `ds-connector` | `ds-portal` and `ds-edc`, same namespace | authority ns `:30005`; own EDC management and provenance `:30000`; 443 (Keycloak, external dataset API) |
-| `ds-provenance` | `ds-connector`, same namespace | *(none — baseline only)* |
+| `ds-provenance` | `ds-connector`, same namespace | 443 (Keycloak JWKS) |
 | `ds-federated-catalog` | `ds-portal`, same namespace | own connector; authority ns `:30005`; 443 (Keycloak) |
 | `ds-portal` | ingress controller ns | same namespace `:30001`, `:30000`, `:30003`; authority ns `:30005`; 443 (Keycloak) |
 
-!!! warning "Known gap: `ds-identity-registry` and `ds-provenance` have no egress allow for 443"
-    Both verify JWTs against Keycloak's JWKS endpoint, and the identity-registry's
-    optional `keycloak-org-sync` init container calls the admin API — but neither
-    chart adds a 443 egress rule, so with `global.networkPolicy.enabled: true`
-    (the default) those calls are denied by the baseline policy.
+Every service that verifies JWTs needs egress to Keycloak's JWKS endpoint on
+443 — without it the baseline (DNS + Postgres only) fails every authenticated
+request. All six service charts carry that rule.
 
-    Until the charts add the rule, supply it per release:
+### Adding an egress allow without touching a template
 
-    ```yaml
-    networkPolicy:
-      egress:
-        - to:
-            - ipBlock:
-                cidr: 0.0.0.0/0
-                except: [169.254.169.254/32]
-          ports:
-            - {protocol: TCP, port: 443}
-    ```
+`.Values.networkPolicy.egress` is appended verbatim to the default-deny policy by
+`ds.networkPolicy.defaultDeny`, so a release can open a path the chart does not
+know about:
 
-    `.Values.networkPolicy.egress` is appended verbatim to the default-deny
-    policy by `ds.networkPolicy.defaultDeny`, so this needs no template change.
+```yaml
+networkPolicy:
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.0.0.0/8
+      ports:
+        - {protocol: TCP, port: 8080}
+```
+
+Prefer a namespace or pod selector over a CIDR where the peer is in-cluster. Any
+broad-CIDR rule should exclude `169.254.169.254/32`, as the chart-supplied ones
+do.
 
 Two extra policies are conditional:
 

@@ -209,9 +209,9 @@ issued (`kubectl get certificate -A`); exactly one Ingress per host carries the
 
 Almost always NetworkPolicy. Confirm by temporarily setting
 `global.networkPolicy.enabled: false` in a non-production environment — if the
-call succeeds, the missing allow is the cause. See
-[Exposure](exposure.md#networkpolicy-model), including the known 443-egress gap
-on `ds-identity-registry` and `ds-provenance`.
+call succeeds, the missing allow is the cause. Add it with
+`.Values.networkPolicy.egress` on the release rather than editing a template; see
+[Exposure](exposure.md#adding-an-egress-allow-without-touching-a-template).
 
 ### Certificate not issued
 
