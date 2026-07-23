@@ -1,0 +1,13 @@
+apiVersion: v2
+name: ds-connector
+description: |
+  EDC orchestration, consent, governance sync and provenance bridge for one
+  participant. Internal only — the portal and dataset API reach it in-cluster;
+  the EDC reaches its /internal and /webhooks paths. No public Ingress.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

@@ -1,0 +1,57 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# Ingress: the portal (UX/API calls) and this participant's EDC (/internal +
+# /webhooks) reach the connector, in this namespace only. No public path — a
+# truly external dataset API needs connectivity arranged separately (see
+# helm/AGENTS.md → dataset API).
+{{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
+    (dict "namespace" .Release.Namespace "name" "ds-portal")
+    (dict "namespace" .Release.Namespace "name" "ds-edc"))) }}
+---
+{{- if ((.Values.global).monitoring).serviceMonitor }}
+# /metrics is unauthenticated (root AGENTS.md) — Prometheus only, never ingress.
+{{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
+---
+{{- end }}
+# Egress: the connector calls the trust anchor (authority ns), its own EDC and
+# provenance (same ns), and Keycloak / dataset API off-cluster over TLS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-egress
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    # Identity-registry in the authority namespace.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ ((.Values.global).namespaces).authority }}
+      ports:
+        - protocol: TCP
+          port: 30005
+    # EDC and provenance in this participant's namespace.
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.edc.managementPort }}
+        - protocol: TCP
+          port: 30000
+    # Keycloak and the (external) dataset API over TLS.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

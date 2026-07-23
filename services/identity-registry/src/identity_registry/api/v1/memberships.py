@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...db.models import OrganizationMembership
+from ...db.models import Did, OrganizationMembership
 from ...dependencies import (
     get_db,
     require_admin_scope,
@@ -48,6 +48,14 @@ async def create_membership(
     )
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Membership already exists")
+
+    # user_did is a FK to dids.did — check up front so an unregistered DID returns a
+    # clear 404 instead of surfacing an IntegrityError as a 500.
+    known_did = await db.execute(select(Did.did).where(Did.did == data.user_did))
+    if not known_did.scalar_one_or_none():
+        raise HTTPException(
+            status_code=404, detail=f"Unknown DID: {data.user_did}"
+        )
 
     membership = OrganizationMembership(
         user_did=data.user_did,

@@ -1,0 +1,42 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# Public: the browser reaches the portal through the ingress controller.
+{{ include "ds.networkPolicy.fromIngressController" (dict "ctx" . "ports" (list .Values.service.port)) }}
+---
+# Egress: SSR calls to this participant's connector/provenance/catalog (same ns),
+# the authority registry, and Keycloak over TLS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-egress
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}
+      ports:
+        - {protocol: TCP, port: 30001}
+        - {protocol: TCP, port: 30000}
+        - {protocol: TCP, port: 30003}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ ((.Values.global).namespaces).authority }}
+      ports:
+        - {protocol: TCP, port: 30005}
+    # Keycloak (OIDC) over TLS.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - {protocol: TCP, port: 443}
+{{- end }}

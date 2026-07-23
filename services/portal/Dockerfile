@@ -17,7 +17,8 @@ FROM node:22-alpine AS runtime
 LABEL org.opencontainers.image.description="ds-portal — SvelteKit data governance portal"
 
 WORKDIR /app
-RUN addgroup -S app && adduser -S -G app app
+# uid/gid pinned: kubelet cannot verify runAsNonRoot against a named USER
+RUN addgroup -S -g 10001 app && adduser -S -u 10001 -G app app
 
 COPY --from=builder /app/build ./build
 COPY --from=builder /app/package.json ./

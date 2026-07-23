@@ -22,8 +22,19 @@ helm/
 ├── docs/                        # prerequisites, CNPG example, Keycloak contract
 └── charts/
     ├── ds-common/               # library chart — ALL shared helpers live here
-    └── ds-identity-registry/    # authority release
+    ├── ds-namespaces/           # labeled namespaces (participant label → NetPols)
+    ├── ds-identity-registry/    # authority release
+    ├── ds-edc/                  # participant: Eclipse EDC (only public DSP surface)
+    ├── ds-connector/            # participant: orchestration/consent (internal)
+    ├── ds-provenance/           # participant: PROV-O lineage (internal)
+    ├── ds-federated-catalog/    # participant: DCAT-AP crawler (internal, optional)
+    └── ds-portal/               # participant: SvelteKit UI (only human host, optional)
 ```
+
+The federated catalog crawls the dataspace through a **consumer-capable**
+connector (in dev it targets the consumer connector on 31001). `connectorServiceName`
+defaults to the same-participant connector; set it explicitly if the catalog
+runs under a participant whose connector cannot perform DSP catalog requests.
 
 ### Conventions that will bite you if ignored
 
@@ -80,6 +91,51 @@ mandatory secret is wired. A render that fails names the missing key.
 5. A release entry in `helmfile.yaml.gotmpl`, participant-scoped with
    `needs: [<authority ns>/ds-identity-registry]`.
 6. Update the checklist in this file and the plan's phasing table.
+
+### Cross-release addressing (participant charts)
+
+A participant's charts are separate releases but must address each other's
+Services. Do **not** derive a sibling's name from `.Release.Name` — derive it
+from the participant name:
+
+- Releases are named `ds-<service>-<participant>` (helmfile enforces this).
+- Each release name contains its chart name, so the Service fullname collapses
+  to the release name.
+- Therefore `ds-edc-<participant>`, `ds-provenance-<participant>`,
+  `ds-connector-<participant>` are addressable from `.Values.participant.name`
+  alone. The helpers `conn.edcService` / `conn.provenanceService` /
+  `edc.connectorService` do exactly this.
+
+The identity-registry lives in the authority namespace; participant charts reach
+it at `ds-identity-registry.<authority-ns>.svc.cluster.local:30005`.
+
+### Two deviations from the security contract, made deliberately
+
+- **`edc.sql.schema.autocreate` defaults to `true`, not `false`.** The contract
+  (below) prefers `false` to avoid superuser DDL at every boot. The charts give
+  each EDC a *least-privilege role that owns only its own database*
+  (`docs/cnpg-cluster.example.yaml`), which removes the actual risk — DDL as a
+  cluster superuser — while keeping the connector self-migrating. It stays a
+  value (`sqlSchemaAutocreate`); set it `false` and run Flyway out-of-band for
+  the strictest posture.
+- **The connector has no public Ingress, but the dataset API is external.** In
+  compose the participant-operated dataset API calls the connector `/internal/*`
+  over the Docker network. In-cluster that path is reachable only from the same
+  namespace (NetworkPolicy). If the dataset API runs outside the cluster, the
+  operator must arrange connectivity (run it in-namespace, or add a dedicated
+  internal Ingress carrying the `X-Api-Key`) — the charts intentionally do not
+  expose `/internal` publicly by default.
+
+### did:web over HTTPS — where the `:80` Caddy hack went
+
+The dev stack resolves `did:web` over plaintext `:80` through a Caddy rewrite.
+The charts do not carry that: the participant host and the trust-anchor host
+serve `/.well-known/did.json` over TLS on 443, and `edc.iam.did.web.use.https`
+is `true`. The rewrite (`/.well-known/did.json` →
+`/dids/did:web:<host>/did.json`) is a static per-host nginx `rewrite-target`
+annotation. The participant host reaches the authority-namespace registry
+through an `ExternalName` Service (`<edc>-identity-registry`), because an Ingress
+can only target a Service in its own namespace.
 
 ---
 
@@ -352,20 +408,20 @@ Legend: `[x]` implemented in the charts · `[~]` implemented for the authority
 release, pending for participant charts · `[ ]` not yet.
 
 - [x] `DS_ENV=production` on every service container — hardcoded in `ds.env.common`, not a value
-- [~] Every `CHANGE_ME` in `.env.example` mapped to a Secret or values entry — done for identity-registry
+- [x] Every `CHANGE_ME` in `.env.example` mapped to a Secret or values entry — all seven charts (identity-registry, edc, connector, provenance, portal, federated-catalog + namespaces)
 - [ ] `task secrets:check` passes in the release pipeline
 - [x] `DS_DEMO_IDENTITY_ENABLED` absent from the chart entirely
 - [ ] `realm-production.example.json` selected; dev realm unreachable — external KC, see `docs/keycloak-requirements.md`
-- [ ] EDC management/control ports ClusterIP-only, no Ingress — pending `ds-edc`
-- [ ] `edc.iam.did.web.use.https=true`, `edc.sql.schema.autocreate=false` — pending `ds-edc`
-- [ ] EDC vault rendered from generated keys, not the committed dev files — pending `ds-edc`
+- [x] EDC management/control ports ClusterIP-only, no Ingress — `ds-edc` Service exposes them in-cluster; Ingress and `fromIngressController` NetPol list only protocol+public
+- [x] `edc.iam.did.web.use.https=true` · `edc.sql.schema.autocreate` — `true` by design (per-DB owner role; see §deviations)
+- [x] EDC vault rendered from generated keys, not the committed dev files — `ds-edc` Secret; committed fixtures never mounted
 - [~] `IDENTITY_REGISTRY_ENCRYPTION_KEY` in a backed-up secret store — chart Secret + prominent backup warnings; the backup itself is operator-side
-- [ ] `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhook notifications enabled — pending `ds-connector`
-- [~] TLS terminated for all browser- and DSP-facing endpoints — cert-manager wired for authority ingress
-- [x] Per-service database roles — `docs/cnpg-cluster.example.yaml`; chart consumes one role per service
-- [~] Pod `securityContext` hardening and resource limits — enforced by `ds-common` for every chart
+- [x] `CONNECTOR_WEBHOOK_ALLOWED_HOSTS` set if webhook notifications enabled — `ds-connector` value, empty rejects all
+- [x] TLS terminated for all browser- and DSP-facing endpoints — cert-manager wired for authority, participant and portal ingress
+- [x] Per-service database roles — `docs/cnpg-cluster.example.yaml`; charts consume one role per service, one DB per participant
+- [x] Pod `securityContext` hardening and resource limits — enforced by `ds-common` for every chart; namespaces enforce PSA `restricted`
 - [ ] Log shipping with a defined retention window
-- [~] `/metrics` endpoints reachable only from in-cluster Prometheus — `ds.networkPolicy.metricsFromPrometheus` helper ready; wired per service
+- [~] `/metrics` endpoints reachable only from in-cluster Prometheus — `ds.networkPolicy.metricsFromPrometheus` wired on `ds-connector`
 - [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned — still unpinned (see §Supply-chain)
 - [ ] CI includes dependency scanning and `task secrets:check`
 

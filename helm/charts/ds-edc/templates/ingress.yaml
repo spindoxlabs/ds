@@ -1,0 +1,91 @@
+{{- if .Values.ingress.enabled }}
+{{- $host := include "edc.host" . }}
+{{- $fullname := include "ds.fullname" . }}
+{{- $irExternal := printf "%s-identity-registry" $fullname }}
+# =============================================================================
+# The participant public host — <participant>.<baseDomain>.
+#
+# This host IS the participant's did:web identity, so DID resolution and the DSP
+# endpoints share it. It serves exactly three path shapes; everything else 404s.
+#
+#   /.well-known/did.json  → identity-registry (authority ns, via ExternalName)
+#   /protocol/2025-1/*      → EDC DSP protocol port
+#   /public/*              → EDC data-plane public port
+#
+# Management (:{{ .Values.ports.management }}) and control (:{{ .Values.ports.control }})
+# are NOT routed here — they create and delete assets, policies and transfers.
+# =============================================================================
+
+# ExternalName bridge: an Ingress may only target a Service in its own
+# namespace, so DID resolution reaches the authority-namespace registry through
+# this alias.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $irExternal }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  type: ExternalName
+  externalName: ds-identity-registry.{{ ((.Values.global).namespaces).authority }}.svc.cluster.local
+  ports:
+    - {name: http, port: 30005, protocol: TCP}
+---
+# ── did:web resolution ───────────────────────────────────────────────────────
+# The one Ingress on this host that requests the certificate (issueCert true).
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-did
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
+    nginx.ingress.kubernetes.io/rewrite-target: /dids/did:web:{{ $host }}/did.json
+    nginx.ingress.kubernetes.io/upstream-vhost: ds-identity-registry.{{ ((.Values.global).namespaces).authority }}.svc.cluster.local
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /.well-known/did.json
+            pathType: Exact
+            backend:
+              service:
+                name: {{ $irExternal }}
+                port:
+                  number: 30005
+---
+# ── DSP protocol + data-plane public endpoint ───────────────────────────────
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-dsp
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /protocol
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ .Values.ports.protocol }}
+          - path: /public
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ .Values.ports.public }}
+{{- end }}

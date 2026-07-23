@@ -1,0 +1,76 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# Ingress controller reaches only the public ports (protocol, data-plane).
+# Management and control are absent from this list, so no Ingress path — even a
+# misconfigured one — can route to them.
+{{ include "ds.networkPolicy.fromIngressController" (dict "ctx" . "ports" (list .Values.ports.protocol .Values.ports.public)) }}
+---
+# In-cluster callers: this participant's connector drives management and reads
+# the API/health context. Restricted to the same namespace.
+{{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.ports.management .Values.ports.api .Values.ports.control) "from" (list
+    (dict "namespace" .Release.Namespace "name" "ds-connector"))) }}
+---
+# Remote participants' EDCs dial the DSP protocol and data-plane endpoints from
+# their own namespaces. Cross-namespace, but only the two public ports.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-dsp-from-peers
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              dataspace.spindoxlabs.io/participant: "true"
+      ports:
+        - protocol: TCP
+          port: {{ .Values.ports.protocol }}
+        - protocol: TCP
+          port: {{ .Values.ports.public }}
+---
+# Egress: STS/VP queries to the authority registry, callbacks to this
+# participant's connector, Postgres (in default-deny), DNS, and DSP calls to
+# remote participants over TLS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-egress
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ ((.Values.global).namespaces).authority }}
+      ports:
+        - protocol: TCP
+          port: 30005
+    - to:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: {{ .Values.connectorPort }}
+    # Remote participants' DSP/data-plane endpoints, over TLS.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - protocol: TCP
+          port: 443
+{{- end }}

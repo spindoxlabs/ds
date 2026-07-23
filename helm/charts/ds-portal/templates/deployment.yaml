@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ds.labels" . | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: portal
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          env:
+            - name: PORT
+              value: {{ .Values.service.port | quote }}
+            {{- include "portal.env" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          {{- include "ds.probes" . | nindent 10 }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          {{- include "ds.resources" . | nindent 10 }}
+      volumes:
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

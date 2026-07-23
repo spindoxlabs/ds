@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  # ClusterIP always. Only protocol and public are published (via Ingress);
+  # management and control are reachable in-cluster but never routed publicly.
+  type: ClusterIP
+  ports:
+    - {name: api, port: {{ .Values.ports.api }}, targetPort: api, protocol: TCP}
+    - {name: management, port: {{ .Values.ports.management }}, targetPort: management, protocol: TCP}
+    - {name: protocol, port: {{ .Values.ports.protocol }}, targetPort: protocol, protocol: TCP}
+    - {name: public, port: {{ .Values.ports.public }}, targetPort: public, protocol: TCP}
+    - {name: control, port: {{ .Values.ports.control }}, targetPort: control, protocol: TCP}
+  selector:
+    {{- include "ds.selectorLabels" . | nindent 4 }}

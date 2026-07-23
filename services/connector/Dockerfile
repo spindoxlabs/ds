@@ -30,7 +30,8 @@ LABEL org.opencontainers.image.source="https://github.com/spindoxlabs/dataspaces
       org.opencontainers.image.description="ds-connector — EDC orchestration and consent service"
 
 WORKDIR /app
-RUN groupadd -r app && useradd -r -g app -d /app app
+# uid/gid pinned: kubelet cannot verify runAsNonRoot against a named USER
+RUN groupadd -r -g 10001 app && useradd -r -u 10001 -g app -d /app app
 
 COPY --from=builder /opt/venv /opt/venv
 COPY services/connector/src/ src/

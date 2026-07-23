@@ -19,7 +19,8 @@ FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.description="ds-federated-catalog — DCAT-AP federated catalog crawler"
 
 WORKDIR /app
-RUN groupadd -r app && useradd -r -g app -d /app app
+# uid/gid pinned: kubelet cannot verify runAsNonRoot against a named USER
+RUN groupadd -r -g 10001 app && useradd -r -u 10001 -g app -d /app app
 
 COPY --from=builder /opt/venv /opt/venv
 COPY services/federated-catalog/src/ src/

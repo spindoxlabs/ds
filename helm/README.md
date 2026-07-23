@@ -17,10 +17,12 @@ Postgres (CloudNativePG), Keycloak and cert-manager are **not** installed by
 these charts — see [`docs/prerequisites.md`](./docs/prerequisites.md). The dev-only
 `dataset-api-mock`, `caddy` and `edc-extensions` are intentionally excluded.
 
-> **Status:** the authority release (`ds-identity-registry`) and the shared
-> `ds-common` library are implemented. Participant charts (`ds-edc`,
-> `ds-connector`, `ds-provenance`, `ds-federated-catalog`, `ds-portal`) are
-> planned — see the phasing table in the plan.
+> **Status:** all seven charts are implemented — `ds-common` (library),
+> `ds-namespaces`, the authority `ds-identity-registry`, and the participant
+> tier `ds-edc` / `ds-connector` / `ds-provenance` / `ds-federated-catalog` /
+> `ds-portal`. The full `helmfile.yaml.gotmpl` composes an authority plus any
+> number of participants and renders end-to-end through SOPS. Remaining work is
+> hardening and CI gates — see the phasing table in the plan.
 
 ## Install
 

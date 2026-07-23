@@ -1,0 +1,58 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile; the
+# global: block at the bottom exists only so `helm lint`/`template` work
+# standalone.
+
+service:
+  name: provenance # → ghcr.io/spindoxlabs/ds-provenance
+  port: 30000
+  healthPath: /health
+
+replicaCount: 1
+
+# The participant this instance belongs to. Set by helmfile per participant.
+participant:
+  name: provider
+  role: provider
+
+image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources: {}
+probes: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+maxLineageDepth: 20
+
+migration:
+  enabled: true
+  mode: initContainer
+
+secrets:
+  dbUser: "" # defaults to the database name (owner role)
+  dbPassword: ""
+
+global:
+  baseDomain: ds.example.org
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  postgres:
+    host: ds-pg-rw.database.svc.cluster.local
+    port: 5432
+    sslMode: require
+    databases: {provenancePrefix: provenance}
+  keycloak: {issuerUrl: ""}
+  networkPolicy: {enabled: true}
+  monitoring: {serviceMonitor: false, prometheusNamespace: monitoring}
+  externalSecrets: {enabled: false, secretStoreRef: {}}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

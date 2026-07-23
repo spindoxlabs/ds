@@ -1,0 +1,57 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile.
+
+service:
+  name: federated-catalog # → ghcr.io/spindoxlabs/ds-federated-catalog
+  port: 30003
+  healthPath: /health
+
+replicaCount: 1
+
+participant:
+  name: provider
+  role: provider
+
+image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources: {}
+probes: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+crawlInterval: 300
+startupDelay: 10
+maxDatasetsPerProvider: 500
+
+# Catalog discovery is a CONSUMER-side operation. In dev the crawler points at
+# the consumer connector (31001). "" → this participant's own connector; set it
+# explicitly if a different participant runs the catalog.
+connectorServiceName: ""
+connectorPort: 30001
+
+auth:
+  serviceClientId: svc-ds-federated-catalog
+
+secrets:
+  serviceClientSecret: "" # svc-ds-federated-catalog Keycloak secret
+
+global:
+  baseDomain: ds.example.org
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  namespaces: {authority: ds-authority}
+  keycloak: {issuerUrl: "", tokenUrl: ""}
+  networkPolicy: {enabled: true}
+  monitoring: {serviceMonitor: false, prometheusNamespace: monitoring}
+  externalSecrets: {enabled: false, secretStoreRef: {}}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

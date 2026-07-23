@@ -1,0 +1,31 @@
+{{- if .Values.ingress.enabled }}
+{{- $host := printf "%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain }}
+# =============================================================================
+# The only human-facing host — portal.<baseDomain>. All paths go to the portal;
+# it is SSR, so there is no per-API fan-in (the dev Caddy /api/* routes exist
+# only because the dev portal runs on the host). ORIGIN must equal this URL and
+# match the Keycloak redirect URI.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ds.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- end }}

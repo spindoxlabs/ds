@@ -1,0 +1,8 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# Provenance is written and read by this participant's connector only, in the
+# same namespace. Not reachable from the ingress controller — no public path.
+{{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
+    (dict "namespace" .Release.Namespace "name" "ds-connector"))) }}
+{{- end }}

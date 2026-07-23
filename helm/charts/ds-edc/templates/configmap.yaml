@@ -1,0 +1,79 @@
+{{- $did := include "edc.did" . -}}
+{{- $host := include "edc.host" . -}}
+{{- $ir := include "edc.irBase" . -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+data:
+  # Production render of services/connector/config/<role>.properties. The
+  # committed dev files carry *.localhost hosts, plaintext did:web and superuser
+  # DB creds; nothing from them is mounted here.
+  #
+  # ${EDC_API_KEY}, ${EDC_DB_USER}, ${EDC_DB_PASSWORD} are resolved from the
+  # container environment (from the Secret) — they never appear in this
+  # ConfigMap.
+  edc.properties: |
+    edc.participant.id={{ $did }}
+    edc.iam.issuer.id={{ $did }}
+    edc.hostname={{ $host }}
+
+    # ── Web contexts ──────────────────────────────────────────────────────────
+    web.http.port={{ .Values.ports.api }}
+    web.http.path=/api
+    web.http.management.port={{ .Values.ports.management }}
+    web.http.management.path=/management
+    web.http.management.auth.key=${EDC_API_KEY}
+    web.http.protocol.port={{ .Values.ports.protocol }}
+    web.http.protocol.path=/protocol
+    web.http.public.port={{ .Values.ports.public }}
+    web.http.public.path=/public
+    web.http.control.port={{ .Values.ports.control }}
+    web.http.control.path=/control
+    web.http.version.port={{ .Values.ports.version }}
+    web.http.version.path=/version
+
+    # ── DSP / data-plane public addressing (what remote participants dial) ────
+    edc.dsp.callback.address=https://{{ $host }}/protocol
+    edc.dataplane.api.public.baseurl=https://{{ $host }}/public
+    ds.edr.endpoint.public.baseurl=https://{{ $host }}/public
+
+    edc.transfer.proxy.token.signer.privatekey.alias=participant-private-key
+    edc.transfer.proxy.token.verifier.publickey.alias=participant-private-key
+
+    # Callback into this participant's ds-connector (in-cluster).
+    edc.receiver.http.endpoint=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}/webhooks/transfer-process
+    ds.connector.internal.url=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}
+
+    # ── Vault (mounted from the Secret, not the committed dev fixture) ─────────
+    edc.vault.hashicorp.enabled=false
+    edc.vault.fs.file=/config/vault.properties
+
+    # ── DCP / STS / credential service (via identity-registry) ────────────────
+    edc.iam.sts.oauth.token.url={{ $ir }}/sts/{{ $did }}/token
+    edc.iam.sts.oauth.client.id={{ $did }}
+    edc.iam.sts.oauth.client.secret.alias=sts-client-secret
+    edc.credential.service.url={{ $ir }}/credentials/{{ $did }}
+    edc.iam.trusted-issuer.0.id={{ include "edc.trustAnchorDid" . }}
+    edc.iam.dcp.scopes.membership.id=membership
+    edc.iam.dcp.scopes.membership.type=default
+    edc.iam.dcp.scopes.membership.value=org.eclipse.dspace.dcp.vc.type:MembershipCredential:read
+    edc.iam.dcp.scopes.membership.profile=*
+
+    # did:web resolution over HTTPS — a DID document carries trust keys.
+    edc.iam.did.web.use.https={{ .Values.didWebUseHttps }}
+
+    # DS_DEMO_IDENTITY_ENABLED is deliberately never set — the extension
+    # defaults to false, and an absent key cannot be flipped to a signature
+    # bypass.
+
+    # ── PostgreSQL ────────────────────────────────────────────────────────────
+    edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}
+    edc.datasource.default.user=${EDC_DB_USER}
+    edc.datasource.default.password=${EDC_DB_PASSWORD}
+    edc.datasource.default.pool.maxIdleConnections=3
+    edc.datasource.default.pool.maxTotalConnections=10
+    edc.datasource.default.pool.testConnectionOnReturn=true
+    edc.sql.schema.autocreate={{ .Values.sqlSchemaAutocreate }}

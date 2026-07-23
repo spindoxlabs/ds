@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 from ds_auth import Principal
@@ -60,6 +61,8 @@ from ...services.vc import (
     build_membership_credential,
     sign_credential,
 )
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -674,6 +677,16 @@ async def keycloak_sync(
 
     await db.commit()
 
+    # The DB mapping above is the authoritative sync and has now committed.
+    # Pushing the `dataspace_did` attribute onto the Keycloak user itself is a
+    # best-effort secondary step: it can be retried and does not invalidate the
+    # mapping. Previously any failure here was silently swallowed, so callers
+    # (e.g. onboarding) had no way to tell a partial sync from a complete one.
+    # We now log the failure and surface it in the response without failing the
+    # request, so the caller can decide whether to retry.
+    attribute_synced = True
+    warning: str | None = None
+
     if settings.keycloak_admin_url:
         import httpx
 
@@ -704,10 +717,30 @@ async def keycloak_sync(
                     headers={"Authorization": f"Bearer {kc_token}"},
                 )
                 resp.raise_for_status()
-        except httpx.HTTPError:
-            pass
+        except httpx.HTTPError as exc:
+            attribute_synced = False
+            warning = (
+                "Keycloak dataspace_did attribute push failed; the DID mapping "
+                "was stored but the attribute may be missing on the Keycloak user. "
+                "Retry the sync to reconcile."
+            )
+            # Log the cause but never the response body — it can echo tokens/PII.
+            log.error(
+                "Keycloak attribute push failed for did=%s realm=%s user=%s: %s",
+                data.did,
+                data.keycloak_realm,
+                data.keycloak_user_id,
+                type(exc).__name__,
+            )
 
-    return {"status": "synced", "did": data.did}
+    response = {
+        "status": "synced" if attribute_synced else "partial",
+        "did": data.did,
+        "keycloak_attribute_synced": attribute_synced,
+    }
+    if warning:
+        response["warning"] = warning
+    return response
 
 
 # ── Keys ──────────────────────────────────────────────────────────

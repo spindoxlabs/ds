@@ -1,0 +1,92 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile.
+
+service:
+  name: edc-connector # → ghcr.io/spindoxlabs/ds-edc-connector
+
+replicaCount: 1
+
+participant:
+  name: provider
+  role: provider # provider | consumer
+  did: "" # "" → did:web:<name>.<baseDomain>
+
+image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+# EDC writes Flyway state under its working dir; the JVM needs a writable /tmp.
+# The container FS is otherwise read-only.
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources:
+  requests: {cpu: 250m, memory: 512Mi}
+  limits: {memory: 1Gi}
+probes: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+# ── Ports (uniform across participants — each EDC is namespace-isolated) ───────
+ports:
+  api: 19191 # web.http.port — hosts /api + health
+  management: 19193 # PRIVILEGED — never exposed
+  protocol: 19194 # DSP — public
+  public: 19291 # data-plane public endpoint — public
+  control: 19192 # PRIVILEGED — never exposed
+  version: 19195
+
+healthPath: /api/check/health
+
+# ── Trust ─────────────────────────────────────────────────────────────────────
+trustAnchor:
+  did: "" # "" → did:web:<trustAnchor host>.<baseDomain>
+
+# ── SQL schema management ─────────────────────────────────────────────────────
+# The contract (helm/AGENTS.md) prefers false. It is left configurable and
+# defaults to true here BECAUSE each EDC connects as a least-privilege role that
+# owns ONLY its own database (docs/cnpg-cluster.example.yaml) — the real risk the
+# contract flags is superuser DDL, which this avoids. Set false and run Flyway
+# out-of-band for the strictest posture.
+sqlSchemaAutocreate: true
+
+# did:web resolution MUST be over HTTPS in production — DID documents carry the
+# keys trust decisions rest on. Kept as a value only to make the invariant
+# visible; do not set false outside a throwaway cluster.
+didWebUseHttps: true
+
+# In-cluster address of this participant's connector, for EDC transfer/webhook
+# callbacks. "" → ds-connector-<participant>.
+connectorServiceName: ""
+connectorPort: 30001
+
+ingress:
+  enabled: true
+
+secrets:
+  dbUser: "" # defaults to the edc database name (owner role)
+  dbPassword: ""
+  edcApiKey: "" # shared with this participant's ds-connector
+  stsClientSecret: "" # matches the participant's sts_client_secret in the registry
+  edrSigningPrivateJwk: "" # EDR signing key (NOT a DID key)
+
+global:
+  baseDomain: ds.example.org
+  hosts: {trustAnchor: trust-anchor}
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  namespaces: {authority: ds-authority}
+  postgres:
+    host: ds-pg-rw.database.svc.cluster.local
+    port: 5432
+    sslMode: require
+    databases: {edcPrefix: edc}
+  ingress:
+    className: nginx
+    annotations: {}
+    tls: {clusterIssuer: "", secretName: ""}
+  networkPolicy: {enabled: true}
+  resources: {}

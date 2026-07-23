@@ -1,0 +1,13 @@
+apiVersion: v2
+name: ds-edc
+description: |
+  Eclipse Dataspace Connector (v0.16.0, DCP-enabled) for one participant. The
+  only participant workload with a public surface: DSP protocol and the
+  data-plane public endpoint. Management and control APIs stay ClusterIP-only.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

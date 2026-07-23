@@ -1,0 +1,62 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile.
+
+service:
+  name: portal # → ghcr.io/spindoxlabs/ds-portal
+  port: 30004
+  healthPath: / # SvelteKit answers on / (no /health route)
+
+replicaCount: 1
+
+# The participant this portal serves.
+participant:
+  name: provider
+  role: provider
+
+image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources: {}
+probes:
+  # Node cold start; give it room before the first liveness check.
+  livenessInitialDelay: 20
+  readinessInitialDelay: 10
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+# ── Auth.js / Keycloak (public OIDC login client) ─────────────────────────────
+auth:
+  keycloakClientId: ds-portal # the PUBLIC redirect client, not a service client
+  scope: openid profile email
+  serviceClientId: svc-ds-portal # server-side API calls
+
+ingress:
+  enabled: true
+
+secrets:
+  authSecret: "" # Auth.js session encryption
+  authKeycloakSecret: "" # public OIDC client secret
+  portalServiceClientSecret: "" # svc-ds-portal
+
+global:
+  baseDomain: ds.example.org
+  hosts: {portal: portal}
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  namespaces: {authority: ds-authority}
+  keycloak: {realm: dataspaces, issuerUrl: ""}
+  ingress:
+    className: nginx
+    annotations: {}
+    tls: {clusterIssuer: "", secretName: ""}
+  networkPolicy: {enabled: true}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

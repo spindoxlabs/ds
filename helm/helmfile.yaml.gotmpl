@@ -5,13 +5,15 @@
 #   helmfile -e production diff
 #   helmfile -e production apply
 #
-# Two release groups:
-#   authority   — the dataspace trust anchor. Deployed ONCE per dataspace.
-#   participant — EDC + connector + provenance (+ catalog, + portal), one group
-#                 per entry in values.yaml `participants`.
+# Release groups, in dependency order:
+#   ds-namespaces        — labeled namespaces (participant label drives NetPols)
+#   authority            — ds-identity-registry, once per dataspace
+#   participant          — ds-edc / ds-connector / ds-provenance per participant
 #
-# Configuration comes from values.yaml (operator-edited) and secrets.sops.yaml
-# (SOPS-encrypted). Nothing is configured in this file.
+# Release NAMES follow ds-<service>-<participant> so a chart can address a
+# sibling's Service from the participant name alone (see ds-connector/_env.tpl).
+#
+# Configuration: values.yaml (operator-edited) + secrets.sops.yaml (encrypted).
 # ==============================================================================
 
 environments:
@@ -20,11 +22,9 @@ environments:
       - values.yaml
     secrets:
       - secrets.sops.yaml
-  # A second environment overlays values.yaml with environment-specific
-  # differences (different baseDomain, fewer replicas, staging issuer):
-  #   staging:
-  #     values: [values.yaml, environments/staging.yaml]
-  #     secrets: [secrets.sops.yaml]
+  # staging:
+  #   values: [values.yaml, environments/staging.yaml]
+  #   secrets: [secrets.sops.yaml]
 
 ---
 
@@ -32,23 +32,33 @@ helmDefaults:
   wait: true
   timeout: 600
   atomic: true
-  createNamespace: true
-
-# The namespace label the identity-registry NetworkPolicy matches on. Applied by
-# helmfile so participant namespaces can reach the authority and nothing else
-# can. Keep this in sync with charts/ds-identity-registry/templates/networkpolicy.yaml.
-commonLabels:
-  app.kubernetes.io/part-of: dataspace
+  createNamespace: false # namespaces are owned by the ds-namespaces release
 
 releases:
+  # ── Namespaces (must exist and be labeled before anything lands in them) ─────
+  - name: ds-namespaces
+    namespace: default
+    chart: ./charts/ds-namespaces
+    createNamespace: false
+    values:
+      - authorityNamespace: {{ .Values.global.namespaces.authority | quote }}
+        participantNamespaces:
+        {{- range .Values.participants }}
+        {{- if .enabled }}
+          - {{ printf "%s%s" $.Values.global.namespaces.participantPrefix .name | quote }}
+        {{- end }}
+        {{- end }}
+
   # ── Dataspace authority ─────────────────────────────────────────────────────
   - name: ds-identity-registry
     namespace: {{ .Values.global.namespaces.authority }}
     chart: ./charts/ds-identity-registry
     condition: authority.enabled
+    needs:
+      - default/ds-namespaces
     values:
       - global:
-          {{ toYaml .Values.global | nindent 10 }}
+          {{- .Values.global | toYaml | nindent 10 }}
       - trustAnchorDomain: {{ .Values.authority.identityRegistry.trustAnchorDomain | quote }}
         replicaCount: {{ .Values.authority.identityRegistry.replicaCount }}
         exposeUserDids: {{ .Values.authority.identityRegistry.exposeUserDids }}
@@ -70,8 +80,112 @@ releases:
           keycloakAdminPassword: {{ .Values.secrets.keycloakAdminPassword | quote }}
 
   # ── Participants ────────────────────────────────────────────────────────────
-  # Charts land in Phase 3-4. Each participant produces:
-  #   ds-edc-<name>, ds-connector-<name>, ds-provenance-<name>,
-  #   ds-federated-catalog-<name> (optional), ds-portal-<name> (optional)
-  # in namespace <global.namespaces.participantPrefix><name>, each release
-  # declaring `needs: [<authority ns>/ds-identity-registry]`.
+{{- $root := . }}
+{{- range .Values.participants }}
+{{- if .enabled }}
+{{- $p := . }}
+{{- $ns := printf "%s%s" $root.Values.global.namespaces.participantPrefix $p.name }}
+{{- $psec := index $root.Values.secrets.participants $p.name }}
+
+  - name: ds-edc-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-edc
+    needs:
+      - default/ds-namespaces
+      - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+          did: {{ $p.did | default "" | quote }}
+        replicaCount: {{ $p.edc.replicaCount | default 1 }}
+        secrets:
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" $p.name) | quote }}
+          edcApiKey: {{ $psec.edcApiKey | quote }}
+          stsClientSecret: {{ $psec.stsSecret | quote }}
+          edrSigningPrivateJwk: {{ $psec.edcVault.edrSigningPrivateJwk | quote }}
+
+  - name: ds-provenance-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-provenance
+    needs:
+      - default/ds-namespaces
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+        replicaCount: {{ $p.provenance.replicaCount | default 1 }}
+        secrets:
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" $p.name) | quote }}
+
+  - name: ds-connector-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-connector
+    needs:
+      - {{ $ns }}/ds-edc-{{ $p.name }}
+      - {{ $ns }}/ds-provenance-{{ $p.name }}
+      - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+          did: {{ $p.did | default "" | quote }}
+        replicaCount: {{ $p.connector.replicaCount | default 1 }}
+        datasetApi:
+          url: {{ $p.datasetApi.url | default "" | quote }}
+        notify:
+          backends: {{ dig "connector" "notifyBackends" "null" $p | quote }}
+          webhookAllowedHosts: {{ dig "connector" "webhookAllowedHosts" list $p | toJson }}
+        governance:
+          overlayName: {{ dig "connector" "governanceOverlayName" "" $p | quote }}
+          configMap: {{ dig "connector" "governanceConfigMap" "" $p | quote }}
+        secrets:
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" $p.name) | quote }}
+          edcApiKey: {{ $psec.edcApiKey | quote }}
+          serviceClientSecret: {{ $root.Values.secrets.svcDsConnectorSecret | quote }}
+          trustAnchorPublicJwk: {{ $root.Values.secrets.trustAnchorPublicJwk | quote }}
+
+{{- if dig "federatedCatalog" "enabled" false $p }}
+  - name: ds-federated-catalog-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-federated-catalog
+    needs:
+      - {{ $ns }}/ds-connector-{{ $p.name }}
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+        replicaCount: {{ dig "federatedCatalog" "replicaCount" 1 $p }}
+        crawlInterval: {{ dig "federatedCatalog" "crawlInterval" 300 $p }}
+        secrets:
+          serviceClientSecret: {{ $root.Values.secrets.svcDsFederatedCatalogSecret | quote }}
+{{- end }}
+
+{{- if dig "portal" "enabled" false $p }}
+  - name: ds-portal-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-portal
+    needs:
+      - {{ $ns }}/ds-connector-{{ $p.name }}
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+        replicaCount: {{ dig "portal" "replicaCount" 1 $p }}
+        secrets:
+          authSecret: {{ $root.Values.secrets.authSecret | quote }}
+          authKeycloakSecret: {{ $root.Values.secrets.authKeycloakSecret | quote }}
+          portalServiceClientSecret: {{ $root.Values.secrets.svcDsPortalSecret | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

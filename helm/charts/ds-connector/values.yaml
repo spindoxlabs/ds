@@ -1,0 +1,96 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile.
+
+service:
+  name: connector # → ghcr.io/spindoxlabs/ds-connector
+  port: 30001
+  healthPath: /health
+
+replicaCount: 1
+
+participant:
+  name: provider
+  role: provider # provider | consumer
+  did: "" # "" → did:web:<name>.<baseDomain>
+
+image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources: {}
+probes: {}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+migration:
+  enabled: true
+  mode: initContainer
+
+# ── Data source ───────────────────────────────────────────────────────────────
+# Participant-operated, NOT deployed by these charts. It authenticates to
+# /internal/* with the EDC API key.
+datasetApi:
+  url: "" # e.g. https://datasets.internal.example.org
+
+# ── EDC wiring ────────────────────────────────────────────────────────────────
+# In-cluster address of this participant's ds-edc release.
+edc:
+  serviceName: "" # "" → "<release>-ds-edc" in this namespace
+  managementPort: 19193
+  protocolPort: 19194
+  # Public DSP protocol URL other participants dial. "" → derived as
+  # https://<name>.<baseDomain>/protocol/2025-1
+  protocolPublicUrl: ""
+
+# ── Trust anchor ──────────────────────────────────────────────────────────────
+# did:web of the trust anchor; "" → did:web:<trustAnchor host>.<baseDomain>.
+# The public JWK is mounted from the Secret and verifies user VCs on the consent
+# and consumer APIs.
+trustAnchor:
+  did: ""
+  keyMountPath: /etc/ds/trust-anchor-public.json
+
+# ── Governance ────────────────────────────────────────────────────────────────
+governance:
+  overlayName: "" # merges governance.<name>.yaml
+  configMap: "" # "" → the image's baked-in governance.yaml
+  mountPath: /governance
+
+# ── Consent notifications ─────────────────────────────────────────────────────
+# Webhook URLs are rejected unless their host is allowlisted (SSRF guard).
+notify:
+  backends: "null" # null | smtp | webhook (comma-separated)
+  webhookAllowedHosts: [] # required if backends includes webhook
+  portalBaseUrl: "" # "" → https://<portal host>.<baseDomain>
+
+secrets:
+  dbUser: ""
+  dbPassword: ""
+  edcApiKey: "" # shared with this participant's ds-edc
+  serviceClientSecret: "" # svc-ds-connector Keycloak secret
+  trustAnchorPublicJwk: "" # public JWK contents (mounted as a file)
+
+global:
+  baseDomain: ds.example.org
+  hosts: {portal: portal, trustAnchor: trust-anchor}
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  namespaces: {authority: ds-authority}
+  postgres:
+    host: ds-pg-rw.database.svc.cluster.local
+    port: 5432
+    sslMode: require
+    databases: {connectorPrefix: connector}
+  keycloak: {issuerUrl: "", tokenUrl: ""}
+  networkPolicy: {enabled: true}
+  monitoring: {serviceMonitor: false, prometheusNamespace: monitoring}
+  externalSecrets: {enabled: false, secretStoreRef: {}}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

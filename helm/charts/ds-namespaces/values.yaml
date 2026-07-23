@@ -1,0 +1,3 @@
+# Set by helmfile from the top-level values.
+authorityNamespace: ds-authority
+participantNamespaces: [] # list of namespace names

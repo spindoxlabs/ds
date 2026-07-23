@@ -1,0 +1,14 @@
+apiVersion: v2
+name: ds-portal
+description: |
+  SvelteKit web frontend — the only human-facing surface of the dataspace.
+  Server-side rendered: the browser talks only to the portal, which calls the
+  connector, provenance and catalog in-cluster. Deployed alongside one
+  participant.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

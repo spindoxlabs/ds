@@ -195,6 +195,8 @@ ir-cli membership import --community-registry members.yaml --organization exampl
 
 # API (admin)
 POST   /admin/memberships                            — register membership
+                                                       (409 if it already exists,
+                                                        404 if the user DID is unknown)
 GET    /admin/memberships?organization=<alias>        — list members of org
 GET    /admin/memberships?user_did=<did>              — list orgs for user
 DELETE /admin/memberships/{user_did}/{org_alias}      — remove membership

@@ -1,0 +1,46 @@
+{{- if ((.Values.global).networkPolicy).enabled }}
+{{ include "ds.networkPolicy.defaultDeny" . }}
+---
+# Read by this participant's portal only. Not reachable from the ingress
+# controller — no public path.
+{{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
+    (dict "namespace" .Release.Namespace "name" "ds-portal"))) }}
+---
+{{- if ((.Values.global).monitoring).serviceMonitor }}
+# /metrics is unauthenticated (root AGENTS.md) — Prometheus only.
+{{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
+---
+{{- end }}
+# Egress: crawls the dataspace through a connector (same ns), reads the
+# authority registry, and mints tokens at Keycloak over TLS.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-egress
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector: {}
+      ports:
+        - {protocol: TCP, port: {{ .Values.connectorPort }}}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ ((.Values.global).namespaces).authority }}
+      ports:
+        - {protocol: TCP, port: 30005}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32
+      ports:
+        - {protocol: TCP, port: 443}
+{{- end }}

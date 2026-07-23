@@ -1,0 +1,13 @@
+apiVersion: v2
+name: ds-federated-catalog
+description: |
+  DCAT-AP catalog crawler for one participant. Internal only — read by that
+  participant's portal. Crawls the dataspace through a consumer-capable
+  connector. No public Ingress.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

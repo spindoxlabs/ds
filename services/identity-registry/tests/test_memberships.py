@@ -56,6 +56,21 @@ class TestMembershipCRUD:
         assert resp.status_code == 409
 
     @pytest.mark.asyncio
+    async def test_create_membership_unknown_did(self, client, admin_headers):
+        """An unregistered DID must return 404, not a FK IntegrityError as a 500."""
+        resp = await client.post(
+            "/admin/memberships",
+            json={
+                "user_did": "did:web:users.dataspaces.localhost:never-registered",
+                "organization_alias": ORG_ALIAS,
+                "role": "member",
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 404
+        assert "never-registered" in resp.json()["detail"]
+
+    @pytest.mark.asyncio
     async def test_list_by_organization(self, client, admin_headers):
         await _create_did(client, SUBJECT_DID, admin_headers)
         await _create_did(client, CONSUMER_DID, admin_headers)

@@ -15,7 +15,8 @@ FROM eclipse-temurin:21-jre-alpine AS runtime
 LABEL org.opencontainers.image.description="dataspaces EDC connector — DCP-enabled with custom ODRL extensions"
 
 RUN apk add --no-cache curl
-RUN addgroup -S edc && adduser -S -G edc edc
+# uid/gid pinned: kubelet cannot verify runAsNonRoot against a named USER
+RUN addgroup -S -g 10001 edc && adduser -S -u 10001 -G edc edc
 
 COPY --from=builder /build/services/edc-connector/build/libs/connector.jar /connector.jar
 

@@ -1,0 +1,101 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  # EDC holds SQL leases/leader state; a single replica avoids split-brain until
+  # HA is validated. PDB is emitted once replicaCount > 1.
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ds.labels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: edc
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          command: ["sh", "-c", "java $JAVA_OPTS -Dedc.fs.config=/config/edc.properties -jar /connector.jar"]
+          env:
+            {{- include "ds.env.common" . | nindent 12 }}
+            - name: EDC_API_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_API_KEY}
+            - name: EDC_DB_USER
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_DB_USER}
+            - name: EDC_DB_PASSWORD
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_DB_PASSWORD}
+            {{- include "ds.env.extra" . | nindent 12 }}
+          ports:
+            - {name: api, containerPort: {{ .Values.ports.api }}, protocol: TCP}
+            - {name: management, containerPort: {{ .Values.ports.management }}, protocol: TCP}
+            - {name: protocol, containerPort: {{ .Values.ports.protocol }}, protocol: TCP}
+            - {name: public, containerPort: {{ .Values.ports.public }}, protocol: TCP}
+            - {name: control, containerPort: {{ .Values.ports.control }}, protocol: TCP}
+            - {name: version, containerPort: {{ .Values.ports.version }}, protocol: TCP}
+          livenessProbe:
+            httpGet: {path: {{ .Values.healthPath }}, port: api}
+            initialDelaySeconds: 40
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet: {path: {{ .Values.healthPath }}, port: api}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - {name: config, mountPath: /config, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+          {{- include "ds.resources" . | nindent 10 }}
+      volumes:
+        # /config carries edc.properties (ConfigMap) and vault.properties
+        # (Secret) side by side via a single projected volume.
+        - name: config
+          projected:
+            sources:
+              - configMap:
+                  name: {{ include "ds.fullname" . }}
+                  items:
+                    - {key: edc.properties, path: edc.properties}
+              - secret:
+                  name: {{ include "ds.secretName" . }}
+                  items:
+                    - {key: vault.properties, path: vault.properties}
+        - name: tmp
+          emptyDir: {}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -217,6 +217,23 @@ Public addressing — every public host is a subdomain of global.baseDomain
 {{- end -}}
 
 {{/*
+Participant-scoped database names — <prefix>_<participant>, matching the roles
+provisioned in docs/cnpg-cluster.example.yaml. One helper per service so the
+naming lives in exactly one place.
+*/}}
+{{- define "ds.db.connector" -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).connectorPrefix | default "connector") .Values.participant.name -}}
+{{- end -}}
+
+{{- define "ds.db.provenance" -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).provenancePrefix | default "provenance") .Values.participant.name -}}
+{{- end -}}
+
+{{- define "ds.db.edc" -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).edcPrefix | default "edc") .Values.participant.name -}}
+{{- end -}}
+
+{{/*
 TLS block for an Ingress.
 
 The secret name is derived from the HOST, not from the Ingress object: a host

@@ -1,0 +1,12 @@
+apiVersion: v2
+name: ds-provenance
+description: |
+  W3C PROV-O event logging and lineage for one participant. Internal only —
+  reached by that participant's ds-connector, never exposed publicly.
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common
