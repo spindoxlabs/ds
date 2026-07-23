@@ -21,7 +21,7 @@ BASE_URL = "https://provider.dataspaces.localhost"
 # Default profile for assertions
 _P = OdrlProfile()
 
-# Energy-domain profile used by tests that exercise tag→purpose derivation
+# Energy-domain profile used by tests that exercise purpose declarations
 _ENERGY_PROFILE = OdrlProfile(
     tag_to_purpose={
         "rec": "EnergyBalancing",
@@ -36,6 +36,10 @@ _ENERGY_PROFILE = OdrlProfile(
         PurposeConcept(slug="UrbanPlanning", label="Urban Planning"),
     ],
 )
+
+
+def _policy(**kwargs) -> DataspacePolicy:
+    return DataspacePolicy(**kwargs)
 
 
 def _mapper(**kwargs) -> GovernanceMapper:
@@ -121,43 +125,86 @@ def test_pii_prohibits_transfer_and_sublicense():
     assert "odrl:sublicense" in prohibited_actions
 
 
-def test_purpose_derived_from_tags():
-    mapper = _mapper(profile=_ENERGY_PROFILE)
-    rule = _rule(access_level="open", classification="green", tags=["grid"])
-    offer = mapper.to_odrl_offer("ds", rule)
-
-    constraints = [
-        c for p in offer["odrl:permission"]
+def _purpose_constraints(offer) -> list[dict]:
+    return [
+        c
+        for p in offer["odrl:permission"]
         for c in p.get("odrl:constraint", [])
         if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
     ]
-    assert any("GridMonitoring" in c["odrl:rightOperand"]["@id"] for c in constraints)
+
+
+def _purpose_iris(offer) -> list[str]:
+    """Flatten purpose IRIs across constraints.
+
+    A single declared purpose is emitted as ``isA`` with one IRI; several are
+    emitted as ``isAnyOf`` with a list, because constraints inside a permission
+    are ANDed and one-per-purpose would demand they all hold at once.
+    """
+    iris: list[str] = []
+    for constraint in _purpose_constraints(offer):
+        right = constraint["odrl:rightOperand"]
+        for item in right if isinstance(right, list) else [right]:
+            iris.append(item["@id"])
+    return iris
+
+
+def test_purpose_comes_from_policy_declaration():
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=["GridMonitoring"]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert any("GridMonitoring" in iri for iri in _purpose_iris(offer))
 
 
 def test_purpose_uses_profile_namespace():
     mapper = _mapper(profile=_ENERGY_PROFILE)
-    rule = _rule(access_level="open", classification="green", tags=["grid"])
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=["GridMonitoring"]),
+    )
     offer = mapper.to_odrl_offer("ds", rule)
-
-    constraints = [
-        c for p in offer["odrl:permission"]
-        for c in p.get("odrl:constraint", [])
-        if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
-    ]
-    assert all(c["odrl:rightOperand"]["@id"].startswith(_P.namespace) for c in constraints)
+    iris = _purpose_iris(offer)
+    assert iris
+    assert all(iri.startswith(_P.namespace) for iri in iris)
 
 
-def test_no_purpose_constraints_without_tag_mapping():
-    mapper = _mapper()
-    rule = _rule(access_level="open", classification="green", tags=["grid"])
+def test_tags_alone_produce_no_purpose_constraint():
+    """`tags` are DCAT-AP keywords — a topic is not a reason for processing."""
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(access_level="open", classification="green", tags=["grid", "rec"])
     offer = mapper.to_odrl_offer("ds", rule)
+    assert _purpose_iris(offer) == []
 
-    for perm in offer["odrl:permission"]:
-        purpose_constraints = [
-            c for c in perm.get("odrl:constraint", [])
-            if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
-        ]
-        assert len(purpose_constraints) == 0
+
+def test_unknown_declared_purpose_is_dropped():
+    """A typo must not become an unconstrained offer — it is dropped and flagged
+    by the `purpose-declared` compliance check, never silently widened."""
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=["GridMonitoring", "NotAPurpose"]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert _purpose_iris(offer) == [
+        _P.purpose_iri("GridMonitoring")
+    ] * len(offer["odrl:permission"])
+
+
+def test_declared_purpose_accepts_full_iri():
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=[_P.purpose_iri("GridMonitoring")]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert _P.purpose_iri("GridMonitoring") in _purpose_iris(offer)
 
 
 def test_consent_duty_added_when_user_filter_column_set():
@@ -473,21 +520,55 @@ def test_contract_definition_structure():
 
 # ── Purpose derivation ────────────────────────────────────────────────────────
 
-def test_derive_purposes_from_multiple_tags():
+def test_multiple_declared_purposes_are_deduplicated():
     mapper = _mapper(profile=_ENERGY_PROFILE)
-    rule = _rule(access_level="open", classification="green", tags=["rec", "grid", "meters"])
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        # slug and full IRI of the same concept, plus a second concept
+        policy=_policy(purpose=[
+            "EnergyBalancing",
+            _P.purpose_iri("EnergyBalancing"),
+            "GridMonitoring",
+        ]),
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
-    purpose_values = [
-        c["odrl:rightOperand"]["@id"]
-        for p in offer["odrl:permission"]
-        for c in p.get("odrl:constraint", [])
-        if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
-    ]
+    purpose_values = _purpose_iris(offer)
     assert _P.purpose_iri("EnergyBalancing") in purpose_values
     assert _P.purpose_iri("GridMonitoring") in purpose_values
-    # deduplication: rec and meters both map to EnergyBalancing
+    # The slug and the full IRI denote the same concept — listed once.
     assert purpose_values.count(_P.purpose_iri("EnergyBalancing")) == len(offer["odrl:permission"])
+
+    # Several purposes collapse into ONE isAnyOf constraint per permission:
+    # constraints inside a permission are ANDed, so one per purpose would
+    # require a consumer's use to serve all of them simultaneously.
+    for constraint in _purpose_constraints(offer):
+        assert constraint["odrl:operator"]["@id"] == "odrl:isAnyOf"
+        assert isinstance(constraint["odrl:rightOperand"], list)
+    assert len(_purpose_constraints(offer)) == len(offer["odrl:permission"])
+
+
+def test_single_declared_purpose_uses_is_a():
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=["GridMonitoring"]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    for constraint in _purpose_constraints(offer):
+        assert constraint["odrl:operator"]["@id"] == "odrl:isA"
+        assert constraint["odrl:rightOperand"] == {"@id": _P.purpose_iri("GridMonitoring")}
+
+
+def test_derive_purposes_from_tags_is_authoring_only():
+    """The tag map still suggests slugs when scaffolding, but never maps."""
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    assert mapper.derive_purposes_from_tags(["rec", "grid", "meters"]) == [
+        "EnergyBalancing",
+        "GridMonitoring",
+    ]
 
 
 def test_medallion_inference():
@@ -508,13 +589,13 @@ def test_medallion_inference():
 def test_profile_defaults_produce_valid_iris():
     p = OdrlProfile()
     assert p.term("Membership") == "https://w3id.org/dsp/policy/Membership"
-    assert p.purpose_iri("EnergyBalancing") == "https://w3id.org/dsp/policy/purpose:EnergyBalancing"
+    assert p.purpose_iri("EnergyBalancing") == "https://w3id.org/dsp/policy/purpose/EnergyBalancing"
 
 
 def test_profile_custom_namespace():
     p = OdrlProfile(namespace="https://example.org/policy/", prefix="ex")
     assert p.term("Membership") == "https://example.org/policy/Membership"
-    assert p.purpose_iri("Test") == "https://example.org/policy/purpose:Test"
+    assert p.purpose_iri("Test") == "https://example.org/policy/purpose/Test"
 
 
 # ── Domain-neutral: manufacturing profile ─────────────────────────────────────
@@ -529,21 +610,26 @@ def test_manufacturing_profile_produces_correct_purposes():
             "maintenance": "PredictiveMaintenance",
         },
     )
+    mfg_profile.purposes = [
+        PurposeConcept(slug="QualityAssurance", label="Quality Assurance"),
+        PurposeConcept(slug="SupplyChain", label="Supply Chain"),
+        PurposeConcept(slug="PredictiveMaintenance", label="Predictive Maintenance"),
+    ]
     mapper = _mapper(profile=mfg_profile)
-    rule = _rule(access_level="internal", classification="green", tags=["quality", "logistics"])
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        tags=["quality", "logistics"],
+        policy=_policy(purpose=["QualityAssurance", "SupplyChain"]),
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
     ctx = offer["@context"]
     assert ctx["mfg-policy"] == "https://example.org/manufacturing/policy/"
 
-    purpose_iris = [
-        c["odrl:rightOperand"]["@id"]
-        for p in offer["odrl:permission"]
-        for c in p.get("odrl:constraint", [])
-        if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
-    ]
-    assert "https://example.org/manufacturing/policy/purpose:QualityAssurance" in purpose_iris
-    assert "https://example.org/manufacturing/policy/purpose:SupplyChain" in purpose_iris
+    purpose_iris = _purpose_iris(offer)
+    assert "https://example.org/manufacturing/policy/purpose/QualityAssurance" in purpose_iris
+    assert "https://example.org/manufacturing/policy/purpose/SupplyChain" in purpose_iris
 
 
 # ── Participant DID override (deployments outside the dev domain) ────────────

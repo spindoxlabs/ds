@@ -70,6 +70,14 @@ class E2ESettings(BaseSettings):
     data_subject_email: str = "subject@example.test"
     asset_id: str = "datasets.silver.meters_15m"
 
+    # Consent vocabulary — must match services/connector/governance/
+    # sharing-offers.yaml and the ODRL profile taxonomy.
+    sharing_offer_id: str = "household-energy-flexibility"
+    consented_purpose: str = "FlexibilityResearch"
+    # A purpose the dataset is offered for but this subject never agreed to —
+    # the negative case that proves the purpose chain is enforced.
+    unconsented_purpose: str = "IncentiveCalculation"
+
     # Timeouts
     poll_timeout: int = 120
     poll_interval: float = 2.0

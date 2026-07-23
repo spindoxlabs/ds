@@ -1,0 +1,63 @@
+# Sharing offers — what a person is actually asked to consent to.
+#
+# A person does not consent to a dataset; they consent to a purpose-scoped
+# bundle, from a named controller, for a described category of recipient.
+# Everything here is a CODE plus an English label served by GET /ns/policy:
+# translation is the frontend's job, so a locale can never widen a coverage
+# window or invent a resolution.
+#
+# Overlay: sharing-offers.<name>.yaml merges on top (same mechanism as
+# governance.<name>.yaml); *.local.yaml is gitignored for deployment bindings.
+#
+# Validated by `task compliance:validate` — an offer whose purpose is not in
+# the ODRL profile, whose datasets do not resolve, or whose datasets do not
+# declare the offer's purpose in policy.purpose[] fails the gate.
+
+sharing_offers:
+  - id: household-energy-flexibility
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    datasets:
+      - datasets.silver.meters_15m
+    recipients:
+      # The controller decides the purpose. Processors act on its instructions
+      # under a DPA, so a new one joining the category is disclosed, not asked.
+      controller: example-org
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: example-org
+          - credential_type: OrganizationCredential
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P2Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P2Y
+
+  - id: community-incentive-calculation
+    purpose: IncentiveCalculation
+    # Contract, not consent: the community has a contractual duty to compute
+    # and distribute incentives. Disclosed without a toggle — offering a
+    # choice that does not exist is worse than not asking.
+    legal_basis: "https://w3id.org/dpv#Contract"
+    datasets:
+      - datasets.silver.meters_15m
+    recipients:
+      controller: example-org
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: example-org
+    subject_scope: community
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P2Y
+    consent_text_version: "1.0"
+    revocable: false
+    retention: P5Y

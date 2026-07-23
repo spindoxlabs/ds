@@ -21,7 +21,9 @@ from .compliance import (
     RuntimeOwnerLookup,
     build_evidence,
     fetch_participant_dids,
+    fetch_participant_roles,
     load_participant_dids,
+    load_participant_roles,
     render_markdown,
     validate as run_validate,
     write_artifacts,
@@ -70,6 +72,12 @@ ProfileOpt = typer.Option(None, help="Path to an ODRL profile YAML")
 OverlayOpt = typer.Option(
     None, help="Governance overlay name (loads governance.<name>.yaml)"
 )
+SharingOffersOpt = typer.Option(
+    None,
+    "--sharing-offers",
+    help="Path to a sharing-offers YAML (default: sharing-offers.yaml next to "
+    "the governance file, when present)",
+)
 DenyKeyOpt = typer.Option(
     None,
     "--deny-key",
@@ -83,16 +91,34 @@ def _resolve_registries(
     participants_path: Path | None,
     identity_registry_url: str | None,
     token: str | None,
-) -> tuple[OwnerLookup | None, set[str] | None, list]:
+) -> tuple[OwnerLookup | None, set[str] | None, dict[str, list[str]] | None, list]:
     """Build owner/participant lookups from a live registry or YAML seeds."""
     closers: list = []
     if identity_registry_url:
         lookup = RuntimeOwnerLookup(identity_registry_url, token=token)
         closers.append(lookup.close)
-        return lookup, fetch_participant_dids(identity_registry_url, token=token), closers
+        return (
+            lookup,
+            fetch_participant_dids(identity_registry_url, token=token),
+            fetch_participant_roles(identity_registry_url, token=token),
+            closers,
+        )
 
     owners = load_owners_yaml(owners_path) if owners_path else None
-    return owners, load_participant_dids(participants_path), closers
+    return (
+        owners,
+        load_participant_dids(participants_path),
+        load_participant_roles(participants_path),
+        closers,
+    )
+
+
+def _resolve_sharing_offers(governance_file: Path, explicit: Path | None) -> Path | None:
+    """An explicit path wins; otherwise pick up the sibling file by convention."""
+    if explicit is not None:
+        return explicit
+    sibling = governance_file.parent / "sharing-offers.yaml"
+    return sibling if sibling.exists() else None
 
 
 def _emit(result: ValidationResult, output_format: str) -> None:
@@ -106,6 +132,8 @@ def _emit(result: ValidationResult, output_format: str) -> None:
     typer.echo(f"Governance validation: {'PASS' if result.passed else 'FAIL'}")
     typer.echo(f"Governance: {result.governance_path}")
     typer.echo(f"Datasets checked: {result.datasets_checked}")
+    if result.offers_checked:
+        typer.echo(f"Sharing offers checked: {result.offers_checked}")
     if result.artifacts:
         typer.echo("Artifacts:")
         for name, path in result.artifacts.items():
@@ -131,6 +159,7 @@ def validate(
     token: str = TokenOpt,
     profile: Path = ProfileOpt,
     overlay: str = OverlayOpt,
+    sharing_offers: Path = SharingOffersOpt,
     deny_key: list[str] = DenyKeyOpt,
     output_format: str = typer.Option(
         "text", "--format", help="text | json | markdown"
@@ -140,7 +169,7 @@ def validate(
     ),
 ):
     """Validate a governance file before importing it into a connector."""
-    owner_lookup, participant_dids, closers = _resolve_registries(
+    owner_lookup, participant_dids, participant_roles, closers = _resolve_registries(
         owners, participants, identity_registry_url, token
     )
     try:
@@ -154,6 +183,8 @@ def validate(
             profile=load_odrl_profile(profile) if profile else None,
             overlay_name=overlay,
             deny_key_patterns=list(deny_key or []),
+            sharing_offers_path=_resolve_sharing_offers(file, sharing_offers),
+            participant_roles=participant_roles,
         )
     finally:
         for close in closers:
@@ -184,11 +215,12 @@ def evidence(
     token: str = TokenOpt,
     profile: Path = ProfileOpt,
     overlay: str = OverlayOpt,
+    sharing_offers: Path = SharingOffersOpt,
     deny_key: list[str] = DenyKeyOpt,
 ):
     """Validate, then write DCAT-AP catalog and ODRL offers as audit evidence."""
     odrl_profile = load_odrl_profile(profile) if profile else None
-    owner_lookup, participant_dids, closers = _resolve_registries(
+    owner_lookup, participant_dids, participant_roles, closers = _resolve_registries(
         owners, participants, identity_registry_url, token
     )
     try:
@@ -202,6 +234,8 @@ def evidence(
             profile=odrl_profile,
             overlay_name=overlay,
             deny_key_patterns=list(deny_key or []),
+            sharing_offers_path=_resolve_sharing_offers(file, sharing_offers),
+            participant_roles=participant_roles,
         )
     finally:
         for close in closers:

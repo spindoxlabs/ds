@@ -20,6 +20,12 @@ sources:
     tags: [weather, gold, features]
     source_system: Open-Meteo
 
+    # `policy.purpose[]` is the only runtime declaration of which purposes a
+    # dataset may serve. `tags` are DCAT-AP catalogue keywords and carry no
+    # policy meaning.
+    policy:
+      purpose: [EnergyCommunityOperation, GridMonitoring]
+
     dataspace:
       expose: true
       medallion: gold
@@ -47,6 +53,13 @@ sources:
         args:
           column: sub
     tags: [meters, silver, pii, rec]
+
+    # One meter dataset serves several distinct reasons for processing; the
+    # negotiated purpose decides which consent rows apply.
+    policy:
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent:
+        required: true
 
     dataspace:
       expose: true

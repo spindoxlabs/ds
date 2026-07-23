@@ -9,8 +9,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import ConsentRequestORM
 from ..notifications.base import ConsentNotifier
+from . import consent_vocabulary as vocab
 
 log = logging.getLogger(__name__)
+
+
+def _validated(dataset_id: str, purpose: list[str] | None) -> list[str]:
+    """Resolve the dataset and normalise purposes, or raise ``VocabularyError``.
+
+    Every consent write goes through here.  Before this existed, ``dataset_id``
+    was an unvalidated string and ``purpose`` an unvalidated list, so a row
+    could record a promise about a dataset that did not exist for a purpose
+    nobody had defined.
+    """
+    vocab.resolve_dataset(dataset_id)
+    return vocab.normalise_purposes(purpose)
 
 
 async def create_consent_request(
@@ -22,7 +35,12 @@ async def create_consent_request(
     message: str | None = None,
     notification_url: str | None = None,
     notifier: ConsentNotifier | None = None,
+    controller: str | None = None,
+    controller_role: str | None = None,
+    offer_id: str | None = None,
 ) -> ConsentRequestORM:
+    purposes = _validated(dataset_id, purpose)
+
     latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
     if latest and latest.status in ("pending", "granted"):
         return latest
@@ -31,7 +49,10 @@ async def create_consent_request(
         subject_id=subject_id,
         consumer_id=consumer_id,
         dataset_id=dataset_id,
-        purpose=purpose or [],
+        purpose=purposes,
+        controller=controller,
+        controller_role=controller_role,
+        offer_id=offer_id,
         message=message,
         notification_url=notification_url,
         status="pending",
@@ -148,12 +169,17 @@ async def set_subject_data_sharing(
     enabled: bool,
     purpose: list[str] | None = None,
     message: str | None = None,
+    controller: str | None = None,
+    controller_role: str | None = None,
+    offer_id: str | None = None,
 ) -> ConsentRequestORM:
     """Set a data subject's standing sharing decision for a dataset.
 
     This is owner-driven consent: the subject can make their data available or
     unavailable without waiting for a consumer-created pending request.
     """
+    purposes = _validated(dataset_id, purpose)
+
     latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
     now = datetime.now(timezone.utc)
 
@@ -164,7 +190,10 @@ async def set_subject_data_sharing(
             subject_id=subject_id,
             consumer_id=consumer_id,
             dataset_id=dataset_id,
-            purpose=purpose or [],
+            purpose=purposes,
+            controller=controller,
+            controller_role=controller_role,
+            offer_id=offer_id,
             message=message or "Data owner enabled sharing.",
             status="granted",
             requested_at=now,
@@ -188,7 +217,10 @@ async def set_subject_data_sharing(
         subject_id=subject_id,
         consumer_id=consumer_id,
         dataset_id=dataset_id,
-        purpose=purpose or [],
+        purpose=purposes,
+        controller=controller,
+        controller_role=controller_role,
+        offer_id=offer_id,
         message=message or "Data owner disabled sharing.",
         status="revoked",
         requested_at=now,
@@ -237,21 +269,101 @@ async def register_transfer(
     return True
 
 
+def consent_satisfies(
+    consent: ConsentRequestORM,
+    purpose: list[str] | None,
+    controller_role: str | None,
+    consent_required: bool,
+) -> tuple[bool, str]:
+    """Does a granted row authorise *this* request? Returns (allowed, reason).
+
+    The matrix, for a dataset whose rows are gated on consent:
+
+    | purpose is the consented one or narrower AND controller-role matches | allow |
+    | purpose empty, unrelated, or broader                                 | deny  |
+    | controller-role differs                                              | deny  |
+
+    For an open, non-personal dataset there is no data subject and the question
+    does not arise, so the row's own status is the whole answer.
+    """
+    if consent.status != "granted":
+        return False, f"consent status is {consent.status}"
+
+    if not consent_required:
+        return True, "dataset does not require per-subject consent"
+
+    if not purpose:
+        # Absent purpose means the caller never declared why it wants the data.
+        return False, "no purpose declared for a consent-required dataset"
+
+    consented = list(consent.purpose or [])
+    if not consented:
+        # The person was never told the use, so the consent does not meet
+        # GDPR Art. 4(11). Empty is never "unrestricted".
+        return False, "consent row records no purpose"
+
+    if not vocab.purpose_covered(purpose, consented):
+        return False, (
+            f"requested purpose {purpose} is not covered by consented {consented}"
+        )
+
+    if controller_role and consent.controller_role and controller_role != consent.controller_role:
+        return False, (
+            f"controller role '{controller_role}' differs from consented "
+            f"'{consent.controller_role}'"
+        )
+
+    return True, "consent covers the requested purpose and controller role"
+
+
 async def check_consent(
     session: AsyncSession,
     subject_id: str,
     dataset_id: str,
     consumer_id: str,
-) -> bool:
+    purpose: list[str] | None = None,
+    controller_role: str | None = None,
+    consent_required: bool | None = None,
+) -> tuple[bool, str]:
+    """Whether one subject's consent authorises this consumer, purpose and role."""
+    if consent_required is None:
+        consent_required = _dataset_requires_consent(dataset_id)
+
     latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
-    return latest is not None and latest.status == "granted"
+    if latest is None:
+        return False, "no consent record"
+    return consent_satisfies(latest, purpose, controller_role, consent_required)
+
+
+def _dataset_requires_consent(dataset_id: str) -> bool:
+    """Resolve the dataset's consent gate, defaulting to fail-closed.
+
+    An unknown dataset id reaching the check is not a reason to relax: treat it
+    as consent-required so a mis-keyed request denies rather than leaks.
+    """
+    try:
+        return vocab.requires_consent(vocab.resolve_dataset(dataset_id))
+    except vocab.VocabularyError:
+        log.warning("Consent check for unknown dataset '%s' — failing closed", dataset_id)
+        return True
 
 
 async def get_granted_subject_ids(
     session: AsyncSession,
     dataset_id: str,
     consumer_id: str,
+    purpose: list[str] | None = None,
+    controller_role: str | None = None,
+    consent_required: bool | None = None,
 ) -> list[str]:
+    """Subjects whose latest consent authorises this consumer, purpose and role.
+
+    This is the row-filter list: a subject who did not consent to the declared
+    purpose simply does not appear, so their rows never leave the provider.
+    """
+    if consent_required is None:
+        consent_required = _dataset_requires_consent(dataset_id)
+
     result = await session.execute(
         select(ConsentRequestORM)
         .where(
@@ -268,8 +380,16 @@ async def get_granted_subject_ids(
     latest_by_subject: dict[str, ConsentRequestORM] = {}
     for consent in result.scalars().all():
         latest_by_subject.setdefault(consent.subject_id, consent)
-    return [
-        subject_id
-        for subject_id, consent in latest_by_subject.items()
-        if consent.status == "granted"
-    ]
+
+    granted: list[str] = []
+    for subject_id, consent in latest_by_subject.items():
+        allowed, reason = consent_satisfies(
+            consent, purpose, controller_role, consent_required
+        )
+        if allowed:
+            granted.append(subject_id)
+        elif consent.status == "granted":
+            log.debug(
+                "Subject %s excluded from %s row filter: %s", subject_id, dataset_id, reason
+            )
+    return granted

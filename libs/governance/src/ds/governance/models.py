@@ -120,12 +120,42 @@ class GovernanceRuleV2(GovernanceRule):
 
 # ── ODRL Profile ─────────────────────────────────────────────────────────────
 
+# The five SKOS mapping properties.  Only these may appear as a
+# ``dpv_mapping.relation`` — anything else is a false interop claim.
+SKOS_MATCH_RELATIONS = (
+    "exactMatch",
+    "broadMatch",
+    "closeMatch",
+    "narrowMatch",
+    "relatedMatch",
+)
+
+
+class DpvMapping(BaseModel):
+    """Alignment of a local purpose to an external vocabulary term (DPV).
+
+    Documentation and interop only.  ``odrl:isA`` matching never follows this
+    mapping — see :meth:`OdrlProfile.is_a`.  A mapping that claims
+    ``exactMatch`` where the terms merely overlap would silently widen consent.
+    """
+
+    iri: str
+    relation: str = "broadMatch"
+
+
 class PurposeConcept(BaseModel):
-    """A purpose concept in the ODRL profile taxonomy."""
+    """A purpose concept in the ODRL profile taxonomy.
+
+    ``broader`` builds the *local* hierarchy, which is the only thing
+    enforcement looks at.  ``dpv_mapping`` records how the concept relates to
+    an external vocabulary and is served for readers, never matched against.
+    """
 
     slug: str
     label: str
     definition: str = ""
+    broader: str | None = None
+    dpv_mapping: DpvMapping | None = None
 
 
 class OdrlProfile(BaseModel):
@@ -145,7 +175,11 @@ class OdrlProfile(BaseModel):
 
     query_action: str = "Query"
 
-    purpose_base: str = "purpose:"
+    # A path segment, NOT a pseudo-prefix. `purpose:` would make purpose IRIs
+    # compact to `purpose:Slug`, which JSON-LD rejects as confusable with a
+    # compact IRI (IRI_CONFUSED_WITH_PREFIX) — the DSP catalogue response then
+    # fails to serialise. See check_purpose_taxonomy, which enforces this.
+    purpose_base: str = "purpose/"
 
     profile_iri: str | None = None
 
@@ -159,6 +193,62 @@ class OdrlProfile(BaseModel):
     def purpose_iri(self, slug: str) -> str:
         """Build a purpose IRI from a slug (e.g. ``EnergyBalancing``)."""
         return f"{self.namespace}{self.purpose_base}{slug}"
+
+    # ── Purpose taxonomy ──────────────────────────────────────────────────
+
+    @property
+    def purpose_index(self) -> dict[str, PurposeConcept]:
+        return {concept.slug: concept for concept in self.purposes}
+
+    def purpose_slug(self, value: str) -> str | None:
+        """Normalise a purpose reference to a slug known to this profile.
+
+        Accepts a bare slug, a full profile IRI, or the ``{prefix}:{base}slug``
+        compact form.  Returns ``None`` when the value is not in the taxonomy —
+        callers treat that as a validation failure, never as a wildcard.
+        """
+        if not value:
+            return None
+        candidate = value.strip()
+        for prefix in (
+            f"{self.namespace}{self.purpose_base}",
+            f"{self.prefix}:{self.purpose_base}",
+            self.purpose_base,
+        ):
+            if candidate.startswith(prefix):
+                candidate = candidate[len(prefix):]
+                break
+        return candidate if candidate in self.purpose_index else None
+
+    def broader_chain(self, slug: str) -> list[str]:
+        """Return ``[slug, parent, grandparent, …]`` following local ``broader``.
+
+        Stops at an unknown or repeated slug, so a malformed profile degrades to
+        a short chain instead of looping.  Cycles are reported by the
+        ``purpose-hierarchy`` compliance check, not raised here.
+        """
+        index = self.purpose_index
+        chain: list[str] = []
+        seen: set[str] = set()
+        current: str | None = slug
+        while current and current in index and current not in seen:
+            chain.append(current)
+            seen.add(current)
+            current = index[current].broader
+        return chain
+
+    def is_a(self, requested: str, consented: str) -> bool:
+        """``odrl:isA`` — is *requested* the consented purpose or narrower?
+
+        Matching follows **only** the local ``broader`` chain.  ``dpv_mapping``
+        is deliberately not consulted: a ``broadMatch`` to a generic DPV term
+        would otherwise let an unrelated use match a specific consent.
+        """
+        requested_slug = self.purpose_slug(requested)
+        consented_slug = self.purpose_slug(consented)
+        if not requested_slug or not consented_slug:
+            return False
+        return consented_slug in self.broader_chain(requested_slug)
 
 
 _PROFILES_DIR = Path(__file__).parent / "profiles"

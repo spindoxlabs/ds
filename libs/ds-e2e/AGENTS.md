@@ -13,13 +13,32 @@ src/ds_e2e/
 ├── runner.py       Flow orchestration
 ├── cleanup.py      DB truncation + EDC state reset + provider sync
 └── flows/
-    ├── __init__.py Flow registry
-    ├── base.py     BaseFlow ABC
-    ├── smoke.py    Full DSP consumer-pull flow
-    ├── uc1.py      Subject-pool validation
-    ├── uc2.py      Owner-scoped negotiation
-    └── uc3.py      Open/external data
+    ├── __init__.py        Flow registry
+    ├── base.py            BaseFlow ABC
+    ├── smoke.py           Full DSP consumer-pull flow
+    ├── consent_purpose.py Consent vocabulary: taxonomy, offers, purpose enforcement
+    ├── uc1.py             Subject-pool validation
+    ├── uc2.py             Owner-scoped negotiation
+    └── uc3.py             Open/external data
 ```
+
+## Flows
+
+| Flow | Needs the EDC? | Covers |
+|---|---|---|
+| `smoke` | yes | Catalogue → negotiate → transfer → query → revoke, with an offer-based consent grant. Asserts a query for an unconsented purpose **and** a query with no purpose both return zero rows |
+| `consent-purpose` | **no** | SKOS taxonomy at `/ns/policy`, the `/ns/sharing-offers` projection, `422` on invalid consent writes, offer expansion, and the full `odrl:isA` matrix at `/internal/consent/check` |
+| `uc1` / `uc2` / `uc3` | yes | Governance patterns GP-1 / GP-2 / GP-3 |
+
+`consent-purpose` needs only ds-connector, identity-registry and Keycloak, so it is the
+fastest way to verify the consent vocabulary when the EDC is unavailable.
+
+The consent vocabulary the flows assert against is pinned in `config.py`
+(`sharing_offer_id`, `consented_purpose`, `unconsented_purpose`) and must stay in step
+with `services/connector/governance/sharing-offers.yaml` and the ODRL profile. The
+negative purpose is deliberately one the *dataset* permits but the *subject* never
+agreed to — that is the case that proves the purpose chain is enforced rather than
+merely declared.
 
 ## Key design
 

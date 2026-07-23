@@ -26,6 +26,9 @@ import org.eclipse.edc.spi.system.ServiceExtensionContext;
 @Extension("Dataspaces ODRL Constraint Functions")
 public class DataspacesExtension implements ServiceExtension {
 
+    private static final String PURPOSE_COMPACT = "odrl:purpose";
+    private static final String PURPOSE_EXPANDED = "http://www.w3.org/ns/odrl/2/purpose";
+
     @Inject
     private RuleBindingRegistry ruleBindingRegistry;
 
@@ -66,6 +69,13 @@ public class DataspacesExtension implements ServiceExtension {
         ruleBindingRegistry.bind(membershipOperand, "contract.negotiation");
         ruleBindingRegistry.bind(consentOperand,     "contract.negotiation");
 
+        // odrl:purpose — bound in both the compact and the expanded form, since
+        // whether the ODRL context is applied depends on how the policy reached
+        // the store. An unbound operand evaluates to false and would deny every
+        // negotiation for a purpose-scoped dataset.
+        ruleBindingRegistry.bind(PURPOSE_COMPACT,  "contract.negotiation");
+        ruleBindingRegistry.bind(PURPOSE_EXPANDED, "contract.negotiation");
+
         // Register constraint evaluator functions
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,
@@ -85,9 +95,18 @@ public class DataspacesExtension implements ServiceExtension {
             "ds:contractRequired",
             (op, rv, duty, ctx) -> true
         );
+        PurposeFunction purposeFunction = new PurposeFunction(context.getMonitor());
+        for (String operand : new String[]{PURPOSE_COMPACT, PURPOSE_EXPANDED}) {
+            policyEngine.registerFunction(
+                ParticipantAgentPolicyContext.class,
+                Permission.class,
+                operand,
+                purposeFunction
+            );
+        }
 
         context.getMonitor().info(
-            "Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus (retry×3), namespace=%s"
+            "Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus (retry×3), odrl:purpose, namespace=%s"
                 .formatted(namespace, cacheTtlSeconds, namespace, namespace)
         );
     }

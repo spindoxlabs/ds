@@ -1,0 +1,44 @@
+# Sharing-offer fixture for the connector test suite.
+
+sharing_offers:
+  # Consent-based: gets a control in a frontend.
+  - id: test-flexibility
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    datasets:
+      - datasets.silver.meters
+    recipients:
+      controller: example-org
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: example-org
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P2Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P2Y
+
+  # Contract-based: disclosed without a toggle.
+  - id: test-incentives
+    purpose: IncentiveCalculation
+    legal_basis: "https://w3id.org/dpv#Contract"
+    datasets:
+      - datasets.silver.meters
+    recipients:
+      controller: example-org
+      controller_role: community-operator
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: example-org
+    subject_scope: community
+    measures: [consumption]
+    resolution: PT15M
+    consent_text_version: "1.0"
+    revocable: false
+    retention: P5Y

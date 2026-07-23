@@ -87,7 +87,7 @@ class GovernanceMapper:
         action_keys = policy.permitted_actions or _LEVEL_ACTION_KEYS.get(access_level, ["{query}"])
         permitted = self._resolve_actions(action_keys)
         prohibited = policy.prohibited_actions or _CLASS_PROHIBITIONS.get(rule.classification or "green", [])
-        purposes = policy.purpose or self._derive_purposes(rule.tags)
+        purposes = self._purpose_iris(policy.purpose)
 
         offer_id = f"urn:offer:{self.participant_id}:{dataset_key.replace('.', ':')}"
 
@@ -167,12 +167,23 @@ class GovernanceMapper:
                 "odrl:rightOperand": "true",
             })
 
-        # Purpose constraint
-        for purpose in purposes:
+        # Purpose constraint — ONE constraint listing every permitted purpose.
+        #
+        # Constraints within a permission are ANDed, so emitting one constraint
+        # per purpose would demand that a consumer's use serve all of them at
+        # once. `odrl:isAnyOf` expresses what a multi-purpose dataset actually
+        # offers: any one of these reasons is admissible.
+        if len(purposes) == 1:
             constraints.append({
                 "odrl:leftOperand": {"@id": "odrl:purpose"},
                 "odrl:operator": {"@id": "odrl:isA"},
-                "odrl:rightOperand": {"@id": purpose},
+                "odrl:rightOperand": {"@id": purposes[0]},
+            })
+        elif purposes:
+            constraints.append({
+                "odrl:leftOperand": {"@id": "odrl:purpose"},
+                "odrl:operator": {"@id": "odrl:isAnyOf"},
+                "odrl:rightOperand": [{"@id": purpose} for purpose in purposes],
             })
 
         # Consent constraint
@@ -227,16 +238,42 @@ class GovernanceMapper:
 
         return obligations
 
-    def _derive_purposes(self, tags: list[str]) -> list[str]:
-        tag_map = self.profile.tag_to_purpose
+    def _purpose_iris(self, declared: list[str]) -> list[str]:
+        """Expand ``policy.purpose[]`` to full profile IRIs, order-preserving.
+
+        ``policy.purpose[]`` is the *only* runtime source of a dataset's
+        purposes.  Entries may be written as slugs or as full IRIs; anything
+        that is neither a known slug nor an absolute IRI is dropped here and
+        reported by the ``purpose-declared`` compliance check, so a typo cannot
+        silently become an unconstrained offer.
+        """
         seen: set[str] = set()
         purposes: list[str] = []
+        for entry in declared:
+            slug = self.profile.purpose_slug(entry)
+            iri = self.profile.purpose_iri(slug) if slug else (
+                entry if "://" in entry else None
+            )
+            if iri and iri not in seen:
+                purposes.append(iri)
+                seen.add(iri)
+        return purposes
+
+    def derive_purposes_from_tags(self, tags: list[str]) -> list[str]:
+        """Authoring helper — suggest ``policy.purpose[]`` slugs from tags.
+
+        Used when scaffolding a new governance entry.  Never called during
+        mapping: a tag is a catalogue keyword, not a reason for processing.
+        """
+        tag_map = self.profile.tag_to_purpose
+        seen: set[str] = set()
+        slugs: list[str] = []
         for tag in tags:
             slug = tag_map.get(tag)
             if slug and slug not in seen:
-                purposes.append(self.profile.purpose_iri(slug))
+                slugs.append(slug)
                 seen.add(slug)
-        return purposes
+        return slugs
 
     # ── EDC Asset ─────────────────────────────────────────────────────────────
 

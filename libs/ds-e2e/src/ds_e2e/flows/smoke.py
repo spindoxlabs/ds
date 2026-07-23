@@ -92,18 +92,62 @@ class SmokeFlow(BaseFlow):
             result.fail_step("catalog discovery", str(exc))
             return result
 
-        # 6. Consent grant
+        # 6. Consent grant — by sharing offer, not by dataset.
+        #    The connector expands the offer into per-dataset rows and stamps
+        #    the purpose and controller from it, so the decision cannot drift
+        #    from the copy the person read.
+        try:
+            offers = self.http.get(f"{s.connector_url}/ns/sharing-offers") or []
+            offer = next(
+                (o for o in offers if o.get("id") == s.sharing_offer_id),
+                None,
+            )
+            if offer is None:
+                result.fail_step(
+                    "sharing offers",
+                    f"offer '{s.sharing_offer_id}' not published",
+                    available=[o.get("id") for o in offers],
+                )
+                return result
+            if not offer.get("requires_consent"):
+                result.fail_step(
+                    "sharing offers",
+                    f"offer '{s.sharing_offer_id}' is not consent-based",
+                    legal_basis=offer.get("legal_basis"),
+                )
+                return result
+            result.pass_step(
+                "sharing offers",
+                "public offer vocabulary served",
+                offer=offer.get("id"),
+                purpose=offer.get("purpose"),
+                controller=offer.get("recipients", {}).get("controller"),
+            )
+        except Exception as exc:
+            result.fail_step("sharing offers", str(exc))
+            return result
+
         try:
             share_body = {
-                "dataset_id": asset_id,
+                "offer_id": s.sharing_offer_id,
                 "consumer_id": s.consumer_did,
                 "enabled": True,
-                "purpose": ["ds:purpose:EnergyBalancing"],
             }
             share = self.http.post(
                 f"{s.connector_url}/consent/my/shares", share_body, headers=subject_headers
-            ) or {}
-            result.pass_step("consent grant", "data subject granted standing data sharing", consent_id=share.get("id"))
+            ) or []
+            rows = share if isinstance(share, list) else [share]
+            if not rows or any(r.get("purpose") != [s.consented_purpose] for r in rows):
+                result.fail_step(
+                    "consent grant", "offer did not expand to purpose-stamped rows", rows=rows
+                )
+                return result
+            result.pass_step(
+                "consent grant",
+                "data subject granted standing data sharing for one purpose",
+                consent_ids=[r.get("id") for r in rows],
+                purpose=s.consented_purpose,
+            )
         except Exception as exc:
             result.fail_step("consent grant", str(exc))
             return result
@@ -177,19 +221,80 @@ class SmokeFlow(BaseFlow):
             return result
         result.pass_step("transfer EDR", "EDR-gated transfer started", transfer_id=transfer_id)
 
-        # 11. Query dataset-api
-        query_params = urllib.parse.urlencode({
+        # 11. Query dataset-api for the consented purpose
+        base_query = {
             "dataset_name": asset_id,
             "consumer_id": s.consumer_did,
             "subject_id": s.data_subject_id,
             "agreement_id": agreement_id,
             "transfer_id": transfer_id,
-        })
+        }
+        query_params = urllib.parse.urlencode(
+            {**base_query, "purpose": s.consented_purpose}
+        )
         status, query_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{query_params}")
         if status != 200 or not isinstance(query_payload, dict) or query_payload.get("count", 0) < 1:
             result.fail_step("query consentita", "expected at least one authorized row", status_code=status)
             return result
-        result.pass_step("query consentita", "consent and active transfer allow data query", rows=query_payload.get("count"))
+        result.pass_step(
+            "query consentita",
+            "consent and active transfer allow data query for the consented purpose",
+            rows=query_payload.get("count"),
+            purpose=s.consented_purpose,
+        )
+
+        # 11b. The purpose is binding, not decorative. The same agreement and
+        #      the same active transfer must yield nothing for a purpose this
+        #      subject never agreed to — the row filter is scoped to (subject,
+        #      purpose, controller-role), so their rows simply never leave.
+        other_params = urllib.parse.urlencode(
+            {**base_query, "purpose": s.unconsented_purpose}
+        )
+        status, other_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{other_params}")
+        if status != 200 or not isinstance(other_payload, dict):
+            result.fail_step(
+                "query purpose non consentita",
+                "unexpected response for an unconsented purpose",
+                status_code=status,
+            )
+            return result
+        if other_payload.get("count", 0) != 0:
+            result.fail_step(
+                "query purpose non consentita",
+                "rows leaked for a purpose the subject did not consent to",
+                purpose=s.unconsented_purpose,
+                rows=other_payload.get("count"),
+            )
+            return result
+        result.pass_step(
+            "query purpose non consentita",
+            "a purpose the subject did not consent to yields zero rows",
+            purpose=s.unconsented_purpose,
+        )
+
+        # 11c. Omitting the purpose entirely must not behave like a wildcard.
+        #      For a consent-required dataset an absent purpose means the caller
+        #      never said why it wants the data — fail closed.
+        no_purpose = urllib.parse.urlencode(base_query)
+        status, no_purpose_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{no_purpose}")
+        if status != 200 or not isinstance(no_purpose_payload, dict):
+            result.fail_step(
+                "query senza purpose",
+                "unexpected response when no purpose is declared",
+                status_code=status,
+            )
+            return result
+        if no_purpose_payload.get("count", 0) != 0:
+            result.fail_step(
+                "query senza purpose",
+                "an undeclared purpose behaved as a wildcard",
+                rows=no_purpose_payload.get("count"),
+            )
+            return result
+        result.pass_step(
+            "query senza purpose",
+            "an undeclared purpose fails closed on a consent-required dataset",
+        )
 
         # 12. Revoke
         requests_payload = self.http.get(

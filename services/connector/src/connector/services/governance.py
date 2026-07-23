@@ -136,13 +136,52 @@ class ConnectorGovernanceMapper:
         constraints = result.get("odrl:constraint")
         if isinstance(constraints, list):
             result["odrl:constraint"] = [
-                constraint for constraint in constraints
+                cls._to_edc_constraint(constraint)
+                for constraint in constraints
                 if not (
                     isinstance(constraint, dict)
-                    and constraint.get("odrl:leftOperand") in {"odrl:purpose", "ds:consentStatus"}
+                    and constraint.get("odrl:leftOperand") == "ds:consentStatus"
                 )
             ]
         return result
+
+    #: ``odrl:purpose`` in absolute form. The compact form must not reach EDC:
+    #: it is stored verbatim as the left operand and then treated as an IRI
+    #: whose scheme is ``odrl``, which JSON-LD refuses to compact
+    #: (IRI_CONFUSED_WITH_PREFIX) — taking the whole DSP catalogue response down
+    #: with a 500. Every other operand the mapper emits is already absolute.
+    PURPOSE_OPERAND = "http://www.w3.org/ns/odrl/2/purpose"
+
+    @classmethod
+    def _to_edc_constraint(cls, constraint):
+        """Make the purpose constraint safe for EDC's policy store and serialiser.
+
+        The public ODRL offer keeps the idiomatic ``odrl:purpose`` and
+        ``{"@id": <iri>}`` forms, because a purpose *is* an IRI reference and the
+        offer carries an ``@context`` that defines the prefix. EDC has neither
+        luxury: it stores operands as literals and re-serialises them, so the
+        left operand is expanded to an absolute IRI and the right operand
+        flattened to plain strings — which is also the shape
+        ``ConsentStatusFunction`` reads the negotiated purposes back out of.
+        """
+        if not isinstance(constraint, dict):
+            return constraint
+        if constraint.get("odrl:leftOperand") not in ("odrl:purpose", cls.PURPOSE_OPERAND):
+            return constraint
+
+        right = constraint.get("odrl:rightOperand")
+        if isinstance(right, dict) and "@id" in right:
+            right = right["@id"]
+        elif isinstance(right, list):
+            right = [
+                item["@id"] if isinstance(item, dict) and "@id" in item else item
+                for item in right
+            ]
+        return {
+            **constraint,
+            "odrl:leftOperand": cls.PURPOSE_OPERAND,
+            "odrl:rightOperand": right,
+        }
 
 
 def load_exposed_datasets(

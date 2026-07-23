@@ -60,6 +60,12 @@ def _build_vocab(profile: OdrlProfile) -> dict:
     ]
 
     # ── Purpose concepts (deployer-configured) ─────────────────────────
+    #
+    # Served as a SKOS taxonomy: `skos:broader` is the local hierarchy that
+    # `odrl:isA` matching follows, and the `skos:*Match` predicate records the
+    # declared alignment to an external vocabulary (DPV). The two are
+    # deliberately distinct — the mapping is for readers, never for matching,
+    # because a broadMatch to a generic term would silently widen consent.
     for purpose in profile.purposes:
         entry: dict = {
             "@id": profile.purpose_iri(purpose.slug),
@@ -68,6 +74,12 @@ def _build_vocab(profile: OdrlProfile) -> dict:
         }
         if purpose.definition:
             entry["skos:definition"] = purpose.definition
+        if purpose.broader:
+            entry["skos:broader"] = {"@id": profile.purpose_iri(purpose.broader)}
+        if purpose.dpv_mapping:
+            entry[f"skos:{purpose.dpv_mapping.relation}"] = {
+                "@id": purpose.dpv_mapping.iri
+            }
         graph.append(entry)
 
     return {
@@ -96,4 +108,29 @@ async def policy_namespace():
         content=_get_vocab(),
         media_type="application/ld+json",
         headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
+@router.get("/ns/sharing-offers")
+async def sharing_offers():
+    """The offers a person can be asked about — a vocabulary, not data.
+
+    Public by design, mirroring ``/ns/policy``: an onboarding wizard has to
+    render these before anyone has an identity.  Served as codes plus an
+    English label for every code; translation is entirely the frontend's job,
+    so a locale can mistranslate a label but cannot invent a resolution or
+    widen a coverage window.
+
+    Dataset keys are not in this projection — which datasets back an offer is
+    operator detail the person was never shown, and changing them deliberately
+    does not invalidate consent.
+    """
+    from ...services import consent_vocabulary as vocab
+
+    offers = [
+        vocab.public_offer_projection(offer) for offer in vocab.get_offers().offers
+    ]
+    return JSONResponse(
+        content=offers,
+        headers={"Cache-Control": "public, max-age=300"},
     )

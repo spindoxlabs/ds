@@ -1,7 +1,7 @@
 # ODRL profile for energy dataspaces.
 #
 # Ships as the platform default.  Deployers override by pointing
-# ODRL_PROFILE_PATH to their own YAML (same schema).
+# CONNECTOR_ODRL_PROFILE_PATH to their own YAML (same schema).
 
 namespace: "https://w3id.org/dsp/policy/"
 prefix: "dsp-policy"
@@ -9,31 +9,66 @@ prefix: "dsp-policy"
 membership_operand: Membership
 consent_operand: ConsentStatus
 query_action: Query
-purpose_base: "purpose:"
+# A path segment, not a pseudo-prefix: `purpose:` would produce IRIs that
+# compact to `purpose:Slug`, which JSON-LD rejects as confusable with a compact
+# IRI and which breaks the DSP catalogue response.
+purpose_base: "purpose/"
 
-# Tag-to-purpose mapping: governance.yaml tags → purpose slugs.
-# The mapper builds full IRIs as {namespace}{purpose_base}{slug}.
+# Authoring default only — `ds-governance scaffold` uses this to suggest a
+# starting `policy.purpose[]` for a new dataset.  It is NOT runtime truth:
+# the mapper reads `policy.purpose[]` and nothing else.  A tag is a DCAT-AP
+# catalogue keyword (a topic); a purpose is a reason for processing.  One
+# meter dataset can serve incentive calculation, flexibility research or cost
+# optimisation, so mapping `meters -> <a purpose>` is a category error.
 tag_to_purpose:
-  rec: EnergyBalancing
-  meters: EnergyBalancing
+  meters: EnergyCommunityOperation
   grid: GridMonitoring
-  tourism: UrbanPlanning
-  mobility: UrbanPlanning
 
-# Purpose taxonomy — served by the /ns/policy vocabulary endpoint.
+# Purpose taxonomy — served by GET /ns/policy as SKOS concepts.
+#
+# `broader` builds the local hierarchy and is the ONLY thing `odrl:isA`
+# matching follows.  `dpv_mapping` aligns each concept with the W3C DPV v2.2
+# vocabulary (https://w3id.org/dpv#) for interop and documentation; it is never
+# matched against, because a broadMatch to a generic DPV term would let an
+# unrelated use satisfy a specific consent.
 purposes:
-  - slug: EnergyBalancing
-    label: Energy Community Balancing
+  - slug: EnergyCommunityOperation
+    label: Energy community operation
+    definition: Operating a renewable energy community on behalf of its members.
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#ServiceProvision"
+      relation: broadMatch
+
+  - slug: IncentiveCalculation
+    label: Incentive calculation
     definition: >-
-      Use of data for balancing energy production and consumption
-      within an energy community.
+      Computing shared-energy incentives and their distribution among members.
+    broader: EnergyCommunityOperation
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#FulfilmentOfObligation"
+      relation: broadMatch
+
+  - slug: CostOptimization
+    label: Cost optimisation
+    definition: Reducing energy cost for the member or the community.
+    broader: EnergyCommunityOperation
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#OptimisationForConsumer"
+      relation: broadMatch
+
+  - slug: FlexibilityResearch
+    label: Flexibility research
+    definition: >-
+      Studying when and how much consumption can shift, to plan community
+      flexibility.
+    broader: EnergyCommunityOperation
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#ResearchAndDevelopment"
+      relation: broadMatch
 
   - slug: GridMonitoring
-    label: Grid Monitoring
-    definition: >-
-      Use of data for monitoring grid stability, load, and fault detection.
-
-  - slug: UrbanPlanning
-    label: Urban Planning
-    definition: >-
-      Use of aggregated mobility or tourism data for urban infrastructure planning.
+    label: Grid monitoring
+    definition: Monitoring grid stability, load, and fault detection.
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#PublicBenefit"
+      relation: broadMatch

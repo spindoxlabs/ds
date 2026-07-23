@@ -79,7 +79,7 @@ identity-registry (30005)
   |-->  ds-connector (participant registry)
   |-->  federated-catalog (provider discovery)
 
-dataset-api (30002, external) --> ds-connector /internal/*  agreement + consent checks
+dataset-api (30002, external) --> ds-connector /internal/*  agreement + purpose-scoped consent checks
 ```
 
 ### Shared infrastructure (root docker-compose.yml)
@@ -248,9 +248,9 @@ sequenceDiagram
     Consumer->>EDC: Initiate transfer
     EDC-->>Consumer: EDR (endpoint + auth token)
 
-    Consumer->>DP: Query data using EDR
+    Consumer->>DP: Query data using EDR (+ declared purpose)
     DP->>DA: Proxy request to dataset-api
-    DA->>DA: Row-level filtering (consent check)
+    DA->>DA: Row-level filtering (consent check, scoped by purpose)
     DA-->>DP: Filtered data
     DP-->>Consumer: Response
 ```
@@ -261,6 +261,7 @@ Key points:
 - `fc-cli` crawls each source, maps distributions to EDC `HttpData` assets
 - The `data_address` becomes the EDC asset's backend URL -- the data plane proxies consumer requests to it
 - Row-level filtering happens at dataset-api, which calls `GET /internal/consent/check` on ds-connector
+- The query carries the **purpose** it is made for, and the check returns only subjects whose consent covers it — so the same consumer, agreement and transfer return different rows depending on why they are asking
 
 ---
 
@@ -307,6 +308,6 @@ Each service has a `Dockerfile` and optional `charts/` directory for Helm deploy
 | BB05 | Publication & Discovery | EDC DSP, federated catalog |
 | BB06 | Data Exchange | EDC connector, ds-connector |
 | BB07 | Provenance & Traceability | ds-provenance |
-| BB08 | Vocabulary Hub | Profile-namespaced ODRL vocabulary (connector `GET /ns/policy`) |
-| BB09 | Data Sovereignty | Consent system in ds-connector |
+| BB08 | Vocabulary Hub | Profile-namespaced ODRL vocabulary and SKOS purpose taxonomy (`GET /ns/policy`), sharing offers (`GET /ns/sharing-offers`) |
+| BB09 | Data Sovereignty | Consent system in ds-connector — purpose-scoped, controller-bound |
 | DCP | Dataspace Credential Protocol | EDC connectors + identity-registry (STS + credential service) |

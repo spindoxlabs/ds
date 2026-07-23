@@ -60,9 +60,15 @@ def test_dataspace_spec_defaults():
 def test_load_default_profile():
     profile = load_odrl_profile()
     assert profile.namespace == "https://w3id.org/dsp/policy/"
-    assert "rec" in profile.tag_to_purpose
-    assert profile.tag_to_purpose["rec"] == "EnergyBalancing"
-    assert len(profile.purposes) == 3
+    assert "meters" in profile.tag_to_purpose
+    assert profile.tag_to_purpose["meters"] == "EnergyCommunityOperation"
+    assert {c.slug for c in profile.purposes} == {
+        "EnergyCommunityOperation",
+        "IncentiveCalculation",
+        "CostOptimization",
+        "FlexibilityResearch",
+        "GridMonitoring",
+    }
 
 
 def test_load_profile_from_yaml(tmp_path):
@@ -88,4 +94,4 @@ purposes:
 def test_load_profile_missing_path_falls_back_to_default():
     profile = load_odrl_profile("/nonexistent/path.yaml")
     assert profile.namespace == "https://w3id.org/dsp/policy/"
-    assert "rec" in profile.tag_to_purpose
+    assert "meters" in profile.tag_to_purpose

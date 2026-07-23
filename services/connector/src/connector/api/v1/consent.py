@@ -12,7 +12,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...dependencies import get_db, get_notifier, get_settings_dep, require_internal_scope
 from ...notifications.base import ConsentNotifier
-from ...services import consent_service
+from ...services import circle, consent_service
+from ...services import consent_vocabulary as vocab
 from ...services.membership_check import check_subject_membership, resolve_dataset_owner
 from ...services.user_credentials import verify_user_vc_jwt
 from ...clients.edc_management import EdcManagementClient
@@ -30,6 +31,11 @@ class ConsentRequestCreate(BaseModel):
     purpose: list[str] = []
     message: str | None = None
     notification_url: str | None = None
+    # Who is asking, and in what capacity. `consumer_id` alone cannot answer
+    # that: it names a connector, not the controller deciding the purpose.
+    controller: str | None = None
+    controller_role: str | None = None
+    offer_id: str | None = None
 
 
 class ConsentResponse(BaseModel):
@@ -38,6 +44,9 @@ class ConsentResponse(BaseModel):
     consumer_id: str
     dataset_id: str
     purpose: list[str] = []
+    controller: str | None = None
+    controller_role: str | None = None
+    offer_id: str | None = None
     message: str | None = None
     status: str
     requested_at: datetime
@@ -53,10 +62,14 @@ class TransferRegisterRequest(BaseModel):
 
 
 class DataSharingSetRequest(BaseModel):
-    dataset_id: str
+    dataset_id: str | None = None
     consumer_id: str | None = None
     enabled: bool
     purpose: list[str] = []
+    # Preferred form: name the offer, not a dataset. The connector expands it
+    # into per-dataset rows, so the caller cannot drift from the copy the
+    # person actually read.
+    offer_id: str | None = None
 
 
 def _verify_user(
@@ -131,21 +144,64 @@ async def create_consent_request(
                     detail=f"Subject '{subject_id}' is not a member of dataset owner organization '{owner_alias}'",
                 )
 
+    await _reject_if_already_covered(request, body, settings)
+
     request_ids = []
-    async with db.begin():
-        for subject_id in body.subject_ids:
-            consent = await consent_service.create_consent_request(
-                session=db,
-                subject_id=subject_id,
-                consumer_id=body.consumer_id,
-                dataset_id=body.dataset_id,
-                purpose=body.purpose,
-                message=body.message,
-                notification_url=body.notification_url,
-                notifier=notifier,
-            )
-            request_ids.append(consent.id)
+    try:
+        async with db.begin():
+            for subject_id in body.subject_ids:
+                consent = await consent_service.create_consent_request(
+                    session=db,
+                    subject_id=subject_id,
+                    consumer_id=body.consumer_id,
+                    dataset_id=body.dataset_id,
+                    purpose=body.purpose,
+                    message=body.message,
+                    notification_url=body.notification_url,
+                    notifier=notifier,
+                    controller=body.controller,
+                    controller_role=body.controller_role,
+                    offer_id=body.offer_id,
+                )
+                request_ids.append(consent.id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return {"request_ids": request_ids, "status": "pending"}
+
+
+async def _reject_if_already_covered(
+    request: Request,
+    body: ConsentRequestCreate,
+    settings: Settings,
+) -> None:
+    """Refuse a request from a party the offer already covers as a processor.
+
+    A processor of the offer's controller acts on its instructions under a DPA;
+    the controller has not changed and neither has the processing operation.
+    Art. 13(1)(e) requires *disclosing* such a recipient, and disclosure is not
+    consent — asking anyway would imply a choice that does not exist and would
+    train people to click through the questions that do matter.
+    """
+    if not body.offer_id:
+        return
+    try:
+        offer = vocab.resolve_offer(body.offer_id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    verdict = await circle.evaluate(
+        offer,
+        requester_did=body.consumer_id,
+        identity_registry_url=settings.identity_registry_url,
+        token_provider=getattr(request.app.state, "ir_token_provider", None),
+    )
+    if verdict.covered_processor:
+        raise HTTPException(
+            409,
+            f"Consumer '{body.consumer_id}' is already covered by offer "
+            f"'{offer.id}' as a processor of '{offer.recipients.controller}' — "
+            "this recipient must be disclosed and notified, not asked for consent",
+        )
 
 
 @router.get("/status")
@@ -237,18 +293,61 @@ async def set_my_data_share(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    """Enable or disable a data subject's sharing decision for one dataset."""
+    """Enable or disable a data subject's sharing decision.
+
+    Two forms, one table.  Naming an ``offer_id`` is preferred: the connector
+    expands the offer into per-dataset rows and stamps the purpose and
+    controller from it, so the decision cannot drift from what the person read.
+    Naming a ``dataset_id`` directly remains available for a subject managing
+    one dataset from ``/my-data``.
+    """
     _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
 
-    async with db.begin():
-        consent = await consent_service.set_subject_data_sharing(
-            session=db,
-            subject_id=x_subject_id,
-            dataset_id=body.dataset_id,
-            consumer_id=body.consumer_id or settings.consumer_participant_did,
-            enabled=body.enabled,
-            purpose=body.purpose,
-        )
+    if not body.offer_id and not body.dataset_id:
+        raise HTTPException(422, "Either offer_id or dataset_id is required")
+
+    consumer_id = body.consumer_id or settings.consumer_participant_did
+
+    try:
+        if body.offer_id:
+            offer = vocab.resolve_offer(body.offer_id)
+            if not offer.requires_consent:
+                # Contract-based processing is disclosed, not toggled. Offering
+                # a control here would imply a choice that does not exist.
+                raise HTTPException(
+                    409,
+                    f"Offer '{offer.id}' is not consent-based "
+                    f"(legal basis {offer.legal_basis}) — it is disclosed, not consented",
+                )
+            consents = []
+            async with db.begin():
+                for dataset_id in offer.datasets:
+                    consents.append(
+                        await consent_service.set_subject_data_sharing(
+                            session=db,
+                            subject_id=x_subject_id,
+                            dataset_id=dataset_id,
+                            consumer_id=consumer_id,
+                            enabled=body.enabled,
+                            purpose=[offer.purpose],
+                            controller=offer.recipients.controller,
+                            controller_role=offer.recipients.controller_role,
+                            offer_id=offer.id,
+                        )
+                    )
+            return [ConsentResponse.model_validate(c) for c in consents]
+
+        async with db.begin():
+            consent = await consent_service.set_subject_data_sharing(
+                session=db,
+                subject_id=x_subject_id,
+                dataset_id=body.dataset_id,
+                consumer_id=consumer_id,
+                enabled=body.enabled,
+                purpose=body.purpose,
+            )
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
     return ConsentResponse.model_validate(consent)
 
 

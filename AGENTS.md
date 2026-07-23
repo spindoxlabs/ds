@@ -296,6 +296,40 @@ Resolution chain:
 
 **Governance overlay:** `governance.<name>.yaml` merges on top of the base file. Set `CONNECTOR_GOVERNANCE_OVERLAY_NAME` or pass `overlay_name`. `*.local.yaml` is gitignored for deployment-specific bindings.
 
+### The consent vocabulary — purposes, sharing offers, the circle
+
+Three vocabularies have to agree before a person can be asked anything meaningful:
+
+```
+purpose slug ──► ODRL profile taxonomy (SKOS, /ns/policy)
+     │ groups                    dpv_mapping → DPV IRI (docs only)
+     ▼                           broader     → local hierarchy (enforcement)
+sharing offer ──► governance.yaml datasets (declare policy.purpose[])
+     │ consented as
+     ▼
+consent row (dataset + purpose + controller-role, all validated)
+     │ compared at
+     ▼
+GET /internal/consent/check?purpose=…&controller_role=…
+```
+
+| Rule | Why |
+|---|---|
+| `policy.purpose[]` is the **only** runtime source of a dataset's purposes | `tags` are DCAT-AP keywords — a topic is not a reason for processing. `tag_to_purpose` is an authoring default for scaffolding only |
+| `odrl:isA` matching follows **only** the local `broader` chain, never `dpv_mapping` | A `broadMatch` to a generic DPV term would let an unrelated use satisfy a specific consent |
+| Empty `purpose[]` is **never** a wildcard for personal data | The person was never told the use, so the consent fails GDPR Art. 4(11). Fail closed — this applies to the requested purpose too |
+| Consent to a child purpose does **not** cover its parent | That would widen consent |
+| The consent key is **(subject, purpose, controller-role)** | Controller ≠ legal entity: a DSO's grid-operations and metering functions are distinct controllers |
+| Only `dpv:Consent` offers get a UI control | Contract-based processing is disclosed, not toggled; asking implies a choice that does not exist |
+| A **covered processor** is disclosed, never asked | Same controller, same operation (Art. 28). `POST /consent/request` returns 409 |
+| `user_visible_hash` excludes `datasets[]` | Which datasets back an offer is a schema-migration concern nobody was shown |
+
+Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same overlay mechanism as `governance.yaml`) and are served publicly at `GET /ns/sharing-offers` as **codes plus an English fallback** — translation is entirely the frontend's job, and dataset keys are not in the public projection.
+
+Consent writes resolve through `services/connector/src/connector/services/consent_vocabulary.py`; anything outside the declared vocabulary is a **422**. `task compliance:validate` gates the whole chain before an import.
+
+See `docs/consent-and-sovereignty.md` for the full model and the enforcement matrix.
+
 ### Organization memberships
 
 The `OrganizationMembership` table in identity-registry tracks which user DIDs belong to which owner organizations. Seeded by `ir-cli membership add` or `ir-cli membership import --community-registry`.
@@ -340,7 +374,9 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Task | Where to start |
 |------|---------------|
 | Add a new dataset to the catalogue | `services/connector/governance/governance.yaml` |
-| Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function) |
+| Add or change a sharing offer | `services/connector/governance/sharing-offers.yaml`, then `task compliance:validate` |
+| Add a purpose to the taxonomy | `libs/governance/src/ds/governance/profiles/energy.yaml` |
+| Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function, **plus a rule binding**) |
 | Add a new API endpoint to connector | `services/connector/src/connector/api/v1/` |
 | Add a new portal page | `services/portal/src/routes/` |
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
@@ -410,7 +446,7 @@ Most endpoints use the unified `ds_auth` guard, but **two other mechanisms exist
 
 The DCP-facing identity-registry endpoints are a fourth case: `/sts/{did}/token` authenticates with the participant's STS client secret, and `/credentials/{did}/presentations/query` requires a self-issued DCP token signed by the requested DID's registered key.
 
-Public by design: `/dids/`, `/status/`, `/health`, and the connector's `/ns/policy` static vocabulary.
+Public by design: `/dids/`, `/status/`, `/health`, and the connector's `/ns/policy` and `/ns/sharing-offers` static vocabularies. Both are vocabularies rather than data — an onboarding wizard has to render offers before anyone has an identity — and the offer projection deliberately omits dataset keys.
 
 > `/metrics` on ds-connector, ds-provenance, ds-federated-catalog and dataset-api is currently **unauthenticated** and reachable through Caddy. Treat it as a known gap, not a pattern to copy.
 

@@ -1,0 +1,50 @@
+# Governance fixture for the connector test suite.
+#
+# Kept separate from services/connector/governance/governance.yaml so tests
+# assert against a stable vocabulary rather than whatever the dev catalogue
+# happens to declare.
+
+defaults:
+  access_level: internal
+  classification: green
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
+  dataspace:
+    expose: false
+
+sources:
+  # Consent-gated, personal — the dataset the consent tests exercise.
+  datasets.silver.meters:
+    title: "Smart Meter Readings (test)"
+    access_level: restricted
+    classification: pii
+    tags: [meters, silver, pii]
+    user_filter_column: sub
+    policy:
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent:
+        required: true
+    dataspace:
+      expose: true
+      medallion: silver
+      asset:
+        id: "datasets.silver.meters"
+      data_address:
+        base_url: "http://dataset-api:30002/query"
+
+  # Open, non-personal — there is no data subject, so consent does not arise.
+  datasets.gold.weather:
+    title: "Weather Features (test)"
+    access_level: open
+    classification: green
+    tags: [weather, gold]
+    policy:
+      purpose: [GridMonitoring]
+    dataspace:
+      expose: true
+      medallion: gold
+      asset:
+        id: "datasets.gold.weather"
+      data_address:
+        base_url: "http://dataset-api:30002/query"

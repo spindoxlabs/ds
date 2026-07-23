@@ -70,6 +70,31 @@ src/
 | Call ds-connector API | `src/lib/server/connector.ts` |
 | Call ds-provenance API | `src/lib/server/provenance.ts` |
 | Change ODRL rendering | `src/lib/server/odrl.ts` |
+| Change what a data subject is asked | `src/routes/my-data/` + `getSharingOffers()` in `connector.ts` |
+
+## `/my-data` — sharing offers, not dataset toggles
+
+The page has two sections, and the distinction matters:
+
+1. **Sharing** — the `GET /ns/sharing-offers` list. This is what a person is actually
+   asked: a purpose-scoped bundle, from a named controller, for a described category
+   of recipient. Toggling posts `{offer_id, enabled}`; the connector expands the offer
+   into per-dataset rows and stamps the purpose and controller, so the portal never
+   names a dataset and the decision cannot drift from the copy shown.
+2. **Data held about you** — the dataset-derived detail view. Read-only. Raw dataset
+   keys are not something anyone consents to.
+
+Rules when touching this page:
+
+- **Only `requires_consent` offers get a control.** Contract-based offers render as
+  disclosure with no toggle — offering a choice that does not exist is what
+  invalidates consent, and the connector returns 409 if you try anyway.
+- **Never hardcode a purpose.** `ds` validates purposes against the ODRL taxonomy and
+  returns 422 for anything unknown. Pass what the offer declares, or nothing.
+- **`ds` serves codes; the portal renders sentences.** ISO 8601 durations
+  (`PT15M`, `P2Y`) and slugs are translated in the component via a lookup that falls
+  back to the code itself. `fallback_text_en` is the server-supplied English safety
+  net, so an unmapped code degrades to readable text rather than disappearing.
 
 ## Coding conventions
 

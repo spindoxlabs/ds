@@ -40,7 +40,18 @@ class ConsentRequestORM(Base):
     subject_id: Mapped[str] = mapped_column(Text, nullable=False)   # User DID
     consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # Purpose slugs from the ODRL profile taxonomy, validated on write.
+    # An empty list is never a wildcard: for a consent-required dataset it means
+    # the person was never told the use, so the row fails closed.
     purpose: Mapped[list | None] = mapped_column(JSON)              # list[str]
+    # Who decides the purpose. `controller` is an owner alias; `controller_role`
+    # names which of that participant's roles is acting, because controller is
+    # not the same thing as legal entity — a DSO's grid-operations and metering
+    # functions are distinct controllers under unbundling rules.
+    controller: Mapped[str | None] = mapped_column(Text)
+    controller_role: Mapped[str | None] = mapped_column(Text)
+    # The sharing offer this row was created from, when it came from one.
+    offer_id: Mapped[str | None] = mapped_column(Text)
     message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     # pending | granted | rejected | revoked

@@ -22,6 +22,7 @@ console = Console()
 
 class FlowName(str, Enum):
     smoke = "smoke"
+    consent_purpose = "consent-purpose"
     uc1 = "uc1"
     uc2 = "uc2"
     uc3 = "uc3"

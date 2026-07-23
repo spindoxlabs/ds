@@ -195,6 +195,12 @@ async def query(
     subject_id: str | None = Query(default=None),
     agreement_id: str | None = Query(default=None),
     transfer_id: str | None = Query(default=None),
+    purpose: str | None = Query(
+        default=None,
+        description="Comma-separated purpose slugs — the reason this query is "
+        "made. Rows belonging to subjects who did not consent to it are filtered "
+        "out. Required for consent-gated datasets.",
+    ),
 ) -> dict[str, Any]:
     if request.method == "POST":
         body = await request.json()
@@ -203,6 +209,9 @@ async def query(
         subject_id = body.get("subject_id", subject_id)
         agreement_id = body.get("agreement_id", agreement_id)
         transfer_id = body.get("transfer_id", transfer_id)
+        purpose = body.get("purpose", purpose)
+    if isinstance(purpose, list):
+        purpose = ",".join(purpose)
 
     spec = DATASETS.get(dataset_name)
     if not spec:
@@ -242,10 +251,13 @@ async def query(
                 403,
                 "consumer_id is required for consent-protected datasets in mock mode",
             )
-        subject_ids = await _granted_subject_ids(dataset_name, spec["asset_id"], consumer_id, subject_id)
+        subject_ids = await _granted_subject_ids(
+            dataset_name, spec["asset_id"], consumer_id, subject_id, purpose
+        )
         subject_column = spec.get("subject_column", "sub")
         rows = [row for row in rows if row.get(subject_column) in subject_ids]
         authorization["consent_checked"] = True
+        authorization["purpose"] = purpose
         authorization["authorized_subject_ids"] = subject_ids
 
     await _audit_query(
@@ -361,13 +373,22 @@ async def _granted_subject_ids(
     asset_id: str,
     consumer_id: str,
     subject_id: str | None,
+    purpose: str | None = None,
 ) -> list[str]:
+    """Subjects whose consent covers this consumer *and this purpose*.
+
+    Passing the purpose through is what makes the declaration binding: for a
+    consent-gated dataset the connector denies when no purpose is given, so a
+    caller that omits it receives no rows rather than all of them.
+    """
     candidates = [dataset_name, asset_id]
     async with httpx.AsyncClient(timeout=5.0) as client:
         for dataset_id in candidates:
             params = {"dataset_id": dataset_id, "consumer_id": consumer_id}
             if subject_id:
                 params["subject_id"] = subject_id
+            if purpose:
+                params["purpose"] = purpose
             try:
                 response = await client.get(
                     f"{settings.connector_internal_url.rstrip('/')}/internal/consent/check",

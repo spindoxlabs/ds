@@ -11,6 +11,13 @@
 http://*.dataspaces.localhost:80 {
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
+		# Docker service name, on purpose: DID resolution stays on the Docker
+		# network and host :80 is never exposed. In the pure-Docker topology the
+		# EDCs resolve did:web:*.dataspaces.localhost via Caddy's network aliases
+		# to here. When the identity-registry runs on the host (task dev), this
+		# name does not resolve and the host-run EDC falls back to
+		# DemoIdentityFallbackExtension — the documented dev tradeoff, guarded
+		# out of production by task secrets:check.
 		reverse_proxy identity-registry:30005
 	}
 	respond 404
@@ -25,6 +32,13 @@ http://*.dataspaces.localhost:80 {
 http://*.dataspaces.localhost:9010 {
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
+		# Docker service name, on purpose: DID resolution stays on the Docker
+		# network and host :80 is never exposed. In the pure-Docker topology the
+		# EDCs resolve did:web:*.dataspaces.localhost via Caddy's network aliases
+		# to here. When the identity-registry runs on the host (task dev), this
+		# name does not resolve and the host-run EDC falls back to
+		# DemoIdentityFallbackExtension — the documented dev tradeoff, guarded
+		# out of production by task secrets:check.
 		reverse_proxy identity-registry:30005
 	}
 	respond 404

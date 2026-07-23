@@ -81,6 +81,7 @@ class ValidationResult:
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     datasets_checked: int = 0
+    offers_checked: int = 0
     errors: list[Finding] = field(default_factory=list)
     warnings: list[Finding] = field(default_factory=list)
     checks: list[str] = field(default_factory=lambda: list(CHECKS))
@@ -102,6 +103,7 @@ class ValidationResult:
             "generated_at": self.generated_at,
             "passed": self.passed,
             "datasets_checked": self.datasets_checked,
+            "offers_checked": self.offers_checked,
             "checks": self.checks,
             "artifacts": self.artifacts,
             "errors": [item.asdict() for item in self.errors],

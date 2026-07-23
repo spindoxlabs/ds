@@ -88,6 +88,45 @@ class RuntimeOwnerLookup:
         return self._listed
 
 
+def fetch_participant_roles(
+    identity_registry_url: str,
+    *,
+    token: str | None = None,
+    timeout: float = 10.0,
+    client: httpx.Client | None = None,
+) -> dict[str, list[str]] | None:
+    """Fetch ``did -> roles`` for every participant. Returns None if unavailable.
+
+    Used to validate an offer's ``controller_role`` against the roles the
+    controller actually holds — a participant can act in several capacities
+    (a DSO's grid-operations and metering functions are distinct controllers),
+    and only the declared ones may appear in an offer.
+    """
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    owns_client = client is None
+    client = client or httpx.Client(timeout=timeout)
+    try:
+        resp = client.get(
+            f"{identity_registry_url.rstrip('/')}/participants", headers=headers
+        )
+        resp.raise_for_status()
+        return {
+            item["did"]: list(item.get("roles") or [])
+            for item in resp.json()
+            if isinstance(item, dict) and item.get("did")
+        }
+    except (httpx.HTTPError, KeyError, ValueError) as exc:
+        log.warning(
+            "Cannot list participant roles from %s (%s) — skipping controller-role check",
+            identity_registry_url,
+            exc,
+        )
+        return None
+    finally:
+        if owns_client:
+            client.close()
+
+
 def fetch_participant_dids(
     identity_registry_url: str,
     *,

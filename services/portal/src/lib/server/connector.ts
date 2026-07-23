@@ -45,6 +45,12 @@ export interface ConsentRequest {
 	consumer_id: string;
 	status: 'pending' | 'granted' | 'rejected' | 'revoked';
 	purpose: string[] | null;
+	/** Owner alias of the controller that decides the purpose. */
+	controller?: string | null;
+	/** Which role of that participant is acting — controller ≠ legal entity. */
+	controller_role?: string | null;
+	/** Set when the row came from a sharing offer rather than a raw dataset toggle. */
+	offer_id?: string | null;
 	message: string | null;
 	requested_at: string;
 	decided_at?: string | null;
@@ -117,17 +123,76 @@ export async function setMyDataShare(
 	datasetId: string,
 	enabled: boolean,
 	vcJws?: string | null,
+	purpose: string[] = [],
 ): Promise<DataShareDecision> {
 	return apiFetch<DataShareDecision>(
 		connectorUrl('/consent/my/shares'),
 		{
 			method: 'POST',
 			headers: subjectCredentialHeaders(subjectId, vcJws),
-			body: JSON.stringify({
-				dataset_id: datasetId,
-				enabled,
-				purpose: ['ds:purpose:EnergyBalancing', 'ds:purpose:GridMonitoring'],
-			}),
+			// `purpose` is validated against the ODRL profile taxonomy on write.
+			// The portal never invents one: it passes what the offer declares.
+			body: JSON.stringify({ dataset_id: datasetId, enabled, purpose }),
+		},
+		token,
+	);
+}
+
+// ── Sharing offers ───────────────────────────────────────────────────────────
+//
+// What a person is actually asked about: a purpose-scoped bundle from a named
+// controller, for a described category of recipient. Served as codes plus an
+// English fallback — the portal composes the sentence, ds serves the facts.
+
+export interface SharingOffer {
+	id: string;
+	purpose: string;
+	purpose_broader: string[];
+	legal_basis: string;
+	/** false for contract/legitimate-interest offers — disclose, never toggle. */
+	requires_consent: boolean;
+	recipients: {
+		controller: string;
+		controller_role: string | null;
+		processors: { category: string };
+	};
+	subject_scope: string;
+	measures: string[];
+	resolution: string | null;
+	coverage: { retrospective: string | null; prospective: string | null };
+	consent_text_version: string;
+	revocable: boolean;
+	retention: string | null;
+	user_visible_hash: string;
+	dataset_count: number;
+	fallback_text_en: {
+		purpose_label: string;
+		purpose_definition: string;
+		processor_category: string;
+	};
+}
+
+/** Public vocabulary endpoint — no credential required. */
+export async function getSharingOffers(): Promise<SharingOffer[]> {
+	return apiFetch<SharingOffer[]>(connectorUrl('/ns/sharing-offers'));
+}
+
+export async function setMyOfferShare(
+	token: string,
+	subjectId: string,
+	offerId: string,
+	enabled: boolean,
+	vcJws?: string | null,
+): Promise<DataShareDecision[]> {
+	// Naming the offer rather than a dataset is what keeps the decision tied to
+	// the copy the person read: the connector expands it into per-dataset rows
+	// and stamps the purpose and controller from the offer itself.
+	return apiFetch<DataShareDecision[]>(
+		connectorUrl('/consent/my/shares'),
+		{
+			method: 'POST',
+			headers: subjectCredentialHeaders(subjectId, vcJws),
+			body: JSON.stringify({ offer_id: offerId, enabled }),
 		},
 		token,
 	);

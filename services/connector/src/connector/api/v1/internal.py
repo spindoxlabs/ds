@@ -148,30 +148,76 @@ async def consent_check(
     dataset_id: str,
     consumer_id: str,
     subject_id: Optional[str] = None,
+    purpose: Optional[str] = None,
+    controller_role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_internal_scope),
 ):
-    """Check consent for a consumer+dataset pair.
+    """Check consent for a consumer+dataset pair, scoped to a purpose and role.
 
     - With ``subject_id``: returns whether that specific subject has active consent.
     - Without ``subject_id``: returns all granted subject IDs (used by the Dataset API PEP
       to build a row-level IN-list filter).
+
+    ``purpose`` is a comma-separated list of profile purpose slugs or IRIs — the
+    reason the caller wants the data.  Matching uses ``odrl:isA`` semantics over
+    the profile's local ``broader`` chain, so a consent to a parent purpose
+    covers a narrower request but never the other way round.
+
+    For a consent-required dataset an absent ``purpose`` denies: the caller has
+    not said why it wants the data, so no consent can authorise it.  Callers
+    that predate the purpose chain therefore fail closed rather than silently
+    receiving everything.
     """
     from ...services.consent_service import check_consent, get_granted_subject_ids
+    from ...services import consent_vocabulary as vocab
+
+    purposes = [p.strip() for p in (purpose or "").split(",") if p.strip()]
+    try:
+        purposes = vocab.normalise_purposes(purposes)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    consent_required = None
+    try:
+        consent_required = vocab.requires_consent(vocab.resolve_dataset(dataset_id))
+    except vocab.VocabularyError:
+        # Leave it to the service layer, which fails closed on unknown datasets.
+        pass
 
     if subject_id:
-        active = await check_consent(db, subject_id, dataset_id, consumer_id)
+        active, reason = await check_consent(
+            db,
+            subject_id,
+            dataset_id,
+            consumer_id,
+            purpose=purposes,
+            controller_role=controller_role,
+            consent_required=consent_required,
+        )
         return {
             "subject_id": subject_id,
             "dataset_id": dataset_id,
             "consumer_id": consumer_id,
+            "purpose": purposes,
+            "controller_role": controller_role,
             "consent_active": active,
+            "reason": reason,
         }
     # No subject_id: return all granted subjects for this (consumer, dataset)
-    granted = await get_granted_subject_ids(db, dataset_id, consumer_id)
+    granted = await get_granted_subject_ids(
+        db,
+        dataset_id,
+        consumer_id,
+        purpose=purposes,
+        controller_role=controller_role,
+        consent_required=consent_required,
+    )
     return {
         "dataset_id": dataset_id,
         "consumer_id": consumer_id,
+        "purpose": purposes,
+        "controller_role": controller_role,
         "subject_ids": granted,
     }
 

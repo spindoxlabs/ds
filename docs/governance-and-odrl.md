@@ -22,8 +22,13 @@ sources:
     description: "Aggregated energy consumption and production data"
     access_level: open          # open | internal | restricted | secret
     classification: green       # green | pii
-    tags: [energy, metrics]
+    tags: [energy, metrics]     # DCAT-AP catalogue keywords — no policy meaning
     user_filter_column: null    # set to enable consent-based row filtering
+
+    policy:
+      # The ONLY runtime declaration of which purposes this dataset may serve.
+      # Slugs must exist in the active ODRL profile taxonomy.
+      purpose: [EnergyCommunityOperation, GridMonitoring]
 
     dataspace:
       expose: true              # push to EDC catalogue
@@ -79,7 +84,38 @@ Where `{ns}` is the namespace from the loaded `OdrlProfile` (default `https://w3
 Additional constraints:
 
 - When `user_filter_column` is set or `classification: pii`: adds `{ns}ConsentStatus eq "active"`
-- Tags map to `odrl:purpose` constraints via the profile's `tag_to_purpose` mapping (e.g. `meters` → `{ns}purpose:EnergyBalancing`)
+- `policy.purpose[]` maps to **one** `odrl:purpose` constraint (see below)
+
+### Purpose constraints
+
+`policy.purpose[]` is the only runtime source of a dataset's purposes. Entries may be written as slugs or as full profile IRIs; anything that is neither a known slug nor an absolute IRI is dropped by the mapper and reported by the `purpose-declared` compliance check, so a typo cannot silently become an unconstrained offer.
+
+| Declared purposes | Emitted constraint |
+|---|---|
+| exactly one | `odrl:purpose isA {ns}purpose/X` |
+| several | `odrl:purpose isAnyOf [{ns}purpose/X, {ns}purpose/Y]` |
+| none | no purpose constraint |
+
+**One constraint, never one per purpose.** Constraints inside a permission are ANDed, so emitting several would demand that a consumer's use serve all of them simultaneously.
+
+> **`purpose_base` is a path segment (`purpose/`), not a pseudo-prefix (`purpose:`).**
+> A colon makes purpose IRIs compact to `purpose:Slug`, which JSON-LD rejects as
+> confusable with a compact IRI (`IRI_CONFUSED_WITH_PREFIX`) — the whole DSP catalogue
+> response then fails to serialise with a 500. The `purpose-iri-shape` compliance check
+> enforces this for deployer-supplied profiles.
+
+> **`tags` are not the binding mechanism.** `tags` is free-form and overloaded (`[meters, silver, pii, rec]` mixes domain, medallion layer, sensitivity and community). Mapping `meters → EnergyBalancing` maps a *topic* to a *purpose* — a category error, since one meter dataset can serve incentive calculation, flexibility research or cost optimisation.
+>
+> `tags` are DCAT-AP catalogue keywords. The profile's `tag_to_purpose` map survives only as an authoring default when scaffolding a new governance entry (`GovernanceMapper.derive_purposes_from_tags`), never as runtime truth.
+
+### DPV alignment
+
+Each purpose concept may declare `broader` (the local hierarchy) and `dpv_mapping` (alignment to [W3C DPV](https://w3id.org/dpv#)). They are not interchangeable:
+
+- `broader` is **enforcement** — `odrl:isA` matching walks this chain and nothing else.
+- `dpv_mapping` is **interop and documentation** — served at `/ns/policy` as the declared `skos:*Match` predicate, never matched against.
+
+Following a `broadMatch` during enforcement would let a consumer whose policy names a generic DPV term satisfy a member's specific consent. `relation` must be one of the five SKOS match properties; the CI gate rejects anything else. See [Consent & Sovereignty](consent-and-sovereignty.md#the-purpose-chain).
 
 ### 2. EDC Asset
 
@@ -149,7 +185,21 @@ The dataspace defines custom ODRL terms under a configurable namespace prefix. T
 |------|------|-------------|
 | `{ns}Membership` | Constraint | Membership check for the requesting participant |
 | `{ns}ConsentStatus` | Constraint | Active consent check (`active`) |
-| `{ns}purpose:{PurposeName}` | Constraint | Purpose URIs derived from `OdrlProfile.tag_to_purpose` (e.g. `{ns}purpose:EnergyBalancing`) |
+| `odrl:purpose` | Constraint | Left operand; the value space is this profile's taxonomy (ODRL 2.2 leaves it to the profile) |
+| `{ns}purpose/{Slug}` | `skos:Concept` | A purpose concept, with `skos:prefLabel`, `skos:definition`, optional `skos:broader` and an optional SKOS match property pointing at DPV |
+
+The purpose concepts are served as a SKOS taxonomy, so a reader can walk `skos:broader` to see what a consent covers and read the declared DPV alignment without guessing:
+
+```json
+{
+  "@id": "https://w3id.org/dsp/policy/purpose/FlexibilityResearch",
+  "@type": "skos:Concept",
+  "skos:prefLabel": "Flexibility research",
+  "skos:definition": "Studying when and how much consumption can shift.",
+  "skos:broader": { "@id": "https://w3id.org/dsp/policy/purpose/EnergyCommunityOperation" },
+  "skos:broadMatch": { "@id": "https://w3id.org/dpv#ResearchAndDevelopment" }
+}
+```
 
 ---
 
