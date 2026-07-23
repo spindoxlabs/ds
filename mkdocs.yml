@@ -17,8 +17,9 @@ theme:
         icon: material/brightness-4
         name: Switch to light mode
   features:
-    - navigation.sections
-    - navigation.expand
+    # Sections stay collapsible and collapsed by default — the blueprint trees
+    # are long enough that expanding them buries everything else.
+    - navigation.indexes
     - navigation.top
     - search.suggest
     - content.action.edit

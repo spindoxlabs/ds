@@ -9,7 +9,8 @@
 #
 # Anything absent from this file has a safe default inside the charts.
 # See .agents/helm/plan.md for the design, helm/AGENTS.md for the security
-# contract, and helm/docs/prerequisites.md for what must exist before install.
+# contract, and docs/deployment/ for the operator documentation — prerequisites,
+# the full key-by-key reference for this file, secrets, exposure and day-2 ops.
 # ==============================================================================
 
 global:
@@ -65,7 +66,7 @@ global:
       edcPrefix: edc
 
   # ── Keycloak — externally managed, never installed by these charts ──────────
-  # See helm/docs/keycloak-requirements.md for the realm/client contract.
+  # See docs/deployment/keycloak.md for the realm/client contract.
   keycloak:
     realm: dataspaces
     issuerUrl: https://sso.example.org/realms/dataspaces

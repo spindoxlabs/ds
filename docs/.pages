@@ -7,5 +7,9 @@ nav:
   - consent-and-sovereignty.md
   - owner-identity-and-ownership.md
   - provenance-and-lineage.md
-  - DSSC Blueprint: dssc-blueprint-docs
-  - CEEDS Blueprint: ceeds-blueprint-docs
+  - Deployment: deployment
+  - roadmap.md
+  - Data Spaces Blueprints:
+      - DSSC Blueprint v3.0: dssc-blueprint-docs
+      - CEEDS Blueprint v2.0: ceeds-blueprint-docs
+      - CEEDS benchmark: ceeds-benchmark.md

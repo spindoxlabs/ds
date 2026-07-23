@@ -39,7 +39,8 @@ dataspaces/
 │   ├── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
 │   ├── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
 │   └── ds-e2e/                 ds-e2e — end-to-end verification framework (`ds-e2e` CLI)
-├── docs/                       Architecture docs, DSSC blueprint reference
+├── docs/                       mkdocs site — architecture, deployment reference, blueprints
+├── helm/                       Helm charts + helmfile for Kubernetes deployment
 ├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
 ├── docker-compose.yml          Shared infra — caddy, postgres, identity-registry, keycloak
 ├── docker-compose.provider.yml Provider participant stack
@@ -159,7 +160,7 @@ The `ir-cli` tool (installed in the identity-registry container) handles bootstr
 
 ## Deployment / production configuration
 
-**See `helm/AGENTS.md` for the full deployment contract.** The essentials:
+**See `helm/AGENTS.md` for the full deployment contract**, and `docs/deployment/` for the operator documentation (prerequisites, Keycloak realm contract, `values.yaml` reference, secrets, exposure, day-2 operations — published as the Deployment section of the docs site). The essentials:
 
 ### The `DS_ENV` production guard
 

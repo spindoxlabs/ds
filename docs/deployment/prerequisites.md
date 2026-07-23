@@ -20,7 +20,7 @@ Optional: Prometheus Operator (for `ServiceMonitor`), External Secrets Operator
 ## 1. PostgreSQL via CloudNativePG
 
 Install the operator, then apply a `Cluster`. A worked example is in
-[`cnpg-cluster.example.yaml`](./cnpg-cluster.example.yaml).
+[`helm/docs/cnpg-cluster.example.yaml`](https://github.com/spindoxlabs/ds/blob/main/helm/docs/cnpg-cluster.example.yaml).
 
 ```bash
 kubectl apply --server-side -f \
@@ -67,7 +67,7 @@ and the per-role passwords in `secrets.sops.yaml`.
 ## 2. Keycloak
 
 The charts never install Keycloak. They need an existing realm that satisfies the
-contract in [`keycloak-requirements.md`](./keycloak-requirements.md) — service
+contract in [Keycloak requirements](keycloak.md) — service
 clients with the right scopes, user groups mirroring those scope names, brute
 force protection, and the three audit event flags NIS2 evidence depends on.
 
@@ -163,5 +163,11 @@ kubectl get clusterissuer                           # cert-manager issuer Ready
 kubectl get ingressclass                            # nginx present
 curl -sf $ISSUER/.well-known/openid-configuration   # Keycloak realm reachable
 dig +short portal.$BASE_DOMAIN                      # DNS resolves to the LB
-task secrets:check                                  # no dev defaults remain
+helmfile -e production template >/dev/null          # every required secret is wired
 ```
+
+The last line is the real gate: the Secret templates use `required`, so a render
+that succeeds proves every mandatory secret has a value, and a render that fails
+names the missing key. See [Secrets](secrets.md).
+
+Next: [Keycloak requirements](keycloak.md) → [Configuration reference](configuration.md).

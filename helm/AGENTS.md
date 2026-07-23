@@ -1,10 +1,22 @@
 # Helm deployment model — Agent Guide
 
-> **Status: charts in progress.** The security contract below is the invariant
-> set; the sections after it describe *what exists on disk* and how to work in
-> this folder. The authority release (`ds-identity-registry`) and the shared
-> `ds-common` library chart are implemented; participant charts are planned. See
-> `.agents/helm/plan.md` for the full design and phasing.
+> **Status: all seven charts implemented and rendering end-to-end.** `ds-common`
+> (library), `ds-namespaces`, the authority `ds-identity-registry`, and the
+> participant tier `ds-edc` / `ds-connector` / `ds-provenance` /
+> `ds-federated-catalog` / `ds-portal`. `helmfile.yaml.gotmpl` composes an
+> authority plus any number of participants through SOPS. Remaining work is
+> hardening and CI gates — see the checklist at the end of this file.
+>
+> The security contract below is the invariant set; the sections after it
+> describe *what exists on disk* and how to work in this folder. See
+> `.agents/helm/plan.md` for the design and phasing.
+
+> **Operator documentation lives in `docs/deployment/`**, published as the
+> Deployment section of the mkdocs site: prerequisites, the Keycloak realm
+> contract, the key-by-key `values.yaml` reference, the secret key reference,
+> exposure/NetworkPolicy, and day-2 operations. Keep it in sync when you change
+> a chart's values contract or its public surface — it is the only operator-
+> facing description of either. This file stays agent- and security-facing.
 
 ## Working in this folder
 
@@ -13,13 +25,14 @@
 ```
 helm/
 ├── AGENTS.md                    # this file — security contract + ops notes
-├── README.md                    # operator runbook (install / secrets / validate)
+├── README.md                    # short runbook; points at docs/deployment/
 ├── helmfile.yaml.gotmpl         # release composition; MUST keep .gotmpl extension
 ├── values.yaml                  # the ONE operator-edited file
 ├── secrets.example.yaml         # template → copy to secrets.sops.yaml
 ├── secrets.sops.yaml            # SOPS-encrypted, committed; plaintext NEVER committed
 ├── .sops.yaml                   # SOPS creation rules (set your age/KMS recipient)
-├── docs/                        # prerequisites, CNPG example, Keycloak contract
+├── docs/
+│   └── cnpg-cluster.example.yaml   # reference CNPG Cluster (databases + roles)
 └── charts/
     ├── ds-common/               # library chart — ALL shared helpers live here
     ├── ds-namespaces/           # labeled namespaces (participant label → NetPols)
@@ -255,6 +268,61 @@ itself.
 > Re-introducing an equivalent realm gate in CI is tracked as follow-up work; the
 > checks it performed are worth recovering from git history.
 
+## Exposure
+
+The design rule: **one public host per trust boundary, path-allowlisted, default
+404.** A chart gets an `Ingress` only if it appears below. Everything else is
+ClusterIP + NetworkPolicy and is reachable only from named in-cluster callers.
+
+Operator-facing detail (paths, rewrites, per-service NetworkPolicy allows,
+verification commands) is in `docs/deployment/exposure.md`. This section is the
+invariant list.
+
+### The three host shapes
+
+| Host | Chart that owns the Ingress | Serves |
+|------|-----------------------------|--------|
+| `portal.<baseDomain>` | `ds-portal` | `/` — the only human-facing host. SSR, so the dev Caddy `/api/*` fan-in is **not** reproduced. |
+| `<participant>.<baseDomain>` | `ds-edc` | `/.well-known/did.json` (rewritten to the authority registry via an `ExternalName`), `/protocol/*` → `:19194`, `/public/*` → `:19291`. Nothing else. |
+| `trust-anchor.<baseDomain>` | `ds-identity-registry` | `/.well-known/did.json` (rewritten), `/status/*` (StatusList2021 — must be publicly fetchable, or revocation cannot be checked) |
+| `users.<baseDomain>` | `ds-identity-registry` | `/<id>/did.json`, **only** when `exposeUserDids` — needed just for remote resolution of user DIDs |
+
+The participant host **is** the participant's did:web identity, which is why DID
+resolution and the DSP endpoints share it. One host, one Ingress owner: the
+did:web path for a participant lives in `ds-edc`, not in the registry chart, and
+crosses namespaces through an `ExternalName` Service because an Ingress can only
+target a Service in its own namespace.
+
+### Never exposed
+
+EDC management (`:19193`) and control (`:19192`) — they create and delete assets,
+policies and transfers. The connector (`:30001`, including `/internal/*` and
+`/webhooks/*`), provenance (`:30000`), federated catalog (`:30003`). The
+registry's `/admin/*`, `/sts/*`, `/credentials/*`, `/memberships/*`, `/owners/*`.
+Every `/metrics` endpoint — all unauthenticated, restricted to the Prometheus
+namespace by NetworkPolicy and never routed through an Ingress.
+
+The `ds-edc` Service publishes management and control in-cluster, but
+`fromIngressController` lists only `protocol` and `public`. The exposure is
+denied twice — at routing and at the network layer — so a misconfigured Ingress
+path still cannot reach them. **Keep both denials when editing that chart.**
+
+`credentialService.expose` (DCP presentation query) defaults to `false`: in the
+EDC DCP flow the holder self-presents, so remote verifiers do not call it. It is
+authenticated when enabled, but it is attack surface with no default consumer.
+
+### Two structural rules
+
+- **One cert-manager Certificate per host.** Several Ingress objects share a host
+  because `rewrite-target` is a per-object annotation. Exactly one may carry the
+  `cluster-issuer` annotation — pass `issueCert true` to `ds.ingress.annotations`
+  on that one and `false` on the rest. `ds.ingress.tls` derives the secret name
+  from the host so they share the certificate.
+- **Egress allows are opt-in per chart.** `ds.networkPolicy.defaultDeny` permits
+  only DNS and Postgres; anything else must be listed. Broad-CIDR rules always
+  exclude `169.254.169.254/32` — a pod that reaches the metadata endpoint can
+  often mint cloud IAM credentials.
+
 ## Secret and key material
 
 `.env.example` is the authoritative catalogue of every variable, what it does,
@@ -411,7 +479,7 @@ release, pending for participant charts · `[ ]` not yet.
 - [x] Every `CHANGE_ME` in `.env.example` mapped to a Secret or values entry — all seven charts (identity-registry, edc, connector, provenance, portal, federated-catalog + namespaces)
 - [ ] `task secrets:check` passes in the release pipeline
 - [x] `DS_DEMO_IDENTITY_ENABLED` absent from the chart entirely
-- [ ] `realm-production.example.json` selected; dev realm unreachable — external KC, see `docs/keycloak-requirements.md`
+- [ ] `realm-production.example.json` selected; dev realm unreachable — external KC, see `docs/deployment/keycloak.md`
 - [x] EDC management/control ports ClusterIP-only, no Ingress — `ds-edc` Service exposes them in-cluster; Ingress and `fromIngressController` NetPol list only protocol+public
 - [x] `edc.iam.did.web.use.https=true` · `edc.sql.schema.autocreate` — `true` by design (per-DB owner role; see §deviations)
 - [x] EDC vault rendered from generated keys, not the committed dev files — `ds-edc` Secret; committed fixtures never mounted
@@ -424,6 +492,7 @@ release, pending for participant charts · `[ ]` not yet.
 - [~] `/metrics` endpoints reachable only from in-cluster Prometheus — `ds.networkPolicy.metricsFromPrometheus` wired on `ds-connector`
 - [ ] Dockerfiles use `uv sync --frozen`; base images digest-pinned — still unpinned (see §Supply-chain)
 - [ ] CI includes dependency scanning and `task secrets:check`
+- [ ] **`ds-identity-registry` and `ds-provenance` egress to Keycloak (443).** Both verify JWTs against the JWKS endpoint, and the registry's optional `keycloak-org-sync` init container calls the admin API — but neither chart adds a 443 egress rule, so `ds.networkPolicy.defaultDeny` (DNS + Postgres only) denies those calls whenever `global.networkPolicy.enabled` is true. `ds-edc`, `ds-connector`, `ds-federated-catalog` and `ds-portal` all carry the rule; these two were missed. Workaround: set `.Values.networkPolicy.egress` on the release (it is appended verbatim to the default-deny policy). Fix: add the rule to both charts' `networkpolicy.yaml`.
 
 ### Change made to the service Dockerfiles
 
@@ -434,6 +503,10 @@ application-repo change the charts depend on; keep it if you rework a Dockerfile
 
 ## See also
 
+- `docs/deployment/` — the operator documentation (published as the Deployment
+  section of the docs site): prerequisites, Keycloak contract, `values.yaml`
+  reference, secret reference, exposure, day-2 operations
 - `.env.example` — the variable catalogue this chart implements
+- `.agents/helm/plan.md` — design and phasing
 - `.agents/security-review.md` — findings and rationale behind these requirements
 - Root `AGENTS.md` → "Security posture"
