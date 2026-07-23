@@ -82,6 +82,15 @@ offer, assigner and status, but not the purpose, timeframe or justification the 
 stated. Adding these turns a negotiation into an auditable request. This becomes more
 valuable now that purpose is a validated taxonomy term rather than free text.
 
+### Anonymisation as an alternative to consent
+
+Where a recipient needs only aggregate insight, anonymised output would fall outside the scope
+of data protection law entirely, removing the need to ask each person. This is worth exploring,
+but it is not a shortcut: fifteen-minute household load curves are notoriously re-identifiable,
+and reaching genuine anonymity means either sophisticated treatment of load shapes or
+aggregation coarse enough to destroy much of the analytical value. It deserves its own
+assessment rather than being assumed.
+
 ### Subject identifier hardening
 
 User DIDs are derived from a hash of the login email, which correctly keeps personal data out

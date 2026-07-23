@@ -329,6 +329,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Identity & DCP flow | `docs/identity-and-dcp.md` |
 | Data exchange flow | `docs/data-exchange-flow.md` |
 | Provenance & lineage | `docs/provenance-and-lineage.md` |
+| Roadmap & deferred work | `docs/roadmap.md` |
 | Consent & sovereignty | `docs/consent-and-sovereignty.md` |
 | Owner identity & ownership | `docs/owner-identity-and-ownership.md` |
 | DSSC Blueprint reference | `docs/dssc-blueprint-docs/` |

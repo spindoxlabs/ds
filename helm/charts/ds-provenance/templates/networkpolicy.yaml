@@ -5,4 +5,28 @@
 # same namespace. Not reachable from the ingress controller — no public path.
 {{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
     (dict "namespace" .Release.Namespace "name" "ds-connector"))) }}
+---
+# Egress: Keycloak over TLS. Provenance verifies every JWT against the JWKS
+# endpoint, so without this rule the default-deny baseline (DNS + Postgres only)
+# fails every authenticated request.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "ds.fullname" . }}-egress
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 169.254.169.254/32 # cloud metadata endpoint
+      ports:
+        - {protocol: TCP, port: 443}
 {{- end }}
