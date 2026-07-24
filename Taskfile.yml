@@ -573,10 +573,58 @@ tasks:
           task edc:build
         fi
         PID=
-        cleanup() { [ -n "$PID" ] && kill $PID 2>/dev/null && wait $PID 2>/dev/null; exit 0; }
+
+        # Stop the JVM without ever blocking forever.
+        #
+        # The old loop did `kill $PID; wait $PID`. An EDC that is slow to run its
+        # shutdown hooks — or does not act on SIGTERM at all — left `wait`
+        # blocked for good: the watcher printed "restarting", then never
+        # restarted, and the stale JVM kept serving the *old* JAR while every
+        # rebuild appeared to do nothing. Losing a watcher silently is worse
+        # than a hard kill, so escalate and move on.
+        stop_edc() {
+          [ -z "$PID" ] && return 0
+          kill "$PID" 2>/dev/null
+          i=0
+          while [ $i -lt 20 ]; do
+            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC provider ignored SIGTERM for 10s — sending SIGKILL"
+          kill -9 "$PID" 2>/dev/null
+          i=0
+          while [ $i -lt 10 ]; do
+            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC provider survived SIGKILL — port 19191/19193/19194 may still be held" >&2
+          PID=
+        }
+
+        cleanup() { stop_edc; exit 0; }
         trap cleanup INT TERM EXIT
+
+        conf="{{.ROOT_DIR}}/services/connector/config/provider.properties"
+
+        # An EDC that outlived its watcher still holds the ports, so every boot
+        # after it fails to bind and the loop spins — 200+ restarts with nothing
+        # in the log but BindException. Reap our own strays before starting.
+        kill_stale() {
+          for stale in $(pgrep -f "edc.fs.config=$conf" 2>/dev/null); do
+            [ "$stale" = "$PID" ] && continue
+            echo "Reaping stale EDC provider JVM $stale (it still holds the ports)"
+            kill -9 "$stale" 2>/dev/null
+          done
+          sleep 1
+        }
+
+        FAILS=0
         while true; do
-          MTIME=$(stat -c %Y "$jar")
+          kill_stale
+          MTIME=$(stat -c %Y "$jar" 2>/dev/null)
+          STARTED=$(date +%s)
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
@@ -584,16 +632,38 @@ tasks:
             -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
-          while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
-            sleep 2
-            kill -0 $PID 2>/dev/null || break
-          done
-          echo "JAR changed or process exited — restarting..."
-          kill $PID 2>/dev/null; wait $PID 2>/dev/null
-          PID=
-          sleep 1
-        done
 
+          while true; do
+            sleep 2
+            if ! kill -0 "$PID" 2>/dev/null; then
+              echo "EDC provider exited on its own — restarting..."
+              break
+            fi
+            NOW=$(stat -c %Y "$jar" 2>/dev/null)
+            # An empty mtime means the JAR is mid-write: wait for the new one
+            # rather than restarting onto a file that is not there yet.
+            if [ -n "$NOW" ] && [ "$NOW" != "$MTIME" ]; then
+              echo "JAR changed ($MTIME → $NOW) — restarting EDC provider..."
+              break
+            fi
+          done
+
+          stop_edc
+
+          # Back off when the JVM dies almost immediately. A crash loop is a
+          # configuration problem, not something to retry 200 times a minute —
+          # slow down so the reason stays readable in the log.
+          if [ $(( $(date +%s) - STARTED )) -lt 20 ]; then
+            FAILS=$((FAILS + 1))
+            BACKOFF=$((FAILS * 5))
+            [ $BACKOFF -gt 60 ] && BACKOFF=60
+            echo "EDC provider died after <20s (attempt $FAILS) — waiting ${BACKOFF}s before retrying"
+            sleep $BACKOFF
+          else
+            FAILS=0
+            sleep 1
+          fi
+        done
   edc-consumer:watch:
     desc: Run EDC consumer locally, auto-restart on fat JAR rebuild
     cmds:
@@ -606,10 +676,58 @@ tasks:
           task edc:build
         fi
         PID=
-        cleanup() { [ -n "$PID" ] && kill $PID 2>/dev/null && wait $PID 2>/dev/null; exit 0; }
+
+        # Stop the JVM without ever blocking forever.
+        #
+        # The old loop did `kill $PID; wait $PID`. An EDC that is slow to run its
+        # shutdown hooks — or does not act on SIGTERM at all — left `wait`
+        # blocked for good: the watcher printed "restarting", then never
+        # restarted, and the stale JVM kept serving the *old* JAR while every
+        # rebuild appeared to do nothing. Losing a watcher silently is worse
+        # than a hard kill, so escalate and move on.
+        stop_edc() {
+          [ -z "$PID" ] && return 0
+          kill "$PID" 2>/dev/null
+          i=0
+          while [ $i -lt 20 ]; do
+            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC consumer ignored SIGTERM for 10s — sending SIGKILL"
+          kill -9 "$PID" 2>/dev/null
+          i=0
+          while [ $i -lt 10 ]; do
+            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC consumer survived SIGKILL — port 29191/29193/29194 may still be held" >&2
+          PID=
+        }
+
+        cleanup() { stop_edc; exit 0; }
         trap cleanup INT TERM EXIT
+
+        conf="{{.ROOT_DIR}}/services/connector/config/consumer.properties"
+
+        # An EDC that outlived its watcher still holds the ports, so every boot
+        # after it fails to bind and the loop spins — 200+ restarts with nothing
+        # in the log but BindException. Reap our own strays before starting.
+        kill_stale() {
+          for stale in $(pgrep -f "edc.fs.config=$conf" 2>/dev/null); do
+            [ "$stale" = "$PID" ] && continue
+            echo "Reaping stale EDC consumer JVM $stale (it still holds the ports)"
+            kill -9 "$stale" 2>/dev/null
+          done
+          sleep 1
+        }
+
+        FAILS=0
         while true; do
-          MTIME=$(stat -c %Y "$jar")
+          kill_stale
+          MTIME=$(stat -c %Y "$jar" 2>/dev/null)
+          STARTED=$(date +%s)
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
@@ -617,16 +735,38 @@ tasks:
             -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
-          while [ "$(stat -c %Y "$jar" 2>/dev/null)" = "$MTIME" ]; do
-            sleep 2
-            kill -0 $PID 2>/dev/null || break
-          done
-          echo "JAR changed or process exited — restarting..."
-          kill $PID 2>/dev/null; wait $PID 2>/dev/null
-          PID=
-          sleep 1
-        done
 
+          while true; do
+            sleep 2
+            if ! kill -0 "$PID" 2>/dev/null; then
+              echo "EDC consumer exited on its own — restarting..."
+              break
+            fi
+            NOW=$(stat -c %Y "$jar" 2>/dev/null)
+            # An empty mtime means the JAR is mid-write: wait for the new one
+            # rather than restarting onto a file that is not there yet.
+            if [ -n "$NOW" ] && [ "$NOW" != "$MTIME" ]; then
+              echo "JAR changed ($MTIME → $NOW) — restarting EDC consumer..."
+              break
+            fi
+          done
+
+          stop_edc
+
+          # Back off when the JVM dies almost immediately. A crash loop is a
+          # configuration problem, not something to retry 200 times a minute —
+          # slow down so the reason stays readable in the log.
+          if [ $(( $(date +%s) - STARTED )) -lt 20 ]; then
+            FAILS=$((FAILS + 1))
+            BACKOFF=$((FAILS * 5))
+            [ $BACKOFF -gt 60 ] && BACKOFF=60
+            echo "EDC consumer died after <20s (attempt $FAILS) — waiting ${BACKOFF}s before retrying"
+            sleep $BACKOFF
+          else
+            FAILS=0
+            sleep 1
+          fi
+        done
   # ── Schema ───────────────────────────────────────────────────────────────
   #
   # Alembic owns every schema. Services verify the revision at startup and
@@ -714,10 +854,78 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e clean
 
-  e2e:all:
-    desc: Run all E2E flows with cleanup
+  e2e:wait-ready:
+    desc: "E2E: block until both EDCs and the federated catalogue can answer"
     cmds:
-      - cd libs/ds-e2e && uv run ds-e2e run --flow all --clean-first
+      - |
+        set +e
+        # The management API is the readiness signal, not /health: it answers
+        # (401 without a key) only once the control plane is actually serving.
+        # A flow that starts on a half-booted EDC gets a 502 from
+        # /consumer/catalog and reads as a product failure.
+        probe() { curl -so /dev/null -w '%{http_code}' -m 3 -X POST "$1" \
+          -H 'Content-Type: application/json' -d '{}' 2>/dev/null; }
+        for i in $(seq 1 120); do
+          p=$(probe http://172.17.0.1:19193/management/v3/assets/request)
+          c=$(probe http://172.17.0.1:29193/management/v3/assets/request)
+          [ "$p" != "000" ] && [ "$c" != "000" ] && break
+          sleep 2
+        done
+        if [ "$p" = "000" ] || [ "$c" = "000" ]; then
+          echo "EDCs did not become ready (provider=$p consumer=$c)" >&2
+          exit 1
+        fi
+        echo "EDCs ready (provider=$p consumer=$c)"
+
+        # The catalogue is crawled on a timer, so an empty one right after a
+        # restart means "not yet", not "broken".
+        TOKEN_URL="${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}"
+        tok=$(curl -s -X POST "$TOKEN_URL" -d grant_type=client_credentials \
+          -d client_id="${SVC_DS_E2E_ID:-svc-ds-e2e}" -d client_secret="${SVC_DS_E2E_SECRET:-svc-ds-e2e}" \
+          | python3 -c 'import sys,json;print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
+        for i in $(seq 1 60); do
+          n=$(curl -s -H "Authorization: Bearer $tok" http://172.17.0.1:30003/catalog/meta \
+            | python3 -c 'import sys,json;print(json.load(sys.stdin).get("dataset_count",0))' 2>/dev/null)
+          [ -n "$n" ] && [ "$n" != "0" ] && break
+          sleep 3
+        done
+        echo "federated catalogue datasets: ${n:-0}"
+        exit 0
+
+  e2e:prepare:
+    desc: "E2E: clean state, restart the EDCs, wait for readiness, apply fixtures"
+    cmds:
+      # `ds-e2e clean` runs DROP DATABASE / CREATE DATABASE on edc_provider and
+      # edc_consumer. The EDCs hold open connections and only run their schema
+      # migration at boot, so anything that keeps running afterwards is talking
+      # to a control plane whose schema was pulled out from under it. Restarting
+      # them is not optional — it is what makes a clean run mean anything.
+      - task: e2e:clean
+      - |
+        set +e
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q '^dataspaces-edc-provider-1$'; then
+          echo "Restarting EDC containers after the database reset..."
+          docker restart dataspaces-edc-provider-1 dataspaces-edc-consumer-1 >/dev/null 2>&1
+        else
+          # Local dev mode: the EDCs are host JVMs owned by `edc-*:watch` loops,
+          # which restart them on exit. Killing them is the restart.
+          echo "Restarting local EDC JVMs after the database reset..."
+          for port in 19193 29193; do
+            for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
+              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
+            done
+          done
+        fi
+        sleep 5
+        exit 0
+      - task: e2e:wait-ready
+      - task: e2e:scenario:apply
+
+  e2e:all:
+    desc: Run all E2E flows (clean state, EDC restart, fixtures, then every flow)
+    cmds:
+      - task: e2e:prepare
+      - cd libs/ds-e2e && uv run ds-e2e run --flow all
 
   e2e:uc1:
     desc: "E2E: UC-1 delegated consent"

@@ -139,11 +139,12 @@ Settings use the `PROVENANCE_` prefix:
 
 ```bash
 cd services/provenance
-task install
-task dev         # hot reload on :30000
+task setup       # uv sync
+task run         # hot reload on :30000
+task debug       # same, waiting for a debugpy attach on :30900
 task db:migrate  # alembic upgrade head
-task test
-task seed        # insert sample PROV-O graph
+
+uv run pytest
 ```
 
 ```bash

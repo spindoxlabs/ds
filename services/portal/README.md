@@ -113,11 +113,14 @@ Environment variables (set in `.env` or Docker):
 
 ```bash
 cd services/portal
-task install     # npm install
-task dev         # vite dev server on :30004
-task build
-task preview
-task test        # vitest
+task setup       # npm install
+task run         # SvelteKit dev server on :30004
+task debug       # same, with the Node inspector on :30904
+
+# The npm scripts are not wrapped in tasks:
+npm run build
+npm run preview
+npm run test
 ```
 
 ```bash

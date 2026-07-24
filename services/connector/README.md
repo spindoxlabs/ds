@@ -60,7 +60,8 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 ### Internal (consumed by edc-extensions)
 
 - `GET /internal/agreements/{id}/status` — check whether a contract agreement is active
-- `GET /internal/consent/check` — check consent status for a (dataset, consumer) pair; returns subject IDs for row filtering
+- `GET /internal/consent/check` — **the single consent decision**, in three projections: `subject_ids` (the dataset-api's row filter), `consent_active` (a named subject), and `should_ask` / `pending_request_id` (the pending guard). One code path decides consent; two endpoints would be two chances to diverge
+- `POST /internal/consent/asks` — record the ask behind a negotiation the pending guard is about to park. Never raises for a business outcome: always 200 with `asked` and a `reason`, so policy stays in Python
 - `POST /consent/register-transfer` — link a transfer process ID to a consent record for revocation
 - `GET /internal/edr-jwks` — proxy the EDC provider's JWKS endpoint for JWT verification
 - `GET /internal/participants/check` — forwards scope checks to identity-registry when HTTP-backed; falls back to local file-based check otherwise
@@ -80,15 +81,45 @@ Consent grants and revocations (`/consent/admin/shares`, `/consent/my/shares`, `
 
 ## ODRL policy derivation
 
-The `GovernanceMapper` in `libs/governance/src/ds/governance/mapper.py` converts a `GovernanceRuleV2` into a full ODRL Offer:
+The `GovernanceMapper` in `libs/governance/src/ds/governance/mapper.py` converts a `GovernanceRuleV2` into a full ODRL Offer.
 
-- `access_level` → permitted actions (profile-namespaced actions, `odrl:aggregate`, `odrl:transfer`)
-- `classification` → prohibited actions (PII datasets prohibit `odrl:distribute`, `odrl:sublicense`)
-- `user_filter_column` → profile-namespaced `ConsentStatus eq "active"` constraint + `odrl:obtainConsent` pre-duty
-- `policy.obligations.delete_after_days` → `odrl:delete` obligation
-- `policy.obligations.attribution` → `odrl:attribute` obligation with `attributeUrl`
+**Actions**, from `policy.permitted_actions` when set, otherwise derived from `access_level`:
 
-Tags are mapped to ODRL `odrl:purpose` via the profile's `tag_to_purpose` mapping (e.g. `meters` → `{ns}purpose:EnergyBalancing`).
+| `access_level` | permitted |
+|---|---|
+| `open` | profile query action, `odrl:aggregate`, `odrl:transfer` |
+| `internal` | profile query action, `odrl:aggregate` |
+| `restricted` | profile query action |
+| `secret` | none — and the dataset is never exposed at all |
+
+**Prohibitions**, from `policy.prohibited_actions` when set, otherwise from `classification`:
+
+| `classification` | prohibited |
+|---|---|
+| `pii` | `odrl:transfer`, `odrl:derive`, `odrl:distribute`, `odrl:sublicense` |
+| `red` | `odrl:transfer`, `odrl:sublicense` |
+| `yellow` | `odrl:sublicense` |
+| `green` | none |
+
+**Constraints** on each permission (ANDed):
+
+- **Membership** — `{ns}Membership eq <scope>` whenever `access_requirements` is `partner`/`contract` or `access_level` is `internal`/`restricted`. With an `ownership` block the scope becomes `owner:<alias>:member` (or `:partner`)
+- **`ds:contractRequired eq "true"`** for `restricted` datasets, or when `policy.obligations.contract_required` is set
+- **`odrl:purpose`** — `isA` for a single purpose, `isAnyOf` for several. One constraint listing every permitted purpose, because constraints within a permission are ANDed and one-per-purpose would demand a use serve all of them at once
+- **`{ns}ConsentStatus eq "active"`** plus an `odrl:obtainConsent` pre-duty, when `policy.consent.required` **or** `row_filters` **or** `user_filter_column` is set
+
+**Obligations** from `policy.obligations`: `delete_after_days` → `odrl:delete`, `attribution` → `odrl:attributeTo` with `attributeUrl`.
+
+> **Purposes come from `policy.purpose[]`, and only from there.** The mapper calls
+> `_purpose_iris(policy.purpose)`; `tags` are never consulted at runtime. Tags are
+> DCAT-AP catalogue keywords — a topic is not a reason for processing, and treating
+> one as the other would let a dataset acquire a lawful basis by being labelled.
+> The profile's `tag_to_purpose` map exists only as an authoring default when
+> scaffolding a new rule. An empty `purpose[]` is never a wildcard: for a
+> consent-required dataset it means the person was never told the use, so the
+> check fails closed.
+
+`ConnectorGovernanceMapper._to_edc_constraint` (in `services/connector/src/connector/services/governance.py`) rewrites the purpose constraint on its way to EDC — absolute left operand, right operand flattened to plain strings — because EDC stores operands as literals and re-serialises them. See `services/edc-extensions/AGENTS.md` for how the extensions read them back, and why that is less trivial than it sounds.
 
 ---
 
@@ -108,11 +139,19 @@ The sync is idempotent — calling it multiple times is safe.
 
 When a data subject revokes consent:
 
-1. `revoke_consent()` fetches the `transfer_ids` linked to the consent record
-2. Calls `DELETE /management/v3/transferprocesses/{id}/terminate` on the provider EDC for each active transfer
-3. Sets the consent status to `revoked`
+1. `revoke_consent()` sets the consent status to `revoked` and commits
+2. A `ConsentRevoked` provenance event is emitted after the commit
+3. **EDC's policy monitor terminates any running transfer.** `AgreementConsentFunction`
+   is bound to the `policy.monitor` scope, so the provider re-evaluates the signed
+   agreement's policy on every pass for each started transfer, asks this same consent
+   table, and terminates through EDC's own state machine when the subject pool empties
 
-This ensures that revocation propagates to the EDC data plane within the next request cycle.
+The connector does **not** terminate transfers itself. It used to try — via a
+`delete_asset` call left in place as a placeholder — which could only ever have
+reached the transfers it happened to have recorded on the consent row, and did so
+by deleting the wrong resource. Termination on the next monitor pass is a moment
+later than a synchronous call, and until it lands the dataset-api PEP already
+returns zero rows for the revoked subject, so no data moves in the interval.
 
 ---
 
@@ -159,11 +198,14 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 
 ```bash
 cd services/connector
-task install     # uv sync
-task dev         # uvicorn with hot reload on :30001
+task setup       # uv sync
+task run         # uvicorn with hot reload on :30001
+task debug       # same, waiting for a debugpy attach on :30901
 task db:migrate  # alembic upgrade head
-task test
-task lint
+
+# Tests and linters run through uv rather than a task:
+uv run pytest
+uv run ruff check src/
 ```
 
 To start the full connector stack (EDC instances + STS + VC wallet + db):

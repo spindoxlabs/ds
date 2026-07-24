@@ -110,14 +110,27 @@ class ScenarioRunner:
     # ── apply ────────────────────────────────────────────────────────────────
 
     def apply(self) -> ScenarioReport:
+        """Provision the fixtures, in dependency order.
+
+        Memberships come last, and that ordering is the whole point: a
+        membership names a user DID, and the identity-registry refuses one whose
+        DID it does not know (``404 Unknown DID``). Applying them inside the
+        owner loop — before the participant loop had registered those DIDs —
+        made a first run fail and the identical second run succeed, which reads
+        like flakiness and is really just a missing edge in the graph.
+        """
         report = ScenarioReport(name=self.scenario.get("name", "scenario"))
         if not self._check_agreements(report):
             return report
         self._check_offers(report)
+
+        pending_memberships: list[tuple[str, str]] = []
         for owner in self.scenario.get("owners") or []:
-            self._apply_owner(owner, report)
+            self._apply_owner(owner, report, pending_memberships)
         for participant in self.scenario.get("participants") or []:
             self._apply_participant(participant, report)
+        for user_did, organization in pending_memberships:
+            self._apply_membership(user_did, organization, report)
         return report
 
     def _check_agreements(self, report: ScenarioReport) -> bool:
@@ -184,7 +197,12 @@ class ScenarioRunner:
                         f"{source.get(field_name)!r}, scenario expects {expected!r}"
                     )
 
-    def _apply_owner(self, spec: dict[str, Any], report: ScenarioReport) -> None:
+    def _apply_owner(
+        self,
+        spec: dict[str, Any],
+        report: ScenarioReport,
+        pending_memberships: list[tuple[str, str]] | None = None,
+    ) -> None:
         alias = spec["alias"]
         body = {
             "id": alias,
@@ -210,7 +228,13 @@ class ScenarioRunner:
 
         member_of = spec.get("member_of")
         if member_of and spec.get("did"):
-            self._apply_membership(spec["did"], member_of, report)
+            # Deferred: the DID is registered by the participant loop, which has
+            # not run yet. Applying it here is what made `scenario apply` need
+            # two passes.
+            if pending_memberships is None:
+                self._apply_membership(spec["did"], member_of, report)
+            else:
+                pending_memberships.append((spec["did"], member_of))
 
     def _accept_agreement(
         self, alias: str, accepts: dict[str, Any], report: ScenarioReport

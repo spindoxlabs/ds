@@ -188,10 +188,12 @@ task setup                # uv sync
 task db:migrate           # alembic upgrade head
 task run                  # uvicorn on :30005 with hot-reload
 task debug                # debugpy on :30905 + uvicorn on :30005
-task test                 # pytest
-task lint                 # ruff check
-task format               # ruff format
-task type-check           # mypy
+
+# Tests and linters run through uv rather than a task:
+uv run pytest
+uv run ruff check src/
+uv run ruff format src/
+uv run mypy src/
 ```
 
 ---

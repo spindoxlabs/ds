@@ -301,7 +301,8 @@ Consumer queries dataset-api
 ```bash
 task compliance:validate
 task compliance:test
-task compliance:e2e:smoke   # requires a running stack
+task compliance:evidence    # DCAT-AP catalog + ODRL offers → reports/compliance
+task e2e                    # smoke flow — requires a running stack
 ```
 
 See `docs/dssc-blueprint-docs/` for the DSSC blueprint reference material.
@@ -319,6 +320,9 @@ See `docs/dssc-blueprint-docs/` for the DSSC blueprint reference material.
 | `task consumer:logs` | Follow consumer logs |
 | `task reset-demo-state` | Clear runtime data (requests, consents, agreements, transfers, provenance) |
 | `task edc:base` | Build EDC base image (once per version bump) |
+| `task e2e:all` | Every e2e flow — cleans state, restarts the EDCs, applies fixtures, then runs |
+| `task e2e:fast` | Every flow that runs without the EDC |
+| `task e2e:prepare` | Just the preconditions: clean, EDC restart, readiness wait, fixtures |
 
 Run `task --list` for all available commands.
 
