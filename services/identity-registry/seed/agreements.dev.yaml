@@ -1,0 +1,19 @@
+# Dataspace service agreements (Block D §5.4).
+#
+# YAML seed → `ir-cli agreement import` → read-only portal view. The portal
+# never edits YAML. Each `text` entry points at a per-locale markdown file
+# resolved relative to THIS file; the importer stores its path + SHA-256, never
+# the prose.
+#
+# `capacity` is the consent boundary (§2.5): it decides whether a party
+# accepting this agreement is covered-and-disclosed (processor) or needs its
+# own consent (joint_controller | independent_controller).
+agreements:
+  - id: dataspace-participation
+    version: "1.0"
+    effective_from: 2026-09-01
+    applies_to: [consumer, provider]
+    capacity: processor
+    text:
+      en: content/participation-en.md
+      it: content/participation-it.md

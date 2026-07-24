@@ -52,6 +52,15 @@ class E2ESettings(BaseSettings):
     service_client_secret: str = Field(
         "svc-ds-portal", validation_alias="SVC_DS_PORTAL_SECRET"
     )
+    # An identity-registry.admin-capable client, for the org-onboarding flow —
+    # the portal client above only holds read/resolve scopes.
+    ir_admin_client_id: str = Field(
+        "svc-ds-identity-registry", validation_alias="SVC_DS_IDENTITY_REGISTRY_ID"
+    )
+    ir_admin_client_secret: str = Field(
+        "svc-ds-identity-registry",
+        validation_alias="SVC_DS_IDENTITY_REGISTRY_SECRET",
+    )
 
     # Identity
     provider_did: str = Field(
@@ -69,6 +78,14 @@ class E2ESettings(BaseSettings):
     data_subject_id: str = "did:web:users.dataspaces.localhost:data-subject"
     data_subject_email: str = "subject@example.test"
     asset_id: str = "datasets.silver.meters_15m"
+
+    # Organisation onboarding (Block D). The agreement must be seeded via
+    # `ir-cli agreement import` at bootstrap; the flow asserts it exists.
+    org_e2e_alias: str = "org-e2e"
+    org_e2e_legal_name: str = "E2E Test Organisation"
+    org_e2e_did: str = "did:web:org-e2e.dataspaces.localhost"
+    org_agreement_id: str = "dataspace-participation"
+    org_agreement_version: str = "1.0"
 
     # Consent vocabulary — must match services/connector/governance/
     # sharing-offers.yaml and the ODRL profile taxonomy.

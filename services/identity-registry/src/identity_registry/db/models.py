@@ -6,12 +6,14 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    Date,
     DateTime,
     ForeignKey,
     Integer,
     LargeBinary,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -154,10 +156,144 @@ class Owner(Base):
     organization_config: Mapped[dict | None] = mapped_column(
         JsonType, nullable=True
     )
+    # ── Gaia-X-shaped legal identity (Block D) ────────────────────────
+    # Shape-compatible with gx:LegalParticipant; not full GXDCH compliance.
+    registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registration_type: Mapped[str | None] = mapped_column(
+        String(16), nullable=True
+    )  # local | EUID | EORI | vatID | leiCode
+    hq_country_code: Mapped[str | None] = mapped_column(
+        String(8), nullable=True
+    )  # ISO 3166-2
+    legal_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    parent_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    sub_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    # ── Verification lifecycle ────────────────────────────────────────
+    # Operator-seeded owners default to 'verified'; owners promoted from an
+    # OrganizationApplication move pending → verified → suspended | revoked.
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="verified", server_default="verified"
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    verified_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # ── Current accepted service agreement + declared capacity (§2.5) ──
+    agreement_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agreement_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    agreement_accepted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    agreement_capacity: Mapped[str | None] = mapped_column(
+        String(32), nullable=True
+    )  # processor | joint_controller | independent_controller
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
     updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class OrganizationApplication(Base):
+    """Pre-verification organisation registration data (Block D §5.5).
+
+    Holds an applicant's declared legal identity before it is promoted into an
+    ``Owner`` row on verification. All trust state (the ``status`` transition to
+    ``verified``) lives here and in the ``Owner`` it promotes into — never in the
+    portal or CLI, which only call the IR.
+    """
+
+    __tablename__ = "organization_applications"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    alias: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    legal_name: Mapped[str] = mapped_column(Text, nullable=False)
+    registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
+    registration_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    hq_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    legal_country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    parent_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    sub_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    roles: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
+    did: Mapped[str | None] = mapped_column(Text, nullable=True)
+    dsp_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="pending"
+    )  # pending | verified | rejected
+    evidence_ref: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verified_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class Agreement(Base):
+    """Service-agreement definition, YAML-seeded and IR-hosted (Block D §5.4).
+
+    Shaped so it can later become a ``gx:GaiaXTermsAndConditions`` credential.
+    The ``capacity`` field is the consent boundary (§2.5): it decides whether a
+    party accepting this agreement is covered-and-disclosed or needs its own
+    consent.
+    """
+
+    __tablename__ = "agreements"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    version: Mapped[str] = mapped_column(String(32), primary_key=True)
+    effective_from: Mapped[datetime | None] = mapped_column(Date, nullable=True)
+    applies_to: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
+    capacity: Mapped[str] = mapped_column(
+        String(32), nullable=False
+    )  # processor | joint_controller | independent_controller
+    # {locale: {"path": str, "sha256": str}} — codes + hash, never inline PII.
+    texts: Mapped[dict] = mapped_column(JsonType, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class AgreementAcceptance(Base):
+    """An organisation's acceptance of a specific agreement version (§5.4).
+
+    Same evidence shape as the citizen path (§2.4): proves *what text, at what
+    version and locale* was accepted via ``text_sha256`` — no prose, no PII.
+    """
+
+    __tablename__ = "agreement_acceptances"
+    __table_args__ = (
+        UniqueConstraint(
+            "owner_alias",
+            "agreement_id",
+            "agreement_version",
+            name="uq_agreement_acceptance",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    owner_alias: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agreement_id: Mapped[str] = mapped_column(String, nullable=False)
+    agreement_version: Mapped[str] = mapped_column(String(32), nullable=False)
+    capacity: Mapped[str] = mapped_column(String(32), nullable=False)
+    locale: Mapped[str] = mapped_column(String(16), nullable=False)
+    text_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    accepted_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    accepted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 

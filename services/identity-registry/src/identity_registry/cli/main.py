@@ -3,15 +3,26 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
 
 from ..config import get_settings
-from ..db.engine import get_engine, get_session_factory, init_db
-from ..db.models import Credential, Did, Key, KeycloakMapping, OrganizationMembership, Owner, Participant, StatusList
+from ..db.engine import get_session_factory, init_db
+from ..db.models import (
+    Agreement,
+    AgreementAcceptance,
+    Credential,
+    Did,
+    Key,
+    KeycloakMapping,
+    OrganizationApplication,
+    OrganizationMembership,
+    Owner,
+    Participant,
+    StatusList,
+)
 from ..services.crypto import (
     decrypt_private_jwk,
     encrypt_private_jwk,
@@ -30,6 +41,8 @@ status_app = typer.Typer(help="Status list management")
 keycloak_app = typer.Typer(help="Keycloak mapping management")
 owner_app = typer.Typer(help="Owner registry management")
 membership_app = typer.Typer(help="Organization membership management")
+org_app = typer.Typer(help="Organisation onboarding (Block D)")
+agreement_app = typer.Typer(help="Service-agreement management")
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
@@ -38,6 +51,8 @@ app.add_typer(status_app, name="status")
 app.add_typer(keycloak_app, name="keycloak")
 app.add_typer(owner_app, name="owner")
 app.add_typer(membership_app, name="membership")
+app.add_typer(org_app, name="org")
+app.add_typer(agreement_app, name="agreement")
 
 
 def _run(coro):
@@ -475,6 +490,7 @@ def credential_revoke(
     async def _revoke():
         factory = await _ensure_db()
         from sqlalchemy import select
+
         from ..services.status_list import set_bit
 
         async with factory() as session:
@@ -539,6 +555,7 @@ def key_rotate(
         settings = get_settings()
         factory = await _ensure_db()
         from sqlalchemy import select
+
         from ..services.crypto import next_key_index
 
         async with factory() as session:
@@ -587,6 +604,7 @@ def status_export():
     async def _export():
         factory = await _ensure_db()
         from sqlalchemy import select
+
         from ..services.status_list import encode_bitstring
 
         async with factory() as session:
@@ -949,7 +967,7 @@ def membership_remove(
             )
             membership = result.scalar_one_or_none()
             if not membership:
-                typer.echo(f"Membership not found", err=True)
+                typer.echo("Membership not found", err=True)
                 raise typer.Exit(1)
 
             await session.delete(membership)
@@ -1033,6 +1051,453 @@ def membership_import(
         typer.echo(f"Imported {count} membership(s) for {organization}")
 
     _run(_import())
+
+
+# ── Organisation onboarding (Block D §5.6) ────────────────────────
+#
+# Every command routes through services.org_onboarding, the same gated logic the
+# HTTP API uses (§5.7 hard constraint: the CLI is the reference implementation).
+
+
+async def _resolve_application(session, alias: str) -> OrganizationApplication | None:
+    from sqlalchemy import select
+
+    result = await session.execute(
+        select(OrganizationApplication)
+        .where(OrganizationApplication.alias == alias)
+        .order_by(OrganizationApplication.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+@org_app.command("register")
+def org_register(
+    alias: str = typer.Option(..., help="Owner alias (kebab-case)"),
+    name: str = typer.Option(..., help="Legal name"),
+    registration_number: str = typer.Option(None, help="Registration number"),
+    type: str = typer.Option(
+        None, "--type", help="Registration type: local|EUID|EORI|vatID|leiCode"
+    ),
+    hq_country: str = typer.Option(None, help="HQ country code (ISO 3166-2)"),
+    legal_country: str = typer.Option(None, help="Legal country code (ISO 3166-2)"),
+    role: list[str] = typer.Option(["consumer"], help="Roles (repeatable)"),
+    did: str = typer.Option(None, help="did:web: URI for the organisation"),
+    dsp_address: str = typer.Option(None, help="DSP protocol endpoint URL"),
+):
+    """Create/update an organisation application (idempotent by alias)."""
+    from ..schemas.requests import VALID_REGISTRATION_TYPES
+
+    if type is not None and type not in VALID_REGISTRATION_TYPES:
+        typer.echo(
+            f"Invalid --type {type!r}. "
+            f"Must be one of {sorted(VALID_REGISTRATION_TYPES)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    async def _register():
+        factory = await _ensure_db()
+        async with factory() as session:
+            app_row = await _resolve_application(session, alias)
+            if app_row is None:
+                app_row = OrganizationApplication(alias=alias, legal_name=name)
+                session.add(app_row)
+            app_row.legal_name = name
+            app_row.registration_number = registration_number
+            app_row.registration_type = type
+            app_row.hq_country_code = hq_country
+            app_row.legal_country_code = legal_country
+            app_row.roles = list(role)
+            app_row.did = did
+            app_row.dsp_address = dsp_address
+            app_row.updated_at = datetime.now(UTC)
+            await session.commit()
+            typer.echo(f"Application registered: {alias} (status={app_row.status})")
+
+    _run(_register())
+
+
+@org_app.command("verify")
+def org_verify(
+    alias: str = typer.Option(..., help="Owner alias"),
+    verified_by: str = typer.Option(..., help="Who verified (operator id)"),
+    evidence_ref: str = typer.Option(None, help="Reference to verification evidence"),
+):
+    """Mark an application verified and promote it into an Owner row."""
+    from ..services import org_onboarding as ops
+
+    async def _verify():
+        factory = await _ensure_db()
+        async with factory() as session:
+            app_row = await _resolve_application(session, alias)
+            if app_row is None:
+                typer.echo(f"No application for alias: {alias}", err=True)
+                raise typer.Exit(1)
+            app_row.status = "verified"
+            app_row.verified_by = verified_by
+            app_row.verified_at = datetime.now(UTC)
+            if evidence_ref is not None:
+                app_row.evidence_ref = evidence_ref
+            owner = await ops.upsert_owner_from_application(
+                session, app_row, verified_by=verified_by
+            )
+            await session.commit()
+            typer.echo(f"Verified and promoted to Owner: {owner.id} (status=verified)")
+
+    _run(_verify())
+
+
+@org_app.command("agreement")
+def org_agreement(
+    alias: str = typer.Option(..., help="Owner alias"),
+    agreement: str = typer.Option(..., help="Agreement id"),
+    version: str = typer.Option(..., help="Agreement version"),
+    locale: str = typer.Option("en", help="BCP 47 locale of the accepted text"),
+    accepted_by: str = typer.Option(None, help="Who accepted (org contact id)"),
+):
+    """Record an organisation's acceptance of an agreement version."""
+    from sqlalchemy import select
+
+    from ..services import org_onboarding as ops
+
+    async def _accept():
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            ag_result = await session.execute(
+                select(Agreement).where(
+                    Agreement.id == agreement, Agreement.version == version
+                )
+            )
+            ag = ag_result.scalar_one_or_none()
+            if ag is None:
+                typer.echo(f"Agreement not found: {agreement}@{version}", err=True)
+                raise typer.Exit(1)
+            try:
+                await ops.record_agreement_acceptance(
+                    session, owner, ag, locale=locale, accepted_by=accepted_by
+                )
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(
+                f"Accepted {agreement}@{version} for {alias} "
+                f"(capacity={ag.capacity}, locale={locale})"
+            )
+
+    _run(_accept())
+
+
+@org_app.command("issue-credential")
+def org_issue_credential(
+    alias: str = typer.Option(..., help="Owner alias"),
+    ttl_days: int = typer.Option(365, help="Credential TTL in days"),
+    scope: list[str] = typer.Option(["dataspaces.query"], help="Allowed scopes"),
+):
+    """Issue an OrganizationCredential (gate: verified + current agreement)."""
+    from ..services import org_onboarding as ops
+
+    async def _issue():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            app_row = await _resolve_application(session, alias)
+            roles = (app_row.roles if app_row else None) or ["consumer"]
+            dsp_address = app_row.dsp_address if app_row else None
+            try:
+                cred = await ops.issue_organization_credential(
+                    session,
+                    settings,
+                    owner,
+                    roles=roles,
+                    allowed_scopes=list(scope),
+                    dsp_address=dsp_address,
+                    ttl_days=ttl_days,
+                )
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(f"Issued OrganizationCredential: {cred.id}")
+            typer.echo(f"  Subject: {owner.did}")
+
+    _run(_issue())
+
+
+@org_app.command("promote")
+def org_promote(
+    alias: str = typer.Option(..., help="Owner alias"),
+    dsp_address: str = typer.Option(
+        None, help="DSP endpoint (default: from application)"
+    ),
+    scope: list[str] = typer.Option(["dataspaces.query"], help="Allowed scopes"),
+    sts_secret: str = typer.Option("insecure-dev-secret", help="STS client secret"),
+):
+    """Register the org as a DSP participant (gate: valid OrganizationCredential)."""
+    from ..services import org_onboarding as ops
+
+    async def _promote():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            app_row = await _resolve_application(session, alias)
+            dsp = dsp_address or (app_row.dsp_address if app_row else None)
+            if not dsp:
+                typer.echo(
+                    "No --dsp-address given and none on the application", err=True
+                )
+                raise typer.Exit(1)
+            roles = (app_row.roles if app_row else None) or ["consumer"]
+            try:
+                participant = await ops.promote_owner_to_participant(
+                    session,
+                    settings,
+                    owner,
+                    dsp_address=dsp,
+                    roles=roles,
+                    allowed_scopes=list(scope),
+                    sts_secret=sts_secret,
+                )
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(f"Promoted to participant: {participant.did}")
+            typer.echo(f"  DSP: {participant.dsp_address}  roles={participant.roles}")
+
+    _run(_promote())
+
+
+@org_app.command("list")
+def org_list():
+    """List organisation owners with their lifecycle state."""
+
+    async def _list():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(
+                select(Owner).where(Owner.registration_type.isnot(None))
+            )
+            owners = result.scalars().all()
+            if not owners:
+                typer.echo("No organisation owners.")
+                return
+            for o in owners:
+                ag = (
+                    f"{o.agreement_id}@{o.agreement_version}"
+                    if o.agreement_id
+                    else "-"
+                )
+                typer.echo(
+                    f"  {o.id}  name={o.name}  status={o.status}  "
+                    f"did={o.did or '-'}  agreement={ag}  "
+                    f"capacity={o.agreement_capacity or '-'}"
+                )
+
+    _run(_list())
+
+
+@org_app.command("show")
+def org_show(
+    alias: str = typer.Option(..., help="Owner alias"),
+):
+    """Show an organisation's owner row, application and agreement acceptances."""
+    from ..services import org_onboarding as ops
+
+    async def _show():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            app_row = await _resolve_application(session, alias)
+            if owner is None and app_row is None:
+                typer.echo(f"Nothing found for alias: {alias}", err=True)
+                raise typer.Exit(1)
+            if owner:
+                typer.echo(f"Owner: {owner.id}")
+                typer.echo(f"  name={owner.name}  status={owner.status}")
+                typer.echo(
+                    f"  registration={owner.registration_number or '-'} "
+                    f"({owner.registration_type or '-'})"
+                )
+                typer.echo(
+                    f"  hq={owner.hq_country_code or '-'} "
+                    f"legal={owner.legal_country_code or '-'}"
+                )
+                typer.echo(f"  did={owner.did or '-'}")
+                typer.echo(
+                    f"  agreement={owner.agreement_id or '-'}@"
+                    f"{owner.agreement_version or '-'} "
+                    f"capacity={owner.agreement_capacity or '-'}"
+                )
+            if app_row:
+                typer.echo(f"Application: {app_row.id}  status={app_row.status}")
+            acc_result = await session.execute(
+                select(AgreementAcceptance).where(
+                    AgreementAcceptance.owner_alias == alias
+                )
+            )
+            acceptances = acc_result.scalars().all()
+            if acceptances:
+                typer.echo("Acceptances:")
+                for a in acceptances:
+                    typer.echo(
+                        f"  {a.agreement_id}@{a.agreement_version}  "
+                        f"locale={a.locale}  sha256={a.text_sha256[:12]}…"
+                    )
+
+    _run(_show())
+
+
+@org_app.command("suspend")
+def org_suspend(
+    alias: str = typer.Option(..., help="Owner alias"),
+):
+    """Suspend an organisation (StatusList bit + participant deactivation)."""
+    from ..services import org_onboarding as ops
+
+    async def _suspend():
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            await ops.suspend_owner(session, owner)
+            await session.commit()
+            typer.echo(f"Suspended: {alias}")
+
+    _run(_suspend())
+
+
+@org_app.command("revoke")
+def org_revoke(
+    alias: str = typer.Option(..., help="Owner alias"),
+):
+    """Revoke an organisation (terminal; StatusList bit + participant deactivation)."""
+    from ..services import org_onboarding as ops
+
+    async def _revoke():
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            await ops.revoke_owner(session, owner)
+            await session.commit()
+            typer.echo(f"Revoked: {alias}")
+
+    _run(_revoke())
+
+
+@org_app.command("import")
+def org_import(
+    file: Path = typer.Option(..., help="organizations.yaml seed file"),
+):
+    """Bulk upsert organisation applications from a YAML seed (idempotent)."""
+
+    async def _import():
+        import yaml
+
+        if not file.exists():
+            typer.echo(f"File not found: {file}", err=True)
+            raise typer.Exit(1)
+        with file.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+
+        factory = await _ensure_db()
+        count = 0
+        async with factory() as session:
+            for entry in data.get("organizations", []):
+                alias = entry["alias"]
+                app_row = await _resolve_application(session, alias)
+                if app_row is None:
+                    app_row = OrganizationApplication(
+                        alias=alias, legal_name=entry.get("legal_name", alias)
+                    )
+                    session.add(app_row)
+                app_row.legal_name = entry.get("legal_name", app_row.legal_name)
+                app_row.registration_number = entry.get("registration_number")
+                app_row.registration_type = entry.get("registration_type")
+                app_row.hq_country_code = entry.get("hq_country_code")
+                app_row.legal_country_code = entry.get("legal_country_code")
+                app_row.parent_organizations = entry.get("parent_organizations")
+                app_row.sub_organizations = entry.get("sub_organizations")
+                app_row.roles = entry.get("roles", ["consumer"])
+                app_row.did = entry.get("did")
+                app_row.dsp_address = entry.get("dsp_address")
+                app_row.updated_at = datetime.now(UTC)
+                count += 1
+            await session.commit()
+        typer.echo(f"Imported {count} organisation application(s)")
+
+    _run(_import())
+
+
+@agreement_app.command("import")
+def agreement_import(
+    file: Path = typer.Option(..., help="agreements.yaml seed file"),
+):
+    """Import service-agreement definitions from a YAML seed (idempotent)."""
+    from ..services.agreements import import_agreements, load_agreements_file
+
+    async def _import():
+        if not file.exists():
+            typer.echo(f"File not found: {file}", err=True)
+            raise typer.Exit(1)
+        try:
+            entries = load_agreements_file(file)
+        except (FileNotFoundError, ValueError) as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(1) from exc
+
+        factory = await _ensure_db()
+        async with factory() as session:
+            count = await import_agreements(session, entries)
+            await session.commit()
+        typer.echo(f"Imported {count} agreement version(s)")
+
+    _run(_import())
+
+
+@agreement_app.command("list")
+def agreement_list():
+    """List service-agreement definitions."""
+
+    async def _list():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(select(Agreement))
+            agreements = result.scalars().all()
+            if not agreements:
+                typer.echo("No agreements.")
+                return
+            for a in agreements:
+                typer.echo(
+                    f"  {a.id}@{a.version}  capacity={a.capacity}  "
+                    f"applies_to={a.applies_to}  "
+                    f"locales={sorted((a.texts or {}).keys())}"
+                )
+
+    _run(_list())
 
 
 def run():

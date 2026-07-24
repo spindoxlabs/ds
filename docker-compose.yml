@@ -152,6 +152,7 @@ services:
           --user-id 00000000-0000-4000-a000-000000000004 \
           --email subject@example.test
         ir-cli owner import --file /seed/owners.dev.yaml
+        ir-cli agreement import --file /seed/agreements.dev.yaml
         ir-cli membership add \
           --user-did did:web:users.dataspaces.localhost:data-subject \
           --organization example-org \

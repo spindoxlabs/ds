@@ -19,22 +19,30 @@ src/identity_registry/
     users.py           GET /users/resolve — resolve user by email
     owners.py          /admin/owners CRUD, GET /owners/resolve
     memberships.py     /admin/memberships CRUD, GET /memberships/check
+    organizations.py   /admin/organizations/applications, /admin/credentials/organization,
+                       /admin/owners/{alias} (PATCH), /promote, /agreement (Block D)
+    agreements.py      GET /agreements, /agreements/{id}, /agreements/{id}/acceptances
   services/
     crypto.py          EC P-256 keygen, JWK, ES256 signing, JWS
     did.py             build_did_document (W3C DID doc)
-    vc.py              MembershipCredential + DataSubjectCredential builders, sign_credential
+    vc.py              MembershipCredential + DataSubjectCredential + OrganizationCredential builders, sign_credential
+    org_onboarding.py  Block D: gated org lifecycle ops (verify→owner, agreement, issue, promote, suspend/revoke) — shared by API + CLI
+    agreements.py      Block D: agreement YAML load + import (path + SHA-256, no inline prose)
     token.py           create_si_token — Self-Issued JWT for DCP auth
     presentation.py    build_presentation_response — VP JWT for DCP queries
     status_list.py     StatusList2021 bitstring ops (131072 slots)
     keycloak_admin.py   Keycloak admin API integration
   db/
-    models.py          SQLAlchemy models: Key, Did, Credential, Participant, KeycloakMapping, Owner, OrganizationMembership, StatusList
+    models.py          SQLAlchemy models: Key, Did, Credential, Participant, KeycloakMapping, Owner,
+                       OrganizationApplication, Agreement, AgreementAcceptance, OrganizationMembership, StatusList
     engine.py          Async engine + session factory
   schemas/
     requests.py        Pydantic request models
     responses.py       Pydantic response models
   cli/
-    main.py            ir-cli (typer): bootstrap, participant, credential, key, status commands
+    main.py            ir-cli (typer): bootstrap, participant, credential, key, status, owner,
+                       membership, org (register/verify/agreement/issue-credential/promote/
+                       list/show/suspend/revoke/import), agreement (import/list) commands
 ```
 
 ## API tiers
@@ -55,7 +63,33 @@ src/identity_registry/
 
 ## Database
 
-PostgreSQL, 8 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_mappings`, `owners`, `organization_memberships`, `status_lists`. Alembic for migrations.
+PostgreSQL, 11 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_mappings`, `owners`, `organization_applications`, `agreements`, `agreement_acceptances`, `organization_memberships`, `status_lists`. Alembic for migrations.
+
+## Organisation onboarding (Block D)
+
+Organisations are enabled through an admin API + `ir-cli org`, following the seed-and-import
+pattern — **no public self-registration** this iteration. The lifecycle and its gates live in
+`services/org_onboarding.py`, shared by the HTTP API and the CLI so both behave identically
+(the CLI is the reference implementation):
+
+```
+register (application) → verify (→ Owner row, status=verified)
+  → accept agreement (records capacity + text SHA-256, no prose)
+  → issue-credential  [gate: verified AND a current agreement accepted]
+  → promote           [gate: a valid, unrevoked OrganizationCredential exists]
+  → suspend | revoke  [StatusList bit + participant deactivation, one tx]
+```
+
+- `Owner` carries Gaia-X-shaped legal identity (`registration_number`/`registration_type` ∈
+  `{local,EUID,EORI,vatID,leiCode}`, ISO 3166-2 `hq_country_code`/`legal_country_code`,
+  `parent_organizations`/`sub_organizations`), a verification lifecycle (`status`,
+  `verified_at`/`_by`, `evidence_ref`) and the current accepted agreement + **capacity** (§2.5).
+- `OrganizationCredential` (`vc.py`) is shape-compatible with `gx:LegalParticipant` — not full
+  GXDCH compliance.
+- Agreements are YAML-seeded (`seed/agreements.dev.yaml` + `seed/content/*.md`), imported by
+  `ir-cli agreement import`; acceptance is proved by `text_sha256`, never inline text.
+- The gates are enforced **in code** (raise `OrgOnboardingError` → 409/422), never in docs.
+- Portal review queue (D.7) is deferred; it will call the same `/admin/*` endpoints as the CLI.
 
 ## Common tasks
 
@@ -68,6 +102,8 @@ PostgreSQL, 8 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_m
 | Add a new API endpoint | `api/v1/` (pick the right tier) + register in `main.py` |
 | Add a DB table | `db/models.py` + `task db:revision MESSAGE=...` |
 | Change StatusList2021 behavior | `services/status_list.py` |
+| Change org onboarding logic / gates | `services/org_onboarding.py` (shared by `api/v1/organizations.py` + `cli/main.py`) |
+| Add/change a service agreement | `seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 
 ## Dev commands
 

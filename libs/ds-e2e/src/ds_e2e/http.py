@@ -44,6 +44,18 @@ class HttpClient:
     ) -> Any:
         return self._request("POST", url, body=body, headers=headers, raise_for_status=raise_for_status)
 
+    def patch(
+        self,
+        url: str,
+        body: dict[str, Any] | None = None,
+        *,
+        headers: dict[str, str] | None = None,
+        raise_for_status: bool = True,
+    ) -> Any:
+        return self._request(
+            "PATCH", url, body=body, headers=headers, raise_for_status=raise_for_status
+        )
+
     def get_raw(self, url: str, *, headers: dict[str, str] | None = None) -> tuple[int, Any]:
         return self._request_raw("GET", url, headers=headers)
 
@@ -95,6 +107,26 @@ class HttpClient:
 
     def bearer_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.acquire_service_token()}"}
+
+    def token_for(self, client_id: str, client_secret: str) -> str:
+        """Fetch an uncached client-credentials token for an arbitrary client.
+
+        Used when a flow needs a scope the default service client does not hold
+        (e.g. the org-onboarding flow needs identity-registry.admin)."""
+        resp = self._client.post(
+            self._settings.keycloak_token_url,
+            data={
+                "grant_type": "client_credentials",
+                "client_id": client_id,
+                "client_secret": client_secret,
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    def bearer_headers_for(self, client_id: str, client_secret: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token_for(client_id, client_secret)}"}
 
     def _request(
         self,

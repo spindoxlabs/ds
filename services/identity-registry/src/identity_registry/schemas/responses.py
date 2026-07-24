@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 from pydantic import BaseModel
 
@@ -94,5 +94,65 @@ class OwnerResponse(BaseModel):
     aliases: list[str]
     organization_config: dict | None
     canonical_uri: str | None = None
+    # ── Gaia-X legal identity + lifecycle (Block D) ───────────────
+    registration_number: str | None = None
+    registration_type: str | None = None
+    hq_country_code: str | None = None
+    legal_country_code: str | None = None
+    parent_organizations: list[str] | None = None
+    sub_organizations: list[str] | None = None
+    status: str = "verified"
+    verified_at: datetime | None = None
+    verified_by: str | None = None
+    evidence_ref: str | None = None
+    agreement_id: str | None = None
+    agreement_version: str | None = None
+    agreement_accepted_at: datetime | None = None
+    agreement_capacity: str | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class OrganizationApplicationResponse(BaseModel):
+    id: str
+    alias: str
+    legal_name: str
+    registration_number: str | None = None
+    registration_type: str | None = None
+    hq_country_code: str | None = None
+    legal_country_code: str | None = None
+    parent_organizations: list[str] | None = None
+    sub_organizations: list[str] | None = None
+    roles: list[str]
+    did: str | None = None
+    dsp_address: str | None = None
+    status: str
+    evidence_ref: str | None = None
+    verified_by: str | None = None
+    verified_at: datetime | None = None
+    notes: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgreementResponse(BaseModel):
+    id: str
+    version: str
+    effective_from: date | None = None
+    applies_to: list[str]
+    capacity: str
+    texts: dict
+    created_at: datetime
+    updated_at: datetime
+
+
+class AgreementAcceptanceResponse(BaseModel):
+    id: str
+    owner_alias: str
+    agreement_id: str
+    agreement_version: str
+    capacity: str
+    locale: str
+    text_sha256: str
+    accepted_by: str | None = None
+    accepted_at: datetime

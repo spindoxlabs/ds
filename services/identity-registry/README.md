@@ -30,13 +30,18 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 
 ## Database
 
-6 tables:
+11 tables:
 
 - `keys` — EC P-256 key pairs (JSONB for private_jwk/public_jwk), owner_did, kid, active flag, rotation tracking
 - `dids` — DID records with type (participant/user), service_endpoints (JSONB), FK to keys
 - `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/revoked), StatusList2021 index
 - `participants` — participant registry with DID (FK), role, allowed_scopes (JSONB), dsp_address, sts_client_secret
 - `keycloak_mappings` — DID-to-Keycloak user mappings (realm, user_id, email, subject_id)
+- `owners` — owner registry + Gaia-X legal identity, verification lifecycle, current agreement + capacity (Block D)
+- `organization_applications` — pre-verification org registration data, promoted into `owners` on verify (Block D)
+- `agreements` — service-agreement definitions (id + version, capacity, per-locale text path + SHA-256) (Block D)
+- `agreement_acceptances` — an org's acceptance of an agreement version (capacity, locale, text SHA-256) (Block D)
+- `organization_memberships` — user-DID → owner-alias memberships
 - `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose (revocation)
 
 ---
@@ -79,6 +84,13 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `DELETE` | `/admin/dids/{did}` | Deactivate DID + revoke credentials |
 | `POST` | `/admin/credentials/membership` | Issue MembershipCredential |
 | `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential |
+| `POST` | `/admin/credentials/organization` | Issue OrganizationCredential (gate: verified + agreement) |
+| `POST` | `/admin/organizations/applications` | Register an organisation application |
+| `GET` | `/admin/organizations/applications` | List applications (`?status=&alias=`) |
+| `GET`/`PATCH` | `/admin/organizations/applications/{id}` | Get / update (verify) an application |
+| `PATCH` | `/admin/owners/{alias}` | Promote / update owner legal identity + lifecycle |
+| `POST` | `/admin/owners/{alias}/agreement` | Record agreement acceptance |
+| `POST` | `/admin/owners/{alias}/promote` | Promote a credentialled owner to a participant |
 | `GET` | `/admin/credentials/{id}` | Get credential JSON |
 | `GET` | `/admin/credentials` | List credentials (optional `?subject_did=`) |
 | `DELETE` | `/admin/credentials/{id}` | Revoke credential |
@@ -105,6 +117,9 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli credential list` | List all credentials |
 | `ir-cli key rotate` | Rotate key for a DID |
 | `ir-cli status export` | Export StatusList2021 as JSON |
+| `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
+| `ir-cli org list/show/suspend/revoke/import` | Manage organisations |
+| `ir-cli agreement import/list` | Import + list service-agreement definitions |
 
 ---
 
@@ -120,7 +135,15 @@ EC P-256 key generation (`generate_key_pair`), JWK serialization, ES256 signing 
 
 ### `vc.py`
 
-`build_membership_credential` + `build_data_subject_credential` builders. `sign_credential` adds `JsonWebSignature2020` proof using ES256 JWS. Includes `credentialStatus` with StatusList2021Entry.
+`build_membership_credential` + `build_data_subject_credential` + `build_organization_credential` builders. `sign_credential` adds `JsonWebSignature2020` proof using ES256 JWS. Includes `credentialStatus` with StatusList2021Entry. The `OrganizationCredential` subject is shape-compatible with `gx:LegalParticipant` (Block D).
+
+### `org_onboarding.py`
+
+Block D: the gated organisation lifecycle (`upsert_owner_from_application`, `record_agreement_acceptance`, `issue_organization_credential`, `promote_owner_to_participant`, `suspend_owner`/`revoke_owner`). Shared by `api/v1/organizations.py` and `cli/main.py` so the HTTP API and the CLI enforce the same gates. Raises `OrgOnboardingError` (mapped to HTTP 409/422).
+
+### `agreements.py`
+
+Block D: `load_agreements_file` (resolves per-locale text paths, computes SHA-256) + `import_agreements` (idempotent upsert). Stores path + hash, never inline prose.
 
 ### `token.py`
 
