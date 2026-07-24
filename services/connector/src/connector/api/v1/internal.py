@@ -169,7 +169,7 @@ async def consent_check(
     that predate the purpose chain therefore fail closed rather than silently
     receiving everything.
     """
-    from ...services.consent_service import check_consent, get_granted_subject_ids
+    from ...services.consent_service import check_consent_detail, get_granted_subject_ids
     from ...services import consent_vocabulary as vocab
 
     purposes = [p.strip() for p in (purpose or "").split(",") if p.strip()]
@@ -186,7 +186,7 @@ async def consent_check(
         pass
 
     if subject_id:
-        active, reason = await check_consent(
+        active, reason, row = await check_consent_detail(
             db,
             subject_id,
             dataset_id,
@@ -203,6 +203,9 @@ async def consent_check(
             "controller_role": controller_role,
             "consent_active": active,
             "reason": reason,
+            # The legal-basis evidence of the row that decided — proof of which
+            # consent state authorised access, for the PEP's audit trail.
+            "legal_basis": row.legal_basis if row else None,
         }
     # No subject_id: return all granted subjects for this (consumer, dataset)
     granted = await get_granted_subject_ids(

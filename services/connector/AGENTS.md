@@ -17,7 +17,7 @@ src/connector/
 ├── api/v1/
 │   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers}
 │   ├── consumer.py      POST /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
-│   ├── consent.py       POST /consent/request, GET/POST /consent/my/shares, POST /consent/my/{id}/{approve,reject,revoke}
+│   ├── consent.py       POST /consent/request, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
 │   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
 │   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /consent/register-transfer, GET /internal/edr-jwks
 │   └── namespace.py     GET /ns/policy, GET /ns/sharing-offers — public vocabularies
@@ -156,6 +156,44 @@ Capacity comes from the participant's current accepted agreement. Until the
 identity-registry exposes agreements, capacity is unprovable and everyone resolves to
 *outside the circle* — which asks rather than assumes. A redundant question is
 recoverable; a skipped one is not.
+
+## Service-provisioned shares and the scoped wildcard (Block B)
+
+`POST /consent/admin/shares` lets a service — the onboarding wizard — record a
+subject's standing data-sharing consent on their behalf after approval. It
+authenticates as a service (`connector.consent.provision`, or `connector.admin`),
+**not** with the subject's VC-JWT: spreading user credentials into onboarding
+would add a fourth auth mechanism to a repo that already flags mixing them as its
+commonest mistake. The body names an `offer_id`, never a dataset — the connector
+expands the offer into per-dataset rows so the caller cannot drift from the copy
+the person read. Only consent-based offers are accepted (409 for contract-based).
+Idempotent; the subject's membership in the offer's controller org is checked
+when a registry is wired.
+
+Rows written this way carry **`consumer_id = "*"`** — the *scoped wildcard*
+(`consent_service.WILDCARD_CONSUMER`). It admits **any party inside the circle**
+for the row's controller and purpose — a processor of the declared controller,
+never a new controller and never a new purpose. Precedence, in both
+`check_consent` and `get_granted_subject_ids` (via `resolve_decision`):
+
+| specific `granted` > wildcard | allow (purpose + role must still match) |
+| specific `revoked`/`rejected` > wildcard | deny — an explicit opt-out always wins |
+| no specific + wildcard `granted` | allow (purpose + role must still match) |
+| no specific + no wildcard | deny — fail-closed |
+
+A *pending* specific row (an unanswered consumer request) neither grants nor
+blocks; it falls through to the subject's standing wildcard decision.
+
+## Legal-basis evidence (Block B)
+
+`ConsentRequestORM.legal_basis` (JSON) records *under what basis* a row was
+written: the DPV `basis_iri`, `consent_text_version`, `locale`, the SHA-256 of
+the rendered text actually shown, the offer's `user_visible_hash`, and a
+`submission_ref`. **Codes and hashes only — never PII.** For service-provisioned
+shares the connector is authoritative for the offer-derived fields (`offer_id`,
+`controller`, `controller_role`, `user_visible_hash`); the caller supplies only
+the evidence it holds. Surfaced on `GET /consent/my`, `GET /consent/status` and
+`GET /internal/consent/check` (the deciding row's basis, for the PEP audit trail).
 
 ## Participant registry
 

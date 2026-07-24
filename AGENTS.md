@@ -328,6 +328,8 @@ Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same
 
 Consent writes resolve through `services/connector/src/connector/services/consent_vocabulary.py`; anything outside the declared vocabulary is a **422**. `task compliance:validate` gates the whole chain before an import.
 
+**Service-provisioned shares & the scoped wildcard.** The onboarding wizard records a subject's standing consent after approval via `POST /consent/admin/shares` (scope `connector.consent.provision` on `svc-ds-onboarding`). It names an `offer_id`, not a dataset; the connector expands it into `consumer_id = "*"` rows — the **scoped wildcard**, which admits any party inside the circle for that controller and purpose (never a new controller or purpose). A per-party specific row overrides the wildcard: an explicit grant or opt-out both win. Each row carries a `legal_basis` evidence record (DPV basis IRI, consent-text version, locale, rendered-text SHA-256, `user_visible_hash`, `submission_ref` — **codes and hashes only, never PII**), surfaced on `GET /consent/my`, `/consent/status` and `/internal/consent/check`.
+
 See `docs/consent-and-sovereignty.md` for the full model and the enforcement matrix.
 
 ### Organization memberships

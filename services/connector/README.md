@@ -44,6 +44,7 @@ EDC's Management API is low-level and stateless. This service adds:
 ### Consent
 
 - `POST /consent/request` — consumer creates a consent request for a data subject
+- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record
 - `GET /consent/my` — data subject retrieves their own consent requests (requires `X-Subject-Id` header)
 - `POST /consent/my/{id}/approve` — data subject approves a request
 - `POST /consent/my/{id}/reject` — data subject rejects a request

@@ -52,6 +52,11 @@ class ConsentRequestORM(Base):
     controller_role: Mapped[str | None] = mapped_column(Text)
     # The sharing offer this row was created from, when it came from one.
     offer_id: Mapped[str | None] = mapped_column(Text)
+    # Evidence of the legal basis under which this row was written: the DPV
+    # basis IRI plus the codes + versions + hashes that prove *what* was shown
+    # and agreed. Never PII — `submission_ref` only, never a name, email, CF or
+    # POD. The connector DB is not a PII store.
+    legal_basis: Mapped[dict | None] = mapped_column(JSON)
     message: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
     # pending | granted | rejected | revoked

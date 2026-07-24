@@ -13,6 +13,13 @@ from . import consent_vocabulary as vocab
 
 log = logging.getLogger(__name__)
 
+# A consent row whose consumer is the wildcard admits *any party inside the
+# circle* for its controller and purpose (§3.1) — a processor of the declared
+# controller, never a new controller and never a new purpose. A per-party
+# specific row always overrides it: an explicit grant or an explicit opt-out
+# both beat the standing wildcard.
+WILDCARD_CONSUMER = "*"
+
 
 def _validated(dataset_id: str, purpose: list[str] | None) -> list[str]:
     """Resolve the dataset and normalise purposes, or raise ``VocabularyError``.
@@ -38,6 +45,7 @@ async def create_consent_request(
     controller: str | None = None,
     controller_role: str | None = None,
     offer_id: str | None = None,
+    legal_basis: dict | None = None,
 ) -> ConsentRequestORM:
     purposes = _validated(dataset_id, purpose)
 
@@ -53,6 +61,7 @@ async def create_consent_request(
         controller=controller,
         controller_role=controller_role,
         offer_id=offer_id,
+        legal_basis=legal_basis,
         message=message,
         notification_url=notification_url,
         status="pending",
@@ -124,6 +133,7 @@ async def approve_consent(
     consent_id: str,
     subject_id: str,
     notifier: ConsentNotifier | None = None,
+    legal_basis: dict | None = None,
 ) -> ConsentRequestORM | None:
     consent = await get_consent_request(session, consent_id)
     if not consent or consent.subject_id != subject_id:
@@ -132,6 +142,8 @@ async def approve_consent(
         return None
     consent.status = "granted"
     consent.decided_at = datetime.now(timezone.utc)
+    if legal_basis is not None:
+        consent.legal_basis = legal_basis
     if notifier:
         try:
             await notifier.notify_status_changed(consent)
@@ -172,6 +184,7 @@ async def set_subject_data_sharing(
     controller: str | None = None,
     controller_role: str | None = None,
     offer_id: str | None = None,
+    legal_basis: dict | None = None,
 ) -> ConsentRequestORM:
     """Set a data subject's standing sharing decision for a dataset.
 
@@ -194,6 +207,7 @@ async def set_subject_data_sharing(
             controller=controller,
             controller_role=controller_role,
             offer_id=offer_id,
+            legal_basis=legal_basis,
             message=message or "Data owner enabled sharing.",
             status="granted",
             requested_at=now,
@@ -221,6 +235,7 @@ async def set_subject_data_sharing(
         controller=controller,
         controller_role=controller_role,
         offer_id=offer_id,
+        legal_basis=legal_basis,
         message=message or "Data owner disabled sharing.",
         status="revoked",
         requested_at=now,
@@ -316,6 +331,41 @@ def consent_satisfies(
     return True, "consent covers the requested purpose and controller role"
 
 
+def resolve_decision(
+    specific: ConsentRequestORM | None,
+    wildcard: ConsentRequestORM | None,
+    purpose: list[str] | None,
+    controller_role: str | None,
+    consent_required: bool,
+) -> tuple[bool, str, ConsentRequestORM | None]:
+    """Combine a per-party row with the standing wildcard (§3.1).
+
+    | specific granted           > wildcard | allow (purpose + role must match) |
+    | specific revoked/rejected  > wildcard | deny  (explicit opt-out wins)     |
+    | no specific + wildcard granted        | allow (purpose + role must match) |
+    | no specific + no wildcard             | deny  (fail-closed)               |
+
+    A *pending* specific row is a consumer's unanswered ask, not the subject's
+    decision, so it neither grants nor blocks — it falls through to whatever the
+    subject already decided via the wildcard.  Returns the row that decided, so
+    callers can surface its legal-basis evidence.
+    """
+    if specific is not None:
+        if specific.status == "granted":
+            allowed, reason = consent_satisfies(
+                specific, purpose, controller_role, consent_required
+            )
+            return allowed, reason, specific
+        if specific.status in ("revoked", "rejected"):
+            return False, f"consumer explicitly opted out (status {specific.status})", specific
+    if wildcard is not None:
+        allowed, reason = consent_satisfies(
+            wildcard, purpose, controller_role, consent_required
+        )
+        return allowed, reason, wildcard
+    return False, "no consent record", None
+
+
 async def check_consent(
     session: AsyncSession,
     subject_id: str,
@@ -326,13 +376,40 @@ async def check_consent(
     consent_required: bool | None = None,
 ) -> tuple[bool, str]:
     """Whether one subject's consent authorises this consumer, purpose and role."""
+    allowed, reason, _row = await check_consent_detail(
+        session,
+        subject_id,
+        dataset_id,
+        consumer_id,
+        purpose=purpose,
+        controller_role=controller_role,
+        consent_required=consent_required,
+    )
+    return allowed, reason
+
+
+async def check_consent_detail(
+    session: AsyncSession,
+    subject_id: str,
+    dataset_id: str,
+    consumer_id: str,
+    purpose: list[str] | None = None,
+    controller_role: str | None = None,
+    consent_required: bool | None = None,
+) -> tuple[bool, str, ConsentRequestORM | None]:
+    """As :func:`check_consent`, also returning the row that decided."""
     if consent_required is None:
         consent_required = _dataset_requires_consent(dataset_id)
 
-    latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
-    if latest is None:
-        return False, "no consent record"
-    return consent_satisfies(latest, purpose, controller_role, consent_required)
+    specific = None
+    if consumer_id != WILDCARD_CONSUMER:
+        specific = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    wildcard = await get_latest_consent(
+        session, subject_id, dataset_id, WILDCARD_CONSUMER
+    )
+    return resolve_decision(
+        specific, wildcard, purpose, controller_role, consent_required
+    )
 
 
 def _dataset_requires_consent(dataset_id: str) -> bool:
@@ -360,15 +437,20 @@ async def get_granted_subject_ids(
 
     This is the row-filter list: a subject who did not consent to the declared
     purpose simply does not appear, so their rows never leave the provider.
+
+    A subject may be authorised by a per-party grant *or* by the scoped wildcard
+    (§3.1); a per-party opt-out overrides the wildcard.  Both are considered here
+    so the row-filter agrees with :func:`check_consent`.
     """
     if consent_required is None:
         consent_required = _dataset_requires_consent(dataset_id)
 
+    consumer_ids = {consumer_id, WILDCARD_CONSUMER}
     result = await session.execute(
         select(ConsentRequestORM)
         .where(
             ConsentRequestORM.dataset_id == dataset_id,
-            ConsentRequestORM.consumer_id == consumer_id,
+            ConsentRequestORM.consumer_id.in_(consumer_ids),
         )
         .order_by(
             ConsentRequestORM.subject_id.asc(),
@@ -377,18 +459,26 @@ async def get_granted_subject_ids(
             ConsentRequestORM.decided_at.desc(),
         )
     )
-    latest_by_subject: dict[str, ConsentRequestORM] = {}
+    specific_by_subject: dict[str, ConsentRequestORM] = {}
+    wildcard_by_subject: dict[str, ConsentRequestORM] = {}
     for consent in result.scalars().all():
-        latest_by_subject.setdefault(consent.subject_id, consent)
+        if consent.consumer_id == WILDCARD_CONSUMER:
+            wildcard_by_subject.setdefault(consent.subject_id, consent)
+        else:
+            specific_by_subject.setdefault(consent.subject_id, consent)
 
     granted: list[str] = []
-    for subject_id, consent in latest_by_subject.items():
-        allowed, reason = consent_satisfies(
-            consent, purpose, controller_role, consent_required
+    for subject_id in specific_by_subject.keys() | wildcard_by_subject.keys():
+        allowed, reason, _row = resolve_decision(
+            specific_by_subject.get(subject_id),
+            wildcard_by_subject.get(subject_id),
+            purpose,
+            controller_role,
+            consent_required,
         )
         if allowed:
             granted.append(subject_id)
-        elif consent.status == "granted":
+        else:
             log.debug(
                 "Subject %s excluded from %s row filter: %s", subject_id, dataset_id, reason
             )

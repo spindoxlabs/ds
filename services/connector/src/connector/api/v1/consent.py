@@ -10,7 +10,13 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, get_notifier, get_settings_dep, require_internal_scope
+from ...dependencies import (
+    get_db,
+    get_notifier,
+    get_settings_dep,
+    require_consent_provision,
+    require_internal_scope,
+)
 from ...notifications.base import ConsentNotifier
 from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
@@ -47,6 +53,7 @@ class ConsentResponse(BaseModel):
     controller: str | None = None
     controller_role: str | None = None
     offer_id: str | None = None
+    legal_basis: dict | None = None
     message: str | None = None
     status: str
     requested_at: datetime
@@ -70,6 +77,32 @@ class DataSharingSetRequest(BaseModel):
     # into per-dataset rows, so the caller cannot drift from the copy the
     # person actually read.
     offer_id: str | None = None
+
+
+class AdminShareLegalBasis(BaseModel):
+    """Evidence a service records when provisioning consent on a subject's behalf.
+
+    Codes, versions and hashes only — never a name, email, CF or POD. The
+    connector supplies ``offer_id``, ``controller``, ``controller_role`` and
+    ``user_visible_hash`` itself from the resolved offer, so the caller cannot
+    drift from what the person read; anything it sends for those is ignored.
+    """
+
+    source: str | None = None
+    rec_slug: str | None = None
+    basis_iri: str | None = None
+    consent_text_version: str | None = None
+    locale: str | None = None
+    rendered_text_sha256: str | None = None
+    accepted_at: str | None = None
+    submission_ref: str | None = None
+
+
+class AdminShareRequest(BaseModel):
+    subject_id: str
+    offer_id: str
+    enabled: bool
+    legal_basis: AdminShareLegalBasis | None = None
 
 
 def _verify_user(
@@ -233,6 +266,7 @@ async def get_consent_status(
     return {
         "status": latest.status,
         "decided_at": latest.decided_at.isoformat() if latest.decided_at else None,
+        "legal_basis": latest.legal_basis,
     }
 
 
@@ -349,6 +383,109 @@ async def set_my_data_share(
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
     return ConsentResponse.model_validate(consent)
+
+
+# ── Service-provisioned shares (onboarding) ───────────────────────────────────
+
+def _offer_legal_basis_record(offer, caller: AdminShareLegalBasis | None) -> dict:
+    """Assemble the stored legal-basis evidence for a provisioned share.
+
+    The connector, not the caller, is authoritative for anything that ties the
+    record to the offer — ``offer_id``, ``controller``, ``controller_role`` and
+    the user-visible-facts hash — so a service cannot record consent to
+    something other than what the offer describes. The caller supplies only the
+    evidence it holds: source, versions, locale, the rendered-text hash and a
+    non-PII submission reference.
+    """
+    sent = caller.model_dump() if caller else {}
+    return {
+        "source": sent.get("source"),
+        "rec_slug": sent.get("rec_slug"),
+        "offer_id": offer.id,
+        "basis_iri": sent.get("basis_iri") or offer.legal_basis,
+        "controller": offer.recipients.controller,
+        "controller_role": offer.recipients.controller_role,
+        "consent_text_version": sent.get("consent_text_version") or offer.consent_text_version,
+        "locale": sent.get("locale"),
+        "rendered_text_sha256": sent.get("rendered_text_sha256"),
+        "user_visible_hash": vocab.offer_user_visible_hash(offer),
+        "accepted_at": sent.get("accepted_at"),
+        "submission_ref": sent.get("submission_ref"),
+    }
+
+
+@router.post("/admin/shares")
+async def admin_provision_share(
+    body: AdminShareRequest,
+    request: Request,
+    _claims: dict = Depends(require_consent_provision),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """Provision a data subject's standing sharing decision from an offer.
+
+    The onboarding service calls this after it syncs a newly-approved
+    participant's DID.  It names an ``offer_id``, never a dataset, so it cannot
+    drift from the copy the person read: the connector expands the offer into
+    one **wildcard-scoped** row per resolved dataset (§3.1), stamping purpose,
+    controller-role and the user-visible-facts hash from the offer itself.
+
+    Only consent-based offers can be provisioned — a contract-based offer is
+    disclosed, not consented, so provisioning one would manufacture a choice
+    that does not exist.  Idempotent: a re-run returns the existing rows.
+    """
+    try:
+        offer = vocab.resolve_offer(body.offer_id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if not offer.requires_consent:
+        raise HTTPException(
+            409,
+            f"Offer '{offer.id}' is not consent-based (legal basis "
+            f"{offer.legal_basis}) — it is disclosed, not consented",
+        )
+
+    # A standing share is only meaningful for a member of the offer's controller
+    # organisation. Enforced whenever a registry is wired; a pure-unit setup with
+    # no registry skips it rather than failing on an unreachable host.
+    if settings.identity_registry_url:
+        is_member = await check_subject_membership(
+            settings.identity_registry_url,
+            user_did=body.subject_id,
+            organization_alias=offer.recipients.controller,
+            token_provider=getattr(request.app.state, "ir_token_provider", None),
+        )
+        if not is_member:
+            raise HTTPException(
+                403,
+                f"Subject '{body.subject_id}' is not a member of controller "
+                f"organisation '{offer.recipients.controller}'",
+            )
+
+    legal_basis = _offer_legal_basis_record(offer, body.legal_basis)
+
+    try:
+        consents = []
+        async with db.begin():
+            for dataset_id in offer.datasets:
+                consents.append(
+                    await consent_service.set_subject_data_sharing(
+                        session=db,
+                        subject_id=body.subject_id,
+                        dataset_id=dataset_id,
+                        consumer_id=consent_service.WILDCARD_CONSUMER,
+                        enabled=body.enabled,
+                        purpose=[offer.purpose],
+                        controller=offer.recipients.controller,
+                        controller_role=offer.recipients.controller_role,
+                        offer_id=offer.id,
+                        legal_basis=legal_basis,
+                    )
+                )
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return [ConsentResponse.model_validate(c) for c in consents]
 
 
 @router.get("/my/{consent_id}")

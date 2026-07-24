@@ -152,6 +152,62 @@ class SmokeFlow(BaseFlow):
             result.fail_step("consent grant", str(exc))
             return result
 
+        # 6b. The scoped wildcard (§3.1). A consent provisioned by an operator on
+        #     the subject's behalf (POST /consent/admin/shares, the path the
+        #     onboarding service uses) carries consumer_id = "*": it admits any
+        #     party inside the circle for this controller and purpose. A consumer
+        #     with no row of its own must be authorised by that wildcard alone,
+        #     and never for a purpose the subject did not consent to.
+        try:
+            wildcard_rows = self.http.post(
+                f"{s.connector_url}/consent/admin/shares",
+                {
+                    "subject_id": s.data_subject_id,
+                    "offer_id": s.sharing_offer_id,
+                    "enabled": True,
+                    "legal_basis": {"source": "e2e", "submission_ref": "e2e-verification"},
+                },
+                headers=svc_headers,
+            ) or []
+            wildcard_rows = wildcard_rows if isinstance(wildcard_rows, list) else [wildcard_rows]
+            if not wildcard_rows or any(r.get("consumer_id") != "*" for r in wildcard_rows):
+                result.fail_step(
+                    "wildcard consent",
+                    "admin provisioning did not create wildcard-scoped rows",
+                    rows=wildcard_rows,
+                )
+                return result
+        except HttpError as exc:
+            result.fail_step("wildcard consent", f"HTTP {exc.status}", response=exc.body)
+            return result
+
+        novel_consumer = "did:web:novel.dataspaces.localhost"
+        wildcard_check = self.http.get(
+            f"{s.connector_url}/internal/consent/check?"
+            + urllib.parse.urlencode(
+                {
+                    "dataset_id": s.asset_id,
+                    "consumer_id": novel_consumer,
+                    "subject_id": s.data_subject_id,
+                    "purpose": s.consented_purpose,
+                }
+            ),
+            headers=svc_headers,
+        ) or {}
+        if not wildcard_check.get("consent_active"):
+            result.fail_step(
+                "wildcard consent",
+                "a consumer with no specific row was not authorised by the wildcard",
+                reason=wildcard_check.get("reason"),
+            )
+            return result
+        result.pass_step(
+            "wildcard consent",
+            "operator-provisioned wildcard authorises any in-circle consumer for the consented purpose",
+            wildcard_datasets=[r.get("dataset_id") for r in wildcard_rows],
+            novel_consumer=novel_consumer,
+        )
+
         # 7. Negotiate
         policy = self._policy(dataset)
         offer_id = str(policy.get("@id") or f"{asset_id}#offer")

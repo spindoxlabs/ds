@@ -11,13 +11,19 @@ Participants hold `did:web:` identities issued by the identity registry, and org
 registered as owners with memberships binding user DIDs to them.
 
 The onboarding chain — an external participant onboarding service provisioning DIDs,
-credentials, memberships and Keycloak mappings on approval — is wired and fail-closed.
+credentials, memberships and Keycloak mappings on approval — is wired and fail-closed. The
+wizard also collects an **optional** data-sharing consent (never a condition of membership,
+per GDPR Art. 7(4)) and provisions it to the connector on approval via
+`POST /consent/admin/shares`, keyed to the sharing offer the person accepted. A failed share
+never tears down a valid identity; it is retried from the admin UI.
 
 Consent is expressed as **sharing offers**: purpose-scoped bundles a person agrees to once,
 described in human terms (what data, at what resolution, over what period, for what purpose)
 rather than as dataset identifiers. Purposes form a local SKOS hierarchy aligned to the
 [W3C Data Privacy Vocabulary](https://w3id.org/dpv/), and purpose limitation is enforced at
-negotiation time, not merely declared.
+negotiation time, not merely declared. An operator-provisioned consent is a **scoped
+wildcard** — it admits any party inside the circle for that controller and purpose, and every
+row carries a non-PII legal-basis evidence record.
 
 Organisation onboarding — verification, service agreement, organisation credential, promotion
 to participant — is available as an **API surface plus a CLI** (`ir-cli org`), driven by

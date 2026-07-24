@@ -235,12 +235,13 @@ The consent system uses PostgreSQL via async SQLAlchemy. Key tables in `services
 |-------|------|---------|
 | `id` | UUID | Primary key |
 | `subject_id` | TEXT | Data subject DID |
-| `consumer_id` | TEXT | DID of the requesting consumer |
+| `consumer_id` | TEXT | DID of the requesting consumer — or `*`, the **scoped wildcard** (see below) |
 | `dataset_id` | TEXT | Governance key of the dataset — validated on write |
 | `purpose` | JSON | Purpose slugs from the ODRL taxonomy — validated on write. Empty is never a wildcard |
 | `controller` | TEXT | Owner alias of the controller that decides the purpose |
 | `controller_role` | TEXT | Which role of that participant is acting |
 | `offer_id` | TEXT | The sharing offer this row came from, when it came from one |
+| `legal_basis` | JSON | Evidence of the basis this row was written under — DPV `basis_iri`, `consent_text_version`, `locale`, rendered-text SHA-256, `user_visible_hash`, `submission_ref`. **Codes and hashes only, never PII** |
 | `status` | TEXT | `pending`, `granted`, `rejected`, `revoked` |
 | `requested_at` / `decided_at` / `revoked_at` | TIMESTAMP | Lifecycle timestamps |
 | `revocation_reason` | TEXT | Why it was revoked |
@@ -293,6 +294,22 @@ Vocabulary endpoints are public; consent endpoints authenticate on `X-Subject-Id
 | Endpoint | Purpose |
 |----------|---------|
 | `POST /consent/request` | Create a consent request for a set of subjects. Carries `controller`, `controller_role` and `offer_id`. `409` when the requester is already covered as a processor |
+
+### Service-provisioned shares (onboarding)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `POST /consent/admin/shares` | Record a subject's standing sharing decision from an `offer_id`. Guarded by `connector.consent.provision` (a **service** scope, not the subject's VC-JWT). `422` unknown offer, `409` non-consent offer, `403` subject not a member of the offer's controller org |
+
+The onboarding wizard calls this after it syncs a newly-approved participant's DID. It names an `offer_id`, never a dataset, so it cannot drift from the copy the person read. The connector expands the offer into one **wildcard-scoped** row per dataset (`consumer_id = "*"`), stamping purpose, controller-role, `legal_basis` and `user_visible_hash` from the offer. Idempotent.
+
+**The scoped wildcard.** A `consumer_id = "*"` row admits **any party inside the circle** for its controller and purpose — a processor of the declared controller, never a new controller and never a new purpose. A per-party row overrides it:
+
+| specific `granted` > wildcard | allow (purpose + controller-role must still match) |
+|---|---|
+| specific `revoked`/`rejected` > wildcard | deny — an explicit opt-out always wins |
+| no specific + wildcard `granted` | allow (purpose + controller-role must still match) |
+| no specific + no wildcard | deny — fail-closed |
 
 ### Internal (called by EDC extensions and dataset-api)
 
@@ -463,10 +480,12 @@ sequenceDiagram
     participant DA as dataset-api
 
     Note over User,IR: 1. Onboarding
-    User->>Onboarding: Register
+    User->>Onboarding: Register (optionally accept a data-sharing offer)
     Onboarding->>IR: Create participant + issue DataSubjectCredential
     IR->>KC: POST /admin/keycloak/sync
     Note over KC: Sets dataspace_did user attribute
+    Onboarding->>Conn: POST /consent/admin/shares (offer_id, legal_basis)
+    Note over Conn: Wildcard rows provisioned if the user opted in
 
     Note over User,KC: 2. Login
     User->>KC: Authenticate (OIDC)

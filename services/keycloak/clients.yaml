@@ -69,8 +69,12 @@ clients:
     scopes_prefix: null
     default_scopes:
       - identity-registry.admin
+      # Provision a subject's standing sharing decision on the connector after
+      # onboarding approval (POST /consent/admin/shares).
+      - connector.consent.provision
     extra_audiences:
       - svc-ds-identity-registry
+      - svc-ds-connector
 
   - client_id: svc-ds-portal
     name: Dataspace Portal

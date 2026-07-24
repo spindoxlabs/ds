@@ -62,6 +62,12 @@ require_provider_write = require_permission("connector.provider.write", "connect
 require_history_read = require_permission("connector.history.read", "connector.admin")
 require_internal = require_permission("connector.internal")
 require_webhook = require_permission("connector.webhook")
+# Onboarding provisions standing consent on a subject's behalf after approval.
+# It authenticates as a service (svc-ds-onboarding), not as the subject, so it
+# needs its own permission rather than the VC-JWT the /consent/my/* routes use.
+require_consent_provision = require_permission(
+    "connector.consent.provision", "connector.admin"
+)
 
 
 async def _require_internal_or_api_key(request: Request) -> dict:
