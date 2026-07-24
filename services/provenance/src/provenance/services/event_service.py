@@ -13,7 +13,11 @@ from ..schemas.events import (
     AccessRequested,
     CatalogViewed,
     CataloguePublished,
+    ConsentGranted,
+    ConsentRevoked,
     ContractAgreementSigned,
+    DataDisclosed,
+    DataIngested,
     DataTransferCompleted,
     DomainEvent,
     EventIngestResponse,
@@ -67,6 +71,14 @@ async def ingest_event(
         prov_node = await _materialise_obligation_fulfilled(session, event)
     elif isinstance(event, AccessRevoked):
         prov_node = await _materialise_access_revoked(session, event)
+    elif isinstance(event, ConsentGranted):
+        prov_node = await _materialise_consent_granted(session, event)
+    elif isinstance(event, ConsentRevoked):
+        prov_node = await _materialise_consent_revoked(session, event)
+    elif isinstance(event, DataIngested):
+        prov_node = await _materialise_data_ingested(session, event)
+    elif isinstance(event, DataDisclosed):
+        prov_node = await _materialise_data_disclosed(session, event)
 
     orm = DomainEventORM(
         event_type=event.event_type,
@@ -74,8 +86,10 @@ async def ingest_event(
         occurred_at=event.occurred_at,
         payload=event.model_dump(mode="json"),
         prov_node_id=prov_node.id if prov_node else None,
-        agreement_id=getattr(event, "agreement_id", None),
-        data_product_id=getattr(event, "data_product_id", None),
+        agreement_id=getattr(event, "agreement_id", None)
+        or getattr(event, "agreement_ref", None),
+        data_product_id=getattr(event, "data_product_id", None)
+        or getattr(event, "dataset_id", None),
         provider_did=getattr(event, "provider_did", None),
         consumer_did=getattr(event, "consumer_did", None),
         processed=True,
@@ -447,4 +461,138 @@ async def _materialise_access_revoked(
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
+    return activity
+
+
+async def _materialise_consent_granted(
+    session: AsyncSession, event: ConsentGranted
+) -> ProvNodeORM:
+    activity = await upsert_node(
+        session,
+        f"urn:activity:consent-grant:{event.event_id or event.occurred_at.isoformat()}",
+        "Activity",
+        label="Consent Granted",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={
+            "datasetId": event.dataset_id,
+            "offerId": event.offer_id,
+            "purpose": event.purpose,
+            "controller": event.controller,
+            "controllerRole": event.controller_role,
+            "consumerDid": event.consumer_did,
+            "legalBasis": event.legal_basis,
+        },
+    )
+    dataset = await upsert_node(
+        session, event.dataset_id, "Entity", label=event.dataset_id
+    )
+    subject = await upsert_node(session, event.subject_id, "Agent", label=event.subject_id)
+    await session.flush()
+    await _edge(session, "used", activity.id, dataset.id)
+    await _edge(session, "wasAssociatedWith", activity.id, subject.id)
+    return activity
+
+
+async def _materialise_consent_revoked(
+    session: AsyncSession, event: ConsentRevoked
+) -> ProvNodeORM:
+    activity = await upsert_node(
+        session,
+        f"urn:activity:consent-revocation:{event.event_id or event.occurred_at.isoformat()}",
+        "Activity",
+        label="Consent Revoked",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={
+            "datasetId": event.dataset_id,
+            "offerId": event.offer_id,
+            "purpose": event.purpose,
+            "controller": event.controller,
+            "controllerRole": event.controller_role,
+            "consumerDid": event.consumer_did,
+            "reason": event.reason,
+        },
+    )
+    dataset = await upsert_node(
+        session, event.dataset_id, "Entity", label=event.dataset_id
+    )
+    subject = await upsert_node(session, event.subject_id, "Agent", label=event.subject_id)
+    await session.flush()
+    # The subject withdraws the standing permission over the dataset; the
+    # revocation invalidates the consent's hold on it.
+    await _edge(session, "invalidated", activity.id, dataset.id)
+    await _edge(session, "wasAssociatedWith", activity.id, subject.id)
+    return activity
+
+
+async def _materialise_data_ingested(
+    session: AsyncSession, event: DataIngested
+) -> ProvNodeORM:
+    activity = await upsert_node(
+        session,
+        f"urn:activity:ingestion:{event.event_id or event.occurred_at.isoformat()}",
+        "Activity",
+        label="Data Ingestion",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={
+            "sourceRef": event.source_ref,
+            "recordCount": event.record_count,
+            "consentSnapshotHash": event.consent_snapshot_hash,
+            "agreementRef": event.agreement_ref,
+        },
+    )
+    dataset = await upsert_node(
+        session, event.dataset_id, "Entity", label=event.dataset_id,
+        energy_type="DataProduct",
+    )
+    await session.flush()
+    await _edge(session, "wasGeneratedBy", dataset.id, activity.id)
+    if event.provider_did:
+        provider = await upsert_node(
+            session, event.provider_did, "Agent", label=event.provider_did
+        )
+        await session.flush()
+        await _edge(session, "wasAssociatedWith", activity.id, provider.id)
+        await _edge(session, "wasAttributedTo", dataset.id, provider.id)
+    return activity
+
+
+async def _materialise_data_disclosed(
+    session: AsyncSession, event: DataDisclosed
+) -> ProvNodeORM:
+    activity = await upsert_node(
+        session,
+        f"urn:activity:disclosure:{event.event_id or event.occurred_at.isoformat()}",
+        "Activity",
+        label="Data Disclosure",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={
+            "purpose": event.purpose,
+            "columns": event.columns,
+            "subjectCount": event.subject_count,
+            "sourceRef": event.source_ref,
+            "consentSnapshotHash": event.consent_snapshot_hash,
+            "agreementRef": event.agreement_ref,
+        },
+    )
+    recipient = await upsert_node(
+        session, event.recipient_ref, "Agent", label=event.recipient_ref
+    )
+    await session.flush()
+    await _edge(session, "wasAssociatedWith", activity.id, recipient.id)
+    if event.source_ref:
+        source = await upsert_node(
+            session, event.source_ref, "Entity", label=event.source_ref
+        )
+        await session.flush()
+        await _edge(session, "used", activity.id, source.id)
+    if event.disclosed_by:
+        discloser = await upsert_node(
+            session, event.disclosed_by, "Agent", label=event.disclosed_by
+        )
+        await session.flush()
+        await _edge(session, "wasAssociatedWith", activity.id, discloser.id)
     return activity

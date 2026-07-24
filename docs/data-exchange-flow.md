@@ -159,8 +159,19 @@ At each stage, ds-connector emits provenance events to ds-provenance:
 | Negotiation finalized | `ContractAgreementSigned` | Activity (agreement) |
 | Transfer started | `DataTransferCompleted` | Activity (transfer) |
 | Obligation met | `UsageObligationFulfilled` | Activity (obligation) |
+| Consent granted | `ConsentGranted` | Activity + dataset Entity + subject Agent |
+| Consent revoked | `ConsentRevoked` | Activity (`invalidated` the dataset) + subject Agent |
+| DSO/offline handover recorded (`POST /admin/ingestion`) | `DataIngested` | Activity + dataset Entity |
+| Offline CSV export to a recipient (onboarding) | `DataDisclosed` | Activity + recipient Agent |
 
 These events create a linked-data graph that can be traversed via `GET /prov/lineage/{iri}`.
+
+The consent, ingestion and disclosure events (Block C) carry **codes,
+pseudonymous DIDs and hashes only, never PII**. A `DataIngested` /
+`DataDisclosed` record includes a `consent_snapshot_hash` — a recomputable
+SHA-256 over the consent tuples that authorised the handover — so the record
+proves which consent state was in force without the provenance store holding any
+subject data. See `docs/provenance-and-lineage.md`.
 
 ---
 

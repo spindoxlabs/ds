@@ -9,10 +9,13 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...clients.edc_management import EdcManagementClient
 from ...config import Settings
+from ...db.models import ConsentRequestORM
 from ...dependencies import (
     get_db,
     get_notifier,
+    get_prov,
     get_settings_dep,
     require_consent_provision,
     require_internal_scope,
@@ -21,11 +24,55 @@ from ...notifications.base import ConsentNotifier
 from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
 from ...services.membership_check import check_subject_membership, resolve_dataset_owner
+from ...services.prov_bridge import ProvBridge
 from ...services.user_credentials import verify_user_vc_jwt
-from ...clients.edc_management import EdcManagementClient
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/consent", tags=["consent"])
+
+
+async def _emit_consent_events(
+    prov: ProvBridge | None,
+    consents: list[ConsentRequestORM],
+    *,
+    reason: str | None = None,
+) -> None:
+    """Emit a provenance event per settled consent row, after the DB commits.
+
+    Follows the ``access_revoked`` pattern: provenance is a downstream,
+    non-fatal side effect emitted from the API layer once the transaction has
+    committed, never inside it — an event must not be recorded for a write that
+    then rolls back.  The row's final status decides the event; event ids are
+    deterministic so an idempotent re-run (e.g. a repeated admin provision) is
+    deduplicated by the provenance store rather than double-counted.
+    """
+    if prov is None:
+        return
+    for consent in consents:
+        if consent.status == "granted":
+            await prov.consent_granted(
+                subject_id=consent.subject_id,
+                dataset_id=consent.dataset_id,
+                consumer_id=consent.consumer_id,
+                offer_id=consent.offer_id,
+                purpose=list(consent.purpose or []),
+                controller=consent.controller,
+                controller_role=consent.controller_role,
+                legal_basis=consent.legal_basis,
+                event_id=f"consent-granted:{consent.id}",
+            )
+        elif consent.status == "revoked":
+            await prov.consent_revoked(
+                subject_id=consent.subject_id,
+                dataset_id=consent.dataset_id,
+                consumer_id=consent.consumer_id,
+                offer_id=consent.offer_id,
+                purpose=list(consent.purpose or []),
+                controller=consent.controller,
+                controller_role=consent.controller_role,
+                reason=reason or consent.revocation_reason,
+                event_id=f"consent-revoked:{consent.id}",
+            )
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -326,6 +373,7 @@ async def set_my_data_share(
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
+    prov: ProvBridge | None = Depends(get_prov),
 ):
     """Enable or disable a data subject's sharing decision.
 
@@ -369,6 +417,7 @@ async def set_my_data_share(
                             offer_id=offer.id,
                         )
                     )
+            await _emit_consent_events(prov, consents)
             return [ConsentResponse.model_validate(c) for c in consents]
 
         async with db.begin():
@@ -382,6 +431,7 @@ async def set_my_data_share(
             )
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
+    await _emit_consent_events(prov, [consent])
     return ConsentResponse.model_validate(consent)
 
 
@@ -421,6 +471,7 @@ async def admin_provision_share(
     _claims: dict = Depends(require_consent_provision),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
+    prov: ProvBridge | None = Depends(get_prov),
 ):
     """Provision a data subject's standing sharing decision from an offer.
 
@@ -485,6 +536,7 @@ async def admin_provision_share(
                 )
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
+    await _emit_consent_events(prov, consents)
     return [ConsentResponse.model_validate(c) for c in consents]
 
 
@@ -511,6 +563,7 @@ async def approve_consent(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     notifier: ConsentNotifier = Depends(get_notifier),
+    prov: ProvBridge | None = Depends(get_prov),
 ):
     _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
@@ -519,6 +572,7 @@ async def approve_consent(
         )
     if not consent:
         raise HTTPException(404, "Consent request not found or not in pending state")
+    await _emit_consent_events(prov, [consent])
     return {"status": "granted", "id": consent.id}
 
 
@@ -549,6 +603,7 @@ async def revoke_consent(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     notifier: ConsentNotifier = Depends(get_notifier),
+    prov: ProvBridge | None = Depends(get_prov),
 ):
     _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
@@ -557,6 +612,7 @@ async def revoke_consent(
         )
     if not consent:
         raise HTTPException(404, "Consent request not found or not in granted state")
+    await _emit_consent_events(prov, [consent])
 
     # Terminate active EDC transfers
     transfer_ids = consent.transfer_ids or []

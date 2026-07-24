@@ -23,7 +23,11 @@ rather than as dataset identifiers. Purposes form a local SKOS hierarchy aligned
 [W3C Data Privacy Vocabulary](https://w3id.org/dpv/), and purpose limitation is enforced at
 negotiation time, not merely declared. An operator-provisioned consent is a **scoped
 wildcard** — it admits any party inside the circle for that controller and purpose, and every
-row carries a non-PII legal-basis evidence record.
+row carries a non-PII legal-basis evidence record. Consent grants and revocations, recorded
+DSO/offline ingestions (`POST /admin/ingestion`), and offline CSV disclosures each emit a
+PROV-O event carrying **codes, DIDs and hashes only** — a recomputable `consent_snapshot_hash`
+proves which consent state authorised a handover without the provenance store holding any
+subject data.
 
 Organisation onboarding — verification, service agreement, organisation credential, promotion
 to participant — is available as an **API surface plus a CLI** (`ir-cli org`), driven by
@@ -42,8 +46,10 @@ The intended shape, when it is picked up:
   wizard: legal entity details → registration number and country → legal representative
   contact → requested role (consumer or provider) → DSP endpoint if provider → evidence
   upload → service agreement acceptance → submit.
-- An operator review queue at `/admin/onboarding` — already delivered in read-only form with
-  action buttons; the wizard adds applications to the same queue.
+- An operator review queue at `/admin/onboarding` (read-only list + verify/issue/promote/suspend
+  buttons calling the same registry endpoints as the CLI). This portal surface is **not yet
+  built** (deferred with the wizard); the backend it will call — applications, credential
+  issuance, promotion, agreements — is delivered.
 - Applicant authentication is the open design question. An applicant is by definition not yet
   a participant, so the portal's participant-scoped auth does not cover them. The preferred
   answer is a self-registered Keycloak user in an `applicants` group, reusing the existing

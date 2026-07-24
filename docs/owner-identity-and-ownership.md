@@ -284,6 +284,95 @@ Never reverse steps 1 and 2 — adding ownership before provisioning scopes lock
 
 ---
 
+## Organisation onboarding (Block D)
+
+An owner in the registry can be a lightweight alias (a name and a DID) or a fully
+onboarded **organisation** with a verified legal identity, an accepted service agreement,
+and an issued credential that lets it act as a dataspace participant. Organisation onboarding
+is the lifecycle that promotes the former into the latter.
+
+**No public self-registration this iteration.** Organisations are enabled through an admin
+API and `ir-cli org`, following the same seed-and-import pattern as owners and memberships. The
+portal review queue is deferred (see [roadmap](roadmap.md)); when built, every button will call
+the same registry endpoints the CLI does.
+
+### Lifecycle
+
+```
+register  →  verify  →  agreement  →  issue-credential  →  promote
+(application) (Owner,     (records      (gate: verified +    (gate: valid
+              verified)    capacity +     agreement)          credential)
+                           text SHA-256)                       → participant
+```
+
+| Stage | CLI | API | Effect |
+|-------|-----|-----|--------|
+| Register | `ir-cli org register` | `POST /admin/organizations/applications` | Creates a pre-verification `OrganizationApplication` (`status: pending`) |
+| Verify | `ir-cli org verify` | `PATCH /admin/organizations/applications/{id}` (`status: verified`) | Promotes the legal identity into an `Owner` row (`status: verified`) |
+| Agreement | `ir-cli org agreement` | `POST /admin/owners/{alias}/agreement` | Records acceptance (capacity + `text_sha256`) and stamps the owner's current agreement |
+| Issue credential | `ir-cli org issue-credential` | `POST /admin/credentials/organization` | Issues an `OrganizationCredential` — **refused unless verified and an agreement is accepted** |
+| Promote | `ir-cli org promote` | `POST /admin/owners/{alias}/promote` | Registers the org as a DSP participant — **refused unless a valid credential exists** |
+| Suspend / Revoke | `ir-cli org suspend`/`revoke` | `PATCH /admin/owners/{alias}` (`status`) | Sets the StatusList bit **and** deactivates the participant in one transaction |
+
+The gates are enforced **in code** (`services/org_onboarding.py`, shared by the API and the
+CLI), never in documentation. The CLI is the reference implementation.
+
+### Gaia-X-shaped legal identity
+
+The `Owner` row carries a legal identity shape-compatible with `gx:LegalParticipant`:
+
+- `registration_number` + `registration_type` ∈ `{local, EUID, EORI, vatID, leiCode}`
+- `hq_country_code` + `legal_country_code` — ISO 3166-2
+- optional `parent_organizations` / `sub_organizations` — RECs federate
+- a verification trail (`status`, `verified_at`/`_by`, `evidence_ref`)
+- the current accepted agreement and its **capacity** (§2.5): `processor`, `joint_controller`
+  or `independent_controller` — the field that decides whether a party is covered-and-disclosed
+  or needs its own consent
+
+This is deliberately **shape-compatible, not compliant**: full Gaia-X needs a GXDCH notary,
+SHACL conformance and a keypair revocation lifecycle. See [roadmap](roadmap.md).
+
+### Service agreements
+
+Agreements are YAML-seeded and IR-hosted, following the seed-and-import pattern:
+
+```yaml
+# services/identity-registry/seed/agreements.dev.yaml
+agreements:
+  - id: dataspace-participation
+    version: "1.0"
+    effective_from: 2026-09-01
+    applies_to: [consumer, provider]
+    capacity: processor          # ← decides consent coverage (§2.5)
+    text:
+      en: content/participation-en.md
+      it: content/participation-it.md
+```
+
+`ir-cli agreement import --file agreements.yaml` upserts definitions (keyed by `id` + `version`)
+and computes a per-locale **SHA-256 of the rendered text**; only the path and hash are stored,
+never the prose. Acceptance records `(owner, agreement_id, version, capacity, accepted_at,
+accepted_by, locale, text_sha256)` — the same evidence shape as the citizen consent path, so
+citizen and organisation acceptances prove identically. `GET /agreements` serves the
+definitions read-only for the (deferred) portal view.
+
+### Example
+
+```bash
+ir-cli org register --alias acme-energy --name "Acme Energy" \
+  --registration-number IT12345678901 --type vatID \
+  --hq-country IT-TN --legal-country IT-TN \
+  --role consumer --did did:web:acme.dataspaces.localhost \
+  --dsp-address https://acme.dataspaces.localhost/protocol
+ir-cli org verify        --alias acme-energy --verified-by operator@rec --evidence-ref REG-2026-001
+ir-cli org agreement     --alias acme-energy --agreement dataspace-participation --version 1.0 --locale en
+ir-cli org issue-credential --alias acme-energy
+ir-cli org promote       --alias acme-energy --dsp-address https://acme.dataspaces.localhost/protocol
+# acme-energy is now a participant and can negotiate + pull like any other
+```
+
+---
+
 ## IR memberships vs Keycloak organizations
 
 Two independent systems, same upstream source, different consumers:

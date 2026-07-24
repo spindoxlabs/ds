@@ -60,7 +60,10 @@ VCs are issued by the identity-registry:
 - `MembershipCredential` VCs are auto-issued when registering a participant via `ir-cli participant add` or `POST /admin/participants`
 - Additional membership VCs can be issued via `ir-cli credential issue-membership` or `POST /admin/credentials/membership`
 - `DataSubjectCredential` VCs are issued via `ir-cli credential issue-data-subject` or `POST /admin/credentials/data-subject`
+- `OrganizationCredential` VCs are issued via `ir-cli org issue-credential` or `POST /admin/credentials/organization` (Block D) — see [Owner Identity & Ownership](owner-identity-and-ownership.md#organisation-onboarding-block-d)
 - All credentials include a `StatusList2021Entry` for revocation tracking
+
+**Issuance gates for `OrganizationCredential`** (enforced in code, not documentation): the owner must be `verified` **and** have accepted a current service-agreement version before a credential is issued; a participant may only be promoted once a valid, unrevoked `OrganizationCredential` exists. `suspend`/`revoke` set the StatusList bit and deactivate the participant in one transaction. The credential is **shape-compatible with `gx:LegalParticipant`** (Gaia-X registration-type enum, ISO 3166-2 country codes, headquarters/legal address split) but is not full GXDCH compliance.
 
 ### VC structure
 

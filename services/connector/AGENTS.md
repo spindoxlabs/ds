@@ -20,6 +20,7 @@ src/connector/
 │   ├── consent.py       POST /consent/request, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
 │   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
 │   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /consent/register-transfer, GET /internal/edr-jwks
+│   ├── admin.py         GET /admin/participants, POST /admin/ingestion (record a DSO handover → DataIngested)
 │   └── namespace.py     GET /ns/policy, GET /ns/sharing-offers — public vocabularies
 ├── services/
 │   ├── governance.py    GovernanceService — loads governance.yaml, filters by expose flag
@@ -194,6 +195,28 @@ shares the connector is authoritative for the offer-derived fields (`offer_id`,
 `controller`, `controller_role`, `user_visible_hash`); the caller supplies only
 the evidence it holds. Surfaced on `GET /consent/my`, `GET /consent/status` and
 `GET /internal/consent/check` (the deciding row's basis, for the PEP audit trail).
+
+## Consent & disclosure provenance (Block C)
+
+`services/prov_bridge.py` gains four emit methods — `consent_granted`,
+`consent_revoked`, `data_ingested`, `data_disclosed` — mapped to PROV-O in
+ds-provenance. Consent events are emitted **from the API layer after the write
+commits** (the `access_revoked` pattern in `consumer.py`), never inside the
+transaction, via `_emit_consent_events` in `api/v1/consent.py`: the row's final
+status picks the event, `event_id` is deterministic (`consent-granted:{id}` /
+`consent-revoked:{id}`) so an idempotent re-provision is deduplicated by the
+provenance store. The `get_prov` dependency returns `None` when provenance is
+unwired (e.g. unit tests), making every emit a no-op.
+
+`POST /admin/ingestion` (guard `connector.ingestion.record`, `connector.admin`
+superset) lets an operator record a manual DSO/offline handover as they perform
+it, emitting `DataIngested`. The connector computes the `consent_snapshot_hash`
+itself from its consent DB (`consent_service.dataset_consent_snapshot`) — a
+recomputable SHA-256 over the sorted `(subject_did, dataset_id, purpose,
+controller_role, consent_text_version)` tuples of the currently-granted rows —
+so the record proves *which* consent state authorised the handover while the
+provenance store holds no subject data. **All Block C events carry codes, DIDs
+and hashes only, never PII.** See `docs/provenance-and-lineage.md`.
 
 ## Participant registry
 

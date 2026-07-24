@@ -62,6 +62,13 @@ EDC's Management API is low-level and stateless. This service adds:
 
 - `GET /ns/policy` — the profile-namespaced ODRL vocabulary as JSON-LD (`Cache-Control: public, max-age=86400`)
 
+### Admin
+
+- `GET /admin/participants` — list registered participants (guard `connector.admin`)
+- `POST /admin/ingestion` — record a manual DSO/offline data handover (guard `connector.ingestion.record`); computes the `consent_snapshot_hash` from the consent DB and emits a `DataIngested` provenance event
+
+Consent grants and revocations (`/consent/admin/shares`, `/consent/my/shares`, `/consent/my/{id}/approve|revoke`) emit `ConsentGranted` / `ConsentRevoked` provenance events after the write commits. All Block C events carry **codes, DIDs and hashes only, never PII**.
+
 ---
 
 ## ODRL policy derivation

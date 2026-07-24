@@ -286,3 +286,109 @@ class ProvBridge:
             "subject_id": subject_id,
             "reason": reason,
         })
+
+    # ── Consent & disclosure (Block C) ────────────────────────────────────────
+    #
+    # These carry codes, DIDs and hashes only, never PII. ``consumer_id`` may be
+    # the scoped wildcard "*"; it is passed through verbatim rather than through
+    # ``_did`` so the provenance record keeps the same token the consent row holds.
+
+    async def consent_granted(
+        self,
+        subject_id: str,
+        dataset_id: str,
+        consumer_id: str | None = None,
+        offer_id: str | None = None,
+        purpose: list[str] | None = None,
+        controller: str | None = None,
+        controller_role: str | None = None,
+        legal_basis: dict | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "ConsentGranted",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "subject_id": _did(subject_id),
+            "dataset_id": dataset_id,
+            "consumer_did": consumer_id,
+            "offer_id": offer_id,
+            "purpose": purpose or [],
+            "controller": controller,
+            "controller_role": controller_role,
+            "legal_basis": legal_basis,
+        })
+
+    async def consent_revoked(
+        self,
+        subject_id: str,
+        dataset_id: str,
+        consumer_id: str | None = None,
+        offer_id: str | None = None,
+        purpose: list[str] | None = None,
+        controller: str | None = None,
+        controller_role: str | None = None,
+        reason: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "ConsentRevoked",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "subject_id": _did(subject_id),
+            "dataset_id": dataset_id,
+            "consumer_did": consumer_id,
+            "offer_id": offer_id,
+            "purpose": purpose or [],
+            "controller": controller,
+            "controller_role": controller_role,
+            "reason": reason,
+        })
+
+    async def data_ingested(
+        self,
+        dataset_id: str,
+        provider_id: str | None = None,
+        source_ref: str | None = None,
+        record_count: int | None = None,
+        consent_snapshot_hash: str | None = None,
+        agreement_ref: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "DataIngested",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "dataset_id": dataset_id,
+            "provider_did": _did(provider_id),
+            "source_ref": source_ref,
+            "record_count": record_count,
+            "consent_snapshot_hash": consent_snapshot_hash,
+            "agreement_ref": agreement_ref,
+        })
+
+    async def data_disclosed(
+        self,
+        recipient_ref: str,
+        purpose: list[str] | None = None,
+        columns: list[str] | None = None,
+        subject_count: int | None = None,
+        source_ref: str | None = None,
+        disclosed_by: str | None = None,
+        consent_snapshot_hash: str | None = None,
+        agreement_ref: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        await self._prov.emit_event({
+            "event_type": "DataDisclosed",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "recipient_ref": recipient_ref,
+            "purpose": purpose or [],
+            "columns": columns or [],
+            "subject_count": subject_count,
+            "source_ref": source_ref,
+            "disclosed_by": disclosed_by,
+            "consent_snapshot_hash": consent_snapshot_hash,
+            "agreement_ref": agreement_ref,
+        })

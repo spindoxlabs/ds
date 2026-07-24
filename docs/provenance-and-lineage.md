@@ -141,6 +141,77 @@ Creates:
 - Activity (the revocation)
 - Relations to the dataset, agreement, and participant agents
 
+### ConsentGranted
+
+Emitted by the connector when a subject's data-sharing consent is granted —
+`approve_consent`, `set_subject_data_sharing`, and offer provisioning via
+`POST /consent/admin/shares`. Emitted from the API layer *after* the write
+commits (the `AccessRevoked` pattern) with a deterministic `event_id`, so an
+idempotent re-provision is deduplicated rather than double-counted.
+
+Creates:
+- Activity (the consent grant)
+- Entity (the dataset the consent is about)
+- Agent (the pseudonymous subject DID)
+- Relations: `used`, `wasAssociatedWith`
+
+Key fields: `subject_id`, `dataset_id`, `consumer_did` (may be the scoped
+wildcard `*`), `offer_id`, `purpose`, `controller_role`, `legal_basis`.
+
+### ConsentRevoked
+
+Emitted when a subject withdraws consent — `revoke_consent` or
+`set_subject_data_sharing(enabled=False)`.
+
+Creates:
+- Activity (the consent revocation)
+- Entity (the dataset)
+- Agent (the subject DID)
+- Relations: `invalidated`, `wasAssociatedWith`
+
+Adds `reason` to the `ConsentGranted` field set.
+
+### DataIngested
+
+Emitted when a DSO / offline data handover is recorded via
+`POST /admin/ingestion` (guard `connector.ingestion.record`). The DSO leg is
+manual in phase A, so the operator records the handover as they perform it. The
+connector computes the `consent_snapshot_hash` itself from its consent DB.
+
+Creates:
+- Activity (the ingestion)
+- Entity (the ingested dataset, `wasGeneratedBy` the activity)
+- Agent (the provider), when known
+
+Key fields: `dataset_id`, `source_ref`, `record_count`, `consent_snapshot_hash`,
+`agreement_ref`.
+
+### DataDisclosed
+
+Emitted by the onboarding service after a successful CSV export names a
+recipient (`ir-cli`/`export-csv --recipient …`). It documents an offline,
+DPA-governed disclosure.
+
+Creates:
+- Activity (the disclosure)
+- Agent (the recipient; and the disclosing controller, when known)
+- Entity (the source, e.g. a REC slug), when given
+
+Key fields: `recipient_ref`, `purpose`, `columns[]` (column *names*, not
+values), `subject_count`, `consent_snapshot_hash`, `agreement_ref`.
+
+### No PII in provenance
+
+The Block C events carry **codes, pseudonymous DIDs and hashes only — never a
+name, email, fiscal code or POD**. `subject_id` is the subject DID (as on
+`AccessRevoked`); `legal_basis` is the Block B evidence record (basis IRI,
+versions, hashes); `recipient_ref` and `agreement_ref` identify a party and its
+DPA, never their contents. The `consent_snapshot_hash` is a SHA-256 over the
+sorted `(subject_did, dataset_id, purpose, controller_role, consent_text_version)`
+tuples that authorised a handover — it proves *which* consent state was in force,
+verifiable by recomputation from the connector DB, while the provenance store
+holds none of the underlying subject data.
+
 ---
 
 ## Database schema

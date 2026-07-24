@@ -52,6 +52,11 @@ Domain event types:
 - `ContractAgreementSigned` — creates NegotiationActivity + ContractAgreement entity + two wasAssociatedWith edges
 - `DataTransferCompleted` — creates DataTransferActivity + derived Entity at consumer + wasGeneratedBy + wasDerivedFrom + wasAttributedTo
 - `UsageObligationFulfilled` — creates ObligationFulfilmentActivity + wasAssociatedWith
+- `ConsentGranted` / `ConsentRevoked` — consent Activity + dataset Entity + subject Agent (`used`/`invalidated` + `wasAssociatedWith`)
+- `DataIngested` — Ingestion Activity + dataset Entity (`wasGeneratedBy`); records a DSO/offline handover
+- `DataDisclosed` — Disclosure Activity + recipient Agent; records an offline CSV export
+
+The consent/ingestion/disclosure events (Block C) carry **codes, DIDs and hashes only, never PII** — a `consent_snapshot_hash` fingerprints the authorising consent state without storing it.
 
 Domain event ingest is idempotent via `event_id`.
 

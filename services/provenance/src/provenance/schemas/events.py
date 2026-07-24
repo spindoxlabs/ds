@@ -150,6 +150,71 @@ class AccessRevoked(BaseModel):
     reason: str | None = None
 
 
+# ── Consent & disclosure events (Block C) ─────────────────────────────────────
+#
+# These record the legal chain — when a subject's consent was granted or
+# revoked, and when data actually changed hands under it — as auditable PROV-O.
+# They carry **codes, DIDs and hashes only, never PII**: ``subject_id`` is the
+# pseudonymous subject DID (as on ``AccessRevoked``), ``legal_basis`` holds the
+# Block B evidence record (basis IRI, versions, hashes), and
+# ``consent_snapshot_hash`` is a SHA-256 over the sorted consent tuples that
+# authorised a handover — verifiable by recomputation, holding no name or POD.
+
+
+class ConsentGranted(BaseModel):
+    event_type: Literal["ConsentGranted"] = "ConsentGranted"
+    event_id: str | None = None
+    occurred_at: datetime
+    subject_id: str               # pseudonymous subject DID
+    dataset_id: str               # governance key the consent is about
+    consumer_did: str | None = None  # the party admitted, or "*" for the scoped wildcard
+    offer_id: str | None = None
+    purpose: list[str] = []
+    controller: str | None = None
+    controller_role: str | None = None
+    legal_basis: dict | None = None  # codes/hashes only (Block B evidence)
+
+
+class ConsentRevoked(BaseModel):
+    event_type: Literal["ConsentRevoked"] = "ConsentRevoked"
+    event_id: str | None = None
+    occurred_at: datetime
+    subject_id: str
+    dataset_id: str
+    consumer_did: str | None = None
+    offer_id: str | None = None
+    purpose: list[str] = []
+    controller: str | None = None
+    controller_role: str | None = None
+    reason: str | None = None
+
+
+class DataIngested(BaseModel):
+    event_type: Literal["DataIngested"] = "DataIngested"
+    event_id: str | None = None
+    occurred_at: datetime
+    dataset_id: str
+    provider_did: str | None = None
+    source_ref: str | None = None        # opaque handle for the source handover, never PII
+    record_count: int | None = None
+    consent_snapshot_hash: str | None = None  # SHA-256 over the authorising consent tuples
+    agreement_ref: str | None = None     # identifies the DPA, never its contents
+
+
+class DataDisclosed(BaseModel):
+    event_type: Literal["DataDisclosed"] = "DataDisclosed"
+    event_id: str | None = None
+    occurred_at: datetime
+    recipient_ref: str                   # who received the data (org alias/DID/DPA ref)
+    purpose: list[str] = []
+    columns: list[str] = []              # disclosed column *names*, not values (Art. 13/14)
+    subject_count: int | None = None
+    source_ref: str | None = None        # what was disclosed (e.g. a REC slug), never PII
+    disclosed_by: str | None = None      # the disclosing agent (e.g. the REC controller)
+    consent_snapshot_hash: str | None = None
+    agreement_ref: str | None = None
+
+
 DomainEvent = Annotated[
     CataloguePublished
     | CatalogViewed
@@ -162,7 +227,11 @@ DomainEvent = Annotated[
     | DataTransferCompleted
     | QueryExecuted
     | UsageObligationFulfilled
-    | AccessRevoked,
+    | AccessRevoked
+    | ConsentGranted
+    | ConsentRevoked
+    | DataIngested
+    | DataDisclosed,
     Field(discriminator="event_type"),
 ]
 

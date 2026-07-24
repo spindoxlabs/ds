@@ -73,6 +73,15 @@ These are the events emitted by ds-connector and ingested here:
 | `QueryExecuted` | Dataspace-originated query executed | Activity (query) + relations |
 | `UsageObligationFulfilled` | Obligation met post-transfer | Activity (obligation) + relations |
 | `AccessRevoked` | Access to a dataset is revoked | Activity (revocation) + relations |
+| `ConsentGranted` | Subject's data-sharing consent granted | Activity + dataset Entity + subject Agent |
+| `ConsentRevoked` | Subject withdraws consent | Activity (`invalidated` the dataset) + subject Agent |
+| `DataIngested` | DSO/offline handover recorded (`POST /admin/ingestion`) | Activity + dataset Entity (`wasGeneratedBy`) |
+| `DataDisclosed` | Onboarding CSV export to a named recipient | Activity + recipient Agent |
+
+> **Block C events carry codes, DIDs and hashes only — never PII.** `subject_id`
+> is the pseudonymous subject DID; `legal_basis` is the Block B evidence record;
+> `consent_snapshot_hash` is a recomputable SHA-256 over the authorising consent
+> tuples. See `docs/provenance-and-lineage.md` § "No PII in provenance".
 
 ## Testing
 

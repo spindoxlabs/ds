@@ -43,7 +43,7 @@ identity-registry.admin  identity-registry.read  identity-registry.resolve
 identity-registry.membership.read
 connector.admin  connector.provider.read  connector.provider.write
 connector.history.read  connector.internal  connector.webhook
-connector.consent.provision
+connector.consent.provision  connector.ingestion.record
 provenance.read  provenance.write
 catalog.read
 ```
@@ -60,7 +60,7 @@ admin-level authority:
 | Client | Notable scopes | Blast radius if the secret leaks |
 |--------|---------------|----------------------------------|
 | `svc-ds-portal` | `connector.admin`, `identity-registry.read` | full provider management |
-| `svc-ds-onboarding` | `identity-registry.admin`, `connector.consent.provision` | register arbitrary participants, provision subject consent |
+| `svc-ds-onboarding` | `identity-registry.admin`, `connector.consent.provision`, `provenance.write` | register arbitrary participants, provision subject consent, record disclosures |
 | `svc-ds-identity-registry` | `identity-registry.admin` | full registry control |
 | `svc-ds-connector` | `identity-registry.read`, `provenance.write` | forge provenance |
 | `svc-ds-federated-catalog` | `identity-registry.read` | participant enumeration |

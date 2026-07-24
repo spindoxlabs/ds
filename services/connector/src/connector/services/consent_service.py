@@ -1,7 +1,10 @@
 """Consent lifecycle management."""
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+from collections.abc import Iterable
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -423,6 +426,63 @@ def _dataset_requires_consent(dataset_id: str) -> bool:
     except vocab.VocabularyError:
         log.warning("Consent check for unknown dataset '%s' — failing closed", dataset_id)
         return True
+
+
+def consent_snapshot_hash(rows: Iterable[ConsentRequestORM]) -> str:
+    """A recomputable, non-PII fingerprint of a consent state (§4.1).
+
+    SHA-256 over the sorted ``(subject_did, dataset_id, purpose,
+    controller_role, consent_text_version)`` tuples.  It proves *which* consent
+    state authorised a handover, verifiable by recomputation from the connector
+    DB, while holding no name, POD or fiscal code — the subject appears only as
+    its pseudonymous DID, exactly as it does on the consent row itself.
+    """
+    tuples = sorted(
+        (
+            row.subject_id or "",
+            row.dataset_id or "",
+            ",".join(sorted(row.purpose or [])),
+            row.controller_role or "",
+            (row.legal_basis or {}).get("consent_text_version") or "",
+        )
+        for row in rows
+    )
+    payload = json.dumps(tuples, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+async def latest_granted_rows_for_dataset(
+    session: AsyncSession, dataset_id: str
+) -> list[ConsentRequestORM]:
+    """The effective granted consent rows for a dataset — latest per party.
+
+    One row per ``(subject_id, consumer_id)`` — the most recent — kept only when
+    it is currently ``granted``.  This is the state a :class:`DataIngested` or
+    ``DataDisclosed` snapshot hashes over.
+    """
+    result = await session.execute(
+        select(ConsentRequestORM)
+        .where(ConsentRequestORM.dataset_id == dataset_id)
+        .order_by(
+            ConsentRequestORM.subject_id.asc(),
+            ConsentRequestORM.consumer_id.asc(),
+            ConsentRequestORM.requested_at.desc(),
+            ConsentRequestORM.revoked_at.desc(),
+            ConsentRequestORM.decided_at.desc(),
+        )
+    )
+    latest: dict[tuple[str, str], ConsentRequestORM] = {}
+    for row in result.scalars().all():
+        latest.setdefault((row.subject_id, row.consumer_id), row)
+    return [row for row in latest.values() if row.status == "granted"]
+
+
+async def dataset_consent_snapshot(
+    session: AsyncSession, dataset_id: str
+) -> tuple[str, int]:
+    """``(consent_snapshot_hash, granted_party_count)`` for a dataset."""
+    rows = await latest_granted_rows_for_dataset(session, dataset_id)
+    return consent_snapshot_hash(rows), len(rows)
 
 
 async def get_granted_subject_ids(

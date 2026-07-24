@@ -40,6 +40,10 @@ scopes:
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
     description: Accept EDC webhook events (transfer-process, contract-negotiation)
+  - name: connector.consent.provision
+    description: Provision a subject's standing sharing decision (POST /consent/admin/shares)
+  - name: connector.ingestion.record
+    description: Record a DSO/offline data handover (POST /admin/ingestion)
 
   # Provenance
   - name: provenance.read
@@ -72,9 +76,12 @@ clients:
       # Provision a subject's standing sharing decision on the connector after
       # onboarding approval (POST /consent/admin/shares).
       - connector.consent.provision
+      # Emit a DataDisclosed provenance event after a CSV export (Block C).
+      - provenance.write
     extra_audiences:
       - svc-ds-identity-registry
       - svc-ds-connector
+      - svc-ds-provenance
 
   - client_id: svc-ds-portal
     name: Dataspace Portal

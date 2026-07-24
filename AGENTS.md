@@ -82,6 +82,9 @@ identity-registry (30005)
   ├── Participant registry GET /admin/participants, GET /admin/participants/check?did=&scope=
   ├── Owners registry    GET /owners/resolve?alias=<name>, CRUD /admin/owners
   ├── Memberships        GET /memberships/check?user_did=&organization=, CRUD /admin/memberships
+  ├── Org onboarding     /admin/organizations/applications, /admin/credentials/organization,
+  │                      /admin/owners/{alias} (PATCH), /promote, /agreement  (Block D)
+  ├── Agreements         GET /agreements, /agreements/{id}, /agreements/{id}/acceptances
   └── StatusList2021     GET /status/{list_id}
 
 Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
@@ -332,6 +335,17 @@ Consent writes resolve through `services/connector/src/connector/services/consen
 
 See `docs/consent-and-sovereignty.md` for the full model and the enforcement matrix.
 
+**Consent & disclosure provenance (Block C).** The connector emits four PROV-O
+events to ds-provenance: `ConsentGranted` / `ConsentRevoked` (on grant/revoke,
+from the API layer after commit), `DataIngested` (an operator records a manual
+DSO handover via `POST /admin/ingestion`, guard `connector.ingestion.record`),
+and `DataDisclosed` (the onboarding CSV export, when a `--recipient` is named,
+using `svc-ds-onboarding`'s `provenance.write` scope). All four carry **codes,
+pseudonymous DIDs and hashes only — never PII**: a `consent_snapshot_hash` (a
+recomputable SHA-256 over the authorising consent tuples) proves *which* consent
+state backed a handover without the provenance store holding subject data. See
+`docs/provenance-and-lineage.md`.
+
 ### Organization memberships
 
 The `OrganizationMembership` table in identity-registry tracks which user DIDs belong to which owner organizations. Seeded by `ir-cli membership add` or `ir-cli membership import --community-registry`.
@@ -386,10 +400,12 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
 | Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
 | Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
+| Onboard an organisation | `ir-cli org register/verify/agreement/issue-credential/promote` or `/admin/organizations/*` (Block D) |
+| Add/change a service agreement | `services/identity-registry/seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 | Add/manage KC organizations | `services/keycloak/organizations.yaml` + `ir-cli keycloak org-sync` |
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
 | Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
-| Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` |
+| Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` (or `organizations.py` for org credentials) |
 
 ## Gotchas
 

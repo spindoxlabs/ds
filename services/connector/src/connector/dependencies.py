@@ -49,6 +49,11 @@ def get_notifier(request: Request):
     return request.app.state.notifier
 
 
+def get_prov(request: Request):
+    """The provenance bridge, or None if provenance is not wired."""
+    return getattr(request.app.state, "prov", None)
+
+
 # ── Authorization guards ────────────────────────────────────────────────────
 #
 # One unified guard (ds_auth.require_permission) authorizes BOTH service tokens
@@ -67,6 +72,12 @@ require_webhook = require_permission("connector.webhook")
 # needs its own permission rather than the VC-JWT the /consent/my/* routes use.
 require_consent_provision = require_permission(
     "connector.consent.provision", "connector.admin"
+)
+# An operator records a DSO/offline data handover as they perform it (the DSO
+# leg is manual in phase A), so the ingestion event has a human trigger rather
+# than an automatic one. connector.admin is a superset.
+require_ingestion_record = require_permission(
+    "connector.ingestion.record", "connector.admin"
 )
 
 
