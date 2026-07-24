@@ -42,6 +42,11 @@ scopes:
     description: Accept EDC webhook events (transfer-process, contract-negotiation)
   - name: connector.consent.provision
     description: Provision a subject's standing sharing decision (POST /consent/admin/shares)
+  # Keycloak's client-scope description is VARCHAR(255) and the realm API
+  # answers 500 rather than a validation error when it overflows — keep these
+  # one short line each. The rationale lives in dependencies.py.
+  - name: connector.consent.read
+    description: Is a negotiation awaiting a consent decision (GET /consent/pending)
   - name: connector.ingestion.record
     description: Record a DSO/offline data handover (POST /admin/ingestion)
 
@@ -154,9 +159,15 @@ clients:
       - identity-registry.read
       - identity-registry.membership.read
       - provenance.write
+      # A consumer connector asks the provider whether one of its own
+      # negotiations is parked on a consent decision, so a long REQUESTED can be
+      # shown as "waiting on a person" instead of as silence (§6.6).
+      - connector.consent.read
     extra_audiences:
       - svc-ds-identity-registry
       - svc-ds-provenance
+      # The counterparty's connector — the audience of GET /consent/pending.
+      - svc-ds-connector
 
   - client_id: svc-ds-federated-catalog
     name: Dataspace Federated Catalog
@@ -182,7 +193,16 @@ clients:
     scopes_prefix: null
     default_scopes:
       - identity-registry.read
+      # "I am the EDC reporting its own negotiation state" — the webhook route
+      # uses require_exact_permission, so connector.admin does not grant it.
       - connector.webhook
+      # The ODRL constraint functions and the consent pending guard call
+      # /internal/consent/check and /internal/participants/check. Before this
+      # they presented X-Api-Key — the *same* secret as EDC's Management API
+      # key, so one leak yielded contract administration, the data-plane
+      # signing keys and the subject pools at once, and every /internal/* call
+      # authenticated as the same anonymous bearer with no audit trail.
+      - connector.internal
     extra_audiences:
       - svc-ds-identity-registry
       - svc-ds-connector

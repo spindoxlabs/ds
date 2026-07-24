@@ -28,11 +28,26 @@ services:
       - "29291:29291"
       - "29195:29195"
     environment:
+      # Kept for anything still reading edc.api.key. The Management API key
+      # that is actually enforced is WEB_HTTP_MANAGEMENT_AUTH_KEY below — and
+      # since the extensions moved onto client credentials, that is now this
+      # value's only job. One purpose, one boundary.
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       # Dev-only: accepts self-issued DCP tokens without signature
       # verification. Never set this in a production deployment.
       DS_DEMO_IDENTITY_ENABLED: ${DS_DEMO_IDENTITY_ENABLED:-true}
-      EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:31001/webhooks/transfer-process
+      # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
+      # dot.notation (ConfigurationLoader → ConfigFactory.fromEnvironment). The
+      # properties files cannot carry these: FsConfigurationExtension does a
+      # plain Properties.load() and stores a ${...} placeholder verbatim.
+      #
+      # The Management API key — enforced now that auth.type=tokenbased is set.
+      WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # How the EDC authenticates to ds-connector: /internal/* during policy
+      # evaluation, /webhooks/contract-negotiation to report negotiation state.
+      DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
+      DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
+      DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
     depends_on:
       edc-db-create-consumer:
         condition: service_completed_successfully
@@ -133,6 +148,9 @@ services:
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+      # Off the DSP path: "is this negotiation of mine parked on a consent
+      # decision?" Unset it and a long REQUESTED simply stays REQUESTED.
+      CONNECTOR_PROVIDER_CONNECTOR_URL: http://172.17.0.1:30001
     depends_on:
       edc-consumer:
         condition: service_healthy

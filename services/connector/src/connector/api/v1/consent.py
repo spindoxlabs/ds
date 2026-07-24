@@ -1,24 +1,27 @@
 """Consent registry API — subject sovereignty endpoints."""
 from __future__ import annotations
 
+import inspect
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...clients.edc_management import EdcManagementClient
 from ...config import Settings
 from ...db.models import ConsentRequestORM
 from ...dependencies import (
     get_db,
     get_notifier,
+    get_participant_registry,
     get_prov,
     get_settings_dep,
     require_consent_provision,
+    require_consent_read,
     require_internal_scope,
+    require_provider_read,
 )
 from ...notifications.base import ConsentNotifier
 from ...services import circle, consent_service
@@ -171,20 +174,50 @@ def _verify_user(
     )
 
 
-# ── Consumer-facing endpoints ─────────────────────────────────────────────────
+# ── Provider-local request seeding ────────────────────────────────────────────
 
 @router.post("/request", status_code=201)
 async def create_consent_request(
     body: ConsentRequestCreate,
     request: Request,
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     notifier: ConsentNotifier = Depends(get_notifier),
+    registry=Depends(get_participant_registry),
+    _claims: dict = Depends(require_consent_provision),
 ):
-    """Initiate consent requests for a set of data subjects."""
-    _verify_user(x_user_vc, x_subject_id, settings, {"ConsumerUser"})
+    """Seed consent requests for a set of data subjects, **provider-locally**.
+
+    This is an operator/portal tool, not the path a data consumer takes.
+
+    It used to be cross-participant: a consumer's user credential, presented in
+    ``X-User-VC``, raised a request on the provider connector. That never worked
+    and could not be made to work well. ``_verify_user`` required the credential
+    to name *this* participant, so a real consumer got 403; the same call against
+    the consumer's own connector returned 201 and wrote a row on the wrong side
+    of the dataspace, where ``/internal/consent/check`` — which runs against the
+    provider — would never read it. And nothing bound ``consumer_id`` to the
+    caller, so a credential could raise a request naming any consumer at all.
+
+    Both were symptoms of one thing: a cross-participant request channel,
+    authenticated by a header, running parallel to the one DSP already provides.
+    A consumer now simply negotiates. ``ConsentPendingGuard`` parks the
+    negotiation, and the requester's identity comes from EDC's DCP-verified
+    ``counterPartyId`` rather than from anything the requester asserts about
+    itself.
+
+    What remains is the case that was always legitimate: an operator or the
+    portal recording an ask on this connector, where the check reads. It
+    authenticates as a service or an administrator — ``connector.consent.provision``,
+    the same permission the onboarding wizard uses for standing shares — because
+    the caller is acting on the *provider's* behalf, not presenting a consumer's
+    credential.
+
+    ``consumer_id`` is still validated against the participant registry: naming a
+    party the dataspace does not know would put a promise in front of a person
+    about a recipient nobody can identify.
+    """
+    await _require_known_participant(registry, body.consumer_id, settings)
 
     if body.notification_url:
         allowed_raw = settings.webhook_allowed_hosts.strip()
@@ -247,6 +280,33 @@ async def create_consent_request(
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
     return {"request_ids": request_ids, "status": "pending"}
+
+
+async def _require_known_participant(registry, consumer_id: str, settings: Settings) -> None:
+    """Refuse a request naming a party the dataspace does not know.
+
+    Option B's surviving half. The cross-participant channel is gone, so this no
+    longer has to stand in for authenticating the requester — but a consent
+    request still names a recipient to a person, and that recipient has to be
+    someone the dataspace can identify. ``allow_unknown_participants`` keeps the
+    escape hatch a dev setup with no registry needs.
+    """
+    if settings.allow_unknown_participants:
+        return
+    try:
+        participant = registry.get_by_id(consumer_id)
+        if inspect.isawaitable(participant):
+            participant = await participant
+    except Exception as exc:  # registry unreachable
+        raise HTTPException(
+            503, f"Participant registry unavailable, cannot validate '{consumer_id}'"
+        ) from exc
+    if participant is None:
+        raise HTTPException(
+            422,
+            f"Consumer '{consumer_id}' is not a registered participant — a consent "
+            "request must name a recipient the dataspace can identify",
+        )
 
 
 async def _reject_if_already_covered(
@@ -315,6 +375,108 @@ async def get_consent_status(
         "decided_at": latest.decided_at.isoformat() if latest.decided_at else None,
         "legal_basis": latest.legal_basis,
     }
+
+
+@router.get("/pending")
+async def get_pending_consent(
+    correlation_id: str,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_consent_read),
+):
+    """Is this negotiation waiting on a consent decision, and since when? (§6.6)
+
+    ``REQUESTED`` is ambiguous on the wire. DSP has no state for "waiting on a
+    human", so "the provider has not looked yet" and "waiting on a person,
+    possibly for weeks" render identically to the consumer — precisely the
+    distinction that matters when deciding whether to wait or to give up. This
+    answers it.
+
+    It is **not** the rejected relay option. That one carried an identity DSP
+    already carries; this carries information DSP does not model at all.
+    Constraints that keep it from becoming a back channel:
+
+    - **Off the DSP path.** Not a DSP message, not a precondition of any
+      negotiation transition. If it is unavailable the negotiation is
+      unaffected and the consumer falls back to showing ``REQUESTED``.
+    - **Status only, keyed by ``correlationId``** — the counterparty's own id
+      for the negotiation, so a caller can only ask about a negotiation it is
+      party to. It answers *whether* a decision is outstanding and *since when*.
+      It must never expose who the subjects are, how many there are, or what
+      any of them decided: that is the data subject's business, not the
+      counterparty's. The response below is deliberately the whole story.
+
+    > **Known limitation.** The perimeter is the unguessable ``correlationId``
+    > plus the ``connector.consent.read`` permission. Scoping to *the* caller's
+    > own negotiations would need a cross-participant identity, and this
+    > platform has exactly one — DCP — which is reachable only inside a DSP
+    > exchange. Until a participant-scoped credential exists off that path, the
+    > narrowness of the projection is what bounds the disclosure, rather than
+    > the authentication.
+    """
+    consents = await consent_service.list_by_correlation(db, correlation_id)
+    if not consents:
+        return {
+            "correlation_id": correlation_id,
+            "awaiting_consent": False,
+            "status": "unknown",
+        }
+
+    statuses = {c.status for c in consents}
+    if "pending" in statuses:
+        state = "awaiting_consent"
+    elif "granted" in statuses:
+        state = "granted"
+    elif statuses == {"expired"}:
+        state = "expired"
+    else:
+        state = "refused"
+
+    requested_at = min(
+        (c.requested_at for c in consents if c.requested_at), default=None
+    )
+    return {
+        "correlation_id": correlation_id,
+        "awaiting_consent": state == "awaiting_consent",
+        "status": state,
+        "since": requested_at.isoformat() if requested_at else None,
+    }
+
+
+@router.get("/asks")
+async def list_consent_asks(
+    negotiation_id: str | None = None,
+    status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_provider_read),
+):
+    """The operator/portal view: which asks are holding up which negotiation.
+
+    Provider-local, over this connector's own table — no protocol involvement.
+    ``GET /consent/my`` already shows a subject their own pending requests; what
+    was missing is the other direction, the one an operator needs when someone
+    asks why a consumer's request has been sitting there for a week.
+
+    Unlike ``GET /consent/pending`` this *does* name subjects: an operator of the
+    provider is looking at their own participant's consent records, which is the
+    same data ``/internal/consent/check`` already returns to the PEP. The
+    counterparty is the party that must not see it.
+    """
+    consents = await consent_service.list_asks(
+        db, negotiation_id=negotiation_id, status=status
+    )
+    return [
+        {
+            **ConsentResponse.model_validate(consent).model_dump(),
+            "negotiation_id": consent.negotiation_id,
+            "correlation_id": consent.correlation_id,
+            "negotiation_closed_at": (
+                consent.negotiation_closed_at.isoformat()
+                if consent.negotiation_closed_at
+                else None
+            ),
+        }
+        for consent in consents
+    ]
 
 
 # ── Subject-facing endpoints (JWT-protected) ──────────────────────────────────
@@ -558,6 +720,7 @@ async def get_my_consent(
 @router.post("/my/{consent_id}/approve")
 async def approve_consent(
     consent_id: str,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -573,12 +736,47 @@ async def approve_consent(
     if not consent:
         raise HTTPException(404, "Consent request not found or not in pending state")
     await _emit_consent_events(prov, [consent])
-    return {"status": "granted", "id": consent.id}
+
+    # One grant is enough: the negotiation's consent constraint passes as soon
+    # as anybody is in the pool, so the parked negotiation can move now rather
+    # than waiting for the rest of the subjects to answer.
+    negotiation = await _resume_blocked_negotiation(request, db, consent, settings)
+    return {"status": "granted", "id": consent.id, "negotiation": negotiation}
+
+
+async def _resume_blocked_negotiation(
+    request: Request,
+    db: AsyncSession,
+    consent: ConsentRequestORM,
+    settings: Settings,
+) -> dict | None:
+    """Un-park the negotiation this consent row was blocking, if there is one.
+
+    Best-effort and non-fatal: the subject's decision is recorded and committed
+    either way. If the resume does not land, the negotiation stays parked until
+    the TTL sweep or a retry reaches it — the wrong outcome, but a recoverable
+    one, and much better than failing the subject's own request because a
+    control plane was briefly unreachable.
+    """
+    if not consent.negotiation_id:
+        return None
+    provider_edc = request.app.state.provider_edc
+    if provider_edc is None:
+        return None
+    try:
+        return await provider_edc.resume_negotiation(consent.negotiation_id)
+    except Exception as exc:
+        log.warning(
+            "Could not resume negotiation %s after consent %s was granted: %s",
+            consent.negotiation_id, consent.id, exc,
+        )
+        return {"resumed": False, "outcome": "error"}
 
 
 @router.post("/my/{consent_id}/reject")
 async def reject_consent(
     consent_id: str,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -592,7 +790,41 @@ async def reject_consent(
         )
     if not consent:
         raise HTTPException(404, "Consent request not found or not in pending state")
-    return {"status": "rejected", "id": consent.id}
+
+    # One refusal decides nothing about the negotiation — the others may still
+    # grant. Only when every ask has come back and none granted is there nothing
+    # left to wait for, and the negotiation is terminated rather than left
+    # parked until its TTL.
+    negotiation = None
+    if consent.negotiation_id:
+        pending, granted = await consent_service.negotiation_ask_tally(
+            db, consent.negotiation_id
+        )
+        if pending == 0 and granted == 0:
+            negotiation = await _terminate_refused_negotiation(
+                request, consent.negotiation_id
+            )
+    return {"status": "rejected", "id": consent.id, "negotiation": negotiation}
+
+
+async def _terminate_refused_negotiation(request: Request, negotiation_id: str) -> dict:
+    """End a negotiation every subject has refused.
+
+    DSP treats ``TERMINATED`` as final but explicitly permits a new negotiation
+    afterwards, so this closes the current request without foreclosing a later
+    one — which is what a consumer that changes its purpose or its terms needs.
+    """
+    provider_edc = request.app.state.provider_edc
+    if provider_edc is None:
+        return {"terminated": False, "outcome": "no_edc_client"}
+    try:
+        await provider_edc.terminate_negotiation(
+            negotiation_id, "All data subjects refused consent"
+        )
+        return {"terminated": True, "outcome": "terminated"}
+    except Exception as exc:
+        log.warning("Could not terminate refused negotiation %s: %s", negotiation_id, exc)
+        return {"terminated": False, "outcome": "error"}
 
 
 @router.post("/my/{consent_id}/revoke")
@@ -614,22 +846,28 @@ async def revoke_consent(
         raise HTTPException(404, "Consent request not found or not in granted state")
     await _emit_consent_events(prov, [consent])
 
-    # Terminate active EDC transfers
+    # Running transfers are *not* terminated from here. EDC's policy monitor
+    # re-evaluates the agreement policy for every started provider transfer, and
+    # `AgreementConsentFunction` (bound to the `policy.monitor` scope) now
+    # answers that evaluation from this same consent table — so the row we just
+    # revoked terminates the transfer on the monitor's next pass, through EDC,
+    # with EDC's own state machine and leasing. Terminating from here as well
+    # would race that and would only ever cover the transfers this connector
+    # happens to have recorded on the row.
     transfer_ids = consent.transfer_ids or []
     if transfer_ids:
-        provider_edc = EdcManagementClient(
-            base_url=settings.edc_provider_management_url,
-            api_key=settings.edc_api_key,
+        log.info(
+            "Consent %s revoked; %d transfer(s) left to the EDC policy monitor",
+            consent.id,
+            len(transfer_ids),
         )
-        for tid in transfer_ids:
-            try:
-                await provider_edc.delete_asset(tid)  # placeholder: use terminate endpoint
-                log.info("Terminated transfer %s due to consent revocation", tid)
-            except Exception as exc:
-                log.warning("Failed to terminate transfer %s: %s", tid, exc)
-        await provider_edc.close()
 
-    return {"status": "revoked", "id": consent.id, "transfers_terminated": len(transfer_ids)}
+    return {
+        "status": "revoked",
+        "id": consent.id,
+        "transfer_ids": transfer_ids,
+        "termination": "delegated_to_policy_monitor",
+    }
 
 
 # ── Internal endpoints ────────────────────────────────────────────────────────

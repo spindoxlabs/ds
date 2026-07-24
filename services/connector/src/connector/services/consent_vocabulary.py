@@ -147,6 +147,43 @@ def resolve_offer(offer_id: str) -> SharingOffer:
     return offer
 
 
+def offers_covering(
+    dataset_id: str,
+    purposes: list[str] | None = None,
+    controller_role: str | None = None,
+) -> list[SharingOffer]:
+    """Consent-based offers that back this dataset for these purposes.
+
+    Used to answer *whose* circle a would-be consumer would have to be inside
+    (§6.3).  A consent decision names a dataset and a purpose; the circle is a
+    property of the offer that bundled them, so the offer has to be found back
+    from the pair.
+
+    Matching is ``odrl:isA`` in the same direction consent uses: an offer for a
+    broader purpose covers a narrower request, never the reverse.  An absent
+    ``purposes`` matches every offer for the dataset — the caller has not
+    narrowed the question, so neither do we.
+
+    Non-consent offers are excluded: contract-based processing is disclosed, not
+    consented, so there is no question to suppress.
+    """
+    candidates = [
+        offer for offer in get_offers().for_dataset(dataset_id) if offer.requires_consent
+    ]
+    if controller_role:
+        candidates = [
+            offer
+            for offer in candidates
+            if not offer.recipients.controller_role
+            or offer.recipients.controller_role == controller_role
+        ]
+    if not purposes:
+        return candidates
+    return [
+        offer for offer in candidates if purpose_covered(purposes, [offer.purpose])
+    ]
+
+
 def offer_broader_chain(offer: SharingOffer) -> list[str]:
     slug = get_profile().purpose_slug(offer.purpose)
     return get_profile().broader_chain(slug) if slug else []

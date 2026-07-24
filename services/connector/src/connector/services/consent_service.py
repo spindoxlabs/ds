@@ -49,11 +49,20 @@ async def create_consent_request(
     controller_role: str | None = None,
     offer_id: str | None = None,
     legal_basis: dict | None = None,
+    negotiation_id: str | None = None,
+    correlation_id: str | None = None,
 ) -> ConsentRequestORM:
     purposes = _validated(dataset_id, purpose)
 
     latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
     if latest and latest.status in ("pending", "granted"):
+        # Reattach rather than duplicate. A negotiation retrying against an ask
+        # the subject has not answered yet is the same question, so it adopts the
+        # existing row — but it does bind it to the negotiation now waiting on
+        # it, which an earlier ask may not have had.
+        if latest.status == "pending" and negotiation_id and not latest.negotiation_id:
+            latest.negotiation_id = negotiation_id
+            latest.correlation_id = correlation_id
         return latest
 
     consent = ConsentRequestORM(
@@ -69,6 +78,8 @@ async def create_consent_request(
         notification_url=notification_url,
         status="pending",
         transfer_ids=[],
+        negotiation_id=negotiation_id,
+        correlation_id=correlation_id,
     )
     session.add(consent)
     await session.flush()
@@ -79,6 +90,37 @@ async def create_consent_request(
         except Exception as exc:
             log.warning("notify_requested failed for consent %s: %s", consent.id, exc)
     return consent
+
+
+async def subject_pool_for_dataset(
+    session: AsyncSession, dataset_id: str
+) -> list[str]:
+    """Who can be asked about this dataset.
+
+    The pool is the set of subjects this connector already holds a consent row
+    for — which, in practice, is everyone onboarded: ``POST /consent/admin/shares``
+    writes a standing wildcard row per subject as they are approved, so a person
+    enters the pool at onboarding rather than at the first request.
+
+    Deliberately *not* a directory query against the identity-registry. A
+    membership listing is a different question with a different blast radius,
+    and the provider connector should not need to enumerate an organisation's
+    people in order to relay a question to the ones whose data is at stake.
+
+    An empty pool means there is nobody to ask, which is a real answer: a
+    negotiation for a dataset nobody has enrolled in must be refused, not parked
+    forever waiting on a decision no one can make.
+    """
+    result = await session.execute(
+        select(ConsentRequestORM.subject_id)
+        .where(ConsentRequestORM.dataset_id == dataset_id)
+        .distinct()
+    )
+    return sorted(
+        subject_id
+        for subject_id in result.scalars().all()
+        if subject_id and subject_id != WILDCARD_CONSUMER
+    )
 
 
 async def get_latest_consent(
@@ -101,6 +143,100 @@ async def get_latest_consent(
         )
     )
     return result.scalars().first()
+
+
+async def find_pending_request(
+    session: AsyncSession,
+    dataset_id: str,
+    consumer_id: str,
+    purpose: list[str] | None = None,
+    subject_id: str | None = None,
+) -> ConsentRequestORM | None:
+    """An ask already outstanding for this tuple, if there is one.
+
+    Keyed on ``(subject pool, dataset, purpose, consumer)`` — the same tuple
+    ``check_consent`` decides on — so a consumer that re-negotiates reattaches
+    to the question already put to the subjects instead of asking it again.
+    Without this, every retry of a parked negotiation would create a fresh row
+    and the subject would see the same request repeatedly.
+
+    Purpose matching is ``odrl:isA``: an outstanding ask for a broader purpose
+    already covers a narrower re-request.  Returns the most recent match.
+    """
+    stmt = select(ConsentRequestORM).where(
+        ConsentRequestORM.dataset_id == dataset_id,
+        ConsentRequestORM.consumer_id == consumer_id,
+        ConsentRequestORM.status == "pending",
+    )
+    if subject_id:
+        stmt = stmt.where(ConsentRequestORM.subject_id == subject_id)
+    stmt = stmt.order_by(ConsentRequestORM.requested_at.desc())
+    result = await session.execute(stmt)
+
+    for row in result.scalars().all():
+        if not purpose:
+            return row
+        if vocab.purpose_covered(purpose, list(row.purpose or [])):
+            return row
+    return None
+
+
+async def list_by_correlation(
+    session: AsyncSession, correlation_id: str
+) -> list[ConsentRequestORM]:
+    """Every ask raised for one counterparty-side negotiation id.
+
+    ``correlation_id`` is the *consumer's* id for the negotiation, which is the
+    only handle it holds — so this is the lookup behind ``GET /consent/pending``.
+    Callers must project it down to a status; the rows themselves name subjects.
+    """
+    result = await session.execute(
+        select(ConsentRequestORM).where(
+            ConsentRequestORM.correlation_id == correlation_id
+        )
+    )
+    return list(result.scalars().all())
+
+
+async def list_asks(
+    session: AsyncSession,
+    negotiation_id: str | None = None,
+    status: str | None = None,
+) -> list[ConsentRequestORM]:
+    """Asks raised because a negotiation is parked — the operator's view."""
+    stmt = select(ConsentRequestORM).where(
+        ConsentRequestORM.negotiation_id.is_not(None)
+    )
+    if negotiation_id:
+        stmt = stmt.where(ConsentRequestORM.negotiation_id == negotiation_id)
+    if status:
+        stmt = stmt.where(ConsentRequestORM.status == status)
+    result = await session.execute(
+        stmt.order_by(ConsentRequestORM.requested_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def negotiation_ask_tally(
+    session: AsyncSession, negotiation_id: str
+) -> tuple[int, int]:
+    """``(pending, granted)`` counts of the asks blocking one negotiation.
+
+    A negotiation asks the whole subject pool at once, and the ODRL consent
+    check passes as soon as *anybody* has granted — so one grant is enough to
+    resume, while one refusal decides nothing. Only when every ask has come back
+    and none of them granted is the negotiation actually dead.
+    """
+    result = await session.execute(
+        select(ConsentRequestORM.status).where(
+            ConsentRequestORM.negotiation_id == negotiation_id
+        )
+    )
+    statuses = list(result.scalars().all())
+    return (
+        sum(1 for status in statuses if status == "pending"),
+        sum(1 for status in statuses if status == "granted"),
+    )
 
 
 async def get_consent_request(

@@ -80,6 +80,14 @@ require_webhook = require_exact_permission("connector.webhook")
 require_consent_provision = require_permission(
     "connector.consent.provision", "connector.admin"
 )
+# "Is this negotiation waiting on a consent decision, and since when" — the
+# counterparty's own status question (§6.6). Separate from every other consent
+# permission because it is the *only* one a party outside this participant is
+# meant to hold, and what it grants is a boolean and a timestamp keyed by an
+# unguessable correlation id — never a subject, a count, or a decision.
+require_consent_read = require_permission(
+    "connector.consent.read", "connector.admin"
+)
 # An operator records a DSO/offline data handover as they perform it (the DSO
 # leg is manual in phase A), so the ingestion event has a human trigger rather
 # than an automatic one. connector.admin is a superset.
@@ -88,27 +96,22 @@ require_ingestion_record = require_permission(
 )
 
 
-async def _require_internal_or_api_key(request: Request) -> dict:
-    """Accept JWT with connector.internal scope OR X-Api-Key matching EDC_API_KEY.
-
-    The EDC extensions call internal endpoints with X-Api-Key (no JWT available
-    in the Java runtime). Falls back to standard JWT auth.
-    """
-    api_key = request.headers.get("X-Api-Key")
-    settings = get_settings()
-    if api_key and settings.edc_api_key and api_key == settings.edc_api_key:
-        return {"sub": "edc-extension", "scope": "connector.internal"}
-    from ds_auth.fastapi import get_oidc_config, authenticate
-    from ds_auth import OidcConfig
-    from fastapi import HTTPException
-    config: OidcConfig = request.app.state.oidc_config
-    principal = await authenticate(request, config)
-    if not principal.grants_exactly(("connector.internal",)):
-        raise HTTPException(403, "Missing required permission: connector.internal")
-    return {"sub": principal.subject, "scope": "connector.internal"}
-
-
 # Back-compat aliases (unchanged call sites in admin/internal/consent/webhooks).
+#
+# `/internal/*` used to also accept `X-Api-Key` equal to `EDC_API_KEY`, because
+# the EDC extensions had no other credential. That branch is gone, and with it a
+# single static secret that spanned two trust boundaries: the same value was
+# EDC's **Management API key** — create/delete assets and policies, terminate
+# transfers — *and* the credential for `/internal/edr-jwks`, the keys that sign
+# data-plane tokens, and `/internal/consent/check`, which enumerates subject
+# pools. One leak yielded all three. It also defeated attribution: every
+# `/internal/*` call arrived as the same anonymous bearer, so no audit trail
+# could distinguish the EDC from the dataset-api.
+#
+# Both callers now present their own Keycloak client credentials —
+# `svc-edc` and `svc-ds-dataset-api`, each holding `connector.internal`. The
+# fallback is removed rather than merely deprecated so it cannot silently
+# persist; `EDC_API_KEY` survives only as EDC's Management API key.
 require_admin_scope = require_admin
-require_internal_scope = _require_internal_or_api_key
+require_internal_scope = require_internal
 require_webhook_scope = require_webhook

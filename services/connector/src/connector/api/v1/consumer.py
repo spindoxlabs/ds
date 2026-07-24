@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -166,6 +166,7 @@ async def start_negotiation(
 
 @router.get("/requests")
 async def list_access_requests(
+    http_request: Request,
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
@@ -184,6 +185,7 @@ async def list_access_requests(
     for request in requests:
         negotiation_state = None
         transfer_state = None
+        awaiting_since = None
         if request.negotiation_id:
             try:
                 negotiation = await svc._edc.get_negotiation(request.negotiation_id)
@@ -194,6 +196,21 @@ async def list_access_requests(
                 elif negotiation_state == "TERMINATED" and request.status != "revoked":
                     request.status = "terminated"
                     changed = True
+                elif negotiation_state == "REQUESTED" and request.status in {
+                    "negotiating", "awaiting_consent"
+                }:
+                    # REQUESTED is ambiguous on the wire: it means both "the
+                    # provider has not looked yet" and "waiting on a person,
+                    # possibly for weeks". Only the provider can tell them
+                    # apart, so ask — off the DSP path, and never as a
+                    # precondition of anything (§6.6).
+                    awaiting_since = await _provider_consent_status(
+                        http_request, settings, request.negotiation_id
+                    )
+                    status = "awaiting_consent" if awaiting_since else "negotiating"
+                    if request.status != status:
+                        request.status = status
+                        changed = True
             except (httpx.RequestError, httpx.HTTPStatusError):
                 negotiation_state = None
         if request.transfer_id:
@@ -215,13 +232,50 @@ async def list_access_requests(
             "transfer_id": request.transfer_id,
             "transfer_state": transfer_state,
             "status": request.status,
+            "awaiting_consent_since": awaiting_since,
             "created_at": request.created_at.isoformat() if request.created_at else None,
             "updated_at": request.updated_at.isoformat() if request.updated_at else None,
-            "can_revoke": request.status in {"negotiating", "finalized", "transferring", "transferred"},
+            "can_revoke": request.status in {
+                "negotiating", "awaiting_consent", "finalized", "transferring", "transferred"
+            },
         })
     if changed:
         await db.commit()
     return items
+
+
+async def _provider_consent_status(
+    http_request: Request,
+    settings: Settings,
+    negotiation_id: str,
+) -> str | None:
+    """When did the provider start waiting on a person for this negotiation?
+
+    ``None`` for "not waiting, or cannot tell" — the two are deliberately the
+    same answer here. This read is off the DSP path: if the provider is
+    unreachable, or does not implement it, the negotiation is unaffected and the
+    request simply keeps showing as negotiating. Nothing may depend on it.
+
+    Our negotiation id is the provider's ``correlationId``, which is why the
+    provider can answer without us learning any provider-side identifier.
+    """
+    base_url = settings.provider_connector_url
+    token_provider = getattr(http_request.app.state, "ir_token_provider", None)
+    if not base_url or token_provider is None:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(
+                f"{base_url.rstrip('/')}/consent/pending",
+                params={"correlation_id": negotiation_id},
+                headers={"Authorization": f"Bearer {await token_provider()}"},
+            )
+        if response.status_code != 200:
+            return None
+        body = response.json()
+        return body.get("since") if body.get("awaiting_consent") else None
+    except (httpx.HTTPError, ValueError):
+        return None
 
 
 @router.post("/requests/{request_id}/revoke")

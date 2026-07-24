@@ -70,16 +70,41 @@ async def get_meta(request: Request):
 
 @router.get("/{dataset_iri:path}")
 async def get_dataset(dataset_iri: str, request: Request):
-    """Return a single dataset by IRI."""
+    """Return a single dataset by the IRI the catalogue advertises.
+
+    A dataset IRI is not necessarily a URL. Ours are governance keys —
+    ``datasets.silver.meters_15m`` — so unconditionally prefixing ``https://``
+    turned every lookup into a miss, and made ``/catalog/datasets`` report
+    ``Dataset 'https://datasets' not found``.
+
+    The prefixing exists for a real case, though: a URL IRI arrives here with
+    its scheme separator mangled, because the path parameter eats the leading
+    slash. So try the value as advertised first, then the repaired-URL forms.
+    """
     cache = request.app.state.cache
     settings = request.app.state.settings
-    # Reconstruct IRI (path param strips leading slash for http:// IRIs)
-    if not dataset_iri.startswith("http"):
-        dataset_iri = "https://" + dataset_iri
-    ds = cache.get_by_iri(dataset_iri)
-    if ds is None:
-        raise HTTPException(404, f"Dataset {dataset_iri!r} not found in catalog")
-    return _jsonld({"@type": "dcat:Dataset", **ds}, settings.base_url)
+
+    for candidate in _iri_candidates(dataset_iri):
+        ds = cache.get_by_iri(candidate)
+        if ds is not None:
+            # The `@type` override goes *after* the spread. Written before it,
+            # the cached document's own bare `Dataset` silently won, so a
+            # resolved dataset was typed differently from the same dataset in
+            # the catalogue listing.
+            return _jsonld({**ds, "@type": "dcat:Dataset"}, settings.base_url)
+
+    raise HTTPException(404, f"Dataset {dataset_iri!r} not found in catalog")
+
+
+def _iri_candidates(dataset_iri: str) -> list[str]:
+    """The forms this path could have meant, most literal first."""
+    candidates = [dataset_iri]
+    # `https:/host/x` — the path param collapsed the `//` of a URL IRI.
+    if dataset_iri.startswith(("http:/", "https:/")) and "://" not in dataset_iri:
+        candidates.append(dataset_iri.replace(":/", "://", 1))
+    elif not dataset_iri.startswith("http"):
+        candidates.append("https://" + dataset_iri)
+    return candidates
 
 
 class SearchRequest(BaseModel):

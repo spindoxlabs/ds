@@ -91,6 +91,18 @@ def _guarded_routes(s: Any) -> list[tuple[str, str, str, dict[str, Any] | None]]
         ("connector", "GET", "/internal/agreements/e2e-nonexistent/status", None),
         ("connector", "GET", "/internal/transfers/e2e-nonexistent/status", None),
         ("connector", "POST", "/internal/audit/query", {}),
+        # The EDC pending guard records an ask here. Anonymous access would let
+        # anyone raise a consent request against any subject pool.
+        (
+            "connector",
+            "POST",
+            "/internal/consent/asks",
+            {
+                "negotiation_id": "e2e-nonexistent",
+                "dataset_id": s.asset_id,
+                "consumer_id": s.consumer_did,
+            },
+        ),
         # ── connector: webhooks (the EDC calls these) ────────────────────────
         ("connector", "POST", "/webhooks/contract-negotiation", {}),
         ("connector", "POST", "/webhooks/transfer-process", {}),
@@ -106,6 +118,23 @@ def _guarded_routes(s: Any) -> list[tuple[str, str, str, dict[str, Any] | None]]
             {"subject_id": s.data_subject_id, "offer_id": s.sharing_offer_id, "enabled": True},
         ),
         ("connector", "POST", "/consent/register-transfer", {}),
+        # Provider-local seeding. It used to authenticate on the *consumer's*
+        # VC-JWT; it is now a service route, so it belongs in this battery.
+        (
+            "connector",
+            "POST",
+            "/consent/request",
+            {
+                "consumer_id": s.consumer_did,
+                "dataset_id": s.asset_id,
+                "subject_ids": [s.data_subject_id],
+            },
+        ),
+        # The operator view names subjects — it must never answer anonymously.
+        ("connector", "GET", "/consent/asks", None),
+        # Status only, but still a participant-scoped question about somebody
+        # else's negotiation.
+        ("connector", "GET", "/consent/pending?correlation_id=e2e-nonexistent", None),
         # ── identity-registry: admin ─────────────────────────────────────────
         ("identity-registry", "GET", "/admin/participants", None),
         ("identity-registry", "POST", "/admin/participants", {}),

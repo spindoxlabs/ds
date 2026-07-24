@@ -359,9 +359,38 @@ class ConsentPurposeFlow(BaseFlow):
             allowed=[s.consented_purpose],
             denied=[c[1] for c in cases if not c[2]],
         )
+
+        self._withdraw_share(subject_headers)
         return True
 
     # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _withdraw_share(self, subject_headers: dict[str, str]) -> None:
+        """Withdraw the standing share this flow provisioned.
+
+        A flow revokes what it writes. Leaving this one granted made the *next*
+        flow's assertions wrong rather than this one's: a pending consent request
+        neither grants nor blocks, so it falls through to whatever standing
+        decision the subject already has (``resolve_decision``, §3.1) — and
+        ``consent-request`` would then find its own undecided request reported as
+        authorised, which looks like a consent bug and is really a leftover row.
+
+        Best-effort: a failure here must not fail a flow whose assertions have
+        all passed.
+        """
+        s = self.settings
+        try:
+            self.http.post(
+                f"{s.connector_url}/consent/my/shares",
+                {
+                    "offer_id": s.sharing_offer_id,
+                    "consumer_id": s.consumer_did,
+                    "enabled": False,
+                },
+                headers=subject_headers,
+            )
+        except Exception as exc:  # noqa: BLE001 - cleanup must not mask results
+            log.warning("consent-purpose: could not withdraw its standing share: %s", exc)
 
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings

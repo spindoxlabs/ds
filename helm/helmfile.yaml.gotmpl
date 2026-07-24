@@ -104,6 +104,7 @@ releases:
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" $p.name) | quote }}
           edcApiKey: {{ $psec.edcApiKey | quote }}
+          connectorClientSecret: {{ $psec.connectorClientSecret | quote }}
           stsClientSecret: {{ $psec.stsSecret | quote }}
           edrSigningPrivateJwk: {{ $psec.edcVault.edrSigningPrivateJwk | quote }}
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import os
 from pathlib import Path
@@ -6,9 +8,6 @@ from alembic.config import Config
 from alembic.script import ScriptDirectory
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
-
-from __future__ import annotations
-
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,

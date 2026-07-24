@@ -12,9 +12,16 @@ data:
   # committed dev files carry *.localhost hosts, plaintext did:web and superuser
   # DB creds; nothing from them is mounted here.
   #
-  # ${EDC_API_KEY}, ${EDC_DB_USER}, ${EDC_DB_PASSWORD} are resolved from the
-  # container environment (from the Secret) — they never appear in this
-  # ConfigMap.
+  # Secrets are NOT written here as ${PLACEHOLDER}: EDC's FsConfigurationExtension
+  # is a plain Properties.load() with no interpolation, so a ${...} would be
+  # stored verbatim. EDC does read the environment as config, converting
+  # ENVIRONMENT_NOTATION to dot.notation (ConfigurationLoader →
+  # ConfigFactory.fromEnvironment), so every secret-bearing setting is supplied
+  # that way from the Secret and simply omitted from this file:
+  #   WEB_HTTP_MANAGEMENT_AUTH_KEY        → web.http.management.auth.key
+  #   EDC_DATASOURCE_DEFAULT_USER         → edc.datasource.default.user
+  #   EDC_DATASOURCE_DEFAULT_PASSWORD     → edc.datasource.default.password
+  #   DS_CONNECTOR_INTERNAL_CLIENT_SECRET → ds.connector.internal.client.secret
   edc.properties: |
     edc.participant.id={{ $did }}
     edc.iam.issuer.id={{ $did }}
@@ -25,7 +32,11 @@ data:
     web.http.path=/api
     web.http.management.port={{ .Values.ports.management }}
     web.http.management.path=/management
-    web.http.management.auth.key=${EDC_API_KEY}
+    # `auth.type` is what installs the authentication filter — EDC registers one
+    # only for contexts that declare a type, so `auth.key` on its own leaves the
+    # Management API (assets, policies, transfer termination, negotiation resume)
+    # open to anything that can reach the port.
+    web.http.management.auth.type=tokenbased
     web.http.protocol.port={{ .Values.ports.protocol }}
     web.http.protocol.path=/protocol
     web.http.public.port={{ .Values.ports.public }}
@@ -43,9 +54,20 @@ data:
     edc.transfer.proxy.token.signer.privatekey.alias=participant-private-key
     edc.transfer.proxy.token.verifier.publickey.alias=participant-private-key
 
-    # Callback into this participant's ds-connector (in-cluster).
-    edc.receiver.http.endpoint=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}/webhooks/transfer-process
+    # This participant's ds-connector (in-cluster): /internal/* during ODRL
+    # policy evaluation, and /webhooks/contract-negotiation, which the extension
+    # posts to directly. There is no callback-URL setting — EDC 0.16.0 has no
+    # `edc.receiver.http.*`, and the static-callback extension would need a
+    # fourth shared secret to authenticate.
     ds.connector.internal.url=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}
+
+    # How this EDC authenticates to ds-connector: its own Keycloak client
+    # (connector.internal + connector.webhook), not EDC_API_KEY. That key is the
+    # Management API key above, and sharing it across both boundaries meant one
+    # leak yielded contract administration, the data-plane signing keys and the
+    # subject pools together. The extension refuses to start without these.
+    ds.connector.internal.token.url={{ required "keycloak.tokenUrl is required" ((.Values.global).keycloak).tokenUrl }}
+    ds.connector.internal.client.id={{ .Values.connectorClientId }}
 
     # ── Vault (mounted from the Secret, not the committed dev fixture) ─────────
     edc.vault.hashicorp.enabled=false
@@ -71,8 +93,6 @@ data:
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}
-    edc.datasource.default.user=${EDC_DB_USER}
-    edc.datasource.default.password=${EDC_DB_PASSWORD}
     edc.datasource.default.pool.maxIdleConnections=3
     edc.datasource.default.pool.maxTotalConnections=10
     edc.datasource.default.pool.testConnectionOnReturn=true

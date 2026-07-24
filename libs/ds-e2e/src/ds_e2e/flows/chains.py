@@ -135,12 +135,25 @@ class _ChainFlow(BaseFlow):
             result.fail_step("load credentials", str(exc))
             return None
 
-    def _revoke_share(self, headers: dict[str, str], offer_id: str) -> None:
-        """Leave no standing grant behind — the next flow must start from zero."""
+    def _revoke_share(
+        self, headers: dict[str, str], offer_id: str, consumer_id: str | None = None
+    ) -> None:
+        """Leave no standing grant behind — the next flow must start from zero.
+
+        ``consumer_id`` must match the grant. A consent row is keyed by
+        ``(subject, dataset, consumer)``, so omitting it here falls back to the
+        default consumer DID and withdraws a *different* row — the original grant
+        survives, and the flow that granted to a named third party (the grid
+        operator, in the unbundling chain) then reports its own consent as
+        surviving its own withdrawal.
+        """
+        body: dict[str, object] = {"offer_id": offer_id, "enabled": False}
+        if consumer_id:
+            body["consumer_id"] = consumer_id
         self.http.raw(
             "POST",
             f"{self.settings.connector_url}/consent/my/shares",
-            body={"offer_id": offer_id, "enabled": False},
+            body=body,
             headers=headers,
         )
 
@@ -565,7 +578,7 @@ class ChainUnbundlingFlow(_ChainFlow):
                 "the consent row did not record which role was consented to",
                 controller_role=sorted(str(r) for r in roles),
             )
-            self._revoke_share(subject, GRID_OFFER)
+            self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
             return result
         result.pass_step(
             "member consents to a role",
@@ -587,7 +600,7 @@ class ChainUnbundlingFlow(_ChainFlow):
                 "the role the member consented to was refused",
                 reason=allowed.get("reason"),
             )
-            self._revoke_share(subject, GRID_OFFER)
+            self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
             return result
         result.pass_step(
             "consented role is authorised",
@@ -612,7 +625,7 @@ class ChainUnbundlingFlow(_ChainFlow):
                 "metering role of the same legal entity",
                 controller_role="metering",
             )
-            self._revoke_share(subject, GRID_OFFER)
+            self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
             return result
         result.pass_step(
             "other role is refused",
@@ -622,7 +635,7 @@ class ChainUnbundlingFlow(_ChainFlow):
         )
 
         # 5. Withdrawal, and no residue for the next run.
-        self._revoke_share(subject, GRID_OFFER)
+        self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
         after = self._consent_check(
             svc,
             consumer_id=GRID_DID,

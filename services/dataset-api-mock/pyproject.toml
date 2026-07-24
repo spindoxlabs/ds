@@ -12,7 +12,14 @@ dependencies = [
     "httpx",
     "pydantic>=2.7",
     "pydantic-settings>=2.3",
+    # ServiceTokenProvider — the PEP authenticates to ds-connector's
+    # /internal/* API as svc-ds-dataset-api rather than with the shared
+    # X-Api-Key, which is also EDC's Management API key.
+    "ds-auth",
 ]
+
+[tool.uv.sources]
+ds-auth = { path = "../../libs/ds-auth", editable = true }
 
 [project.optional-dependencies]
 dev = []

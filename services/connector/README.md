@@ -43,12 +43,19 @@ EDC's Management API is low-level and stateless. This service adds:
 
 ### Consent
 
-- `POST /consent/request` — consumer creates a consent request for a data subject
+A data *consumer* does not call these. It negotiates: a provider-side contract
+negotiation for a consent-gated dataset is parked by `ConsentPendingGuard` while
+the subjects decide, and the ask is recorded from EDC's DCP-verified
+`counterPartyId`.
+
+- `POST /consent/request` — **provider-local**: an operator or the portal seeds a consent request for a set of subjects. Guarded by `connector.consent.provision`
+- `GET /consent/pending?correlation_id=` — is this negotiation waiting on a consent decision, and since when. Status only, for the counterparty. Guarded by `connector.consent.read`
+- `GET /consent/asks` — operator view: which asks are holding up which negotiation. Guarded by `connector.provider.read`
 - `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record
 - `GET /consent/my` — data subject retrieves their own consent requests (requires `X-Subject-Id` header)
-- `POST /consent/my/{id}/approve` — data subject approves a request
-- `POST /consent/my/{id}/reject` — data subject rejects a request
-- `POST /consent/my/{id}/revoke` — data subject revokes a previously approved consent; terminates linked EDC transfers
+- `POST /consent/my/{id}/approve` — data subject approves a request; resumes the negotiation it was blocking
+- `POST /consent/my/{id}/reject` — data subject rejects a request; terminates the negotiation only once every subject has refused
+- `POST /consent/my/{id}/revoke` — data subject revokes a previously approved consent. Running transfers are terminated by EDC's policy monitor, not from here
 
 ### Internal (consumed by edc-extensions)
 

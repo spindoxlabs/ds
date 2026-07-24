@@ -171,6 +171,48 @@ class EdcManagementClient:
             error_detail=f"Negotiation did not complete within {timeout}s",
         )
 
+    async def terminate_negotiation(self, negotiation_id: str, reason: str) -> None:
+        """Terminate a negotiation — the refusal and TTL-expiry path.
+
+        Unlike resuming, this is plain Management API: a subject's refusal and a
+        parked negotiation's TTL both end in the same place a counterparty
+        walking away would, so no custom endpoint is needed.
+        """
+        r = await self._http.post(
+            f"/v3/contractnegotiations/{_path_id(negotiation_id)}/terminate",
+            json={
+                "@context": EDC_CONTEXT,
+                "@type": "TerminateNegotiation",
+                "@id": negotiation_id,
+                "reason": reason,
+            },
+        )
+        if r.status_code in (404, 409):
+            # Already gone, or already in a state that cannot be terminated.
+            log.info("Negotiation %s not terminable (%s): %s", negotiation_id, r.status_code, r.text[:200])
+            return
+        self._raise_with_body(r, "terminate negotiation")
+
+    async def resume_negotiation(self, negotiation_id: str) -> dict[str, Any]:
+        """Clear ``pending`` on a negotiation parked by the consent guard.
+
+        Served by ``NegotiationResumeController`` in our EDC extension, because
+        the Management API has no way to clear ``pending`` at EDC 0.16.0. Local
+        to the provider's own control plane — never a DSP message.
+
+        Idempotent, and deliberately not an error when nothing happens: a grant
+        arriving after the TTL terminated the negotiation returns
+        ``outcome="terminal"`` so the caller can record the race rather than
+        retry into it forever.
+        """
+        r = await self._http.post(
+            f"/dataspaces/negotiations/{_path_id(negotiation_id)}/resume"
+        )
+        if r.status_code == 404:
+            return {"id": negotiation_id, "resumed": False, "outcome": "not_found"}
+        self._raise_with_body(r, "resume negotiation")
+        return r.json()
+
     # -- Transfer -------------------------------------------------------------
 
     async def start_transfer(self, req: TransferRequest) -> str:

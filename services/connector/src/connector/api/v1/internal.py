@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import get_settings
 from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
-from ...dependencies import get_db, get_participant_registry, require_internal_scope
+from ...dependencies import (
+    get_db,
+    get_notifier,
+    get_participant_registry,
+    get_settings_dep,
+    require_internal_scope,
+)
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
 
@@ -145,15 +151,30 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
 
 @router.get("/consent/check")
 async def consent_check(
+    request: Request,
     dataset_id: str,
     consumer_id: str,
     subject_id: Optional[str] = None,
     purpose: Optional[str] = None,
     controller_role: Optional[str] = None,
     db: AsyncSession = Depends(get_db),
+    settings=Depends(get_settings_dep),
     _claims: dict = Depends(require_internal_scope),
 ):
-    """Check consent for a consumer+dataset pair, scoped to a purpose and role.
+    """The single consent decision — one endpoint, three projections.
+
+    Three callers ask the same question and read different parts of the answer:
+
+    | Caller | Reads |
+    |---|---|
+    | dataset-api PEP, at query time | ``subject_ids`` — the row filter |
+    | ``ConsentStatusFunction``, at negotiation | ``consent_active``/``subject_ids`` |
+    | ``ConsentPendingGuard``, before parking | ``should_ask``, ``pending_request_id`` |
+
+    They stay on one endpoint deliberately. The projections are the same query
+    under different lenses, returning all of them is cheap, and *one code path
+    deciding consent* is the security-relevant property — two endpoints would be
+    two chances to diverge.
 
     - With ``subject_id``: returns whether that specific subject has active consent.
     - Without ``subject_id``: returns all granted subject IDs (used by the Dataset API PEP
@@ -185,6 +206,18 @@ async def consent_check(
         # Leave it to the service layer, which fails closed on unknown datasets.
         pass
 
+    ask = await _ask_projection(
+        request,
+        db,
+        settings,
+        dataset_id=dataset_id,
+        consumer_id=consumer_id,
+        subject_id=subject_id,
+        purposes=purposes,
+        controller_role=controller_role,
+        consent_required=consent_required,
+    )
+
     if subject_id:
         active, reason, row = await check_consent_detail(
             db,
@@ -206,6 +239,7 @@ async def consent_check(
             # The legal-basis evidence of the row that decided — proof of which
             # consent state authorised access, for the PEP's audit trail.
             "legal_basis": row.legal_basis if row else None,
+            **ask,
         }
     # No subject_id: return all granted subjects for this (consumer, dataset)
     granted = await get_granted_subject_ids(
@@ -222,6 +256,184 @@ async def consent_check(
         "purpose": purposes,
         "controller_role": controller_role,
         "subject_ids": granted,
+        **ask,
+    }
+
+
+async def _ask_projection(
+    request: Request,
+    db: AsyncSession,
+    settings,
+    *,
+    dataset_id: str,
+    consumer_id: str,
+    subject_id: str | None,
+    purposes: list[str],
+    controller_role: str | None,
+    consent_required: bool | None,
+) -> dict:
+    """``should_ask`` and ``pending_request_id`` — the guard's half of the answer.
+
+    ``should_ask`` answers *if consent is absent, is that a question for a
+    person?*  It is deliberately independent of whether consent happens to be
+    present right now, so the pending guard reads one flag instead of
+    reconstructing the circle rules in Java:
+
+    - **false** for a dataset that is not consent-gated — there is nobody to ask.
+    - **false** for a party the offers already cover as a processor (§6.3). Such
+      a recipient is disclosed under Art. 13(1)(e), not consented; asking anyway
+      would imply a choice that does not exist and would train people to click
+      through the questions that do matter.
+    - **true** otherwise, including when capacity is unprovable — a redundant
+      question is recoverable, a skipped one is not.
+
+    It never leaks *who* consented: it is a boolean over the circle verdict, not
+    a membership listing.  ``subject_ids`` remains the only sensitive projection
+    and its exposure is unchanged.
+
+    ``pending_request_id`` names an ask already outstanding for this tuple, so a
+    re-negotiating consumer reattaches to it instead of asking the same people
+    a second time.
+    """
+    from ...services import circle
+    from ...services import consent_vocabulary as vocab
+    from ...services.consent_service import find_pending_request
+
+    pending = await find_pending_request(
+        db, dataset_id, consumer_id, purpose=purposes, subject_id=subject_id
+    )
+    projection = {
+        "should_ask": False,
+        "pending_request_id": pending.id if pending else None,
+    }
+    if not consent_required:
+        return projection
+
+    offers = vocab.offers_covering(dataset_id, purposes, controller_role)
+    covered = await circle.is_covered_processor(
+        offers,
+        requester_did=consumer_id,
+        identity_registry_url=settings.identity_registry_url,
+        token_provider=getattr(request.app.state, "ir_token_provider", None),
+    )
+    projection["should_ask"] = not covered
+    return projection
+
+
+class ConsentAskRequest(BaseModel):
+    """A parked negotiation asking the connector to put a question to people."""
+
+    negotiation_id: str
+    correlation_id: str | None = None
+    dataset_id: str
+    consumer_id: str
+    purpose: list[str] = []
+    controller_role: str | None = None
+
+
+@router.post("/consent/asks", status_code=200)
+async def record_consent_ask(
+    body: ConsentAskRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    settings=Depends(get_settings_dep),
+    notifier=Depends(get_notifier),
+    _claims: dict = Depends(require_internal_scope),
+):
+    """Record the ask behind a parked contract negotiation (§6.4).
+
+    Called by ``ConsentPendingGuard`` when a provider-side negotiation reaches
+    ``REQUESTED`` for a consent-gated dataset and no consent covers the
+    requester. The identity in ``consumer_id`` is EDC's ``counterPartyId`` — a
+    DCP-verified credential presentation, not a self-asserted header, which is
+    the whole reason this replaced the old cross-participant
+    ``POST /consent/request``.
+
+    **Never raises for a business answer.** The caller is a state-machine guard;
+    a 4xx it has to interpret would put policy back in Java. Every outcome is a
+    200 with ``asked`` and a ``reason``:
+
+    | ``asked`` | when | the guard should |
+    |---|---|---|
+    | true | the question was put to at least one person | park the negotiation |
+    | false, ``not_consent_gated`` | no data subject to ask | let it proceed |
+    | false, ``covered_processor`` | disclosed under Art. 28, not consented (§6.3) | let it proceed |
+    | false, ``no_subjects`` | nobody is enrolled in this dataset | let it proceed — and be refused |
+    | false, ``unknown_dataset``/``unknown_purpose`` | the offer names something we do not have | let it proceed — and be refused |
+
+    "Let it proceed" is not "allow": the ODRL consent constraint still evaluates
+    and still denies. It only means *parking would not help*, because no human
+    decision is pending that could ever unblock it.
+
+    Idempotent by construction: a re-negotiation for the same
+    ``(subject pool, dataset, purpose, consumer)`` reattaches to the outstanding
+    rows instead of asking the same people twice.
+    """
+    from ...services import circle
+    from ...services import consent_vocabulary as vocab
+    from ...services.consent_service import (
+        create_consent_request,
+        subject_pool_for_dataset,
+    )
+
+    def refuse(reason: str, **extra) -> dict:
+        return {"asked": False, "reason": reason, "request_ids": [], **extra}
+
+    try:
+        rule = vocab.resolve_dataset(body.dataset_id)
+    except vocab.VocabularyError:
+        return refuse("unknown_dataset")
+    if not vocab.requires_consent(rule):
+        return refuse("not_consent_gated")
+
+    try:
+        purposes = vocab.normalise_purposes(body.purpose)
+    except vocab.VocabularyError as exc:
+        return refuse("unknown_purpose", detail=str(exc))
+
+    offers = vocab.offers_covering(body.dataset_id, purposes, body.controller_role)
+    if await circle.is_covered_processor(
+        offers,
+        requester_did=body.consumer_id,
+        identity_registry_url=settings.identity_registry_url,
+        token_provider=getattr(request.app.state, "ir_token_provider", None),
+    ):
+        return refuse("covered_processor")
+
+    subjects = await subject_pool_for_dataset(db, body.dataset_id)
+    if not subjects:
+        return refuse("no_subjects")
+
+    offer = offers[0] if offers else None
+    request_ids: list[str] = []
+    for subject_id in subjects:
+        consent = await create_consent_request(
+            session=db,
+            subject_id=subject_id,
+            consumer_id=body.consumer_id,
+            dataset_id=body.dataset_id,
+            purpose=purposes,
+            message="A data consumer has requested access; a contract "
+                    "negotiation is waiting on your decision.",
+            notifier=notifier,
+            controller=offer.recipients.controller if offer else None,
+            controller_role=(
+                body.controller_role
+                or (offer.recipients.controller_role if offer else None)
+            ),
+            offer_id=offer.id if offer else None,
+            negotiation_id=body.negotiation_id,
+            correlation_id=body.correlation_id,
+        )
+        request_ids.append(consent.id)
+    await db.commit()
+
+    return {
+        "asked": True,
+        "reason": "awaiting_consent",
+        "request_ids": request_ids,
+        "negotiation_id": body.negotiation_id,
+        "correlation_id": body.correlation_id,
     }
 
 

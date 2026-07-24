@@ -26,6 +26,21 @@ class DcatSource:
     defaults: dict[str, Any] = field(default_factory=dict)
 
 
+def _is_provider(participant: dict[str, Any]) -> bool:
+    """Whether a registry participant offers data.
+
+    The identity-registry models this as ``roles`` — a *list*, because a
+    participant can be both provider and consumer. Reading the singular
+    ``role`` (which the API never returns) matched nothing, so every crawl
+    found zero providers and the catalogue was silently empty rather than
+    wrong. The singular key is still tolerated for any older payload.
+    """
+    roles = participant.get("roles")
+    if isinstance(roles, (list, tuple, set)):
+        return "provider" in roles
+    return participant.get("role") == "provider" or roles == "provider"
+
+
 def load_providers_from_registry(
     identity_registry_url: str,
     headers: dict[str, str] | None = None,
@@ -38,7 +53,7 @@ def load_providers_from_registry(
         return [
             Provider(id=p["did"], dsp_address=p.get("dsp_address") or "")
             for p in resp.json()
-            if p.get("role") == "provider" and p.get("dsp_address")
+            if _is_provider(p) and p.get("dsp_address")
         ]
     except httpx.HTTPError as exc:
         log.error("Failed to fetch providers from identity-registry: %s", exc)

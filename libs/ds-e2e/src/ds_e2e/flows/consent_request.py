@@ -1,15 +1,20 @@
-"""The interactive consent lifecycle — a consumer asks, a subject decides.
+"""The interactive consent lifecycle — an ask is raised, a subject decides.
 
 The `smoke` flow covers the *standing* path: a subject publishes an ongoing
 sharing decision against an offer, and consumers draw on it. This flow covers
 the other half of the consent model, which had no end-to-end coverage at all:
-a consumer names a dataset and a set of subjects, each subject sees a pending
+an ask names a dataset and a set of subjects, each subject sees a pending
 request in their own inbox, and each decides.
+
+The ask is seeded through `POST /consent/request`, the provider-local route an
+operator or the portal uses. In the DSP path the same rows are written by
+`ConsentPendingGuard` from a parked negotiation, with the requester's identity
+taken from EDC's DCP-verified `counterPartyId` — the lifecycle from there on is
+identical, so this flow asserts it without needing an EDC running.
 
 What it proves, in order:
 
-- a consumer can raise a request, and the request lands *pending* — never
-  pre-approved;
+- an ask lands *pending* — never pre-approved;
 - the pending request appears to the subject it names, and to nobody else;
 - a rejection is final: the consent check stays closed and re-deciding a
   settled request is refused;
@@ -35,7 +40,7 @@ log = logging.getLogger(__name__)
 class ConsentRequestFlow(BaseFlow):
     name = "consent-request"
     description = (
-        "Interactive consent: consumer requests, subject sees it pending, "
+        "Interactive consent: an ask lands pending, the subject sees it, "
         "rejects/approves/revokes, with enforcement asserted at each transition"
     )
 
@@ -58,15 +63,13 @@ class ConsentRequestFlow(BaseFlow):
 
         try:
             subject_vc = self._resolve_user_vc(s.data_subject_email, svc_headers)
-            consumer_vc = self._resolve_user_vc(s.consumer_email, svc_headers)
         except Exception as exc:
             result.fail_step("load credentials", str(exc))
             return result
 
         subject_headers = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
-        consumer_headers = {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
 
-        # ── 1. The consumer raises a request ─────────────────────────────────
+        # ── 1. An ask is raised on the provider ──────────────────────────────
         request_body = {
             "consumer_id": s.consumer_did,
             "dataset_id": s.asset_id,
@@ -75,27 +78,27 @@ class ConsentRequestFlow(BaseFlow):
             "offer_id": s.sharing_offer_id,
             "message": "e2e uc4 — interactive consent lifecycle",
         }
-        # Deliberately raised against the *provider* connector. That is where
+        # Raised against the *provider* connector, as a service. That is where
         # `/internal/consent/check` reads from, so it is the only place a row can
-        # land and still gate access. A request that only succeeds against the
-        # consumer connector has been recorded where nothing will ever read it.
+        # land and still gate access.
+        #
+        # It is no longer raised with the consumer's own credential. A consumer
+        # asking for data now simply negotiates: `ConsentPendingGuard` parks the
+        # negotiation and records the ask from EDC's DCP-verified
+        # `counterPartyId`. `POST /consent/request` is what remains for the
+        # provider-local case — an operator or the portal seeding an ask — and it
+        # authenticates as a service accordingly. The lifecycle asserted below is
+        # the same one the guard produces; this drives it without needing an EDC.
         status, payload = self.http.raw(
             "POST",
             f"{s.connector_url}/consent/request",
             body=request_body,
-            headers=consumer_headers,
+            headers=svc_headers,
         )
         if status != 201 or not isinstance(payload, dict):
-            detail = "consent request was not created"
-            if status == 403 and "not linked" in str(payload):
-                detail = (
-                    "the consumer's credential is linked to the consumer participant, "
-                    "but the request must be recorded on the provider connector where "
-                    "the consent check reads — the interactive path cannot complete"
-                )
             result.fail_step(
-                "consumer requests consent",
-                detail,
+                "provider seeds a consent request",
+                "consent request was not created",
                 status_code=status,
                 response=payload,
                 target=f"{s.connector_url}/consent/request",
@@ -104,15 +107,15 @@ class ConsentRequestFlow(BaseFlow):
         request_ids = payload.get("request_ids") or []
         if not request_ids or payload.get("status") != "pending":
             result.fail_step(
-                "consumer requests consent",
+                "provider seeds a consent request",
                 "request did not land in pending state",
                 response=payload,
             )
             return result
         consent_id = str(request_ids[0])
         result.pass_step(
-            "consumer requests consent",
-            "consumer raised a consent request; it is pending, not pre-approved",
+            "provider seeds a consent request",
+            "the ask landed pending, not pre-approved",
             consent_id=consent_id,
         )
 
@@ -212,7 +215,7 @@ class ConsentRequestFlow(BaseFlow):
             "POST",
             f"{s.connector_url}/consent/request",
             body={**request_body, "message": "e2e uc4 — approval path"},
-            headers=consumer_headers,
+            headers=svc_headers,
         )
         if status != 201 or not isinstance(payload, dict) or not payload.get("request_ids"):
             result.fail_step(

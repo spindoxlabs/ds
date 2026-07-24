@@ -38,6 +38,11 @@ dependencies {
     runtimeOnly("org.eclipse.edc:sql-pool-apache-commons:${edcVersion}")
     runtimeOnly("org.eclipse.edc:sql-lease-core:${edcVersion}")
     runtimeOnly("org.eclipse.edc:edr-index-sql:${edcVersion}")
+    // The policy monitor is what terminates a running transfer when consent is
+    // revoked. Without a persistent store it defaults to in-memory, so a
+    // control-plane restart would silently forget every transfer it was
+    // watching — and a later revocation would never reach them.
+    runtimeOnly("org.eclipse.edc:policy-monitor-store-sql:${edcVersion}")
     runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
     runtimeOnly("org.postgresql:postgresql:42.7.5")
 

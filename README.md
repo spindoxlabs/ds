@@ -62,14 +62,30 @@ dataspaces/
 
 ### Start in local development mode
 
+Brings the container stack up, then replaces most services with hot-reload host
+processes in a tmux session named `ds`. Fast to iterate on; it does **not**
+exercise the service Dockerfiles or the compose `environment:` blocks.
+
 Note: requires `tmux` installed (eg. `apt install tmux`)
 
 ```bash
-task dev
+task dev:restart          # stop + start, then attach to the tmux session
+task dev:stop             # stop everything, including the watch loops
 ```
 
+### Start the full stack (everything in containers)
 
-### Start the full stack
+The mode that validates a change to a Dockerfile, a compose environment block or
+a dependency — nothing runs on the host.
+
+```bash
+task docker:restart              # stop + rebuild images + start
+task docker:restart BUILD=false  # skip the rebuild (fast; only when source is unchanged)
+task docker:stop
+```
+
+`task start` alone starts the stack without stopping anything first or
+rebuilding images.
 
 ```bash
 task start

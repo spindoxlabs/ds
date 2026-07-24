@@ -41,7 +41,7 @@ src/ds_e2e/
 | `authz-perimeter` | no | Header substitution, query-parameter scoping, role confusion, enumeration resistance — with real credentials |
 | `dcp-trust` | no | STS refusal paths and token shape, presentation-query DID binding, did:web resolution, StatusList publication |
 | `consent-purpose` | no | SKOS taxonomy at `/ns/policy`, the `/ns/sharing-offers` projection, `422` on invalid consent writes, offer expansion, the full `odrl:isA` matrix at `/internal/consent/check` |
-| `consent-request` | no | The interactive consent lifecycle: request lands pending, subject inbox scoping, rejection finality, approval, purpose bounding, revocation with history retained, provenance |
+| `consent-request` | no | The interactive consent lifecycle: an ask lands pending, subject inbox scoping, rejection finality, approval, purpose bounding, revocation with history retained, provenance. The ask is seeded through the provider-local `POST /consent/request`; in the DSP path `ConsentPendingGuard` writes the same rows from a parked negotiation, so the lifecycle from there on is identical and this flow needs no EDC |
 | `org-onboarding` | no | register → verify → agreement → credential → promote, both negative gates, readiness, suspend |
 | `uc1` / `uc2` / `uc3` | yes | Governance patterns GP-1 / GP-2 / GP-3 |
 | `chain-community` | no | Community-mediated consent: the member's row names the community as controller, the grant is purpose-bounded, and a subject outside the member pool cannot be drawn into it |
@@ -146,7 +146,16 @@ lists the routes that client legitimately reaches and must be kept in step with
 
 ## Known gaps
 
-- Post-revoke query enforcement: the dataset-api-mock (provider-side) doesn't see consumer-side revocations because the provider EDC has different agreement/transfer IDs than the consumer
+- Post-revoke query enforcement: **should now be assertable end to end.** The gap
+  was that the connector terminated transfers itself (via a `delete_asset`
+  placeholder) and the provider EDC's agreement/transfer IDs differ from the
+  consumer's, so nothing on the provider side reacted to a revocation.
+  `AgreementConsentFunction` is now bound to EDC's `policy.monitor` scope, so a
+  revoked consent fails the *provider's* re-evaluation of the agreement policy
+  and EDC terminates the transfer through its own state machine. Termination
+  takes effect on the next monitor pass rather than synchronously, so an
+  assertion needs to poll. The consumer-side workaround in `smoke` should be
+  removable — verify against a running stack before deleting it.
 - UC1/UC2 membership check: `svc-ds-portal` may lack the scope for the identity-registry `/memberships/check` endpoint
 - `dcp-trust` asserts STS *refusals* unconditionally but only asserts issuance when `E2E_PROVIDER_STS_SECRET` is set; without it the positive path is unverified
 - No flow asserts EDR token expiry or renewal, nor DSP-level policy enforcement at the provider EDC (only its effect on the consumer's query)

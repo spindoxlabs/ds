@@ -324,7 +324,7 @@ GET /internal/consent/check?purpose=…&controller_role=…
 | Consent to a child purpose does **not** cover its parent | That would widen consent |
 | The consent key is **(subject, purpose, controller-role)** | Controller ≠ legal entity: a DSO's grid-operations and metering functions are distinct controllers |
 | Only `dpv:Consent` offers get a UI control | Contract-based processing is disclosed, not toggled; asking implies a choice that does not exist |
-| A **covered processor** is disclosed, never asked | Same controller, same operation (Art. 28). `POST /consent/request` returns 409 |
+| A **covered processor** is disclosed, never asked | Same controller, same operation (Art. 28). `POST /consent/request` returns 409, and `/internal/consent/check` returns `should_ask: false` so the pending guard does not park |
 | `user_visible_hash` excludes `datasets[]` | Which datasets back an offer is a schema-migration concern nobody was shown |
 
 Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same overlay mechanism as `governance.yaml`) and are served publicly at `GET /ns/sharing-offers` as **codes plus an English fallback** — translation is entirely the frontend's job, and dataset keys are not in the public projection.
@@ -332,6 +332,23 @@ Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same
 Consent writes resolve through `services/connector/src/connector/services/consent_vocabulary.py`; anything outside the declared vocabulary is a **422**. `task compliance:validate` gates the whole chain before an import.
 
 **Service-provisioned shares & the scoped wildcard.** The onboarding wizard records a subject's standing consent after approval via `POST /consent/admin/shares` (scope `connector.consent.provision` on `svc-ds-onboarding`). It names an `offer_id`, not a dataset; the connector expands it into `consumer_id = "*"` rows — the **scoped wildcard**, which admits any party inside the circle for that controller and purpose (never a new controller or purpose). A per-party specific row overrides the wildcard: an explicit grant or opt-out both win. Each row carries a `legal_basis` evidence record (DPV basis IRI, consent-text version, locale, rendered-text SHA-256, `user_visible_hash`, `submission_ref` — **codes and hashes only, never PII**), surfaced on `GET /consent/my`, `/consent/status` and `/internal/consent/check`.
+
+**A consumer asks by negotiating, not by calling an API.** A provider-side
+contract negotiation for a consent-gated dataset is parked by
+`ConsentPendingGuard` (an EDC `ContractNegotiationPendingGuard`) when no consent
+covers the requester; the connector records the ask from EDC's DCP-verified
+`counterPartyId` and the offer's asset and purpose constraints. The subject
+decides through the existing `/consent/my/*` routes; a grant clears `pending`
+via a resume endpoint in our EDC extension and the negotiation continues. There
+is no cross-participant consent API — DSP already carries the requester's
+identity, cryptographically, and re-deriving it from a header proved it more
+weakly. `POST /consent/request` remains only as the provider-local seeding route
+(an operator or the portal), authenticated as a service.
+
+**Consent is re-checked while a transfer runs.** `AgreementConsentFunction` is
+bound to EDC's `policy.monitor` scope, so a revocation terminates a running
+transfer through EDC's own state machine rather than through a manual call from
+the connector.
 
 See `docs/consent-and-sovereignty.md` for the full model and the enforcement matrix.
 
@@ -435,6 +452,91 @@ Caddy gateway ports: `:9010` (provider), `:9000` (consumer).
 
 Every service has a `task <participant>:<service>:run` command in the root Taskfile that stops the Docker container and runs the service locally with hot-reload. Environment variables are set to use `172.17.0.1` for backend services and Caddy-proxied domains for browser-facing URLs. This allows running one service locally while the rest remain in Docker.
 
+### Restarting the stack — two modes, ask which
+
+An agent may restart the stack itself. **Ask first which mode**, because they
+verify different things.
+
+Everything starts in Docker. Two task families:
+
+```
+task docker:stop      stop everything: kill watch loops, tmux session,
+                      port holders, then compose down -v
+task docker:start     task build (unless BUILD=false) → task start
+                        task start = infra:start → identity:bootstrap
+                                     → provider:start → consumer:start
+task docker:restart   docker:stop + docker:start          ← everything in containers
+
+task dev:stop         docker:stop
+task dev:start        docker:start, then a tmux session `ds` whose windows each run
+                      `task <participant>:<service>:run` — and *each of those* does
+                      `docker stop <container>` before running the service on the
+                      host with hot-reload                 ← local mode
+task dev:restart      dev:stop + dev:start
+```
+
+So **local mode is docker-then-replace**: `dev:start` brings the full container
+stack up and then replaces the services it wants on the host. Services with no
+tmux window (caddy, keycloak, postgres, the `*-db-init-*` jobs) stay in
+containers in both modes.
+
+Both families take `BUILD=false` to reuse the existing images — much faster, and
+wrong whenever source has changed.
+
+| | `task dev:*` | `task docker:*` |
+|---|---|---|
+| Ends with | ~12 host processes, rest in containers | everything in containers |
+| Speed | fast iteration — edit and uvicorn reloads | slow — every image rebuilt |
+| Exercises the service Dockerfiles and compose `environment:` blocks | **not for the replaced services** | **yes** |
+
+A change touching a `Dockerfile`, a `docker-compose.*.yml` `environment:` block, a
+`pyproject.toml` dependency or `build.gradle.kts` is **not verified** by `dev:*`
+for any service that mode replaces: the host process reads `.env.local` through the
+Taskfile's `dotenv` and never sees the compose env. The usual sequence for a
+substantial change is **`task dev:restart` first** (find and fix logic cheaply),
+**then `task docker:restart`** (prove the container path).
+
+`dev:start` ends with `tmux attach`, which needs a TTY. To drive it
+non-interactively, run `docker:start` and then create the `ds` session with
+`tmux new-session -d` — same windows, no attach — and leave it for the user to
+attach to.
+
+**Killing local mode: watch loops first, by process group.** `tmux kill-session`
+does *not* stop `edc-provider:watch` / `edc-consumer:watch` — they are re-parented
+and survive, and each restarts its JVM as soon as the JVM dies. Freeing a port
+without killing the loop frees it only long enough for the loop to grab it back,
+and the container that wanted it then fails to bind and exits silently.
+`docker:stop` kills the loops by name before it touches any port.
+
+**Check the boot actually succeeded.** `docker compose up -d` returns success
+even when an init container exited non-zero, and a failed `identity-registry-db-init`
+or `keycloak-sync` leaves a stack that looks half-up rather than broken. After a
+restart, check `docker ps -a` for non-zero `Exited` init containers and read their
+logs before concluding anything about a test result.
+
+### EDC configuration: environment, never `${}` in a properties file
+
+`services/connector/config/*.properties` is loaded by EDC's
+`FsConfigurationExtension`, which is a plain `Properties.load()` — **no
+interpolation**. A `${EDC_API_KEY}` written there is stored as the literal string
+`${EDC_API_KEY}`, and the failure is silent wherever the value is not actually
+checked.
+
+EDC *does* read the environment: `ConfigurationLoader` merges
+`ConfigFactory.fromEnvironment(...)`, converting `ENVIRONMENT_NOTATION` to
+`dot.notation`. So a secret-bearing or deployment-specific setting is supplied as
+an env var whose name **is** the setting:
+
+| Env var | Setting |
+|---|---|
+| `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` |
+| `DS_CONNECTOR_INTERNAL_CLIENT_ID` | `ds.connector.internal.client.id` |
+| `EDC_DATASOURCE_DEFAULT_PASSWORD` | `edc.datasource.default.password` |
+
+Set those in the compose `environment:` block (dev) or from the Secret in
+`helm/charts/ds-edc/templates/deployment.yaml` (production), and leave the
+setting out of the properties file entirely.
+
 ### Idempotency
 
 All bootstrap and provisioning operations must be idempotent. `task identity:bootstrap` can be run repeatedly without duplicating participants or credentials. `ir-cli` commands use upsert semantics. Alembic migrations are tracked and skip already-applied revisions. Database init containers check for existing databases before creating them.
@@ -452,15 +554,28 @@ Service accounts are defined in `services/keycloak/clients.yaml`. Default secret
 
 ## Security posture
 
-### Three authentication mechanisms — know which one applies
+### Two authentication mechanisms — know which one applies
 
-Most endpoints use the unified `ds_auth` guard, but **two other mechanisms exist**. Using the wrong one when adding an endpoint is the most common security mistake in this repo.
+Most endpoints use the unified `ds_auth` guard, but **one other mechanism exists**. Using the wrong one when adding an endpoint is the most common security mistake in this repo.
 
 | Mechanism | Where | How it authenticates |
 |-----------|-------|----------------------|
-| **`require_permission`** (default) | Everything except the two below | JWT bearer → scope (service) or groups (user) |
-| **`X-Api-Key`** | `/internal/*` on ds-connector | Static shared secret equal to `EDC_API_KEY`, used by the Java EDC extensions and dataset-api. See `connector/dependencies.py`. |
-| **VC-JWT headers** | `/consent/*` and `/consumer/*` on ds-connector | `X-Subject-Id` + `X-User-VC`, verified against the trust-anchor key by `services/user_credentials.py`. **Not** `require_permission`. |
+| **`require_permission`** (default) | Everything except the one below | JWT bearer → scope (service) or groups (user) |
+| **VC-JWT headers** | `/consent/my/*`, `/consent/status` and `/consumer/*` on ds-connector | `X-Subject-Id` + `X-User-VC`, verified against the trust-anchor key by `services/user_credentials.py`. **Not** `require_permission`. |
+
+> **`X-Api-Key` on `/internal/*` is gone.** It was a static shared secret equal to
+> `EDC_API_KEY` — which is *also* EDC's Management API key, so one leaked value
+> yielded contract administration **and** the data-plane signing keys behind
+> `/internal/edr-jwks` **and** the subject pools behind `/internal/consent/check`.
+> It defeated attribution too: every call arrived as the same anonymous bearer.
+> Both callers now present their own Keycloak client credentials —
+> `svc-edc` (the Java EDC extensions) and `svc-ds-dataset-api` (the PEP), each
+> holding `connector.internal`. `EDC_API_KEY` survives only as EDC's Management
+> API key. Do not reintroduce a shared static secret across a trust boundary.
+>
+> **EDC's Management API needs `web.http.management.auth.type=tokenbased`**, not
+> just `auth.key`: EDC registers an authentication filter only for contexts that
+> declare a type, so the key alone protects nothing.
 
 The DCP-facing identity-registry endpoints are a fourth case: `/sts/{did}/token` authenticates with the participant's STS client secret, and `/credentials/{did}/presentations/query` requires a self-issued DCP token signed by the requested DID's registered key.
 

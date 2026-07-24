@@ -76,9 +76,18 @@ class CatalogCache:
                     continue
             if q:
                 q_lower = q.lower()
-                title = str(ds.get("dct:title") or ds.get("title") or "").lower()
-                desc = str(ds.get("dct:description") or ds.get("description") or "").lower()
-                if q_lower not in title and q_lower not in desc:
+                # The identifier is searchable too. A consumer who knows a
+                # dataset only as `datasets.silver.meters_15m` — which is how it
+                # is advertised, referenced in an offer and named in a
+                # negotiation — must be able to find it by that name; matching
+                # only prose made the catalogue's own IRIs unsearchable.
+                haystack = [
+                    str(ds.get("@id") or ""),
+                    str(ds.get("dct:identifier") or ds.get("identifier") or ""),
+                    str(ds.get("dct:title") or ds.get("title") or ""),
+                    str(ds.get("dct:description") or ds.get("description") or ""),
+                ]
+                if not any(q_lower in field.lower() for field in haystack):
                     continue
             if keywords:
                 ds_keywords = ds.get("dcat:keyword") or ds.get("keywords") or []

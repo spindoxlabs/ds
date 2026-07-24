@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 import httpx
+from ds_auth.production import ProductionGuard
+from ds_auth.service_token import ServiceTokenProvider
 from fastapi import FastAPI, HTTPException, Query, Request
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .metrics import install_metrics
+
+log = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="DATASET_API_", extra="ignore")
 
     connector_internal_url: str = "http://172.17.0.1:30001"
-    connector_api_key: str = "insecure-dev-key"
+    # This service's own identity on ds-connector's /internal/* API.
+    # `svc-ds-dataset-api` holds `connector.internal` with `svc-ds-connector` in
+    # its audience. This replaced `connector_api_key`, which was the same value
+    # as EDC's Management API key — one secret across two trust boundaries.
+    keycloak_token_url: str = (
+        "http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token"
+    )
+    service_client_id: str = "svc-ds-dataset-api"
+    service_client_secret: str = "svc-ds-dataset-api"
     enforce_consent: bool = True
     external_query_url: str | None = None
     extra_datasets_path: str | None = None
@@ -24,6 +37,31 @@ class Settings(BaseSettings):
 settings = Settings()
 app = FastAPI(title="dataset-api-mock", version="0.1.0")
 install_metrics(app, "dataset-api")
+
+_token_provider = ServiceTokenProvider(
+    token_url=settings.keycloak_token_url,
+    client_id=settings.service_client_id,
+    client_secret=settings.service_client_secret,
+)
+
+
+def _check_production_config() -> None:
+    """Refuse to run with the dev client secret when ``DS_ENV=production``.
+
+    A weak secret still authenticates, so nothing about a running system would
+    look wrong. Registering it here is what makes the omission loud.
+    """
+    guard = ProductionGuard("dataset-api")
+    guard.forbid_default(
+        "DATASET_API_SERVICE_CLIENT_SECRET",
+        settings.service_client_secret,
+        {"svc-ds-dataset-api"},
+        "Set the Keycloak client secret for svc-ds-dataset-api.",
+    )
+    guard.enforce()
+
+
+_check_production_config()
 
 
 DATASETS: dict[str, dict[str, Any]] = {
@@ -278,15 +316,28 @@ async def query(
     }
 
 
-def _internal_headers() -> dict[str, str]:
-    return {"X-Api-Key": settings.connector_api_key}
+async def _internal_headers() -> dict[str, str]:
+    """Authenticate to ds-connector's ``/internal/*`` API as this service.
+
+    ``svc-ds-dataset-api`` holds ``connector.internal`` with ``svc-ds-connector``
+    in its audience. This replaced the ``X-Api-Key`` the PEP used to send: that
+    key is the *same* value as EDC's Management API key, so one leak yielded
+    contract administration, the data-plane signing keys behind
+    ``/internal/edr-jwks`` and the subject pools behind
+    ``/internal/consent/check`` at once — and every caller arrived as the same
+    anonymous bearer, so no audit trail could tell the dataset-api from the EDC.
+
+    No fallback: the connector no longer accepts that header, so one could only
+    turn a clear configuration error into a 403 at query time.
+    """
+    return {"Authorization": f"Bearer {await _token_provider()}"}
 
 
 async def _agreement_active(agreement_id: str) -> bool | None:
     url = f"{settings.connector_internal_url.rstrip('/')}/internal/agreements/{agreement_id}/status"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, headers=_internal_headers())
+            response = await client.get(url, headers=await _internal_headers())
         if response.status_code == 404:
             return False
         response.raise_for_status()
@@ -300,7 +351,7 @@ async def _transfer_active(transfer_id: str, agreement_id: str | None) -> bool |
     params = {"agreement_id": agreement_id} if agreement_id else None
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, params=params, headers=_internal_headers())
+            response = await client.get(url, params=params, headers=await _internal_headers())
         response.raise_for_status()
         return bool(response.json().get("active"))
     except httpx.RequestError:
@@ -329,7 +380,7 @@ async def _audit_query(
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=payload, headers=_internal_headers())
+            await client.post(url, json=payload, headers=await _internal_headers())
     except httpx.RequestError:
         return
 
@@ -393,7 +444,7 @@ async def _granted_subject_ids(
                 response = await client.get(
                     f"{settings.connector_internal_url.rstrip('/')}/internal/consent/check",
                     params=params,
-                    headers=_internal_headers(),
+                    headers=await _internal_headers(),
                 )
                 response.raise_for_status()
             except (httpx.RequestError, httpx.HTTPStatusError):

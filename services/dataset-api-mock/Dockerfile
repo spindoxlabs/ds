@@ -4,7 +4,11 @@ WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# Shared library (local path dep) — ds_auth.ServiceTokenProvider
+COPY libs/ds-auth/ /build/ds-auth/
 RUN uv venv /opt/venv && \
+    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
+      /build/ds-auth && \
     UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
       fastapi "uvicorn[standard]" httpx "pydantic>=2.7" "pydantic-settings>=2.3"
 

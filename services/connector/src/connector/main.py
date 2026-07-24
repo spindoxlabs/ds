@@ -1,6 +1,7 @@
 """ds-connector — FastAPI application factory."""
+import asyncio
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -10,7 +11,7 @@ log = logging.getLogger(__name__)
 from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
 from .config import get_settings
-from .db.engine import verify_schema
+from .db.engine import get_session_factory, verify_schema
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
@@ -18,6 +19,7 @@ from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
+from .services.pending_sweep import parse_duration, run_sweeper
 from .services.prov_bridge import ProvBridge
 from .api.v1.provider import router as provider_router
 from .api.v1.consumer import router as consumer_router
@@ -147,8 +149,26 @@ async def lifespan(app: FastAPI):
     app.state.notifier = notifier
     app.state.ir_token_provider = ir_token_provider
 
+    # A parked negotiation waits on a person, and a person may never answer.
+    # Provider-only: the asks and the negotiations they block are both the
+    # provider's, and a consumer sweeping would have nothing to sweep.
+    sweeper = None
+    if settings.role == "provider":
+        sweeper = asyncio.create_task(
+            run_sweeper(
+                get_session_factory(),
+                provider_edc,
+                parse_duration(settings.consent_pending_ttl),
+                settings.consent_pending_sweep_interval,
+            )
+        )
+
     yield
 
+    if sweeper is not None:
+        sweeper.cancel()
+        with suppress(asyncio.CancelledError):
+            await sweeper
     if owners_registry is not None:
         await owners_registry.close()
     if http_registry is not None:

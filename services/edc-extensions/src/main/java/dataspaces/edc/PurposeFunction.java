@@ -1,7 +1,7 @@
 package dataspaces.edc;
 
-import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
 import org.eclipse.edc.policy.engine.spi.AtomicConstraintRuleFunction;
+import org.eclipse.edc.policy.engine.spi.PolicyContext;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
@@ -12,14 +12,20 @@ import org.eclipse.edc.spi.monitor.Monitor;
  * <p>The constraint declares which purposes the provider offers this dataset
  * for. It is not, on its own, the access decision: a purpose the provider
  * permits still yields no rows for a data subject who did not consent to it.
- * That binding check lives in {@link ConsentStatusFunction}, which reads the
- * same constraint off the permission and passes the purposes to ds-connector.
+ * That binding check lives in {@link ConsentStatusFunction} (negotiation) and
+ * {@link AgreementConsentFunction} (running transfer), which read the same
+ * constraint off the permission and pass the purposes to ds-connector.
  *
  * <p>Registering this function is what stops the purpose being decorative.
- * Without it the constraint would be unbound, EDC would evaluate it to false,
- * and every negotiation for a purpose-scoped dataset would be denied.
+ * Without it the operand would be unbound, EDC's scope filter would strip the
+ * constraint from the permission, and the consent functions would find no
+ * purpose to pass on — which the connector treats as "the caller never said
+ * why", and denies.
+ *
+ * <p>The context type is a parameter because the same evaluation applies in
+ * every scope the purpose is bound to; only the surrounding context differs.
  */
-public class PurposeFunction implements AtomicConstraintRuleFunction<Permission, ParticipantAgentPolicyContext> {
+public class PurposeFunction<C extends PolicyContext> implements AtomicConstraintRuleFunction<Permission, C> {
 
     private final Monitor monitor;
 
@@ -28,7 +34,7 @@ public class PurposeFunction implements AtomicConstraintRuleFunction<Permission,
     }
 
     @Override
-    public boolean evaluate(Operator operator, Object rightValue, Permission rule, ParticipantAgentPolicyContext context) {
+    public boolean evaluate(Operator operator, Object rightValue, Permission rule, C context) {
         if (rightValue == null) {
             monitor.warning("PurposeFunction: purpose constraint has no right operand — denying");
             return false;

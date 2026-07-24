@@ -273,15 +273,45 @@ tasks:
         IDENTITY_REGISTRY_URL=$CONNECTOR_IDENTITY_REGISTRY_URL \
         npm run dev
 
-  # ── Dev lifecycle ─────────────────────────────────────────────────────────
-  dev:stop:
-    desc: Stop everything (failsafe — exits 0 even if nothing is running)
+  # ── Lifecycle: two modes ──────────────────────────────────────────────────
+  #
+  #   task docker:*   everything in containers. The mode that exercises the
+  #                   Dockerfiles and the compose `environment:` blocks, so it is
+  #                   the one that actually validates a change to either.
+  #   task dev:*      local dev: brings the container stack up, then replaces
+  #                   most services with host processes under hot-reload, in a
+  #                   tmux session named `ds`.
+  #
+  # Both share `docker:stop`, because both leave containers behind. `dev:*` is
+  # docker-then-replace, not an alternative to containers.
+  #
+  # A change to a Dockerfile, a compose `environment:` block, a pyproject
+  # dependency or build.gradle.kts is NOT verified by `dev:*` for any service
+  # that mode replaces — those host processes read .env.local through this
+  # file's `dotenv` and never see the compose environment.
+
+  docker:stop:
+    desc: "Docker: stop everything (failsafe — exits 0 even if nothing is running)"
     cmds:
       - |
         set +e
         DEV_PORTS="19191 19193 19194 19291 29191 29193 29194 29291 30000 30001 30002 30003 30004 30005 31000 31001"
 
-        # 1. Send C-c to every tmux window, wait for graceful shutdown, then kill session
+        # 1. Kill the local-dev watch loops FIRST, by name.
+        #    `tmux kill-session` does not reach them: the loops are re-parented
+        #    and survive, and each one restarts its JVM the moment the JVM dies.
+        #    Killing ports before killing the loops therefore frees a port only
+        #    long enough for the loop to grab it again — and the container that
+        #    wanted it then fails to bind and exits.
+        for pattern in "edc-provider:watch" "edc-consumer:watch" "edc:watch-build"; do
+          for pid in $(pgrep -f "$pattern" 2>/dev/null); do
+            pgid=$(ps -o pgid= -p $pid 2>/dev/null | tr -d ' ')
+            [ -n "$pgid" ] && kill -9 -${pgid} 2>/dev/null
+            kill -9 $pid 2>/dev/null
+          done
+        done
+
+        # 2. Send C-c to every tmux window, wait for graceful shutdown, then kill session
         if tmux has-session -t ds 2>/dev/null; then
           for win in $(tmux list-windows -t ds -F '#W' 2>/dev/null); do
             tmux send-keys -t "ds:${win}" C-c 2>/dev/null
@@ -290,7 +320,7 @@ tasks:
           tmux kill-session -t ds 2>/dev/null
         fi
 
-        # 2. Kill process groups of anything on known ports
+        # 3. Kill process groups of anything on known ports
         #    Kills the watcher parent + Java child together so nothing respawns
         kill_port_holders() {
           for port in $DEV_PORTS; do
@@ -303,15 +333,15 @@ tasks:
         }
         kill_port_holders
 
-        # 3. Docker compose down on all stacks
+        # 4. Docker compose down on all stacks
         COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.consumer.yml down -v --remove-orphans 2>/dev/null
         COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.provider.yml down -v --remove-orphans 2>/dev/null
         COMPOSE_PROJECT_NAME=dataspaces docker compose down -v --remove-orphans 2>/dev/null
 
-        # 4. Final sweep
+        # 5. Final sweep
         kill_port_holders
 
-        # 5. Wait for ports to be free
+        # 6. Wait for ports to be free
         for port in $DEV_PORTS; do
           timeout 5 bash -c "while lsof -ti tcp:${port} >/dev/null 2>&1; do sleep 0.3; done" 2>/dev/null
         done
@@ -319,29 +349,44 @@ tasks:
         echo "All stopped"
         exit 0
 
-  dev:start:
-    desc: Build images, then start everything (infra + bootstrap + provider + consumer)
+  docker:start:
+    desc: "Docker: start everything in containers (BUILD=false to skip the image rebuild)"
+    vars:
+      BUILD: '{{.BUILD | default "true"}}'
     cmds:
-      - task: build
+      - |
+        if [ "{{.BUILD}}" = "true" ]; then
+          task build
+        else
+          echo "BUILD=false — using the existing images (source changes will NOT be picked up)"
+        fi
       - task: start
 
-  dev:restart:
-    desc: Full restart (stop + start)
+  docker:restart:
+    desc: "Docker: full restart in containers (BUILD=false to skip the image rebuild)"
     cmds:
-      - task: dev:stop
-      - task: dev:start
+      - task: docker:stop
+      - task: docker:start
+        vars: {BUILD: '{{.BUILD | default "true"}}'}
 
-  dev:
-    desc: Restart all services, then open tmux shells
+  dev:stop:
+    desc: "Local dev: stop the tmux session and everything else"
+    cmds:
+      - task: docker:stop
+
+  dev:start:
+    desc: "Local dev: containers up, then hot-reload services in tmux (BUILD=false to skip the image rebuild)"
     cmds:
       - |
         command -v tmux >/dev/null 2>&1 || {
           echo "tmux is not installed. Install it, e.g.:  sudo apt install tmux" >&2
           exit 1
         }
-      - task: dev:stop
-      - task: dev:start
+      - task: docker:start
+        vars: {BUILD: '{{.BUILD | default "true"}}'}
       - |
+        # Each `task <x>:run` window stops its own container first, so the
+        # container stack above is the starting point rather than a conflict.
         tmux new-session -d -s ds -n edc-watch-build
         tmux source-file "$(pwd)/dev.tmux.conf"
         tmux send-keys -t ds:edc-watch-build          'task edc:watch-build' Enter
@@ -366,6 +411,13 @@ tasks:
         tmux new-window -t ds -n consumer-provenance
         tmux send-keys -t ds:consumer-provenance      'task consumer:provenance:run' Enter
         tmux attach -t ds
+
+  dev:restart:
+    desc: "Local dev: full restart (BUILD=false to skip the image rebuild)"
+    cmds:
+      - task: dev:stop
+      - task: dev:start
+        vars: {BUILD: '{{.BUILD | default "true"}}'}
 
   # ── Utilities ────────────────────────────────────────────────────────────
 
@@ -474,7 +526,6 @@ tasks:
           echo "No connector.jar found — building..."
           task edc:build
         fi
-        EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
@@ -491,7 +542,6 @@ tasks:
           echo "No connector.jar found — building..."
           task edc:build
         fi
-        EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
@@ -528,7 +578,6 @@ tasks:
         while true; do
           MTIME=$(stat -c %Y "$jar")
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
-          EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_PROVIDER" \
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
@@ -562,7 +611,6 @@ tasks:
         while true; do
           MTIME=$(stat -c %Y "$jar")
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
-          EDC_RECEIVER_HTTP_ENDPOINT="$EDC_RECEIVER_HTTP_ENDPOINT_CONSUMER" \
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \

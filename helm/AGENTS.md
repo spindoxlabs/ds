@@ -228,6 +228,22 @@ itself.
 - **`EDC_API_KEY`** must come from a Secret, with no chart-level default. Prefer
   the file form (`EDC_API_KEY_FILE`) and mount the Secret as a file — the
   connector already supports it (`services/connector/src/connector/config.py`).
+  It is now EDC's **Management API key and nothing else**: the extensions
+  authenticate to ds-connector with their own Keycloak client. Do not reuse it
+  for anything again — as one value across two boundaries, a single leak yielded
+  contract administration, the data-plane signing keys behind
+  `/internal/edr-jwks` and the subject pools behind `/internal/consent/check`.
+- **`web.http.management.auth.type=tokenbased` must be set**, not just
+  `auth.key`. EDC installs an authentication filter only for contexts that
+  declare a type, so the key on its own leaves the Management API open to
+  anything that can reach the port. The chart sets it; do not remove it while
+  keeping the key and assuming it protects something.
+- **`secrets.connectorClientSecret`** is the EDC's own Keycloak client secret
+  (`svc-edc`, holding `connector.internal` + `connector.webhook`). The extension
+  **refuses to start** without it, `connectorClientId` and
+  `global.keycloak.tokenUrl` — deliberately, because an EDC that boots and then
+  silently denies every negotiation because policy evaluation cannot reach the
+  connector is far harder to diagnose.
 - **`edc.iam.did.web.use.https`** must be `true`. In dev it is `false` so
   `did:web` resolution works over plain HTTP against Caddy. In production, DID
   documents carry the public keys used for trust decisions; fetching them over

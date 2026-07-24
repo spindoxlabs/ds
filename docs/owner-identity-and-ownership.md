@@ -224,10 +224,10 @@ The `--did-prefix` option maps `user_id` → DID: `did:web:<prefix>:<user_id>`. 
 
 ## Consent subject-pool validation
 
-When a dataset has ownership, the consent endpoint validates that each subject belongs to the owner's organization before creating a consent request:
+When a dataset has ownership, the provider-local seeding endpoint validates that each subject belongs to the owner's organization before creating a consent request:
 
 ```
-POST /consent/request
+POST /consent/request          # operator/portal; a consumer negotiates instead
   ↓ dataset_id → GovernanceResolver → ownership[0].name
   ↓ for each subject_id:
   ↓   derive subject DID

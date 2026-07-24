@@ -189,9 +189,35 @@ Until the identity-registry carries agreements with a `capacity` field (organisa
 | Facet | Mechanism | Row starts as |
 |---|---|---|
 | Inside circle — standing availability | Sharing offers → `POST /consent/my/shares` with `offer_id` | `granted` |
-| Outside circle — new request | `POST /consent/request` → `/consent/my/{id}/approve\|reject` | `pending` |
+| Outside circle — new request | A contract negotiation, parked by `ConsentPendingGuard` → `/consent/my/{id}/approve\|reject` | `pending` |
 
 Both write the same `ConsentRequestORM`. The only differences are the controller identity and the starting status.
+
+### The request *is* a negotiation
+
+A consumer that wants consent-gated data does not call a consent API. It negotiates, and the provider's EDC parks the negotiation while the subjects decide.
+
+This matters for a reason that is not merely tidiness. A consent record's value is that it answers *who asked* — and by the time a negotiation reaches the provider, DSP has already established that, cryptographically, from a verified credential presentation (`counterPartyId`). The consent API it replaced re-derived the same fact from a self-asserted header, which is a weaker answer to the question the record exists to answer.
+
+```
+consumer negotiates
+  → provider EDC: REQUESTED, offer carries ds:consentStatus
+  → ConsentPendingGuard asks GET /internal/consent/check
+      consent present?          → not parked, negotiation proceeds
+      covered processor?        → not parked; disclosed, not asked (should_ask: false)
+      nobody enrolled?          → not parked; refused by the ODRL constraint instead
+      otherwise                 → POST /internal/consent/asks, negotiation parked
+  → subject decides via /consent/my/{id}/approve|reject
+      first grant               → resume endpoint clears `pending`, negotiation continues
+      all refused               → Management API terminates the negotiation
+      nobody answers in 30 days → asks marked `expired`, negotiation terminated
+```
+
+Parking is protocol-legal: DSP treats `REQUESTED` as an ordinary non-terminal state with no provider deadline, defines `callbackAddress` for exactly these asynchronous settings, and explicitly permits a new negotiation after `TERMINATED`. It is also EDC's own recommendation for this shape of requirement, via `ContractNegotiationPendingGuard`.
+
+**A parked negotiation is the receipt.** The consumer gets no synchronous answer, and `REQUESTED` alone cannot distinguish "the provider has not looked yet" from "waiting on a person, possibly for weeks". `GET /consent/pending?correlation_id=…` closes that gap — off the DSP path, status only, and never who the subjects are, how many there are, or what any of them decided.
+
+`POST /consent/request` still exists as the **provider-local** seeding route — an operator or the portal recording an ask on the connector where the check reads. It authenticates as a service, not with a consumer's credential.
 
 ---
 
@@ -293,7 +319,9 @@ Vocabulary endpoints are public; consent endpoints authenticate on `X-Subject-Id
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /consent/request` | Create a consent request for a set of subjects. Carries `controller`, `controller_role` and `offer_id`. `409` when the requester is already covered as a processor |
+| `POST /consent/request` | **Provider-local.** Seed consent requests for a set of subjects — an operator or the portal, authenticated with `connector.consent.provision`. Carries `controller`, `controller_role` and `offer_id`. `409` when the requester is already covered as a processor; `422` when `consumer_id` is not a registered participant. A data consumer does not call this: it negotiates |
+| `GET /consent/pending?correlation_id=` | **The counterparty's own status question.** Is this negotiation waiting on a consent decision, and since when. A boolean and a timestamp — never a subject, a count, or a decision. Permission `connector.consent.read` |
+| `GET /consent/asks` | **Provider operator/portal.** Which asks are holding up which negotiation, subjects included. Permission `connector.provider.read` |
 
 ### Service-provisioned shares (onboarding)
 
@@ -476,6 +504,7 @@ sequenceDiagram
     participant KC as Keycloak
     participant Portal as ds-portal
     participant Conn as ds-connector
+    participant EDC as EDC provider
     participant Consumer
     participant DA as dataset-api
 
@@ -491,9 +520,13 @@ sequenceDiagram
     User->>KC: Authenticate (OIDC)
     KC-->>User: JWT with dataspace_did claim
 
-    Note over Consumer,Conn: 3. Consent request
-    Consumer->>Conn: POST /consent/request (subject DID, dataset, purpose)
-    Conn->>Conn: Create ConsentRequestORM (status: pending)
+    Note over Consumer,Conn: 3. Consent request — a negotiation, not an API call
+    Consumer->>EDC: DSP contract negotiation (dataset, purpose)
+    EDC->>Conn: GET /internal/consent/check (counterPartyId, asset, purposes)
+    Conn-->>EDC: consent absent, should_ask
+    EDC->>Conn: POST /internal/consent/asks
+    Conn->>Conn: Create ConsentRequestORM per subject (status: pending)
+    Note over EDC: ConsentPendingGuard parks the negotiation in REQUESTED
 
     Note over User,Conn: 4. Subject approves
     User->>Portal: View consent requests
@@ -501,7 +534,9 @@ sequenceDiagram
     Conn-->>Portal: Pending consent requests
     User->>Portal: Approve
     Portal->>Conn: POST /consent/my/{id}/approve
-    Conn->>Conn: Set status: approved
+    Conn->>Conn: Set status: granted
+    Conn->>EDC: POST /dataspaces/negotiations/{id}/resume
+    Note over EDC: `pending` cleared — the negotiation continues
 
     Note over Consumer,DA: 5. Data query with purpose-scoped row filtering
     Consumer->>DA: Query dataset via EDR (purpose=FlexibilityResearch)
@@ -525,7 +560,7 @@ Key points:
 
 When a dataset has an `ownership` block in its governance rule, the consent endpoint validates that each subject is a member of the dataset owner's organization before creating a consent request.
 
-The check flow:
+The check flow (on the provider-local seeding route; the pending guard reaches the same pool through `subject_pool_for_dataset`, which is the set of subjects this connector already holds a consent row for):
 1. `POST /consent/request` receives `dataset_id` and `subject_ids`
 2. Connector resolves the governance rule for `dataset_id`, extracts `ownership[0].name`
 3. For each subject, derives the subject DID and calls `GET /memberships/check?user_did=<did>&organization=<alias>` on the identity-registry

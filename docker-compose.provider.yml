@@ -28,11 +28,26 @@ services:
       - "19291:19291"
       - "19195:19195"
     environment:
+      # Kept for anything still reading edc.api.key. The Management API key
+      # that is actually enforced is WEB_HTTP_MANAGEMENT_AUTH_KEY below — and
+      # since the extensions moved onto client credentials, that is now this
+      # value's only job. One purpose, one boundary.
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       # Dev-only: accepts self-issued DCP tokens without signature
       # verification. Never set this in a production deployment.
       DS_DEMO_IDENTITY_ENABLED: ${DS_DEMO_IDENTITY_ENABLED:-true}
-      EDC_RECEIVER_HTTP_ENDPOINT: http://172.17.0.1:30001/webhooks/transfer-process
+      # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
+      # dot.notation (ConfigurationLoader → ConfigFactory.fromEnvironment). The
+      # properties files cannot carry these: FsConfigurationExtension does a
+      # plain Properties.load() and stores a ${...} placeholder verbatim.
+      #
+      # The Management API key — enforced now that auth.type=tokenbased is set.
+      WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # How the EDC authenticates to ds-connector: /internal/* during policy
+      # evaluation, /webhooks/contract-negotiation to report negotiation state.
+      DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
+      DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
+      DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
     depends_on:
       edc-db-create-provider:
         condition: service_completed_successfully
@@ -180,6 +195,11 @@ services:
       DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
       DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
       DATASET_API_ENFORCE_CONSENT: "true"
+      # The PEP authenticates to /internal/* as itself, not with the shared
+      # X-Api-Key that doubles as EDC's Management API key.
+      DATASET_API_KEYCLOAK_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
+      DATASET_API_SERVICE_CLIENT_ID: ${SVC_DS_DATASET_API_ID:-svc-ds-dataset-api}
+      DATASET_API_SERVICE_CLIENT_SECRET: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
     depends_on:
       ds-connector-provider:
         condition: service_healthy

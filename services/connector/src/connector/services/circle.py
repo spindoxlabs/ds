@@ -79,6 +79,43 @@ async def evaluate(
     return CircleVerdict(True, capacity, f"admitted as {capacity}")
 
 
+async def is_covered_processor(
+    offers,
+    requester_did: str,
+    identity_registry_url: str,
+    token_provider=None,
+) -> bool:
+    """Is *requester_did* disclosed rather than asked, across all these offers?
+
+    Every offer that bundles this dataset and purpose must cover the requester
+    as a processor before the question is suppressed.  Coverage by one offer and
+    not another means there is a controller whose processing the person has not
+    been asked about, and that question still has to be put.
+
+    An empty offer list is *not* coverage.  It means no consent-based offer was
+    found for the pair, so nothing has been established about the requester's
+    capacity — and this module's whole doctrine is that unprovable resolves to
+    outside the circle, because a redundant question is recoverable and a
+    skipped one is not.
+    """
+    if not offers:
+        return False
+    for offer in offers:
+        verdict = await evaluate(
+            offer,
+            requester_did=requester_did,
+            identity_registry_url=identity_registry_url,
+            token_provider=token_provider,
+        )
+        if not verdict.covered_processor:
+            log.debug(
+                "Requester %s not covered by offer %s: %s",
+                requester_did, offer.id, verdict.reason,
+            )
+            return False
+    return True
+
+
 async def _satisfies_admitted_by(
     offer: SharingOffer,
     requester_did: str,

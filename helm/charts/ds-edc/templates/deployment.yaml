@@ -36,13 +36,20 @@ spec:
           command: ["sh", "-c", "java $JAVA_OPTS -Dedc.fs.config=/config/edc.properties -jar /connector.jar"]
           env:
             {{- include "ds.env.common" . | nindent 12 }}
-            - name: EDC_API_KEY
+            # EDC reads the environment as config, mapping ENVIRONMENT_NOTATION
+            # to dot.notation. These names ARE the settings — the ConfigMap
+            # cannot carry them, because EDC does not interpolate ${...} in a
+            # properties file.
+            - name: WEB_HTTP_MANAGEMENT_AUTH_KEY
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_API_KEY}
-            - name: EDC_DB_USER
+            - name: DS_CONNECTOR_INTERNAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: DS_CONNECTOR_CLIENT_SECRET}
+            - name: EDC_DATASOURCE_DEFAULT_USER
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_DB_USER}
-            - name: EDC_DB_PASSWORD
+            - name: EDC_DATASOURCE_DEFAULT_PASSWORD
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_DB_PASSWORD}
             {{- include "ds.env.extra" . | nindent 12 }}

@@ -64,19 +64,31 @@ didWebUseHttps: true
 connectorServiceName: ""
 connectorPort: 30001
 
+# The Keycloak client this EDC authenticates as when it calls ds-connector's
+# /internal/* (ODRL policy evaluation) and /webhooks/* (negotiation lifecycle).
+# It needs `connector.internal` and `connector.webhook`; see
+# services/keycloak/clients.yaml. The extension refuses to start without a
+# client id, secret and token URL — an EDC that boots and then silently denies
+# every negotiation is much harder to diagnose.
+connectorClientId: svc-edc
+
 ingress:
   enabled: true
 
 secrets:
   dbUser: "" # defaults to the edc database name (owner role)
   dbPassword: ""
-  edcApiKey: "" # shared with this participant's ds-connector
+  edcApiKey: "" # EDC's Management API key — and nothing else
+  connectorClientSecret: "" # Keycloak secret for connectorClientId (svc-edc)
   stsClientSecret: "" # matches the participant's sts_client_secret in the registry
   edrSigningPrivateJwk: "" # EDR signing key (NOT a DID key)
 
 global:
   baseDomain: ds.example.org
   hosts: {trustAnchor: trust-anchor}
+  # tokenUrl is required: the EDC extensions obtain a client-credentials token
+  # for ds-connector's internal API from it.
+  keycloak: {tokenUrl: ""}
   image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
   namespaces: {authority: ds-authority}
   postgres:

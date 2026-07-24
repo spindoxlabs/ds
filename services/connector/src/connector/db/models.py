@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -69,6 +69,23 @@ class ConsentRequestORM(Base):
     notification_sent: Mapped[bool] = mapped_column(Boolean, default=False)
     notification_url: Mapped[str | None] = mapped_column(Text)      # webhook target
     transfer_ids: Mapped[list | None] = mapped_column(JSON)         # list[str]
+    # The negotiation this ask is blocking, when it came from the pending guard.
+    #
+    # `negotiation_id` is *this* connector's id for it — what the resume call
+    # needs, since only the provider's own control plane can clear `pending`.
+    # `correlation_id` is the counterparty's id for the same negotiation, and is
+    # therefore the only handle the consumer can ask about (§6.6). Keeping both
+    # is what lets the provider answer "is this negotiation waiting on a person"
+    # without the consumer ever learning a provider-side identifier.
+    negotiation_id: Mapped[str | None] = mapped_column(Text, index=True)
+    correlation_id: Mapped[str | None] = mapped_column(Text, index=True)
+    # When this ask stopped blocking anything, because the negotiation it was
+    # raised for was terminated. It is what stops the TTL sweep retrying a
+    # negotiation it has already dealt with: without it, "dead" is a property of
+    # the consent rows alone, which stays true forever once it becomes true.
+    negotiation_closed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True)
+    )
 
 
 class ConsumerTransferORM(Base):

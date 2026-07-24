@@ -55,8 +55,25 @@ class Settings(BaseSettings):
         validation_alias="EDC_API_KEY_FILE",
     )
 
+    # The counterparty connector's base URL, for the one off-DSP-path read a
+    # consumer makes: "is this negotiation of mine waiting on a person?" (§6.6).
+    # Empty disables it and the consumer simply shows REQUESTED.
+    provider_connector_url: str = ""
+
     dataset_api_url: str = "http://localhost:30002"
     provenance_url: str = "http://localhost:30000"
+
+    # How long a contract negotiation may stay parked waiting for a data
+    # subject's decision (plan §6.2's ``ds.consent.pending.ttl``). After this the
+    # unanswered asks are marked `expired` and the negotiation is terminated;
+    # DSP explicitly permits a new negotiation afterwards, so a consumer that
+    # still wants the data simply asks again.
+    #
+    # Not an ODRL constraint: `edc:inForceDate` says when an *agreement* is
+    # valid, not how long a negotiation may wait, and there is no upstream
+    # operand for the latter. ISO 8601, days/hours/minutes/seconds only.
+    consent_pending_ttl: str = "P30D"
+    consent_pending_sweep_interval: float = 3600.0
 
     negotiation_poll_interval: float = 2.0
     negotiation_timeout: float = 120.0

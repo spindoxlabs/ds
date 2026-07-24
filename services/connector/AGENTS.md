@@ -17,9 +17,9 @@ src/connector/
 ├── api/v1/
 │   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers}
 │   ├── consumer.py      POST /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
-│   ├── consent.py       POST /consent/request, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
+│   ├── consent.py       POST /consent/request (provider-local seeding), GET /consent/pending, GET /consent/asks, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
 │   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
-│   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /consent/register-transfer, GET /internal/edr-jwks
+│   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /internal/consent/asks, POST /consent/register-transfer, GET /internal/edr-jwks
 │   ├── admin.py         GET /admin/participants, POST /admin/ingestion (record a DSO handover → DataIngested)
 │   └── namespace.py     GET /ns/policy, GET /ns/sharing-offers — public vocabularies
 ├── services/
@@ -28,7 +28,8 @@ src/connector/
 │   ├── circle.py        Who is a covered processor vs an independent controller
 │   ├── provider_service.py   ProviderService — sync assets/policies/contracts to EDC
 │   ├── consumer_service.py   ConsumerService — negotiate/transfer/poll/edr
-│   ├── consent_service.py    ConsentService — CRUD + revocation → transfer termination
+│   ├── consent_service.py    ConsentService — CRUD, the subject pool, the ask ↔ negotiation link
+│   ├── pending_sweep.py      TTL on a negotiation parked waiting for a person (§6.2)
 │   ├── agreement_service.py  AgreementService — EDC contract agreement queries
 │   └── prov_bridge.py        ProvBridge — emit provenance events to ds-provenance
 ├── clients/
@@ -217,6 +218,49 @@ controller_role, consent_text_version)` tuples of the currently-granted rows —
 so the record proves *which* consent state authorised the handover while the
 provenance store holds no subject data. **All Block C events carry codes, DIDs
 and hashes only, never PII.** See `docs/provenance-and-lineage.md`.
+
+## The negotiation *is* the consent request
+
+A consumer that wants consent-gated data does not call a consent API — it
+negotiates. On the provider side `ConsentPendingGuard` (in `edc-extensions`)
+sees a `REQUESTED` negotiation whose offer carries `ds:consentStatus`, asks
+`GET /internal/consent/check`, and if consent is absent calls
+`POST /internal/consent/asks`. The connector writes one pending row per subject
+in the pool, stamped with `negotiation_id` (ours) and `correlation_id` (the
+counterparty's), and EDC parks the negotiation.
+
+There used to be a cross-participant `POST /consent/request` authenticated by
+`X-User-VC`. It could not work: `_verify_user` required the credential to name
+*this* participant, so a real consumer got 403, and the same call against the
+consumer's own connector wrote a row on the side where
+`/internal/consent/check` never reads. Both defects were symptoms of running a
+header-authenticated request channel parallel to the one DSP already runs — and
+DSP proves the requester cryptographically, via DCP, which is what the guard now
+uses (`counterPartyId`). `POST /consent/request` survives only as the
+provider-local seeding route, authenticated with `connector.consent.provision`.
+
+| Route | Who | Answers |
+|---|---|---|
+| `POST /internal/consent/asks` | the pending guard | never raises for a business outcome — always 200 with `asked` + `reason`, so policy stays in Python |
+| `GET /consent/asks` | provider operator/portal | which asks are holding up which negotiation, subjects included |
+| `GET /consent/pending?correlation_id=` | the counterparty | *status only* — a boolean and a timestamp. Never who, how many, or what they decided |
+| `POST {edc-management}/dataspaces/negotiations/{id}/resume` | this connector, on a grant | clears `pending` — the one thing EDC's Management API cannot do |
+
+Decision handling, in `api/v1/consent.py`:
+
+- **one grant resumes** — the consent constraint passes as soon as anybody is in
+  the pool, so the negotiation moves without waiting for the rest;
+- **one refusal decides nothing** — only when every ask is settled and none
+  granted (`negotiation_ask_tally`) is the negotiation terminated;
+- both are best-effort: the subject's decision is committed either way, and a
+  control plane that is briefly unreachable must not fail a person's own request.
+
+`pending_sweep.py` is the deadline (`CONNECTOR_CONSENT_PENDING_TTL`, default
+`P30D`). Expired asks are marked `expired`, not `rejected` — a refusal is a
+choice and is evidence of one; an expiry is the absence of a decision.
+`negotiation_closed_at` is what makes the retry loop terminate: "no pending and
+no granted ask" stays true forever once true, so without a marker every past
+negotiation would be re-terminated on every pass.
 
 ## Participant registry
 
