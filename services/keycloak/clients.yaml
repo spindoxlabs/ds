@@ -83,6 +83,12 @@ clients:
       - svc-ds-connector
       - svc-ds-provenance
 
+  # No `*.admin` on a service client. Admin is an operator grant — it belongs to
+  # an administrator's own token or an admin CLI acting under a named condition,
+  # never to a long-lived process. It is also a superset ({service}.admin
+  # satisfies any {service}.*), so putting it here would silently hand the portal
+  # every connector permission that exists, including the machine-identity ones.
+  # The portal gets exactly what its pages call.
   - client_id: svc-ds-portal
     name: Dataspace Portal
     secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
@@ -94,9 +100,45 @@ clients:
       - identity-registry.resolve
       - identity-registry.read
       - identity-registry.membership.read
-      - connector.admin
+      # Provider console: asset/policy/contract/transfer listings, and the
+      # governance sync button.
+      - connector.provider.read
+      - connector.provider.write
       - connector.history.read
       - provenance.read
+      - catalog.read
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-connector
+      - svc-ds-provenance
+      - svc-ds-federated-catalog
+
+  # The e2e harness drives endpoints that belong to several different callers —
+  # the provider console, the onboarding service, the dataset-api. It gets its
+  # own client so those grants are visible as a test identity instead of being
+  # smuggled into a production one, and so revoking it cannot break a service.
+  # Never enable this client outside a dev or CI realm.
+  - client_id: svc-ds-e2e
+    name: Dataspace E2E Harness (dev/CI only)
+    secret: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}
+    service_account_enabled: true
+    scopes_prefix: null
+    default_scopes:
+      - dataset.query
+      - dataset.read
+      - identity-registry.resolve
+      - identity-registry.read
+      - identity-registry.membership.read
+      - connector.provider.read
+      - connector.provider.write
+      - connector.history.read
+      - connector.consent.provision
+      - connector.ingestion.record
+      # Machine-identity permissions: granted by name because they are exempt
+      # from the admin superset (ds_auth.require_exact_permission).
+      - connector.internal
+      - provenance.read
+      - provenance.write
       - catalog.read
     extra_audiences:
       - svc-ds-identity-registry

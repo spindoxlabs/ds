@@ -33,6 +33,10 @@ DATABASES = {
     "provenance_consumer": PROVENANCE_TABLES,
 }
 
+# EDC stores are dropped and recreated rather than truncated: their schema is
+# owned by the connector runtime, so the table set is not ours to enumerate.
+EDC_DATABASES = ("edc_provider", "edc_consumer")
+
 EDC_PROVIDER_MGMT = "http://172.17.0.1:19193/management"
 EDC_CONSUMER_MGMT = "http://172.17.0.1:29193/management"
 
@@ -106,7 +110,7 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
         except psycopg.Error as exc:
             log.warning("Could not truncate %s: %s", db_name, exc)
 
-    for edc_db in ("edc_provider", "edc_consumer"):
+    for edc_db in EDC_DATABASES:
         pg_dsn = f"{base_url}/postgres"
         try:
             with psycopg.connect(pg_dsn, autocommit=True) as conn:

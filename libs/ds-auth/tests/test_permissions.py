@@ -1,4 +1,4 @@
-from ds_auth import grant_satisfies, has_permission
+from ds_auth import grant_satisfies, has_exact_permission, has_permission
 
 
 def test_exact_match():
@@ -29,3 +29,34 @@ def test_has_permission_any_of():
 
 def test_has_permission_empty():
     assert not has_permission([], ["connector.admin"])
+
+
+# ── has_exact_permission ─────────────────────────────────────────────────────
+
+
+def test_exact_matches_by_name():
+    assert has_exact_permission(["connector.webhook"], ["connector.webhook"])
+
+
+def test_exact_is_not_satisfied_by_admin():
+    assert not has_exact_permission(["connector.admin"], ["connector.webhook"])
+
+
+def test_exact_is_not_satisfied_by_a_different_service_admin():
+    assert not has_exact_permission(["provenance.admin"], ["connector.internal"])
+
+
+def test_exact_accepts_any_of_the_required():
+    assert has_exact_permission(
+        ["connector.internal"], ["connector.webhook", "connector.internal"]
+    )
+
+
+def test_exact_with_no_grants_is_false():
+    assert not has_exact_permission([], ["connector.webhook"])
+
+
+def test_admin_still_satisfies_the_normal_rule():
+    """The superset is unchanged for ordinary resource permissions."""
+    assert has_permission(["connector.admin"], ["connector.provider.read"])
+    assert not has_exact_permission(["connector.admin"], ["connector.provider.read"])

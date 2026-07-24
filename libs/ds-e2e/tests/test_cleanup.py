@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from ds_e2e.cleanup import DATABASES, run_cleanup
+from ds_e2e.cleanup import DATABASES, EDC_DATABASES, run_cleanup
 from ds_e2e.config import E2ESettings
 from ds_e2e.http import HttpClient
 
@@ -24,8 +24,11 @@ def test_cleanup_truncates_databases():
     with patch("ds_e2e.cleanup.psycopg.connect", return_value=mock_conn) as mock_connect:
         run_cleanup(settings, http)
 
-    assert mock_connect.call_count == len(DATABASES)
-    assert mock_cursor.execute.call_count == len(DATABASES)
+    # One connection per application database it truncates, plus one to the
+    # `postgres` database per EDC store it drops and recreates.
+    assert mock_connect.call_count == len(DATABASES) + len(EDC_DATABASES)
+    # One TRUNCATE per application database; a DROP and a CREATE per EDC store.
+    assert mock_cursor.execute.call_count == len(DATABASES) + 2 * len(EDC_DATABASES)
     http.post.assert_called_once()
 
 

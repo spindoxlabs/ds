@@ -16,14 +16,14 @@ from .api.v1.public import router as public_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
 from .config import get_settings
-from .db.engine import init_db
+from .db.engine import verify_schema
 
 log = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    await verify_schema()
 
     settings = get_settings()
 

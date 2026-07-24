@@ -11,8 +11,8 @@ from ...dependencies import (
     get_participant_registry,
     get_prov,
     get_settings_dep,
-    require_admin_scope,
     require_ingestion_record,
+    require_provider_read,
 )
 from ...registry.participants import ParticipantRegistry
 from ...services import consent_service
@@ -25,7 +25,10 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 @router.get("/participants")
 async def list_participants(
     registry: ParticipantRegistry = Depends(get_participant_registry),
-    _claims: dict = Depends(require_admin_scope),
+    # A read of registry state the provider console renders, so it is reachable
+    # with the provider read grant. Admin still satisfies it (superset) — the
+    # point is that the portal no longer needs admin to show this page.
+    _claims: dict = Depends(require_provider_read),
 ):
     return [
         {

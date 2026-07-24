@@ -38,6 +38,34 @@ sharing_offers:
     revocable: true
     retention: P2Y
 
+  # Same legal entity, a different controller. A grid operator's operations
+  # function and its metering function are unbundled: metering holds the
+  # readings, operations wants them for planning, and consent to one is not
+  # consent to the other. `controller_role` is what makes that boundary
+  # checkable — a request arriving in the metering role is refused against a
+  # row consented for operations, even though `controller` matches.
+  - id: grid-operations-planning
+    purpose: EnergyCommunityOperation
+    legal_basis: "https://w3id.org/dpv#Consent"
+    datasets:
+      - datasets.silver.meters_15m
+    recipients:
+      controller: grid-operator
+      controller_role: operations
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: grid-operator
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P1Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y
+
   - id: community-incentive-calculation
     purpose: IncentiveCalculation
     # Contract, not consent: the community has a contractual duty to compute

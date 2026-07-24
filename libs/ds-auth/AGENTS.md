@@ -51,6 +51,28 @@ src/ds_auth/
    ```
 4. `Dockerfile`: `COPY libs/ds-auth/ /build/ds-auth/`, install it, and strip `ds-auth` from the copied service `pyproject.toml` before installing the rest (see `services/connector/Dockerfile`).
 
+## When admin must *not* apply
+
+`{service}.admin` is a superset — that is right for permissions describing
+authority over a resource, and wrong for permissions describing **machine
+identity**. `require_exact_permission(...)` matches by name only:
+
+```python
+require_webhook  = require_exact_permission("connector.webhook")
+require_internal = require_exact_permission("connector.internal")
+```
+
+The test: *should the platform operator be able to do this with their own
+token?* For "accept an EDC transfer-state callback" and "read the EDR signing
+keys" the answer is no — holding those means "I am that component", and an
+administrator is not. Granting them by name also makes the realm config
+readable: you can see exactly which client is allowed to be the EDC.
+
+Corollary, enforced in `services/keycloak/clients.yaml`: **no service client
+carries a `*.admin` scope.** Admin belongs to an operator's own token or an
+admin CLI. A long-lived process holding it acquires every permission of that
+service, including the ones above.
+
 ## Perimeter narrowing
 
 `require_permission(..., perimeter=fn)` runs `fn(principal, request) -> bool` after the permission check to bound a valid caller to the resources it may touch (its own participant/subject). Raise `PermissionDenied` or return False to deny. This turns a coarse permission into bounded authority ("user token valid, but only within its perimeter").

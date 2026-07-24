@@ -8,6 +8,31 @@ owners:
       create: true
       role: community
 
+  # A service provider appointed by the community. Its capacity — processor or
+  # independent controller — is what decides whether it is inside the consent
+  # circle, and capacity comes from the agreement it signed, never from being
+  # listed here.
+  - id: partner-org
+    type: schema:Organization
+    name: Partner Service Provider
+    did: did:web:partner.dataspaces.localhost
+    aliases: [partner]
+    organization:
+      create: true
+      role: processor
+
+  # A grid operator is one legal entity with more than one controller: metering
+  # and operations are unbundled, so a consent naming one does not reach the
+  # other. `controller_role` on a sharing offer is what carries that distinction.
+  - id: grid-operator
+    type: schema:Organization
+    name: Grid Operator
+    did: did:web:grid-operator.dataspaces.localhost
+    aliases: [grid]
+    organization:
+      create: true
+      role: operator
+
   - id: open-data-provider
     type: schema:Organization
     name: Open Data Provider

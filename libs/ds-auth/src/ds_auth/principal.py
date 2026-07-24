@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from .jwt import extract_groups, extract_organizations, extract_scopes, is_service_account
 from .models import Organization
-from .permissions import has_permission
+from .permissions import has_exact_permission, has_permission
 
 
 @dataclass(frozen=True)
@@ -66,3 +66,11 @@ class Principal:
 
     def grants_any(self, required: Iterable[str]) -> bool:
         return has_permission(self.authority, required)
+
+    def grants_exactly(self, required: Iterable[str]) -> bool:
+        """True only if a required permission is held by name.
+
+        For machine-identity permissions the admin superset must not apply —
+        see :func:`ds_auth.permissions.has_exact_permission`.
+        """
+        return has_exact_permission(self.authority, required)

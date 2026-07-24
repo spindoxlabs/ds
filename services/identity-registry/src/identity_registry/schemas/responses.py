@@ -156,3 +156,20 @@ class AgreementAcceptanceResponse(BaseModel):
     text_sha256: str
     accepted_by: str | None = None
     accepted_at: datetime
+
+
+class CurrentAgreementResponse(BaseModel):
+    """What a participant currently holds — the connector's circle input.
+
+    ``capacity`` is the load-bearing field: ``processor`` means the party acts
+    on the controller's instructions and is disclosed rather than asked;
+    ``joint_controller`` and ``independent_controller`` both decide their own
+    purposes, so they are a new consent question.
+    """
+
+    participant_did: str
+    owner_alias: str
+    agreement_id: str
+    version: str | None = None
+    capacity: str
+    accepted_at: datetime | None = None

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from ds_auth import OidcConfig, Principal
 from ds_auth.errors import PermissionDenied
-from ds_auth.fastapi import require_permission
+from ds_auth.fastapi import require_exact_permission, require_permission
 
 
 def _token(**claims):
@@ -100,3 +100,61 @@ def test_unconfigured_app_returns_500():
     assert TestClient(app, raise_server_exceptions=False).get(
         "/x", headers=_auth(tok)
     ).status_code == 500
+
+
+# ── require_exact_permission — the admin superset must not apply ─────────────
+#
+# Some permissions mean "I am this component", not "I may administer it":
+# accepting EDC webhook callbacks, reading the EDR signing keys. An operator
+# holding connector.admin must not inherit them, or admin becomes the ability
+# to forge a transfer-state callback and lift data-plane keys.
+
+
+@pytest.fixture
+def exact_client():
+    app = FastAPI()
+    app.state.oidc_config = OidcConfig(issuer_url=None, insecure_dev=True)
+
+    @app.get("/webhook")
+    async def webhook(_p=Depends(require_exact_permission("connector.webhook"))):
+        return {"ok": True}
+
+    return TestClient(app)
+
+
+def test_exact_permission_allows_the_named_scope(exact_client):
+    tok = _token(
+        preferred_username="service-account-svc-edc", scope="connector.webhook"
+    )
+    assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 200
+
+
+def test_exact_permission_is_not_satisfied_by_admin(exact_client):
+    """The whole point: connector.admin does not imply connector.webhook."""
+    tok = _token(
+        preferred_username="service-account-svc-ds-portal", scope="connector.admin"
+    )
+    assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 403
+
+
+def test_exact_permission_is_not_satisfied_by_admin_group(exact_client):
+    """Same rule for a user token — an admin operator, not just an admin service."""
+    tok = _token(email="admin@b.test", groups=["/connector.admin"])
+    assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 403
+
+
+def test_exact_permission_allows_one_of_several(exact_client):
+    tok = _token(
+        preferred_username="service-account-svc-edc",
+        scope="connector.webhook connector.provider.read",
+    )
+    assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 200
+
+
+def test_exact_permission_still_requires_a_token(exact_client):
+    assert exact_client.get("/webhook").status_code == 401
+
+
+def test_exact_permission_rejects_an_empty_permission_list():
+    with pytest.raises(ValueError):
+        require_exact_permission()

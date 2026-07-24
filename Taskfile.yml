@@ -579,6 +579,82 @@ tasks:
           sleep 1
         done
 
+  # ── Schema ───────────────────────────────────────────────────────────────
+  #
+  # Alembic owns every schema. Services verify the revision at startup and
+  # refuse to run against one they did not expect, so these tasks are the only
+  # way a database changes shape.
+
+  db:migrate:
+    desc: Apply pending migrations to every service database
+    cmds:
+      - task: db:migrate:identity-registry
+      - task: db:migrate:connector
+      - task: db:migrate:provenance
+
+  db:migrate:identity-registry:
+    desc: Migrate the identity-registry database
+    cmds:
+      - |
+        cd services/identity-registry
+        IDENTITY_REGISTRY_DATABASE_URL="{{.IR_DB | default "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"}}" \
+          uv run alembic upgrade head
+
+  db:migrate:connector:
+    desc: Migrate both connector databases (provider + consumer)
+    cmds:
+      - |
+        cd services/connector
+        for db in connector_provider connector_consumer; do
+          echo "→ $db"
+          CONNECTOR_ROLE=provider \
+          CONNECTOR_DATABASE_URL="postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/$db" \
+            uv run alembic upgrade head
+        done
+
+  db:migrate:provenance:
+    desc: Migrate both provenance databases (provider + consumer)
+    cmds:
+      - |
+        cd services/provenance
+        for db in provenance_provider provenance_consumer; do
+          echo "→ $db"
+          PROVENANCE_DATABASE_URL="postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/$db" \
+            uv run alembic upgrade head
+        done
+
+  db:status:
+    desc: Report the schema revision of every service database
+    cmds:
+      - |
+        for db in identity_registry connector_provider connector_consumer \
+                  provenance_provider provenance_consumer; do
+          rev=$(docker exec dataspaces-postgres-1 psql -U postgres -d "$db" -tAc \
+            "select version_num from alembic_version" 2>/dev/null || echo "MISSING")
+          printf '  %-24s %s\n' "$db" "${rev:-<no revision>}"
+        done
+
+  db:reset:
+    desc: "DESTRUCTIVE: drop every service database and rebuild it from migrations"
+    prompt: This deletes all local dataspace data. Continue?
+    cmds:
+      - |
+        for db in identity_registry connector_provider connector_consumer \
+                  provenance_provider provenance_consumer edc_provider edc_consumer; do
+          echo "→ dropping $db"
+          docker exec dataspaces-postgres-1 psql -U postgres -d postgres -q \
+            -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" \
+            -c "CREATE DATABASE $db"
+        done
+      - task: db:migrate
+      - |
+        echo
+        echo "Databases rebuilt at head. Next:"
+        echo "  1. task identity:bootstrap    (trust anchor, participants, dev users)"
+        echo "  2. restart ds-connector, identity-registry and ds-provenance —"
+        echo "     they verify the schema revision at startup and hold stale connections"
+        echo "  3. task e2e:scenario:apply    (use-case fixtures, if you run the chains)"
+
   # ── E2E verification ─────────────────────────────────────────────────────
   e2e:
     desc: Run E2E smoke test
@@ -609,6 +685,77 @@ tasks:
     desc: "E2E: UC-4 open/external data"
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow uc3
+
+  e2e:security:
+    desc: "E2E: API contract, authz perimeter and DCP trust chain (no EDC needed)"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow security
+
+  e2e:fast:
+    desc: "E2E: every flow that runs without the EDC"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow fast
+
+  e2e:api-contract:
+    desc: "E2E: public perimeter, anonymous/wrong-scope refusal, input validation"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow api-contract
+
+  e2e:authz:
+    desc: "E2E: cross-subject isolation, role confusion, enumeration resistance"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow authz-perimeter
+
+  e2e:dcp:
+    desc: "E2E: STS, presentation-query binding, did:web and StatusList"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow dcp-trust
+
+  e2e:consent-purpose:
+    desc: "E2E: consent vocabulary, purpose taxonomy and offer expansion"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow consent-purpose
+
+  e2e:consent-request:
+    desc: "E2E: interactive consent — request, approve, reject, revoke"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow consent-request
+
+  e2e:org-onboarding:
+    desc: "E2E: organisation onboarding lifecycle and gates"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow org-onboarding
+
+  e2e:catalog:
+    desc: "E2E: federated catalogue crawl freshness, discovery and search"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow catalog-discovery
+
+  e2e:lineage:
+    desc: "E2E: provenance graph connectivity, idempotency and audit log"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow lineage
+
+  e2e:scenario:apply:
+    desc: "E2E: provision use-case fixtures (idempotent)"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e scenario apply
+
+  e2e:scenario:show:
+    desc: "E2E: report current use-case fixture state (read-only)"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e scenario show
+
+  e2e:scenario:destroy:
+    desc: "E2E: remove the use-case fixtures this scenario created"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e scenario destroy
+
+  e2e:chains:
+    desc: "E2E: the three delegation chains (community, partner, unbundling)"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow chains
 
   e2e:health:
     desc: Check reachability of all platform services

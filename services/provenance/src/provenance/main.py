@@ -6,7 +6,7 @@ from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
 from .config import get_settings
-from .db.engine import init_db
+from .db.engine import verify_schema
 from .dependencies import require_read_or_write_scope, require_read_scope, require_write_scope
 from .metrics import install_metrics
 from .schemas.context import PROV_CONTEXT
@@ -22,7 +22,7 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    await verify_schema()
 
     settings = get_settings()
 

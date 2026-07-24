@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 
-from ds_auth.fastapi import require_permission
+from ds_auth.fastapi import require_exact_permission, require_permission
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import Request
@@ -65,8 +65,15 @@ require_admin = require_permission("connector.admin")
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
 require_provider_write = require_permission("connector.provider.write", "connector.admin")
 require_history_read = require_permission("connector.history.read", "connector.admin")
-require_internal = require_permission("connector.internal")
-require_webhook = require_permission("connector.webhook")
+# Machine identity, not administrative authority — so the admin superset must
+# not reach them (require_exact_permission). `connector.webhook` means "I am the
+# EDC reporting its own state"; an operator with connector.admin holding it too
+# would be able to forge a transfer-process callback. `connector.internal` means
+# "I am the dataset-api or an EDC extension", and it opens /internal/edr-jwks —
+# the keys that sign data-plane tokens. Neither is something an administrator
+# should acquire by being an administrator.
+require_internal = require_exact_permission("connector.internal")
+require_webhook = require_exact_permission("connector.webhook")
 # Onboarding provisions standing consent on a subject's behalf after approval.
 # It authenticates as a service (svc-ds-onboarding), not as the subject, so it
 # needs its own permission rather than the VC-JWT the /consent/my/* routes use.
@@ -96,7 +103,7 @@ async def _require_internal_or_api_key(request: Request) -> dict:
     from fastapi import HTTPException
     config: OidcConfig = request.app.state.oidc_config
     principal = await authenticate(request, config)
-    if not principal.grants_any(("connector.internal",)):
+    if not principal.grants_exactly(("connector.internal",)):
         raise HTTPException(403, "Missing required permission: connector.internal")
     return {"sub": principal.subject, "scope": "connector.internal"}
 

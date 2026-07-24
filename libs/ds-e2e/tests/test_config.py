@@ -14,7 +14,9 @@ def test_defaults():
     assert settings.dataset_api_url == "http://172.17.0.1:30002"
     assert settings.provenance_url == "http://172.17.0.1:30000"
     assert settings.identity_registry_url == "http://172.17.0.1:30005"
-    assert settings.counter_party_address == "http://edc-provider:19194/protocol/2025-1"
+    # The host-gateway address, not a Docker DNS name: the EDCs are reachable at
+    # the same address whether they run in compose or on the host (see config.py).
+    assert settings.counter_party_address == "http://172.17.0.1:19194/protocol/2025-1"
     assert settings.service_client_id == "svc-ds-portal"
     assert settings.poll_timeout == 120
 

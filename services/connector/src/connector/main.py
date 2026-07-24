@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
 from .config import get_settings
-from .db.engine import init_db
+from .db.engine import verify_schema
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
@@ -32,7 +32,7 @@ from .api.v1.history import router as history_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
-    await init_db()
+    await verify_schema()
 
     guard = ProductionGuard("ds-connector")
     guard.require_set(

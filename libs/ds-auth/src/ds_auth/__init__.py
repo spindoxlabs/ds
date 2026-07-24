@@ -31,7 +31,7 @@ from .jwt import (
     verify_token,
 )
 from .models import Organization
-from .permissions import grant_satisfies, has_permission
+from .permissions import grant_satisfies, has_exact_permission, has_permission
 from .principal import Principal
 
 __all__ = [
@@ -47,6 +47,7 @@ __all__ = [
     "is_service_account",
     "grant_satisfies",
     "has_permission",
+    "has_exact_permission",
     "AuthError",
     "AuthConfigError",
     "TokenInvalid",

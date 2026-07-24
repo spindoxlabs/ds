@@ -1,0 +1,93 @@
+# Scenario: the three delegation chains.
+#
+# Declares the fixtures the chain-* flows need, so a run is reproducible from a
+# clean stack and reversible afterwards:
+#
+#   ds-e2e scenario apply    provision (idempotent)
+#   ds-e2e scenario show     what exists right now
+#   ds-e2e scenario destroy  remove exactly what apply created
+#
+# Everything here is provisioned through the identity-registry **admin API** —
+# no direct database access — so the same file works against a local stack, a
+# compose stack or a cluster. Agreements are the one exception: they are seeded
+# from `services/identity-registry/seed/agreements.dev.yaml` via
+# `ir-cli agreement import`, because their text hashes must come from files.
+# `apply` verifies they are present and tells you the command if they are not.
+#
+# Names are generic on purpose (AGENTS.md): community / partner / grid operator
+# are roles, not organisations.
+
+name: energy-chains
+description: >
+  Fixtures for the three delegation chains: community-mediated consent, a
+  third-party partner inside or outside the consent circle, and an unbundled
+  grid operator whose two controller roles must not reach each other.
+
+# Agreements that must already be seeded. `capacity` is the assertion — a
+# scenario that silently ran against an agreement with the wrong capacity would
+# make the circle tests pass for the wrong reason.
+requires_agreements:
+  - id: dataspace-participation
+    version: "1.0"
+    capacity: processor
+  - id: independent-controller-participation
+    version: "1.0"
+    capacity: independent_controller
+
+# Organisations. `accepts` binds the owner to an agreement version, which is
+# what gives it a provable capacity — the input to the connector's circle check.
+owners:
+  - alias: partner-org
+    name: Partner Service Provider
+    type: schema:Organization
+    did: did:web:partner.dataspaces.localhost
+    accepts:
+      agreement_id: dataspace-participation
+      version: "1.0"
+    # Membership in the community is the offer's `admitted_by` constraint;
+    # capacity alone does not put a party inside the circle.
+    member_of: example-org
+
+  - alias: outsider-org
+    name: Independent Analytics Provider
+    type: schema:Organization
+    did: did:web:outsider.dataspaces.localhost
+    accepts:
+      agreement_id: independent-controller-participation
+      version: "1.0"
+    # Deliberately not a member of example-org: it fails both halves of the
+    # circle definition, which is the case that must produce a consent request.
+
+  - alias: grid-operator
+    name: Grid Operator
+    type: schema:Organization
+    did: did:web:grid-operator.dataspaces.localhost
+    accepts:
+      agreement_id: dataspace-participation
+      version: "1.0"
+
+# DSP participants. Registered so the connector's participant registry resolves
+# them and the circle check has a DID to look up.
+participants:
+  - did: did:web:partner.dataspaces.localhost
+    roles: [consumer]
+    dsp_address: http://partner.dataspaces.localhost/protocol
+  - did: did:web:outsider.dataspaces.localhost
+    roles: [consumer]
+    dsp_address: http://outsider.dataspaces.localhost/protocol
+  - did: did:web:grid-operator.dataspaces.localhost
+    roles: [consumer]
+    dsp_address: http://grid-operator.dataspaces.localhost/protocol
+
+# The offers the chain flows consent against. Declared here as expectations, not
+# as writes: offers live in `services/connector/governance/sharing-offers.yaml`
+# and are served by the connector, so the scenario asserts they are published
+# rather than trying to create them.
+requires_offers:
+  - id: household-energy-flexibility
+    controller: example-org
+    purpose: FlexibilityResearch
+  - id: grid-operations-planning
+    controller: grid-operator
+    controller_role: operations
+    purpose: EnergyCommunityOperation

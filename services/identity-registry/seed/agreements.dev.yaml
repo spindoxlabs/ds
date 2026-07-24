@@ -17,3 +17,16 @@ agreements:
     text:
       en: content/participation-en.md
       it: content/participation-it.md
+
+  # The other side of the boundary. A party accepting this one decides its own
+  # purposes, so it is never covered by a disclosure made about someone else's
+  # processor category — it has to be asked. Seeded in dev so the circle check
+  # has both answers to give; without it every requester resolves to the same
+  # capacity and the boundary is untestable.
+  - id: independent-controller-participation
+    version: "1.0"
+    effective_from: 2026-09-01
+    applies_to: [consumer]
+    capacity: independent_controller
+    text:
+      en: content/independent-controller-en.md

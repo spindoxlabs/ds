@@ -43,6 +43,58 @@ async def authenticate(request: Request, config: OidcConfig) -> Principal:
     return Principal.from_claims(claims)
 
 
+def require_exact_permission(
+    *perms: str,
+    perimeter: PerimeterFn | None = None,
+) -> Callable[..., Awaitable[Principal]]:
+    """Like :func:`require_permission`, but ``{service}.admin`` does **not** satisfy it.
+
+    For permissions that mean "I am this component" rather than "I may
+    administer this component": accepting EDC webhook callbacks, reading EDR
+    signing keys over the internal API. An operator holding ``connector.admin``
+    should not be able to forge a transfer-state callback or lift the keys that
+    sign data-plane tokens, and a service client that happens to carry an admin
+    scope should not silently acquire either.
+
+    The permission has to be granted by name, which also makes it visible in the
+    realm config: you can read off exactly which client is allowed to be the EDC.
+    """
+    if not perms:
+        raise ValueError("require_exact_permission needs at least one permission")
+
+    async def _dependency(
+        request: Request,
+        config: OidcConfig = Depends(get_oidc_config),
+    ) -> Principal:
+        principal = await authenticate(request, config)
+
+        if not principal.grants_exactly(perms):
+            raise HTTPException(
+                status_code=403,
+                detail=f"Missing required permission: {' or '.join(perms)}",
+            )
+
+        await _check_perimeter(perimeter, principal, request)
+        return principal
+
+    return _dependency
+
+
+async def _check_perimeter(
+    perimeter: PerimeterFn | None, principal: Principal, request: Request
+) -> None:
+    if perimeter is None:
+        return
+    try:
+        result = perimeter(principal, request)
+        if inspect.isawaitable(result):
+            result = await result
+    except PermissionDenied as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    if not result:
+        raise HTTPException(status_code=403, detail="Outside permitted perimeter")
+
+
 def require_permission(
     *perms: str,
     perimeter: PerimeterFn | None = None,
@@ -72,18 +124,7 @@ def require_permission(
                 detail=f"Missing required permission: {' or '.join(perms)}",
             )
 
-        if perimeter is not None:
-            try:
-                result = perimeter(principal, request)
-                if inspect.isawaitable(result):
-                    result = await result
-            except PermissionDenied as exc:
-                raise HTTPException(status_code=403, detail=str(exc)) from exc
-            if not result:
-                raise HTTPException(
-                    status_code=403, detail="Outside permitted perimeter"
-                )
-
+        await _check_perimeter(perimeter, principal, request)
         return principal
 
     return _dependency

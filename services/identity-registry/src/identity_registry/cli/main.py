@@ -9,7 +9,7 @@ from pathlib import Path
 import typer
 
 from ..config import get_settings
-from ..db.engine import get_session_factory, init_db
+from ..db.engine import get_session_factory, verify_schema
 from ..db.models import (
     Agreement,
     AgreementAcceptance,
@@ -60,7 +60,7 @@ def _run(coro):
 
 
 async def _ensure_db():
-    await init_db()
+    await verify_schema()
     return get_session_factory()
 
 

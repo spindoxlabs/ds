@@ -64,6 +64,23 @@ class HttpClient:
     ) -> tuple[int, Any]:
         return self._request_raw("POST", url, body=body, headers=headers)
 
+    def raw(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: dict[str, Any] | None = None,
+        form: dict[str, str] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> tuple[int, Any]:
+        """Any method, never raising — the probe primitive.
+
+        Contract flows assert on the *status code* of endpoints that are meant
+        to refuse, so they need a call that reports 401/403/422 rather than
+        raising. ``form`` sends application/x-www-form-urlencoded, which the STS
+        token endpoint requires."""
+        return self._request_raw(method, url, body=body, form=form, headers=headers)
+
     def poll_until(
         self,
         url: str,
@@ -165,11 +182,14 @@ class HttpClient:
         url: str,
         body: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        form: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         log.debug("%s %s (raw)", method, url)
         kwargs: dict[str, Any] = {}
         if body is not None:
             kwargs["json"] = body
+        if form is not None:
+            kwargs["data"] = form
         if headers:
             kwargs["headers"] = headers
 

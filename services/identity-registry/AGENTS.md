@@ -21,7 +21,8 @@ src/identity_registry/
     memberships.py     /admin/memberships CRUD, GET /memberships/check
     organizations.py   /admin/organizations/applications, /admin/credentials/organization,
                        /admin/owners/{alias} (PATCH), /promote, /agreement (Block D)
-    agreements.py      GET /agreements, /agreements/{id}, /agreements/{id}/acceptances
+    agreements.py      GET /agreements, /agreements/current, /agreements/{id},
+                       /agreements/{id}/acceptances
   services/
     crypto.py          EC P-256 keygen, JWK, ES256 signing, JWS
     did.py             build_did_document (W3C DID doc)
@@ -88,6 +89,14 @@ register (application) → verify (→ Owner row, status=verified)
   GXDCH compliance.
 - Agreements are YAML-seeded (`seed/agreements.dev.yaml` + `seed/content/*.md`), imported by
   `ir-cli agreement import`; acceptance is proved by `text_sha256`, never inline text.
+- `GET /agreements/current?participant_did=` is the **connector's circle input**
+  (`services/connector/.../circle.py`): it answers what capacity a participant signed, which
+  decides whether that party is a disclosed processor or an independent controller needing its
+  own consent. It must **fail closed** — unknown participant, no accepted agreement, or a
+  non-`verified` owner all return 404, because the caller reads "no answer" as "outside the
+  circle" and asks. Returning a capacity on weak evidence suppresses a consent request that
+  Art. 4(11) requires. Routed above `/agreements/{agreement_id}` so `current` is not read as an
+  agreement id; `tests/test_agreements_current.py` pins that and every refusal path.
 - The gates are enforced **in code** (raise `OrgOnboardingError` → 409/422), never in docs.
 - Portal review queue (D.7) is deferred; it will call the same `/admin/*` endpoints as the CLI.
 
