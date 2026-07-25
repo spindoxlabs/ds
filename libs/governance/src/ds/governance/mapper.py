@@ -173,6 +173,23 @@ class GovernanceMapper:
         # per purpose would demand that a consumer's use serve all of them at
         # once. `odrl:isAnyOf` expresses what a multi-purpose dataset actually
         # offers: any one of these reasons is admissible.
+        #
+        # This shape depends on a patched EDC class — do not change it casually.
+        #
+        # Stock EDC cannot serialise a multi-valued right operand: it ingests,
+        # stores and evaluates one correctly, but
+        # `JsonObjectFromPolicyTransformer.visitLiteralExpression` renders it with
+        # `toString()` on the way out, so the operand reaches every other
+        # participant as `"[{@value={valueType=STRING, chars=https://…}}, …]"`.
+        # `services/edc-extensions` carries a patched copy of that class so the
+        # published operand is a plain array of purpose IRIs.
+        #
+        # `odrl:or` of scalar `isA` was tried instead and is **worse**: EDC accepts
+        # the `OrConstraint` on ingest and then fails JSON-LD compaction
+        # (`IRI_CONFUSED_WITH_PREFIX`), 500ing the entire Management API list
+        # response and emptying the DSP catalogue.
+        #
+        # See `docs/governance-and-odrl.md` and the plan §3b.
         if len(purposes) == 1:
             constraints.append({
                 "odrl:leftOperand": {"@id": "odrl:purpose"},

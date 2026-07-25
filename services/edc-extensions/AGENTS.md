@@ -137,6 +137,37 @@ Admits the constraint shapes the governance mapper emits — `isA` (a single pur
 `isAnyOf` (a multi-purpose dataset) and `eq` — and denies a constraint with no right
 operand.
 
+`Purposes.of` also descends into logical constraints (`odrl:or` / `and` / `xone`),
+which the mapper does **not** emit — EDC cannot serialise one (see
+`docs/governance-and-odrl.md`). The traversal is kept because a policy can arrive
+from a counterparty or a hand-written policy definition. `PurposesTest` covers
+every shape, including the mangled operand that must be dropped rather than
+forwarded.
+
+### A forked EDC class lives here
+
+`src/main/java/org/eclipse/edc/connector/controlplane/transform/odrl/from/JsonObjectFromPolicyTransformer.java`
+is **not ours** — it is EDC v0.16.0's class, patched so a multi-valued ODRL right
+operand is published as a JSON-LD array instead of a `toString()` dump, and placed
+under the upstream package so it replaces the broken one in the shadow JAR.
+
+A registered transformer cannot do this: `TypeTransformerRegistryImpl.forContext`
+is memoised, `register` appends to an `ArrayList`, lookup is `findAny()`, there is
+no removal API, and our extension initialises after core — so ours would never be
+selected. The file header has the full rationale.
+
+Two guards, because a silent revert here republishes unreadable policies while
+everything looks healthy:
+
+- `:edc-connector:verifyForkedTransformer` greps the packaged outer class **and**
+  inner `$Visitor` and fails the build if upstream's copy won.
+- `JsonObjectFromPolicyTransformerForkTest` fails if `edcVersion` moves, forcing a
+  re-fork or — better — deletion once the fix is upstream.
+
+The same patch is on `fix/odrl-multivalued-right-operand-serialisation` in the EDC
+clone. **When it lands upstream, delete the fork, both guards and the
+`duplicatesStrategy` block.**
+
 It is not, on its own, the access decision: a purpose the *provider* permits still
 yields no rows for a subject who did not consent to it. Registering it is what stops
 the purpose being decorative — **an unbound left operand evaluates to false in EDC, so

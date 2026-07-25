@@ -136,6 +136,24 @@ class CatalogDiscoveryFlow(BaseFlow):
             iri=iri,
         )
 
+        # ── 3b. Its operands survived the round trip ─────────────────────────
+        unreadable = _unreadable_operands(target)
+        if unreadable:
+            result.fail_step(
+                "policy operands are readable",
+                "a right operand reached the catalogue as a stringified object "
+                "instead of a value — a counterparty cannot read these terms",
+                iri=iri,
+                operands=unreadable[:3],
+            )
+            return result
+        result.pass_step(
+            "policy operands are readable",
+            "every right operand published for the dataset is a value, not an "
+            "object dump",
+            iri=iri,
+        )
+
         # ── 4. That IRI resolves to the same dataset ─────────────────────────
         status, single = self.http.raw(
             "GET", f"{base}/catalog/{iri}", headers=headers
@@ -242,3 +260,43 @@ class CatalogDiscoveryFlow(BaseFlow):
             if asset_id in self._iri(ds):
                 return ds
         return None
+
+
+# ── policy operand round trip ────────────────────────────────────────────────
+#
+# EDC's `JsonObjectFromPolicyTransformer` collapses a multi-valued ODRL right
+# operand with `toString()`, so a multi-purpose dataset was published as
+#
+#   "rightOperand": "[{@value={valueType=STRING, chars=https://…}}, …]"
+#
+# Enforcement was unaffected — the provider unwraps it in-JVM — which is exactly
+# why nothing noticed: the damage is only visible to a reader outside that JVM,
+# and nothing read the published policy back. A patched transformer is carried in
+# `services/edc-extensions` until the fix lands upstream.
+#
+# This asserts the *property* (operands are readable values) rather than a
+# particular shape, so it also catches the next operand EDC cannot serialise.
+
+_DUMP_MARKERS = ("valueType=", "@value=", "chars=")
+
+
+def _unreadable_operands(dataset: dict[str, Any]) -> list[str]:
+    found: list[str] = []
+
+    def walk(node: Any, depth: int = 0) -> None:
+        if depth > 8:
+            return
+        if isinstance(node, dict):
+            for key, value in node.items():
+                if key.endswith("rightOperand"):
+                    for item in value if isinstance(value, list) else [value]:
+                        text = item if isinstance(item, str) else ""
+                        if any(marker in text for marker in _DUMP_MARKERS):
+                            found.append(text[:120])
+                walk(value, depth + 1)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item, depth + 1)
+
+    walk(dataset)
+    return found

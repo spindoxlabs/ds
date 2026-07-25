@@ -126,21 +126,23 @@ def test_pii_prohibits_transfer_and_sublicense():
 
 
 def _purpose_constraints(offer) -> list[dict]:
-    return [
-        c
-        for p in offer["odrl:permission"]
-        for c in p.get("odrl:constraint", [])
-        if c.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose"
-    ]
+    """Every atomic purpose constraint, including those nested in an ``odrl:or``.
+
+    Several purposes are emitted as a disjunction of ``isA`` constraints rather
+    than one ``isAnyOf`` with a multi-valued operand, because EDC cannot
+    serialise a multi-valued right operand — see ``GovernanceMapper``.
+    """
+    out: list[dict] = []
+    for permission in offer["odrl:permission"]:
+        for constraint in permission.get("odrl:constraint", []):
+            for candidate in constraint.get("odrl:or", [constraint]):
+                if candidate.get("odrl:leftOperand", {}).get("@id") == "odrl:purpose":
+                    out.append(candidate)
+    return out
 
 
 def _purpose_iris(offer) -> list[str]:
-    """Flatten purpose IRIs across constraints.
-
-    A single declared purpose is emitted as ``isA`` with one IRI; several are
-    emitted as ``isAnyOf`` with a list, because constraints inside a permission
-    are ANDed and one-per-purpose would demand they all hold at once.
-    """
+    """Flatten purpose IRIs across constraints, whatever shape declares them."""
     iris: list[str] = []
     for constraint in _purpose_constraints(offer):
         right = constraint["odrl:rightOperand"]
@@ -519,6 +521,36 @@ def test_contract_definition_structure():
 
 
 # ── Purpose derivation ────────────────────────────────────────────────────────
+
+def test_several_purposes_stay_one_multi_valued_isanyof():
+    """Do not replace this with a disjunction of scalar `isA` constraints.
+
+    EDC 0.16.0 cannot serialise a multi-valued right operand — it renders it with
+    `toString()` on the way out, so purposes reach every other participant as a
+    Java object dump. The obvious fix, `odrl:or` of scalar `isA`, was tried
+    against a running EDC and is worse: the OrConstraint is accepted on ingest and
+    then fails JSON-LD compaction (`IRI_CONFUSED_WITH_PREFIX`), which 500s the
+    whole Management API list response and leaves the DSP catalogue empty.
+
+    Unreadable purposes beat no catalogue, so the multi-valued operand stays and
+    this test pins it. See `.agents/plans/portal-review/plan.md` §3b.
+    """
+    mapper = _mapper(profile=_ENERGY_PROFILE)
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        policy=_policy(purpose=["EnergyBalancing", "GridMonitoring"]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+
+    for permission in offer["odrl:permission"]:
+        assert not [c for c in permission["odrl:constraint"] if "odrl:or" in c], (
+            "a disjunction breaks EDC serialisation — see the docstring"
+        )
+    for constraint in _purpose_constraints(offer):
+        assert constraint["odrl:operator"]["@id"] == "odrl:isAnyOf"
+        assert isinstance(constraint["odrl:rightOperand"], list)
+
 
 def test_multiple_declared_purposes_are_deduplicated():
     mapper = _mapper(profile=_ENERGY_PROFILE)

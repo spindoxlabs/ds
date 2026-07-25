@@ -98,6 +98,36 @@ Additional constraints:
 
 **One constraint, never one per purpose.** Constraints inside a permission are ANDed, so emitting several would demand that a consumer's use serve all of them simultaneously.
 
+> **A patched EDC class makes the multi-valued operand readable — do not remove it casually.**
+>
+> Stock EDC (0.16.0 through 0.18.0 and `main`) cannot serialise a multi-valued
+> right operand. It ingests, stores and evaluates one correctly, but on the way out
+> `JsonObjectFromPolicyTransformer.visitLiteralExpression` renders it with
+> `toString()`, so the operand used to leave the connector as a single string:
+>
+> ```
+> "rightOperand": "[{@value={valueType=STRING, chars=https://…/EnergyCommunityOperation}}, …]"
+> ```
+>
+> Enforcement was never affected — `Purposes.of` unwraps the value in-JVM — which is
+> why it went unnoticed: the damage is only visible *outside* that JVM, to every
+> other participant. A DSP counterparty could not determine which purposes we
+> permit, and the same string reached the federated catalogue, the portal and the
+> DCAT-AP evidence.
+>
+> `services/edc-extensions` therefore carries a **patched copy of that EDC class**
+> under the upstream package, so it replaces the broken one in the shadow JAR. The
+> published operand is now a plain array of purpose IRIs. See the file header for
+> why a registered transformer cannot work, `verifyForkedTransformer` in
+> `edc-connector/build.gradle.kts` for the packaging guard, and
+> `.agents/plans/portal-review/plan.md` §3b for the full account. **Delete the fork
+> when the fix lands upstream**, not before.
+>
+> **Do not "simplify" this to `odrl:or` of scalar `isA` constraints.** Tried against
+> a running EDC: the `OrConstraint` is accepted on ingest and then fails JSON-LD
+> compaction (`IRI_CONFUSED_WITH_PREFIX`), which 500s the *entire* Management API
+> list response and leaves the DSP catalogue empty.
+
 > **`purpose_base` is a path segment (`purpose/`), not a pseudo-prefix (`purpose:`).**
 > A colon makes purpose IRIs compact to `purpose:Slug`, which JSON-LD rejects as
 > confusable with a compact IRI (`IRI_CONFUSED_WITH_PREFIX`) — the whole DSP catalogue

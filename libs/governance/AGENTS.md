@@ -93,6 +93,14 @@ The mapper emits **one** `odrl:purpose` constraint per permission (`isA` for a s
 purpose, `isAnyOf` for several). Constraints inside a permission are ANDed, so one
 per purpose would demand a consumer's use serve all of them at once.
 
+**The multi-valued `isAnyOf` operand only survives because of a patched EDC class**
+carried in `services/edc-extensions` — stock EDC serialises it with `toString()`,
+so purposes reach other participants as a Java object dump. Do not replace it with
+`odrl:or` of scalar `isA`: tested against a running EDC, that fails JSON-LD
+compaction and 500s the whole Management API list response, emptying the DSP
+catalogue. `test_several_purposes_stay_one_multi_valued_isanyof` pins the shape.
+See `docs/governance-and-odrl.md` and the plan §3b.
+
 ### `PurposeConcept` — two fields, two jobs
 
 | Field | Served at `/ns/policy` as | Used for |

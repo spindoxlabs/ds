@@ -12,6 +12,8 @@
  * Build:  ./gradlew :edc-connector:shadowJar
  * Output: edc-connector/build/libs/connector.jar
  */
+import java.util.zip.ZipFile
+
 plugins {
     java
     id("com.github.johnrengelman.shadow") version "8.1.1"
@@ -20,6 +22,14 @@ plugins {
 val edcVersion = "0.16.0"
 
 dependencies {
+    // ── Our custom ODRL constraint functions ─────────────────────────────────
+    //
+    // Declared FIRST on purpose. It carries a forked copy of EDC's
+    // JsonObjectFromPolicyTransformer (see that file's header), and with
+    // DuplicatesStrategy.EXCLUDE the first copy written to the JAR wins. Order is
+    // not a guarantee, so `verifyForkedTransformer` below asserts the outcome.
+    runtimeOnly(project(":edc-extensions"))
+
     // ── Core control plane with DCP ──────────────────────────────────────────
     runtimeOnly("org.eclipse.edc:controlplane-dcp-bom:${edcVersion}")
 
@@ -46,8 +56,6 @@ dependencies {
     runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
     runtimeOnly("org.postgresql:postgresql:42.7.5")
 
-    // ── Our custom ODRL constraint functions ─────────────────────────────────
-    runtimeOnly(project(":edc-extensions"))
 }
 
 java {
@@ -59,8 +67,52 @@ java {
 tasks.shadowJar {
     archiveFileName.set("connector.jar")
     mergeServiceFiles()
+    // Keep the first copy of a duplicated entry rather than writing both. Combined
+    // with :edc-extensions being declared first, this is what lets the forked
+    // JsonObjectFromPolicyTransformer replace upstream's.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
     manifest {
         attributes["Main-Class"] = "org.eclipse.edc.boot.system.runtime.BaseRuntime"
+    }
+    finalizedBy("verifyForkedTransformer")
+}
+
+/**
+ * Fail the build if the packaged JsonObjectFromPolicyTransformer is upstream's
+ * rather than our patched fork.
+ *
+ * Dependency order decides which copy is written, and nothing else would notice if
+ * it changed: the connector would start, serve a catalogue, and quietly publish
+ * unreadable multi-valued ODRL operands again. Delete this together with the fork
+ * once the fix is upstream.
+ */
+tasks.register("verifyForkedTransformer") {
+    val jar = layout.buildDirectory.file("libs/connector.jar")
+    inputs.file(jar)
+    doLast {
+        val pkg = "org/eclipse/edc/connector/controlplane/transform/odrl/from/"
+        // The outer class carries the marker constant; the fix itself lives in the
+        // inner Visitor. Check both — a mixed packaging would otherwise look fine.
+        val expected = mapOf(
+            "${pkg}JsonObjectFromPolicyTransformer.class" to "ds-fork-multivalued-right-operand",
+            "${pkg}JsonObjectFromPolicyTransformer\$Visitor.class" to "literalNode",
+        )
+        ZipFile(jar.get().asFile).use { zip ->
+            expected.forEach { (entryName, needle) ->
+                val entry = zip.getEntry(entryName)
+                    ?: throw GradleException("$entryName is missing from connector.jar")
+                val bytes = zip.getInputStream(entry).readBytes()
+                if (!String(bytes, Charsets.ISO_8859_1).contains(needle)) {
+                    throw GradleException(
+                        "connector.jar packaged UPSTREAM's $entryName, not the patched fork in " +
+                            ":edc-extensions. Multi-valued ODRL right operands would again be " +
+                            "published as a stringified Java object that no counterparty can " +
+                            "parse. Check dependency order and shadowJar duplicatesStrategy."
+                    )
+                }
+            }
+        }
+        logger.lifecycle("verifyForkedTransformer: patched transformer is packaged")
     }
 }
 

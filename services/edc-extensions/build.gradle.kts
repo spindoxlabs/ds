@@ -23,6 +23,11 @@ dependencies {
     // negotiation but not clear `pending`).
     api("org.eclipse.edc:web-spi:$edcVersion")
     api("org.eclipse.edc:transaction-spi:$edcVersion")
+    // Needed to compile the forked JsonObjectFromPolicyTransformer (see the file
+    // header for why it is forked). Provided by the EDC runtime, so compileOnly.
+    compileOnly("org.eclipse.edc:json-ld-spi:$edcVersion")
+    compileOnly("org.eclipse.edc:transform-spi:$edcVersion")
+    compileOnly("org.eclipse.edc:control-plane-transform:$edcVersion")
     compileOnly("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
     // A policy that has been through EDC's JSON-LD expansion carries its right
     // operands as JsonString/JsonObject, not String — see Purposes.
@@ -32,10 +37,26 @@ dependencies {
     // HTTP client for consent check
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
+
+    // Purposes reads the shape a policy arrives in, and that shape varies by how
+    // the policy reached the store — the one place here worth unit-testing
+    // directly, since getting it wrong denies access silently.
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testImplementation("jakarta.json:jakarta.json-api:2.1.3")
+    testRuntimeOnly("org.eclipse.parsson:parsson:1.1.5")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))
     }
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // JsonObjectFromPolicyTransformerForkTest fails if this moves away from the
+    // version the forked transformer was taken from.
+    systemProperty("edc.version", edcVersion)
 }

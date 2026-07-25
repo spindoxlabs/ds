@@ -7,6 +7,7 @@ import org.eclipse.edc.policy.model.AtomicConstraint;
 import org.eclipse.edc.policy.model.Constraint;
 import org.eclipse.edc.policy.model.Expression;
 import org.eclipse.edc.policy.model.LiteralExpression;
+import org.eclipse.edc.policy.model.MultiplicityConstraint;
 import org.eclipse.edc.policy.model.Permission;
 
 import java.util.ArrayList;
@@ -79,15 +80,60 @@ public final class Purposes {
             return purposes;
         }
         for (Constraint constraint : rule.getConstraints()) {
-            if (!(constraint instanceof AtomicConstraint atomic)) {
-                continue;
-            }
-            if (!OPERANDS.contains(literal(atomic.getLeftExpression()))) {
-                continue;
-            }
-            collect(atomic.getRightExpression(), purposes);
+            collectConstraint(constraint, purposes, 0);
         }
         return purposes;
+    }
+
+    /**
+     * Collect purposes from one constraint, descending into logical constraints.
+     *
+     * <h2>Why both shapes are read, permanently</h2>
+     *
+     * <p>Two shapes declare the same thing and both must be understood:
+     *
+     * <ul>
+     *   <li>{@code odrl:isAnyOf} with a multi-valued right operand — one atomic
+     *       constraint listing every purpose.</li>
+     *   <li>an {@code odrl:or} of single-valued {@code odrl:isA} constraints —
+     *       what the governance mapper emits now, because EDC cannot serialise a
+     *       multi-valued operand: {@code JsonObjectFromPolicyTransformer}
+     *       stringifies it with {@code toString()}, so the purposes reach a DSP
+     *       consumer as an unreadable Java object dump.</li>
+     * </ul>
+     *
+     * <p>The old shape does not age out. A {@code ContractAgreement} stores its
+     * own policy ({@code edc_contract_agreement.policy}), and
+     * {@link AgreementConsentFunction} evaluates that frozen copy on the
+     * {@code policy.monitor} scope for the life of the transfer — so an agreement
+     * signed before the mapper changed still presents {@code isAnyOf} years
+     * later. Reading only the current shape would silently yield no purposes,
+     * which the connector treats as a denial and which terminates a running
+     * transfer. Keep both until no pre-change agreement can be active.
+     *
+     * <p>Scope filtering is safe for the nested shape: EDC's {@code ScopeFilter}
+     * recurses into a {@link MultiplicityConstraint} and keeps the children whose
+     * left operand is bound. Every child here carries {@code odrl:purpose}, bound
+     * by {@link PurposeFunction}, so they survive or vanish together — the
+     * upstream caveat about partial filtering changing a constraint's meaning
+     * cannot bite.
+     */
+    private static void collectConstraint(Constraint constraint, List<String> into, int depth) {
+        if (constraint == null || depth > 4) {
+            return;
+        }
+        if (constraint instanceof AtomicConstraint atomic) {
+            if (OPERANDS.contains(literal(atomic.getLeftExpression()))) {
+                collect(atomic.getRightExpression(), into);
+            }
+            return;
+        }
+        if (constraint instanceof MultiplicityConstraint multiplicity
+                && multiplicity.getConstraints() != null) {
+            for (Constraint nested : multiplicity.getConstraints()) {
+                collectConstraint(nested, into, depth + 1);
+            }
+        }
     }
 
     private static void collect(Expression expression, List<String> into) {
@@ -179,18 +225,32 @@ public final class Purposes {
         }
         StringBuilder out = new StringBuilder();
         for (Constraint constraint : rule.getConstraints()) {
-            if (!(constraint instanceof AtomicConstraint atomic)) {
-                continue;
-            }
+            describeConstraint(constraint, out, 0);
+        }
+        return out.isEmpty() ? "<no purpose constraint>" : out.toString();
+    }
+
+    /** Mirrors {@link #collectConstraint} so the diagnostic covers both shapes. */
+    private static void describeConstraint(Constraint constraint, StringBuilder out, int depth) {
+        if (constraint == null || depth > 4) {
+            return;
+        }
+        if (constraint instanceof AtomicConstraint atomic) {
             if (!OPERANDS.contains(literal(atomic.getLeftExpression()))) {
-                continue;
+                return;
             }
             Object value = atomic.getRightExpression() instanceof LiteralExpression literal
                 ? literal.getValue() : atomic.getRightExpression();
             out.append(value == null ? "null" : value.getClass().getName())
                .append(" = ").append(value).append("; ");
+            return;
         }
-        return out.isEmpty() ? "<no purpose constraint>" : out.toString();
+        if (constraint instanceof MultiplicityConstraint multiplicity
+                && multiplicity.getConstraints() != null) {
+            for (Constraint nested : multiplicity.getConstraints()) {
+                describeConstraint(nested, out, depth + 1);
+            }
+        }
     }
 
     private static String literal(Expression expression) {

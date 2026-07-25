@@ -17,11 +17,32 @@ def _id_of(value: Any) -> str:
     return str(value)
 
 
+# ODRL logical constraints nest their operands. The purpose disjunction is
+# emitted as `odrl:or` of atomic constraints (see GovernanceMapper), so a flat
+# read would drop every purpose from the matrix — and the matrix is what
+# `task compliance:evidence` publishes as the human-readable account of a
+# policy. Losing a constraint there is worse than showing it awkwardly.
+_LOGICAL_OPERANDS = ("odrl:or", "odrl:and", "odrl:xone")
+
+
+def _flatten_constraint(constraint: dict[str, Any], depth: int = 0) -> list[dict[str, Any]]:
+    if depth > 4:
+        return []
+    for operand in _LOGICAL_OPERANDS:
+        nested = constraint.get(operand)
+        if nested:
+            out: list[dict[str, Any]] = []
+            for child in nested:
+                out.extend(_flatten_constraint(child, depth + 1))
+            return out
+    return [constraint]
+
+
 def _permission_constraints(policy: dict[str, Any]) -> list[dict[str, Any]]:
     constraints: list[dict[str, Any]] = []
     for permission in policy.get("odrl:permission") or []:
         for constraint in permission.get("odrl:constraint") or []:
-            constraints.append(constraint)
+            constraints.extend(_flatten_constraint(constraint))
     return constraints
 
 
