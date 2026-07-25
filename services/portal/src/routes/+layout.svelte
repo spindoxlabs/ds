@@ -5,8 +5,15 @@
 
   let { data, children } = $props();
   const persona = $derived(derivePersona(data.session));
-  const isDataSubject = $derived(data.userVcRole === 'DataSubject');
-  const isConsumerUser = $derived(data.userVcRole === 'ConsumerUser');
+
+  // Roles are additive, not exclusive: one person can be both a data subject and
+  // a consumer user, and provider comes from Keycloak groups on a separate axis
+  // entirely. Every section the user qualifies for is shown.
+  const vcRoles = $derived(
+    data.userVcRoles?.length ? data.userVcRoles : (data.userVcRole ? [data.userVcRole] : []),
+  );
+  const isDataSubject = $derived(vcRoles.includes('DataSubject'));
+  const isConsumerUser = $derived(vcRoles.includes('ConsumerUser'));
 
   const navItems = $derived([
     { href: '/', label: 'Catalog', show: isConsumerUser || persona.isAdmin },

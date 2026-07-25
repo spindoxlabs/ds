@@ -52,8 +52,18 @@ async function getServiceToken(): Promise<string> {
 	}
 }
 
+export interface ResolvedCredential {
+	role: string | null;
+	vcJws: string | null;
+}
+
 export interface ResolvedIdentity {
 	did: string;
+	/** Every role the user holds — see `Session.userVcRoles`. */
+	roles: string[];
+	/** VC-JWS per role, for selecting the credential a call requires. */
+	jwsByRole: Record<string, string>;
+	/** Newest credential. Kept for callers with no role preference. */
 	role: string | null;
 	vcJws: string | null;
 	subjectId: string;
@@ -76,12 +86,26 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedIdentit
 		}
 		const data = (await res.json()) as {
 			did: string;
+			roles?: string[] | null;
+			credentials?: Array<{ role?: string | null; vc_jws?: string | null }> | null;
 			role?: string | null;
 			vc_jws?: string | null;
 			subject_id: string;
 		};
+
+		// `credentials` is ordered newest-first by the registry. Keep the first
+		// JWS per role so a re-issued credential does not shadow the current one.
+		const jwsByRole: Record<string, string> = {};
+		for (const cred of data.credentials ?? []) {
+			if (cred.role && cred.vc_jws && !(cred.role in jwsByRole)) {
+				jwsByRole[cred.role] = cred.vc_jws;
+			}
+		}
+
 		return {
 			did: data.did,
+			roles: data.roles ?? (data.role ? [data.role] : []),
+			jwsByRole,
 			role: data.role ?? null,
 			vcJws: data.vc_jws ?? null,
 			subjectId: data.subject_id,

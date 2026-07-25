@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId } from '$lib/server/auth';
+import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 export const GET: RequestHandler = async ({ params, locals }) => {
@@ -16,7 +16,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const res = await fetch(`${connectorUrl}/consumer/negotiations/${params.id}`, {
 		headers: {
-			...subjectCredentialHeaders(subjectId, session?.userVcJws),
+			...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 	});

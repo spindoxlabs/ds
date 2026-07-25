@@ -151,6 +151,22 @@ services:
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000004 \
           --email subject@example.test
+        # A user holding BOTH roles. Roles are additive, not exclusive — the same
+        # human can be a data subject about their own consumption and a consumer
+        # user acting for an organisation — and without a fixture that actually
+        # holds two credentials, every guard and nav path that assumes one role
+        # per person looks correct in dev.
+        ir-cli credential issue-data-subject \
+          --subject-id dual-user --role DataSubject \
+          --linked-participant-did did:web:provider.dataspaces.localhost
+        ir-cli credential issue-data-subject \
+          --subject-id dual-user --role ConsumerUser \
+          --linked-participant-did did:web:consumer.dataspaces.localhost
+        ir-cli keycloak sync \
+          --did did:web:users.dataspaces.localhost:dual-user \
+          --realm dataspaces \
+          --user-id 00000000-0000-4000-a000-000000000005 \
+          --email dual@example.test
         ir-cli owner import --file /seed/owners.dev.yaml
         ir-cli agreement import --file /seed/agreements.dev.yaml
         ir-cli membership add \
@@ -159,6 +175,10 @@ services:
           --role consumer
         ir-cli membership add \
           --user-did did:web:users.dataspaces.localhost:consumer-user \
+          --organization example-org \
+          --role consumer
+        ir-cli membership add \
+          --user-did did:web:users.dataspaces.localhost:dual-user \
           --organization example-org \
           --role consumer
         echo "Identity bootstrap complete"

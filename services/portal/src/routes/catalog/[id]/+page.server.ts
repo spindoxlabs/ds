@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { summarisePolicy } from '$lib/server/odrl';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId } from '$lib/server/auth';
+import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 export const load: PageServerLoad = async ({ params, locals, fetch }) => {
@@ -13,9 +13,23 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const federatedUrl = env.FEDERATED_CATALOG_URL;
 	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
 	const defaultCounterPartyAddress =
-		env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS ?? 'http://edc-provider:19194/protocol/2025-1';
+		env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS ?? 'http://172.17.0.1:19194/protocol/2025-1';
 	const defaultAssigner =
 		env.CONSUMER_DEFAULT_ASSIGNER ?? 'did:web:provider.dataspaces.localhost';
+
+	// Two JSON-LD shapes reach this page: the dataset-api serves prefixed terms
+	// (`dcat:distribution`, `odrl:hasPolicy`), the federated catalog serves its
+	// own @context with them unprefixed. Reading only the prefixed form left
+	// federated datasets with no policy and an assigner falling back to the
+	// deployment default — a negotiation against the wrong provider.
+	const pick = (obj: Record<string, unknown> | null | undefined, ...names: string[]): unknown => {
+		if (!obj) return undefined;
+		for (const name of names) {
+			const value = obj[name];
+			if (value !== undefined && value !== null && value !== '') return value;
+		}
+		return undefined;
+	};
 
 	const idOf = (value: unknown): string => {
 		if (!value) return '';
@@ -68,10 +82,13 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	try {
 		const dataset = (await fromFederatedCatalog()) ?? (await fromDatasetApi());
 
-		const distribution = Array.isArray(dataset['dcat:distribution'])
-			? (dataset['dcat:distribution'] as Array<Record<string, unknown>>)[0]
+		const rawDistribution = pick(dataset, 'dcat:distribution', 'distribution');
+		const distribution = Array.isArray(rawDistribution)
+			? (rawDistribution as Array<Record<string, unknown>>)[0]
 			: null;
-		const rawPolicy = dataset['odrl:hasPolicy'] ?? distribution?.['odrl:hasPolicy'];
+		const rawPolicy =
+			pick(dataset, 'odrl:hasPolicy', 'hasPolicy')
+			?? pick(distribution, 'odrl:hasPolicy', 'hasPolicy');
 		const policy = Array.isArray(rawPolicy) ? rawPolicy[0] : rawPolicy;
 		const policySummary = summarisePolicy(policy as Record<string, unknown> ?? null);
 		const policyObject = policy && typeof policy === 'object'
@@ -79,13 +96,20 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 			: null;
 		const offerId = `${assetId}#offer`;
 		const assigner =
-			idOf(policyObject?.['odrl:assigner'])
-			|| idOf(dataset['edc:assigner'])
-			|| idOf(dataset['provider_participant_id'])
+			idOf(pick(policyObject, 'odrl:assigner', 'assigner'))
+			|| idOf(pick(dataset, 'edc:assigner', 'assigner'))
+			|| idOf(pick(dataset, 'provider_participant_id'))
 			|| defaultAssigner;
+		// A federated record carries the real DSP endpoint on its access service.
+		// Preferring the default over it would negotiate against whichever
+		// provider the deployment happens to name — wrong as soon as the catalog
+		// federates more than one.
+		const accessService = pick(distribution, 'dcat:accessService', 'accessService') as
+			| Record<string, unknown>
+			| undefined;
 		const counterPartyAddress =
-			idOf(dataset['edc:counterPartyAddress'])
-			|| idOf(dataset['counter_party_address'])
+			idOf(pick(dataset, 'edc:counterPartyAddress', 'counter_party_address'))
+			|| String(pick(accessService, 'endpointURL', 'dcat:endpointURL') ?? '')
 			|| defaultCounterPartyAddress;
 
 		if (policyObject) {
@@ -98,7 +122,7 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 		try {
 			const requestsRes = await fetch(`${connectorUrl}/consumer/requests`, {
 				headers: {
-					...subjectCredentialHeaders(subjectId, session?.userVcJws),
+					...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 					...(token ? { Authorization: `Bearer ${token}` } : {}),
 				},
 			});

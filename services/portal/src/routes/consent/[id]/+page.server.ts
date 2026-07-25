@@ -2,12 +2,13 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { PageServerLoad, Actions } from './$types';
 import { getMyConsent, approveConsent, rejectConsent, revokeConsent } from '$lib/server/connector';
 import { summarisePolicy } from '$lib/server/odrl';
+import { vcJwsForRole } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ params, locals }) => {
 	const session = await locals.auth();
 	const token = session?.accessToken ?? '';
 	const subjectId = session?.userDid ?? '';
-	const vcJws = session?.userVcJws;
+	const vcJws = vcJwsForRole(session, 'DataSubject');
 	try {
 		const consent = await getMyConsent(params.id, token, subjectId, vcJws);
 		const policySummary = summarisePolicy(null);
@@ -23,7 +24,7 @@ export const actions: Actions = {
 		const token = session?.accessToken ?? '';
 		const subjectId = session?.userDid ?? '';
 		try {
-			await approveConsent(params.id, token, subjectId, session?.userVcJws);
+			await approveConsent(params.id, token, subjectId, vcJwsForRole(session, 'DataSubject'));
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}
@@ -34,7 +35,7 @@ export const actions: Actions = {
 		const token = session?.accessToken ?? '';
 		const subjectId = session?.userDid ?? '';
 		try {
-			await rejectConsent(params.id, token, subjectId, session?.userVcJws);
+			await rejectConsent(params.id, token, subjectId, vcJwsForRole(session, 'DataSubject'));
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}
@@ -45,7 +46,7 @@ export const actions: Actions = {
 		const token = session?.accessToken ?? '';
 		const subjectId = session?.userDid ?? '';
 		try {
-			await revokeConsent(params.id, token, subjectId, session?.userVcJws);
+			await revokeConsent(params.id, token, subjectId, vcJwsForRole(session, 'DataSubject'));
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed' });
 		}

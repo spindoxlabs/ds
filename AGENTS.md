@@ -549,6 +549,17 @@ All bootstrap and provisioning operations must be idempotent. `task identity:boo
 | `provider@example.test` | `provider` | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
 | `consumer@example.test` | `consumer` | — | `ConsumerUser` | Data consumer |
 | `subject@example.test` | `subject` | — | `DataSubject` | Consent management |
+| `dual@example.test` | `dual` | — | `ConsumerUser` **and** `DataSubject` | Role coexistence |
+
+**`dual@example.test` exists to stop role exclusivity from looking correct.** VC
+roles are additive: the same human is a data subject about their own consumption
+*and* a consumer user acting for an organisation. Without a fixture that actually
+holds two credentials, every guard and navigation path that assumes one role per
+person passes in dev. Provider is a separate axis again — a Keycloak **group**
+(`connector.provider.*`), not a VC — so it composes with either.
+
+`ir-cli credential issue-data-subject` is idempotent **per role**, not per
+subject, which is what makes a dual-role user possible to create.
 
 Service accounts are defined in `services/keycloak/clients.yaml`. Default secret = client_id (e.g., `svc-ds-portal` / `svc-ds-portal`).
 

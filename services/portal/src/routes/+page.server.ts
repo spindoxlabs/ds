@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { env } from '$env/dynamic/private';
 import { redirect } from '@sveltejs/kit';
-import { parseTokenRoles } from '$lib/server/auth';
+import { hasVcRole, parseTokenRoles } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const session = await locals.auth();
@@ -10,14 +10,19 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	}
 
 	const roles = parseTokenRoles(session.accessToken);
-	const userVcRole = session.userVcRole ?? null;
-	if (!roles.isAdmin && userVcRole !== 'ConsumerUser') {
-		if (roles.isDatasetAdmin) {
+	// Redirect only when the catalogue is genuinely not this user's page, and only
+	// when exactly one other path applies. Ranking roles by priority bounced a
+	// user who holds several away from a section they are entitled to.
+	if (!roles.isAdmin && !hasVcRole(session, 'ConsumerUser')) {
+		const isSubject = hasVcRole(session, 'DataSubject');
+		if (roles.isDatasetAdmin && !isSubject) {
 			throw redirect(303, '/provider/assets');
 		}
-		if (userVcRole === 'DataSubject') {
+		if (isSubject && !roles.isDatasetAdmin) {
 			throw redirect(303, '/my-data');
 		}
+		// Both (or neither) apply: leave them here, where the nav shows every
+		// section they qualify for.
 	}
 
 	// Use federated catalog when configured; fall back to dataset-api catalogue.

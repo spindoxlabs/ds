@@ -83,6 +83,8 @@ const { handle: authHandle, signIn, signOut } = SvelteKitAuth({
 				const email = (profile?.email ?? token.email ?? '') as string;
 				const identity = await resolveUserByEmail(email);
 				token.userDid = identity?.did ?? null;
+				token.userVcRoles = identity?.roles ?? [];
+				token.userVcJwsByRole = identity?.jwsByRole ?? {};
 				token.userVcRole = identity?.role ?? null;
 				token.userVcJws = identity?.vcJws ?? null;
 				token.userSubjectId = identity?.subjectId ?? null;
@@ -102,6 +104,8 @@ const { handle: authHandle, signIn, signOut } = SvelteKitAuth({
 			}
 			session.accessToken = token.accessToken as string | undefined;
 			session.userDid = (token.userDid as string) ?? null;
+			session.userVcRoles = (token.userVcRoles as string[]) ?? [];
+			session.userVcJwsByRole = (token.userVcJwsByRole as Record<string, string>) ?? {};
 			session.userVcRole = (token.userVcRole as string) ?? null;
 			session.userVcJws = (token.userVcJws as string) ?? null;
 			session.userSubjectId = (token.userSubjectId as string) ?? null;

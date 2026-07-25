@@ -110,6 +110,35 @@ export function getConsumerSubjectId(session: Session): string {
 	return session.userDid ?? '';
 }
 
+/**
+ * Does the user hold this VC role?
+ *
+ * A person legitimately holds several — the same human is a data subject about
+ * their own consumption and a consumer user acting for an organisation — so this
+ * asks "includes", never "equals". `userVcRole` is consulted as a fallback for
+ * sessions minted before `userVcRoles` existed.
+ */
+export function hasVcRole(session: Session | null | undefined, role: string): boolean {
+	if (!session) return false;
+	if (session.userVcRoles?.length) return session.userVcRoles.includes(role);
+	return session.userVcRole === role;
+}
+
+/**
+ * The VC to present for a call that requires `role`.
+ *
+ * Falls back to the newest credential so a session minted before per-role
+ * selection existed still works; returns null when there is nothing to present,
+ * which the connector answers with a 401 rather than a silent success.
+ */
+export function vcJwsForRole(
+	session: Session | null | undefined,
+	role: string,
+): string | null {
+	if (!session) return null;
+	return session.userVcJwsByRole?.[role] ?? session.userVcJws ?? null;
+}
+
 export async function requireAuth(event: { locals: App.Locals; url: URL }) {
 	const session = await event.locals.auth();
 	if (!session?.user || session.error === 'RefreshTokenError') {
@@ -136,23 +165,43 @@ export async function requireProvider(event: { locals: App.Locals; url: URL }) {
 	return { session, roles };
 }
 
+/**
+ * Consumer routes need a `ConsumerUser` credential, because every call they make
+ * presents one.
+ *
+ * There is deliberately **no admin bypass**. There used to be one, and it was
+ * dead code: an admin has no identity-registry mapping, so `subjectId` is empty
+ * and the guard rejected them at the first condition anyway. Worse, letting an
+ * admin through would only defer the failure to the connector, which requires a
+ * VC these routes cannot produce. An operator who must act as a consumer needs a
+ * credential issued, not a UI exception.
+ */
 export async function requireConsumer(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
 	const subjectId = getConsumerSubjectId(session);
-	const userVcRole = session.userVcRole ?? null;
-	if (!subjectId || (!roles.isAdmin && userVcRole !== 'ConsumerUser')) {
+	if (!subjectId || !hasVcRole(session, 'ConsumerUser')) {
 		throw redirect(303, '/');
 	}
-	return { session, roles, subjectId, userVcRole };
+	return {
+		session,
+		roles,
+		subjectId,
+		userVcRole: 'ConsumerUser',
+		vcJws: vcJwsForRole(session, 'ConsumerUser'),
+	};
 }
 
 export async function requireDataSubject(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const subjectId = session.userDid ?? '';
-	const userVcRole = session.userVcRole ?? null;
-	if (!subjectId || userVcRole !== 'DataSubject') {
+	if (!subjectId || !hasVcRole(session, 'DataSubject')) {
 		throw redirect(303, '/');
 	}
-	return { session, subjectId, userVcRole };
+	return {
+		session,
+		subjectId,
+		userVcRole: 'DataSubject',
+		vcJws: vcJwsForRole(session, 'DataSubject'),
+	};
 }

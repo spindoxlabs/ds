@@ -2,7 +2,7 @@ import { fail } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { env } from '$env/dynamic/private';
 import { subjectCredentialHeaders } from '$lib/server/connector';
-import { getConsumerSubjectId } from '$lib/server/auth';
+import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals, fetch }) => {
 	const session = await locals.auth();
@@ -11,7 +11,7 @@ export const load: PageServerLoad = async ({ locals, fetch }) => {
 	const connectorUrl = env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 
 	const headers = {
-		...subjectCredentialHeaders(subjectId, session?.userVcJws),
+		...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 		...(token ? { Authorization: `Bearer ${token}` } : {}),
 	};
 
@@ -57,7 +57,7 @@ export const actions: Actions = {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				...subjectCredentialHeaders(subjectId, session?.userVcJws),
+				...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 				...(token ? { Authorization: `Bearer ${token}` } : {}),
 			},
 			body: JSON.stringify({ reason: 'Revoked by consumer user' }),

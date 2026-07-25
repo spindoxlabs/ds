@@ -65,11 +65,36 @@ class KeycloakMappingResponse(BaseModel):
     subject_id: str
 
 
-class UserResolveResponse(BaseModel):
-    did: str
+class UserCredentialResponse(BaseModel):
+    """One presentable credential held by a user."""
+
     role: str | None = None
     vc_jws: str | None = None
+    credential_type: str
+    issued_at: datetime
+    expires_at: datetime | None = None
+
+
+class UserResolveResponse(BaseModel):
+    """Every credential a user can present, not just the newest one.
+
+    A person legitimately holds more than one role — the same human can be a
+    data subject about their own consumption *and* a consumer user acting for an
+    organisation. Returning only the most recently issued credential made those
+    mutually exclusive for every caller, and left a caller presenting whichever
+    VC happened to be newest rather than the one the operation requires.
+
+    ``role`` and ``vc_jws`` are retained as the newest entry of ``credentials``
+    so existing callers keep working; new callers should read ``credentials`` and
+    select by role.
+    """
+
+    did: str
     subject_id: str
+    roles: list[str] = []
+    credentials: list[UserCredentialResponse] = []
+    role: str | None = None
+    vc_jws: str | None = None
 
 
 class MembershipResponse(BaseModel):

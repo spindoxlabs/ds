@@ -104,16 +104,39 @@ Rules when touching this page:
 - **Graph visualization**: use Cytoscape.js with dagre layout for lineage DAGs
 - **Svelte 5**: use `$state`, `$derived`, `$effect` runes — not Svelte 4 stores syntax
 
-## Auth model
+## Auth model — two independent axes
 
-Keycloak issues JWTs with roles in `resource_access` and scopes. The portal derives a `UserPersona`:
+Authority arrives on **two axes that must not be conflated**. Getting this wrong
+is what made roles mutually exclusive.
 
-| Role / Scope | Persona flag | Access |
-|-------------|-------------|--------|
-| `admin` | `isAdmin` | Admin routes, health, audit, lineage |
-| `dataset.admin` | `isProvider` | Provider routes, governance sync |
-| `dataspaces.query` | `isConsumer` | Consumer routes, negotiate, transfer |
-| (authenticated) | `isSubject` | Consent routes |
+| Axis | Source | Carries | Checked with |
+|---|---|---|---|
+| **Keycloak** | realm roles, any client's `resource_access` roles, realm `groups`, `organization.<alias>.{groups,roles}` | operator and provider authority (`connector.admin`, `connector.provider.*`, `dataset.admin`) | `parseTokenRoles` / `derivePersona` |
+| **Verifiable credential** | identity-registry `GET /users/resolve` | `ConsumerUser`, `DataSubject` — what the connector's `X-User-VC` calls present | `hasVcRole(session, role)` |
+
+**Roles are additive, never exclusive.** One person legitimately holds several:
+the same human is a data subject about their own consumption *and* a consumer user
+acting for an organisation, and may hold provider groups on top. So:
+
+- **Always `hasVcRole(session, …)`, never `session.userVcRole === …`.** The
+  singular field is the newest credential, kept only for compatibility.
+- **Present the credential the call requires** — `vcJwsForRole(session, role)`.
+  `session.userVcJws` is whichever VC was issued last, so using it made a consumer
+  call fail whenever the subject credential happened to be newer.
+- **The nav shows every section the user qualifies for**, and the landing page
+  redirects only when exactly one other path applies. Ranking roles by priority
+  bounced a multi-role user away from a section they were entitled to.
+- **There is no admin bypass on the VC axis, by design.** An admin has no
+  identity-registry mapping, so an "admin may act as consumer" exception was dead
+  code — and letting one through would only defer the failure to the connector,
+  which requires a VC the portal cannot produce. An operator who must act as a
+  consumer needs a credential issued.
+
+`dual@example.test` / `dual` is the dev fixture that holds both VC roles.
+
+Persona flags (`isAdmin`, `isProvider`, `isConsumer`, `isSubject`) remain for UI
+display. All gating is cosmetic — the backend re-verifies and re-authorizes every
+request.
 
 ## Environment variables
 
@@ -145,7 +168,22 @@ with no useful error.
 | `CONSUMER_CONNECTOR_URL` | `http://172.17.0.1:31001` | Connector driven by the `/consumer/*` routes. In dev one portal fronts both stacks, so it differs from `CONNECTOR_URL`; per participant they are the same |
 | `CONSUMER_PARTICIPANT_DID` | `did:web:consumer.dataspaces.localhost` | DID reported as the consumer when querying data through an EDR. Wrong value → the provider's PEP rejects the query |
 | `CONSUMER_DEFAULT_ASSIGNER` | `did:web:provider.dataspaces.localhost` | ODRL assigner used only when the catalogue entry carries none |
-| `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | `http://edc-provider:19194/protocol/2025-1` | DSP protocol address used only when the catalogue entry carries none |
+| `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | `http://172.17.0.1:19194/protocol/2025-1` | DSP protocol address used only when the catalogue entry carries none. **Must equal the participant's registered `dsp_address`** — see below |
+
+### A DSP address is an identity, not a route
+
+`counter_party_address` is resolved against the identity registry, so it has to be
+the value registered as that participant's `dsp_address`. Anything else gets
+`400 Unknown dataspace participant` from the connector — **including an address
+that is perfectly reachable**. The container-DNS form
+(`http://edc-provider:19194/protocol/2025-1`) resolves, answers HTTP, and is still
+rejected, which is why "I can curl it" is not evidence that this value is right.
+Check it against `GET /admin/participants` on the identity registry.
+
+For the same reason the catalogue detail loader prefers the DSP endpoint carried
+*in the dataset record* (`accessService.endpointURL`) over this default: the
+default is only correct for the one provider the deployment happens to name, and
+a federated catalogue serves datasets from several.
 
 ## Testing
 

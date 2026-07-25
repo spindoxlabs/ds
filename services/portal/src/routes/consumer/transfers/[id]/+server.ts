@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId } from '$lib/server/auth';
+import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 function connectorUrl(): string {
@@ -41,7 +41,7 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 
 	const res = await fetch(`${connectorUrl()}/consumer/transfers/${params.id}`, {
 		headers: {
-			...subjectCredentialHeaders(subjectId, session?.userVcJws),
+			...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 	});
@@ -58,7 +58,7 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 	const token = session?.accessToken ?? '';
 	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const headers: Record<string, string> = {
-		...subjectCredentialHeaders(subjectId, session?.userVcJws),
+		...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 		...(token ? { Authorization: `Bearer ${token}` } : {}),
 	};
 

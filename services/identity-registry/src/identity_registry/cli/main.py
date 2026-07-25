@@ -409,9 +409,21 @@ def credential_issue_data_subject(
                     Credential.status == "active",
                 )
             )
-            if existing_cred.scalar_one_or_none():
-                typer.echo(f"Active DataSubjectCredential already exists for {subject_did}")
-                return
+            # Idempotent **per role**, not per subject. One person legitimately
+            # holds several — a data subject about their own consumption who is
+            # also a consumer user acting for an organisation — and keying this
+            # on `credential_type` alone silently skipped the second issuance,
+            # making a dual-role user impossible to create. `credential_type`
+            # cannot carry the role: it is also the VC `type` (services/vc.py)
+            # that DCP presentation matching keys on.
+            for cred in existing_cred.scalars().all():
+                subject = (cred.credential_json or {}).get("credentialSubject") or {}
+                if subject.get("role") == role:
+                    typer.echo(
+                        f"Active DataSubjectCredential with role={role or '-'} "
+                        f"already exists for {subject_did}"
+                    )
+                    return
 
             ta_key_result = await session.execute(
                 select(Key).where(Key.owner_did == ta_did, Key.active.is_(True))

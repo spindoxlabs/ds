@@ -20,9 +20,8 @@ async function loadOwnedDatasets(fetchFn: typeof fetch, subjectId: string): Prom
 }
 
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
-	const { session, subjectId } = await requireDataSubject({ locals, url });
+	const { session, subjectId, vcJws } = await requireDataSubject({ locals, url });
 	const token = session.accessToken ?? '';
-	const vcJws = session.userVcJws;
 
 	// Sharing offers are the primary view — they are what the person was asked.
 	// The dataset-derived list is kept as a "what data do I actually have"
@@ -56,20 +55,20 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 
 export const actions: Actions = {
 	shareOffer: async ({ request, locals, url }) => {
-		const { session, subjectId } = await requireDataSubject({ locals, url });
+		const { session, subjectId, vcJws } = await requireDataSubject({ locals, url });
 		const form = await request.formData();
 		const offerId = String(form.get('offer_id') ?? '');
 		const enabled = String(form.get('enabled') ?? '') === 'true';
 		if (!offerId) return fail(400, { error: 'offer_id is required' });
 		try {
-			await setMyOfferShare(session.accessToken ?? '', subjectId, offerId, enabled, session.userVcJws);
+			await setMyOfferShare(session.accessToken ?? '', subjectId, offerId, enabled, vcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed to update sharing' });
 		}
 		throw redirect(303, '/my-data');
 	},
 	share: async ({ request, locals, url }) => {
-		const { session, subjectId } = await requireDataSubject({ locals, url });
+		const { session, subjectId, vcJws } = await requireDataSubject({ locals, url });
 		const token = session.accessToken ?? '';
 		const form = await request.formData();
 		const datasetId = String(form.get('dataset_id') ?? '');
@@ -79,20 +78,20 @@ export const actions: Actions = {
 			.filter(Boolean);
 		if (!datasetId) return fail(400, { error: 'dataset_id is required' });
 		try {
-			await setMyDataShare(token, subjectId, datasetId, true, session.userVcJws, purpose);
+			await setMyDataShare(token, subjectId, datasetId, true, vcJws, purpose);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed to enable sharing' });
 		}
 		throw redirect(303, '/my-data');
 	},
 	stop: async ({ request, locals, url }) => {
-		const { session, subjectId } = await requireDataSubject({ locals, url });
+		const { session, subjectId, vcJws } = await requireDataSubject({ locals, url });
 		const token = session.accessToken ?? '';
 		const form = await request.formData();
 		const datasetId = String(form.get('dataset_id') ?? '');
 		if (!datasetId) return fail(400, { error: 'dataset_id is required' });
 		try {
-			await setMyDataShare(token, subjectId, datasetId, false, session.userVcJws);
+			await setMyDataShare(token, subjectId, datasetId, false, vcJws);
 		} catch (e) {
 			return fail(500, { error: e instanceof Error ? e.message : 'Failed to disable sharing' });
 		}

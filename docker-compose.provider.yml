@@ -226,7 +226,7 @@ services:
       # identity: a wrong assigner fails a negotiation with no useful error.
       CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
       CONSUMER_DEFAULT_ASSIGNER: did:web:provider.dataspaces.localhost
-      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: http://edc-provider:19194/protocol/2025-1
+      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
       AUTH_KEYCLOAK_ISSUER: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
       AUTH_KEYCLOAK_ID: ds-portal
       AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}

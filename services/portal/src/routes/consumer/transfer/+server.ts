@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId } from '$lib/server/auth';
+import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 async function connectorErrorMessage(res: Response): Promise<string> {
@@ -34,7 +34,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		body.counter_party_address
 		?? body.counterPartyAddress
 		?? env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS
-		?? 'http://edc-provider:19194/protocol/2025-1';
+		?? 'http://172.17.0.1:19194/protocol/2025-1';
 	const connectorId =
 		body.connector_id
 		?? body.connectorId
@@ -59,7 +59,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			...subjectCredentialHeaders(subjectId, session?.userVcJws),
+			...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 		body: JSON.stringify(payload),

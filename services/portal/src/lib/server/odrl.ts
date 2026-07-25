@@ -1,20 +1,26 @@
 /**
  * ODRL JSON-LD → plain-language sentences.
  * Used server-side in load functions; result passed as plain strings to components.
+ *
+ * Two JSON-LD shapes reach this module and both must render identically:
+ * the dataset-api serves `odrl:`-prefixed terms, while the federated catalog
+ * serves its own @context with the terms unprefixed (`permission`, `action`,
+ * `leftOperand`). Reading only one shape silently produced an empty summary for
+ * every federated dataset, so every lookup goes through `term()`.
  */
 
 interface OdrlAction {
 	'@id'?: string;
 }
 
-interface OdrlConstraint {
-	'odrl:leftOperand'?: string | { '@id': string };
-	'odrl:rightOperand'?: string;
-}
+type OdrlConstraint = Record<string, unknown>;
 
-interface OdrlRule {
-	'odrl:action'?: OdrlAction | string;
-	'odrl:constraint'?: OdrlConstraint | OdrlConstraint[];
+type OdrlRule = Record<string, unknown>;
+
+/** Read an ODRL term under its prefixed or unprefixed name. */
+function term<T = unknown>(obj: Record<string, unknown> | null | undefined, name: string): T | undefined {
+	if (!obj) return undefined;
+	return (obj[`odrl:${name}`] ?? obj[name]) as T | undefined;
 }
 
 export interface PolicySummary {
@@ -24,9 +30,15 @@ export interface PolicySummary {
 	constraints: string[];
 }
 
+/** Last path segment of an IRI, lowercased — the two sources differ in case
+ *  (`.../policy/Query` vs `odrl:query`), and a case-sensitive lookup made the
+ *  same policy render differently depending on where it was read from. */
+function localName(iri: string): string {
+	return (iri.split(/[/#:]/).pop() ?? iri).toLowerCase();
+}
+
 function actionLabel(action: OdrlAction | string | undefined): string {
 	const id = typeof action === 'string' ? action : action?.['@id'] ?? '';
-	const short = id.split(/[/#:]/).pop() ?? id;
 	const labels: Record<string, string> = {
 		use: 'Use data',
 		query: 'Execute queries',
@@ -38,26 +50,27 @@ function actionLabel(action: OdrlAction | string | undefined): string {
 		anonymize: 'Anonymise before use',
 		attribute: 'Attribute the data source',
 	};
-	return labels[short] ?? short;
+	// Fall back to the original segment, not the lowercased one — an unmapped
+	// term should read as it was written.
+	return labels[localName(id)] ?? (id.split(/[/#:]/).pop() ?? id);
 }
 
 function constraintSentence(c: OdrlConstraint): string {
-	const left =
-		typeof c['odrl:leftOperand'] === 'string'
-			? c['odrl:leftOperand']
-			: c['odrl:leftOperand']?.['@id'] ?? '';
-	const right = c['odrl:rightOperand'] ?? '';
-	const short = left.split(/[/#:]/).pop() ?? left;
+	const rawLeft = term<string | { '@id': string }>(c, 'leftOperand');
+	const left = typeof rawLeft === 'string' ? rawLeft : rawLeft?.['@id'] ?? '';
+	const right = String(term<string>(c, 'rightOperand') ?? '');
 
 	const map: Record<string, (r: string) => string> = {
-		accessScope: (r) => `Requires OAuth scope "${r}"`,
-		consentStatus: (r) => `Data-subject consent must be "${r}"`,
-		contractRequired: (r) =>
+		accessscope: (r) => `Requires OAuth scope "${r}"`,
+		consentstatus: (r) => `Data-subject consent must be "${r}"`,
+		contractrequired: (r) =>
 			r === 'true' ? 'A bilateral contract agreement is required' : 'No contract required',
-		participantRole: (r) => `Requesting participant must have role "${r}"`,
+		participantrole: (r) => `Requesting participant must have role "${r}"`,
 		purpose: (r) => `Declared purpose must be "${r}"`,
+		membership: (r) => `Requester must be a member of "${r}"`,
 	};
-	return map[short]?.(right) ?? `${short} = ${right}`;
+	const short = left.split(/[/#:]/).pop() ?? left;
+	return map[localName(left)]?.(right) ?? `${short} = ${right}`;
 }
 
 function rulesFor(rules: OdrlRule | OdrlRule[] | undefined): OdrlRule[] {
@@ -68,16 +81,17 @@ function rulesFor(rules: OdrlRule | OdrlRule[] | undefined): OdrlRule[] {
 export function summarisePolicy(policy: Record<string, unknown> | null | undefined): PolicySummary {
 	if (!policy) return { permitted: [], prohibited: [], obligations: [], constraints: [] };
 
-	const perms = rulesFor(policy['odrl:permission'] as OdrlRule | OdrlRule[] | undefined);
-	const prohbs = rulesFor(policy['odrl:prohibition'] as OdrlRule | OdrlRule[] | undefined);
-	const obligs = rulesFor(policy['odrl:obligation'] as OdrlRule | OdrlRule[] | undefined);
+	const perms = rulesFor(term<OdrlRule | OdrlRule[]>(policy, 'permission'));
+	const prohbs = rulesFor(term<OdrlRule | OdrlRule[]>(policy, 'prohibition'));
+	const obligs = rulesFor(term<OdrlRule | OdrlRule[]>(policy, 'obligation'));
 
-	const permitted = perms.map((r) => actionLabel(r['odrl:action']));
-	const prohibited = prohbs.map((r) => actionLabel(r['odrl:action']));
-	const obligations = obligs.map((r) => actionLabel(r['odrl:action']));
+	const labelOf = (r: OdrlRule) => actionLabel(term<OdrlAction | string>(r, 'action'));
+	const permitted = perms.map(labelOf);
+	const prohibited = prohbs.map(labelOf);
+	const obligations = obligs.map(labelOf);
 
 	const allConstraints = [...perms, ...prohbs, ...obligs].flatMap((r) => {
-		const c = r['odrl:constraint'];
+		const c = term<OdrlConstraint | OdrlConstraint[]>(r, 'constraint');
 		if (!c) return [];
 		return (Array.isArray(c) ? c : [c]).map(constraintSentence);
 	});

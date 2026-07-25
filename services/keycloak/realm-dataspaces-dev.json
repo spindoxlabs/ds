@@ -297,11 +297,21 @@
     }
   ],
   "groups": [
-    { "name": "connector.admin" },
-    { "name": "connector.provider.read" },
-    { "name": "connector.provider.write" },
-    { "name": "provenance.read" },
-    { "name": "catalog.read" }
+    {
+      "name": "connector.admin"
+    },
+    {
+      "name": "connector.provider.read"
+    },
+    {
+      "name": "connector.provider.write"
+    },
+    {
+      "name": "provenance.read"
+    },
+    {
+      "name": "catalog.read"
+    }
   ],
   "users": [
     {
@@ -395,6 +405,25 @@
         {
           "type": "password",
           "value": "subject",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/catalog.read"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000005",
+      "username": "dual@example.test",
+      "email": "dual@example.test",
+      "firstName": "Dual",
+      "lastName": "Role",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "dual",
           "temporary": false
         }
       ],
