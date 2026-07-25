@@ -21,6 +21,24 @@ ds-<service>-<participant>.
   value: {{ printf "http://ds-federated-catalog-%s:30003" $p | quote }}
 - name: IDENTITY_REGISTRY_URL
   value: {{ printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority | quote }}
+{{- if .Values.datasetApi.url }}
+- name: CATALOGUE_URL
+  value: {{ .Values.datasetApi.url | quote }}
+{{- end }}
+# Consumer-side wiring. Without these the portal falls back to the compose
+# host-gateway convention (172.17.0.1), which does not resolve in-cluster.
+- name: CONSUMER_CONNECTOR_URL
+  value: {{ .Values.consumer.connectorUrl | default (printf "http://ds-connector-%s:30001" $p) | quote }}
+- name: CONSUMER_PARTICIPANT_DID
+  value: {{ include "ds.participantDid" . | quote }}
+{{- if .Values.consumer.defaultAssigner }}
+- name: CONSUMER_DEFAULT_ASSIGNER
+  value: {{ .Values.consumer.defaultAssigner | quote }}
+{{- end }}
+{{- if .Values.consumer.defaultCounterPartyAddress }}
+- name: CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS
+  value: {{ .Values.consumer.defaultCounterPartyAddress | quote }}
+{{- end }}
 # Auth.js / Keycloak OIDC login.
 - name: AUTH_KEYCLOAK_ISSUER
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}

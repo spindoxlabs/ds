@@ -220,6 +220,13 @@ services:
       PROVENANCE_URL: http://ds-provenance-provider:30000
       FEDERATED_CATALOG_URL: http://ds-federated-catalog-provider:30003
       IDENTITY_REGISTRY_URL: http://identity-registry:30005
+      CATALOGUE_URL: http://dataset-api-provider:30002
+      CONSUMER_CONNECTOR_URL: http://172.17.0.1:31001
+      # Explicit, so the portal's in-code fallbacks never decide a participant
+      # identity: a wrong assigner fails a negotiation with no useful error.
+      CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      CONSUMER_DEFAULT_ASSIGNER: did:web:provider.dataspaces.localhost
+      CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: http://edc-provider:19194/protocol/2025-1
       AUTH_KEYCLOAK_ISSUER: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
       AUTH_KEYCLOAK_ID: ds-portal
       AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}

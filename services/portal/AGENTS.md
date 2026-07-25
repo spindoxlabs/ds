@@ -33,12 +33,10 @@ src/
 │   ├── my-data/                 Data subject — owned datasets and sharing
 │   ├── lineage/[iri]/           Provenance graph viewer (Cytoscape)
 │   ├── metrics/                 Usage metrics
-│   └── admin/
+│   └── admin/                   Operator panel
 │       ├── audit/               Provenance event audit log
-│       ├── compliance/          Compliance checks
 │       ├── health/              Service health checks
-│       ├── participants/        Participant registry viewer
-│       └── rulebook/            Governance rulebook
+│       └── participants/        Participant registry viewer
 ├── lib/
 │   ├── components/
 │   │   ├── NegotiationWizard.svelte   Multi-step negotiate → transfer → EDR flow
@@ -119,33 +117,50 @@ Keycloak issues JWTs with roles in `resource_access` and scopes. The portal deri
 
 ## Environment variables
 
+All of these are **server-side only** — the portal is SSR, so every URL is dialled
+from the portal process, never from the browser. Use backend addresses
+(`172.17.0.1:<port>` on the host, Docker DNS in compose, in-cluster DNS in
+Kubernetes); only `ORIGIN` and `AUTH_KEYCLOAK_ISSUER` are browser-facing.
+
+`.env.local` sets all of them for dev and `docker-compose.provider.yml` passes
+them to the container. **The in-code fallbacks are a last resort, not the dev
+config** — several used to be, and a stale participant DID fails a negotiation
+with no useful error.
+
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `CONNECTOR_URL` | `http://ds-connector:30001` | ds-connector internal URL |
+| `CONNECTOR_URL` | `http://ds-connector:30001` | This participant's ds-connector (used by `connector.ts` and the provider/admin pages) |
 | `PROVENANCE_URL` | `http://ds-provenance:30000` | ds-provenance internal URL |
-| `FEDERATED_CATALOG_URL` | `http://ds-federated-catalog:30003` | Federated catalog URL |
-| `IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | Identity registry URL (user resolution) |
+| `FEDERATED_CATALOG_URL` | — | Federated catalog. Preferred source for the catalogue list **and** dataset detail; falls back to `CATALOGUE_URL` |
+| `CATALOGUE_URL` | `http://172.17.0.1:30002` | dataset-api. Backs catalogue fallback, `/my-data`'s "data held about you" list, and the health page's dataset-api probe. **External in production** — no chart ships it |
+| `IDENTITY_REGISTRY_URL` | `http://172.17.0.1:30005` | Identity registry (user resolution at login) |
 | `AUTH_KEYCLOAK_ISSUER` | `http://keycloak:9080/realms/dataspaces` | OIDC issuer (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
-| `AUTH_KEYCLOAK_ID` | `ds-portal` | Keycloak client ID |
-| `AUTH_KEYCLOAK_SECRET` | — | Keycloak client secret (`change-me-local-client-secret` for dev) |
-| `AUTH_SECRET` | `dev-secret-change-in-prod` | Auth.js session encryption secret |
+| `AUTH_KEYCLOAK_ID` | `ds-portal` | Keycloak login client ID (public redirect client, **not** a service client) |
+| `AUTH_KEYCLOAK_SECRET` | — | Login client secret (`change-me-local-client-secret` for dev) |
+| `AUTH_KEYCLOAK_SCOPE` | `openid profile email` | OIDC scopes requested at login |
+| `AUTH_SECRET` | `dev-secret-change-in-prod` | Auth.js session encryption secret. A known value means forgeable sessions |
 | `ORIGIN` | — | SvelteKit ORIGIN for CSRF (`http://portal.dataspaces.localhost:9010` for dev) |
-| `PORTAL_SERVICE_CLIENT_ID` | `svc-ds-portal` | Service account for backend API calls |
+| `PORTAL_SERVICE_CLIENT_ID` | `svc-ds-portal` | Service account. Used for **one** call — `GET /users/resolve` at login; everything else forwards the user's own token |
 | `PORTAL_SERVICE_CLIENT_SECRET` | `svc-ds-portal` | Service account secret |
-| `CONNECTOR_URL` | `http://ds-connector:30001` | Provider connector base URL (used by `connector.ts`) |
-| `CONSUMER_CONNECTOR_URL` | `http://172.17.0.1:31001` | Consumer connector URL (used by consumer `+server.ts` routes) |
-| `CONSUMER_DEFAULT_ASSIGNER` | `did:web:provider.dataspaces.test` | Default ODRL assigner for consumer negotiations |
-| `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | `http://edc-provider:19194/protocol/2025-1` | Default DSP protocol address |
+| `CONSUMER_CONNECTOR_URL` | `http://172.17.0.1:31001` | Connector driven by the `/consumer/*` routes. In dev one portal fronts both stacks, so it differs from `CONNECTOR_URL`; per participant they are the same |
+| `CONSUMER_PARTICIPANT_DID` | `did:web:consumer.dataspaces.localhost` | DID reported as the consumer when querying data through an EDR. Wrong value → the provider's PEP rejects the query |
+| `CONSUMER_DEFAULT_ASSIGNER` | `did:web:provider.dataspaces.localhost` | ODRL assigner used only when the catalogue entry carries none |
+| `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | `http://edc-provider:19194/protocol/2025-1` | DSP protocol address used only when the catalogue entry carries none |
 
 ## Testing
 
 ```bash
 task setup          # npm ci
 task run            # dev server on :30004
-task check          # svelte-check
-task lint           # eslint
-npm run test        # vitest
+task check          # svelte-check — the only working gate today
 ```
+
+**There is no test runner yet, and `lint` does not run.** `package.json` declares
+`lint: eslint src` but `eslint` is not in `devDependencies`, and there is no test
+script at all — no vitest, no Playwright. So `task check` is the whole gate, and
+"the UI exercises the API" is currently unenforced. Adding Playwright (and making
+`lint` real) is P10 of `.agents/plans/portal-review/plan.md`. Until then, changes
+here are verified by `task check` plus driving the affected page by hand.
 
 ## Integration points
 

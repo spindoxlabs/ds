@@ -38,6 +38,25 @@ auth:
   scope: openid profile email
   serviceClientId: svc-ds-portal # server-side API calls
 
+# The dataset-api is external in production (no chart ships it), so it cannot be
+# derived. Leave empty and the catalogue detail view, /my-data's "data held about
+# you" list and the health page's dataset-api probe are unavailable — the portal
+# has no in-cluster address to fall back to.
+datasetApi:
+  url: "" # e.g. https://datasets.internal.example.org
+
+# ── Consumer-side wiring ──────────────────────────────────────────────────────
+# The /consumer/* routes drive a connector and name a counterparty. Defaults
+# target this participant's own connector, which is the per-participant reading
+# of the compose topology (where one portal fronted both stacks).
+consumer:
+  # Override only when this portal drives a different participant's connector.
+  connectorUrl: ""
+  # The provider this participant negotiates with by default. Used only when the
+  # catalogue entry carries no assigner or counter-party address of its own.
+  defaultAssigner: ""
+  defaultCounterPartyAddress: ""
+
 ingress:
   enabled: true
 

@@ -10,11 +10,12 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const subjectId = session ? getConsumerSubjectId(session) : '';
 	const assetId = decodeURIComponent(params.id);
 	const connectorUrl = env.CONNECTOR_URL ?? 'http://ds-connector:30001';
+	const federatedUrl = env.FEDERATED_CATALOG_URL;
 	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
 	const defaultCounterPartyAddress =
 		env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS ?? 'http://edc-provider:19194/protocol/2025-1';
 	const defaultAssigner =
-		env.CONSUMER_DEFAULT_ASSIGNER ?? 'did:web:provider.dataspaces.test';
+		env.CONSUMER_DEFAULT_ASSIGNER ?? 'did:web:provider.dataspaces.localhost';
 
 	const idOf = (value: unknown): string => {
 		if (!value) return '';
@@ -26,27 +27,46 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 		return String(value);
 	};
 
-	try {
-		const listRes = await fetch(`${catalogueUrl}/catalogue`, {
-			headers: token ? { Authorization: `Bearer ${token}` } : {},
-		});
+	const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+
+	// Resolve from the federated catalog first, as the landing page does. A
+	// dataset discovered from another participant only exists there — resolving
+	// detail from the local dataset-api alone would 404 it.
+	const fromFederatedCatalog = async (): Promise<Record<string, unknown> | null> => {
+		if (!federatedUrl) return null;
+		try {
+			const res = await fetch(`${federatedUrl}/catalog/${encodeURIComponent(assetId)}`, { headers });
+			if (!res.ok) return null;
+			return (await res.json()) as Record<string, unknown>;
+		} catch (e) {
+			console.error(
+				'[ds-portal] Federated catalog detail unavailable, falling back to dataset-api:',
+				e instanceof Error ? e.message : e,
+			);
+			return null;
+		}
+	};
+
+	const fromDatasetApi = async (): Promise<Record<string, unknown>> => {
+		const listRes = await fetch(`${catalogueUrl}/catalogue`, { headers });
 		if (!listRes.ok) throw new Error(`${listRes.status}`);
 		const raw = await listRes.json();
 		const datasets: Array<Record<string, unknown>> = Array.isArray(raw)
 			? raw
 			: (raw?.datasets ?? raw?.['dcat:dataset'] ?? []);
-		let dataset = datasets.find((item) => {
+		const match = datasets.find((item) => {
 			const ids = [item['dct:identifier'], item['@id'], item['id'], item['asset_id']];
 			return ids.map(String).includes(assetId);
 		});
+		if (match) return match;
 
-		if (!dataset) {
-			const res = await fetch(`${catalogueUrl}/catalogue/${encodeURIComponent(assetId)}`, {
-				headers: token ? { Authorization: `Bearer ${token}` } : {},
-			});
-			if (!res.ok) throw new Error(`${res.status}`);
-			dataset = await res.json() as Record<string, unknown>;
-		}
+		const res = await fetch(`${catalogueUrl}/catalogue/${encodeURIComponent(assetId)}`, { headers });
+		if (!res.ok) throw new Error(`${res.status}`);
+		return (await res.json()) as Record<string, unknown>;
+	};
+
+	try {
+		const dataset = (await fromFederatedCatalog()) ?? (await fromDatasetApi());
 
 		const distribution = Array.isArray(dataset['dcat:distribution'])
 			? (dataset['dcat:distribution'] as Array<Record<string, unknown>>)[0]
@@ -88,9 +108,13 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 					? (
 						requests.find((item) => {
 							const status = String(item?.status ?? '').trim().toLowerCase();
+							// Mirrors the connector's own live-request set
+							// (api/v1/consumer.py:239). Omitting awaiting_consent here
+							// would let a request parked on a consent decision look
+							// absent, and offer a duplicate negotiation.
 							return (
 								String(item?.asset_id ?? item?.assetId ?? '') === assetId
-								&& ['negotiating', 'finalized', 'transferring', 'transferred'].includes(status)
+								&& ['negotiating', 'awaiting_consent', 'finalized', 'transferring', 'transferred'].includes(status)
 							);
 						}) ?? null
 					)

@@ -82,7 +82,7 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 	}
 
 	const queryUrl = toInternalDataUrl(endpoint);
-	const consumerId = env.CONSUMER_PARTICIPANT_DID ?? 'did:web:consumer.dataspaces.test';
+	const consumerId = env.CONSUMER_PARTICIPANT_DID ?? 'did:web:consumer.dataspaces.localhost';
 	const agreementId =
 		transfer.contractId
 		?? transfer.contract_agreement_id
