@@ -134,6 +134,23 @@ acting for an organisation, and may hold provider groups on top. So:
 
 `dual@example.test` / `dual` is the dev fixture that holds both VC roles.
 
+### Gating an action on a permission
+
+`hasGrant(session, 'connector.provider.write')` answers "may this user do it", and
+`requireGrant(event, '…')` guards a whole route. Both mirror
+`ds_auth.permissions.grant_satisfies`, including the `{service}.admin` superset —
+a portal that gates on different rules than the API either hides things the user
+may do or offers actions the API will refuse.
+
+Use `hasGrant` to decide whether to *offer* an action (a read-only operator should
+see a queue without buttons that would 403) and `requireGrant` to guard a route.
+
+**A denied route fails with an explanation, not a redirect.** `requireAdmin`,
+`requireProvider` and `requireGrant` throw a 403 naming the missing permission,
+rendered by `routes/+error.svelte`. A silent bounce to `/` is indistinguishable
+from a broken page: the operator missing one Keycloak group sees the app "not
+work" with nothing to act on.
+
 Persona flags (`isAdmin`, `isProvider`, `isConsumer`, `isSubject`) remain for UI
 display. All gating is cosmetic — the backend re-verifies and re-authorizes every
 request.

@@ -8,7 +8,7 @@
  * `connector.provider.write`). This is UI gating only — the backend re-verifies
  * and re-authorizes every request.
  */
-import { redirect } from '@sveltejs/kit';
+import { error, redirect } from '@sveltejs/kit';
 import type { Session } from '@auth/core/types';
 
 export interface ServerRoles {
@@ -69,15 +69,94 @@ function extractOrganizations(payload: Record<string, unknown>): string[] {
 	return Object.keys(orgs as Record<string, unknown>);
 }
 
+/**
+ * Every permission-shaped authority the token carries: realm roles, any client's
+ * roles, realm groups and org-level groups. The backend authorizes on exactly
+ * this union (`ds_auth.extract_groups` plus the scope claim).
+ */
+function extractGrants(payload: Record<string, unknown>): string[] {
+	const scopes = ((payload?.scope as string) ?? '').split(' ').filter(Boolean);
+	return [...extractRoles(payload), ...extractGroups(payload), ...scopes];
+}
+
+/**
+ * Does a single held grant satisfy a required permission?
+ *
+ * Mirrors `ds_auth.permissions.grant_satisfies`: `{service}.admin` is a superset
+ * that satisfies any `{service}.*`. Kept deliberately identical — a portal that
+ * gates on different rules than the API either hides things the user may do, or
+ * offers actions the API will refuse.
+ *
+ * Note this is the *superset* rule, not `has_exact_permission`. Permissions that
+ * mean "I am this machine" (`connector.webhook`, `connector.internal`) are never
+ * user-facing, so the portal has no reason to model the exact variant.
+ */
+function grantSatisfies(grant: string, required: string): boolean {
+	if (grant === required) return true;
+	if (grant.endsWith('.admin')) {
+		const service = grant.slice(0, -'.admin'.length);
+		return required.startsWith(`${service}.`);
+	}
+	return false;
+}
+
+/**
+ * Does the session hold `permission`?
+ *
+ * UI gating only — the backend re-authorizes every request. Use it to decide
+ * whether to *offer* an action, so a read-only operator sees a queue without
+ * buttons that would 403.
+ */
+export function hasGrant(session: Session | null | undefined, ...permissions: string[]): boolean {
+	if (!session?.accessToken) return false;
+	const payload = decodeToken(session.accessToken);
+	if (!payload) return false;
+	const grants = extractGrants(payload);
+	return permissions.some((required) => grants.some((g) => grantSatisfies(g, required)));
+}
+
+/**
+ * Guard a route on a permission, failing with an **explanation** rather than a
+ * redirect.
+ *
+ * A silent bounce to `/` is indistinguishable from a broken page: the operator
+ * who is missing one Keycloak group sees the app "not work" and has nothing to
+ * act on. A 403 naming the permission is something they can take to whoever
+ * administers the realm.
+ */
+export async function requireGrant(
+	event: { locals: App.Locals; url: URL },
+	...permissions: string[]
+) {
+	const session = await requireAuth(event);
+	if (!hasGrant(session, ...permissions)) {
+		throw error(403, {
+			message:
+				`This page needs the ${permissions.join(' or ')} permission, which your account ` +
+				`does not currently hold. Ask an operator to add the matching Keycloak group.`,
+		});
+	}
+	return session;
+}
+
+function decodeToken(accessToken: string): Record<string, unknown> | null {
+	try {
+		const parts = accessToken.split('.');
+		if (parts.length !== 3) return null;
+		return JSON.parse(
+			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8'),
+		);
+	} catch {
+		return null;
+	}
+}
+
 export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 
 	try {
-		const parts = accessToken.split('.');
-		if (parts.length !== 3) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
-		const payload: Record<string, unknown> = JSON.parse(
-			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
-		);
+		const payload = decodeToken(accessToken);
+		if (!payload) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 
 		// Dual-sourced authority: roles (realm + any client) AND groups.
 		const authorities = new Set<string>([...extractRoles(payload), ...extractGroups(payload)]);
@@ -151,7 +230,11 @@ export async function requireAdmin(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
 	if (!roles.isAdmin) {
-		throw redirect(303, '/');
+		throw error(403, {
+			message:
+				'Operator pages need administrator authority — the `ds-admin` realm role or the ' +
+				'`connector.admin` group. Your account holds neither.',
+		});
 	}
 	return { session, roles };
 }
@@ -160,7 +243,11 @@ export async function requireProvider(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
 	const roles = parseTokenRoles(session.accessToken);
 	if (!roles.isAdmin && !roles.isDatasetAdmin) {
-		throw redirect(303, '/');
+		throw error(403, {
+			message:
+				'Provider pages need `connector.provider.read` (or `dataset.admin`). Your account ' +
+				'does not hold it — ask an operator to add the matching Keycloak group.',
+		});
 	}
 	return { session, roles };
 }

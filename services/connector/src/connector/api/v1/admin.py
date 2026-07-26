@@ -1,6 +1,8 @@
 """Admin routes for operational portal views."""
 from __future__ import annotations
 
+import inspect
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -30,16 +32,29 @@ async def list_participants(
     # point is that the portal no longer needs admin to show this page.
     _claims: dict = Depends(require_provider_read),
 ):
+    # Two registries satisfy this dependency and they disagree on async:
+    # `HttpParticipantRegistry.all()` is a coroutine (the deployed path, backed by
+    # the identity-registry), while the YAML-seeded `ParticipantRegistry.all()` is
+    # not. Awaiting unconditionally breaks the seeded one; not awaiting yielded
+    # `TypeError: 'coroutine' object is not iterable` and a 500 on every read.
+    participants = registry.all()
+    if inspect.isawaitable(participants):
+        participants = await participants
+
     return [
         {
             "id": participant.id,
-            "role": participant.role,
+            # A participant can hold several roles since `fdf7d6a`. `role` is kept
+            # as the first one so existing readers keep working, but `roles` is the
+            # truth — a provider that is also a consumer is not an edge case.
+            "roles": participant.roles,
+            "role": participant.roles[0] if participant.roles else None,
             "dsp_address": participant.dsp_address,
             "dsp_endpoint": participant.dsp_address,
             "allowed_scopes": participant.allowed_scopes,
             "scopes": participant.allowed_scopes,
         }
-        for participant in registry.all()
+        for participant in participants
     ]
 
 
