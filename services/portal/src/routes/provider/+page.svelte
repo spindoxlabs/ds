@@ -10,6 +10,7 @@
     { href: '/provider/assets', title: 'Datasets', hint: 'What is published, and its sync state' },
     { href: '/provider/contracts', title: 'Agreements', hint: 'Active and past contracts' },
     { href: '/provider/governance', title: 'Governance', hint: 'Policy configuration and sync' },
+    { href: '/provider/activity', title: 'Activity', hint: 'What happened to the data you publish' },
   ];
 </script>
 
@@ -43,7 +44,7 @@
 
   <div>
     <h2 class="font-semibold text-gray-900 mb-2">Sections</h2>
-    <div class="grid sm:grid-cols-3 gap-4">
+    <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-4">
       {#each sections as s}
         <a href={s.href} class="ds-card hover:shadow-md transition-shadow">
           <h3 class="font-semibold text-gray-900">{s.title}</h3>

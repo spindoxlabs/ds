@@ -1,20 +1,12 @@
+import { redirect } from '@sveltejs/kit';
 import type { PageServerLoad } from './$types';
-import { queryEvents } from '$lib/server/provenance';
 
-export const load: PageServerLoad = async ({ url, locals }) => {
-	const session = await locals.auth();
-	const token = session?.accessToken ?? '';
-
-	const params: Record<string, string> = {};
-	const eventType = url.searchParams.get('event_type');
-	if (eventType) params['event_type'] = eventType;
-	const after = url.searchParams.get('occurred_after');
-	if (after) params['occurred_after'] = after;
-
-	try {
-		const events = await queryEvents(params, token);
-		return { events, error: null };
-	} catch (e) {
-		return { events: [], error: e instanceof Error ? e.message : 'Failed' };
-	}
+/**
+ * The audit log became the observability view, which shows the same events with
+ * the fields they actually carry. Kept as a redirect so existing links and
+ * bookmarks land somewhere useful instead of 404ing.
+ */
+export const load: PageServerLoad = async ({ url }) => {
+	const params = new URLSearchParams(url.search);
+	throw redirect(308, `/admin/observability${params.size ? '?' + params : ''}`);
 };

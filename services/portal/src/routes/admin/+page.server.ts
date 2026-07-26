@@ -1,7 +1,7 @@
 import type { PageServerLoad } from './$types';
 import { env } from '$env/dynamic/private';
 import { hasGrant } from '$lib/server/auth';
-import { queryEvents } from '$lib/server/provenance';
+import { queryEvents, type AuditEntry } from '$lib/server/provenance';
 
 /**
  * The operator landing answers "is this instance healthy, and what has it been
@@ -38,10 +38,10 @@ export const load: PageServerLoad = async ({ locals, fetch, parent }) => {
 		count('/history/agreements'),
 	]);
 
-	let recentEvents: Awaited<ReturnType<typeof queryEvents>> = [];
+	let recentEvents: AuditEntry[] = [];
 	let eventsError: string | null = null;
 	try {
-		recentEvents = (await queryEvents({}, token)).slice(0, 8);
+		recentEvents = (await queryEvents({ limit: 8 }, token)).events;
 	} catch (e) {
 		eventsError = e instanceof Error ? e.message : 'Provenance is unavailable';
 	}

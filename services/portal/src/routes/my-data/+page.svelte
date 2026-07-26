@@ -4,6 +4,51 @@
 
   let { data, form } = $props();
 
+  // Plain-language rendering. A person reading their own record should not have
+  // to decode event type names, DIDs or purpose IRIs.
+  const EVENT_LABELS: Record<string, string> = {
+    ConsentGranted: 'You agreed',
+    ConsentRevoked: 'You withdrew',
+    DataDisclosed: 'Data shared',
+    DataIngested: 'Data received',
+    AccessRevoked: 'Access ended',
+    QueryExecuted: 'Data read',
+    DataTransferCompleted: 'Data sent',
+  };
+
+  function eventLabel(type: string): string {
+    return EVENT_LABELS[type] ?? type;
+  }
+
+  function eventTone(type: string): string {
+    if (type === 'ConsentGranted') return 'bg-emerald-50 text-emerald-700';
+    if (type === 'ConsentRevoked' || type === 'AccessRevoked') return 'bg-amber-50 text-amber-800';
+    return 'bg-blue-50 text-blue-700';
+  }
+
+  function eventSentence(e: { event_type: string; detail: Record<string, unknown> }): string {
+    const d = e.detail;
+    const purposes = Array.isArray(d.purpose) ? (d.purpose as string[]).join(', ') : '';
+    switch (e.event_type) {
+      case 'ConsentGranted':
+        return purposes
+          ? `You agreed to sharing for ${purposes}.`
+          : 'You agreed to a sharing request.';
+      case 'ConsentRevoked':
+        return d.reason
+          ? `You withdrew your agreement (${d.reason}).`
+          : 'You withdrew your agreement.';
+      case 'DataDisclosed':
+        return `Data about you was shared with ${d.recipient_ref ?? 'a recipient'}`
+          + (purposes ? ` for ${purposes}.` : '.');
+      case 'DataIngested':
+        return 'New data about you was received into the dataspace.';
+      default:
+        return eventLabel(e.event_type) + '.';
+    }
+  }
+
+
   const sharesByDataset = $derived(
     new Map((data.shares as DataShareDecision[]).map((share) => [share.dataset_id, share])),
   );
@@ -211,6 +256,42 @@
           </article>
         {/each}
       </div>
+    {/if}
+  </section>
+
+  <!-- ── What happened with your data (GDPR Art. 15) ───────────────────────── -->
+  <section class="space-y-3">
+    <div>
+      <h2 class="text-lg font-semibold text-gray-900">What happened with your data</h2>
+      <p class="text-sm text-gray-600">
+        Decisions you made, and times your data was shared. Read from the
+        provenance log with your own credential — nobody else sees this view.
+      </p>
+    </div>
+
+    {#if data.timelineError}
+      <div class="ds-card border-amber-200 bg-amber-50 text-sm text-amber-900">
+        {data.timelineError}
+      </div>
+    {:else if data.timeline.events.length === 0}
+      <p class="text-sm text-gray-500">Nothing has been recorded about your data yet.</p>
+    {:else}
+      <ol class="space-y-2">
+        {#each data.timeline.events as e (e.id)}
+          <li class="ds-card flex items-start gap-3">
+            <span class="ds-badge shrink-0 {eventTone(e.event_type)}">{eventLabel(e.event_type)}</span>
+            <div class="min-w-0">
+              <p class="text-sm text-gray-800">{eventSentence(e)}</p>
+              <p class="text-xs text-gray-500 mt-0.5">{new Date(e.occurred_at).toLocaleString()}</p>
+            </div>
+          </li>
+        {/each}
+      </ol>
+      {#if data.timeline.total > data.timeline.events.length}
+        <p class="text-xs text-gray-500">
+          Showing the {data.timeline.events.length} most recent of {data.timeline.total}.
+        </p>
+      {/if}
     {/if}
   </section>
 </div>

@@ -11,7 +11,7 @@
 
   const sections = [
     { href: '/admin/participants', title: 'Participants', hint: 'Registry of trusted participants' },
-    { href: '/admin/audit', title: 'Audit log', hint: 'PROV-O events and data flows' },
+    { href: '/admin/observability', title: 'Observability', hint: 'Provenance events, filterable and exportable' },
     { href: '/admin/health', title: 'System health', hint: 'Service liveness' },
   ];
 </script>
@@ -66,8 +66,8 @@
           </tbody>
         </table>
       </div>
-      <a href="/admin/audit" class="text-sm text-brand-600 hover:underline mt-2 inline-block">
-        Full audit log →
+      <a href="/admin/observability" class="text-sm text-brand-600 hover:underline mt-2 inline-block">
+        Full observability view →
       </a>
     {/if}
   </div>

@@ -10,6 +10,7 @@ import {
 	type OwnedDataset,
 	type SharingOffer,
 } from '$lib/server/connector';
+import { queryMyEvents, type EventPage } from '$lib/server/provenance';
 
 async function loadOwnedDatasets(fetchFn: typeof fetch, subjectId: string): Promise<OwnedDataset[]> {
 	const catalogueUrl = env.CATALOGUE_URL ?? 'http://172.17.0.1:30002';
@@ -35,12 +36,23 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 		offersError = e instanceof Error ? e.message : 'Failed to load sharing offers';
 	}
 
+	// What has actually happened with this person's data (GDPR Art. 15). Read with
+	// their own credential — provenance takes the subject from the credential, not
+	// from a parameter, so this cannot be pointed at anyone else.
+	let timeline: EventPage = { events: [], total: 0, limit: 10, offset: 0 };
+	let timelineError: string | null = null;
+	try {
+		timeline = await queryMyEvents({ limit: 10 }, subjectId, vcJws);
+	} catch (e) {
+		timelineError = e instanceof Error ? e.message : 'Your activity history is unavailable';
+	}
+
 	try {
 		const [datasets, shares] = await Promise.all([
 			loadOwnedDatasets(fetch, subjectId),
 			getMyDataShares(token, subjectId, vcJws),
 		]);
-		return { subjectId, offers, offersError, datasets, shares, error: null };
+		return { subjectId, offers, offersError, datasets, shares, timeline, timelineError, error: null };
 	} catch (e) {
 		return {
 			subjectId,
@@ -48,6 +60,8 @@ export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 			offersError,
 			datasets: [],
 			shares: [],
+			timeline,
+			timelineError,
 			error: e instanceof Error ? e.message : 'Failed to load owned datasets',
 		};
 	}

@@ -22,11 +22,13 @@ src/
 │   │   ├── negotiate/           Negotiation wizard flow
 │   │   ├── negotiations/        Active negotiations list + [id] detail
 │   │   ├── transfer/            Transfer initiation
-│   │   └── transfers/           Transfer history + [id] detail
+│   │   ├── transfers/           Transfer history + [id] detail
+│   │   └── activity/            This participant's provenance
 │   ├── provider/
 │   │   ├── assets/              EDC asset list + [id] detail
 │   │   ├── contracts/           Contract definitions
-│   │   └── governance/          Governance YAML viewer
+│   │   ├── governance/          Governance YAML viewer
+│   │   └── activity/            This participant's provenance
 │   ├── consent/
 │   │   ├── +page.svelte         Data subject consent list
 │   │   └── [id]/                Individual consent detail
@@ -34,7 +36,8 @@ src/
 │   ├── lineage/[iri]/           Provenance graph viewer (Cytoscape)
 │   ├── metrics/                 Usage metrics
 │   └── admin/                   Operator panel
-│       ├── audit/               Provenance event audit log
+│       ├── observability/       Provenance events — filters, paging, CSV
+│       ├── audit/               308 → observability (kept so links survive)
 │       ├── health/              Service health checks
 │       └── participants/        Participant registry viewer
 ├── lib/
@@ -42,6 +45,7 @@ src/
 │   │   ├── NegotiationWizard.svelte   Multi-step negotiate → transfer → EDR flow
 │   │   ├── StatusPoller.svelte        Generic async state polling component
 │   │   ├── PolicySummary.svelte       ODRL policy → human-readable rendering
+│   │   ├── EventTable.svelte          Shared provenance table (detail expand, paging)
 │   │   ├── LineageGraph.svelte        Cytoscape DAG visualization
 │   │   ├── ConsentBadge.svelte        Consent status badge
 │   │   └── JsonLdViewer.svelte        JSON-LD document inspector
@@ -93,6 +97,33 @@ Rules when touching this page:
   (`PT15M`, `P2Y`) and slugs are translated in the component via a lookup that falls
   back to the code itself. `fallback_text_en` is the server-supplied English safety
   net, so an unmapped code degrades to readable text rather than disappearing.
+
+## Observability
+
+Three views read the same provenance API and share `EventTable.svelte`:
+
+| Route | Shows | Reads |
+|---|---|---|
+| `/admin/observability` | everything this participant recorded, filterable, CSV | `GET /prov/events` |
+| `/provider/activity`, `/consumer/activity` | the same store, framed per console | `GET /prov/events` |
+| `/my-data` timeline | the person's own history, in plain language | `GET /prov/my/events` |
+
+Three things to keep right when touching them:
+
+- **Event types carry different fields**, so the table shows the shared dimensions
+  and expands the rest per row. `queryEvents` keeps every unrecognised field in
+  `detail` rather than discarding it — the old client kept four columns, which is
+  why `DataDisclosed` used to arrive with its recipient, purposes and column names
+  already thrown away.
+- **CSV exports the union of what is on screen**, not a fixed header. A fixed
+  header drops exactly the fields that make the Block C events meaningful.
+- **The subject timeline renders sentences, not codes.** It is read by the person
+  the data is about; event type names, DIDs and purpose IRIs are not their
+  vocabulary. It is also the only one of the three authenticated by a verifiable
+  credential rather than a scope — `subject_id` is taken from that credential
+  server-side, so there is no parameter to point elsewhere.
+
+`/admin/audit` is a 308 to `/admin/observability`, kept so older links resolve.
 
 ## Coding conventions
 
