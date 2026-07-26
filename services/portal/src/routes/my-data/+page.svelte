@@ -1,5 +1,6 @@
 <script lang="ts">
   import ConsentBadge from '$lib/components/ConsentBadge.svelte';
+  import { WILDCARD_CONSUMER } from '$lib/consent';
   import type { DataShareDecision, OwnedDataset, SharingOffer } from '$lib/server/connector';
 
   let { data, form } = $props();
@@ -183,6 +184,53 @@
                     <dd class="inline">{offer.subject_scope.replaceAll('_', ' ')}</dd>
                   </div>
                 </dl>
+
+                {#if decision}
+                  {@const wildcard = decision.consumer_id === WILDCARD_CONSUMER}
+                  <p class="text-xs text-gray-600">
+                    {#if wildcard}
+                      This is a standing decision: it covers any recipient inside
+                      {decision.controller ?? 'this circle'} for this purpose. A choice you
+                      make about one specific recipient overrides it.
+                    {:else}
+                      This decision applies to one recipient:
+                      <span class="font-mono">{decision.consumer_id}</span>.
+                    {/if}
+                  </p>
+
+                  {#if decision.legal_basis}
+                    {@const lb = decision.legal_basis}
+                    <details class="text-xs text-gray-600">
+                      <summary class="cursor-pointer text-gray-700">Record of this decision</summary>
+                      <!-- Art. 7(1): what proves which text was agreed to. Codes and
+                           hashes only — never anything identifying. -->
+                      <dl class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                        {#if lb.consent_text_version}
+                          <div><dt class="inline text-gray-500">Text version:</dt>
+                            <dd class="inline"> {lb.consent_text_version}</dd></div>
+                        {/if}
+                        {#if lb.basis_iri}
+                          <div><dt class="inline text-gray-500">Legal basis:</dt>
+                            <dd class="inline"> {lb.basis_iri.split(/[#/]/).pop()}</dd></div>
+                        {/if}
+                        {#if lb.accepted_at}
+                          <div><dt class="inline text-gray-500">Recorded:</dt>
+                            <dd class="inline"> {new Date(lb.accepted_at).toLocaleString()}</dd></div>
+                        {/if}
+                        {#if lb.source}
+                          <div><dt class="inline text-gray-500">Given via:</dt>
+                            <dd class="inline"> {lb.source}</dd></div>
+                        {/if}
+                        {#if lb.user_visible_hash}
+                          <div class="sm:col-span-2">
+                            <dt class="inline text-gray-500">Fingerprint of what you were shown:</dt>
+                            <dd class="inline font-mono break-all"> {lb.user_visible_hash.slice(0, 32)}…</dd>
+                          </div>
+                        {/if}
+                      </dl>
+                    </details>
+                  {/if}
+                {/if}
               </div>
 
               {#if offer.requires_consent}

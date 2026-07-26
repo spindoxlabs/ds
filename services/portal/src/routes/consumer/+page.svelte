@@ -4,6 +4,29 @@
   let queryError = $state<string | null>(null);
   let running = $state(false);
 
+  // The connector reports `awaiting_consent` as a distinct state precisely so it
+  // is not read as a stalled negotiation. Showing the raw slug threw that away.
+  const STATUS_LABELS: Record<string, string> = {
+    awaiting_consent: 'awaiting consent',
+    negotiating: 'negotiating',
+    finalized: 'agreed',
+    transferring: 'transferring',
+    transferred: 'delivered',
+    revoked: 'withdrawn',
+  };
+
+  function statusLabel(status: string): string {
+    return STATUS_LABELS[status] ?? status;
+  }
+
+  function statusTone(status: string): string {
+    if (status === 'awaiting_consent') return 'bg-amber-50 text-amber-800';
+    if (status === 'transferred' || status === 'finalized') return 'bg-emerald-50 text-emerald-700';
+    if (status === 'revoked') return 'bg-gray-100 text-gray-600';
+    return 'bg-blue-50 text-blue-700';
+  }
+
+
   function fmt(value: unknown): string {
     if (!value) return '-';
     const date = new Date(String(value));
@@ -68,8 +91,20 @@
                   <p class="font-mono text-xs text-gray-500 mt-1">Transfer: {String(req['transfer_id'])}</p>
                 {/if}
               </div>
-              <span class="ds-badge bg-blue-50 text-blue-700">{String(req['status'] ?? '-')}</span>
+              <span class="ds-badge {statusTone(String(req['status'] ?? ''))}">
+                {statusLabel(String(req['status'] ?? '-'))}
+              </span>
             </div>
+            {#if req['status'] === 'awaiting_consent'}
+              <!-- "Not looked at yet" and "waiting on a person, possibly for weeks"
+                   render identically without this, which is the distinction that
+                   matters most to someone wondering whether to chase it. -->
+              <p class="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
+                Waiting on a data subject to decide{#if req['awaiting_consent_since']}
+                  , since {fmt(req['awaiting_consent_since'])}{/if}. Nothing is required
+                from you.
+              </p>
+            {/if}
             <div class="flex items-center gap-2 text-xs text-gray-500">
               {#if req['negotiation_state']}
                 <span>Negotiation {String(req['negotiation_state'])}</span>

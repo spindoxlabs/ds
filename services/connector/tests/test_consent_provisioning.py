@@ -272,3 +272,38 @@ async def test_legal_basis_surfaces_in_internal_check(client):
     assert body["consent_active"] is True
     assert body["legal_basis"]["offer_id"] == "test-flexibility"
     assert body["legal_basis"]["submission_ref"] == "20260101-abc123"
+
+
+# ── the subject's own decision carries the same evidence ─────────────────────
+
+@pytest.mark.asyncio
+async def test_subject_offer_share_records_legal_basis(client):
+    """A decision made in the portal is no less in need of proof than one made in
+    the onboarding wizard.
+
+    Without this, `legal_basis` was populated only for service-provisioned
+    consent, so for every subject who used the portal there was no record of
+    *which* consent text they saw — which is exactly what `user_visible_hash`
+    exists to prove (Art. 7(1)).
+    """
+    from tests import make_vc_headers
+
+    subject = make_vc_headers()
+    r = await client.post(
+        "/consent/my/shares",
+        headers=subject,
+        json={"offer_id": "test-flexibility", "enabled": True},
+    )
+    assert r.status_code == 200, r.text
+    rows = r.json()
+    assert len(rows) == 1
+
+    lb = rows[0]["legal_basis"]
+    assert lb is not None, "the subject's own decision must carry an evidence record"
+    # Everything here is derived from the resolved offer server-side: the caller
+    # supplies none of it, so the portal cannot drift from what was shown.
+    assert lb["offer_id"] == "test-flexibility"
+    assert lb["basis_iri"] == "https://w3id.org/dpv#Consent"
+    assert lb["controller"] == "example-org"
+    assert lb["consent_text_version"]
+    assert lb["user_visible_hash"]

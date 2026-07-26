@@ -38,6 +38,23 @@ export function subjectCredentialHeaders(subjectId: string, vcJws?: string | nul
 
 // ── Consent ──────────────────────────────────────────────────────────────────
 
+export interface LegalBasis {
+	source?: string | null;
+	rec_slug?: string | null;
+	offer_id?: string | null;
+	basis_iri?: string | null;
+	controller?: string | null;
+	controller_role?: string | null;
+	consent_text_version?: string | null;
+	locale?: string | null;
+	rendered_text_sha256?: string | null;
+	user_visible_hash?: string | null;
+	accepted_at?: string | null;
+	submission_ref?: string | null;
+}
+
+export { WILDCARD_CONSUMER } from '$lib/consent';
+
 export interface ConsentRequest {
 	id: string;
 	subject_id: string;
@@ -51,6 +68,15 @@ export interface ConsentRequest {
 	controller_role?: string | null;
 	/** Set when the row came from a sharing offer rather than a raw dataset toggle. */
 	offer_id?: string | null;
+	/**
+	 * Evidence for the decision — DPV basis IRI, the consent-text version and the
+	 * hash of the facts the person was shown, plus where it came from.
+	 *
+	 * Codes and hashes only, never PII. This is the Art. 7(1) record: it is what
+	 * proves *which* text a person agreed to, so it belongs on screen rather than
+	 * only in the database.
+	 */
+	legal_basis?: LegalBasis | null;
 	message: string | null;
 	requested_at: string;
 	decided_at?: string | null;

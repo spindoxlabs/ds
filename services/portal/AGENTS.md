@@ -238,15 +238,22 @@ a federated catalogue serves datasets from several.
 ```bash
 task setup          # npm ci
 task run            # dev server on :30004
-task check          # svelte-check — the only working gate today
+task check          # svelte-check
+npm run build       # ALSO run this — see below
 ```
 
-**There is no test runner yet, and `lint` does not run.** `package.json` declares
+**`task check` is not sufficient on its own.** `svelte-check` does not enforce
+SvelteKit's server/client boundary: importing a *value* (not just a type) from
+`$lib/server/…` into a component typechecks cleanly and then fails the production
+build with "Cannot import … into code that runs in the browser". Anything a
+component needs at runtime belongs in a browser-safe module — see
+`src/lib/consent.ts`. **Run `npm run build` before considering a change done.**
+
+**There is no test runner, and `lint` does not run.** `package.json` declares
 `lint: eslint src` but `eslint` is not in `devDependencies`, and there is no test
-script at all — no vitest, no Playwright. So `task check` is the whole gate, and
-"the UI exercises the API" is currently unenforced. Adding Playwright (and making
-`lint` real) is P10 of `.agents/plans/portal-review/plan.md`. Until then, changes
-here are verified by `task check` plus driving the affected page by hand.
+script — no vitest, no Playwright. So `check` + `build` is the whole gate, and
+"the UI exercises the API" is unenforced. Adding Playwright (and making `lint`
+real) is P10 of `.agents/plans/portal-review/plan.md`.
 
 ## Integration points
 

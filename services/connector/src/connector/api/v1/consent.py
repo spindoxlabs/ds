@@ -563,6 +563,16 @@ async def set_my_data_share(
                     f"Offer '{offer.id}' is not consent-based "
                     f"(legal basis {offer.legal_basis}) — it is disclosed, not consented",
                 )
+            # The subject's own decision deserves the same evidence record a
+            # service-provisioned one gets. Without it there is no record of
+            # *which* consent text this person saw — `user_visible_hash` exists
+            # precisely to prove that, and a decision made in the portal is no
+            # less in need of proof than one made in the onboarding wizard.
+            #
+            # No caller-supplied part: everything is derived from the resolved
+            # offer server-side, so the portal cannot drift from what was shown.
+            legal_basis = _offer_legal_basis_record(offer, None)
+
             consents = []
             async with db.begin():
                 for dataset_id in offer.datasets:
@@ -577,6 +587,7 @@ async def set_my_data_share(
                             controller=offer.recipients.controller,
                             controller_role=offer.recipients.controller_role,
                             offer_id=offer.id,
+                            legal_basis=legal_basis,
                         )
                     )
             await _emit_consent_events(prov, consents)

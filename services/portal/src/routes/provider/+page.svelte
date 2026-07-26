@@ -10,6 +10,7 @@
     { href: '/provider/assets', title: 'Datasets', hint: 'What is published, and its sync state' },
     { href: '/provider/contracts', title: 'Agreements', hint: 'Active and past contracts' },
     { href: '/provider/governance', title: 'Governance', hint: 'Policy configuration and sync' },
+    { href: '/provider/requests', title: 'Consent requests', hint: 'Which decision is holding up which negotiation' },
     { href: '/provider/activity', title: 'Activity', hint: 'What happened to the data you publish' },
   ];
 </script>
@@ -31,7 +32,7 @@
       <p class="text-xs uppercase tracking-wide text-gray-500">Transfers</p>
       <p class="text-2xl font-semibold text-gray-900 mt-1">{show(data.counts.transfers)}</p>
     </a>
-    <div class="ds-card {data.counts.pendingAsks ? 'border-amber-200 bg-amber-50' : ''}">
+    <a href="/provider/requests" class="ds-card hover:shadow-md transition-shadow {data.counts.pendingAsks ? 'border-amber-200 bg-amber-50' : ''}">
       <p class="text-xs uppercase tracking-wide text-gray-500">Awaiting a consent decision</p>
       <p class="text-2xl font-semibold text-gray-900 mt-1">{show(data.counts.pendingAsks)}</p>
       {#if data.counts.pendingAsks}
@@ -39,7 +40,7 @@
           A negotiation is parked until a data subject decides.
         </p>
       {/if}
-    </div>
+    </a>
   </div>
 
   <div>
