@@ -96,6 +96,9 @@ class DomainEventORM(Base):
     data_product_id: Mapped[str | None] = mapped_column(Text)
     provider_did: Mapped[str | None] = mapped_column(Text)
     consumer_did: Mapped[str | None] = mapped_column(Text)
+    # Promoted out of the payload so a data subject's own history can be filtered
+    # and indexed like every other dimension. Pseudonymous DID, never a name.
+    subject_id: Mapped[str | None] = mapped_column(Text, index=True)
     processed: Mapped[bool] = mapped_column(Boolean, default=False)
 
 

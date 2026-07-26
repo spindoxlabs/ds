@@ -28,7 +28,7 @@ from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
 from ...services.membership_check import check_subject_membership, resolve_dataset_owner
 from ...services.prov_bridge import ProvBridge
-from ...services.user_credentials import verify_user_vc_jwt
+from ds_auth.user_credentials import verify_user_vc_jwt
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/consent", tags=["consent"])

@@ -24,6 +24,24 @@ class Settings(BaseSettings):
     context_url: str = "https://provenance.dataspaces.localhost/prov/context"
     max_lineage_depth: int = 20
 
+    # ── Data-subject credentials (GET /prov/my/events) ────────────────────────
+    #
+    # A subject reads their own history with a VC-JWT, not a scope, so these
+    # mirror the connector's settings of the same name — the same credential is
+    # presented to both services and must verify identically.
+    trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
+    trust_anchor_key_path: str | None = None
+    vc_insecure_dev: bool = Field(
+        default=True,
+        description=(
+            "When True AND no trust-anchor key is configured, user Verifiable "
+            "Credentials are accepted WITHOUT signature verification (local dev "
+            "only). Production MUST set PROVENANCE_TRUST_ANCHOR_KEY_PATH."
+        ),
+    )
+    credential_status_path: str | None = None
+    credential_status_url: str | None = None
+
 
 _settings: Settings | None = None
 

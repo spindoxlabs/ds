@@ -92,6 +92,7 @@ async def ingest_event(
         or getattr(event, "dataset_id", None),
         provider_did=getattr(event, "provider_did", None),
         consumer_did=getattr(event, "consumer_did", None),
+        subject_id=getattr(event, "subject_id", None),
         processed=True,
     )
     session.add(orm)

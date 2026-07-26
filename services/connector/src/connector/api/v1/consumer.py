@@ -15,7 +15,7 @@ from ...dependencies import get_consumer_service, get_db, get_settings_dep
 from ...registry.participants import UnknownParticipantError
 from ...schemas.edc import FlowRequest, FlowResult
 from ...services.agreement_service import terminate_agreement, upsert_agreement
-from ...services.user_credentials import verify_user_vc_jwt
+from ds_auth.user_credentials import verify_user_vc_jwt
 
 router = APIRouter(prefix="/consumer", tags=["consumer"])
 

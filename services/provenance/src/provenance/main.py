@@ -13,6 +13,7 @@ from .schemas.context import PROV_CONTEXT
 from .api.v1.nodes import router as nodes_router
 from .api.v1.relations import router as relations_router
 from .api.v1.events import router as events_router
+from .api.v1.events import subject_router as subject_events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
 from ds_auth.production import ProductionGuard
@@ -36,6 +37,20 @@ async def lifespan(app: FastAPI):
         "PROVENANCE_OIDC_INSECURE_DEV",
         settings.oidc_insecure_dev,
         "Set PROVENANCE_OIDC_INSECURE_DEV=false and configure the issuer URL.",
+    )
+    # GET /prov/my/events authenticates a data subject from a verifiable
+    # credential. Unverified, anyone could read anyone's history — so the same
+    # two settings the connector guards apply here for the same reason.
+    guard.require_set(
+        "PROVENANCE_TRUST_ANCHOR_KEY_PATH",
+        settings.trust_anchor_key_path,
+        "Mount the trust-anchor public key so a data subject's Verifiable "
+        "Credential is signature-verified before their history is served.",
+    )
+    guard.forbid_true(
+        "PROVENANCE_VC_INSECURE_DEV",
+        settings.vc_insecure_dev,
+        "Set PROVENANCE_VC_INSECURE_DEV=false once the trust-anchor key is mounted.",
     )
     guard.enforce()
 
@@ -90,6 +105,10 @@ def create_app() -> FastAPI:
         prefix="/prov",
         dependencies=[Depends(require_read_or_write_scope)],
     )
+    # No scope dependency: a data subject reading their own history authenticates
+    # with a verifiable credential, verified inside the route. See
+    # `services/subject.py` for why the two models stay on separate routers.
+    app.include_router(subject_events_router, prefix="/prov")
     app.include_router(
         lineage_router,
         prefix="/prov",

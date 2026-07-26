@@ -95,8 +95,49 @@ ruff check src/     # lint
 
 Test database is SQLite (in-memory via `aiosqlite`).
 
+## Querying events
+
+`GET /prov/events` filters on `event_type` (repeatable), `subject_id`,
+`dataset_id`, `consumer_did`, `provider_did`, `agreement_id`, `occurred_after`,
+`occurred_before`, and pages with `limit`/`offset`. The response carries
+`hydra:totalItems` / `hydra:limit` / `hydra:offset` beside `@graph`, matching how
+the federated catalogue pages.
+
+**The projection publishes the event's own fields**, read from the stored payload,
+plus the five indexed columns. It used to emit only four fixed columns, so
+`ConsentGranted`, `ConsentRevoked`, `DataIngested` and `DataDisclosed` were stored
+in full and served as four empty values. Two consequences worth keeping in mind:
+
+- A newly added event type is fully visible without touching the query route —
+  **so whatever an event declares is published.** Payloads are PII-free by
+  construction (`schemas/events.py`); keep them that way.
+- The columns stay in the output alongside the payload fields. They are the
+  *normalised* dimensions — `DataIngested.dataset_id` and
+  `CataloguePublished.data_product_id` both land in `data_product_id` — so a reader
+  grouping across event types keeps working. Publishing only the payload silently
+  renamed `ds:dataProductId` to `ds:datasetId` for some types.
+
+### `GET /prov/my/events` — the subject's own history
+
+A separate route on a **separate router mounted without a scope dependency**,
+because it authenticates a *person* from a verifiable credential rather than a
+service from a scope (`services/subject.py`). A `provenance.read` token is not a
+data subject and gets a 401.
+
+`subject_id` is deliberately not a parameter: it comes from the verified
+credential, so a subject cannot read someone else's history by changing it. The
+`domain_events.subject_id` column exists for this query — filtering a person's own
+view by scanning JSON is both slower and easier to get subtly wrong.
+
+Both settings this needs (`PROVENANCE_TRUST_ANCHOR_KEY_PATH`,
+`PROVENANCE_VC_INSECURE_DEV`) are registered with the `ProductionGuard`: unverified,
+anyone could claim any subject id.
+
 ## Integration points
 
 - **Upstream**: ds-connector emits domain events via `POST /prov/events`
-- **Upstream**: Portal queries lineage via `GET /prov/lineage/{iri}`
+- **Upstream**: Portal queries lineage via `GET /prov/lineage/{iri}` and events via
+  `GET /prov/events`; a data subject's timeline uses `GET /prov/my/events`
+- **Shared**: `ds_auth.user_credentials` — the *same* verifier the connector uses,
+  so both services agree on who a subject is
 - **No downstream dependencies** — this is a pure sink/query service

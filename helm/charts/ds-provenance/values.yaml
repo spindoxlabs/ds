@@ -31,6 +31,15 @@ env: {}
 existingSecret: ""
 networkPolicy: {egress: []}
 
+# GET /prov/my/events lets a data subject read their own history, authenticated
+# by a verifiable credential rather than a scope. The public JWK is mounted from
+# the Secret and is what makes that credential trustworthy — without it the
+# ProductionGuard refuses to start, which is deliberate: serving a person's
+# record on an unverified claim is worse than not serving it.
+trustAnchor:
+  did: ""
+  keyMountPath: /etc/ds/trust-anchor-public.json
+
 maxLineageDepth: 20
 
 migration:
@@ -40,9 +49,11 @@ migration:
 secrets:
   dbUser: "" # defaults to the database name (owner role)
   dbPassword: ""
+  trustAnchorPublicJwk: "" # public JWK contents (mounted as a file)
 
 global:
   baseDomain: ds.example.org
+  hosts: {trustAnchor: trust-anchor}
   image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
   postgres:
     host: ds-pg-rw.database.svc.cluster.local

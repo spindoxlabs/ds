@@ -49,9 +49,20 @@ PROV_CONTEXT: dict = {
 class JSONLDResponse(JSONResponse):
     media_type = "application/ld+json"
 
-    def __init__(self, graph: list | dict, context_url: str, **kwargs):
+    def __init__(
+        self,
+        graph: list | dict,
+        context_url: str,
+        meta: dict | None = None,
+        **kwargs,
+    ):
         content = {
             "@context": context_url,
             "@graph": graph if isinstance(graph, list) else [graph],
         }
+        # Paging counters sit beside `@graph`, not inside it — they describe the
+        # response, not the provenance. `hydra:*` matches the federated catalogue,
+        # so a client pages both surfaces the same way.
+        if meta:
+            content.update(meta)
         super().__init__(content=content, **kwargs)

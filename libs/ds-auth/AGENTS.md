@@ -23,10 +23,25 @@ src/ds_auth/
 ├── jwt.py           verify_token, extract_groups, extract_scopes, is_service_account
 ├── permissions.py   grant_satisfies / has_permission (admin-superset rule)
 ├── principal.py     Principal — normalized caller (scopes vs groups → grants())
+├── user_credentials.py  verify_user_vc_jwt — the *person*-facing mechanism
 └── fastapi.py       require_permission() dependency (needs the `fastapi` extra)
 ```
 
 `errors.py`/`config.py`/`jwt.py`/`permissions.py`/`principal.py` are framework-free; only `fastapi.py` imports FastAPI.
+
+### Two mechanisms, one library
+
+| Module | Authenticates | Used by |
+|---|---|---|
+| `jwt.py` + `fastapi.py` | a **service or an operator**, via an OIDC token, authorized on scopes/groups | almost everything |
+| `user_credentials.py` | a **person**, via an ES256 VC-JWT signed by the trust anchor, checked against StatusList2021 | ds-connector `/consent/my/*`, `/consumer/*`; ds-provenance `/prov/my/events` |
+
+`verify_user_vc_jwt` lives here rather than in one service because **two services
+verify the same credential**. A subject presents one VC to the connector to change
+a sharing decision and to provenance to read their own history; if each service
+carried its own copy they could drift on issuer, expiry or revocation handling —
+and disagree about who someone is. It returns the subject id from the *credential*,
+never from the caller's header.
 
 ## Using it in a service
 

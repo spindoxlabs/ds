@@ -11,6 +11,10 @@ dependencies = [
     "pyjwt[crypto]>=2.9",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
+    # user_credentials verifies ES256 VC-JWTs against the trust anchor key
+    # directly, rather than through pyjwt, because a VC carries its own
+    # credentialStatus that has to be checked in the same pass.
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]
