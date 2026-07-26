@@ -36,6 +36,8 @@ src/
 │   ├── lineage/[iri]/           Provenance graph viewer (Cytoscape)
 │   ├── metrics/                 Usage metrics
 │   └── admin/                   Operator panel
+│       ├── onboarding/          Organisation review queue (verify → credential → promote)
+│       ├── agreements/          Agreement versions and acceptances
 │       ├── observability/       Provenance events — filters, paging, CSV
 │       ├── audit/               308 → observability (kept so links survive)
 │       ├── health/              Service health checks
@@ -124,6 +126,22 @@ Three things to keep right when touching them:
   server-side, so there is no parameter to point elsewhere.
 
 `/admin/audit` is a 308 to `/admin/observability`, kept so older links resolve.
+
+## Operator onboarding
+
+`/admin/onboarding` drives organisation admission. Two rules:
+
+- **Every action calls the same identity-registry endpoint as `ir-cli`.** The CLI
+  is the reference implementation — the console must not become a second way to
+  change trust state.
+- **Show the gate, do not hide the button.** The registry enforces the gates
+  (a credential needs a verified owner holding a current agreement; promotion
+  needs a valid credential); the page states which one is unmet so the trust
+  model stays legible. Actions are additionally gated on `hasGrant`.
+
+These calls forward the **operator's own token**. `svc-ds-portal` holds no
+onboarding grant on purpose, so a 403 means the signed-in user is missing a
+Keycloak group — which `requireGrant` renders as an explanation.
 
 ## Coding conventions
 

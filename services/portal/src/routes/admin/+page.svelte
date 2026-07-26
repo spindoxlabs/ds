@@ -11,6 +11,8 @@
 
   const sections = [
     { href: '/admin/participants', title: 'Participants', hint: 'Registry of trusted participants' },
+    { href: '/admin/onboarding', title: 'Onboarding', hint: 'Review organisations and admit them' },
+    { href: '/admin/agreements', title: 'Agreements', hint: 'What was signed, and in which capacity' },
     { href: '/admin/observability', title: 'Observability', hint: 'Provenance events, filterable and exportable' },
     { href: '/admin/health', title: 'System health', hint: 'Service liveness' },
   ];
