@@ -124,3 +124,35 @@ task test         # pytest
 task lint         # ruff check
 task type-check   # mypy
 ```
+
+## Authorization — onboarding is not `identity-registry.admin`
+
+`identity-registry.admin` reaches every endpoint here, including DID and key
+management. An operator console that only reviews organisation applications should
+not need that, so onboarding is split into grants that name what they permit:
+
+| Grant | Reaches |
+|---|---|
+| `identity-registry.organizations.read` | list/get applications and owners |
+| `identity-registry.organizations.write` | register, verify, issue an org credential, patch an owner, record an agreement acceptance |
+| `identity-registry.organizations.promote` | promote / suspend / revoke as a participant |
+| `identity-registry.agreements.read` | agreements, versions, acceptances |
+| `identity-registry.participants.write` | create / update / delete a participant |
+
+Two properties are load-bearing and `tests/test_onboarding_scopes.py` pins both:
+
+- **`identity-registry.admin` still satisfies all of them** (the `{service}.admin`
+  superset in `ds_auth.permissions`), so `ir-cli` and the bootstrap are unaffected.
+- **A narrow grant reaches nothing else.** `organizations.write` cannot promote,
+  cannot write participants, and cannot touch DIDs — otherwise the split is
+  decoration.
+
+`GET /agreements/current` deliberately stays on `identity-registry.read`: it is the
+connector's circle check, and the connector holds that grant, not an onboarding one.
+
+**Realm groups only apply to a fresh Keycloak.** The groups live in
+`services/keycloak/realm-*.json`, which Keycloak imports at first startup — adding
+one does *not* affect a running realm. In dev that means `task docker:restart`
+(which recreates the Keycloak database); in production the realm is provisioned by
+`celine-policies`. `clients.yaml` scopes, by contrast, are re-applied on every
+`keycloak-sync` run.

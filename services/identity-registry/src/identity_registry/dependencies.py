@@ -37,3 +37,31 @@ require_admin_or_read_scope = require_permission(
 require_membership_read_scope = require_permission(
     "identity-registry.admin", "identity-registry.membership.read"
 )
+
+# ── Onboarding, split out of the admin grant ─────────────────────────────────
+#
+# An operator console should be grantable exactly what its pages need, and
+# `identity-registry.admin` hands over every endpoint here — including DID and key
+# management. These name what they permit instead. The admin grant still satisfies
+# each of them by the superset rule, so `ir-cli` and the bootstrap are unaffected.
+#
+# `promote` is deliberately not part of `write`: marking an application verified is
+# reviewable clerical work, while promotion is the irreversible act that turns an
+# applicant into a DSP counterparty others will negotiate with.
+require_org_read = require_permission(
+    "identity-registry.admin", "identity-registry.organizations.read"
+)
+require_org_write = require_permission(
+    "identity-registry.admin", "identity-registry.organizations.write"
+)
+require_org_promote = require_permission(
+    "identity-registry.admin", "identity-registry.organizations.promote"
+)
+require_agreements_read = require_permission(
+    "identity-registry.admin",
+    "identity-registry.read",
+    "identity-registry.agreements.read",
+)
+require_participants_write = require_permission(
+    "identity-registry.admin", "identity-registry.participants.write"
+)

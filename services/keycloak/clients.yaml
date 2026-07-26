@@ -26,6 +26,21 @@ scopes:
     description: Resolve user identity by email
   - name: identity-registry.membership.read
     description: Check organization membership
+  # Onboarding split out of identity-registry.admin so an operator console can be
+  # granted exactly what a page needs. `identity-registry.admin` still satisfies
+  # all of these (superset), so the CLI and bootstrap are unaffected.
+  - name: identity-registry.organizations.read
+    description: Read organisation applications and owners
+  - name: identity-registry.organizations.write
+    description: Register, verify and credential an organisation
+  # Separate from .write on purpose: promotion is the irreversible act that turns
+  # an applicant into a DSP counterparty.
+  - name: identity-registry.organizations.promote
+    description: Promote, suspend or revoke an organisation as a participant
+  - name: identity-registry.agreements.read
+    description: Read service agreements and their acceptances
+  - name: identity-registry.participants.write
+    description: Register, update or deactivate a DSP participant
 
   # Connector
   - name: connector.admin

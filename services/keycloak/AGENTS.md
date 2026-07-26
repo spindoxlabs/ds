@@ -155,3 +155,19 @@ redirect URIs. Its only failing is that nothing selects it.
 
 Also note `post.logout.redirect.uris` in the dev realm uses `/*` suffixes — a
 minor open-redirect surface the production example avoids.
+
+## Scopes vs groups — different provisioning paths
+
+Both authorize the same permission strings, but they arrive differently, and the
+difference bites:
+
+| | Defined in | Applied by | On a running stack |
+|---|---|---|---|
+| **Client scopes** | `clients.yaml` | `keycloak-sync` init container | re-applied every run |
+| **User groups** | `realm-*.json` | Keycloak's realm import | **only at first startup** |
+
+So adding a group to the realm file has no effect until the Keycloak database is
+recreated — `task docker:restart` in dev, `celine-policies` in production. A new
+scope, by contrast, appears after any `keycloak-sync`.
+
+If a user's token is missing a group you just added, this is almost always why.

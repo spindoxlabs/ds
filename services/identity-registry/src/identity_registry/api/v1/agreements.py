@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Agreement, AgreementAcceptance, Owner, Participant
-from ...dependencies import get_db, require_admin_or_read_scope
+from ...dependencies import get_db, require_admin_or_read_scope, require_agreements_read
 from ...schemas.responses import (
     AgreementAcceptanceResponse,
     AgreementResponse,
@@ -57,7 +57,7 @@ def _to_response(a: Agreement) -> AgreementResponse:
 @router.get("/agreements", response_model=list[AgreementResponse])
 async def list_agreements(
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_or_read_scope),
+    _claims: dict = Depends(require_agreements_read),
 ):
     result = await db.execute(select(Agreement))
     return [_to_response(a) for a in result.scalars().all()]
@@ -114,7 +114,7 @@ async def get_current_agreement(
 async def get_agreement_versions(
     agreement_id: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_or_read_scope),
+    _claims: dict = Depends(require_agreements_read),
 ):
     result = await db.execute(
         select(Agreement).where(Agreement.id == agreement_id)
@@ -133,7 +133,7 @@ async def list_acceptances(
     agreement_id: str,
     owner_alias: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_or_read_scope),
+    _claims: dict = Depends(require_agreements_read),
 ):
     stmt = select(AgreementAcceptance).where(
         AgreementAcceptance.agreement_id == agreement_id

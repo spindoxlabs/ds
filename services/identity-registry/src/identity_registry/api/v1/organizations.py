@@ -8,7 +8,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import Agreement, OrganizationApplication, Owner
-from ...dependencies import get_db, get_settings_dep, require_admin_scope
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_org_promote,
+    require_org_read,
+    require_org_write,
+)
 from ...schemas.requests import (
     AcceptAgreementRequest,
     CreateOrganizationApplicationRequest,
@@ -93,7 +99,7 @@ def _owner_to_response(owner: Owner) -> OwnerResponse:
 async def create_application(
     data: CreateOrganizationApplicationRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     app = OrganizationApplication(
         alias=data.alias,
@@ -123,7 +129,7 @@ async def list_applications(
     status: str | None = Query(default=None),
     alias: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_read),
 ):
     stmt = select(OrganizationApplication)
     if status:
@@ -141,7 +147,7 @@ async def list_applications(
 async def get_application(
     application_id: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_read),
 ):
     result = await db.execute(
         select(OrganizationApplication).where(
@@ -162,7 +168,7 @@ async def update_application(
     application_id: str,
     data: UpdateOrganizationApplicationRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     result = await db.execute(
         select(OrganizationApplication).where(
@@ -225,7 +231,7 @@ async def issue_organization_credential(
     data: IssueOrganizationCredentialRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     owner = await ops.resolve_owner(db, data.alias)
     if not owner:
@@ -262,7 +268,7 @@ async def patch_owner(
     alias: str,
     data: PatchOwnerRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     owner = await ops.resolve_owner(db, alias)
     if not owner:
@@ -316,7 +322,7 @@ async def promote_owner(
     data: PromoteOwnerRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_promote),
 ):
     owner = await ops.resolve_owner(db, alias)
     if not owner:
@@ -356,7 +362,7 @@ async def accept_agreement(
     alias: str,
     data: AcceptAgreementRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     owner = await ops.resolve_owner(db, alias)
     if not owner:

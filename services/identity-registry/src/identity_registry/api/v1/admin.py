@@ -22,6 +22,7 @@ from ...dependencies import (
     get_settings_dep,
     require_admin_or_read_scope,
     require_admin_scope,
+    require_participants_write,
     require_read_scope,
 )
 from ...schemas.requests import (
@@ -105,7 +106,7 @@ async def create_participant(
     data: CreateParticipantRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_participants_write),
 ):
     existing = await db.execute(
         select(Participant).where(Participant.did == data.did)
@@ -250,7 +251,7 @@ async def update_participant(
     did: str,
     data: UpdateParticipantRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_participants_write),
 ):
     result = await db.execute(select(Participant).where(Participant.did == did))
     participant = result.scalar_one_or_none()
@@ -284,7 +285,7 @@ async def update_participant(
 async def delete_participant(
     did: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_participants_write),
 ):
     result = await db.execute(select(Participant).where(Participant.did == did))
     participant = result.scalar_one_or_none()

@@ -7,7 +7,12 @@ from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Owner
-from ...dependencies import get_db, require_admin_scope, require_admin_or_read_scope
+from ...dependencies import (
+    get_db,
+    require_admin_or_read_scope,
+    require_org_read,
+    require_org_write,
+)
 from ...schemas.requests import CreateOwnerRequest, UpdateOwnerRequest
 from ...schemas.responses import OwnerResponse
 
@@ -54,7 +59,7 @@ def _to_response(owner: Owner) -> OwnerResponse:
 async def create_owner(
     data: CreateOwnerRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     existing = await db.execute(select(Owner).where(Owner.id == data.id))
     if existing.scalar_one_or_none():
@@ -78,7 +83,7 @@ async def create_owner(
 @router.get("/admin/owners", response_model=list[OwnerResponse])
 async def list_owners(
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_read),
 ):
     result = await db.execute(select(Owner))
     return [_to_response(o) for o in result.scalars().all()]
@@ -88,7 +93,7 @@ async def list_owners(
 async def get_owner(
     owner_id: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_read),
 ):
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
@@ -102,7 +107,7 @@ async def update_owner(
     owner_id: str,
     data: UpdateOwnerRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
@@ -132,7 +137,7 @@ async def update_owner(
 async def delete_owner(
     owner_id: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_org_write),
 ):
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
