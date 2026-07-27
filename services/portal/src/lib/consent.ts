@@ -16,3 +16,20 @@
  * like before.
  */
 export const WILDCARD_CONSUMER = '*';
+
+/**
+ * A purpose IRI or slug as a human label: `FlexibilityResearch` → `Flexibility
+ * research`.
+ *
+ * Purposes cross the wire as taxonomy slugs (a consumer request record) or as
+ * full profile IRIs (an ODRL policy), and both must render the same way. Lives
+ * here rather than in `$lib/server/odrl` so the server summary and the browser
+ * components share one implementation — two would drift, and a purpose label
+ * that differs between the request form and the request record is exactly the
+ * kind of difference that makes an audit record arguable.
+ */
+export function purposeLabel(value: string): string {
+	const slug = value.split(/[/#:]/).pop() ?? value;
+	const words = slug.replace(/([a-z0-9])([A-Z])/g, '$1 $2');
+	return words.charAt(0).toUpperCase() + words.slice(1).toLowerCase();
+}

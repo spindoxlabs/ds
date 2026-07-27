@@ -249,6 +249,43 @@ so the record proves *which* consent state authorised the handover while the
 provenance store holds no subject data. **All Block C events carry codes, DIDs
 and hashes only, never PII.** See `docs/provenance-and-lineage.md`.
 
+## A request records what was asked for *and* why
+
+`POST /consumer/negotiate` accepts an optional **declaration**:
+`declared_purpose[]`, `declared_from`, `declared_until`, `justification_ref`.
+It is persisted on `consumer_access_requests` and emitted on `AccessRequested`
+beside the offer's own purposes — two different facts, two different fields.
+
+Why it exists: a multi-purpose dataset publishes **one** `odrl:purpose`
+constraint with `odrl:isAnyOf` over every permitted purpose, so the agreement
+records "any of these three", permanently. That is a valid contract and a
+useless answer to "why was this data requested".
+
+Why it is recorded here and not negotiated: EDC resolves the contract policy
+from the offer id against the *provider's* contract definition and discards the
+policy body the consumer sent (`ContractNegotiationProtocolServiceImpl`
+`notifyRequested` → `validatableOffer.getTargetedContractPolicy()`). A consumer
+cannot narrow what it is agreeing to, so the declaration is exactly what it says
+it is: a consumer-side statement of intent, not a policy.
+
+Three rules keep it honest, all in `_validated_declaration`:
+
+- it must be in the taxonomy (`normalise_purposes`);
+- it must be permitted by the offer — `odrl:isA` over the local `broader` chain,
+  so declaring a *narrower* purpose than the offer names is fine and a broader
+  one is a 422;
+- without `odrl_policy` there is nothing to check against, so the declaration is
+  refused rather than stored unverified. An unverifiable claim in an audit record
+  is indistinguishable later from a verified one.
+
+`justification_ref` is an opaque external reference — a ticket or document id,
+never free text about a person. An `@` is rejected, the same guard
+`AdminShareLegalBasis` applies.
+
+**It does not gate access.** The provider decides on the offer's purposes,
+because those are what crossed DSP; see `docs/roadmap.md` for what making the
+declaration enforceable would require.
+
 ## The negotiation *is* the consent request
 
 A consumer that wants consent-gated data does not call a consent API — it

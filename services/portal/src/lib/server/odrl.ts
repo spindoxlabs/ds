@@ -9,6 +9,8 @@
  * every federated dataset, so every lookup goes through `term()`.
  */
 
+import { purposeLabel } from '$lib/consent';
+
 interface OdrlAction {
 	'@id'?: string;
 }
@@ -23,11 +25,28 @@ function term<T = unknown>(obj: Record<string, unknown> | null | undefined, name
 	return (obj[`odrl:${name}`] ?? obj[name]) as T | undefined;
 }
 
+export interface OfferPurpose {
+	/** The IRI as published, which is what the connector validates. */
+	iri: string;
+	/** Human label derived from the IRI's last segment. */
+	label: string;
+}
+
 export interface PolicySummary {
 	permitted: string[];
 	prohibited: string[];
 	obligations: string[];
 	constraints: string[];
+	/**
+	 * Every purpose the offer permits, as a list a person can choose from.
+	 *
+	 * `constraints` renders the same information as a sentence, which is right
+	 * for reading and useless for choosing. A multi-purpose offer publishes one
+	 * `odrl:purpose` constraint with `odrl:isAnyOf` over a list — the shape the
+	 * ODRL Information Model prescribes for set-based operators — so this is a
+	 * list, never a single value.
+	 */
+	purposes: OfferPurpose[];
 }
 
 /** Last path segment of an IRI, lowercased — the two sources differ in case
@@ -78,8 +97,24 @@ function rulesFor(rules: OdrlRule | OdrlRule[] | undefined): OdrlRule[] {
 	return Array.isArray(rules) ? rules : [rules];
 }
 
+/** Every purpose IRI in a right operand — scalar (`isA`) or set (`isAnyOf`). */
+function purposeValues(right: unknown): string[] {
+	const items = Array.isArray(right) ? right : [right];
+	const out: string[] = [];
+	for (const item of items) {
+		const value =
+			typeof item === 'string'
+				? item
+				: ((item as Record<string, string>)?.['@id'] ??
+					(item as Record<string, string>)?.['@value']);
+		if (typeof value === 'string' && value && !out.includes(value)) out.push(value);
+	}
+	return out;
+}
+
 export function summarisePolicy(policy: Record<string, unknown> | null | undefined): PolicySummary {
-	if (!policy) return { permitted: [], prohibited: [], obligations: [], constraints: [] };
+	if (!policy)
+		return { permitted: [], prohibited: [], obligations: [], constraints: [], purposes: [] };
 
 	const perms = rulesFor(term<OdrlRule | OdrlRule[]>(policy, 'permission'));
 	const prohbs = rulesFor(term<OdrlRule | OdrlRule[]>(policy, 'prohibition'));
@@ -90,12 +125,29 @@ export function summarisePolicy(policy: Record<string, unknown> | null | undefin
 	const prohibited = prohbs.map(labelOf);
 	const obligations = obligs.map(labelOf);
 
-	const allConstraints = [...perms, ...prohbs, ...obligs].flatMap((r) => {
+	const allRuleConstraints = [...perms, ...prohbs, ...obligs].flatMap((r) => {
 		const c = term<OdrlConstraint | OdrlConstraint[]>(r, 'constraint');
 		if (!c) return [];
-		return (Array.isArray(c) ? c : [c]).map(constraintSentence);
+		return Array.isArray(c) ? c : [c];
 	});
-	const constraints = [...new Set(allConstraints)];
+	const constraints = [...new Set(allRuleConstraints.map(constraintSentence))];
 
-	return { permitted, prohibited, obligations, constraints };
+	// Only a *permission*'s purposes are offered as a choice: a purpose named in
+	// a prohibition is the one thing the consumer may not declare.
+	const purposeIris = perms
+		.flatMap((r) => {
+			const c = term<OdrlConstraint | OdrlConstraint[]>(r, 'constraint');
+			if (!c) return [];
+			return Array.isArray(c) ? c : [c];
+		})
+		.filter((c) => {
+			const rawLeft = term<string | { '@id': string }>(c, 'leftOperand');
+			const left = typeof rawLeft === 'string' ? rawLeft : (rawLeft?.['@id'] ?? '');
+			return localName(left) === 'purpose';
+		})
+		.flatMap((c) => purposeValues(term(c, 'rightOperand')));
+
+	const purposes = [...new Set(purposeIris)].map((iri) => ({ iri, label: purposeLabel(iri) }));
+
+	return { permitted, prohibited, obligations, constraints, purposes };
 }

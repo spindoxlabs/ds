@@ -119,6 +119,18 @@ class ConsumerAccessRequestORM(Base):
     contract_agreement_id: Mapped[str | None] = mapped_column(Text)
     transfer_id: Mapped[str | None] = mapped_column(Text)
     status: Mapped[str] = mapped_column(Text, nullable=False, default="negotiating")
+    # The consumer's declared intent. Distinct from the offer's permitted
+    # purposes, which live in the agreement policy: an offer saying "any of
+    # these three" cannot answer why *this* request was made. Nullable because
+    # declaring is optional — a request made before this existed, or by a caller
+    # that says nothing, is recorded honestly as undeclared rather than
+    # backfilled with the offer's set, which would invent a statement nobody made.
+    declared_purpose: Mapped[list | None] = mapped_column(JSON)
+    declared_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    declared_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # An opaque external reference (ticket, document id) — never free text, and
+    # never PII. See `NegotiateRequest._no_obvious_pii`.
+    justification_ref: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

@@ -291,10 +291,11 @@ onboarded **organisation** with a verified legal identity, an accepted service a
 and an issued credential that lets it act as a dataspace participant. Organisation onboarding
 is the lifecycle that promotes the former into the latter.
 
-**No public self-registration this iteration.** Organisations are enabled through an admin
-API and `ir-cli org`, following the same seed-and-import pattern as owners and memberships. The
-portal review queue is deferred (see [roadmap](roadmap.md)); when built, every button will call
-the same registry endpoints the CLI does.
+**Intake is invite-gated, not open.** An organisation applies through the public
+`POST /onboarding/applications` (the portal's `/join` form) using a single-use invite code the
+operator issues, or the operator registers it directly through the admin API or `ir-cli org`,
+following the same seed-and-import pattern as owners and memberships. The operator review queue
+lives at `/admin/onboarding`; every button there calls the same registry endpoint the CLI does.
 
 ### Lifecycle
 

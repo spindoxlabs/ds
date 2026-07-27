@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -27,11 +27,48 @@ class CatalogRequest(BaseModel):
 
 
 class NegotiateRequest(BaseModel):
+    """A request to negotiate, and — optionally — why.
+
+    ``declared_purpose`` and the window are the consumer's **statement of
+    intent**. They are not a policy: EDC resolves the contract policy from the
+    offer id against the provider's own contract definition
+    (``ContractNegotiationProtocolServiceImpl``), so nothing a consumer puts in
+    the request body can widen or narrow what the agreement permits. What the
+    declaration does buy is accountability — an offer permitting *any of* three
+    purposes otherwise leaves a permanent record saying only "one of these
+    three", which cannot answer "why did this organisation ask for this data".
+
+    It is validated against the offer's own purposes, so a declaration can only
+    ever be as broad as the offer already allows. ``justification_ref`` is an
+    opaque external reference (a ticket or document id), never free text about a
+    person — the same contract ``evidence_ref`` carries in organisation
+    onboarding.
+    """
+
     counter_party_address: str
     offer_id: str
     asset_id: str
     assigner: str
     odrl_policy: dict | None = None
+    declared_purpose: list[str] | None = None
+    declared_from: datetime | None = None
+    declared_until: datetime | None = None
+    justification_ref: str | None = None
+
+    @field_validator("justification_ref")
+    @classmethod
+    def _no_obvious_pii(cls, v: str | None) -> str | None:
+        """Reject the commonest way PII reaches a request record.
+
+        Mirrors ``AdminShareLegalBasis``: this catches an email pasted into a
+        reference field, not every possible leak. The codes-and-references-only
+        rule stays the caller's obligation.
+        """
+        if v and "@" in v:
+            raise ValueError(
+                "must be an opaque reference, not an email address or other identifier"
+            )
+        return v
 
 
 class TransferStartRequest(BaseModel):
@@ -104,6 +141,11 @@ async def start_negotiation(
     x_user_vc: str | None = Header(default=None),
 ):
     _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    # Before any EDC call: a refused declaration must not leave a live
+    # negotiation behind that the record then fails to describe.
+    declared_purpose = _validated_declaration(req)
+    if req.declared_from and req.declared_until and req.declared_from > req.declared_until:
+        raise HTTPException(422, "declared_from is after declared_until")
     duplicate = await _find_blocking_request(db, svc, x_subject_id, req.asset_id)
     if duplicate:
         raise HTTPException(
@@ -138,6 +180,10 @@ async def start_negotiation(
         assigner=req.assigner,
         negotiation_id=negotiation_id,
         status="negotiating",
+        declared_purpose=declared_purpose or None,
+        declared_from=req.declared_from,
+        declared_until=req.declared_until,
+        justification_ref=req.justification_ref,
     )
     db.add(access_request)
     await db.flush()
@@ -151,6 +197,13 @@ async def start_negotiation(
             user_id=x_subject_id,
             purpose=_extract_purposes(req.odrl_policy),
             offer_id=req.offer_id,
+            # What the offer permits and what this consumer says it intends are
+            # different facts, so they are different fields. `purpose` stays the
+            # offer's set — existing readers keep their meaning.
+            declared_purpose=declared_purpose,
+            declared_from=req.declared_from,
+            declared_until=req.declared_until,
+            justification_ref=req.justification_ref,
         )
         await prov.negotiation_started(
             negotiation_id=negotiation_id,
@@ -233,6 +286,12 @@ async def list_access_requests(
             "transfer_state": transfer_state,
             "status": request.status,
             "awaiting_consent_since": awaiting_since,
+            "declared_purpose": request.declared_purpose or [],
+            "declared_from": request.declared_from.isoformat() if request.declared_from else None,
+            "declared_until": (
+                request.declared_until.isoformat() if request.declared_until else None
+            ),
+            "justification_ref": request.justification_ref,
             "created_at": request.created_at.isoformat() if request.created_at else None,
             "updated_at": request.updated_at.isoformat() if request.updated_at else None,
             "can_revoke": request.status in {
@@ -654,6 +713,31 @@ async def _access_request_for_negotiation(
     return result.scalar_one_or_none()
 
 
+# Both forms the operand reaches us in: `odrl:purpose` as served by the
+# federated catalogue, and the IRI ODRL's context expands it to. Mirrors
+# `Purposes.COMPACT` / `Purposes.EXPANDED` in the EDC extension — the two sides
+# read the same constraint and must agree on what counts as one.
+_PURPOSE_OPERANDS = {"odrl:purpose", "http://www.w3.org/ns/odrl/2/purpose"}
+
+
+def _purpose_values(right) -> list[str]:
+    """Every purpose IRI in a right operand, scalar or set-valued.
+
+    A single-purpose dataset yields a scalar (``odrl:isA``); a multi-purpose one
+    yields a **list** (``odrl:isAnyOf``), which is what the ODRL Information
+    Model prescribes for set-based operators. Reading only the scalar form
+    dropped the entire purpose list of exactly the datasets whose purpose is
+    ambiguous — the ones this record exists to disambiguate.
+    """
+    values: list[str] = []
+    for item in right if isinstance(right, list) else [right]:
+        if isinstance(item, dict):
+            item = item.get("@id") or item.get("id") or item.get("@value")
+        if isinstance(item, str) and item not in values:
+            values.append(item)
+    return values
+
+
 def _extract_purposes(policy: dict | None) -> list[str]:
     purposes: list[str] = []
 
@@ -665,17 +749,65 @@ def _extract_purposes(policy: dict | None) -> list[str]:
             left = value.get("odrl:leftOperand") or value.get("leftOperand")
             if isinstance(left, dict):
                 left = left.get("@id") or left.get("id")
-            if left == "odrl:purpose":
+            if left in _PURPOSE_OPERANDS:
                 right = value.get("odrl:rightOperand") or value.get("rightOperand")
-                if isinstance(right, dict):
-                    right = right.get("@id") or right.get("id")
-                if isinstance(right, str) and right not in purposes:
-                    purposes.append(right)
+                for purpose in _purpose_values(right):
+                    if purpose not in purposes:
+                        purposes.append(purpose)
             for item in value.values():
                 walk(item)
 
     walk(policy or {})
     return purposes
+
+
+def _validated_declaration(req: NegotiateRequest) -> list[str]:
+    """The declared purposes, checked against the offer, as taxonomy slugs.
+
+    Two rules, both fail-closed:
+
+    - A declared purpose must be in the taxonomy. An unrecognised string would
+      make the record unqueryable and unverifiable — worse than no record.
+    - A declared purpose must be one the **offer** permits (``odrl:isA`` over
+      the local ``broader`` chain, so declaring a narrower purpose than the
+      offer names is fine and declaring a broader one is not). Without the
+      offer's policy there is nothing to check against, so a declaration
+      submitted without ``odrl_policy`` is refused rather than recorded
+      unverified: an unverifiable claim in an audit record reads as a verified
+      one later.
+    """
+    from ...services import consent_vocabulary as vocab
+
+    if not req.declared_purpose:
+        return []
+    try:
+        declared = vocab.normalise_purposes(req.declared_purpose)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    offer_purposes = _extract_purposes(req.odrl_policy)
+    if not offer_purposes:
+        raise HTTPException(
+            422,
+            "declared_purpose requires odrl_policy — the declaration is checked "
+            "against the purposes the offer permits, and this offer carries none "
+            "that can be read.",
+        )
+    try:
+        permitted = vocab.normalise_purposes(offer_purposes)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(
+            422, f"Offer purposes are not in the taxonomy: {exc}"
+        ) from exc
+
+    for purpose in declared:
+        if not vocab.purpose_covered([purpose], permitted):
+            raise HTTPException(
+                422,
+                f"Declared purpose '{purpose}' is not permitted by this offer "
+                f"(offer permits: {', '.join(permitted)}).",
+            )
+    return declared
 
 
 async def _agreement_ids_for_request(

@@ -95,6 +95,14 @@ Rules when touching this page:
   invalidates consent, and the connector returns 409 if you try anyway.
 - **Never hardcode a purpose.** `ds` validates purposes against the ODRL taxonomy and
   returns 422 for anything unknown. Pass what the offer declares, or nothing.
+  `NegotiationWizard.svelte` broke this rule for a long time: three hardcoded labels,
+  two of them not in the taxonomy, sent under a field `NegotiateRequest` does not
+  declare — so Pydantic dropped every declaration a person made while the UI implied
+  it had been recorded. The options now come from `policySummary.purposes`, read from
+  the offer's own `odrl:purpose` constraint (set-valued for a multi-purpose dataset),
+  and go out as `declared_purpose[]`, which the connector validates against that same
+  offer. **A choice the backend discards is worse than no choice: it manufactures
+  consent to a purpose nobody recorded.**
 - **`ds` serves codes; the portal renders sentences.** ISO 8601 durations
   (`PT15M`, `P2Y`) and slugs are translated in the component via a lookup that falls
   back to the code itself. `fallback_text_en` is the server-supplied English safety

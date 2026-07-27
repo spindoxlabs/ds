@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { purposeLabel } from '$lib/consent';
+
   let { data } = $props();
   let queryResult = $state<string | null>(null);
   let queryError = $state<string | null>(null);
@@ -104,6 +106,31 @@
                   , since {fmt(req['awaiting_consent_since'])}{/if}. Nothing is required
                 from you.
               </p>
+            {/if}
+            <!-- Why this was asked for. The agreement's policy cannot answer it:
+                 a multi-purpose offer permits any of its purposes, so the contract
+                 says "one of these" and nothing more. -->
+            {#if (req['declared_purpose'] as string[] | undefined)?.length || req['declared_until'] || req['justification_ref']}
+              <dl class="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 space-y-1">
+                {#if (req['declared_purpose'] as string[] | undefined)?.length}
+                  <div class="flex gap-2">
+                    <dt class="text-gray-500 w-24 shrink-0">Stated purpose</dt>
+                    <dd>{(req['declared_purpose'] as string[]).map(purposeLabel).join(', ')}</dd>
+                  </div>
+                {/if}
+                {#if req['declared_until']}
+                  <div class="flex gap-2">
+                    <dt class="text-gray-500 w-24 shrink-0">Needed until</dt>
+                    <dd>{fmt(req['declared_until'])}</dd>
+                  </div>
+                {/if}
+                {#if req['justification_ref']}
+                  <div class="flex gap-2">
+                    <dt class="text-gray-500 w-24 shrink-0">Reference</dt>
+                    <dd class="font-mono">{String(req['justification_ref'])}</dd>
+                  </div>
+                {/if}
+              </dl>
             {/if}
             <div class="flex items-center gap-2 text-xs text-gray-500">
               {#if req['negotiation_state']}

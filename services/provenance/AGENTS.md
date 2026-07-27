@@ -63,7 +63,7 @@ These are the events emitted by ds-connector and ingested here:
 |-------|---------|---------|
 | `CataloguePublished` | Provider syncs governance.yaml | Entity (dataset) + Activity (publish) |
 | `CatalogViewed` | Consumer browses provider catalog | Activity (view) |
-| `AccessRequested` | Consumer requests access to a dataset | Activity (request) + relations |
+| `AccessRequested` | Consumer requests access to a dataset | Activity (request) + relations. Carries `purpose` (what the offer permits) **and** `declared_purpose` (what the consumer stated) — see `docs/provenance-and-lineage.md`; do not collapse them |
 | `NegotiationStarted` | Contract negotiation begins | Activity (negotiation) + relations |
 | `NegotiationFinalized` | Contract negotiation reaches FINALIZED | Activity (finalization) + relations |
 | `NegotiationTerminated` | Contract negotiation is terminated | Activity (termination) + relations |

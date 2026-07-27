@@ -29,6 +29,18 @@ class CatalogViewed(BaseModel):
 
 
 class AccessRequested(BaseModel):
+    """A consumer asked for access — and, optionally, said why.
+
+    ``purpose`` is what the **offer** permits, read from its ``odrl:purpose``
+    constraint. For a multi-purpose dataset that is a set, and a set cannot
+    answer "why was this data requested". ``declared_purpose`` is the consumer's
+    own statement, validated at request time against that set, so it is never
+    broader than what the offer allowed.
+
+    ``justification_ref`` is an opaque external reference. The justification
+    text itself is never emitted here — this store holds codes, DIDs and hashes.
+    """
+
     event_type: Literal["AccessRequested"] = "AccessRequested"
     event_id: str | None = None
     occurred_at: datetime
@@ -39,6 +51,10 @@ class AccessRequested(BaseModel):
     user_did: str
     purpose: list[str] = []
     offer_id: str | None = None
+    declared_purpose: list[str] = []
+    declared_from: datetime | None = None
+    declared_until: datetime | None = None
+    justification_ref: str | None = None
 
 
 class NegotiationStarted(BaseModel):

@@ -29,37 +29,17 @@ PROV-O event carrying **codes, DIDs and hashes only** — a recomputable `consen
 proves which consent state authorised a handover without the provenance store holding any
 subject data.
 
-Organisation onboarding — verification, service agreement, organisation credential, promotion
-to participant — is available as an **API surface plus a CLI** (`ir-cli org`), driven by
-templated YAML in the established seed-and-import pattern.
+Organisation onboarding — application, verification, service agreement, organisation credential,
+promotion to participant, and a provisioning bundle the new participant stands its own deployment
+up from — is available as an **API surface, a CLI** (`ir-cli org`) **and a portal surface**: an
+invite-gated public application form at `/join`, and an operator review queue at
+`/admin/onboarding` with agreement versions and acceptances at `/admin/agreements`. Every portal
+action calls the same registry endpoint as the CLI, which stays the reference implementation.
+Applicants need no identity of their own: intake is gated by a single-use invite code the operator
+issues, so a public write is not an open one. The bundle rotates the STS secret on every call —
+the registry stores a hash and cannot re-show one — which also makes a leaked bundle revocable.
 
 ## Next developments
-
-### Self-service organisation registration in the portal
-
-**Status: designed, deferred.** Organisations are currently enabled through an external
-interface calling the registration API; there is no public sign-up.
-
-The intended shape, when it is picked up:
-
-- A public route group in the portal (`/onboarding/organization`) carrying the applicant
-  wizard: legal entity details → registration number and country → legal representative
-  contact → requested role (consumer or provider) → DSP endpoint if provider → evidence
-  upload → service agreement acceptance → submit.
-- An operator review queue at `/admin/onboarding` (read-only list + verify/issue/promote/suspend
-  buttons calling the same registry endpoints as the CLI). This portal surface is **not yet
-  built** (deferred with the wizard); the backend it will call — applications, credential
-  issuance, promotion, agreements — is delivered.
-- Applicant authentication is the open design question. An applicant is by definition not yet
-  a participant, so the portal's participant-scoped auth does not cover them. The preferred
-  answer is a self-registered Keycloak user in an `applicants` group, reusing the existing
-  group-to-scope mapping; the alternative is a session-token pattern, which has the drawback
-  of adding a further authentication mechanism to a codebase that already carries several.
-- The hard constraint carries over: every action the wizard performs goes through the same
-  registry endpoints the CLI calls. The CLI remains the reference implementation.
-
-Deferring this costs nothing structurally — the state machine, credential type, agreement
-records and review queue all exist. What is missing is only the applicant-facing surface.
 
 ### Data holder as a second provider participant
 
@@ -87,12 +67,34 @@ conformance, and a keypair lifecycle with revocation on inaccurate statements. T
 open at near-zero ongoing cost; walking through it is a decision about federation ambitions,
 not a technical gap.
 
-### Auditable consumer access requests
+### Purpose-specific agreements
 
-A consumer's declared intent is not persisted — the access request model records the asset,
-offer, assigner and status, but not the purpose, timeframe or justification the consumer
-stated. Adding these turns a negotiation into an auditable request. This becomes more
-valuable now that purpose is a validated taxonomy term rather than free text.
+A consumer's declared intent **is** now persisted: `POST /consumer/negotiate` accepts a
+purpose, a timeframe and an opaque justification reference, validated against the purposes
+the offer permits and recorded on the access request and on `AccessRequested`.
+
+What remains is that the declaration is *accountability, not enforcement*. The provider
+decides on the offer's purposes, because those are what crossed the wire, and a
+multi-purpose dataset is published as one `odrl:purpose` constraint with `odrl:isAnyOf` over
+every permitted purpose — so the **agreement** still says "any of these three".
+
+The declaration cannot close that at the protocol layer. EDC resolves the contract policy
+from the offer id against the provider's own contract definition and discards the policy the
+consumer sent, so a consumer cannot narrow what it agrees to. Two routes exist, and neither
+is free:
+
+- **One contract offer per purpose.** Choosing an offer becomes choosing a purpose, bound
+  into the agreement policy where a third party can read it, with no new API and no
+  self-asserted claim. Cost: the catalogue grows per dataset, and the sharing-offer model,
+  the mapper and the compliance evidence all change shape.
+- **A cross-participant declaration channel.** Rejected once already, on the grounds that
+  DSP proves the requester cryptographically and a header-authenticated side channel
+  proves less — the reasoning that removed `POST /consent/request`.
+
+Worth noting that neither ODRL nor the DSSC blueprint requires the narrowing: the
+Information Model defines `Offer` and `Agreement` as distinct policy types and says nothing
+about deriving one from the other. This is a legibility and audit-quality decision, not a
+conformance gap.
 
 ### Anonymisation as an alternative to consent
 

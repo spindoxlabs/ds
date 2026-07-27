@@ -212,12 +212,20 @@ class SmokeFlow(BaseFlow):
         # 7. Negotiate
         policy = self._policy(dataset)
         offer_id = str(policy.get("@id") or f"{asset_id}#offer")
+        # Declare an intent, so the round trip covers the accountability record
+        # and not only the protocol. The purpose is taken from the offer itself:
+        # the connector refuses anything the offer does not permit, so a
+        # hardcoded one would make this flow depend on the dev catalogue.
+        offer_purposes = self._offer_purposes(policy)
+        declared_purpose = offer_purposes[:1]
         negotiate_body = {
             "counter_party_address": s.counter_party_address,
             "offer_id": offer_id,
             "asset_id": asset_id,
             "assigner": s.provider_did,
             "odrl_policy": policy or None,
+            "declared_purpose": declared_purpose,
+            "justification_ref": "e2e-smoke",
         }
         try:
             negotiated = self.http.post(
@@ -230,6 +238,35 @@ class SmokeFlow(BaseFlow):
         except Exception as exc:
             result.fail_step("request access", str(exc))
             return result
+
+        # The declaration must survive to the record, or it was never evidence.
+        if declared_purpose:
+            requests = self.http.get(
+                f"{s.consumer_connector_url}/consumer/requests",
+                headers=consumer_headers,
+            ) or []
+            recorded = next(
+                (r for r in requests if r.get("negotiation_id") == negotiation_id), None
+            )
+            stated = (recorded or {}).get("declared_purpose") or []
+            expected = {p.rsplit("/", 1)[-1] for p in declared_purpose}
+            if not recorded:
+                result.fail_step("declared purpose", "no access request recorded")
+                return result
+            if set(stated) != expected:
+                result.fail_step(
+                    "declared purpose",
+                    "the request record does not carry the declared purpose",
+                    declared=sorted(expected),
+                    recorded=sorted(stated),
+                )
+                return result
+            result.pass_step(
+                "declared purpose",
+                "stated intent is recorded against the request",
+                purpose=sorted(stated),
+                justification_ref=(recorded or {}).get("justification_ref"),
+            )
 
         # 8. Poll negotiation
         encoded_neg_id = urllib.parse.quote(negotiation_id, safe="")
@@ -477,3 +514,35 @@ class SmokeFlow(BaseFlow):
 
     def _policy_requires_consent(self, policy: dict[str, Any]) -> bool:
         return "ds:consentStatus" in json.dumps(policy)
+
+    def _offer_purposes(self, policy: dict[str, Any]) -> list[str]:
+        """Every purpose IRI the offer permits.
+
+        Reads the set-valued form as well as the scalar one: a multi-purpose
+        dataset publishes one ``odrl:purpose`` constraint with ``odrl:isAnyOf``
+        over a list, and a reader that only understands a scalar finds nothing
+        on exactly those datasets.
+        """
+        purposes: list[str] = []
+        operands = {"odrl:purpose", "purpose", "http://www.w3.org/ns/odrl/2/purpose"}
+
+        def walk(value: Any) -> None:
+            if isinstance(value, list):
+                for item in value:
+                    walk(item)
+            elif isinstance(value, dict):
+                left = value.get("odrl:leftOperand") or value.get("leftOperand")
+                if isinstance(left, dict):
+                    left = left.get("@id") or left.get("id")
+                if left in operands:
+                    right = value.get("odrl:rightOperand") or value.get("rightOperand")
+                    for item in right if isinstance(right, list) else [right]:
+                        if isinstance(item, dict):
+                            item = item.get("@id") or item.get("@value")
+                        if isinstance(item, str) and item not in purposes:
+                            purposes.append(item)
+                for item in value.values():
+                    walk(item)
+
+        walk(policy)
+        return purposes

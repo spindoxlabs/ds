@@ -73,7 +73,18 @@ class ProvBridge:
         purpose: list[str] | None = None,
         offer_id: str | None = None,
         event_id: str | None = None,
+        declared_purpose: list[str] | None = None,
+        declared_from: datetime | None = None,
+        declared_until: datetime | None = None,
+        justification_ref: str | None = None,
     ) -> None:
+        """``purpose`` is what the offer permits; ``declared_purpose`` is what
+        the consumer said it wanted. Keeping them apart is the point: collapsing
+        them would make an offer's permissions look like a consumer's statement.
+
+        Every field here stays codes, IRIs and references — ``justification_ref``
+        is an opaque external id, never the justification text itself.
+        """
         await self._prov.emit_event({
             "event_type": "AccessRequested",
             "event_id": event_id or f"access-request:{request_id}",
@@ -85,6 +96,10 @@ class ProvBridge:
             "user_did": _did(user_id),
             "purpose": purpose or [],
             "offer_id": offer_id,
+            "declared_purpose": declared_purpose or [],
+            "declared_from": declared_from.isoformat() if declared_from else None,
+            "declared_until": declared_until.isoformat() if declared_until else None,
+            "justification_ref": justification_ref,
         })
 
     async def negotiation_started(

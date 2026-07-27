@@ -68,6 +68,22 @@ Creates:
 - Activity (the access request)
 - Relations to the dataset entity and participant agents
 
+Carries two kinds of purpose, and the difference matters when reading an audit
+trail:
+
+| Field | Means |
+|---|---|
+| `purpose` | what the **offer** permits, read from its `odrl:purpose` constraint. For a multi-purpose dataset this is a set, and a set cannot say why the data was wanted |
+| `declared_purpose` | what the **consumer stated** it intends, validated at request time against that set, so it is never broader than the offer allowed |
+
+`declared_from` / `declared_until` bound the stated need; `justification_ref` is
+an opaque external reference (a ticket or document id). The justification text
+itself is never emitted — this store holds codes, DIDs and hashes only.
+
+A request that declared nothing carries an empty `declared_purpose`. It is not
+backfilled from the offer: that would put a statement in the record that nobody
+made.
+
 ### NegotiationStarted
 
 Emitted when a contract negotiation begins.

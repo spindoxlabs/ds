@@ -23,17 +23,20 @@
     onComplete: (result: { agreementId: string; transferId: string }) => void;
   } = $props();
 
-  const purposes = [
-    { value: 'ds:purpose:EnergyBalancing', label: 'Energy Community Balancing' },
-    { value: 'ds:purpose:GridMonitoring', label: 'Grid Monitoring' },
-    { value: 'ds:purpose:UrbanPlanning', label: 'Urban Planning' },
-  ];
+  // The purposes this offer actually permits, read from its own ODRL policy.
+  // They were hardcoded here — three labels that were not in the taxonomy, sent
+  // under a field the connector does not accept, so every declaration a person
+  // made was silently discarded. The list a person chooses from must be the list
+  // the provider published, or the choice is theatre.
+  const purposes = $derived(policySummary?.purposes ?? []);
 
   // Steps: review → purpose → negotiating → transferring → done
   type Step = 'review' | 'purpose' | 'negotiating' | 'transferring' | 'done';
 
   let step = $state<Step>('review');
   let selectedPurpose = $state('');
+  let declaredUntil = $state('');
+  let justificationRef = $state('');
   let acknowledged = $state(false);
   let error = $state<string | null>(null);
   let progressLabel = $state('Contacting provider…');
@@ -67,7 +70,11 @@
           asset_id: assetId,
           assigner,
           odrl_policy: odrlPolicy,
-          purpose: selectedPurpose,
+          // The declaration. The connector validates it against the offer's own
+          // purposes and refuses anything broader, so this can only ever narrow.
+          declared_purpose: selectedPurpose ? [selectedPurpose] : [],
+          declared_until: declaredUntil ? new Date(declaredUntil).toISOString() : null,
+          justification_ref: justificationRef.trim() || null,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -212,13 +219,42 @@
         </div>
 
       {:else if step === 'purpose'}
-        <p class="text-sm text-gray-600 mb-4">Select the purpose for which you need this data:</p>
-        <select bind:value={selectedPurpose} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none">
-          <option value="">— choose purpose —</option>
-          {#each purposes as p}
-            <option value={p.value}>{p.label}</option>
-          {/each}
-        </select>
+        {#if purposes.length === 0}
+          <p class="text-sm text-gray-600 mb-4">
+            This offer declares no purpose, so there is nothing to choose. Your request will be
+            recorded without a stated purpose.
+          </p>
+        {:else}
+          <p class="text-sm text-gray-600 mb-4">
+            Which of the purposes this dataset is offered for do you need it for?
+          </p>
+          <select bind:value={selectedPurpose} class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none">
+            <option value="">— choose purpose —</option>
+            {#each purposes as p}
+              <option value={p.iri}>{p.label}</option>
+            {/each}
+          </select>
+          <p class="text-xs text-gray-400 mt-2">
+            Recorded with your request. The provider's policy still governs what is permitted —
+            declaring a purpose narrows what you state you will do, it never widens what you may do.
+          </p>
+
+          <div class="grid grid-cols-2 gap-3 mt-4">
+            <label class="text-sm text-gray-700">
+              <span class="block mb-1">Needed until <span class="text-gray-400">(optional)</span></span>
+              <input type="date" bind:value={declaredUntil}
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none" />
+            </label>
+            <label class="text-sm text-gray-700">
+              <span class="block mb-1">Reference <span class="text-gray-400">(optional)</span></span>
+              <input type="text" bind:value={justificationRef} placeholder="e.g. TICKET-4417"
+                class="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-brand-600 focus:outline-none" />
+            </label>
+          </div>
+          <p class="text-xs text-gray-400 mt-1">
+            The reference is an internal ticket or document id — never personal data.
+          </p>
+        {/if}
         {#if error}
           <div class="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg">
             <p class="text-sm text-red-700">{error}</p>
@@ -226,7 +262,11 @@
         {/if}
         <div class="flex gap-3 mt-5 justify-end">
           <button class="ds-btn-secondary" onclick={() => (step = 'review')}>← Back</button>
-          <button class="ds-btn-primary" disabled={!selectedPurpose} onclick={startNegotiation}>
+          <button
+            class="ds-btn-primary"
+            disabled={purposes.length > 0 && !selectedPurpose}
+            onclick={startNegotiation}
+          >
             Request Access
           </button>
         </div>
