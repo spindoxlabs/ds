@@ -84,6 +84,17 @@
       {/if}
     </div>
 
+    {#if form?.bundle}
+      <div class="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-1">
+        <p class="text-xs text-amber-900">
+          Connection bundle for <span class="font-mono">{form.bundleAlias}</span>.
+          It contains secrets and is shown once — the previous bundle for this
+          organisation no longer works.
+        </p>
+        <textarea class="ds-input w-full font-mono text-xs" rows="12" readonly>{form.bundle}</textarea>
+      </div>
+    {/if}
+
     {#if form?.issuedCode}
       <div class="border border-emerald-200 bg-emerald-50 rounded-lg p-3 space-y-1">
         <p class="text-xs text-emerald-900">
@@ -255,6 +266,15 @@
                     participants will negotiate with.
                   </p>
                 {/if}
+
+                <!-- Step 5: hand over the credentials to run their own instance. -->
+                <form method="POST" action="?/bundle" class="flex items-center gap-2">
+                  <input type="hidden" name="alias" value={app.alias} />
+                  <button class="ds-btn-secondary text-sm">Generate connection bundle</button>
+                  <span class="text-xs text-amber-800">
+                    Rotates their STS secret — any bundle issued earlier stops working.
+                  </span>
+                </form>
               {/if}
             </div>
           {/if}

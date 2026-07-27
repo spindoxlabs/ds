@@ -92,6 +92,16 @@ services:
     environment:
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      # Provisioning bundles: the externally reachable registry URL a third party
+      # configures against, and the realm admin credentials used to create its
+      # connector's Keycloak client. Unset, the bundle is still issued — without
+      # Keycloak credentials in it.
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://172.17.0.1:30005
+      KEYCLOAK_ADMIN_URL: http://172.17.0.1:9080
+      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      KEYCLOAK_REALM: dataspaces
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     depends_on:
       identity-registry-db-init:
         condition: service_completed_successfully

@@ -283,3 +283,19 @@ export function createInvite(token: string, body: { label?: string; ttl_days?: n
 		body: JSON.stringify(body),
 	});
 }
+
+/**
+ * The connection bundle for a promoted organisation.
+ *
+ * **Generating one rotates the participant's STS secret**, so any bundle issued
+ * earlier stops working. The registry stores only a hash and cannot re-show a
+ * secret — rotation is the only honest meaning of "send it again", and it is what
+ * makes a leaked bundle invalidatable.
+ */
+export function generateProvisioningBundle(token: string, alias: string) {
+	return irFetch<Record<string, unknown>>(
+		`/admin/owners/${alias}/provisioning-bundle`,
+		token,
+		{ method: 'POST' },
+	);
+}

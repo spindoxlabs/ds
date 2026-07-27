@@ -4,6 +4,7 @@ import { hasGrant, requireGrant } from '$lib/server/auth';
 import {
 	createInvite,
 	decideApplication,
+	generateProvisioningBundle,
 	issueOrganizationCredential,
 	listAgreements,
 	listApplications,
@@ -143,6 +144,26 @@ export const actions: Actions = {
 			return fail(502, { error: e instanceof Error ? e.message : 'Could not issue the credential' });
 		}
 		throw redirect(303, '/admin/onboarding?status=verified');
+	},
+
+	/**
+	 * Hand a promoted organisation its connection bundle.
+	 *
+	 * Rotates the STS secret, so the page warns before and after. Returned to the
+	 * page rather than downloaded server-side: the operator copies it once, and it
+	 * never touches disk here.
+	 */
+	bundle: async (event) => {
+		const session = await requireGrant(event, 'identity-registry.organizations.promote');
+		const form = await event.request.formData();
+		const alias = String(form.get('alias') ?? '');
+		if (!alias) return fail(400, { error: 'Missing organisation' });
+		try {
+			const bundle = await generateProvisioningBundle(session.accessToken ?? '', alias);
+			return { bundle: JSON.stringify(bundle, null, 2), bundleAlias: alias };
+		} catch (e) {
+			return fail(502, { error: e instanceof Error ? e.message : 'Could not generate a bundle' });
+		}
 	},
 
 	promote: async (event) => {

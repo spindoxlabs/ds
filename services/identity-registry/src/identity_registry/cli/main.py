@@ -1514,3 +1514,56 @@ def agreement_list():
 
 def run():
     app()
+
+
+@org_app.command("bundle")
+def org_bundle(
+    alias: str = typer.Option(..., help="Owner alias"),
+    format: str = typer.Option("json", help="json | env | properties"),
+):
+    """Generate the connection bundle a promoted organisation needs.
+
+    **Rotates the STS secret.** The registry stores only a hash, so a secret cannot
+    be re-shown — issuing a new one is the only honest meaning of "send it again",
+    and it makes a leaked bundle invalidatable.
+
+    Uses the same renderers as `POST /admin/owners/{alias}/provisioning-bundle`, so
+    the CLI and the console cannot emit different config for the same organisation.
+
+    Keycloak client credentials are **not** provisioned here: that needs the admin
+    API, which the HTTP endpoint reaches. Use the console (or the endpoint) when a
+    third party needs service-to-service credentials as well.
+    """
+    import json as _json
+
+    from ..services import org_onboarding as ops
+    from ..services import provisioning
+
+    async def _bundle():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if not owner:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            try:
+                data = await provisioning.build_bundle(session, settings, owner)
+            except provisioning.ProvisioningError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+
+        if format == "env":
+            typer.echo(provisioning.render_env(data))
+        elif format == "properties":
+            typer.echo(provisioning.render_properties(data))
+        else:
+            typer.echo(_json.dumps(data, indent=2))
+        typer.echo(
+            "\n# The STS secret above is new — any previously issued bundle for "
+            f"{alias} no longer works.",
+            err=True,
+        )
+
+    asyncio.run(_bundle())

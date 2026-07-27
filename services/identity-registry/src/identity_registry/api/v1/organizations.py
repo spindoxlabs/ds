@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -31,6 +32,8 @@ from ...schemas.responses import (
     ParticipantResponse,
 )
 from ...services import org_onboarding as ops
+from ...services import provisioning
+from ...services.keycloak_admin import KeycloakAdminClient
 
 router = APIRouter(prefix="/admin", tags=["organizations"])
 
@@ -400,3 +403,84 @@ async def accept_agreement(
         accepted_by=acceptance.accepted_by,
         accepted_at=acceptance.accepted_at,
     )
+
+
+@router.post(
+    "/owners/{alias}/provisioning-bundle",
+    status_code=201,
+)
+async def generate_provisioning_bundle(
+    alias: str,
+    format: str = "json",
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    _claims: dict = Depends(require_org_promote),
+):
+    """Everything a promoted organisation needs to stand up its own ds instance.
+
+    **Returns secrets, once.** Generating a bundle *rotates* the participant's STS
+    secret, so a previously issued one stops working — the registry stores a hash
+    and cannot re-show a secret, which makes rotation the only honest meaning of
+    "send it again". It also means a bundle that leaked can be invalidated by
+    generating another.
+
+    Gated on `organizations.promote` rather than `.write`: handing over working
+    credentials for a DSP counterparty is the same class of act as creating one.
+
+    `format=env|properties` renders the config files directly, using the same
+    renderers as `ir-cli org bundle` so the two cannot drift.
+    """
+    owner = await ops.resolve_owner(db, alias)
+    if not owner:
+        raise HTTPException(status_code=404, detail=f"Owner not found: {alias}")
+
+    keycloak_client_id = None
+    keycloak_secret = None
+    if settings.keycloak_admin_url and settings.keycloak_admin_user:
+        # A third party's connector authenticates service-to-service against this
+        # realm, so its client lives here. Failing to provision it would hand over
+        # a bundle that cannot actually talk to the registry.
+        #
+        # Unconfigured admin credentials are not an error: the bundle is still
+        # useful without them, and a deployment may provision clients elsewhere.
+        client = await KeycloakAdminClient.authenticate(
+            settings.keycloak_admin_url,
+            settings.keycloak_realm,
+            admin_user=settings.keycloak_admin_user,
+            admin_password=settings.keycloak_admin_password or "",
+        )
+        try:
+            keycloak_client_id = provisioning.client_id_for(alias)
+            keycloak_secret = await client.ensure_service_client(
+                keycloak_client_id,
+                name=f"ds connector — {owner.name or alias}",
+                scopes=provisioning.CONNECTOR_SCOPES,
+            )
+        except Exception as exc:  # noqa: BLE001 — surfaced to the operator
+            raise HTTPException(
+                status_code=502,
+                detail=f"Could not provision a Keycloak client for {alias}: {exc}",
+            ) from exc
+        finally:
+            await client.aclose()
+
+    try:
+        bundle = await provisioning.build_bundle(
+            db,
+            settings,
+            owner,
+            keycloak_client_id=keycloak_client_id,
+            keycloak_client_secret=keycloak_secret,
+        )
+    except provisioning.ProvisioningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    await db.commit()
+
+    if format == "env":
+        return PlainTextResponse(provisioning.render_env(bundle), status_code=201)
+    if format == "properties":
+        return PlainTextResponse(
+            provisioning.render_properties(bundle), status_code=201
+        )
+    return bundle

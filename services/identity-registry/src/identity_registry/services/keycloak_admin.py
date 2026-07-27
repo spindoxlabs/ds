@@ -134,6 +134,71 @@ class KeycloakAdminClient:
             return None
         return resp.json()
 
+    # ── Service clients ──────────────────────────────────────────────────────
+
+    async def ensure_service_client(
+        self,
+        client_id: str,
+        *,
+        name: str,
+        scopes: list[str],
+        audiences: list[str] | None = None,
+    ) -> str:
+        """Create (or find) a confidential client and return its secret.
+
+        A third party running its own ds instance needs credentials for the
+        service-to-service calls its connector makes — the identity registry,
+        provenance, and the counterparty connector. Those are Keycloak clients in
+        *this* realm, so the registry provisions them at promotion time rather
+        than leaving an operator to hand-configure a realm per participant.
+
+        Idempotent: an existing client is reused and its secret read back, so
+        re-running promotion does not invalidate credentials already handed out.
+        Rotation is a separate, explicit act.
+        """
+        existing = await self._request(
+            "GET", "/clients", params={"clientId": client_id}
+        )
+        if not existing:
+            await self._request(
+                "POST",
+                "/clients",
+                {
+                    "clientId": client_id,
+                    "name": name,
+                    "enabled": True,
+                    # Service-to-service only: no browser flows, no user sessions.
+                    "publicClient": False,
+                    "serviceAccountsEnabled": True,
+                    "standardFlowEnabled": False,
+                    "directAccessGrantsEnabled": False,
+                    "defaultClientScopes": scopes,
+                },
+            )
+            existing = await self._request(
+                "GET", "/clients", params={"clientId": client_id}
+            )
+
+        if not existing:
+            raise RuntimeError(f"Keycloak client {client_id} could not be created")
+
+        uuid = existing[0]["id"]
+        secret = await self._request("GET", f"/clients/{uuid}/client-secret")
+        if not secret or not secret.get("value"):
+            secret = await self._request("POST", f"/clients/{uuid}/client-secret")
+        return str((secret or {}).get("value", ""))
+
+    async def rotate_service_client_secret(self, client_id: str) -> str:
+        """Issue a new secret, invalidating the previous one."""
+        existing = await self._request(
+            "GET", "/clients", params={"clientId": client_id}
+        )
+        if not existing:
+            raise RuntimeError(f"Keycloak client {client_id} does not exist")
+        uuid = existing[0]["id"]
+        secret = await self._request("POST", f"/clients/{uuid}/client-secret")
+        return str((secret or {}).get("value", ""))
+
     # ── Users ────────────────────────────────────────────────────────────────
 
     async def find_user_by_email(self, email: str) -> dict[str, Any] | None:

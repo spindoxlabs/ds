@@ -81,6 +81,43 @@ class Settings(BaseSettings):
         description="Domain for the trust-anchor DID",
     )
 
+    # ── Provisioning bundle ──────────────────────────────────────────────────
+    #
+    # A third party configures its own deployment from these, so they must be
+    # addresses reachable *from outside this cluster* — an in-cluster service DNS
+    # name in a bundle produces a connector that cannot resolve its own trust
+    # anchor.
+    identity_registry_public_url: str | None = Field(
+        default=None,
+        description=(
+            "Externally reachable base URL of this registry, used in provisioning "
+            "bundles. Defaults to https://<trust_anchor_domain> when unset."
+        ),
+    )
+
+    keycloak_issuer_url: str | None = Field(
+        default=None,
+        validation_alias="KEYCLOAK_ISSUER_URL",
+        description=(
+            "Realm issuer URL handed to a third party's connector in its bundle."
+        ),
+    )
+
+    keycloak_realm: str = Field(
+        default="dataspaces",
+        validation_alias="KEYCLOAK_REALM",
+    )
+
+    # Realm admin credentials, used only to provision a third party's connector
+    # client at bundle time. Unset disables that step: the bundle is still issued,
+    # without Keycloak credentials in it.
+    keycloak_admin_user: str | None = Field(
+        default=None, validation_alias="KEYCLOAK_ADMIN_USERNAME"
+    )
+    keycloak_admin_password: str | None = Field(
+        default=None, validation_alias="KEYCLOAK_ADMIN_PASSWORD"
+    )
+
     credentials_context_url: str = Field(
         default="https://dataspaces.localhost/ns/credentials/v1",
         description="Credentials JSON-LD context URL",
