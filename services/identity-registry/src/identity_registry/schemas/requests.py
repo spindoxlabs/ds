@@ -260,3 +260,46 @@ class PatchOwnerRequest(BaseModel):
         if v is not None and v not in {"pending", "verified", "suspended", "revoked"}:
             raise ValueError("status must be pending | verified | suspended | revoked")
         return v
+
+
+class CreateInviteRequest(BaseModel):
+    """Issue an invite for an organisation to apply with."""
+
+    label: str | None = None
+    created_by: str | None = None
+    # None means it does not expire. An operator handing a code to a known
+    # counterparty may not want a deadline; a code posted anywhere else should
+    # have one.
+    ttl_days: int | None = Field(default=30, ge=1, le=365)
+
+
+class PublicOrganizationApplicationRequest(BaseModel):
+    """An organisation's own account of itself, filed against an invite.
+
+    Nothing here is trusted: it is a claim an operator verifies offline.
+    ``evidence_ref`` is an external reference (ticket or document id) — the
+    registry stores no documents.
+    """
+
+    invite_code: str
+    alias: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*[a-z0-9]$")
+    legal_name: str
+    registration_number: str | None = None
+    registration_type: str | None = None
+    hq_country_code: str | None = None
+    legal_country_code: str | None = None
+    roles: list[str] = Field(default_factory=lambda: ["consumer"], min_length=1)
+    did: str | None = None
+    dsp_address: str | None = None
+    evidence_ref: str | None = None
+    notes: str | None = None
+
+    @field_validator("registration_type")
+    @classmethod
+    def _reg_type(cls, v: str | None) -> str | None:
+        return _validate_registration_type(v)
+
+    @field_validator("roles")
+    @classmethod
+    def _roles(cls, v: list[str]) -> list[str]:
+        return _validate_roles(v)

@@ -2,10 +2,12 @@ import { fail, redirect } from '@sveltejs/kit';
 import type { Actions, PageServerLoad } from './$types';
 import { hasGrant, requireGrant } from '$lib/server/auth';
 import {
+	createInvite,
 	decideApplication,
 	issueOrganizationCredential,
 	listAgreements,
 	listApplications,
+	listInvites,
 	listOwners,
 	promoteOwner,
 	recordAgreementAcceptance,
@@ -30,15 +32,17 @@ export const load: PageServerLoad = async (event) => {
 	const status = event.url.searchParams.get('status') ?? 'pending';
 
 	try {
-		const [applications, owners, agreements] = await Promise.all([
+		const [applications, owners, agreements, invites] = await Promise.all([
 			listApplications(token, status),
 			listOwners(token).catch(() => []),
 			listAgreements(token).catch(() => []),
+			listInvites(token).catch(() => []),
 		]);
 		return {
 			applications,
 			owners,
 			agreements,
+			invites,
 			status,
 			may: {
 				write: hasGrant(session, 'identity-registry.organizations.write'),
@@ -51,6 +55,7 @@ export const load: PageServerLoad = async (event) => {
 			applications: [],
 			owners: [],
 			agreements: [],
+			invites: [],
 			status,
 			may: { write: false, promote: false },
 			error: e instanceof Error ? e.message : 'The identity registry is unavailable',
@@ -64,6 +69,27 @@ function actor(session: { user?: { email?: string | null; name?: string | null }
 }
 
 export const actions: Actions = {
+	/**
+	 * Issue an invitation code.
+	 *
+	 * The code comes back once and is returned to the page so the operator can copy
+	 * it — the registry stores only a hash, so there is no second chance to read it.
+	 */
+	invite: async (event) => {
+		const session = await requireGrant(event, 'identity-registry.organizations.write');
+		const form = await event.request.formData();
+		const ttl = Number(form.get('ttl_days') ?? 30);
+		try {
+			const issued = await createInvite(session.accessToken ?? '', {
+				label: String(form.get('label') ?? '') || undefined,
+				ttl_days: Number.isFinite(ttl) && ttl > 0 ? ttl : undefined,
+			});
+			return { issuedCode: issued.code, issuedLabel: issued.label ?? null };
+		} catch (e) {
+			return fail(502, { error: e instanceof Error ? e.message : 'Could not issue an invite' });
+		}
+	},
+
 	decide: async (event) => {
 		const session = await requireGrant(event, 'identity-registry.organizations.write');
 		const form = await event.request.formData();

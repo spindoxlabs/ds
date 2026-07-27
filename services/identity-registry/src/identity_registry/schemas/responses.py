@@ -198,3 +198,37 @@ class CurrentAgreementResponse(BaseModel):
     version: str | None = None
     capacity: str
     accepted_at: datetime | None = None
+
+
+class IssuedInviteResponse(BaseModel):
+    """Returned once, at issue time. ``code`` is never retrievable again."""
+
+    id: str
+    code: str
+    label: str | None = None
+    expires_at: datetime | None = None
+    created_at: datetime
+
+
+class InviteResponse(BaseModel):
+    """An invite as an operator sees it later — without the code."""
+
+    id: str
+    label: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+    expires_at: datetime | None = None
+    redeemed_at: datetime | None = None
+    application_id: str | None = None
+
+
+class PublicApplicationResponse(BaseModel):
+    """Acknowledgement for the applicant.
+
+    Deliberately minimal: the application is not theirs to read back, and its
+    status is an operator's judgement rather than something to poll.
+    """
+
+    id: str
+    alias: str
+    status: str

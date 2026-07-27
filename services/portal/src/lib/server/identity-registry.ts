@@ -257,3 +257,29 @@ export function listAcceptances(token: string, agreementId: string) {
 		token,
 	);
 }
+
+export interface Invite {
+	id: string;
+	label?: string | null;
+	created_by?: string | null;
+	created_at: string;
+	expires_at?: string | null;
+	redeemed_at?: string | null;
+	application_id?: string | null;
+}
+
+export interface IssuedInvite extends Invite {
+	/** Returned once, at issue time. The registry stores only a hash. */
+	code: string;
+}
+
+export function listInvites(token: string) {
+	return irFetch<Invite[]>('/admin/onboarding/invites', token);
+}
+
+export function createInvite(token: string, body: { label?: string; ttl_days?: number }) {
+	return irFetch<IssuedInvite>('/admin/onboarding/invites', token, {
+		method: 'POST',
+		body: JSON.stringify(body),
+	});
+}

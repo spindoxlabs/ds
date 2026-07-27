@@ -15,6 +15,8 @@ from .api.v1.owners import router as owners_router
 from .api.v1.public import router as public_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
+from .api.v1.onboarding import admin_router as onboarding_admin_router
+from .api.v1.onboarding import public_router as onboarding_public_router
 from .config import get_settings
 from .db.engine import verify_schema
 
@@ -88,6 +90,11 @@ def create_app() -> FastAPI:
     app.include_router(agreements_router)
     app.include_router(owners_router)
     app.include_router(users_router)
+    app.include_router(onboarding_admin_router)
+    # Applicant-facing intake: no scope guard by design — an organisation
+    # applying to join has no identity yet. The invite code in the body is the
+    # gate. See api/v1/onboarding.py.
+    app.include_router(onboarding_public_router)
 
     return app
 

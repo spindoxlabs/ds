@@ -238,6 +238,41 @@ class OrganizationApplication(Base):
     )
 
 
+class OnboardingInvite(Base):
+    """A single-use code that lets a stranger file an organisation application.
+
+    An applicant has no identity yet — that is the point of applying — so the
+    intake route cannot be authenticated the normal way. A fully public write on
+    the service that holds every private key is a spam and enumeration surface,
+    so the operator issues a code out of band and the code is what gates the write.
+
+    The code is stored hashed: a leaked database should not yield usable invites,
+    and nothing needs to read it back (it is shown once, when issued).
+    """
+
+    __tablename__ = "onboarding_invites"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    # Free-text note for the operator: who this was sent to, and why.
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Set when consumed. Single-use: a redeemed invite is spent, not deleted, so
+    # an operator can still see which application it produced.
+    redeemed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    application_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
 class Agreement(Base):
     """Service-agreement definition, YAML-seeded and IR-hosted (Block D §5.4).
 

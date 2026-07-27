@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { Agreement, Owner, OrganizationApplication } from '$lib/server/identity-registry';
+  import type { Agreement, Invite, Owner, OrganizationApplication } from '$lib/server/identity-registry';
 
   let { data, form } = $props();
 
@@ -57,6 +57,76 @@
   {#if data.error}
     <div class="ds-card border-amber-200 bg-amber-50 text-sm text-amber-900">{data.error}</div>
   {/if}
+
+
+  <!-- Invitations: the only way a stranger can file an application. -->
+  <section class="ds-card space-y-3">
+    <div class="flex items-start justify-between gap-3">
+      <div>
+        <h2 class="font-semibold text-gray-900">Invitations</h2>
+        <p class="text-xs text-gray-600 mt-0.5">
+          An organisation needs a code to apply. Send it out of band — the registry
+          stores only a hash, so a code is shown once and cannot be looked up again.
+        </p>
+      </div>
+      {#if data.may.write}
+        <form method="POST" action="?/invite" class="flex items-end gap-2 shrink-0">
+          <label class="text-xs text-gray-600">
+            For
+            <input class="ds-input mt-1 block w-48" name="label" placeholder="who it is for" />
+          </label>
+          <label class="text-xs text-gray-600">
+            Valid days
+            <input class="ds-input mt-1 block w-24" name="ttl_days" type="number" value="30" min="1" />
+          </label>
+          <button class="ds-btn-secondary text-sm">Issue code</button>
+        </form>
+      {/if}
+    </div>
+
+    {#if form?.issuedCode}
+      <div class="border border-emerald-200 bg-emerald-50 rounded-lg p-3 space-y-1">
+        <p class="text-xs text-emerald-900">
+          Copy this now — it cannot be shown again{#if form.issuedLabel} ({form.issuedLabel}){/if}:
+        </p>
+        <p class="font-mono text-sm break-all text-emerald-900">{form.issuedCode}</p>
+        <p class="text-xs text-emerald-800">
+          Send with the link <span class="font-mono">/join?code=…</span>
+        </p>
+      </div>
+    {/if}
+
+    {#if (data.invites as Invite[]).length > 0}
+      <table class="w-full text-xs">
+        <thead>
+          <tr class="text-left text-gray-500 border-b border-gray-200">
+            <th class="pb-1 pr-4">For</th>
+            <th class="pb-1 pr-4">Issued</th>
+            <th class="pb-1 pr-4">Expires</th>
+            <th class="pb-1">State</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {#each data.invites as inv (inv.id)}
+            <tr>
+              <td class="py-1 pr-4">{inv.label ?? '—'}</td>
+              <td class="py-1 pr-4 text-gray-600">{new Date(inv.created_at).toLocaleDateString()}</td>
+              <td class="py-1 pr-4 text-gray-600">
+                {inv.expires_at ? new Date(inv.expires_at).toLocaleDateString() : 'never'}
+              </td>
+              <td class="py-1">
+                {#if inv.redeemed_at}
+                  <span class="ds-badge bg-gray-100 text-gray-600">used</span>
+                {:else}
+                  <span class="ds-badge bg-emerald-50 text-emerald-700">open</span>
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
 
   <div class="flex gap-2">
     {#each FILTERS as f}
