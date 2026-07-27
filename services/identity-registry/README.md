@@ -55,6 +55,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `GET` | `/dids/{did}/did.json` | Resolve DID document (`application/did+ld+json`) |
 | `GET` | `/status/{list-id}` | StatusList2021 credential (`application/ld+json`) |
 | `GET` | `/health` | Liveness check |
+| `POST` | `/onboarding/applications` | Apply to join, **requires a valid invite code**. Not open self-registration — an unauthenticated write on the service holding every private key would be. Every refusal is identical, so the route is not an oracle |
 
 ### DCP protocol — authenticated per-endpoint (called by EDC connectors)
 
@@ -91,6 +92,8 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `PATCH` | `/admin/owners/{alias}` | Promote / update owner legal identity + lifecycle |
 | `POST` | `/admin/owners/{alias}/agreement` | Record agreement acceptance |
 | `POST` | `/admin/owners/{alias}/promote` | Promote a credentialled owner to a participant |
+| `POST` | `/admin/owners/{alias}/provisioning-bundle` | Everything a third party needs to stand up its own instance. `?format=json\|env\|properties\|all`. **Every call rotates the STS secret** — the registry stores a hash and cannot re-show one, so "send it again" can only mean "issue a new one". Gated on `organizations.promote` |
+| `POST`/`GET` | `/admin/onboarding/invites` | Issue / list single-use invitation codes. The code is returned once; only a hash is stored |
 | `GET` | `/admin/credentials/{id}` | Get credential JSON |
 | `GET` | `/admin/credentials` | List credentials (optional `?subject_did=`) |
 | `DELETE` | `/admin/credentials/{id}` | Revoke credential |
@@ -120,6 +123,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
 | `ir-cli org list/show/suspend/revoke/import` | Manage organisations |
 | `ir-cli agreement import/list` | Import + list service-agreement definitions |
+| `ir-cli org bundle --alias --format` | Render a connection bundle (same renderers as the HTTP endpoint, so the two cannot drift) |
 
 ---
 
@@ -177,6 +181,10 @@ Env prefix: `IDENTITY_REGISTRY_`
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN` | `trust-anchor.dataspaces.localhost` | Domain for the trust-anchor DID |
 | `IDENTITY_REGISTRY_CREDENTIALS_CONTEXT_URL` | `https://dataspaces.localhost/ns/credentials/v1` | Credentials JSON-LD context URL |
 | `IDENTITY_REGISTRY_DATASPACE_URI` | `https://dataspaces.localhost/dataspace` | Dataspace membership URI |
+| `IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL` | `https://<trust_anchor_domain>` | Externally reachable base URL written into provisioning bundles. An in-cluster DNS name here produces a connector that cannot resolve its own trust anchor |
+| `KEYCLOAK_ISSUER_URL` | `None` | Realm issuer handed to a third party's connector in its bundle |
+| `KEYCLOAK_REALM` | `dataspaces` | Realm the third party's client is created in |
+| `KEYCLOAK_ADMIN_USERNAME` / `_PASSWORD` | `None` | Realm admin, used **only** to provision a third party's connector client at bundle time. Unset, the bundle is still issued — without Keycloak credentials in it |
 
 ---
 

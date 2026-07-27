@@ -53,6 +53,36 @@ it, and the insecure-dev flag is pinned false rather than merely defaulted.
     secretKeyRef:
       name: {{ include "ds.secretName" . }}
       key: KEYCLOAK_CLIENT_SECRET
+{{/*
+Provisioning bundles. A third party configures its own deployment from these, so
+they must be addresses reachable *from outside this cluster*: an in-cluster
+service DNS name in a bundle produces a connector that cannot resolve its own
+trust anchor.
+*/}}
+- name: IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL
+  value: {{ .Values.publicUrl | default (printf "https://%s" (include "ir.trustAnchorDomain" .)) | quote }}
+- name: KEYCLOAK_ISSUER_URL
+  value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
+- name: KEYCLOAK_REALM
+  value: {{ ((.Values.global).keycloak).realm | quote }}
+{{- if .Values.keycloak.sync.enabled }}
+{{/*
+Realm admin credentials, used only to create a third party's connector client at
+bundle time. Without them the bundle is still issued — without Keycloak
+credentials in it, so the third party's connector cannot authenticate to this
+registry. Gated on the same flag as org-sync because it is the same access.
+*/}}
+- name: KEYCLOAK_ADMIN_USERNAME
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "ds.secretName" . }}
+      key: KEYCLOAK_ADMIN_USERNAME
+- name: KEYCLOAK_ADMIN_PASSWORD
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "ds.secretName" . }}
+      key: KEYCLOAK_ADMIN_PASSWORD
+{{- end }}
 {{- include "ds.env.extra" . }}
 {{- end -}}
 

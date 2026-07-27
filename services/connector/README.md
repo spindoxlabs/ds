@@ -51,7 +51,7 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 - `POST /consent/request` — **provider-local**: an operator or the portal seeds a consent request for a set of subjects. Guarded by `connector.consent.provision`
 - `GET /consent/pending?correlation_id=` — is this negotiation waiting on a consent decision, and since when. Status only, for the counterparty. Guarded by `connector.consent.read`
 - `GET /consent/asks` — operator view: which asks are holding up which negotiation. Guarded by `connector.provider.read`
-- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record
+- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record. **Granting requires evidence** — `source`, `consent_text_version` and `rendered_text_sha256`, else 422; withdrawal requires none. See `docs/external-application-integration.md`
 - `GET /consent/my` — data subject retrieves their own consent requests (requires `X-Subject-Id` header)
 - `POST /consent/my/{id}/approve` — data subject approves a request; resumes the negotiation it was blocking
 - `POST /consent/my/{id}/reject` — data subject rejects a request; terminates the negotiation only once every subject has refused

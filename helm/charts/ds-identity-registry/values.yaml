@@ -83,6 +83,10 @@ bootstrap:
   seedConfigMap: ""
   seedMountPath: /seed
 
+# Externally reachable base URL of this registry, written into provisioning
+# bundles. Defaults to https://<trust-anchor domain>.
+publicUrl: ""
+
 keycloak:
   clientId: ds-identity-registry
   # Optional realm/organization provisioning against an external Keycloak.
