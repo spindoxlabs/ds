@@ -138,6 +138,11 @@ Three things to keep right when touching them:
   (a credential needs a verified owner holding a current agreement; promotion
   needs a valid credential); the page states which one is unmet so the trust
   model stays legible. Actions are additionally gated on `hasGrant`.
+- **A stated gate needs a way to satisfy it.** The credential also needs the owner
+  to have a `did:web`, and an organisation that applied through `/join` has none —
+  it is standing up a deployment, not migrating one. The page offers a *Set DID*
+  control (`?/setDid` → `PATCH /admin/owners/{alias}`) next to that gate; without
+  it the public join flow dead-ends at "has no DID".
 
 These calls forward the **operator's own token**. `svc-ds-portal` holds no
 onboarding grant on purpose, so a 403 means the signed-in user is missing a
@@ -267,11 +272,57 @@ build with "Cannot import … into code that runs in the browser". Anything a
 component needs at runtime belongs in a browser-safe module — see
 `src/lib/consent.ts`. **Run `npm run build` before considering a change done.**
 
-**There is no test runner, and `lint` does not run.** `package.json` declares
-`lint: eslint src` but `eslint` is not in `devDependencies`, and there is no test
-script — no vitest, no Playwright. So `check` + `build` is the whole gate, and
-"the UI exercises the API" is unenforced. Adding Playwright (and making `lint`
-real) is P10 of `.agents/plans/portal-review/plan.md`.
+### UI journeys (`task test:ui`)
+
+```bash
+task test:ui:setup  # once per machine — npx playwright install chromium
+task test:ui        # one journey per role, plus a dual-role journey
+```
+
+Playwright, in `tests/ui/`. Three rules they follow, and new ones should too:
+
+- **Real auth.** Each journey signs in through the Keycloak form as a dev-realm
+  user (`fixtures.ts`). Seeding a session or using a direct-grant token would
+  make the journeys assert against the fixture — the portal's entire
+  authorisation model is derived from the session and the user's credentials.
+- **Assert on API effects, not DOM cosmetics.** A decision that survives a
+  `reload()` is evidence the connector wrote it. `expectReachable()` checks the
+  response *status*, because a 403 here renders as an explanation rather than a
+  redirect, so "the page loaded" is not evidence of access.
+- **A refusal probe needs an otherwise-valid page state.** If a route would also
+  fail for an unrelated reason, the probe passes with the guard deleted.
+
+There is **no `webServer`**: every journey needs the connector, the registry,
+provenance and Keycloak, so `global-setup.ts` fails fast with "start the stack"
+rather than letting the suite red out on timeouts. `workers: 1` — journeys mutate
+shared backend state, and parallelism here trades a real signal for a flaky one.
+
+These journeys found three defects that unit tests and `ds-e2e` both missed: two
+sharing offers over one dataset collided in the connector, `/provider/contracts`
+was wired to EDC transfer processes and 500'd on real data, and an organisation
+that applied through `/join` could never be issued a credential because nothing
+assigned it a DID.
+
+### Lint
+
+`npm run lint` is real now (it previously named a package that was not
+installed). `svelte/require-each-key` is a **warning**: ~34 unkeyed `{#each}`
+blocks predate the config, and an unkeyed block re-uses DOM nodes by index, which
+reorders form state when a list changes underneath. Worth fixing; not a
+lint-config decision. `svelte/no-navigation-without-resolve` is off — the portal
+is served from the root of its own host and never sets `base`.
+
+### The npm lock file is cross-platform
+
+The image is `node:22-alpine` (musl) and `npm ci` fails if the lock lacks the
+musl-only optional deps — a plain `npm install` on a glibc host prunes them and
+the *Docker build* breaks while everything local still works. After changing
+dependencies, regenerate the lock in the build image:
+
+```bash
+docker run --rm -v "$PWD":/w -w /w node:22-alpine \
+  sh -c 'npm install --package-lock-only --include=optional'
+```
 
 ## Integration points
 

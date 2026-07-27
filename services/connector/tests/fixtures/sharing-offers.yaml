@@ -42,3 +42,28 @@ sharing_offers:
     consent_text_version: "1.0"
     revocable: false
     retention: P5Y
+
+  # A *second* consent-based offer over the same dataset, for a different purpose
+  # and a different controller. Two offers naming one dataset are two questions,
+  # and keeping them distinct is what stops one decision overwriting the other.
+  - id: test-grid-planning
+    purpose: EnergyCommunityOperation
+    legal_basis: "https://w3id.org/dpv#Consent"
+    datasets:
+      - datasets.silver.meters
+    recipients:
+      controller: grid-operator
+      controller_role: operations
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: example-org
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P1Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y

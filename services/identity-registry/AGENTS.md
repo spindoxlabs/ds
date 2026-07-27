@@ -68,10 +68,12 @@ PostgreSQL, 11 tables: `keys`, `dids`, `credentials`, `participants`, `keycloak_
 
 ## Organisation onboarding (Block D)
 
-Organisations are enabled through an admin API + `ir-cli org`, following the seed-and-import
-pattern — **no public self-registration** this iteration. The lifecycle and its gates live in
-`services/org_onboarding.py`, shared by the HTTP API and the CLI so both behave identically
-(the CLI is the reference implementation):
+Organisations are enabled through an admin API, `ir-cli org` and — since P8 — an
+**invite-gated public intake**. There is still no open self-registration: an applicant
+must present a single-use code the operator issued. That keeps an unauthenticated write off
+the service holding every private key, while letting a third party apply without an account.
+The lifecycle and its gates live in `services/org_onboarding.py`, shared by the HTTP API and
+the CLI so both behave identically (the CLI is the reference implementation):
 
 ```
 register (application) → verify (→ Owner row, status=verified)
@@ -98,7 +100,24 @@ register (application) → verify (→ Owner row, status=verified)
   Art. 4(11) requires. Routed above `/agreements/{agreement_id}` so `current` is not read as an
   agreement id; `tests/test_agreements_current.py` pins that and every refusal path.
 - The gates are enforced **in code** (raise `OrgOnboardingError` → 409/422), never in docs.
-- Portal review queue (D.7) is deferred; it will call the same `/admin/*` endpoints as the CLI.
+- Portal review queue (D.7) is **live** at `/admin/onboarding`, calling the same `/admin/*`
+  endpoints as the CLI with the operator's own token — no service-account shortcut.
+- **Invites** (`api/v1/onboarding.py`): `POST /admin/onboarding/invites` returns the code once
+  and stores only a hash; `POST /onboarding/applications` is public and requires a valid,
+  unexpired, unused one. Every refusal on the public route is **identical** — an invalid code
+  and a spent code must not be distinguishable, or the route becomes an oracle for guessing.
+- **Provisioning bundle**: `POST /admin/owners/{alias}/provisioning-bundle` returns everything a
+  third party's ds instance needs, gated on `organizations.promote` (handing over working
+  credentials for a DSP counterparty is the same class of act as creating one).
+  - **Every call rotates the STS secret** and stores only `hash_sts_secret(...)`. The registry
+    cannot re-show a secret, so rotation is the only honest meaning of "send it again" — and it
+    is what makes a leaked bundle invalidatable. Say so in any UI before the button.
+  - `format=json|env|properties|all`. `all` returns the bundle plus both renderings **in one
+    rotation**, which is what a UI must use: three separate calls would hand over two bundles
+    whose secret no longer works. An unknown value is a 422, never a silent fall-back to JSON.
+  - `.env` carries the secret; `.properties` never does — EDC's `FsConfigurationExtension` does
+    a plain `Properties.load()` and properties files get committed. `ir-cli org bundle` shares
+    the same renderers in `services/provisioning.py`, so the CLI and API cannot drift.
 
 ## Common tasks
 

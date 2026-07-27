@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import PlainTextResponse
@@ -411,7 +412,7 @@ async def accept_agreement(
 )
 async def generate_provisioning_bundle(
     alias: str,
-    format: str = "json",
+    format: Literal["json", "env", "properties", "all"] = "json",
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_org_promote),
@@ -428,7 +429,12 @@ async def generate_provisioning_bundle(
     credentials for a DSP counterparty is the same class of act as creating one.
 
     `format=env|properties` renders the config files directly, using the same
-    renderers as `ir-cli org bundle` so the two cannot drift.
+    renderers as `ir-cli org bundle` so the two cannot drift. `format=all` returns
+    the bundle *and* both renderings together, because each call rotates: asking
+    three times to obtain three files would leave the first two dead. An unknown
+    format is a 422, not a silent fall-back to JSON — a typo that quietly returns
+    a different artefact than the one asked for is how a `.properties` file ends
+    up holding a secret.
     """
     owner = await ops.resolve_owner(db, alias)
     if not owner:
@@ -483,4 +489,10 @@ async def generate_provisioning_bundle(
         return PlainTextResponse(
             provisioning.render_properties(bundle), status_code=201
         )
+    if format == "all":
+        return {
+            "bundle": bundle,
+            "env": provisioning.render_env(bundle),
+            "properties": provisioning.render_properties(bundle),
+        }
     return bundle

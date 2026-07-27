@@ -12,6 +12,7 @@ import {
 	listOwners,
 	promoteOwner,
 	recordAgreementAcceptance,
+	updateOwner,
 } from '$lib/server/identity-registry';
 
 /**
@@ -132,6 +133,21 @@ export const actions: Actions = {
 		throw redirect(303, '/admin/onboarding?status=verified');
 	},
 
+	/** Assign the `did:web` the credential gate requires. */
+	setDid: async (event) => {
+		const session = await requireGrant(event, 'identity-registry.organizations.write');
+		const form = await event.request.formData();
+		const alias = String(form.get('alias') ?? '');
+		const did = String(form.get('did') ?? '').trim();
+		if (!alias || !did) return fail(400, { error: 'Both the organisation and a DID are required' });
+		try {
+			await updateOwner(session.accessToken ?? '', alias, { did });
+		} catch (e) {
+			return fail(502, { error: e instanceof Error ? e.message : 'Could not set the DID' });
+		}
+		throw redirect(303, '/admin/onboarding?status=verified');
+	},
+
 	issueCredential: async (event) => {
 		const session = await requireGrant(event, 'identity-registry.organizations.write');
 		const form = await event.request.formData();
@@ -150,8 +166,11 @@ export const actions: Actions = {
 	 * Hand a promoted organisation its connection bundle.
 	 *
 	 * Rotates the STS secret, so the page warns before and after. Returned to the
-	 * page rather than downloaded server-side: the operator copies it once, and it
+	 * page rather than downloaded server-side: the operator saves it once, and it
 	 * never touches disk here.
+	 *
+	 * One registry call renders all three artefacts. Asking three times would
+	 * rotate three times and hand over two bundles that no longer authenticate.
 	 */
 	bundle: async (event) => {
 		const session = await requireGrant(event, 'identity-registry.organizations.promote');
@@ -159,8 +178,13 @@ export const actions: Actions = {
 		const alias = String(form.get('alias') ?? '');
 		if (!alias) return fail(400, { error: 'Missing organisation' });
 		try {
-			const bundle = await generateProvisioningBundle(session.accessToken ?? '', alias);
-			return { bundle: JSON.stringify(bundle, null, 2), bundleAlias: alias };
+			const rendered = await generateProvisioningBundle(session.accessToken ?? '', alias);
+			return {
+				bundle: JSON.stringify(rendered.bundle, null, 2),
+				bundleEnv: rendered.env,
+				bundleProperties: rendered.properties,
+				bundleAlias: alias,
+			};
 		} catch (e) {
 			return fail(502, { error: e instanceof Error ? e.message : 'Could not generate a bundle' });
 		}

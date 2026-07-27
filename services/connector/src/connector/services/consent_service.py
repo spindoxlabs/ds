@@ -145,6 +145,39 @@ async def get_latest_consent(
     return result.scalars().first()
 
 
+async def get_latest_offer_consent(
+    session: AsyncSession,
+    subject_id: str,
+    dataset_id: str,
+    consumer_id: str,
+    offer_id: str,
+) -> ConsentRequestORM | None:
+    """The subject's most recent decision **about one offer**.
+
+    Distinct from :func:`get_latest_consent`, which keys on the dataset alone.
+    Several offers can name the same dataset for different purposes and different
+    controllers, and those are different questions: agreeing to share meter data
+    for flexibility research is not agreeing to share it for grid planning. Keyed
+    on the dataset, the second decision would collide with the first — granting
+    would be a silent no-op and withdrawing would revoke the wrong purpose.
+    """
+    result = await session.execute(
+        select(ConsentRequestORM)
+        .where(
+            ConsentRequestORM.subject_id == subject_id,
+            ConsentRequestORM.dataset_id == dataset_id,
+            ConsentRequestORM.consumer_id == consumer_id,
+            ConsentRequestORM.offer_id == offer_id,
+        )
+        .order_by(
+            ConsentRequestORM.requested_at.desc(),
+            ConsentRequestORM.revoked_at.desc(),
+            ConsentRequestORM.decided_at.desc(),
+        )
+    )
+    return result.scalars().first()
+
+
 async def find_pending_request(
     session: AsyncSession,
     dataset_id: str,
@@ -332,7 +365,17 @@ async def set_subject_data_sharing(
     """
     purposes = _validated(dataset_id, purpose)
 
-    latest = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    # A decision made about an offer is scoped to that offer. Two offers may name
+    # the same dataset for different purposes and controllers; treating them as
+    # one row makes granting the second a silent no-op and makes withdrawing it
+    # revoke the first. Decisions made about a bare dataset keep the old key.
+    latest = (
+        await get_latest_offer_consent(
+            session, subject_id, dataset_id, consumer_id, offer_id
+        )
+        if offer_id
+        else await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    )
     now = datetime.now(timezone.utc)
 
     if enabled:

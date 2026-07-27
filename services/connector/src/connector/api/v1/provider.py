@@ -4,9 +4,11 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
+from ...db.models import ContractAgreementORM
 from ...dependencies import (
     get_db,
     get_provider_edc,
@@ -139,6 +141,41 @@ async def list_contracts(edc=Depends(get_provider_edc), _c: dict = Depends(requi
 @router.delete("/contracts/{contract_id}", status_code=204)
 async def delete_contract(contract_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_write)):
     await edc.delete_contract_definition(contract_id)
+
+
+@router.get("/agreements")
+async def list_agreements(
+    active_only: bool = False,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    _c: dict = Depends(require_provider_read),
+) -> list[dict]:
+    """The contract agreements this participant granted, as a provider.
+
+    Deliberately gated on ``provider.read`` rather than ``history.read``: a
+    producer looking at the contracts over their *own* datasets is reading
+    provider data, and requiring the history grant would lock a read-only
+    producer out of it. The same rows are visible through ``/history/agreements``
+    to a caller holding that broader grant, which spans every party's activity.
+    """
+    q = select(ContractAgreementORM).where(
+        ContractAgreementORM.provider_id == settings.participant_did
+    )
+    if active_only:
+        q = q.where(ContractAgreementORM.terminated_at.is_(None))
+    result = await db.execute(q.order_by(ContractAgreementORM.agreed_at.desc()))
+    return [
+        {
+            "agreement_id": a.agreement_id,
+            "asset_id": a.asset_id,
+            "consumer_id": a.consumer_id,
+            "provider_id": a.provider_id,
+            "agreed_at": a.agreed_at.isoformat() if a.agreed_at else None,
+            "terminated_at": a.terminated_at.isoformat() if a.terminated_at else None,
+            "termination_reason": a.termination_reason,
+        }
+        for a in result.scalars()
+    ]
 
 
 @router.get("/transfers")

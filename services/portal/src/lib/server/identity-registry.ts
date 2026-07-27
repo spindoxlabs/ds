@@ -273,6 +273,21 @@ export interface IssuedInvite extends Invite {
 	code: string;
 }
 
+/**
+ * Set an owner's `did:web`, which the credential gate requires.
+ *
+ * An organisation applying through the public route usually has no DID yet — it
+ * is standing up a deployment, not migrating one — so the operator assigns it
+ * here. Without this the gate can never be satisfied from the portal, and the
+ * whole join flow dead-ends at "has no DID".
+ */
+export function updateOwner(token: string, alias: string, body: { did?: string }) {
+	return irFetch<Owner>(`/admin/owners/${alias}`, token, {
+		method: 'PATCH',
+		body: JSON.stringify(body),
+	});
+}
+
 export function listInvites(token: string) {
 	return irFetch<Invite[]>('/admin/onboarding/invites', token);
 }
@@ -292,9 +307,19 @@ export function createInvite(token: string, body: { label?: string; ttl_days?: n
  * secret — rotation is the only honest meaning of "send it again", and it is what
  * makes a leaked bundle invalidatable.
  */
+export interface ProvisioningBundle {
+	bundle: Record<string, unknown>;
+	/** `.env` for the third party's connector. **Contains the STS secret.** */
+	env: string;
+	/** EDC `.properties`. Secret-free by construction — see `provisioning.py`. */
+	properties: string;
+}
+
 export function generateProvisioningBundle(token: string, alias: string) {
-	return irFetch<Record<string, unknown>>(
-		`/admin/owners/${alias}/provisioning-bundle`,
+	// `format=all` in one call, deliberately: each call rotates, so fetching the
+	// three artefacts separately would leave the first two dead on arrival.
+	return irFetch<ProvisioningBundle>(
+		`/admin/owners/${alias}/provisioning-bundle?format=all`,
 		token,
 		{ method: 'POST' },
 	);

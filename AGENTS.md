@@ -412,7 +412,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add a purpose to the taxonomy | `libs/governance/src/ds/governance/profiles/energy.yaml` |
 | Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function, **plus a rule binding**) |
 | Add a new API endpoint to connector | `services/connector/src/connector/api/v1/` |
-| Add a new portal page | `services/portal/src/routes/` |
+| Add a new portal page | `services/portal/src/routes/` (add a journey in `tests/ui/`, run `task test:ui`) |
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
 | Change consent behavior | `services/connector/src/connector/services/consent_service.py` |
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
@@ -432,6 +432,16 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 - **Python services must be installed as packages** in Dockerfiles (`uv pip install .`) so console script entry points (e.g., `ir-cli`) are created. Don't manually list deps.
 - **`172.17.0.1`** is the standard host-gateway address in all compose files.
 - `uv run` for python commands is generally better in the context of a service.
+- **The portal's `package-lock.json` must be generated in the build image.** A plain
+  `npm install` on the host prunes the musl-only optional deps, so `npm ci` inside
+  `node:22-alpine` refuses and the Docker build breaks while everything local still
+  works. Regenerate with `docker run --rm -v "$PWD":/w -w /w node:22-alpine sh -c
+  'npm install --package-lock-only --include=optional'`.
+- **`docker compose` without `COMPOSE_PROJECT_NAME=dataspaces` builds a second,
+  parallel stack.** The containers get `ds-*` names, port binds collide with the
+  real ones, and health checks answer `200` from the *old* containers — so a
+  rebuild looks verified when nothing was replaced. The Taskfile always sets it;
+  ad-hoc compose commands must too.
 
 ## Dev environment conventions
 

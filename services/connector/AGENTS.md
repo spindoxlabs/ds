@@ -15,7 +15,7 @@ src/connector/
 ├── main.py              FastAPI app factory with lifespan hooks
 ├── config.py            Pydantic settings (ConnectorSettings)
 ├── api/v1/
-│   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers}
+│   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers,agreements,authorizations}
 │   ├── consumer.py      POST /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
 │   ├── consent.py       POST /consent/request (provider-local seeding), GET /consent/pending, GET /consent/asks, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
 │   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
@@ -185,6 +185,22 @@ never a new controller and never a new purpose. Precedence, in both
 
 A *pending* specific row (an unanswered consumer request) neither grants nor
 blocks; it falls through to the subject's standing wildcard decision.
+
+## A decision is scoped to the offer it was made about
+
+Several offers may name the **same dataset** for different purposes and different
+controllers. Those are different questions: agreeing to share meter data for
+flexibility research is not agreeing to share it for grid planning.
+
+`set_subject_data_sharing` therefore looks up the subject's current decision with
+`get_latest_offer_consent` when an `offer_id` is given, and `list_my_data_shares`
+collapses to one row per **(dataset, offer)** rather than per dataset. Keyed on the
+dataset alone — as it was — granting the second offer silently returned the first
+row and wrote nothing, while withdrawing the second revoked the first. The subject
+saw a success either way. Decisions made about a bare `dataset_id` keep the old key.
+
+Found by the portal UI journeys, not by the unit tests or `ds-e2e`; both regression
+directions are pinned in `test_consent_provisioning.py`.
 
 ## Legal-basis evidence (Block B)
 

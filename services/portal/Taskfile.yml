@@ -30,3 +30,13 @@ tasks:
   lint:
     cmds:
       - npm run lint
+
+  test:ui:
+    desc: Playwright journeys against a running stack (one per role, plus dual-role)
+    cmds:
+      - npm run test:ui
+
+  test:ui:setup:
+    desc: Install the Playwright browser (once per machine)
+    cmds:
+      - npx playwright install chromium

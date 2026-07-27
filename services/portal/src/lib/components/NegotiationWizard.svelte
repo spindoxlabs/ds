@@ -81,7 +81,6 @@
 
     // Poll negotiation state
     const negotiationStart = Date.now();
-    const TERMINAL_NEG = new Set(['FINALIZED', 'TERMINATED']);
 
     await new Promise<string>((resolve, reject) => {
       pollTimer = setInterval(async () => {

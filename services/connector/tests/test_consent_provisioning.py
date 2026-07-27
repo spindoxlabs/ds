@@ -416,3 +416,74 @@ async def test_an_email_in_an_opaque_reference_is_refused(client):
     )
     assert r.status_code == 422
     assert "opaque reference" in r.text
+
+
+# ── two offers over one dataset ───────────────────────────────────────────────
+#
+# Found by the portal UI journeys, not by unit tests: a subject who had already
+# granted one offer clicked "Share" on a second one, got 200 OK, and the page
+# still showed "not shared". Both offers name the same dataset, and the decision
+# was keyed on the dataset alone — so the second grant collided with the first.
+
+OFFER_A = "test-flexibility"
+OFFER_B = "test-grid-planning"
+
+
+@pytest.mark.asyncio
+async def test_granting_a_second_offer_on_the_same_dataset_is_recorded(client):
+    """Two offers over one dataset are two questions, not one.
+
+    Agreeing to share meter data for flexibility research is not agreeing to
+    share it for community operation: different purpose, different controller.
+    Keyed on the dataset, the second grant silently returned the first row and
+    recorded nothing — the subject believed they had consented, and no evidence
+    existed either way.
+    """
+    from tests import make_vc_headers
+
+    subject = make_vc_headers()
+    for offer in (OFFER_A, OFFER_B):
+        r = await client.post(
+            "/consent/my/shares",
+            headers=subject,
+            json={"offer_id": offer, "enabled": True},
+        )
+        assert r.status_code == 200, r.text
+
+    rows = (await client.get("/consent/my/shares", headers=subject)).json()
+    by_offer = {r["offer_id"]: r for r in rows}
+    assert by_offer.keys() >= {OFFER_A, OFFER_B}, "both decisions must be visible"
+    assert by_offer[OFFER_A]["status"] == "granted"
+    assert by_offer[OFFER_B]["status"] == "granted"
+    # Each carries its own offer's purpose and controller, not the other's.
+    assert by_offer[OFFER_A]["purpose"] == ["FlexibilityResearch"]
+    assert by_offer[OFFER_B]["purpose"] == ["EnergyCommunityOperation"]
+    assert by_offer[OFFER_B]["controller"] == "grid-operator"
+
+
+@pytest.mark.asyncio
+async def test_withdrawing_one_offer_leaves_the_other_granted(client):
+    """The dangerous direction: withdrawal must not revoke a different purpose."""
+    from tests import make_vc_headers
+
+    subject = make_vc_headers()
+    for offer in (OFFER_A, OFFER_B):
+        await client.post(
+            "/consent/my/shares",
+            headers=subject,
+            json={"offer_id": offer, "enabled": True},
+        )
+
+    r = await client.post(
+        "/consent/my/shares",
+        headers=subject,
+        json={"offer_id": OFFER_B, "enabled": False},
+    )
+    assert r.status_code == 200, r.text
+
+    rows = (await client.get("/consent/my/shares", headers=subject)).json()
+    by_offer = {r["offer_id"]: r for r in rows}
+    assert by_offer[OFFER_B]["status"] == "revoked"
+    assert by_offer[OFFER_A]["status"] == "granted", (
+        "stopping one purpose must not silently withdraw another"
+    )

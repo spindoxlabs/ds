@@ -574,10 +574,17 @@ async def list_my_data_shares(
         subject_id=subject_id,
         consumer_id=consumer_id or settings.consumer_participant_did,
     )
-    latest_by_dataset: dict[str, ConsentResponse] = {}
+    # One current decision per *question asked*, not per dataset. Several offers
+    # can name the same dataset for different purposes and controllers; collapsing
+    # them on the dataset alone hides every decision but the first, so a subject
+    # who granted two purposes would see only one of them.
+    latest: dict[tuple[str, str | None], ConsentResponse] = {}
     for consent in consents:
-        latest_by_dataset.setdefault(consent.dataset_id, ConsentResponse.model_validate(consent))
-    return list(latest_by_dataset.values())
+        latest.setdefault(
+            (consent.dataset_id, consent.offer_id),
+            ConsentResponse.model_validate(consent),
+        )
+    return list(latest.values())
 
 
 @router.post("/my/shares")

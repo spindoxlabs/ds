@@ -1,11 +1,26 @@
 <script lang="ts">
-  import type { Agreement, Invite, Owner, OrganizationApplication } from '$lib/server/identity-registry';
+  import type { Invite, Owner, OrganizationApplication } from '$lib/server/identity-registry';
 
   let { data, form } = $props();
 
   const owners = $derived(
     new Map((data.owners as Owner[]).map((o) => [o.id, o])),
   );
+
+  /**
+   * Save an artefact the operator already holds in the page.
+   *
+   * Client-side on purpose: the bundle was returned once and rotating the secret
+   * again to produce a download would invalidate the copy on screen.
+   */
+  function download(name: string, body: string) {
+    const url = URL.createObjectURL(new Blob([body], { type: 'text/plain' }));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   const FILTERS = [
     { value: 'pending', label: 'Awaiting review' },
@@ -28,6 +43,9 @@
     if (!owner) return 'No owner record yet — verify the application first.';
     if (owner.status !== 'verified') return `Owner is ${owner.status ?? 'unknown'}, not verified.`;
     if (!owner.agreement_id) return 'No service agreement has been accepted yet.';
+    // An organisation that applied through the public route usually has no DID:
+    // it is standing up a deployment, not migrating one. The operator assigns it.
+    if (!owner.did) return 'No did:web has been assigned yet.';
     return null;
   }
 
@@ -91,6 +109,27 @@
           It contains secrets and is shown once — the previous bundle for this
           organisation no longer works.
         </p>
+        <div class="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            class="ds-btn-secondary text-sm"
+            onclick={() => download(`${form.bundleAlias}-bundle.json`, form.bundle)}
+          >Download bundle.json</button>
+          <button
+            type="button"
+            class="ds-btn-secondary text-sm"
+            onclick={() => download(`${form.bundleAlias}.env`, form.bundleEnv)}
+          >Download .env</button>
+          <button
+            type="button"
+            class="ds-btn-secondary text-sm"
+            onclick={() => download(`${form.bundleAlias}.properties`, form.bundleProperties)}
+          >Download .properties</button>
+          <span class="text-xs text-amber-800">
+            <span class="font-mono">.env</span> carries the STS secret;
+            <span class="font-mono">.properties</span> carries none.
+          </span>
+        </div>
         <textarea class="ds-input w-full font-mono text-xs" rows="12" readonly>{form.bundle}</textarea>
       </div>
     {/if}
@@ -230,6 +269,21 @@
                     </select>
                   </label>
                   <button class="ds-btn-secondary text-sm">Record acceptance</button>
+                </form>
+              {/if}
+
+              <!-- The DID the credential is issued against. Absent for anyone who
+                   applied through /join, so it is set here rather than leaving the
+                   gate permanently unmet. -->
+              {#if data.may.write && !owner?.did}
+                <form method="POST" action="?/setDid" class="flex flex-wrap items-end gap-2">
+                  <input type="hidden" name="alias" value={app.alias} />
+                  <label class="text-xs text-gray-600">
+                    Assign did:web
+                    <input class="ds-input mt-1 block w-96 font-mono" name="did"
+                           value={app.did ?? `did:web:${app.alias}.dataspaces.localhost`} />
+                  </label>
+                  <button class="ds-btn-secondary text-sm">Set DID</button>
                 </form>
               {/if}
 

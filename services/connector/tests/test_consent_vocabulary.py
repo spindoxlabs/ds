@@ -344,7 +344,11 @@ class TestSharingOffersEndpoint:
     async def test_offers_are_public(self, client):
         r = await client.get("/ns/sharing-offers")
         assert r.status_code == 200
-        assert {o["id"] for o in r.json()} == {"test-flexibility", "test-incentives"}
+        assert {o["id"] for o in r.json()} == {
+        "test-flexibility",
+        "test-incentives",
+        "test-grid-planning",
+    }
 
     @pytest.mark.asyncio
     async def test_public_projection_omits_dataset_keys(self, client):

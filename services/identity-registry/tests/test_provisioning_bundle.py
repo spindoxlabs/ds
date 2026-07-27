@@ -160,3 +160,37 @@ async def test_properties_format_never_contains_a_secret(client, db_session):
     # The literal secret must not appear anywhere in it.
     bundle = (await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)).json()
     assert bundle["identity"]["sts_client_secret"] not in body
+
+
+@pytest.mark.asyncio
+async def test_all_format_renders_every_artefact_in_one_rotation(client, db_session):
+    """The operator needs three files and each call rotates.
+
+    Asking three times would hand over two bundles whose secret no longer works,
+    so `format=all` is the only shape a UI can offer downloads from.
+    """
+    await _seed(db_session)
+    r = await client.post(
+        f"/admin/owners/{ALIAS}/provisioning-bundle?format=all", headers=PROMOTE
+    )
+    assert r.status_code == 201
+    body = r.json()
+    assert set(body) == {"bundle", "env", "properties"}
+
+    secret = body["bundle"]["identity"]["sts_client_secret"]
+    # All three describe the *same* rotation: the env carries the secret the
+    # bundle reports, and the properties file still carries none.
+    assert f"EDC_IAM_STS_OAUTH_CLIENT_SECRET={secret}" in body["env"]
+    assert secret not in body["properties"]
+    assert f"edc.participant.id={DID}" in body["properties"]
+
+
+@pytest.mark.asyncio
+async def test_unknown_format_is_refused(client, db_session):
+    """A typo must not quietly return a different artefact than the one asked
+    for — that is how a `.properties` file ends up holding a secret."""
+    await _seed(db_session)
+    r = await client.post(
+        f"/admin/owners/{ALIAS}/provisioning-bundle?format=propertes", headers=PROMOTE
+    )
+    assert r.status_code == 422

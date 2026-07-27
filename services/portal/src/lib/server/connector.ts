@@ -267,8 +267,15 @@ export async function listProviderAssets(token: string): Promise<ProviderAsset[]
 	});
 }
 
+/**
+ * The provider's contract agreements.
+ *
+ * Was pointed at `/provider/transfers`, which returns raw EDC transfer processes
+ * in JSON-LD — nothing like this shape. The page rendered only while the list
+ * happened to be empty and threw on the first real row.
+ */
 export async function listProviderContracts(token: string): Promise<ContractAgreement[]> {
-	return apiFetch<ContractAgreement[]>(connectorUrl('/provider/transfers'), {}, token);
+	return apiFetch<ContractAgreement[]>(connectorUrl('/provider/agreements'), {}, token);
 }
 
 export interface ContractAgreement {
@@ -276,9 +283,10 @@ export interface ContractAgreement {
 	asset_id: string;
 	provider_id: string;
 	consumer_id: string;
-	status: string;
-	agreed_at?: string;
-	terminated_at?: string;
+	agreed_at?: string | null;
+	/** Set when the agreement was terminated; its absence is what "active" means. */
+	terminated_at?: string | null;
+	termination_reason?: string | null;
 }
 
 // ── Health ────────────────────────────────────────────────────────────────────

@@ -25,14 +25,17 @@
           </tr>
         </thead>
         <tbody class="divide-y divide-gray-100">
-          {#each data.contracts as c}
+          {#each data.contracts as c (c.agreement_id)}
+            {@const active = !c.terminated_at}
             <tr>
-              <td class="py-2 pr-4 font-mono text-xs text-gray-600">{c.agreement_id.slice(0, 14)}…</td>
+              <td class="py-2 pr-4 font-mono text-xs text-gray-600">{c.agreement_id?.slice(0, 14) ?? '—'}…</td>
               <td class="py-2 pr-4 text-gray-900">{c.asset_id}</td>
               <td class="py-2 pr-4 text-gray-700">{c.consumer_id}</td>
               <td class="py-2 pr-4">
-                <span class="ds-badge {c.status === 'active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
-                  {c.status}
+                <!-- Termination is the fact the connector records; "active" is
+                     its absence, not a separate field. -->
+                <span class="ds-badge {active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}">
+                  {active ? 'active' : 'terminated'}
                 </span>
               </td>
               <td class="py-2 text-gray-500">

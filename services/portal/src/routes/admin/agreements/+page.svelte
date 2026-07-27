@@ -4,6 +4,9 @@
   let { data } = $props();
 
   const byId = $derived.by(() => {
+    // Rebuilt in full whenever the loader data changes and never mutated after,
+    // so a reactive Map would add tracking for writes that do not happen.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const map = new Map<string, Agreement[]>();
     for (const a of data.agreements as Agreement[]) {
       map.set(a.id, [...(map.get(a.id) ?? []), a]);

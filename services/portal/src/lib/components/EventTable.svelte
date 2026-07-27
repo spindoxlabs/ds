@@ -42,6 +42,9 @@
   const to = $derived(Math.min(offset + limit, total));
 
   function pageHref(newOffset: number): string {
+    // Local and discarded on return — nothing reads it reactively, so the
+    // reactive wrapper would buy nothing.
+    // eslint-disable-next-line svelte/prefer-svelte-reactivity
     const params = new URLSearchParams(
       typeof window === 'undefined' ? '' : window.location.search,
     );

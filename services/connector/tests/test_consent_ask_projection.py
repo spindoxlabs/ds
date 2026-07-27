@@ -81,7 +81,12 @@ async def test_covered_processor_is_disclosed_not_asked(client, monkeypatch):
     asking again would imply a choice that does not exist.
     """
     async def _covered(offers, **_kwargs):
-        assert [offer.id for offer in offers] == ["test-flexibility"]
+        # Both consent-based offers on this dataset are candidates: `odrl:isA`
+        # matching means an offer for a broader purpose covers a narrower
+        # request, and `test-grid-planning` names the root purpose that
+        # `FlexibilityResearch` sits under. Pinned exactly, because which offers
+        # define the circle decides who may be admitted without being asked.
+        assert [offer.id for offer in offers] == ["test-flexibility", "test-grid-planning"]
         return True
 
     monkeypatch.setattr("connector.services.circle.is_covered_processor", _covered)

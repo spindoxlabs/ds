@@ -1,6 +1,6 @@
 <script lang="ts">
   // governance.yaml viewer — static, rendered from connector's /provider/assets enriched with policy info
-  let { data } = $props();
+  let { data: _data } = $props();
 </script>
 
 <svelte:head><title>Governance Policies</title></svelte:head>
