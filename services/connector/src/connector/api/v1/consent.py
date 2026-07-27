@@ -7,7 +7,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -136,23 +136,75 @@ class AdminShareLegalBasis(BaseModel):
     connector supplies ``offer_id``, ``controller``, ``controller_role`` and
     ``user_visible_hash`` itself from the resolved offer, so the caller cannot
     drift from what the person read; anything it sends for those is ignored.
+
+    **Three fields are required**, because without them the record proves nothing:
+    a consent provisioned by a service is only defensible if it can be tied back to
+    a specific rendering that a specific person saw (GDPR Art. 7(1)). ``source``
+    says which system asked, ``consent_text_version`` which revision, and
+    ``rendered_text_sha256`` pins the exact bytes displayed. An evidence record
+    missing any of them is decorative, and decorative evidence is worse than none
+    because it looks like proof.
     """
 
-    source: str | None = None
+    source: str
+    consent_text_version: str
+    rendered_text_sha256: str
+
     rec_slug: str | None = None
     basis_iri: str | None = None
-    consent_text_version: str | None = None
+    # Strongly recommended: which rendering the person actually read. Required in
+    # any deployment that publishes consent text in more than one language.
     locale: str | None = None
-    rendered_text_sha256: str | None = None
     accepted_at: str | None = None
     submission_ref: str | None = None
 
+    @field_validator("source", "consent_text_version", "rendered_text_sha256")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("must not be empty")
+        return v
+
+    @field_validator("rec_slug", "submission_ref", "source", mode="after")
+    @classmethod
+    def _no_obvious_pii(cls, v: str | None) -> str | None:
+        """Reject the most common way PII leaks into an evidence record.
+
+        These are opaque references by contract. An address here would put a
+        person's identity into the connector's database, which is precisely what
+        the codes-and-hashes rule exists to prevent. This catches the obvious
+        case, not every case — the contract still relies on the caller.
+        """
+        if v and "@" in v:
+            raise ValueError(
+                "must be an opaque reference, not an email address or other identifier"
+            )
+        return v
+
 
 class AdminShareRequest(BaseModel):
+    """A service recording a subject's standing decision.
+
+    ``legal_basis`` is mandatory when enabling a share: a service asserting that
+    someone consented, without evidence of what they were shown, is an assertion
+    nobody can defend later. Withdrawal needs no evidence — a person may always
+    stop, and requiring proof to stop would be the wrong way round.
+    """
+
     subject_id: str
     offer_id: str
     enabled: bool
     legal_basis: AdminShareLegalBasis | None = None
+
+    @model_validator(mode="after")
+    def _evidence_required_to_grant(self) -> AdminShareRequest:
+        if self.enabled and self.legal_basis is None:
+            raise ValueError(
+                "legal_basis is required when enabling a share: a service cannot "
+                "assert that someone consented without evidence of what they were "
+                "shown"
+            )
+        return self
 
 
 def _verify_user(

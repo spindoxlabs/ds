@@ -26,6 +26,15 @@ CONSUMER = "did:web:consumer.dataspaces.localhost"
 OTHER_CONSUMER = "did:web:other.dataspaces.localhost"
 SUBJECT = "did:web:users.dataspaces.localhost:sub-001"
 
+# The connector requires evidence to grant: a service asserting that someone
+# consented, without proof of what they were shown, is indefensible. Tests that
+# are about something else still have to send a valid record.
+EVIDENCE = {
+    "source": "test-harness",
+    "consent_text_version": "1.0",
+    "rendered_text_sha256": "b" * 64,
+}
+
 
 @pytest.fixture(autouse=True)
 def _allow_membership(monkeypatch):
@@ -109,7 +118,12 @@ async def test_admin_shares_rejects_contract_offer(client):
     r = await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
-        json={"subject_id": SUBJECT, "offer_id": "test-incentives", "enabled": True},
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-incentives",
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
     )
     assert r.status_code == 409
 
@@ -119,7 +133,12 @@ async def test_admin_shares_unknown_offer_422(client):
     r = await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
-        json={"subject_id": SUBJECT, "offer_id": "no-such-offer", "enabled": True},
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "no-such-offer",
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
     )
     assert r.status_code == 422
 
@@ -129,14 +148,24 @@ async def test_admin_shares_requires_provision_scope(client):
     r = await client.post(
         "/consent/admin/shares",
         headers=make_headers(scope="connector.webhook"),
-        json={"subject_id": SUBJECT, "offer_id": "test-flexibility", "enabled": True},
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
     )
     assert r.status_code == 403
 
 
 @pytest.mark.asyncio
 async def test_admin_shares_is_idempotent(engine, client):
-    body = {"subject_id": SUBJECT, "offer_id": "test-flexibility", "enabled": True}
+    body = {
+        "subject_id": SUBJECT,
+        "offer_id": "test-flexibility",
+        "enabled": True,
+        "legal_basis": EVIDENCE,
+    }
     first = await client.post("/consent/admin/shares", headers=PROVISION, json=body)
     second = await client.post("/consent/admin/shares", headers=PROVISION, json=body)
     assert first.status_code == second.status_code == 200
@@ -251,7 +280,11 @@ async def test_legal_basis_surfaces_in_internal_check(client):
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
-            "legal_basis": {"source": "onboarding", "submission_ref": "20260101-abc123"},
+            "legal_basis": {
+                **EVIDENCE,
+                "source": "onboarding",
+                "submission_ref": "20260101-abc123",
+            },
         },
     )
 
@@ -307,3 +340,79 @@ async def test_subject_offer_share_records_legal_basis(client):
     assert lb["controller"] == "example-org"
     assert lb["consent_text_version"]
     assert lb["user_visible_hash"]
+
+
+# ── §7 the external-application write contract ────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_granting_without_evidence_is_refused(client):
+    """A service asserting that someone consented, with no record of what they
+    were shown, produces a consent nobody can defend later."""
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={"subject_id": SUBJECT, "offer_id": "test-flexibility", "enabled": True},
+    )
+    assert r.status_code == 422
+    assert "legal_basis is required" in r.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("missing", ["source", "consent_text_version", "rendered_text_sha256"])
+async def test_partial_evidence_is_refused(client, missing):
+    """Each of the three carries part of the proof: which system asked, which
+    revision, and the exact bytes displayed. Any one missing and the record cannot
+    tie a decision to a rendering."""
+    evidence = {k: v for k, v in EVIDENCE.items() if k != missing}
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": evidence,
+        },
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_withdrawal_needs_no_evidence(client):
+    """A person may always stop. Requiring proof to stop would be the wrong way
+    round — and would make withdrawal harder than consent."""
+    await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
+    )
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={"subject_id": SUBJECT, "offer_id": "test-flexibility", "enabled": False},
+    )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_an_email_in_an_opaque_reference_is_refused(client):
+    """These fields are opaque references by contract. An address here would put a
+    person's identity into the connector's database, which is exactly what the
+    codes-and-hashes rule exists to prevent."""
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": {**EVIDENCE, "submission_ref": "alice@example.test"},
+        },
+    )
+    assert r.status_code == 422
+    assert "opaque reference" in r.text

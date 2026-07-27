@@ -28,6 +28,7 @@ import logging
 import urllib.parse
 from typing import Any
 
+from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -265,7 +266,14 @@ class AuthzPerimeterFlow(BaseFlow):
         status, _ = self.http.raw(
             "POST",
             f"{s.connector_url}/consent/admin/shares",
-            body={"subject_id": s.data_subject_id, "offer_id": s.sharing_offer_id, "enabled": True},
+            body={
+                "subject_id": s.data_subject_id,
+                "offer_id": s.sharing_offer_id,
+                "enabled": True,
+                # Valid on purpose: a 422 for a missing evidence field would
+                # let this probe pass with the auth guard removed.
+                "legal_basis": legal_basis("authz-role-confusion"),
+            },
             headers=subject_headers,
         )
         if status < 400:
@@ -311,7 +319,7 @@ class AuthzPerimeterFlow(BaseFlow):
                     "subject_id": s.consumer_subject_id,
                     "offer_id": s.sharing_offer_id,
                     "enabled": True,
-                    "legal_basis": {"source": "e2e", "submission_ref": "authz-perimeter"},
+                    "legal_basis": legal_basis("authz-perimeter"),
                 },
                 headers=svc_headers,
             ) or []

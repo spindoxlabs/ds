@@ -31,6 +31,7 @@ import logging
 import urllib.parse
 from typing import Any
 
+from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -115,7 +116,14 @@ def _guarded_routes(s: Any) -> list[tuple[str, str, str, dict[str, Any] | None]]
             "connector",
             "POST",
             "/consent/admin/shares",
-            {"subject_id": s.data_subject_id, "offer_id": s.sharing_offer_id, "enabled": True},
+            {
+                "subject_id": s.data_subject_id,
+                "offer_id": s.sharing_offer_id,
+                "enabled": True,
+                # A body that would otherwise 422 makes the refusal probe
+                # pass without the guard ever running.
+                "legal_basis": legal_basis("api-contract"),
+            },
         ),
         ("connector", "POST", "/consent/register-transfer", {}),
         # Provider-local seeding. It used to authenticate on the *consumer's*

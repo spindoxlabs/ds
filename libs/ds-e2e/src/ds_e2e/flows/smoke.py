@@ -6,6 +6,7 @@ import time
 import urllib.parse
 from typing import Any
 
+from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.http import HttpError
 from ds_e2e.models import FlowResult
@@ -165,7 +166,7 @@ class SmokeFlow(BaseFlow):
                     "subject_id": s.data_subject_id,
                     "offer_id": s.sharing_offer_id,
                     "enabled": True,
-                    "legal_basis": {"source": "e2e", "submission_ref": "e2e-verification"},
+                    "legal_basis": legal_basis("e2e-verification"),
                 },
                 headers=svc_headers,
             ) or []

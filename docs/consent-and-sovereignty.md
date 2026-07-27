@@ -327,7 +327,7 @@ Vocabulary endpoints are public; consent endpoints authenticate on `X-Subject-Id
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /consent/admin/shares` | Record a subject's standing sharing decision from an `offer_id`. Guarded by `connector.consent.provision` (a **service** scope, not the subject's VC-JWT). `422` unknown offer, `409` non-consent offer, `403` subject not a member of the offer's controller org |
+| `POST /consent/admin/shares` | Record a subject's standing sharing decision from an `offer_id`. Guarded by `connector.consent.provision` (a **service** scope, not the subject's VC-JWT). `422` unknown offer, `409` non-consent offer, `403` subject not a member of the offer's controller org, `422` granting without `source` / `consent_text_version` / `rendered_text_sha256` evidence (withdrawal needs none) |
 
 The onboarding wizard calls this after it syncs a newly-approved participant's DID. It names an `offer_id`, never a dataset, so it cannot drift from the copy the person read. The connector expands the offer into one **wildcard-scoped** row per dataset (`consumer_id = "*"`), stamping purpose, controller-role, `legal_basis` and `user_visible_hash` from the offer. Idempotent.
 
@@ -553,6 +553,9 @@ Key points:
 - Row-level filtering at dataset-api uses the same subject DID that was stored in the consent record
 - The purpose is carried on the query and compared against each subject's consent, so the row set depends on *why* the data is being asked for
 - See [consent-subject-id.md](../services/connector/docs/consent-subject-id.md) for detailed subject identity resolution
+- An application outside this dataspace can drive step 1 itself. It then owns the
+  evidence that its own rendering was what the person read — see
+  [external-application-integration.md](external-application-integration.md)
 
 ---
 

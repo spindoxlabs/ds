@@ -194,7 +194,21 @@ the rendered text actually shown, the offer's `user_visible_hash`, and a
 `submission_ref`. **Codes and hashes only — never PII.** For service-provisioned
 shares the connector is authoritative for the offer-derived fields (`offer_id`,
 `controller`, `controller_role`, `user_visible_hash`); the caller supplies only
-the evidence it holds. Surfaced on `GET /consent/my`, `GET /consent/status` and
+the evidence it holds.
+
+**Granting requires evidence.** `source`, `consent_text_version` and
+`rendered_text_sha256` are mandatory and non-empty on `POST /consent/admin/shares`
+when `enabled=True` (422 otherwise) — which system asked, which revision, the exact
+bytes displayed. An evidence record missing any of them cannot tie the decision to
+a rendering, and evidence that proves nothing is worse than none because it looks
+like proof. **Withdrawal (`enabled=False`) requires none**: a person may always
+stop, and demanding proof to stop would make stopping harder than starting.
+`source`, `rec_slug` and `submission_ref` are opaque references — an `@` in any of
+them is rejected. That check catches the commonest leak, not every one; the
+codes-and-hashes rule remains the caller's obligation.
+
+An external application driving this path is documented in
+`docs/external-application-integration.md`. Surfaced on `GET /consent/my`, `GET /consent/status` and
 `GET /internal/consent/check` (the deciding row's basis, for the PEP audit trail).
 
 ## Consent & disclosure provenance (Block C)

@@ -113,7 +113,17 @@ async def test_admin_shares_emits_consent_granted(prov_client):
     r = await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
-        json={"subject_id": SUBJECT_DID, "offer_id": "test-flexibility", "enabled": True},
+        json={
+            "subject_id": SUBJECT_DID,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            # Granting requires evidence of what the person was shown.
+            "legal_basis": {
+                "source": "test-harness",
+                "consent_text_version": "1.0",
+                "rendered_text_sha256": "c" * 64,
+            },
+        },
     )
     assert r.status_code == 200, r.text
     granted = fake.of("consent_granted")

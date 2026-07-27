@@ -10,6 +10,7 @@ src/ds_e2e/
 ├── config.py       E2ESettings — pydantic-settings, reads .env.local
 ├── http.py         HttpClient — sync httpx, polling, service token caching
 ├── models.py       Step, FlowResult
+├── consent.py      Evidence records for operator-provisioned consent
 ├── runner.py       Flow orchestration (run_flow, run_all, run_selected)
 ├── cleanup.py      DB truncation + EDC state reset + provider sync
 ├── scenario.py     Declarative fixtures — apply / show / destroy
@@ -121,6 +122,12 @@ Two rules the security flows follow, and new ones should too:
   status list, an empty audit log) the step passes with the reason in its detail
   rather than asserting nothing silently. A security assertion that quietly
   became a no-op is worse than one that was never written.
+- **The body of a refusal probe must be otherwise valid.** If the payload would
+  also fail schema validation, the probe passes on a 422 with the guard deleted —
+  the same shape of "passing for the wrong reason" the point above warns about,
+  one layer down. `ds_e2e/consent.py` exists for this: every flow posting to
+  `/consent/admin/shares` sends a complete `legal_basis`, so a refusal there is
+  always about the credential.
 
 ### The two route tables
 
