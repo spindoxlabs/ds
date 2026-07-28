@@ -8,6 +8,7 @@ nav:
   - owner-identity-and-ownership.md
   - provenance-and-lineage.md
   - Deployment: deployment
+  - Taxonomies: taxonomies
   - roadmap.md
   - Data Spaces Blueprints:
       - DSSC Blueprint v3.0: dssc-blueprint-docs
