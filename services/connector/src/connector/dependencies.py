@@ -73,6 +73,9 @@ require_history_read = require_permission("connector.history.read", "connector.a
 # the keys that sign data-plane tokens. Neither is something an administrator
 # should acquire by being an administrator.
 require_internal = require_exact_permission("connector.internal")
+# A hint, not an authority: it takes no input and returns a boolean. Held by the
+# identity-registry, which knows when the participant list changed.
+require_registry_invalidate = require_permission("connector.registry.invalidate")
 require_webhook = require_exact_permission("connector.webhook")
 # Onboarding provisions standing consent on a subject's behalf after approval.
 # It authenticates as a service (svc-ds-onboarding), not as the subject, so it

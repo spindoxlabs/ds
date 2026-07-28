@@ -64,6 +64,13 @@ scopes:
     description: Mutate provider config (sync, delete assets/policies/contracts)
   - name: connector.history.read
     description: Read EDC negotiation, agreement and transfer history
+  # Drop the cached participant list. Deliberately its own grant rather than
+  # `connector.internal`: this endpoint takes no input and returns a boolean,
+  # while `connector.internal` also reaches the subject pools behind
+  # /internal/consent/check and the data-plane signing keys behind
+  # /internal/edr-jwks. A cache hint should not carry either.
+  - name: connector.registry.invalidate
+    description: Invalidate the cached participant registry
   - name: connector.internal
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
@@ -99,6 +106,11 @@ clients:
     scopes_prefix: identity-registry
     default_scopes:
       - identity-registry.admin
+      # Promoting a participant changes who is in the registry; the connector
+      # caches that list, so it is told rather than left to a 60s timer.
+      - connector.registry.invalidate
+    extra_audiences:
+      - svc-ds-connector
 
   - client_id: svc-ds-onboarding
     name: Dataspace Onboarding

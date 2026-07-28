@@ -15,6 +15,7 @@ from .db.engine import get_session_factory, verify_schema
 from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
+from ds.governance.models import profile_path_is_missing
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
@@ -70,6 +71,19 @@ async def lifespan(app: FastAPI):
         {"svc-ds-connector"},
         "Set the Keycloak client secret for svc-ds-connector.",
     )
+    # A configured-but-absent profile path silently falls back to the bundled
+    # energy vocabulary. Every purpose the deployer declared then fails to
+    # resolve, and since sync refuses a dataset whose purpose does not resolve,
+    # the catalogue stops publishing — with nothing in the response explaining
+    # why. Cheap to detect at boot, expensive to diagnose at sync.
+    if profile_path_is_missing(settings.odrl_profile_path):
+        guard.add(
+            "CONNECTOR_ODRL_PROFILE_PATH",
+            f"points at {settings.odrl_profile_path!r}, which does not exist — the "
+            "bundled energy profile would be used instead",
+            "Mount the profile at that path, or unset the variable to use the "
+            "bundled energy profile deliberately.",
+        )
     guard.enforce()
 
     provider_edc = None

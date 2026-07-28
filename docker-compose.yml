@@ -97,6 +97,11 @@ services:
       # connector's Keycloak client. Unset, the bundle is still issued — without
       # Keycloak credentials in it.
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://172.17.0.1:30005
+      # Told when the participant registry changes, so an operator does not
+      # watch a stale list for a minute after a promote. Best-effort: a
+      # connector that cannot be reached just keeps its 60s TTL.
+      IDENTITY_REGISTRY_CONNECTOR_URLS: http://172.17.0.1:30001,http://172.17.0.1:31001
+      IDENTITY_REGISTRY_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       KEYCLOAK_ADMIN_URL: http://172.17.0.1:9080
       KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
       KEYCLOAK_REALM: dataspaces

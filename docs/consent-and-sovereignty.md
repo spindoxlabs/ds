@@ -77,7 +77,7 @@ Two fields, two very different jobs:
 
 > **Safety rule.** `odrl:isA` matching follows **only** the local `broader` chain. The DPV alignment is deliberately not consulted: our purposes are domain specialisations of DPV's generic terms, so `FlexibilityResearch broadMatch dpv:ResearchAndDevelopment` would otherwise let a consumer whose policy says `dpv:ResearchAndDevelopment` match a member's flexibility consent — covering research unrelated to flexibility. That silently widens consent.
 >
-> An absent mapping is honest. A wrong one is a false interop claim that fails silently, which is why `relation` must be one of the five SKOS match properties and the CI gate rejects anything else.
+> An absent mapping is honest. A wrong one is a false interop claim that fails silently, which is why `relation` must be one of the five SKOS match properties and the CI gate rejects anything else. The gate still cannot tell whether the IRI is the *right* term — [DPV 2.3](taxonomies/dpv-2.3.md) records the pinned version, each cited definition and the reasoning, and is where a mapping is actually reviewed.
 
 ---
 

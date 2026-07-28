@@ -1,0 +1,133 @@
+{
+  "$defs": {
+    "DpvMapping": {
+      "description": "Alignment of a local purpose to an external vocabulary term (DPV).\n\nDocumentation and interop only.  ``odrl:isA`` matching never follows this\nmapping — see :meth:`OdrlProfile.is_a`.  A mapping that claims\n``exactMatch`` where the terms merely overlap would silently widen consent.",
+      "properties": {
+        "iri": {
+          "title": "Iri",
+          "type": "string"
+        },
+        "relation": {
+          "default": "broadMatch",
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "iri"
+      ],
+      "title": "DpvMapping",
+      "type": "object"
+    },
+    "PurposeConcept": {
+      "description": "A purpose concept in the ODRL profile taxonomy.\n\n``broader`` builds the *local* hierarchy, which is the only thing\nenforcement looks at.  ``dpv_mapping`` records how the concept relates to\nan external vocabulary and is served for readers, never matched against.",
+      "properties": {
+        "broader": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Broader"
+        },
+        "definition": {
+          "default": "",
+          "title": "Definition",
+          "type": "string"
+        },
+        "dpv_mapping": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DpvMapping"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "label": {
+          "title": "Label",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "label"
+      ],
+      "title": "PurposeConcept",
+      "type": "object"
+    }
+  },
+  "$id": "https://spindoxlabs.github.io/ds/schemas/odrl-profile.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "The purpose taxonomy and ODRL namespace a deployment enforces against. Generated from the OdrlProfile model in ds-governance — do not edit by hand.",
+  "properties": {
+    "consent_operand": {
+      "default": "ConsentStatus",
+      "title": "Consent Operand",
+      "type": "string"
+    },
+    "membership_operand": {
+      "default": "Membership",
+      "title": "Membership Operand",
+      "type": "string"
+    },
+    "namespace": {
+      "default": "https://w3id.org/dsp/policy/",
+      "title": "Namespace",
+      "type": "string"
+    },
+    "prefix": {
+      "default": "dsp-policy",
+      "title": "Prefix",
+      "type": "string"
+    },
+    "profile_iri": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Profile Iri"
+    },
+    "purpose_base": {
+      "default": "purpose/",
+      "title": "Purpose Base",
+      "type": "string"
+    },
+    "purposes": {
+      "items": {
+        "$ref": "#/$defs/PurposeConcept"
+      },
+      "title": "Purposes",
+      "type": "array"
+    },
+    "query_action": {
+      "default": "Query",
+      "title": "Query Action",
+      "type": "string"
+    },
+    "tag_to_purpose": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Tag To Purpose",
+      "type": "object"
+    }
+  },
+  "title": "ds ODRL profile",
+  "type": "object"
+}

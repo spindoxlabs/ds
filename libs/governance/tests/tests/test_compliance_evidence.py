@@ -346,6 +346,7 @@ class TestValidateAgainstRuntime:
                     "a": {
                         "access_level": "open",
                         "ownership": [{"name": "example-org"}],
+                        "policy": {"purpose": ["GridMonitoring"]},
                         "dataspace": {
                             "expose": True,
                             "data_address": {"base_url": "https://api.example.org"},

@@ -264,15 +264,41 @@ _PROFILES_DIR = Path(__file__).parent / "profiles"
 _DEFAULT_PROFILE_PATH = _PROFILES_DIR / "energy.yaml"
 
 
+def profile_path_is_missing(path: Path | str | None) -> bool:
+    """True when a profile path was *configured* and is not there.
+
+    Separated out so a caller can register the condition with a startup guard —
+    the fallback below is silent by design at import time, and a deployment that
+    set the path wants to know at boot rather than at the first sync.
+    """
+    return bool(path) and not Path(path).exists()
+
+
 def load_odrl_profile(path: Path | str | None = None) -> OdrlProfile:
     """Load an OdrlProfile from a YAML file.
 
     When *path* is ``None``, loads the bundled energy profile (platform default).
-    When the file at *path* does not exist, falls back to the energy default.
+    When the file at *path* does not exist, falls back to the energy default —
+    **loudly**, because that fallback is otherwise invisible and expensive.
+
+    A typo'd ``CONNECTOR_ODRL_PROFILE_PATH`` silently yields the *platform*
+    vocabulary. Every purpose the deployer declared then fails to resolve, and
+    since the sync now refuses a dataset whose purpose does not resolve, the
+    whole catalogue stops publishing — for a reason nothing would have reported
+    at ``debug``. An explicitly configured path that is absent is a
+    misconfiguration, not a default.
     """
     p = Path(path) if path is not None else _DEFAULT_PROFILE_PATH
     if not p.exists():
-        logger.debug("ODRL profile not found at %s — falling back to energy default", p)
+        if path is not None:
+            logger.warning(
+                "ODRL profile not found at %s — falling back to the bundled energy "
+                "profile. Purposes declared against your own profile will not "
+                "resolve and their datasets will not publish.",
+                p,
+            )
+        else:
+            logger.debug("ODRL profile not found at %s — falling back to energy default", p)
         p = _DEFAULT_PROFILE_PATH
     with p.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}

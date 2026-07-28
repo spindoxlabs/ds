@@ -1,0 +1,187 @@
+{
+  "$defs": {
+    "OfferCoverage": {
+      "description": "How far back and how far forward the sharing reaches.",
+      "properties": {
+        "prospective": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prospective"
+        },
+        "retrospective": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retrospective"
+        }
+      },
+      "title": "OfferCoverage",
+      "type": "object"
+    },
+    "OfferRecipients": {
+      "description": "Who may receive the data, and in what capacity.\n\nIndependent controllers are never listed here — each one is its own offer,\nbecause consent under Art. 4(11) is consent to a *specific* controller's\nprocessing.  ``controller_role`` names which role of that participant is\nacting: a DSO's grid-operations and metering functions are different\ncontrollers under unbundling rules, same legal entity.",
+      "properties": {
+        "controller": {
+          "title": "Controller",
+          "type": "string"
+        },
+        "controller_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Controller Role"
+        },
+        "processors": {
+          "$ref": "#/$defs/ProcessorCategory"
+        }
+      },
+      "required": [
+        "controller",
+        "processors"
+      ],
+      "title": "OfferRecipients",
+      "type": "object"
+    },
+    "ProcessorCategory": {
+      "description": "A *category* of recipient, not a list of names.\n\nProcessors act on the controller's instructions under a DPA (GDPR Art. 28),\nso a new one joining the category is disclosed rather than re-consented.\n``admitted_by`` is what makes the category checkable instead of a promise:\neach entry is a constraint the platform can evaluate at negotiation time.",
+      "properties": {
+        "admitted_by": {
+          "items": {
+            "additionalProperties": true,
+            "type": "object"
+          },
+          "title": "Admitted By",
+          "type": "array"
+        },
+        "category": {
+          "title": "Category",
+          "type": "string"
+        }
+      },
+      "required": [
+        "category"
+      ],
+      "title": "ProcessorCategory",
+      "type": "object"
+    },
+    "sharingOffer": {
+      "description": "A purpose-scoped bundle a person is asked to consent to.",
+      "properties": {
+        "consent_text_version": {
+          "default": "1.0",
+          "title": "Consent Text Version",
+          "type": "string"
+        },
+        "coverage": {
+          "$ref": "#/$defs/OfferCoverage"
+        },
+        "datasets": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Datasets",
+          "type": "array"
+        },
+        "id": {
+          "title": "Id",
+          "type": "string"
+        },
+        "legal_basis": {
+          "title": "Legal Basis",
+          "type": "string"
+        },
+        "measures": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Measures",
+          "type": "array"
+        },
+        "purpose": {
+          "title": "Purpose",
+          "type": "string"
+        },
+        "recipients": {
+          "$ref": "#/$defs/OfferRecipients"
+        },
+        "resolution": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Resolution"
+        },
+        "retention": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Retention"
+        },
+        "revocable": {
+          "default": true,
+          "title": "Revocable",
+          "type": "boolean"
+        },
+        "subject_scope": {
+          "default": "own_data",
+          "title": "Subject Scope",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "purpose",
+        "legal_basis",
+        "recipients"
+      ],
+      "title": "Sharing offer",
+      "type": "object"
+    }
+  },
+  "$id": "https://spindoxlabs.github.io/ds/schemas/sharing-offers.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Sharing offers declared alongside a governance.yaml. Generated from the SharingOffer model in ds-governance — do not edit by hand.",
+  "properties": {
+    "sharing_offers": {
+      "items": {
+        "$ref": "#/$defs/sharingOffer"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "sharing_offers"
+  ],
+  "title": "ds sharing offers",
+  "type": "object"
+}

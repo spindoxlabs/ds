@@ -14,6 +14,7 @@ from __future__ import annotations
 from typing import Iterable
 
 from ..models import SKOS_MATCH_RELATIONS, OdrlProfile
+from ..purposes import purpose_failure
 from ..sharing import (
     CONSENT_BASIS,
     DPV_LEGAL_BASES,
@@ -157,19 +158,19 @@ def check_dataset_purposes(
     exposed: list[DatasetEvidence],
     profile: OdrlProfile,
 ) -> None:
-    """Every ``policy.purpose[]`` entry must resolve in the active profile.
+    """An exposed dataset must declare purposes, and each must resolve.
 
     An unresolvable entry is dropped by the mapper, so the dataset would be
-    offered with one constraint fewer than its author intended.
+    offered with one constraint fewer than its author intended. An **empty**
+    list is the same defect with no entry to point at: the mapper emits no
+    purpose constraint at all. This check used to iterate entries, so the empty
+    case passed silently — `purpose_failure` is shared with the connector's
+    sync-time gate so both now say the same thing.
     """
     for item in exposed:
-        for entry in item.rule.policy.purpose:
-            if profile.purpose_slug(entry) is None and "://" not in entry:
-                result.error(
-                    "purpose-declared",
-                    f"policy.purpose entry '{entry}' is not in the ODRL profile taxonomy",
-                    item.key,
-                )
+        failure = purpose_failure(item.rule, profile)
+        if failure:
+            result.error("purpose-declared", f"Dataset {failure}", item.key)
 
 
 # ── Sharing offers ───────────────────────────────────────────────────────────

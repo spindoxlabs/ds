@@ -42,6 +42,28 @@ class Settings(BaseSettings):
         description="Keycloak client ID for this service (used as JWT audience)",
     )
 
+    service_client_secret: str = Field(
+        default="svc-ds-identity-registry",
+        description="Secret for this service's own outbound calls.",
+    )
+
+    keycloak_token_url: str | None = Field(
+        default=None,
+        description=(
+            "Token endpoint for this service's outbound calls. Only used to tell "
+            "connectors their participant cache is stale; unset means no "
+            "notification, which costs a minute of staleness, not correctness."
+        ),
+    )
+
+    connector_urls: str = Field(
+        default="",
+        description=(
+            "Comma-separated connector base URLs to notify when the participant "
+            "registry changes (promote, suspend, revoke). Empty disables it."
+        ),
+    )
+
     admin_scope: str = Field(
         default="identity-registry.admin",
         description="Required JWT scope for admin endpoints",

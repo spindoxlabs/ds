@@ -12,14 +12,23 @@ tasks:
       - uv run pytest tests/tests/ -v --cov=src/ds/governance --cov-report=term-missing
 
   schema:refresh:
-    desc: Re-fetch the canonical governance schema from celine-utils
+    desc: Re-fetch the cached governance schema from celine-utils
     vars:
       SCHEMA_URL: https://celine-eu.github.io/schema/governance.schema.json
     cmds:
-      # The published document is the source of truth; `schema/` only caches it
-      # so the conformance test can run offline. Never edit the cached copy.
-      - curl -fsSL "{{ .SCHEMA_URL }}" -o schema/governance.schema.json
+      # governance.yaml is the ONE shape celine-utils defines; the published
+      # document is its source of truth and `../../schemas/` only caches it so
+      # the conformance test can run offline. Never edit the cached copy.
+      - curl -fsSL "{{ .SCHEMA_URL }}" -o ../../schemas/governance.schema.json
       - uv run pytest tests/tests/test_schema_conformance.py -q
+
+  schema:generate:
+    desc: Regenerate the schemas ds owns from their Pydantic models
+    cmds:
+      # Everything else in ../../schemas is generated, never hand-written — the
+      # models are the definition. test_schema_export.py fails on drift.
+      - uv run python -c "from pathlib import Path; from ds.governance.schema_export import write_all; [print(p) for p in write_all(Path('../../schemas'))]"
+      - uv run pytest tests/tests/test_schema_export.py -q
 
   lint:
     cmds:

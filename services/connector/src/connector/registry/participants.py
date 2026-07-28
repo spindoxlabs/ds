@@ -84,9 +84,22 @@ class HttpParticipantRegistry:
             return {"Authorization": f"Bearer {token}"}
         return {}
 
-    async def _refresh_cache(self) -> ParticipantRegistry:
+    def invalidate(self) -> None:
+        """Drop the cache so the next read comes from the identity-registry.
+
+        Called when something is known to have changed — a participant promoted,
+        suspended or revoked. Without it the registry is eventually consistent on
+        a 60s timer, which is right for the DSP-time membership checks this cache
+        exists for and wrong for an operator who has just created a participant
+        and is looking at a list that does not contain it. They cannot tell that
+        from a failure.
+        """
+        self._cache = None
+        self._cache_time = 0.0
+
+    async def _refresh_cache(self, *, force: bool = False) -> ParticipantRegistry:
         now = time.monotonic()
-        if self._cache is not None and (now - self._cache_time) < self._cache_ttl:
+        if not force and self._cache is not None and (now - self._cache_time) < self._cache_ttl:
             return self._cache
         try:
             headers = await self._get_headers()
@@ -131,8 +144,15 @@ class HttpParticipantRegistry:
         registry = await self._refresh_cache()
         return registry.get_by_id(participant_id)
 
-    async def all(self) -> list[Participant]:
-        registry = await self._refresh_cache()
+    async def all(self, *, fresh: bool = False) -> list[Participant]:
+        """Every known participant.
+
+        `fresh=True` bypasses the cache. Used by the operator's own view, which
+        is read a few times a minute by a person who may have just changed
+        something — unlike the negotiation-time checks this cache is for, which
+        run per DSP request and can tolerate a minute of lag.
+        """
+        registry = await self._refresh_cache(force=fresh)
         return registry.all()
 
     async def check_scope(self, participant_id: str, scope: str) -> bool:

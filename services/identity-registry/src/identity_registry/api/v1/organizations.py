@@ -33,6 +33,7 @@ from ...schemas.responses import (
     ParticipantResponse,
 )
 from ...services import org_onboarding as ops
+from ...services.registry_notify import invalidate_participant_caches
 from ...services import provisioning
 from ...services.keycloak_admin import KeycloakAdminClient
 
@@ -347,6 +348,12 @@ async def promote_owner(
 
     await db.commit()
     await db.refresh(participant)
+
+    # The registry just changed. Connectors cache it for a minute, which is
+    # right for per-negotiation membership checks and wrong for an operator
+    # staring at a list that should already contain this participant.
+    await invalidate_participant_caches(settings)
+
     return ParticipantResponse(
         did=participant.did,
         dsp_address=participant.dsp_address,

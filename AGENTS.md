@@ -39,6 +39,7 @@ dataspaces/
 │   ├── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
 │   ├── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
 │   └── ds-e2e/                 ds-e2e — end-to-end verification framework (`ds-e2e` CLI)
+├── schemas/                    JSON Schema for the YAML shapes that cross a repo boundary
 ├── docs/                       mkdocs site — architecture, deployment reference, blueprints
 ├── helm/                       Helm charts + helmfile for Kubernetes deployment
 ├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
@@ -109,6 +110,31 @@ The portal runs in the provider compose. For local dev with hot-reload: `task pr
 
 All containers share the `dataspaces` bridge network.
 
+### Testing against the real dataset-api
+
+`services/dataset-api-mock` is a stand-in. The service that runs in production is
+`celine-dev/repositories/dataset-api`, and **a flow that passes only against the
+mock is evidence about an API nobody runs** — so the mock mirrors the real
+signature (`POST /query` with `{sql, limit, offset, skip_count}`), and the real
+one can be swapped in without changing anything downstream:
+
+```bash
+./services/dataset-api-mock/fixtures/seed.sh    # brings the stack up + seeds
+```
+
+That starts `docker-compose.dataset-api.yml` — the real `dataset-api` on **30002**
+(the mock's port, so the connector, the EDR endpoint and the portal address it
+unchanged) plus `rec-registry` on 30013, both on the ds Postgres — and seeds the
+catalogue entry, the physical table and the REC members. The mock moves aside via
+`DATASET_API_MOCK_PORT` in `.env.local`.
+
+`task e2e:all` and `npm run test:ui` then exercise the real service.
+
+The fixtures matter as much as the wiring: the REC members are named for the ds
+dev users (so `DID → username → member → device` resolves), and the table carries
+a device owned by **nobody** as a negative control. Members named anything else
+resolve to nobody and every flow denies — correctly, and proving nothing.
+
 ## Tech stack
 
 | Layer | Technology |
@@ -129,7 +155,7 @@ All containers share the `dataspaces` bridge network.
 |------|---------|
 | 30000 | ds-provenance (provider) |
 | 30001 | ds-connector (provider) |
-| 30002 | dataset-api (provider) |
+| 30002 | dataset-api (provider) — the **mock**, or the real one under test |
 | 30003 | federated-catalog (provider) |
 | 30004 | portal (standalone, run locally) |
 | 30005 | identity-registry (shared infra) |
@@ -141,6 +167,8 @@ All containers share the `dataspaces` bridge network.
 | 9010 | Caddy provider gateway |
 | 19xxx | EDC provider (management, protocol, public, control) |
 | 29xxx | EDC consumer (management, protocol, public, control) |
+| 30013 | rec-registry (real dataset-api stack only) |
+| 30022 | dataset-api **mock**, when the real one has taken 30002 |
 | 30900+ | debugpy ports |
 
 ## Identity architecture
@@ -253,6 +281,22 @@ governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
 ```
 
 See `docs/governance-and-odrl.md` for the full pipeline documentation.
+
+### Published schemas — `schemas/`
+
+Governance is authored in repos ds does not control, so the shapes that cross
+that boundary are published as JSON Schema for the producer to validate against
+first. **A schema lives where the shape is defined:** ds owns
+`sharing-offers.schema.json`, `odrl-profile.schema.json` and
+`purpose-vocabulary.json` — all *generated from the Pydantic models*, never
+hand-edited (`task -d libs/governance schema:generate`, with a no-diff test).
+`governance.schema.json` is the one shape celine-utils defines, cached here so
+the conformance test runs offline (`task -d libs/governance schema:refresh`).
+
+`purpose-vocabulary.json` carries the slug `enum` the *active profile* accepts —
+no static governance schema can, because the taxonomy is deployment
+configuration. Regenerate it whenever the ODRL profile changes. See
+`schemas/README.md`.
 
 ### Validating governance before import
 
@@ -398,6 +442,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Provenance & lineage | `docs/provenance-and-lineage.md` |
 | Roadmap & deferred work | `docs/roadmap.md` |
 | Consent & sovereignty | `docs/consent-and-sovereignty.md` |
+| DPV alignment of the purpose taxonomy | `docs/taxonomies/dpv-2.3.md` |
 | Integrating an external application | `docs/external-application-integration.md` |
 | Owner identity & ownership | `docs/owner-identity-and-ownership.md` |
 | DSSC Blueprint reference | `docs/dssc-blueprint-docs/` |
@@ -409,10 +454,12 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 |------|---------------|
 | Add a new dataset to the catalogue | `services/connector/governance/governance.yaml` |
 | Add or change a sharing offer | `services/connector/governance/sharing-offers.yaml`, then `task compliance:validate` |
-| Add a purpose to the taxonomy | `libs/governance/src/ds/governance/profiles/energy.yaml` |
+| Add a purpose to the taxonomy | `libs/governance/src/ds/governance/profiles/energy.yaml`, then record the DPV alignment in `docs/taxonomies/dpv-2.3.md` |
 | Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function, **plus a rule binding**) |
 | Add a new API endpoint to connector | `services/connector/src/connector/api/v1/` |
 | Add a new portal page | `services/portal/src/routes/` (add a journey in `tests/ui/`, run `task test:ui`) |
+| Run the flows against the **real** dataset-api | `./services/dataset-api-mock/fixtures/seed.sh`, then `task e2e:all` |
+| Change what the data plane may return | `POST /internal/dataplane/authorize` in `services/connector/src/connector/api/v1/internal.py` |
 | Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
 | Change consent behavior | `services/connector/src/connector/services/consent_service.py` |
 | Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
@@ -437,6 +484,24 @@ task provider:portal:run          # portal locally with hot-reload (optional)
   `node:22-alpine` refuses and the Docker build breaks while everything local still
   works. Regenerate with `docker run --rm -v "$PWD":/w -w /w node:22-alpine sh -c
   'npm install --package-lock-only --include=optional'`.
+- **`task docker:restart` recreates the Postgres volume.** Any database created by
+  hand disappears with it, and services that survive keep a dead connection pool.
+  The ds databases are recreated by their own `*-db-create` init containers; the
+  real dataset-api stack's are recreated by `seed.sh`, which is why it must be
+  re-run after every restart.
+- **The connector image and `governance.yaml` travel together.** The file is
+  mounted, the parser is not: editing governance without rebuilding the connector
+  can leave the running code unable to read the new shape. That produced a
+  published ODRL policy with *no purpose constraint*, so every negotiation parked
+  forever on a consent question nobody could answer — no error, no log.
+- **`test_governance_mapper.py::test_asset_create_basic` has been failing for a
+  long time** (a medallion `KeyError`), unrelated to whatever you are changing.
+  Every other connector test passing is the bar.
+- **`celine-*` services read their OIDC client from `CELINE_OIDC_*`.**
+  `OidcSettings` carries its own `env_prefix`, so `OIDC_ISSUER_URL` and
+  `SERVICE_CLIENT_ID` are read by nothing — the service silently keeps its
+  defaults and every call is refused with a 401 that surfaces somewhere else
+  entirely.
 - **`docker compose` without `COMPOSE_PROJECT_NAME=dataspaces` builds a second,
   parallel stack.** The containers get `ds-*` names, port binds collide with the
   real ones, and health checks answer `200` from the *old* containers — so a

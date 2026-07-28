@@ -147,6 +147,8 @@ Each purpose concept may declare `broader` (the local hierarchy) and `dpv_mappin
 
 Following a `broadMatch` during enforcement would let a consumer whose policy names a generic DPV term satisfy a member's specific consent. `relation` must be one of the five SKOS match properties; the CI gate rejects anything else. See [Consent & Sovereignty](consent-and-sovereignty.md#the-purpose-chain).
 
+The pinned DPV version, every term the profile cites, and why each alignment is the one it is: [DPV 2.3](taxonomies/dpv-2.3.md). The gate cannot check that an IRI is the *right* one — only that it is well formed — so that page is the actual review.
+
 ### 2. EDC Asset
 
 ```json

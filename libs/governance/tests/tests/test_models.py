@@ -1,4 +1,6 @@
 """Tests for GovernanceRule v1/v2 model parsing and defaults."""
+import logging
+
 import pytest
 
 from ds.governance.models import (
@@ -9,6 +11,7 @@ from ds.governance.models import (
     OdrlProfile,
     PolicyConsent,
     load_odrl_profile,
+    profile_path_is_missing,
 )
 
 
@@ -68,7 +71,70 @@ def test_load_default_profile():
         "CostOptimization",
         "FlexibilityResearch",
         "GridMonitoring",
+        "GridResilience",
+        "EnergyForecasting",
+        "EnergyPlanning",
+        "PVPotentialAssessment",
     }
+
+
+def test_default_profile_roots_are_not_mutually_reachable():
+    """The five roots must stay siblings — `is_a` must not cross between them.
+
+    `is_a` walks the local `broader` chain upward, so a consent recorded at one
+    root would cover every request under it. Grid monitoring and grid resilience
+    are the pair most likely to be "tidied" into a parent/child later: observing
+    the network and acting on infrastructure risk are different reasons, and
+    making resilience narrower would let a monitoring consent admit a resilience
+    request. This test is what makes that a deliberate decision rather than a
+    refactor.
+    """
+    profile = load_odrl_profile()
+    roots = [
+        "EnergyCommunityOperation",
+        "GridMonitoring",
+        "GridResilience",
+        "EnergyForecasting",
+        "EnergyPlanning",
+    ]
+    for concept in roots:
+        assert profile.purpose_index[concept].broader is None
+    for requested in roots:
+        for consented in roots:
+            if requested == consented:
+                continue
+            assert not profile.is_a(requested, consented), (
+                f"{requested} must not satisfy a consent for {consented}"
+            )
+
+
+def test_default_profile_children_are_covered_by_their_root():
+    """Consent to a root covers a narrower request, never the reverse."""
+    profile = load_odrl_profile()
+    for child, root in (
+        ("IncentiveCalculation", "EnergyCommunityOperation"),
+        ("CostOptimization", "EnergyCommunityOperation"),
+        ("FlexibilityResearch", "EnergyCommunityOperation"),
+        ("PVPotentialAssessment", "EnergyPlanning"),
+    ):
+        assert profile.is_a(child, root)
+        assert not profile.is_a(root, child)
+
+
+def test_default_profile_dpv_mappings_are_dpv_iris():
+    """Every concept declares an alignment, and it points at DPV.
+
+    `check_purpose_taxonomy` only asserts the IRI is absolute and the relation is
+    a SKOS match property, so a plausible-looking IRI from anywhere passes. The
+    alignments and the reasoning behind each are in `docs/taxonomies/dpv-2.3.md`.
+    """
+    profile = load_odrl_profile()
+    for concept in profile.purposes:
+        assert concept.dpv_mapping is not None, f"{concept.slug} declares no alignment"
+        assert concept.dpv_mapping.iri.startswith("https://w3id.org/dpv#")
+        # Never exactMatch: DPV is domain-neutral and has no energy vocabulary,
+        # so every concept here is narrower than the term it cites.
+        assert concept.dpv_mapping.relation == "broadMatch"
 
 
 def test_load_profile_from_yaml(tmp_path):
@@ -95,3 +161,28 @@ def test_load_profile_missing_path_falls_back_to_default():
     profile = load_odrl_profile("/nonexistent/path.yaml")
     assert profile.namespace == "https://w3id.org/dsp/policy/"
     assert "meters" in profile.tag_to_purpose
+
+
+def test_configured_but_missing_profile_path_warns(caplog):
+    """The fallback is invisible otherwise, and now expensive.
+
+    A typo'd path yields the *platform* vocabulary, so every purpose the deployer
+    declared fails to resolve — and the sync gate then refuses to publish any of
+    their datasets. At `debug` nothing would explain that.
+    """
+    with caplog.at_level(logging.WARNING, logger="ds.governance.models"):
+        load_odrl_profile("/nonexistent/path.yaml")
+    assert any("falling back to the bundled energy profile" in r.message for r in caplog.records)
+
+
+def test_default_profile_load_does_not_warn(caplog):
+    """Using the bundled profile is the documented default, not a misconfiguration."""
+    with caplog.at_level(logging.WARNING, logger="ds.governance.models"):
+        load_odrl_profile()
+    assert caplog.records == []
+
+
+def test_profile_path_is_missing_only_flags_configured_paths():
+    assert profile_path_is_missing("/nonexistent/path.yaml") is True
+    assert profile_path_is_missing(None) is False
+    assert profile_path_is_missing("") is False

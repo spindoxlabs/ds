@@ -16,7 +16,7 @@ from ...dependencies import (
     require_ingestion_record,
     require_provider_read,
 )
-from ...registry.participants import ParticipantRegistry
+from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services import consent_service
 from ...services import consent_vocabulary as vocab
 from ...services.prov_bridge import ProvBridge
@@ -37,7 +37,16 @@ async def list_participants(
     # the identity-registry), while the YAML-seeded `ParticipantRegistry.all()` is
     # not. Awaiting unconditionally breaks the seeded one; not awaiting yielded
     # `TypeError: 'coroutine' object is not iterable` and a 500 on every read.
-    participants = registry.all()
+    # Read through the cache. This page is an operator looking at registry state
+    # they may have just changed; serving it from a 60s cache shows a list
+    # without the participant they created, which is indistinguishable from the
+    # promote having failed. The cache is for the per-negotiation membership
+    # checks, not for this.
+    participants = (
+        registry.all(fresh=True)
+        if isinstance(registry, HttpParticipantRegistry)
+        else registry.all()
+    )
     if inspect.isawaitable(participants):
         participants = await participants
 

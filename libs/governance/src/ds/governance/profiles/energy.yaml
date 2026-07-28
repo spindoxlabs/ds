@@ -23,14 +23,25 @@ purpose_base: "purpose/"
 tag_to_purpose:
   meters: EnergyCommunityOperation
   grid: GridMonitoring
+  weather: EnergyForecasting
+  pv: PVPotentialAssessment
 
 # Purpose taxonomy — served by GET /ns/policy as SKOS concepts.
 #
 # `broader` builds the local hierarchy and is the ONLY thing `odrl:isA`
-# matching follows.  `dpv_mapping` aligns each concept with the W3C DPV v2.2
-# vocabulary (https://w3id.org/dpv#) for interop and documentation; it is never
-# matched against, because a broadMatch to a generic DPV term would let an
-# unrelated use satisfy a specific consent.
+# matching follows.  `dpv_mapping` aligns each concept with the W3C DPV v2.3
+# vocabulary (https://w3id.org/dpv#, published 2026-02-25) for interop and
+# documentation; it is never matched against, because a broadMatch to a generic
+# DPV term would let an unrelated use satisfy a specific consent.
+#
+# Every mapping is `broadMatch` and none is `exactMatch`: DPV is deliberately
+# domain-neutral and has NO energy, grid, forecasting or planning purpose, so
+# every concept here is narrower than the DPV term it cites.  Each choice, the
+# two that are weaker than the rest, and the 2.2 → 2.3 re-parenting that
+# prompted two corrections are written up in `docs/taxonomies/dpv-2.3.md`.
+# Read it before changing an IRI: `check_purpose_taxonomy` only asserts that the
+# IRI is absolute and the relation is a SKOS match property, so a
+# wrong-but-well-formed IRI passes every test in this repo.
 purposes:
   - slug: EnergyCommunityOperation
     label: Energy community operation
@@ -44,8 +55,11 @@ purposes:
     definition: >-
       Computing shared-energy incentives and their distribution among members.
     broader: EnergyCommunityOperation
+    # The contractual child, not the generic obligation: the community has a
+    # contractual duty to compute and distribute incentives, and
+    # sharing-offers.yaml already declares this offer under dpv:Contract.
     dpv_mapping:
-      iri: "https://w3id.org/dpv#FulfilmentOfObligation"
+      iri: "https://w3id.org/dpv#FulfilmentOfContractualObligation"
       relation: broadMatch
 
   - slug: CostOptimization
@@ -69,6 +83,53 @@ purposes:
   - slug: GridMonitoring
     label: Grid monitoring
     definition: Monitoring grid stability, load, and fault detection.
+    # dpv:ServiceMonitoring, new in 2.3, is "monitoring … to understand their
+    # performance and utilisation with a view to inform their management" —
+    # close to a definition of this concept.  It replaces a broadMatch to
+    # dpv:PublicBenefit, which asserted a societal purpose that monitoring by a
+    # distribution operator does not carry.
     dpv_mapping:
-      iri: "https://w3id.org/dpv#PublicBenefit"
+      iri: "https://w3id.org/dpv#ServiceMonitoring"
+      relation: broadMatch
+
+  # A root, NOT a child of GridMonitoring.  `is_a` walks upward, so making
+  # resilience narrower would mean a consent recorded for monitoring silently
+  # admits a resilience request.  Observing the network and acting on
+  # infrastructure risk are different reasons.
+  - slug: GridResilience
+    label: Grid resilience
+    definition: >-
+      Assessing and reducing risk to distribution infrastructure — outage,
+      fault, overload and vegetation risk — and planning the work that
+      mitigates it.
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#IncreaseServiceRobustness"
+      relation: broadMatch
+
+  - slug: EnergyForecasting
+    label: Energy forecasting
+    definition: >-
+      Producing forecasts of generation, consumption or grid state, and
+      processing the environmental observations those forecasts depend on.
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#ServiceOptimisation"
+      relation: broadMatch
+
+  - slug: EnergyPlanning
+    label: Energy planning
+    definition: >-
+      Planning energy infrastructure, generation capacity and the investment
+      behind it.
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#ServiceManagement"
+      relation: broadMatch
+
+  - slug: PVPotentialAssessment
+    label: Photovoltaic potential assessment
+    definition: >-
+      Assessing the photovoltaic potential of buildings and sites, detecting
+      existing installations, and estimating return on investment.
+    broader: EnergyPlanning
+    dpv_mapping:
+      iri: "https://w3id.org/dpv#ServiceProvision"
       relation: broadMatch

@@ -31,9 +31,16 @@ def write_governance(tmp_path: Path, config: dict, name: str = "governance.yaml"
 
 
 def exposed_dataset(**overrides) -> dict:
-    """A minimal, valid, exposed dataset rule."""
+    """A minimal, valid, exposed dataset rule.
+
+    `policy.purpose` is part of "minimal": an exposed dataset that declares no
+    purpose is published with no purpose constraint, so `purpose-declared` now
+    rejects it. Before that check covered the empty case, this fixture was
+    "valid" while describing a dataset nothing would have limited the use of.
+    """
     rule = {
         "access_level": "open",
+        "policy": {"purpose": ["GridMonitoring"]},
         "dataspace": {
             "expose": True,
             "data_address": {"base_url": "http://dataset-api:30002"},
@@ -204,7 +211,19 @@ class TestConsentCoherence:
     def test_consent_required_without_filter_warns(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
-            {"sources": {"a": exposed_dataset(policy={"consent": {"required": True}})}},
+            # `policy` replaces the fixture's block wholesale, so the purpose has
+            # to be restated — without it this asserts the consent warning while
+            # also tripping purpose-declared, and `passed` would be False.
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        policy={
+                            "purpose": ["GridMonitoring"],
+                            "consent": {"required": True},
+                        }
+                    )
+                }
+            },
         )
         result = run(path)
         assert result.passed

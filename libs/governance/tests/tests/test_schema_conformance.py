@@ -27,7 +27,7 @@ REPO = Path(__file__).resolve().parents[4]
 # exists at all (a test that needs the network enforces nothing when there is
 # none).
 SCHEMA = json.loads(
-    (REPO / "libs/governance/schema/governance.schema.json").read_text(encoding="utf-8")
+    (REPO / "schemas/governance.schema.json").read_text(encoding="utf-8")
 )
 
 GOVERNANCE_FILES = sorted(REPO.glob("services/*/governance/governance.yaml")) + sorted(

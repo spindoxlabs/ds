@@ -186,6 +186,31 @@ class TestDatasetPurposes:
         )
         assert "purpose-declared" not in codes(result.errors)
 
+    def test_empty_purpose_is_an_error(self, tmp_path: Path):
+        """The case that used to pass: no entries, so nothing to iterate.
+
+        The mapper emits a purpose constraint only for a non-empty list, so an
+        exposed dataset declaring `purpose: []` is published with no purpose
+        limitation at all — the same outcome as a typo, and previously silent.
+        """
+        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})})
+        assert "purpose-declared" in codes(result.errors)
+
+    def test_absent_purpose_block_is_an_error(self, tmp_path: Path):
+        """Omitting `policy` entirely must fail the same way as declaring it empty."""
+        result = run(tmp_path, sources={"d": dataset(policy={})})
+        assert "purpose-declared" in codes(result.errors)
+
+    def test_error_names_every_unresolvable_entry(self, tmp_path: Path):
+        """A producer revising a file needs the whole list, not the first item."""
+        result = run(
+            tmp_path,
+            sources={"d": dataset(policy={"purpose": ["NotAPurpose", "AlsoWrong"]})},
+        )
+        messages = " ".join(f.message for f in result.errors)
+        assert "NotAPurpose" in messages
+        assert "AlsoWrong" in messages
+
 
 # ── Sharing offers ───────────────────────────────────────────────────────────
 

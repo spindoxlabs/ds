@@ -32,6 +32,16 @@ class ConnectorGovernanceMapper:
             owner_did_resolver=owner_did_resolver,
         )
 
+    @property
+    def profile(self) -> OdrlProfile:
+        """The active ODRL profile — the taxonomy sync validates purposes against.
+
+        Exposed because the sync-time gate has to check a rule against the *same*
+        profile the mapper will use. Reading a second profile would let a dataset
+        pass validation and then be mapped against a different vocabulary.
+        """
+        return self._mapper.profile
+
     def to_asset_create(self, dataset_key: str, rule: GovernanceRuleV2) -> AssetCreate:
         ds = rule.dataspace
         asset_id = ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"

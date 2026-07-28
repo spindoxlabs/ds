@@ -1,0 +1,93 @@
+{
+  "$id": "https://spindoxlabs.github.io/ds/schemas/purpose-vocabulary.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Purpose slugs accepted by the active ODRL profile. An entry in dataspace.purpose[] must be one of these, or an absolute IRI from another vocabulary. Regenerate whenever the profile changes.",
+  "enum": [
+    "EnergyCommunityOperation",
+    "IncentiveCalculation",
+    "CostOptimization",
+    "FlexibilityResearch",
+    "GridMonitoring",
+    "GridResilience",
+    "EnergyForecasting",
+    "EnergyPlanning",
+    "PVPotentialAssessment"
+  ],
+  "namespace": "https://w3id.org/dsp/policy/",
+  "purposeBase": "purpose/",
+  "purposes": [
+    {
+      "broader": null,
+      "definition": "Operating a renewable energy community on behalf of its members.",
+      "dpv": "https://w3id.org/dpv#ServiceProvision",
+      "iri": "https://w3id.org/dsp/policy/purpose/EnergyCommunityOperation",
+      "label": "Energy community operation",
+      "slug": "EnergyCommunityOperation"
+    },
+    {
+      "broader": "EnergyCommunityOperation",
+      "definition": "Computing shared-energy incentives and their distribution among members.",
+      "dpv": "https://w3id.org/dpv#FulfilmentOfContractualObligation",
+      "iri": "https://w3id.org/dsp/policy/purpose/IncentiveCalculation",
+      "label": "Incentive calculation",
+      "slug": "IncentiveCalculation"
+    },
+    {
+      "broader": "EnergyCommunityOperation",
+      "definition": "Reducing energy cost for the member or the community.",
+      "dpv": "https://w3id.org/dpv#OptimisationForConsumer",
+      "iri": "https://w3id.org/dsp/policy/purpose/CostOptimization",
+      "label": "Cost optimisation",
+      "slug": "CostOptimization"
+    },
+    {
+      "broader": "EnergyCommunityOperation",
+      "definition": "Studying when and how much consumption can shift, to plan community flexibility.",
+      "dpv": "https://w3id.org/dpv#ResearchAndDevelopment",
+      "iri": "https://w3id.org/dsp/policy/purpose/FlexibilityResearch",
+      "label": "Flexibility research",
+      "slug": "FlexibilityResearch"
+    },
+    {
+      "broader": null,
+      "definition": "Monitoring grid stability, load, and fault detection.",
+      "dpv": "https://w3id.org/dpv#ServiceMonitoring",
+      "iri": "https://w3id.org/dsp/policy/purpose/GridMonitoring",
+      "label": "Grid monitoring",
+      "slug": "GridMonitoring"
+    },
+    {
+      "broader": null,
+      "definition": "Assessing and reducing risk to distribution infrastructure — outage, fault, overload and vegetation risk — and planning the work that mitigates it.",
+      "dpv": "https://w3id.org/dpv#IncreaseServiceRobustness",
+      "iri": "https://w3id.org/dsp/policy/purpose/GridResilience",
+      "label": "Grid resilience",
+      "slug": "GridResilience"
+    },
+    {
+      "broader": null,
+      "definition": "Producing forecasts of generation, consumption or grid state, and processing the environmental observations those forecasts depend on.",
+      "dpv": "https://w3id.org/dpv#ServiceOptimisation",
+      "iri": "https://w3id.org/dsp/policy/purpose/EnergyForecasting",
+      "label": "Energy forecasting",
+      "slug": "EnergyForecasting"
+    },
+    {
+      "broader": null,
+      "definition": "Planning energy infrastructure, generation capacity and the investment behind it.",
+      "dpv": "https://w3id.org/dpv#ServiceManagement",
+      "iri": "https://w3id.org/dsp/policy/purpose/EnergyPlanning",
+      "label": "Energy planning",
+      "slug": "EnergyPlanning"
+    },
+    {
+      "broader": "EnergyPlanning",
+      "definition": "Assessing the photovoltaic potential of buildings and sites, detecting existing installations, and estimating return on investment.",
+      "dpv": "https://w3id.org/dpv#ServiceProvision",
+      "iri": "https://w3id.org/dsp/policy/purpose/PVPotentialAssessment",
+      "label": "Photovoltaic potential assessment",
+      "slug": "PVPotentialAssessment"
+    }
+  ],
+  "title": "ds purpose vocabulary"
+}

@@ -21,6 +21,7 @@ from ...dependencies import (
     get_participant_registry,
     get_settings_dep,
     require_internal_scope,
+    require_registry_invalidate,
 )
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
@@ -733,6 +734,34 @@ async def audit_query(
             authorized_subject_ids=req.authorized_subject_ids,
         )
     return {"status": "accepted"}
+
+
+@router.post("/registry/invalidate", status_code=200)
+async def invalidate_participant_registry(
+    request: Request,
+    registry: ParticipantRegistry = Depends(get_participant_registry),
+    _claims: dict = Depends(require_registry_invalidate),
+):
+    """Forget the cached participant list.
+
+    The identity-registry calls this when it promotes, suspends or revokes a
+    participant. The connector caches that list for
+    `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL` because DSP-time membership
+    checks run per negotiation and cannot afford a round trip each — but a
+    change the operator just made should not wait out a timer.
+
+    Idempotent, and a no-op for the YAML-seeded registry, which has no cache to
+    drop. Never an error: a caller that cannot invalidate must not fail the
+    operation that prompted it — the cache expires on its own, and a promote
+    rolled back because a cache hint failed would be a far worse outcome than a
+    minute of staleness.
+    """
+    invalidate = getattr(registry, "invalidate", None)
+    if invalidate is None:
+        return {"invalidated": False, "reason": "registry has no cache"}
+    invalidate()
+    log.info("Participant registry cache invalidated")
+    return {"invalidated": True}
 
 
 @router.get("/edr-jwks")

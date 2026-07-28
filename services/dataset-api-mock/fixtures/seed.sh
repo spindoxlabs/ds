@@ -15,6 +15,16 @@ API=dataspaces-real-dataset-api-dataset-api-real-1
 REG=dataspaces-real-dataset-api-rec-registry-1
 KEYCLOAK=${KEYCLOAK_URL:-http://localhost:9080}
 
+# `task docker:restart` recreates the ds Postgres, taking these databases with
+# it. Bringing the compose up re-runs `db-create` and re-migrates; the API then
+# needs a restart because its pool still holds connections to a server that went
+# away. Both are no-ops when nothing changed.
+echo "→ stack"
+ROOT="$(cd "$HERE/../../.." && pwd)"
+docker compose -f "$ROOT/docker-compose.dataset-api.yml" up -d >/dev/null
+docker compose -f "$ROOT/docker-compose.dataset-api.yml" restart dataset-api-real >/dev/null
+sleep 8
+
 echo "→ token"
 TOKEN=$(curl -sf -X POST "$KEYCLOAK/realms/dataspaces/protocol/openid-connect/token" \
   -d "grant_type=client_credentials&client_id=svc-ds-e2e&client_secret=svc-ds-e2e" |

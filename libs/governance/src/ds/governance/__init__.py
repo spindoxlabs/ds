@@ -30,6 +30,7 @@ from .sharing import (
     is_iso_duration,
     load_sharing_offers,
 )
+from .purposes import purpose_failure, unresolved_purposes
 from .resolver import GovernanceConfig, GovernanceResolver
 from .mapper import GovernanceMapper
 from .matrix import build_policy_matrix, build_policy_matrix_entry
@@ -58,6 +59,8 @@ __all__ = [
     "SKOS_MATCH_RELATIONS",
     "load_odrl_profile",
     "subject_column",
+    "purpose_failure",
+    "unresolved_purposes",
     "CONSENT_BASIS",
     "DPV_LEGAL_BASES",
     "OfferCoverage",
