@@ -701,6 +701,14 @@ def keycloak_sync(
     realm: str = typer.Option("dataspaces", help="Keycloak realm name"),
     user_id: str = typer.Option(..., help="Keycloak user UUID"),
     email: str = typer.Option(None, help="User email address"),
+    username: str = typer.Option(
+        None,
+        help=(
+            "Keycloak preferred_username — how systems outside the dataspace "
+            "name this person (the REC registry keys members on it). Defaults "
+            "to the email, which is what this realm uses."
+        ),
+    ),
 ):
     """Create or update a Keycloak-to-DID mapping (idempotent)."""
 
@@ -727,6 +735,8 @@ def keycloak_sync(
                 existing.keycloak_user_id = user_id
                 if email is not None:
                     existing.email = email
+                if username is not None:
+                    existing.username = username
                 existing.subject_id = did
                 existing.synced_at = datetime.now(UTC)
                 typer.echo(f"Updated Keycloak mapping for {did}")
@@ -736,6 +746,10 @@ def keycloak_sync(
                     keycloak_realm=realm,
                     keycloak_user_id=user_id,
                     email=email,
+                    # Falls back to the email because this realm sets
+                    # username = email. Recorded explicitly rather than left
+                    # null so the resolution does not depend on that staying true.
+                    username=username or email,
                     subject_id=did,
                     synced_at=datetime.now(UTC),
                 )
