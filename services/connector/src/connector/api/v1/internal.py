@@ -176,6 +176,7 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
 @router.post("/dataplane/authorize")
 async def dataplane_authorize(
     body: DataPlaneAuthorizeRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     settings=Depends(get_settings_dep),
     _claims: dict = Depends(require_internal_scope),
@@ -270,6 +271,8 @@ async def dataplane_authorize(
                 agreement=agreement,
                 consumer_did=body.consumer_did,
                 purposes=requested,
+                settings=settings,
+                token_provider=getattr(request.app.state, "ir_token_provider", None),
             )
         )
 
@@ -292,10 +295,13 @@ async def _authorize_dataset(
     agreement: dict,
     consumer_did: str,
     purposes: list[str],
+    settings,
+    token_provider=None,
 ) -> dict:
     """One dataset's verdict, with the row filter that goes with it."""
     from ...services.consent_service import get_granted_subject_ids
     from ...services import consent_vocabulary as vocab
+    from ...services.subject_identities import resolve_usernames
 
     def verdict(decision: str, reason: str | None = None, row_filter=None) -> dict:
         return {
@@ -329,14 +335,69 @@ async def _authorize_dataset(
     if not subject_ids:
         return verdict("deny", "no_consent")
 
-    column = subject_column(rule)
-    if not column:
-        # Consent is required but governance names no column to filter on, so
-        # the filter cannot be applied and every row would leave. Refuse and let
-        # the misconfiguration surface.
-        return verdict("deny", "no_user_filter_column")
+    spec = _row_filter_spec(rule)
+    if spec is None:
+        # Consent is required but governance names no row filter, so nothing can
+        # be applied and every row would leave. Refuse and let the
+        # misconfiguration surface.
+        return verdict("deny", "no_row_filter")
 
-    return verdict("allow", row_filter={"column": column, "subject_ids": subject_ids})
+    # The data plane filters on **its own** identifiers, not on DIDs. For
+    # `rec_registry` the column holds device ids resolved from a *member*, so
+    # handing over `subject_ids` would produce a predicate that matches nothing —
+    # or, worse, matches by coincidence. Translate to the username the receiving
+    # system keys on, and let its handler do the rest.
+    usernames = await resolve_usernames(
+        subject_ids, settings.identity_registry_url, token_provider
+    )
+    principals = [usernames[did] for did in subject_ids if did in usernames]
+    if not principals:
+        # Consent exists but nobody could be named to the system holding the
+        # data. Denying is the only honest answer: an empty principal set with
+        # an allow would be read as "filter to nothing", and a missing filter as
+        # "no filter".
+        return verdict("deny", "subjects_unresolvable")
+
+    return verdict(
+        "allow",
+        row_filter={
+            "handler": spec["handler"],
+            "args": spec["args"],
+            # Registry-native identifiers. Never DIDs: a DID is derived from an
+            # unsalted email hash, so it is re-identifiable by anyone who later
+            # holds the payload.
+            "principals": principals,
+        },
+    )
+
+
+def _row_filter_spec(rule) -> dict | None:
+    """The row filter as governance declares it — handler and args.
+
+    Returned whole rather than reduced to a column, because the handler is what
+    knows how a person maps to values in it. `rec_registry` resolves a member to
+    devices; `direct_user_match` matches the subject directly. A decision that
+    shipped only a column would have to assume one of them.
+    """
+    for row_filter in getattr(rule, "row_filters", None) or []:
+        args = getattr(row_filter, "args", None)
+        if isinstance(args, dict):
+            args_dict = dict(args)
+        elif args is not None:
+            args_dict = args.model_dump() if hasattr(args, "model_dump") else vars(args)
+        else:
+            args_dict = {}
+        handler = getattr(row_filter, "handler", None)
+        if handler:
+            return {"handler": str(handler), "args": args_dict}
+
+    # Legacy `user_filter_column` — the spelling the canonical schema does not
+    # define. Migrated to the same handler the real dataset-api migrates it to,
+    # so both sides agree on what it means.
+    column = subject_column(rule)
+    if column:
+        return {"handler": "direct_user_match", "args": {"column": column}}
+    return None
 
 
 @router.get("/consent/check")

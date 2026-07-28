@@ -232,3 +232,16 @@ class PublicApplicationResponse(BaseModel):
     id: str
     alias: str
     status: str
+
+
+class SubjectIdentityResponse(BaseModel):
+    """A subject DID and the username systems outside the dataspace key on.
+
+    Deliberately does **not** carry the email. The whole point of the DID is to
+    keep personal data out of the identifiers that travel, and a resolution
+    endpoint that hands back an address defeats it — the username is what the
+    receiver needs and nothing more.
+    """
+
+    did: str
+    username: str

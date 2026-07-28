@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from connector.services import subject_identities
 from connector.services.agreement_service import terminate_agreement, upsert_agreement
 from connector.services.consent_service import set_subject_data_sharing
 from tests import make_headers
@@ -90,6 +91,21 @@ async def _consent(engine, *, purpose: list[str], consumer=CONSUMER):
                 enabled=True,
                 purpose=purpose,
             )
+
+
+@pytest.fixture(autouse=True)
+def _resolvable_subjects(monkeypatch):
+    """The identity-registry resolves subject DIDs to registry usernames.
+
+    Stubbed rather than mocked away: the mapping is what turns "these subjects
+    consented" into something the data plane can key on, so a test that skipped
+    it would assert on a decision that could not be enforced.
+    """
+    async def fake(dids, *_args, **_kwargs):
+        return {did: f"user-{did.rsplit(':', 1)[-1]}" for did in dids}
+
+    monkeypatch.setattr(subject_identities, "resolve_usernames", fake)
+    yield
 
 
 async def _authorize(client, **body):
@@ -185,14 +201,41 @@ async def test_no_consent_yields_a_refusal_not_an_empty_filter(engine, client):
 
 
 @pytest.mark.asyncio
-async def test_consented_subject_becomes_the_row_filter(engine, client):
+async def test_consent_becomes_a_row_filter_spec(engine, client):
+    """The decision carries the filter **as governance declared it**.
+
+    Not a column and a list of DIDs: `rec_registry` resolves devices from a
+    member, so the receiving handler needs its own name and args to do that. A
+    decision reduced to a column would force the data plane to assume a handler.
+    """
     await _agreement(engine, "agr-1", GATED)
     await _consent(engine, purpose=["FlexibilityResearch"])
     body = (await _authorize(client)).json()
     assert body["decision"] == "allow"
     row_filter = body["datasets"][0]["row_filter"]
-    assert row_filter["subject_ids"] == [SUBJECT]
-    assert row_filter["column"]  # governance names the column, not the caller
+    assert row_filter["handler"]
+    assert row_filter["args"]["column"]
+    # Registry-native identifiers, never the DID — a DID is derived from an
+    # unsalted email hash and so is re-identifiable by whoever holds the payload.
+    assert row_filter["principals"] == [f"user-{SUBJECT.rsplit(':', 1)[-1]}"]
+    assert SUBJECT not in str(row_filter)
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_subjects_deny(engine, client, monkeypatch):
+    """Consent exists, but nobody can be named to the system holding the data.
+
+    Denying is the only honest answer: an allow with an empty principal list
+    reads as "filter to nothing" to one implementation and "no filter" to
+    another, and the second serves everything.
+    """
+    async def resolves_nothing(dids, *_args, **_kwargs):
+        return {}
+
+    monkeypatch.setattr(subject_identities, "resolve_usernames", resolves_nothing)
+    await _agreement(engine, "agr-1", GATED)
+    await _consent(engine, purpose=["FlexibilityResearch"])
+    assert (await _authorize(client)).json()["reason"] == "subjects_unresolvable"
 
 
 @pytest.mark.asyncio

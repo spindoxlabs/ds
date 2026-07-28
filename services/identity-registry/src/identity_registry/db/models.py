@@ -135,6 +135,16 @@ class KeycloakMapping(Base):
     )
     keycloak_realm: Mapped[str] = mapped_column(Text, nullable=False)
     keycloak_user_id: Mapped[str] = mapped_column(Text, nullable=False)
+    # Keycloak's `preferred_username`. Downstream systems that key on the person
+    # rather than on a DID use this: the REC registry resolves a member with
+    # `Member.user_id == user.get_username()`, so a dataspace decision about
+    # "which subjects consented" can only reach it through this value.
+    #
+    # Nullable, and `email` is the fallback: many realms (ours included) set
+    # username = email, and mappings written before this column existed have
+    # only the email. Never guess beyond that — a wrong username silently
+    # resolves to another person's assets.
+    username: Mapped[str | None] = mapped_column(Text, nullable=True)
     email: Mapped[str | None] = mapped_column(Text, nullable=True)
     subject_id: Mapped[str] = mapped_column(Text, nullable=False)
     synced_at: Mapped[datetime] = mapped_column(

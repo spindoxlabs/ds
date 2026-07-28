@@ -70,6 +70,10 @@ class KeycloakSyncRequest(BaseModel):
     keycloak_realm: str
     keycloak_user_id: str
     email: str | None = None
+    # Keycloak's `preferred_username` — how systems outside the dataspace name
+    # this person. Optional because callers written before it existed do not
+    # send it, and `email` then serves as the fallback.
+    username: str | None = None
 
 
 class CreateOwnerRequest(BaseModel):

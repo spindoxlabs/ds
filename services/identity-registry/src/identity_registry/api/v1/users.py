@@ -3,12 +3,17 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Credential, KeycloakMapping
-from ...dependencies import get_db, require_resolve_scope
-from ...schemas.responses import UserCredentialResponse, UserResolveResponse
+from ...dependencies import get_db, require_read_scope, require_resolve_scope
+from ...schemas.responses import (
+    SubjectIdentityResponse,
+    UserCredentialResponse,
+    UserResolveResponse,
+)
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -91,3 +96,50 @@ async def resolve_user_by_email(
         role=newest.role if newest else None,
         vc_jws=newest.vc_jws if newest else None,
     )
+
+
+class SubjectIdentitiesRequest(BaseModel):
+    """DIDs to translate into the identifiers other systems key on."""
+
+    dids: list[str]
+
+
+@router.post("/identities", response_model=list[SubjectIdentityResponse])
+async def resolve_subject_identities(
+    body: SubjectIdentitiesRequest,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_read_scope),
+):
+    """Translate subject DIDs into the username a non-dataspace system keys on.
+
+    A dataspace decision names people by DID. The systems that hold their data
+    do not: the REC registry resolves a member by Keycloak's
+    ``preferred_username``. Something has to bridge the two, and it has to be
+    the registry that already stores the link — deriving it anywhere else means
+    guessing, and a wrong guess reads another person's data.
+
+    **Batched on purpose.** The caller is resolving the whole consented-subject
+    set for one query; one request per subject would put a fan-out on the hot
+    path of every data-plane read.
+
+    A DID with no mapping is **omitted** rather than returned empty, and no
+    error is raised: the caller must not be able to tell "unknown subject" from
+    "subject with no username", or this becomes a directory of who exists.
+    """
+    if not body.dids:
+        return []
+    result = await db.execute(
+        select(KeycloakMapping).where(KeycloakMapping.did.in_(body.dids))
+    )
+    identities = []
+    for mapping in result.scalars().all():
+        # `email` is the documented fallback: this realm sets username = email,
+        # and rows predating the column carry only the email. Nothing further is
+        # inferred.
+        username = mapping.username or mapping.email
+        if not username:
+            continue
+        identities.append(
+            SubjectIdentityResponse(did=mapping.did, username=username)
+        )
+    return identities

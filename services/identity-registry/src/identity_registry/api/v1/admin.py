@@ -664,6 +664,10 @@ async def keycloak_sync(
         mapping.keycloak_realm = data.keycloak_realm
         mapping.keycloak_user_id = data.keycloak_user_id
         mapping.email = data.email
+        # Only overwrite when the caller actually supplied one: a sync from an
+        # older caller must not erase a username a newer one already recorded.
+        if data.username:
+            mapping.username = data.username
         mapping.subject_id = data.did
         mapping.synced_at = datetime.now(UTC)
     else:
@@ -672,6 +676,7 @@ async def keycloak_sync(
             keycloak_realm=data.keycloak_realm,
             keycloak_user_id=data.keycloak_user_id,
             email=data.email,
+            username=data.username,
             subject_id=data.did,
         )
         db.add(mapping)
