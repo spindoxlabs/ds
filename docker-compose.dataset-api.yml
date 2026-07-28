@@ -24,6 +24,24 @@
 name: dataspaces-real-dataset-api
 
 services:
+  # ── databases ─────────────────────────────────────────────────────────────
+  # Owned by this compose, not created by hand: `task docker:restart` recreates
+  # the ds Postgres, so anything made with `psql` disappears on the next restart
+  # and the migrations then fail with "database does not exist".
+  db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      for db in datasets rec_registry; do
+        psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'$$db'"'"'" |
+        grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE $$db";
+      done'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   # ── REC registry ──────────────────────────────────────────────────────────
   rec-registry-migrate:
     build:
@@ -34,6 +52,9 @@ services:
       # ds Postgres, not a second database server. One place to inspect state
       # when a query returns the wrong rows.
       DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/rec_registry
+    depends_on:
+      db-create:
+        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -78,6 +99,8 @@ services:
         condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      # The issuer in a ds token; discovery resolves it from inside the container.
+      - "keycloak.dataspaces.localhost:host-gateway"
 
   # ── the real dataset-api ──────────────────────────────────────────────────
   dataset-api-migrate:
@@ -88,6 +111,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
       DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+    depends_on:
+      db-create:
+        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -96,7 +122,10 @@ services:
       context: ${DATASET_API_PATH:-../../celine-eu/celine-dev/repositories/dataset-api}
       dockerfile: Dockerfile
     ports:
-      - "30012:8001"
+      # Takes the mock's port so nothing downstream has to be repointed: the
+      # connector, the EDR endpoint and the portal all address 30002. Stop
+      # `dataspaces-dataset-api-provider` first — one of them can hold it.
+      - "30002:8001"
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
       DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
@@ -115,19 +144,30 @@ services:
       CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
       CELINE_OIDC_JWKS_URI: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/certs
       CELINE_OIDC_AUDIENCE: svc-dataset-api
-      SERVICE_CLIENT_ID: svc-ds-dataset-api
-      SERVICE_CLIENT_SECRET: svc-ds-dataset-api
+      # `OidcSettings` reads `CELINE_OIDC_*`. `SERVICE_CLIENT_*` is read by
+      # nothing — with the client unset the service sent no bearer at all and
+      # ds refused `/internal/*` with 401, which surfaced as an unexplained
+      # query failure rather than as a configuration error.
+      CELINE_OIDC_CLIENT_ID: svc-ds-dataset-api
+      CELINE_OIDC_CLIENT_SECRET: svc-ds-dataset-api
 
       POLICIES_CHECK_ENABLED: "false"
       LOG_LEVEL: DEBUG
-      # TEMPORARY (e2e bring-up) — pairs with the `src` mount below.
-      PYTHONPATH: /app/src
+      # TEMPORARY (e2e bring-up) — pairs with the `src` mounts below.
+      # `celine` is a namespace package, so both portions resolve from mounts
+      # ahead of the installed copies in `/app/.venv`.
+      PYTHONPATH: /app/src:/app/sdk
     volumes:
       # ── TEMPORARY (e2e bring-up) — remove once the flows pass ────────────
       # Runs the checked-out source instead of the baked image, so a fix in the
       # upstream repo is one container restart away rather than a rebuild. The
       # Dockerfile installs the package into `/app/.venv`, so the mount alone
       # would change nothing — `PYTHONPATH` above is what puts it first.
+      #
+      # The SDK is mounted too: it is an installed dependency, so a wrapper
+      # added in `celine-sdk` is invisible here without it — which surfaced as
+      # `RecRegistryAdminClient has no attribute lookup_assets_by_user_ids`.
+      - ${CELINE_SDK_PATH:-../../celine-eu/celine-dev/repositories/celine-sdk}/src:/app/sdk:ro
       #
       # **Both lines come out together.** A stale mount silently runs different
       # code from the image the same compose file claims to test, which is the
@@ -141,3 +181,4 @@ services:
         condition: service_started
     extra_hosts:
       - "host.docker.internal:host-gateway"
+      - "keycloak.dataspaces.localhost:host-gateway"

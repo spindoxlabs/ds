@@ -11,6 +11,16 @@ tasks:
     cmds:
       - uv run pytest tests/tests/ -v --cov=src/ds/governance --cov-report=term-missing
 
+  schema:refresh:
+    desc: Re-fetch the canonical governance schema from celine-utils
+    vars:
+      SCHEMA_URL: https://celine-eu.github.io/schema/governance.schema.json
+    cmds:
+      # The published document is the source of truth; `schema/` only caches it
+      # so the conformance test can run offline. Never edit the cached copy.
+      - curl -fsSL "{{ .SCHEMA_URL }}" -o schema/governance.schema.json
+      - uv run pytest tests/tests/test_schema_conformance.py -q
+
   lint:
     cmds:
       - uv run ruff check src/ tests/

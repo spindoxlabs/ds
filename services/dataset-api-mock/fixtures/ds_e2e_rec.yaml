@@ -1,0 +1,97 @@
+# REC registry fixture for the ds end-to-end flows.
+#
+# Derived from `rec-registry/recs/rec-example.yaml`, with one change that makes
+# it usable here: **members are named by the ds dev users' Keycloak usernames**.
+#
+# That is the join the whole delegated path turns on. ds names a consented
+# person by DID; the registry resolves a member by `user.get_username()`; the
+# identity-registry bridges the two (`keycloak_mappings.username`). Seeding
+# `ah-00001` — as the upstream example does — leaves that bridge pointing at
+# nobody, and the flow denies with `subjects_unresolvable`, correctly but
+# uselessly.
+#
+# The sensor ids are what `device_id` holds in `ds_e2e.meters_15m`.
+
+version: "1.0"
+schema_version: "0.5"
+
+metadata:
+  created: "2026-07-28"
+  updated: "2026-07-28"
+  updated_by: "ds-e2e"
+  description: REC fixture whose members are the ds dev subjects
+
+community:
+  id: ds_e2e_rec
+  name: ds End-to-End Energy Community
+  description: Community used by the ds e2e flows to exercise rec_registry row filters
+
+  legal:
+    name: "ds E2E REC"
+    vat: "IT0000000000"
+    legal_form: "APS"
+
+  contact:
+    email: "info@ds-e2e.example.test"
+
+  settings:
+    timezone: "Europe/Rome"
+    currency: "EUR"
+
+  operators:
+    ds_e2e_dso:
+      name: ds E2E Distribution Operator
+      country: IT
+
+  areas:
+    main:
+      name: main
+      topology:
+        - "DS001E00001"
+
+
+members:
+  subject:
+    # The ds dev data subject. Keycloak username == email in this realm, and
+    # `keycloak_mappings.username` records it, so DID → username → member
+    # resolves end to end.
+    user_id: "subject@example.test"
+    name: "ds E2E Data Subject"
+    type: "schema:Person"
+    role: consumer
+    area: main
+    status: active
+    delivery_points:
+      - id: "POD-DSE2E0000001"
+        type: pod
+        description: "ds e2e subject"
+        active: true
+    assets:
+      meter:
+        meter-ds-subject:
+          name: "Meter - ds E2E subject"
+          sensor_id: ds-e2e-METER-0001
+          meter_type: consumption
+          pod: "POD-DSE2E0000001"
+
+  dual:
+    # Holds both credentials in the dev realm — included so a delegated query
+    # covering two subjects is exercised, not only the single-member case.
+    user_id: "dual@example.test"
+    name: "ds E2E Dual-role User"
+    type: "schema:Person"
+    role: consumer
+    area: main
+    status: active
+    delivery_points:
+      - id: "POD-DSE2E0000002"
+        type: pod
+        description: "ds e2e dual user"
+        active: true
+    assets:
+      meter:
+        meter-ds-dual:
+          name: "Meter - ds E2E dual user"
+          sensor_id: ds-e2e-METER-0002
+          meter_type: consumption
+          pod: "POD-DSE2E0000002"

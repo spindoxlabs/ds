@@ -21,13 +21,11 @@ sources:
     classification: pii
     tags: [meters, silver, pii]
     user_filter_column: sub
-    policy:
-      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
-      consent:
-        required: true
     dataspace:
       expose: true
       medallion: silver
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent_required: true
       asset:
         id: "datasets.silver.meters"
       data_address:
@@ -39,11 +37,10 @@ sources:
     access_level: open
     classification: green
     tags: [weather, gold]
-    policy:
-      purpose: [GridMonitoring]
     dataspace:
       expose: true
       medallion: gold
+      purpose: [GridMonitoring]
       asset:
         id: "datasets.gold.weather"
       data_address:

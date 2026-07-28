@@ -337,7 +337,7 @@ class SmokeFlow(BaseFlow):
         # client that sends the wrong one is refused as `agreement_unknown`.
         shared_agreement_id = str(edr.get("agreement_id") or agreement_id)
         if not edr_token:
-            result.fail_step("query consentita", "EDR carries no authorization token")
+            result.fail_step("query with consent", "EDR carries no authorization token")
             return result
 
         def data_query(purpose: str | None) -> tuple[int, Any]:
@@ -356,10 +356,10 @@ class SmokeFlow(BaseFlow):
 
         status, query_payload = data_query(s.consented_purpose)
         if status != 200 or not isinstance(query_payload, dict) or query_payload.get("count", 0) < 1:
-            result.fail_step("query consentita", "expected at least one authorized row", status_code=status)
+            result.fail_step("query with consent", "expected at least one authorized row", status_code=status)
             return result
         result.pass_step(
-            "query consentita",
+            "query with consent",
             "consent and active transfer allow data query for the consented purpose",
             rows=query_payload.get("count"),
             purpose=s.consented_purpose,
@@ -372,13 +372,13 @@ class SmokeFlow(BaseFlow):
         status, _ = data_query(s.unconsented_purpose)
         if status != 403:
             result.fail_step(
-                "query purpose non consentita",
+                "query for an unconsented purpose",
                 "expected a refusal for an unconsented purpose",
                 status_code=status,
             )
             return result
         result.pass_step(
-            "query purpose non consentita",
+            "query for an unconsented purpose",
             "a purpose the subject did not consent to is refused",
             purpose=s.unconsented_purpose,
         )
@@ -387,13 +387,13 @@ class SmokeFlow(BaseFlow):
         status, _ = data_query(None)
         if status != 403:
             result.fail_step(
-                "query senza purpose",
+                "query without a purpose",
                 "an undeclared purpose did not fail closed",
                 status_code=status,
             )
             return result
         result.pass_step(
-            "query senza purpose",
+            "query without a purpose",
             "an undeclared purpose fails closed on a consent-required dataset",
         )
 

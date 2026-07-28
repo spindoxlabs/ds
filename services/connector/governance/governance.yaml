@@ -23,12 +23,11 @@ sources:
     # `policy.purpose[]` is the only runtime declaration of which purposes a
     # dataset may serve. `tags` are DCAT-AP catalogue keywords and carry no
     # policy meaning.
-    policy:
-      purpose: [EnergyCommunityOperation, GridMonitoring]
-
     dataspace:
       expose: true
       medallion: gold
+      # Canonical placement per celine-utils/schema/governance.schema.json.
+      purpose: [EnergyCommunityOperation, GridMonitoring]
       asset:
         id: "datasets.gold.om_weather_features"
         content_type: "application/json"
@@ -47,21 +46,24 @@ sources:
     classification: pii
     source_system: Local meter sample adapter
     row_filters:
+      # `device_id` is what `rec_registry` resolves: a member's meters, not a
+      # subject DID. Every governance.yaml in demo3 and celine-pipelines names
+      # this column for this handler.
       - handler: rec_registry
         args:
-          column: sub
+          column: device_id
     tags: [meters, silver, pii, rec]
 
     # One meter dataset serves several distinct reasons for processing; the
     # negotiated purpose decides which consent rows apply.
-    policy:
-      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
-      consent:
-        required: true
-
     dataspace:
       expose: true
       medallion: silver
+      # Canonical placement per celine-utils/schema/governance.schema.json.
+      # One meter dataset serves several distinct reasons for processing; the
+      # negotiated purpose decides which consent rows apply.
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent_required: true
       asset:
         id: "datasets.silver.meters_15m"
         content_type: "application/json"

@@ -23,6 +23,10 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
+    # Validates this repo's governance files against the vendored canonical
+    # schema (see schema/README.md). A dev dependency, not a runtime one: the
+    # library parses governance, the test suite is what asserts the shape.
+    "jsonschema>=4.19",
 ]
 
 [tool.hatch.build.targets.wheel]

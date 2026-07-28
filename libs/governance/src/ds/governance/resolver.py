@@ -108,8 +108,21 @@ class GovernanceResolver:
             "user_filter_column", "row_filters",
         }
 
-        policy_raw = block.get("policy") or {}
+        policy_raw = dict(block.get("policy") or {})
         dataspace_raw = block.get("dataspace") or {}
+
+        # ── Canonical placement wins ────────────────────────────────────────
+        # `celine-utils/schema/governance.schema.json` puts these under
+        # `dataspace:`; ds historically kept them under its own `policy:` block.
+        # Everything authored outside this repo — demo3, celine-pipelines — uses
+        # the canonical location, so reading only `policy:` means a dataset
+        # arrives with **no purpose**, its ODRL policy carries no purpose
+        # constraint, and every consent check then denies for want of a stated
+        # reason. Fail-closed, invisible, and wrong.
+        #
+        # `policy:` stays readable because deployed ds files still use it, but
+        # it is the fallback now, not the source.
+        policy_raw = _canonical_policy(dataspace_raw, policy_raw)
 
         return GovernanceRuleV2(
             title=block.get("title"),
@@ -196,8 +209,98 @@ class GovernanceResolver:
             user_filter_column=pick(base.user_filter_column, override.user_filter_column),
             row_filters=override.row_filters if override.row_filters else base.row_filters,
             extra={**base.extra, **override.extra},
-            # v2: override wins if explicitly set; otherwise base
-            policy=override.policy if override.policy != DataspacePolicy() else base.policy,
-            dataspace=override.dataspace if override.dataspace != DataspaceSpec() else base.dataspace,
+            # v2: merged **field by field**, not wholesale.
+            #
+            # Replacing the whole block loses defaults the source did not
+            # restate — and that is exactly the real-world layout: demo3 puts
+            # `purpose` in `defaults.dataspace` and `consent_required` on the
+            # dataset. Setting the second used to discard the first, leaving a
+            # consent-gated dataset with no purpose, which then denies every
+            # query for want of a stated reason.
+            policy=_merge_policy(base.policy, override.policy),
+            dataspace=_merge_models(base.dataspace, override.dataspace, DataspaceSpec),
         )
         return merged
+
+
+def _canonical_policy(dataspace_raw: dict, policy_raw: dict) -> dict:
+    """Merge the canonical `dataspace:` fields into ds's `policy:` shape.
+
+    | canonical (`dataspace.*`)  | ds (`policy.*`)              |
+    |----------------------------|------------------------------|
+    | `purpose`                  | `purpose`                    |
+    | `consent_required`         | `consent.required`           |
+    | `contract_required`        | `obligations.contract_required` |
+
+    The canonical value wins where both are present: a file that says both
+    should behave the way the schema says, not the way this repo used to.
+    """
+    merged = dict(policy_raw)
+
+    purpose = dataspace_raw.get("purpose")
+    if purpose:
+        merged["purpose"] = list(purpose)
+
+    if "consent_required" in dataspace_raw:
+        consent = dict(merged.get("consent") or {})
+        consent["required"] = bool(dataspace_raw["consent_required"])
+        merged["consent"] = consent
+
+    if "contract_required" in dataspace_raw:
+        obligations = dict(merged.get("obligations") or {})
+        obligations["contract_required"] = bool(dataspace_raw["contract_required"])
+        merged["obligations"] = obligations
+
+    return merged
+
+
+def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> DataspacePolicy:
+    """Merge the way `dataset-api` merges the same fields.
+
+    `celine/dataset/cli/export_governance.py::_merge_dataspace` is the reference,
+    because both tools read the *same files* and must reach the same conclusion —
+    otherwise a dataset is consent-gated in one and open in the other, and each is
+    internally consistent.
+
+    Its rules, which are not "override wins":
+
+    - `purpose` is a **union**, not a replacement. An overlay adds a reason for
+      processing; it does not silently retract the ones the base declared.
+    - `consent_required` and `contract_required` are **OR**. Once something is
+      required it cannot be un-required by a file layered on top — a deployer
+      override may tighten, never loosen.
+
+    Everything else is field-wise override, as before.
+    """
+    merged = _merge_models(base, override, DataspacePolicy)
+    merged.purpose = sorted(set(base.purpose) | set(override.purpose))
+    merged.consent.required = base.consent.required or override.consent.required
+    merged.obligations.contract_required = (
+        base.obligations.contract_required or override.obligations.contract_required
+    )
+    return merged
+
+
+def _merge_models(base, override, model_cls):
+    """Override's explicitly-set fields on top of base, recursively.
+
+    `exclude_defaults` is what makes "explicitly set" mean something: a field
+    the source never mentioned is absent from the dump and therefore cannot
+    silently overwrite an inherited value with a default.
+    """
+
+    def deep_merge(a: dict, b: dict) -> dict:
+        out = dict(a)
+        for key, value in b.items():
+            if isinstance(value, dict) and isinstance(out.get(key), dict):
+                out[key] = deep_merge(out[key], value)
+            else:
+                out[key] = value
+        return out
+
+    return model_cls.model_validate(
+        deep_merge(
+            base.model_dump(exclude_defaults=True),
+            override.model_dump(exclude_defaults=True),
+        )
+    )

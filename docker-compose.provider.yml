@@ -194,7 +194,12 @@ services:
       context: .
       dockerfile: services/dataset-api-mock/Dockerfile
     ports:
-      - "30002:30002"
+      # Host port is env-driven so the **real** dataset-api can take 30002 while
+      # the mock stays reachable for comparison. Set DATASET_API_MOCK_PORT in
+      # .env.local when running `docker-compose.dataset-api.yml`; both services
+      # binding 30002 is what makes `docker:restart` fail with "port is already
+      # allocated".
+      - "${DATASET_API_MOCK_PORT:-30002}:30002"
     environment:
       DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
       DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}

@@ -93,8 +93,23 @@ test.describe('operator', () => {
 		await page.waitForLoadState('networkidle');
 
 		// 8. The participant is now in the registry — the effect that matters.
-		await page.goto('/admin/participants');
-		await expect(page.getByText(alias, { exact: false }).first()).toBeVisible();
+		//
+		// Polled, not asserted once: the connector caches the participant
+		// registry for `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL` (60s by
+		// default), so a promote is not visible on this page immediately. A
+		// single 15s assertion made this test a coin flip on how recently
+		// anything else had read the registry.
+		//
+		// **The staleness is real, not a test artefact**: for up to the TTL the
+		// operator console shows a registry without the participant an operator
+		// just created. Worth fixing at the source — invalidate on promote —
+		// rather than only waiting here.
+		await expect(async () => {
+			await page.goto('/admin/participants');
+			await expect(page.getByText(alias, { exact: false }).first()).toBeVisible({
+				timeout: 2_000,
+			});
+		}).toPass({ timeout: 90_000 });
 	});
 
 	test('the bundle offers all three artefacts from one rotation', async ({ page }) => {

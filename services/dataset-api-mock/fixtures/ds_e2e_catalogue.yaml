@@ -1,0 +1,73 @@
+# Catalogue fixture for the **real** dataset-api, used by the ds e2e stack.
+#
+# One consent-gated dataset, declared the way every governance.yaml in demo3 and
+# celine-dev declares one: a `rec_registry` row filter on `device_id`. That
+# handler resolves *devices from a member*, which is precisely the shape a
+# dataspace query has to work with — the consumer is authorised for the subjects
+# who consented, and their devices are what the rows are keyed by.
+#
+# A fixture using `direct_user_match` would pass without ever exercising that,
+# which is the whole reason the mock was not enough.
+#
+# The dataset id is `datasets.silver.meters_15m` — **the id ds governance
+# publishes** — while the physical table is `ds_e2e.meters_15m`. They are
+# different things: the first is what the agreement names, the second is where
+# the rows live. Naming the entry after the table would make `authorize` refuse
+# with `dataset_not_in_agreement`, because the two catalogues would then be
+# describing different datasets.
+
+datasets:
+  datasets.silver.meters_15m:
+    title: Smart meter readings, 15 minute
+    description: >-
+      Consent-gated meter readings for the ds end-to-end flows. Rows are keyed by
+      `device_id`, resolved to members through the REC registry.
+    backend_type: postgres
+    backend_config:
+      table: ds_e2e.meters_15m
+    expose: true
+    ontology_path: null
+    schema_override_path: null
+    tags:
+      keywords:
+        - schema:ds_e2e
+        - type:table
+        - classification:pii
+      accessRights: restricted
+    lineage:
+      namespace: datasets.silver
+      name: datasets.silver.meters_15m
+      sourceName: postgres
+      facets:
+        schema:
+          _producer: ds-e2e/fixture
+          _schemaURL: https://openlineage.io/spec/facets/1-0-0/SchemaDatasetFacet.json
+          fields:
+            - name: timestamp
+              type: TIMESTAMP
+              description: null
+            - name: device_id
+              type: TEXT
+              description: The meter's sensor id, as the REC registry knows it
+            - name: kwh
+              type: DOUBLE PRECISION
+              description: null
+        governance:
+          _producer: ds-e2e/fixture
+          _schemaURL: file:///GovernanceDatasetFacet.schema.json
+          title: null
+          description: null
+          accessLevel: restricted
+          classification: pii
+          license: null
+          attribution: null
+          retentionDays: 730
+          sourceSystem: postgres
+          # The canonical form — `row_filters`, not `userFilterColumn`. The
+          # legacy spelling is what let the EDR path resolve nothing and serve
+          # every row, so the fixture must not use it.
+          rowFilters:
+            - handler: rec_registry
+              args:
+                column: device_id
+    access_level: restricted
