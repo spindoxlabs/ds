@@ -100,6 +100,8 @@ async def contract_negotiation_event(
             provider_id=event.payload.get("providerId") or settings.participant_id,
             policy_snapshot=event.payload.get("policy") or {},
             agreed_at=datetime.now(timezone.utc),
+            # The id the counterparty will name — see migration 0008.
+            dsp_agreement_id=event.payload.get("dspAgreementId"),
         )
     elif "TERMINATED" in event.type and event.agreement_id:
         # A negotiation can terminate after it produced an agreement — a subject

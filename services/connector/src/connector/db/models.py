@@ -21,7 +21,14 @@ class ContractAgreementORM(Base):
     __tablename__ = "contract_agreements"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    # This runtime's own id for the agreement. EDC generates it per side, so
+    # the provider and the consumer hold *different* values for one negotiation.
     agreement_id: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
+    # The shared DSP agreement id — `ContractAgreement.getAgreementId()`, equal
+    # on both sides. It is the only agreement identifier a counterparty can
+    # name, so it is what a data-plane request carries and what
+    # `/internal/dataplane/authorize` resolves.
+    dsp_agreement_id: Mapped[str | None] = mapped_column(Text, index=True)
     asset_id: Mapped[str] = mapped_column(Text, nullable=False)
     consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
     provider_id: Mapped[str] = mapped_column(Text, nullable=False)

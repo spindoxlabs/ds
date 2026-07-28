@@ -1,6 +1,10 @@
 """Internal API — used by Dataset API PEP for EDR validation and consent checks."""
 from __future__ import annotations
 
+import json
+import logging
+from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 import httpx
@@ -20,8 +24,28 @@ from ...dependencies import (
 )
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
+from ds.governance import subject_column
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/internal", tags=["internal"])
+
+
+class DataPlaneAuthorizeRequest(BaseModel):
+    """What a data plane knows about a request it has already authenticated.
+
+    ``consumer_did`` comes from the **verified** EDR token's ``aud`` — never from
+    a header. ``agreement_id`` and ``purpose`` come from headers and are
+    self-asserted, which is safe only because this endpoint refuses an agreement
+    that does not belong to ``consumer_did`` and a purpose the agreed policy does
+    not permit. A caller can therefore lie only within what it already holds.
+    """
+
+    consumer_did: str
+    agreement_id: str
+    dataset_ids: list[str]
+    purpose: list[str] = []
+    transfer_id: str | None = None
 
 
 class QueryAuditRequest(BaseModel):
@@ -147,6 +171,172 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
         return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
     except (httpx.RequestError, Exception):
         return None
+
+
+@router.post("/dataplane/authorize")
+async def dataplane_authorize(
+    body: DataPlaneAuthorizeRequest,
+    db: AsyncSession = Depends(get_db),
+    settings=Depends(get_settings_dep),
+    _claims: dict = Depends(require_internal_scope),
+):
+    """May this data-plane request return rows, and which ones?
+
+    ds is the control plane and decides; the data plane enforces. The caller
+    supplies what it has authenticated and what its client asserted; every fact
+    that decides the outcome is resolved here, from this connector's own records.
+
+    Five gates, per dataset, all fail-closed:
+
+    1. the agreement exists in **our** records — an EDC-side existence check
+       cannot answer the binding in (2), so an unknown agreement is refused
+       rather than looked up;
+    2. it belongs to ``consumer_did``. **This is the check that makes a
+       self-asserted header safe**: without it, naming someone else's agreement
+       id would read their data;
+    3. it covers *this* dataset — otherwise an agreement over an open dataset
+       would unlock a consent-gated one;
+    4. the transfer, when the caller names one, is still usable;
+    5. the purpose is one the agreed policy permits, and consent exists for it.
+
+    The verdict is **per dataset** because one SQL statement can touch several,
+    and the overall answer is the strictest of them: a join must not return rows
+    the strictest of its inputs would refuse.
+    """
+    from ...services import consent_vocabulary as vocab
+    from ...services.odrl_reader import extract_purposes
+
+    ttl = {"ttl_seconds": settings.dataplane_decision_ttl}
+
+    def refuse(reason: str, **extra):
+        """One deny shape. The data plane returns no rows for any of them."""
+        return {
+            "decision": "deny",
+            "reason": reason,
+            "agreement_id": body.agreement_id,
+            "datasets": [
+                {"dataset_id": d, "decision": "deny", "reason": reason, "row_filter": None}
+                for d in body.dataset_ids
+            ],
+            "cache": ttl,
+            **extra,
+        }
+
+    agreement = await get_agreement_status(db, body.agreement_id)
+    if agreement is None:
+        return refuse("agreement_unknown")
+    if not agreement.get("active"):
+        return refuse("agreement_inactive")
+    if (agreement.get("consumer_id") or "") != body.consumer_did:
+        # Deliberately the same shape as every other refusal, and deliberately
+        # not "which consumer does own it" — a probe must not learn that.
+        return refuse("not_your_agreement")
+
+    if body.transfer_id:
+        # Reuse the route the PEP already calls, so "is this transfer usable"
+        # has one answer and not two that can drift.
+        transfer = await transfer_status(
+            body.transfer_id, body.agreement_id, db, _claims
+        )
+        if not transfer.get("active"):
+            return refuse("transfer_inactive", detail=transfer.get("reason"))
+
+    agreed_purposes: list[str] = []
+    try:
+        agreed_purposes = vocab.normalise_purposes(
+            extract_purposes(agreement.get("policy_snapshot"))
+        )
+    except vocab.VocabularyError:
+        # A policy naming a purpose we cannot resolve is not a reason to serve
+        # data: it is a reason to stop and look.
+        return refuse("agreed_policy_unreadable")
+
+    try:
+        requested = vocab.normalise_purposes(body.purpose)
+    except vocab.VocabularyError as exc:
+        return refuse("purpose_unknown", detail=str(exc))
+
+    if requested and agreed_purposes:
+        for purpose in requested:
+            if not vocab.purpose_covered([purpose], agreed_purposes):
+                return refuse("purpose_not_agreed", detail=purpose)
+
+    datasets = []
+    for dataset_id in body.dataset_ids:
+        datasets.append(
+            await _authorize_dataset(
+                db,
+                dataset_id=dataset_id,
+                agreement=agreement,
+                consumer_did=body.consumer_did,
+                purposes=requested,
+            )
+        )
+
+    denied = next((d for d in datasets if d["decision"] == "deny"), None)
+    return {
+        "decision": "deny" if denied else "allow",
+        "reason": denied["reason"] if denied else None,
+        "agreement_id": body.agreement_id,
+        "transfer_id": body.transfer_id,
+        "purpose": requested,
+        "datasets": datasets,
+        "cache": ttl,
+    }
+
+
+async def _authorize_dataset(
+    db: AsyncSession,
+    *,
+    dataset_id: str,
+    agreement: dict,
+    consumer_did: str,
+    purposes: list[str],
+) -> dict:
+    """One dataset's verdict, with the row filter that goes with it."""
+    from ...services.consent_service import get_granted_subject_ids
+    from ...services import consent_vocabulary as vocab
+
+    def verdict(decision: str, reason: str | None = None, row_filter=None) -> dict:
+        return {
+            "dataset_id": dataset_id,
+            "decision": decision,
+            "reason": reason,
+            "row_filter": row_filter,
+        }
+
+    if dataset_id != agreement.get("asset_id"):
+        return verdict("deny", "dataset_not_in_agreement")
+
+    try:
+        rule = vocab.resolve_dataset(dataset_id)
+    except vocab.VocabularyError:
+        return verdict("deny", "dataset_unknown")
+
+    if not vocab.requires_consent(rule):
+        # No data subject behind these rows, so nothing to filter on. The
+        # agreement gates it and the agreement said yes.
+        return verdict("allow")
+
+    if not purposes:
+        # The same rule `/internal/consent/check` applies: no stated reason, no
+        # rows. A consent-gated dataset cannot be read "just because".
+        return verdict("deny", "purpose_required")
+
+    subject_ids = await get_granted_subject_ids(
+        db, dataset_id, consumer_did, purpose=purposes, consent_required=True
+    )
+    if not subject_ids:
+        return verdict("deny", "no_consent")
+
+    column = subject_column(rule)
+    if not column:
+        # Consent is required but governance names no column to filter on, so
+        # the filter cannot be applied and every row would leave. Refuse and let
+        # the misconfiguration surface.
+        return verdict("deny", "no_user_filter_column")
+
+    return verdict("allow", row_filter={"column": column, "subject_ids": subject_ids})
 
 
 @router.get("/consent/check")
@@ -488,23 +678,66 @@ async def audit_query(
 async def edr_jwks(
     _claims: dict = Depends(require_internal_scope),
 ):
-    """Proxy the EDC provider JWKS endpoint.
+    """The public key EDR tokens are signed with.
 
-    Allows the Dataset API (or any other consumer) to fetch the provider's
-    public key set for EDR JWT signature verification without needing direct
-    access to the EDC management API.
+    A data plane in this topology is the EDR endpoint itself — upstream removed
+    the proxy that used to verify the token before the request arrived — so it
+    has to verify the signature, and for that it needs this key.
+
+    It is read from the **same vault seed EDC signs with**
+    (`edc.transfer.proxy.token.signer.privatekey.alias`), with the private
+    component stripped. Earlier this route proxied EDC's `/v3/jwks`, which does
+    not exist at 0.16 — every fetch was a 404 dressed as a 502, and nothing
+    noticed because nothing consumed it.
+
+    Serving it from the vault rather than a second copy of the key is what keeps
+    rotation honest: change the seed and this answer changes with it.
     """
     settings = get_settings()
-    jwks_url = f"{settings.edc_provider_management_url.rstrip('/')}/v3/jwks"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(
-                jwks_url,
-                headers={"X-Api-Key": settings.edc_api_key},
-            )
-            resp.raise_for_status()
-            return resp.json()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC JWKS fetch failed: {exc.response.status_code}") from exc
-    except httpx.RequestError:
-        raise HTTPException(502, "EDC unreachable")
+    jwk = _edr_public_jwk(settings)
+    if jwk is None:
+        raise HTTPException(
+            503,
+            "No EDR verification key configured — set CONNECTOR_EDC_VAULT_FILE "
+            "and CONNECTOR_EDR_SIGNER_ALIAS to the vault seed EDC signs with.",
+        )
+    return {"keys": [jwk]}
+
+
+@lru_cache(maxsize=4)
+def _edr_public_jwk_cached(vault_file: str, alias: str) -> dict | None:
+    path = Path(vault_file)
+    if not path.exists():
+        log.warning("EDR vault seed not found: %s", path)
+        return None
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        if key.strip() != alias:
+            continue
+        try:
+            jwk = json.loads(value.strip())
+        except json.JSONDecodeError:
+            log.warning("Vault entry %s is not a JWK", alias)
+            return None
+        # Public components only. `d` is the private scalar and must never
+        # leave this process, grant or no grant.
+        public = {k: v for k, v in jwk.items() if k not in {"d", "p", "q", "dp", "dq", "qi"}}
+        # **`kid` is the vault alias, not whatever the JWK claims.** EDC stamps
+        # the alias it signed with into the token header
+        # (`participant-private-key`), while the seeded JWK carries its own
+        # (`edr-provider-key-1`). Publishing the JWK's own kid made every
+        # kid-indexed lookup miss, so a verifier had to try every key and hope.
+        # Publishing the alias is what makes `kid` mean what JWKS says it means.
+        public["kid"] = alias
+        return public
+    log.warning("Alias %s not present in %s", alias, path)
+    return None
+
+
+def _edr_public_jwk(settings) -> dict | None:
+    if not settings.edc_vault_file:
+        return None
+    return _edr_public_jwk_cached(settings.edc_vault_file, settings.edr_signer_alias)

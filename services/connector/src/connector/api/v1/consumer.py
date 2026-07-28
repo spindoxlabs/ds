@@ -14,7 +14,12 @@ from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
 from ...dependencies import get_consumer_service, get_db, get_settings_dep
 from ...registry.participants import UnknownParticipantError
 from ...schemas.edc import FlowRequest, FlowResult
-from ...services.agreement_service import terminate_agreement, upsert_agreement
+from ...services.agreement_service import (
+    get_agreement_status,
+    terminate_agreement,
+    upsert_agreement,
+)
+from ...services.odrl_reader import extract_purposes
 from ds_auth.user_credentials import verify_user_vc_jwt
 
 router = APIRouter(prefix="/consumer", tags=["consumer"])
@@ -617,15 +622,48 @@ async def get_edr(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
+    """The EDR, plus what the client must send with it.
+
+    The endpoint and token come from EDC. The three `Edc-*` values a data-plane
+    query carries — agreement, transfer, purpose — are **this connector's**
+    records, and they are returned here so a client forwards them rather than
+    inventing them. In particular `purpose` is the purpose declared when access
+    was requested: a client that made a declaration then queries under it, which
+    is what makes the declaration mean something at query time instead of only
+    in an audit record.
+    """
     _verify_consumer_user(x_user_vc, x_subject_id, settings)
     if not await _subject_owns_transfer(db, transfer_id, x_subject_id):
         raise HTTPException(404, "Transfer not found")
     try:
-        return await svc.get_edr(transfer_id)
+        edr = await svc.get_edr(transfer_id)
     except httpx.RequestError as exc:
         raise HTTPException(502, f"EDC EDR lookup failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC EDR lookup failed: {exc.response.text}") from exc
+
+    result = await db.execute(
+        select(ConsumerAccessRequestORM).where(
+            ConsumerAccessRequestORM.transfer_id == transfer_id
+        )
+    )
+    request = result.scalar_one_or_none()
+    # `get_edr` returns an `EdrResponse`, not a dict — an `isinstance(edr, dict)`
+    # guard here silently skipped the whole block and the client got an EDR with
+    # nothing to put in its headers.
+    payload = edr.model_dump() if hasattr(edr, "model_dump") else dict(edr)
+    if request is not None:
+        # The **shared** DSP agreement id, resolved from our own record: the
+        # local id EDC gave us means nothing to the provider (migration 0008).
+        shared = await get_agreement_status(db, request.contract_agreement_id or "")
+        payload = {
+            **payload,
+            "agreement_id": (shared or {}).get("dsp_agreement_id")
+            or request.contract_agreement_id,
+            "transfer_id": transfer_id,
+            "purpose": request.declared_purpose or [],
+        }
+    return payload
 
 
 @router.post("/flow", response_model=FlowResult)
@@ -713,52 +751,8 @@ async def _access_request_for_negotiation(
     return result.scalar_one_or_none()
 
 
-# Both forms the operand reaches us in: `odrl:purpose` as served by the
-# federated catalogue, and the IRI ODRL's context expands it to. Mirrors
-# `Purposes.COMPACT` / `Purposes.EXPANDED` in the EDC extension — the two sides
-# read the same constraint and must agree on what counts as one.
-_PURPOSE_OPERANDS = {"odrl:purpose", "http://www.w3.org/ns/odrl/2/purpose"}
-
-
-def _purpose_values(right) -> list[str]:
-    """Every purpose IRI in a right operand, scalar or set-valued.
-
-    A single-purpose dataset yields a scalar (``odrl:isA``); a multi-purpose one
-    yields a **list** (``odrl:isAnyOf``), which is what the ODRL Information
-    Model prescribes for set-based operators. Reading only the scalar form
-    dropped the entire purpose list of exactly the datasets whose purpose is
-    ambiguous — the ones this record exists to disambiguate.
-    """
-    values: list[str] = []
-    for item in right if isinstance(right, list) else [right]:
-        if isinstance(item, dict):
-            item = item.get("@id") or item.get("id") or item.get("@value")
-        if isinstance(item, str) and item not in values:
-            values.append(item)
-    return values
-
-
-def _extract_purposes(policy: dict | None) -> list[str]:
-    purposes: list[str] = []
-
-    def walk(value):
-        if isinstance(value, list):
-            for item in value:
-                walk(item)
-        elif isinstance(value, dict):
-            left = value.get("odrl:leftOperand") or value.get("leftOperand")
-            if isinstance(left, dict):
-                left = left.get("@id") or left.get("id")
-            if left in _PURPOSE_OPERANDS:
-                right = value.get("odrl:rightOperand") or value.get("rightOperand")
-                for purpose in _purpose_values(right):
-                    if purpose not in purposes:
-                        purposes.append(purpose)
-            for item in value.values():
-                walk(item)
-
-    walk(policy or {})
-    return purposes
+# One reader for both sides of the exchange — see `services/odrl_reader.py`.
+_extract_purposes = extract_purposes
 
 
 def _validated_declaration(req: NegotiateRequest) -> list[str]:

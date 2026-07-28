@@ -75,6 +75,24 @@ class Settings(BaseSettings):
     consent_pending_ttl: str = "P30D"
     consent_pending_sweep_interval: float = 3600.0
 
+    # How long a data plane may reuse an `allow` from
+    # `POST /internal/dataplane/authorize`.
+    #
+    # This is a **security** parameter, not a performance one. An EDR token
+    # carries no `exp` (EDC 0.16 `DataPlaneAuthorizationServiceImpl.createTokenParams`)
+    # and nothing resolves it against EDC in our topology, so this window *is*
+    # how long a revoked agreement or a withdrawn consent keeps yielding rows.
+    # Raise it only with that sentence in mind.
+    dataplane_decision_ttl: int = 30
+
+    # The vault seed EDC signs EDR tokens with, and the alias inside it
+    # (`edc.transfer.proxy.token.signer.privatekey.alias`). `/internal/edr-jwks`
+    # serves the public half so a data plane can verify a token nothing else
+    # checks. Reading the same file EDC reads is what keeps the two from
+    # drifting on rotation.
+    edc_vault_file: str | None = None
+    edr_signer_alias: str = "participant-private-key"
+
     negotiation_poll_interval: float = 2.0
     negotiation_timeout: float = 120.0
     transfer_poll_interval: float = 2.0

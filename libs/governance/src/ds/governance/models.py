@@ -47,6 +47,15 @@ class GovernanceRule(BaseModel):
     retention_days: int | None = None
     documentation_url: str | None = None
     source_system: str | None = None
+    # **Legacy.** `celine-utils/schema/governance.schema.json` — the canonical
+    # authoring schema — defines `row_filters` and *not* this field. The real
+    # dataset-api agrees: `row_filters/specs.py` documents `userFilterColumn`
+    # as legacy and migrates it into `{handler: direct_user_match, args: {column}}`.
+    #
+    # Kept because deployed governance files still use it. Never read it
+    # directly — call `subject_column(rule)`, which normalises both spellings.
+    # Reading one spelling is how a correctly-configured dataset gets refused
+    # (or, worse, served unfiltered).
     user_filter_column: str | None = None
     row_filters: list["RowFilter"] = Field(default_factory=list)
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -269,3 +278,32 @@ def load_odrl_profile(path: Path | str | None = None) -> OdrlProfile:
         raw = yaml.safe_load(f) or {}
     logger.debug("Loaded ODRL profile from %s", p)
     return OdrlProfile.model_validate(raw)
+
+
+def subject_column(rule: "GovernanceRule | GovernanceRuleV2") -> str | None:
+    """The column carrying the data subject, however governance spelled it.
+
+    Two spellings are in use and both are legitimate input:
+
+    - `row_filters[].args.column` — canonical, and what
+      `celine-utils/schema/governance.schema.json` defines;
+    - `user_filter_column` — legacy, still present in deployed files.
+
+    Mirrors `get_row_filter_specs` in the real dataset-api, which treats the
+    second as legacy input to the first. Every consumer of this fact — the ODRL
+    mapper, the compliance matrix, the connector's data-plane authorisation —
+    must go through here, because the two readings disagree exactly where it
+    matters: a consent-gated dataset declared canonically has no
+    `user_filter_column`, and a reader that only knows that field concludes
+    there is nothing to filter on.
+    """
+    if getattr(rule, "user_filter_column", None):
+        return rule.user_filter_column
+    for row_filter in getattr(rule, "row_filters", None) or []:
+        args = getattr(row_filter, "args", None)
+        # A model when parsed from governance YAML, a plain dict when a rule is
+        # built by hand in a test or a fixture.
+        column = args.get("column") if isinstance(args, dict) else getattr(args, "column", None)
+        if column:
+            return str(column)
+    return None

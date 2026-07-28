@@ -82,27 +82,33 @@ export const POST: RequestHandler = async ({ params, locals }) => {
 	}
 
 	const queryUrl = toInternalDataUrl(endpoint);
-	const consumerId = env.CONSUMER_PARTICIPANT_DID ?? 'did:web:consumer.dataspaces.localhost';
+	// The query names the dataset, the way the real dataset-api resolves it from
+	// SQL. It is never a parameter beside the agreement: two sources for "which
+	// dataset" is two chances for them to disagree.
+	const assetId = transfer.assetId ?? transfer.asset_id ?? edr.asset_id ?? '';
 	const agreementId =
-		transfer.contractId
+		edr.agreement_id
+		?? transfer.contractId
 		?? transfer.contract_agreement_id
-		?? transfer.contractAgreementId
-		?? transfer.contract_agreement_id;
+		?? transfer.contractAgreementId;
 
-	if (!queryUrl.searchParams.has('consumer_id')) {
-		queryUrl.searchParams.set('consumer_id', consumerId);
-	}
-	if (agreementId && !queryUrl.searchParams.has('agreement_id')) {
-		queryUrl.searchParams.set('agreement_id', String(agreementId));
-	}
-	if (!queryUrl.searchParams.has('transfer_id')) {
-		queryUrl.searchParams.set('transfer_id', params.id);
-	}
-
+	// The exchange identifiers travel as headers, never as query parameters.
+	// The data plane decides nothing from them on its own — it authenticates the
+	// EDR token and asks ds, which refuses an agreement that is not this
+	// consumer's and a purpose the agreement does not permit. `purpose` is the
+	// one declared when access was requested, supplied by the connector so the
+	// portal cannot quietly query under a different one.
+	const purposes: string[] = Array.isArray(edr.purpose) ? edr.purpose : [];
 	const dataRes = await fetch(queryUrl, {
+		method: 'POST',
 		headers: {
+			'Content-Type': 'application/json',
 			...(edr.authorization ? { Authorization: String(edr.authorization) } : {}),
+			...(agreementId ? { 'Edc-Contract-Agreement-Id': String(agreementId) } : {}),
+			'Edc-Transfer-Process-Id': params.id,
+			...(purposes.length ? { 'Edc-Purpose': purposes.join(',') } : {}),
 		},
+		body: JSON.stringify({ sql: `SELECT * FROM ${String(assetId)}`, limit: 100 }),
 	});
 
 	if (!dataRes.ok) {

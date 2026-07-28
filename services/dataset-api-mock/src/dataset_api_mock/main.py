@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jwt
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .metrics import install_metrics
@@ -32,6 +34,10 @@ class Settings(BaseSettings):
     enforce_consent: bool = True
     external_query_url: str | None = None
     extra_datasets_path: str | None = None
+    # Verify the EDR token's signature against ds's JWKS proxy. Off only for a
+    # stack whose EDC JWKS is unreachable; `_check_production_config` refuses it
+    # in production, because with it off a bearer string is an assertion.
+    verify_edr: bool = True
 
 
 settings = Settings()
@@ -58,6 +64,14 @@ def _check_production_config() -> None:
         {"svc-ds-dataset-api"},
         "Set the Keycloak client secret for svc-ds-dataset-api.",
     )
+    if not settings.verify_edr:
+        guard.forbid_default(
+            "DATASET_API_VERIFY_EDR",
+            "false",
+            {"false"},
+            "Nothing else validates the EDR token in this topology — with "
+            "verification off, any bearer string names any consumer.",
+        )
     guard.enforce()
 
 
@@ -225,95 +239,290 @@ async def catalogue_item(asset_id: str) -> dict[str, Any]:
     raise HTTPException(404, f"Unknown asset {asset_id!r}")
 
 
-@app.api_route("/query", methods=["GET", "POST"])
+class DatasetQueryModel(BaseModel):
+    """Mirrors `celine.dataset.schemas.dataset_query.DatasetQueryModel`.
+
+    Field for field, including the defaults. A mock whose request model differs
+    from the real one validates a contract nobody runs.
+    """
+
+    sql: str | None = None
+    limit: int = 100
+    offset: int = 0
+    skip_count: bool = False
+
+
+class DatasetQueryResult(BaseModel):
+    """Mirrors `celine.dataset.schemas.dataset_query.DatasetQueryResult`."""
+
+    items: list[dict[str, Any]]
+    offset: int
+    limit: int
+    count: int
+    total: int | None = None
+
+
+@app.post("/query", response_model=DatasetQueryResult)
 async def query(
-    request: Request,
-    dataset_name: str = Query(default="datasets.gold.om_weather_features"),
-    consumer_id: str | None = Query(default=None),
-    subject_id: str | None = Query(default=None),
-    agreement_id: str | None = Query(default=None),
-    transfer_id: str | None = Query(default=None),
-    purpose: str | None = Query(
-        default=None,
-        description="Comma-separated purpose slugs — the reason this query is "
-        "made. Rows belonging to subjects who did not consent to it are filtered "
-        "out. Required for consent-gated datasets.",
-    ),
-) -> dict[str, Any]:
-    if request.method == "POST":
-        body = await request.json()
-        dataset_name = body.get("dataset_name", dataset_name)
-        consumer_id = body.get("consumer_id", consumer_id)
-        subject_id = body.get("subject_id", subject_id)
-        agreement_id = body.get("agreement_id", agreement_id)
-        transfer_id = body.get("transfer_id", transfer_id)
-        purpose = body.get("purpose", purpose)
-    if isinstance(purpose, list):
-        purpose = ",".join(purpose)
+    body: DatasetQueryModel,
+    authorization: str | None = Header(default=None),
+    edc_contract_agreement_id: str | None = Header(default=None),
+    edc_transfer_process_id: str | None = Header(default=None),
+    edc_purpose: str | None = Header(default=None),
+) -> DatasetQueryResult:
+    """Query datasets — in dataspace mode, or the way this service always worked.
 
-    spec = DATASETS.get(dataset_name)
-    if not spec:
-        raise HTTPException(404, f"Unknown dataset {dataset_name!r}")
-    if not _dataset_enabled(spec):
-        raise HTTPException(404, f"Dataset {dataset_name!r} is not enabled in this runtime profile")
+    **`Edc-Contract-Agreement-Id` present → dataspace mode.** Absent → the plain
+    path, which is what a non-dataspace deployment runs today and which this
+    change must not disturb.
 
+    Dataspace mode never falls back to the plain path on failure. A fallback
+    between two authorization regimes is a bypass with extra steps.
+
+    The datasets come from the query itself, never from a parameter: what a
+    caller may read is decided by ds from the agreement, and letting the caller
+    *name* the dataset alongside it invites the two to disagree.
+    """
+    dataset_names = _datasets_in_sql(body.sql)
+    if not dataset_names:
+        raise HTTPException(400, "No known dataset referenced in the query")
+
+    if edc_contract_agreement_id is None:
+        return await _plain_query(dataset_names, body)
+
+    return await _dataspace_query(
+        dataset_names,
+        body,
+        bearer=authorization,
+        agreement_id=edc_contract_agreement_id,
+        transfer_id=edc_transfer_process_id,
+        purpose=edc_purpose,
+    )
+
+
+def _datasets_in_sql(sql: str | None) -> list[str]:
+    """Which known datasets does this statement touch?
+
+    The real service resolves them through the catalogue and its SQL parser;
+    the FIWARE/QuantumLeap module resolves them its own way. Matching known
+    names against the statement is the mock's equivalent — the *contract* is
+    "the query says which datasets", and that is what has to be identical.
+    """
+    if not sql:
+        return []
+    return [name for name in _enabled_datasets() if name in sql]
+
+
+async def _rows_for(dataset_names: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    name = dataset_names[0]
+    spec = DATASETS[name]
     rows = (
         await _query_external(spec)
         if spec.get("source") == "external"
         else list(spec["rows"])
     )
-    authorization: dict[str, Any] = {
-        "dataset_name": dataset_name,
-        "requires_consent": spec["requires_consent"],
-        "consumer_id": consumer_id,
-        "agreement_id": agreement_id,
-        "transfer_id": transfer_id,
-        "consent_checked": False,
-        "authorized_subject_ids": None,
-    }
+    return rows, spec
 
-    if transfer_id:
-        transfer_active = await _transfer_active(transfer_id, agreement_id)
-        authorization["transfer_active"] = transfer_active
-        if transfer_active is False:
-            raise HTTPException(403, "Transfer is not active")
 
-    if agreement_id:
-        authorization["agreement_active"] = await _agreement_active(agreement_id)
-        if authorization["agreement_active"] is False:
-            authorization["agreement_active"] = None
+def _page(rows: list[dict[str, Any]], body: DatasetQueryModel) -> DatasetQueryResult:
+    window = rows[body.offset : body.offset + body.limit]
+    return DatasetQueryResult(
+        items=window,
+        offset=body.offset,
+        limit=body.limit,
+        count=len(window),
+        total=None if body.skip_count else len(rows),
+    )
 
-    if settings.enforce_consent and spec["requires_consent"]:
-        if not consumer_id:
-            raise HTTPException(
-                403,
-                "consumer_id is required for consent-protected datasets in mock mode",
-            )
-        subject_ids = await _granted_subject_ids(
-            dataset_name, spec["asset_id"], consumer_id, subject_id, purpose
-        )
-        subject_column = spec.get("subject_column", "sub")
-        rows = [row for row in rows if row.get(subject_column) in subject_ids]
-        authorization["consent_checked"] = True
-        authorization["purpose"] = purpose
-        authorization["authorized_subject_ids"] = subject_ids
+
+async def _plain_query(dataset_names: list[str], body: DatasetQueryModel) -> DatasetQueryResult:
+    """Non-dataspace mode: no ds involvement at all, by design."""
+    rows, _ = await _rows_for(dataset_names)
+    return _page(rows, body)
+
+
+async def _dataspace_query(
+    dataset_names: list[str],
+    body: DatasetQueryModel,
+    *,
+    bearer: str | None,
+    agreement_id: str,
+    transfer_id: str | None,
+    purpose: str | None,
+) -> DatasetQueryResult:
+    consumer_did = await _verified_consumer(bearer)
+
+    decision = await _authorize(
+        consumer_did=consumer_did,
+        agreement_id=agreement_id,
+        transfer_id=transfer_id,
+        purpose=[p.strip() for p in (purpose or "").split(",") if p.strip()],
+        dataset_ids=[DATASETS[n]["asset_id"] for n in dataset_names],
+    )
+    if decision.get("decision") != "allow":
+        # The reason is ds's, and it is safe to relay: it names the gate, never
+        # who else holds the agreement.
+        raise HTTPException(403, f"Refused by ds: {decision.get('reason')}")
+
+    rows, spec = await _rows_for(dataset_names)
+    verdict = next(
+        (d for d in decision.get("datasets", []) if d["dataset_id"] == spec["asset_id"]),
+        None,
+    )
+    row_filter = (verdict or {}).get("row_filter")
+    subject_ids = None
+    if row_filter:
+        column = row_filter["column"]
+        subject_ids = row_filter["subject_ids"]
+        rows = [row for row in rows if row.get(column) in subject_ids]
 
     await _audit_query(
         dataset_id=spec["asset_id"],
-        consumer_id=consumer_id,
-        subject_id=subject_id,
+        consumer_id=consumer_did,
+        subject_id=None,
         agreement_id=agreement_id,
         transfer_id=transfer_id,
         row_count=len(rows),
-        authorized_subject_ids=authorization["authorized_subject_ids"],
+        authorized_subject_ids=subject_ids,
     )
+    return _page(rows, body)
 
-    return {
-        "dataset_name": dataset_name,
-        "count": len(rows),
-        "rows": rows,
-        "authorization": authorization,
+
+_jwks_cache: dict[str, Any] = {}
+
+
+async def _verified_consumer(bearer: str | None) -> str:
+    """The consumer DID this request proves, from the EDR token's ``aud``.
+
+    **Nothing else validates this token.** The EDC data-plane proxy was removed
+    upstream (`data-plane-public-api-v2`, deprecated), so the EDR endpoint we
+    hand out *is* this service — there is no proxy in front to check the
+    signature. And the token carries no ``exp``
+    (`DataPlaneAuthorizationServiceImpl.createTokenParams` at v0.16.0), so a
+    leaked one is valid until the agreement behind it is revoked. Verifying it
+    here is the only thing standing between a bearer string and somebody's data.
+
+    ``aud`` is the one identity fact that must never come from a header: it is
+    what ds checks the agreement against.
+    """
+    if not settings.verify_edr:
+        # Dev escape hatch, off by default and refused in production by the
+        # guard above — it exists so a stack without a reachable EDC JWKS can
+        # still be brought up, not so a deployment can skip verification.
+        return _unverified_aud(bearer)
+
+    token = (bearer or "").removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(401, "Dataspace mode requires the EDR token")
+
+    claims = None
+    for key in await _verification_keys():
+        try:
+            claims = jwt.decode(
+                token,
+                key=key,
+                algorithms=["ES256", "RS256"],
+                options={"verify_aud": False, "verify_exp": False},
+            )
+            break
+        except Exception:  # noqa: BLE001 — try the next key, refuse if none fit
+            continue
+    if claims is None:
+        # Every key in the set is tried rather than the one matching `kid`: EDC
+        # sets `kid` to its **vault alias** (`participant-private-key`) while the
+        # JWK carries its own (`edr-provider-key-1`), so a kid-indexed lookup
+        # never matches. The set is one or two keys, so trying them all costs
+        # nothing and survives a rotation that changes either name.
+        raise HTTPException(401, "EDR token is not valid")
+
+    audience = claims.get("aud")
+    if isinstance(audience, list):
+        audience = audience[0] if audience else None
+    if not audience:
+        raise HTTPException(401, "EDR token names no audience")
+    return str(audience)
+
+
+def _unverified_aud(bearer: str | None) -> str:
+    token = (bearer or "").removeprefix("Bearer ").strip()
+    if not token:
+        raise HTTPException(401, "Dataspace mode requires the EDR token")
+    try:
+        claims = jwt.decode(token, options={"verify_signature": False})
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(401, "EDR token is not a JWT") from exc
+    audience = claims.get("aud")
+    if isinstance(audience, list):
+        audience = audience[0] if audience else None
+    if not audience:
+        raise HTTPException(401, "EDR token names no audience")
+    log.warning("EDR signature NOT verified — DATASET_API_VERIFY_EDR is off")
+    return str(audience)
+
+
+async def _verification_keys() -> list[Any]:
+    """The provider's EDR signing keys, via ds.
+
+    ds serves the public half of the vault key EDC signs with
+    (`/internal/edr-jwks`), so this service never needs the EDC vault or the
+    management credential. Cached after the first fetch; a verification failure
+    clears the cache so a rotation does not need a restart.
+    """
+    from jwt import PyJWK
+
+    if _jwks_cache.get("keys"):
+        return _jwks_cache["keys"]
+
+    url = f"{settings.connector_internal_url.rstrip('/')}/internal/edr-jwks"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        response = await client.get(url, headers=await _internal_headers())
+    response.raise_for_status()
+
+    keys = []
+    for entry in response.json().get("keys", []):
+        try:
+            keys.append(PyJWK.from_dict({**entry, "alg": entry.get("alg", "ES256")}).key)
+        except Exception:  # noqa: BLE001 — an unusable key is not a fatal one
+            log.warning("Unusable JWK in the EDR key set: %s", entry.get("kid"))
+    if not keys:
+        raise HTTPException(503, "ds published no usable EDR verification key")
+    _jwks_cache["keys"] = keys
+    return keys
+
+
+async def _authorize(
+    *,
+    consumer_did: str,
+    agreement_id: str,
+    transfer_id: str | None,
+    purpose: list[str],
+    dataset_ids: list[str],
+) -> dict[str, Any]:
+    """Ask ds whether rows may flow, and which.
+
+    One call, one decision. This service assembles nothing: agreement validity,
+    the agreement↔consumer binding, purpose admissibility and the consent pool
+    are all ds's to answer, because ds is the control plane.
+    """
+    url = f"{settings.connector_internal_url.rstrip('/')}/internal/dataplane/authorize"
+    payload = {
+        "consumer_did": consumer_did,
+        "agreement_id": agreement_id,
+        "transfer_id": transfer_id,
+        "purpose": purpose,
+        "dataset_ids": dataset_ids,
     }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.post(url, json=payload, headers=await _internal_headers())
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(502, f"ds-connector refused the check: {exc.response.status_code}") from exc
+    except httpx.RequestError as exc:
+        # ds unreachable is a denial, never an allow: the control plane not
+        # answering is exactly when the data plane must not improvise.
+        raise HTTPException(502, "ds-connector unreachable") from exc
+    return response.json()
 
 
 async def _internal_headers() -> dict[str, str]:
@@ -331,31 +540,6 @@ async def _internal_headers() -> dict[str, str]:
     turn a clear configuration error into a 403 at query time.
     """
     return {"Authorization": f"Bearer {await _token_provider()}"}
-
-
-async def _agreement_active(agreement_id: str) -> bool | None:
-    url = f"{settings.connector_internal_url.rstrip('/')}/internal/agreements/{agreement_id}/status"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, headers=await _internal_headers())
-        if response.status_code == 404:
-            return False
-        response.raise_for_status()
-        return bool(response.json().get("active"))
-    except httpx.RequestError:
-        return None
-
-
-async def _transfer_active(transfer_id: str, agreement_id: str | None) -> bool | None:
-    url = f"{settings.connector_internal_url.rstrip('/')}/internal/transfers/{transfer_id}/status"
-    params = {"agreement_id": agreement_id} if agreement_id else None
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            response = await client.get(url, params=params, headers=await _internal_headers())
-        response.raise_for_status()
-        return bool(response.json().get("active"))
-    except httpx.RequestError:
-        return None
 
 
 async def _audit_query(
@@ -419,40 +603,3 @@ async def _query_external(spec: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
-async def _granted_subject_ids(
-    dataset_name: str,
-    asset_id: str,
-    consumer_id: str,
-    subject_id: str | None,
-    purpose: str | None = None,
-) -> list[str]:
-    """Subjects whose consent covers this consumer *and this purpose*.
-
-    Passing the purpose through is what makes the declaration binding: for a
-    consent-gated dataset the connector denies when no purpose is given, so a
-    caller that omits it receives no rows rather than all of them.
-    """
-    candidates = [dataset_name, asset_id]
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        for dataset_id in candidates:
-            params = {"dataset_id": dataset_id, "consumer_id": consumer_id}
-            if subject_id:
-                params["subject_id"] = subject_id
-            if purpose:
-                params["purpose"] = purpose
-            try:
-                response = await client.get(
-                    f"{settings.connector_internal_url.rstrip('/')}/internal/consent/check",
-                    params=params,
-                    headers=await _internal_headers(),
-                )
-                response.raise_for_status()
-            except (httpx.RequestError, httpx.HTTPStatusError):
-                continue
-            body = response.json()
-            if subject_id and body.get("consent_active"):
-                return [subject_id]
-            subject_ids = body.get("subject_ids") or []
-            if subject_ids:
-                return subject_ids
-    return []

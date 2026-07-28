@@ -37,8 +37,6 @@ sources:
         base_url: "http://dataset-api:30002/query"
         proxy_path: false
         proxy_query_params: true
-        query_params:
-          dataset_name: "datasets.gold.om_weather_features"
 
   # ── Smart Meter Readings (silver, PII) ─────────────────────────────────────
   datasets.silver.meters_15m:
@@ -71,5 +69,3 @@ sources:
         type: HttpData
         base_url: "http://dataset-api:30002/query"
         proxy_query_params: true
-        query_params:
-          dataset_name: "datasets.silver.meters_15m"

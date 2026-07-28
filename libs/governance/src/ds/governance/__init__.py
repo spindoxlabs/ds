@@ -17,6 +17,7 @@ from .models import (
     PurposeConcept,
     SKOS_MATCH_RELATIONS,
     load_odrl_profile,
+    subject_column,
 )
 from .sharing import (
     CONSENT_BASIS,
@@ -56,6 +57,7 @@ __all__ = [
     "PurposeConcept",
     "SKOS_MATCH_RELATIONS",
     "load_odrl_profile",
+    "subject_column",
     "CONSENT_BASIS",
     "DPV_LEGAL_BASES",
     "OfferCoverage",

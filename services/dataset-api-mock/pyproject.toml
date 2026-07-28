@@ -16,6 +16,10 @@ dependencies = [
     # /internal/* API as svc-ds-dataset-api rather than with the shared
     # X-Api-Key, which is also EDC's Management API key.
     "ds-auth",
+    # EDR verification. The token is ES256-signed by the provider EDC, and in
+    # our topology nothing else validates it before the request lands here.
+    "pyjwt>=2.9",
+    "cryptography",
 ]
 
 [tool.uv.sources]

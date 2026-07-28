@@ -1,0 +1,143 @@
+# The **real** dataset-api and rec-registry, against the ds stack.
+#
+# `services/dataset-api-mock` mirrors this service's signature, but a mirror
+# proves nothing about the original: every ds flow that passes against the mock
+# is evidence about an API nobody runs. This compose runs the real one — from
+# `celine-dev/repositories/dataset-api` — in the mock's place, so `ds-e2e` and
+# the Playwright journeys exercise the service production uses, unchanged.
+#
+# rec-registry comes with it because it is not optional: every consent-gated
+# dataset in demo3 and celine-dev declares
+# `row_filters: [{handler: rec_registry, args: {column: device_id}}]`. That
+# handler resolves *devices*, not subject DIDs. Without a real registry the
+# integration would exercise a filter shape production does not use.
+#
+#   docker compose -f docker-compose.dataset-api.yml up -d
+#
+# Paths are relative to this file and overridable with DATASET_API_PATH /
+# REC_REGISTRY_PATH, so a checkout elsewhere needs no edit here.
+#
+# The mock keeps port 30002; this stack takes 30012 (dataset-api) and 30013
+# (rec-registry) so both can run side by side and be compared on the same
+# request. Point `CONNECTOR_DATASET_API_URL` at whichever is under test.
+
+name: dataspaces-real-dataset-api
+
+services:
+  # ── REC registry ──────────────────────────────────────────────────────────
+  rec-registry-migrate:
+    build:
+      context: ${REC_REGISTRY_PATH:-../../celine-eu/celine-dev/repositories/rec-registry}
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      # ds Postgres, not a second database server. One place to inspect state
+      # when a query returns the wrong rows.
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/rec_registry
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  rec-registry:
+    build:
+      context: ${REC_REGISTRY_PATH:-../../celine-eu/celine-dev/repositories/rec-registry}
+      dockerfile: Dockerfile
+    ports:
+      - "30013:8004"
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/rec_registry
+      # `OidcSettings` carries its own `env_prefix="CELINE_OIDC_"`, so neither
+      # `OIDC_ISSUER_URL` nor `OIDC__ISSUER_URL` is ever read — the service
+      # silently kept its celine-realm defaults and refused every ds token.
+      #
+      # `base_url` must equal the `iss` claim; `jwks_uri` must be *reachable
+      # from the container*. They differ here, which is exactly why the settings
+      # keep them apart.
+      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      CELINE_OIDC_JWKS_URI: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/certs
+      CELINE_OIDC_AUDIENCE: svc-rec-registry
+      # `/admin/*` and `/me/*` require a JWT regardless of this flag — the
+      # middleware only skips *optional* extraction. The registry is now a real
+      # client in the ds realm (`svc-rec-registry`), so leave auth on and hold a
+      # token, rather than pretending the harness runs without one.
+      AUTH_ENABLED: "true"
+      POLICIES_ENABLED: "false"
+      # TEMPORARY (e2e bring-up) — pairs with the `src` mount below.
+      PYTHONPATH: /app/src
+    volumes:
+      # `rec-example.yaml` is the seed: one community, areas, members and the
+      # devices whose ids appear in `device_id` row filters.
+      - ${REC_REGISTRY_PATH:-../../celine-eu/celine-dev/repositories/rec-registry}/recs:/app/recs:ro
+      # ── TEMPORARY (e2e bring-up) — remove once the flows pass ────────────
+      # Runs the checked-out source instead of the baked image, so a fix in the
+      # upstream repo is one container restart away rather than a rebuild.
+      # `PYTHONPATH` below is what makes it win: the Dockerfile installs the
+      # package into `/app/.venv`, so mounting `/app/src` alone changes nothing.
+      - ${REC_REGISTRY_PATH:-../../celine-eu/celine-dev/repositories/rec-registry}/src:/app/src:ro
+    depends_on:
+      rec-registry-migrate:
+        condition: service_completed_successfully
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ── the real dataset-api ──────────────────────────────────────────────────
+  dataset-api-migrate:
+    build:
+      context: ${DATASET_API_PATH:-../../celine-eu/celine-dev/repositories/dataset-api}
+      dockerfile: Dockerfile
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  dataset-api-real:
+    build:
+      context: ${DATASET_API_PATH:-../../celine-eu/celine-dev/repositories/dataset-api}
+      dockerfile: Dockerfile
+    ports:
+      - "30012:8001"
+    environment:
+      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+
+      # ── the dataspace PEP ───────────────────────────────────────────────
+      # Without this the `Edc-Contract-Agreement-Id` header is ignored and the
+      # service answers as if no dataspace existed — which is the correct
+      # non-dataspace behaviour and a silent failure here.
+      EDR_ENABLED: "true"
+      CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
+      REC_REGISTRY_URL: http://172.17.0.1:30013
+
+      # `svc-ds-dataset-api` holds `connector.internal` in **both** realms —
+      # it is already in celine-policies/clients.yaml with the same name — so
+      # the same identity works here and in production.
+      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      CELINE_OIDC_JWKS_URI: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/certs
+      CELINE_OIDC_AUDIENCE: svc-dataset-api
+      SERVICE_CLIENT_ID: svc-ds-dataset-api
+      SERVICE_CLIENT_SECRET: svc-ds-dataset-api
+
+      POLICIES_CHECK_ENABLED: "false"
+      LOG_LEVEL: DEBUG
+      # TEMPORARY (e2e bring-up) — pairs with the `src` mount below.
+      PYTHONPATH: /app/src
+    volumes:
+      # ── TEMPORARY (e2e bring-up) — remove once the flows pass ────────────
+      # Runs the checked-out source instead of the baked image, so a fix in the
+      # upstream repo is one container restart away rather than a rebuild. The
+      # Dockerfile installs the package into `/app/.venv`, so the mount alone
+      # would change nothing — `PYTHONPATH` above is what puts it first.
+      #
+      # **Both lines come out together.** A stale mount silently runs different
+      # code from the image the same compose file claims to test, which is the
+      # one failure mode a harness must not have.
+      - ${DATASET_API_PATH:-../../celine-eu/celine-dev/repositories/dataset-api}/src:/app/src:ro
+      - ${DATASET_API_PATH:-../../celine-eu/celine-dev/repositories/dataset-api}/policies:/app/policies:ro
+    depends_on:
+      dataset-api-migrate:
+        condition: service_completed_successfully
+      rec-registry:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

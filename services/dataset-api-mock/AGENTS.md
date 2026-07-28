@@ -31,52 +31,83 @@ Settings use the `DATASET_API_` env prefix.
 | Setting | Default | Purpose |
 |---|---|---|
 | `connector_internal_url` | `http://172.17.0.1:30001` | ds-connector base URL for `/internal/*` calls |
-| `connector_api_key` | `insecure-dev-key` | `X-Api-Key` for `/internal/*` (equals `EDC_API_KEY`) |
+| `verify_edr` | `true` | Verify the EDR token against ds's JWKS. Off is dev-only and refused in production — with it off, a bearer string is an assertion |
 | `enforce_consent` | `true` | When false, consent filtering is skipped — dev only |
 | `external_query_url` | `None` | Proxy a dataset to a real upstream dataset-api |
 | `extra_datasets_path` | `None` | JSON file adding datasets at startup |
 
 ## The `/query` enforcement chain
 
-`GET|POST /query` applies four independent gates, in order. Each one can only
-*remove* access:
+`POST /query` runs in one of **two modes**, chosen by a header, and both are
+first-class.
 
-1. **Transfer** — `GET /internal/transfers/{id}/status`. A stale EDR cannot keep
-   querying after the consumer revokes; a terminated transfer is `403`.
-2. **Agreement** — `GET /internal/agreements/{id}/status`.
-3. **Consent + purpose** — for datasets with `requires_consent`, calls
-   `GET /internal/consent/check?dataset_id=…&consumer_id=…&purpose=…` and keeps only
-   rows whose `subject_column` value is in the returned `subject_ids`.
-4. **Audit** — `POST /internal/audit/query` emits a `QueryExecuted` provenance event
-   with the authorized subject list.
+### The signature is the real dataset-api's, not this service's own
+
+This service exists to stand in for `celine-dev/repositories/dataset-api`. Its
+route, request model and response model therefore mirror that service field for
+field — `POST /query` with `{sql, limit, offset, skip_count}`, answering
+`{items, offset, limit, count, total}`.
+
+**Any divergence makes every green ds flow evidence about an API nobody runs.**
+It previously took `dataset_name`, `consumer_id`, `subject_id`, `agreement_id`,
+`transfer_id` and `purpose` as query parameters — a contract production has never
+implemented. The datasets now come from the query itself, as they do there.
+
+### Mode 1 — dataspace (`Edc-Contract-Agreement-Id` present)
+
+```
+POST /query
+Authorization: Bearer <EDR JWT>
+Edc-Contract-Agreement-Id: <shared DSP agreement id>
+Edc-Transfer-Process-Id: <transfer id>          (optional)
+Edc-Purpose: FlexibilityResearch                 (why this query is made)
+
+{"sql": "SELECT * FROM datasets.silver.meters_15m", "limit": 100}
+```
+
+1. **Verify the EDR token** against `GET /internal/edr-jwks`. Nothing else does:
+   upstream removed the data-plane proxy (`data-plane-public-api-v2`, deprecated),
+   so the EDR endpoint *is* this service, and the token carries no `exp`. The
+   verified `aud` is the consumer DID — the one identity fact that never comes
+   from a header.
+2. **Ask ds** — `POST /internal/dataplane/authorize` with the verified consumer,
+   the agreement from the header, the purpose, and the datasets from the SQL.
+   One call, one decision: ds checks the agreement is live **and belongs to this
+   consumer**, that it covers these datasets, that the transfer is usable, that
+   the purpose is one the agreement permits, and returns the consent row filter.
+3. **Enforce** — `deny` → 403; a `row_filter` → keep only rows whose column value
+   is in `subject_ids`.
+4. **Audit** — `POST /internal/audit/query` emits `QueryExecuted`.
+
+This service assembles nothing. ds is the control plane and decides; this is the
+data plane and enforces. A ds that is unreachable is a **denial**, never an allow.
+
+### Mode 2 — no header
+
+Today's non-dataspace behaviour: rows are served without contacting ds at all. A
+deployment that never joins a dataspace is unaffected by any of the above.
+
+**Dataspace mode never falls back to mode 2.** A fallback between two
+authorization regimes is a bypass with extra steps.
+
+### Two agreement ids, and only one of them crosses
+
+EDC 0.16 keeps `ContractAgreement.getId()` (this runtime's own, **different on
+each side**) apart from `getAgreementId()` (shared, identical on both). A client
+must send the **shared** one; ds resolves either, and the consumer connector
+returns the right one on `GET /consumer/edr/{id}`. Sending the local id is
+refused as `agreement_unknown` — which is exactly how this was found.
 
 ### Purpose is required for consent-gated datasets
 
-The `purpose` query parameter carries **the reason this query is made** — a
-comma-separated list of purpose slugs from the ODRL profile taxonomy.
+`Edc-Purpose` carries **the reason this query is made**. ds fails closed when it
+is absent: for a consent-required dataset an undeclared purpose means the caller
+never said why it wants the data, so the request is refused rather than served.
 
-ds-connector fails closed when it is absent: for a consent-required dataset an
-undeclared purpose means the caller never said why it wants the data, so the
-subject list comes back **empty** and the query returns zero rows. This is
-deliberate — a caller that predates the purpose chain receives nothing rather than
-everything.
-
-```
-GET /query?dataset_name=datasets.silver.meters_15m
-          &consumer_id=did:web:consumer.dataspaces.localhost
-          &agreement_id=…&transfer_id=…
-          &purpose=FlexibilityResearch
-```
-
-The same consumer, agreement and transfer return **different rows** for a different
-purpose: a subject who consented to flexibility research contributes nothing to an
-incentive-calculation query. The e2e `smoke` flow asserts exactly this.
-
-### Dataset id resolution
-
-`_granted_subject_ids` tries the dataset name first, then the asset id. The consent
-row is keyed on the governance key, which is usually — but not necessarily — equal
-to the EDC asset id.
+The same consumer, agreement and transfer return **different rows** for a
+different purpose: a subject who consented to flexibility research contributes
+nothing to an incentive-calculation query. The `smoke` flow asserts exactly this,
+plus the refusal of an agreement the caller does not hold.
 
 ## Adding a dataset
 

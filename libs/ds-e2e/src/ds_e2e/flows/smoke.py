@@ -217,7 +217,12 @@ class SmokeFlow(BaseFlow):
         # the connector refuses anything the offer does not permit, so a
         # hardcoded one would make this flow depend on the dev catalogue.
         offer_purposes = self._offer_purposes(policy)
-        declared_purpose = offer_purposes[:1]
+        # Declare the purpose this subject actually consented to. Declaring any
+        # other permitted purpose is legitimate and would be *correctly* refused
+        # at query time for want of consent — a real scenario, but not this one.
+        declared_purpose = [
+            p for p in offer_purposes if p.rsplit("/", 1)[-1] == s.consented_purpose
+        ] or offer_purposes[:1]
         negotiate_body = {
             "counter_party_address": s.counter_party_address,
             "offer_id": offer_id,
@@ -315,18 +320,41 @@ class SmokeFlow(BaseFlow):
             return result
         result.pass_step("transfer EDR", "EDR-gated transfer started", transfer_id=transfer_id)
 
-        # 11. Query dataset-api for the consented purpose
-        base_query = {
-            "dataset_name": asset_id,
-            "consumer_id": s.consumer_did,
-            "subject_id": s.data_subject_id,
-            "agreement_id": agreement_id,
-            "transfer_id": transfer_id,
-        }
-        query_params = urllib.parse.urlencode(
-            {**base_query, "purpose": s.consented_purpose}
-        )
-        status, query_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{query_params}")
+        # 11. Query the data plane the way a real client does.
+        #
+        # No exchange identifiers as parameters: the EDR token proves who is
+        # asking, three `Edc-*` headers name the exchange, and the query itself
+        # names the dataset. This is the contract the production dataset-api
+        # implements — a probe shaped any other way would validate a mock.
+        edr = self.http.get(
+            f"{s.consumer_connector_url}/consumer/edr/{encoded_transfer_id}",
+            headers=consumer_headers,
+        ) or {}
+        edr_token = str(edr.get("authorization") or "")
+        # The **shared** DSP agreement id, which the connector resolves for us.
+        # `contractAgreementId` from the negotiation is this side's *local* id
+        # and means nothing to the provider — EDC keeps the two apart, and a
+        # client that sends the wrong one is refused as `agreement_unknown`.
+        shared_agreement_id = str(edr.get("agreement_id") or agreement_id)
+        if not edr_token:
+            result.fail_step("query consentita", "EDR carries no authorization token")
+            return result
+
+        def data_query(purpose: str | None) -> tuple[int, Any]:
+            headers = {
+                "Authorization": edr_token,
+                "Edc-Contract-Agreement-Id": shared_agreement_id,
+                "Edc-Transfer-Process-Id": transfer_id,
+            }
+            if purpose:
+                headers["Edc-Purpose"] = purpose
+            return self.http.post_raw(
+                f"{s.dataset_api_url}/query",
+                {"sql": f"SELECT * FROM {asset_id}", "limit": 100},
+                headers=headers,
+            )
+
+        status, query_payload = data_query(s.consented_purpose)
         if status != 200 or not isinstance(query_payload, dict) or query_payload.get("count", 0) < 1:
             result.fail_step("query consentita", "expected at least one authorized row", status_code=status)
             return result
@@ -339,55 +367,58 @@ class SmokeFlow(BaseFlow):
 
         # 11b. The purpose is binding, not decorative. The same agreement and
         #      the same active transfer must yield nothing for a purpose this
-        #      subject never agreed to — the row filter is scoped to (subject,
-        #      purpose, controller-role), so their rows simply never leave.
-        other_params = urllib.parse.urlencode(
-            {**base_query, "purpose": s.unconsented_purpose}
-        )
-        status, other_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{other_params}")
-        if status != 200 or not isinstance(other_payload, dict):
+        #      subject never agreed to — ds refuses the request outright rather
+        #      than returning rows it should not.
+        status, _ = data_query(s.unconsented_purpose)
+        if status != 403:
             result.fail_step(
                 "query purpose non consentita",
-                "unexpected response for an unconsented purpose",
+                "expected a refusal for an unconsented purpose",
                 status_code=status,
-            )
-            return result
-        if other_payload.get("count", 0) != 0:
-            result.fail_step(
-                "query purpose non consentita",
-                "rows leaked for a purpose the subject did not consent to",
-                purpose=s.unconsented_purpose,
-                rows=other_payload.get("count"),
             )
             return result
         result.pass_step(
             "query purpose non consentita",
-            "a purpose the subject did not consent to yields zero rows",
+            "a purpose the subject did not consent to is refused",
             purpose=s.unconsented_purpose,
         )
 
         # 11c. Omitting the purpose entirely must not behave like a wildcard.
-        #      For a consent-required dataset an absent purpose means the caller
-        #      never said why it wants the data — fail closed.
-        no_purpose = urllib.parse.urlencode(base_query)
-        status, no_purpose_payload = self.http.get_raw(f"{s.dataset_api_url}/query?{no_purpose}")
-        if status != 200 or not isinstance(no_purpose_payload, dict):
+        status, _ = data_query(None)
+        if status != 403:
             result.fail_step(
                 "query senza purpose",
-                "unexpected response when no purpose is declared",
+                "an undeclared purpose did not fail closed",
                 status_code=status,
-            )
-            return result
-        if no_purpose_payload.get("count", 0) != 0:
-            result.fail_step(
-                "query senza purpose",
-                "an undeclared purpose behaved as a wildcard",
-                rows=no_purpose_payload.get("count"),
             )
             return result
         result.pass_step(
             "query senza purpose",
             "an undeclared purpose fails closed on a consent-required dataset",
+        )
+
+        # 11d. The agreement is bound to the consumer the token proves. Naming a
+        #      different agreement must not read its data — this is what makes a
+        #      self-asserted header safe.
+        status, _ = self.http.post_raw(
+            f"{s.dataset_api_url}/query",
+            {"sql": f"SELECT * FROM {asset_id}", "limit": 100},
+            headers={
+                "Authorization": edr_token,
+                "Edc-Contract-Agreement-Id": "not-your-agreement",
+                "Edc-Purpose": s.consented_purpose,
+            },
+        )
+        if status != 403:
+            result.fail_step(
+                "foreign agreement refused",
+                "an unknown agreement id was not refused",
+                status_code=status,
+            )
+            return result
+        result.pass_step(
+            "foreign agreement refused",
+            "an agreement the caller does not hold yields no data",
         )
 
         # 12. Revoke
@@ -417,7 +448,7 @@ class SmokeFlow(BaseFlow):
         blocked_deadline = time.time() + s.poll_timeout
         blocked_status = 0
         while time.time() < blocked_deadline:
-            blocked_status, _ = self.http.get_raw(f"{s.dataset_api_url}/query?{query_params}")
+            blocked_status, _ = data_query(s.consented_purpose)
             if blocked_status == 403:
                 break
             time.sleep(s.poll_interval)

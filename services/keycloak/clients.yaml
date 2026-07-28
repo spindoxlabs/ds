@@ -17,6 +17,19 @@ scopes:
   - name: dataset.write
     description: Write dataset data
 
+  # REC Registry — mirrors celine-policies/clients.yaml. A dataspace query on a
+  # dataset whose row filter is `handler: rec_registry` cannot be resolved
+  # without it, and every consent-gated dataset in demo3 and celine-dev uses
+  # exactly that handler.
+  - name: rec-registry.admin
+    description: Full administrative access to the registry
+  - name: rec-registry.import
+    description: Permission to import into the registry
+  - name: rec-registry.export
+    description: Permission to export from the registry
+  - name: rec-registry.lookup
+    description: Permission to lookup data
+
   # Dataspace Identity Registry
   - name: identity-registry.admin
     description: Admin access to dataspace identity-registry API
@@ -153,6 +166,10 @@ clients:
       - connector.provider.write
       - connector.history.read
       - connector.consent.provision
+      # Seeds the REC registry so a `rec_registry` row filter has data to resolve.
+      - rec-registry.admin
+      # The registry validates its own audience, so the harness's token must
+      # carry it — a scope without the audience is refused before it is read.
       - connector.ingestion.record
       # Machine-identity permissions: granted by name because they are exempt
       # from the admin superset (ds_auth.require_exact_permission).
@@ -165,6 +182,7 @@ clients:
       - svc-ds-connector
       - svc-ds-provenance
       - svc-ds-federated-catalog
+      - svc-rec-registry
 
   - client_id: svc-ds-connector
     name: Dataspace Connector
@@ -199,8 +217,18 @@ clients:
     scopes_prefix: dataset
     default_scopes:
       - connector.internal
+      - rec-registry.lookup
     extra_audiences:
       - svc-ds-connector
+      - svc-rec-registry
+
+  - client_id: svc-rec-registry
+    name: REC Registry Service
+    secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
+    scopes_prefix: rec-registry
+    default_scopes:
+      # Own resources
+      - rec-registry.admin
 
   - client_id: svc-edc
     name: Eclipse Dataspace Connector

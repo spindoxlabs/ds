@@ -73,6 +73,13 @@ public class NegotiationEventPublisher implements EventSubscriber {
             ContractAgreement agreement = finalized.getContractAgreement();
             if (agreement != null) {
                 payload.put("contractAgreementId", agreement.getId());
+                // The *shared* DSP agreement id. `getId()` is this runtime's own
+                // entity id and differs on each side of the same negotiation —
+                // verified against a live exchange, where provider and consumer
+                // held different `@id`s and the same `agreementId`. A data-plane
+                // request carries the shared one, because it is the only id both
+                // participants can name.
+                payload.put("dspAgreementId", agreement.getAgreementId());
                 payload.put("assetId", agreement.getAssetId());
                 payload.put("consumerId", agreement.getConsumerId());
                 payload.put("providerId", agreement.getProviderId());
