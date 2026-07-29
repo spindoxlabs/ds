@@ -43,9 +43,9 @@ first-class.
 
 ### The signature is the real dataset-api's, not this service's own
 
-This service exists to stand in for `celine-dev/repositories/dataset-api`. Its
-route, request model and response model therefore mirror that service field for
-field — `POST /query` with `{sql, limit, offset, skip_count}`, answering
+This service exists to stand in for the sibling `dataset-api` (`DATASET_API_PATH`
+— see *Assumed workspace layout* in the root `AGENTS.md`). Its route, request
+model and response model therefore mirror that service field for field — `POST /query` with `{sql, limit, offset, skip_count}`, answering
 `{items, offset, limit, count, total}`.
 
 **Any divergence makes every green ds flow evidence about an API nobody runs.**

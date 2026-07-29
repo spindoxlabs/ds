@@ -1,5 +1,6 @@
 """Tests for the consent vocabulary — purpose hierarchy, offers, re-consent hash."""
 import pytest
+from pydantic import ValidationError
 
 from ds.governance.models import (
     DpvMapping,
@@ -13,6 +14,7 @@ from ds.governance.sharing import (
     OfferRecipients,
     ProcessorCategory,
     SharingOffer,
+    datasets_by_offer,
     is_iso_duration,
     load_sharing_offers,
 )
@@ -41,7 +43,6 @@ def _offer(**kwargs) -> SharingOffer:
         id="household-energy-flexibility",
         purpose="FlexibilityResearch",
         legal_basis=CONSENT_BASIS,
-        datasets=["datasets.silver.meters_15m"],
         recipients=OfferRecipients(
             controller="example-org",
             processors=ProcessorCategory(
@@ -182,13 +183,27 @@ def test_hash_is_stable_across_recomputation():
     assert _hash(offer) == _hash(_offer())
 
 
-def test_hash_ignores_dataset_changes():
-    """Schema migration, medallion re-layering and source swaps are invisible to
-    the person, so they must not invalidate consent."""
-    baseline = _hash(_offer())
-    assert _hash(_offer(datasets=["datasets.gold.meters_1h"])) == baseline
-    assert _hash(_offer(datasets=[])) == baseline
-    assert _hash(_offer(datasets=["a", "b", "c"])) == baseline
+def test_the_hash_cannot_see_datasets_at_all():
+    """Schema migration and source swaps must never invalidate consent.
+
+    This used to be a rule — the hash *excluded* `datasets`. It is now
+    structural: an offer has no datasets to exclude, because the dataset names
+    the offer. Nothing an operator does to the backing datasets can reach these
+    bytes, so there is no longer a rule anyone can forget to apply.
+    """
+    facts = _offer().user_visible_facts()
+    assert "datasets" not in facts
+    assert not any("dataset" in key for key in facts)
+
+
+def test_an_offer_declaring_datasets_is_rejected():
+    """A stale file must fail, not quietly lose its datasets.
+
+    Ignoring the key would leave the offer reaching nothing while looking
+    correct — the silent half-migration this inversion exists to avoid.
+    """
+    with pytest.raises(ValidationError, match="datasets"):
+        _offer(datasets=["datasets.silver.meters_15m"])
 
 
 @pytest.mark.parametrize(
@@ -273,7 +288,6 @@ sharing_offers:
   - id: household-energy-flexibility
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets: [datasets.silver.meters_15m]
     recipients:
       controller: example-org
       processors:
@@ -294,7 +308,6 @@ def test_load_offers(tmp_path):
     offer = catalogue.get("household-energy-flexibility")
     assert offer is not None
     assert offer.recipients.processors.admitted_by == [{"membership": "example-org"}]
-    assert catalogue.for_dataset("datasets.silver.meters_15m") == [offer]
     assert catalogue.consent_based() == [offer]
 
 
@@ -310,7 +323,6 @@ sharing_offers:
   - id: household-energy-flexibility
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets: [datasets.silver.meters_15m]
     recipients:
       controller: site-org
       processors:
@@ -319,7 +331,6 @@ sharing_offers:
   - id: grid-monitoring
     purpose: GridMonitoring
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets: [datasets.silver.meters_15m]
     recipients:
       controller: dso-org
       processors:
@@ -331,3 +342,34 @@ sharing_offers:
     # Rebinding a controller for a deployment must not fork the base file.
     assert catalogue.get("household-energy-flexibility").recipients.controller == "site-org"
     assert catalogue.get("grid-monitoring") is not None
+
+
+# ── The reverse index ────────────────────────────────────────────────────────
+
+def test_datasets_by_offer_reverses_the_declaration():
+    index = datasets_by_offer({
+        "datasets.silver.meters_15m": ["household-energy-flexibility", "grid-ops"],
+        "datasets.gold.meters_1h": ["household-energy-flexibility"],
+        "datasets.gold.grid": [],
+    })
+    assert index["household-energy-flexibility"] == [
+        "datasets.silver.meters_15m",
+        "datasets.gold.meters_1h",
+    ]
+    assert index["grid-ops"] == ["datasets.silver.meters_15m"]
+    assert "datasets.gold.grid" not in index
+
+
+def test_datasets_by_offer_is_order_stable_and_deduplicates():
+    """A reordering between syncs would churn consent rows for no reason."""
+    declared = {
+        "datasets.a": ["offer-1", "offer-1"],
+        "datasets.b": ["offer-1"],
+    }
+    assert datasets_by_offer(declared)["offer-1"] == ["datasets.a", "datasets.b"]
+    assert datasets_by_offer(declared) == datasets_by_offer(dict(declared))
+
+
+def test_an_offer_nothing_declares_simply_has_no_datasets():
+    """Not an error here — the compliance gate decides what an orphan means."""
+    assert datasets_by_offer({"datasets.a": []}) == {}

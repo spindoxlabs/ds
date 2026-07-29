@@ -634,7 +634,7 @@ async def set_my_data_share(
 
             consents = []
             async with db.begin():
-                for dataset_id in offer.datasets:
+                for dataset_id in vocab.datasets_for_offer(offer.id):
                     consents.append(
                         await consent_service.set_subject_data_sharing(
                             session=db,
@@ -751,7 +751,7 @@ async def admin_provision_share(
     try:
         consents = []
         async with db.begin():
-            for dataset_id in offer.datasets:
+            for dataset_id in vocab.datasets_for_offer(offer.id):
                 consents.append(
                     await consent_service.set_subject_data_sharing(
                         session=db,

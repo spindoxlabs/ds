@@ -63,6 +63,8 @@ def dataset(**overrides) -> dict:
         "dataspace": {
             "expose": True,
             "data_address": {"base_url": "http://dataset-api:30002"},
+            # The dataset declares the offer — the direction the platform reads.
+            "sharing_offers": ["household-energy-flexibility"],
         },
     }
     rule.update(overrides)
@@ -74,7 +76,6 @@ def offer(**overrides) -> dict:
         "id": "household-energy-flexibility",
         "purpose": "FlexibilityResearch",
         "legal_basis": "https://w3id.org/dpv#Consent",
-        "datasets": ["datasets.silver.meters_15m"],
         "recipients": {
             "controller": "example-org",
             "processors": {
@@ -224,8 +225,25 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[offer(purpose="NotAPurpose")])
         assert "offer-purpose" in codes(result.errors)
 
-    def test_offer_datasets_must_resolve(self, tmp_path: Path):
-        result = run(tmp_path, offers=[offer(datasets=["datasets.gold.ghost"])])
+    def test_dataset_referencing_an_unknown_offer_is_an_error(self, tmp_path: Path):
+        """"No sharing offer" and "not shared" are the same statement.
+
+        Publishing the dataset anyway would advertise a consent gate that can
+        never open.
+        """
+        result = run(
+            tmp_path,
+            sources={
+                "datasets.silver.meters_15m": dataset(
+                    dataspace={
+                        "expose": True,
+                        "data_address": {"base_url": "http://dataset-api:30002"},
+                        "sharing_offers": ["no-such-offer"],
+                    }
+                )
+            },
+            offers=[offer()],
+        )
         assert "offer-datasets" in codes(result.errors)
 
     def test_duplicate_offer_id_is_an_error(self, tmp_path: Path):
@@ -346,8 +364,9 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[offer(consent_text_version="")])
         assert "offer-codes" in codes(result.errors)
 
-    def test_offer_with_no_datasets_is_a_warning(self, tmp_path: Path):
-        result = run(tmp_path, offers=[offer(datasets=[])])
+    def test_an_offer_no_dataset_declares_is_a_warning(self, tmp_path: Path):
+        """Consenting to it would share nothing — wasteful, not unsafe."""
+        result = run(tmp_path, offers=[offer(), offer(id="orphan")])
         assert "offer-datasets" in codes(result.warnings)
 
     def test_no_offers_file_skips_offer_checks(self, tmp_path: Path):

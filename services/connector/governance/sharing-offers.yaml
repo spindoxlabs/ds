@@ -17,8 +17,6 @@ sharing_offers:
   - id: household-energy-flexibility
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets:
-      - datasets.silver.meters_15m
     recipients:
       # The controller decides the purpose. Processors act on its instructions
       # under a DPA, so a new one joining the category is disclosed, not asked.
@@ -47,8 +45,6 @@ sharing_offers:
   - id: grid-operations-planning
     purpose: EnergyCommunityOperation
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets:
-      - datasets.silver.meters_15m
     recipients:
       controller: grid-operator
       controller_role: operations
@@ -72,8 +68,6 @@ sharing_offers:
     # and distribute incentives. Disclosed without a toggle — offering a
     # choice that does not exist is worse than not asking.
     legal_basis: "https://w3id.org/dpv#Contract"
-    datasets:
-      - datasets.silver.meters_15m
     recipients:
       controller: example-org
       processors:

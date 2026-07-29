@@ -5,8 +5,6 @@ sharing_offers:
   - id: test-flexibility
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets:
-      - datasets.silver.meters
     recipients:
       controller: example-org
       processors:
@@ -27,8 +25,6 @@ sharing_offers:
   - id: test-incentives
     purpose: IncentiveCalculation
     legal_basis: "https://w3id.org/dpv#Contract"
-    datasets:
-      - datasets.silver.meters
     recipients:
       controller: example-org
       controller_role: community-operator
@@ -49,8 +45,6 @@ sharing_offers:
   - id: test-grid-planning
     purpose: EnergyCommunityOperation
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets:
-      - datasets.silver.meters
     recipients:
       controller: grid-operator
       controller_role: operations

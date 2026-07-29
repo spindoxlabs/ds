@@ -119,6 +119,19 @@ class DataspaceSpec(BaseModel):
     data_address: DataspaceDataAddress = Field(default_factory=DataspaceDataAddress)
     contract: DataspaceContract = Field(default_factory=DataspaceContract)
 
+    # Sharing offers this dataset is consentable under, by id.
+    #
+    # **The dataset points at the offer, never the reverse.** Offers are declared
+    # by the producer that declares the dataset, in files beside it, so an offer
+    # naming arbitrary dataset keys would let one producer write the consent text
+    # for another producer's data. Here, only whoever declares the dataset can
+    # bind an offer to it.
+    #
+    # An id that does not resolve means the dataset is **not exposed** — "no
+    # sharing offer" and "not shared" are the same statement, and publishing it
+    # with a dangling reference would advertise a consent gate that can never open.
+    sharing_offers: list[str] = Field(default_factory=list)
+
 
 class GovernanceRuleV2(GovernanceRule):
     """v2 governance rule — extends v1 with ODRL policy and EDC dataspace config."""

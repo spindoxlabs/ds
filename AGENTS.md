@@ -110,13 +110,36 @@ The portal runs in the provider compose. For local dev with hot-reload: `task pr
 
 All containers share the `dataspaces` bridge network.
 
+### Assumed workspace layout
+
+`docker-compose.dataset-api.yml` builds sibling repositories from source, so it
+has to know where they are. The default is a **sibling checkout two levels up**:
+
+```
+<workspace>/
+├── celine-eu/celine-dev/repositories/   dataset-api, rec-registry, celine-sdk
+└── spindoxlabs/ds/                      this repo
+```
+
+Every path is an override, so no other layout needs a code change — set them in
+`.env` (per machine, gitignored) rather than editing compose:
+
+| Variable | Default |
+|---|---|
+| `DATASET_API_PATH` | `../../celine-eu/celine-dev/repositories/dataset-api` |
+| `REC_REGISTRY_PATH` | `../../celine-eu/celine-dev/repositories/rec-registry` |
+| `CELINE_SDK_PATH` | `../../celine-eu/celine-dev/repositories/celine-sdk` |
+
+These matter only for the real-dataset-api stack below. `task start` and the
+mock need none of them.
+
 ### Testing against the real dataset-api
 
 `services/dataset-api-mock` is a stand-in. The service that runs in production is
-`celine-dev/repositories/dataset-api`, and **a flow that passes only against the
-mock is evidence about an API nobody runs** — so the mock mirrors the real
-signature (`POST /query` with `{sql, limit, offset, skip_count}`), and the real
-one can be swapped in without changing anything downstream:
+the sibling `dataset-api` (`DATASET_API_PATH`, above), and **a flow that passes
+only against the mock is evidence about an API nobody runs** — so the mock mirrors
+the real signature (`POST /query` with `{sql, limit, offset, skip_count}`), and the
+real one can be swapped in without changing anything downstream:
 
 ```bash
 ./services/dataset-api-mock/fixtures/seed.sh    # brings the stack up + seeds
@@ -351,7 +374,8 @@ Three vocabularies have to agree before a person can be asked anything meaningfu
 purpose slug ──► ODRL profile taxonomy (SKOS, /ns/policy)
      │ groups                    dpv_mapping → DPV IRI (docs only)
      ▼                           broader     → local hierarchy (enforcement)
-sharing offer ──► governance.yaml datasets (declare policy.purpose[])
+sharing offer ◄── governance.yaml datasets (declare policy.purpose[]
+     │ declared by                 and dataspace.sharing_offers[])
      │ consented as
      ▼
 consent row (dataset + purpose + controller-role, all validated)
@@ -369,7 +393,7 @@ GET /internal/consent/check?purpose=…&controller_role=…
 | The consent key is **(subject, purpose, controller-role)** | Controller ≠ legal entity: a DSO's grid-operations and metering functions are distinct controllers |
 | Only `dpv:Consent` offers get a UI control | Contract-based processing is disclosed, not toggled; asking implies a choice that does not exist |
 | A **covered processor** is disclosed, never asked | Same controller, same operation (Art. 28). `POST /consent/request` returns 409, and `/internal/consent/check` returns `should_ask: false` so the pending guard does not park |
-| `user_visible_hash` excludes `datasets[]` | Which datasets back an offer is a schema-migration concern nobody was shown |
+| An offer has no `datasets[]` — the **dataset** names the offer | Offers are declared by whoever declares the dataset, so an offer naming arbitrary keys would let one producer write the consent text for another's data. It also puts the schema-migration concern nobody was shown structurally outside `user_visible_hash` |
 
 Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same overlay mechanism as `governance.yaml`) and are served publicly at `GET /ns/sharing-offers` as **codes plus an English fallback** — translation is entirely the frontend's job, and dataset keys are not in the public projection.
 

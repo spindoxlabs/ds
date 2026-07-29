@@ -64,6 +64,15 @@ sources:
       # negotiated purpose decides which consent rows apply.
       purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
       consent_required: true
+      # The dataset names its offers, never the reverse: offers are declared by
+      # whoever declares the dataset, so only this file can bind one here. Each
+      # id must resolve — an unresolvable one means the dataset is not shared,
+      # and the sync refuses to publish it rather than advertising a consent
+      # gate that can never open.
+      sharing_offers:
+        - household-energy-flexibility
+        - grid-operations-planning
+        - community-incentive-calculation
       asset:
         id: "datasets.silver.meters_15m"
         content_type: "application/json"

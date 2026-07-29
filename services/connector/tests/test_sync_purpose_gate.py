@@ -8,6 +8,8 @@ that it fails for every offending dataset in one pass rather than the first.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from connector.services.governance import ConnectorGovernanceMapper
@@ -32,11 +34,13 @@ def _mapper() -> ConnectorGovernanceMapper:
     )
 
 
-def _rule(purposes: list[str] | None) -> GovernanceRuleV2:
+def _rule(
+    purposes: list[str] | None, sharing_offers: list[str] | None = None
+) -> GovernanceRuleV2:
     return GovernanceRuleV2(
         access_level="open",
         classification="green",
-        dataspace=DataspaceSpec(expose=True),
+        dataspace=DataspaceSpec(expose=True, sharing_offers=sharing_offers or []),
         policy=DataspacePolicy(purpose=purposes or []),
     )
 
@@ -167,3 +171,68 @@ async def test_absolute_iri_from_another_vocabulary_is_accepted(datasets):
 
     assert result.synced == ["datasets.gold.ext"]
     assert result.errors == []
+
+
+# ── Sharing offers (T25) ─────────────────────────────────────────────────────
+#
+# The sync reads offers from beside the governance file it was handed, so these
+# resolve against `tests/fixtures/sharing-offers.yaml`.
+
+@pytest.fixture
+def fixture_governance() -> str:
+    return str(Path(__file__).parent / "fixtures" / "governance.yaml")
+
+
+@pytest.mark.asyncio
+async def test_unresolvable_offer_id_is_not_published(datasets, fixture_governance):
+    """"No sharing offer" and "not shared" are the same statement.
+
+    Publishing while skipping only the reference would advertise a consent gate
+    that can never open — a consumer negotiates for data no grant can unlock.
+    """
+    datasets({"datasets.gold.dangling": _rule(["GridMonitoring"], ["no-such-offer"])})
+    edc = _RecordingEdc()
+
+    result = await sync_governance(fixture_governance, edc, _mapper(), _NullProv())
+
+    assert edc.created_assets == []
+    assert len(result.errors) == 1
+    assert "no-such-offer" in result.errors[0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_a_resolvable_offer_id_publishes(datasets, fixture_governance):
+    datasets({"datasets.gold.ok": _rule(["FlexibilityResearch"], ["test-flexibility"])})
+    edc = _RecordingEdc()
+
+    result = await sync_governance(fixture_governance, edc, _mapper(), _NullProv())
+
+    assert result.synced == ["datasets.gold.ok"]
+    assert result.errors == []
+
+
+@pytest.mark.asyncio
+async def test_declaring_no_offer_is_not_an_error(datasets, fixture_governance):
+    """A dataset that is not consent-gated has nothing to offer."""
+    datasets({"datasets.gold.open": _rule(["GridMonitoring"], [])})
+    edc = _RecordingEdc()
+
+    result = await sync_governance(fixture_governance, edc, _mapper(), _NullProv())
+
+    assert result.synced == ["datasets.gold.open"]
+    assert result.errors == []
+
+
+@pytest.mark.asyncio
+async def test_both_problems_on_one_dataset_are_both_reported(datasets, fixture_governance):
+    """One revision, not two round trips."""
+    datasets({"datasets.gold.both": _rule(["nope"], ["also-missing"])})
+    edc = _RecordingEdc()
+
+    result = await sync_governance(fixture_governance, edc, _mapper(), _NullProv())
+
+    assert edc.created_assets == []
+    joined = " ".join(e["error"] for e in result.errors)
+    assert "nope" in joined
+    assert "also-missing" in joined
+    assert len(result.errors) == 2

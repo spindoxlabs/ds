@@ -16,11 +16,12 @@ import json
 import logging
 import os
 import re
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +89,20 @@ class OfferRecipients(BaseModel):
 
 
 class SharingOffer(BaseModel):
-    """One consentable bundle."""
+    """One consentable bundle.
+
+    An offer does **not** name its datasets. The dataset names the offer, via
+    ``dataspace.sharing_offers[]`` — see :class:`DataspaceSpec`. A file still
+    declaring ``datasets:`` here is rejected on load rather than ignored: two
+    homes for one fact is the failure this codebase has hit twice silently, and
+    an ignored key looks like it worked.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     id: str
     purpose: str                       # slug, must exist in the ODRL profile
     legal_basis: str                   # DPV legal-basis IRI
-    datasets: list[str] = Field(default_factory=list)   # governance keys
     recipients: OfferRecipients
     subject_scope: str = "own_data"
     measures: list[str] = Field(default_factory=list)
@@ -115,9 +124,11 @@ class SharingOffer(BaseModel):
     def user_visible_facts(self, broader_chain: list[str] | None = None) -> dict[str, Any]:
         """The facts a person actually read, in canonical form.
 
-        Deliberately excludes ``datasets`` — which datasets back an offer is a
-        schema-migration concern the person was never shown, so changing them
-        must not invalidate consent.  Everything else here was on screen.
+        Which datasets back an offer is deliberately absent — that is a
+        schema-migration concern the person was never shown, so changing it must
+        not invalidate consent.  It is now a property of the *datasets*, which
+        makes the exclusion structural rather than a rule to remember.
+        Everything else here was on screen.
         """
         return {
             "purpose": self.purpose,
@@ -165,11 +176,30 @@ class SharingOfferCatalogue(BaseModel):
     def get(self, offer_id: str) -> SharingOffer | None:
         return self.by_id.get(offer_id)
 
-    def for_dataset(self, dataset_key: str) -> list[SharingOffer]:
-        return [offer for offer in self.offers if dataset_key in offer.datasets]
-
     def consent_based(self) -> list[SharingOffer]:
         return [offer for offer in self.offers if offer.requires_consent]
+
+
+def datasets_by_offer(
+    sharing_offers_by_dataset: Mapping[str, Sequence[str]],
+) -> dict[str, list[str]]:
+    """Reverse the declaration: offer id → the dataset keys that name it.
+
+    The dataset → offer direction is the one authored and the one enforced, but
+    two paths genuinely need the reverse — expanding an offer into per-dataset
+    consent rows, and reporting how many datasets an offer reaches. Deriving it
+    here keeps that a *view*: there is still exactly one place the fact is
+    written down.
+
+    Order follows dataset declaration order, and duplicates within one dataset
+    collapse, so the result is stable across reloads — a consent expansion that
+    reordered between syncs would produce gratuitous row churn.
+    """
+    index: dict[str, list[str]] = {}
+    for dataset_key, offer_ids in sharing_offers_by_dataset.items():
+        for offer_id in dict.fromkeys(offer_ids):
+            index.setdefault(offer_id, []).append(dataset_key)
+    return index
 
 
 def _parse(raw: dict[str, Any]) -> SharingOfferCatalogue:

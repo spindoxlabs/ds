@@ -184,7 +184,6 @@ def check_sharing_offers(
     roles: RoleLookup | None = None,
 ) -> None:
     """Validate the offers a person will actually be shown."""
-    by_key = {item.key: item for item in exposed}
     seen_ids: set[str] = set()
 
     for offer in catalogue.offers:
@@ -193,12 +192,78 @@ def check_sharing_offers(
         seen_ids.add(offer.id)
 
         _check_offer_purpose(result, offer, profile)
-        _check_offer_datasets(result, offer, by_key, profile)
         _check_offer_controller(result, offer, roles)
         _check_offer_legal_basis(result, offer)
         _check_offer_durations(result, offer)
         _check_offer_codes(result, offer)
         _check_offer_hash_stability(result, offer, profile)
+
+    _check_dataset_offer_references(result, catalogue, exposed, profile)
+
+
+def _check_dataset_offer_references(
+    result: ValidationResult,
+    catalogue: SharingOfferCatalogue,
+    exposed: list[DatasetEvidence],
+    profile: OdrlProfile,
+) -> None:
+    """Walk the datasets, resolving each offer id they declare.
+
+    This is the check that used to walk ``offer.datasets``. Inverted it becomes
+    **local**: the dataset naming the offer is the same file declaring the
+    purpose and the classification, so the three are validated against each
+    other without reaching across repositories for the answer.
+    """
+    reached: set[str] = set()
+
+    for item in exposed:
+        rule = item.rule
+        declared = rule.dataspace.sharing_offers
+        for offer_id in declared:
+            offer = catalogue.get(offer_id)
+            if offer is None:
+                result.error(
+                    "offer-datasets",
+                    f"Dataset declares sharing offer '{offer_id}', which does not "
+                    "resolve — a dataset with an unresolvable offer is not shared, "
+                    "so it must not be exposed",
+                    item.key,
+                )
+                continue
+            reached.add(offer_id)
+
+            if rule.classification == "pii" and not rule.policy.consent.required:
+                result.error(
+                    "offer-consent-required",
+                    f"PII dataset declares offer '{offer_id}' but does not set "
+                    "policy.consent.required — the offer promises a control that is "
+                    "not enforced",
+                    item.key,
+                )
+
+            offer_slug = profile.purpose_slug(offer.purpose)
+            if offer_slug is None:
+                continue  # already reported by _check_offer_purpose
+            declared_slugs = {
+                profile.purpose_slug(entry) for entry in rule.policy.purpose
+            } - {None}
+            if offer_slug not in declared_slugs:
+                result.error(
+                    "offer-dataset-purpose",
+                    f"Dataset declares offer '{offer_id}', whose purpose "
+                    f"'{offer_slug}' it does not list in policy.purpose[] "
+                    f"(declares: {sorted(declared_slugs)}) — the negotiated offer "
+                    "would deny the very use the person agreed to",
+                    item.key,
+                )
+
+    for offer in catalogue.offers:
+        if offer.id not in reached:
+            result.warning(
+                "offer-datasets",
+                f"Offer '{offer.id}' is declared by no exposed dataset — consenting "
+                "to it shares nothing",
+            )
 
 
 def _check_offer_purpose(
@@ -210,52 +275,6 @@ def _check_offer_purpose(
             f"Offer '{offer.id}' declares purpose '{offer.purpose}', which is not in "
             "the ODRL profile taxonomy",
         )
-
-
-def _check_offer_datasets(
-    result: ValidationResult,
-    offer: SharingOffer,
-    by_key: dict[str, DatasetEvidence],
-    profile: OdrlProfile,
-) -> None:
-    if not offer.datasets:
-        result.warning(
-            "offer-datasets",
-            f"Offer '{offer.id}' resolves to no dataset — consenting to it shares nothing",
-        )
-
-    offer_slug = profile.purpose_slug(offer.purpose)
-
-    for key in offer.datasets:
-        item = by_key.get(key)
-        if item is None:
-            result.error(
-                "offer-datasets",
-                f"Offer '{offer.id}' references dataset '{key}', which is not an "
-                "exposed governance key",
-            )
-            continue
-
-        rule = item.rule
-        if rule.classification == "pii" and not rule.policy.consent.required:
-            result.error(
-                "offer-consent-required",
-                f"Offer '{offer.id}' reaches PII dataset '{key}', which does not set "
-                "policy.consent.required — the offer promises a control that is not enforced",
-            )
-
-        if offer_slug is None:
-            continue
-        declared = {
-            profile.purpose_slug(entry) for entry in rule.policy.purpose
-        } - {None}
-        if offer_slug not in declared:
-            result.error(
-                "offer-dataset-purpose",
-                f"Offer '{offer.id}' asks for purpose '{offer_slug}' but dataset '{key}' "
-                f"does not declare it in policy.purpose[] (declares: {sorted(declared)}) — "
-                "the negotiated offer would deny the very use the person agreed to",
-            )
 
 
 def _check_offer_controller(

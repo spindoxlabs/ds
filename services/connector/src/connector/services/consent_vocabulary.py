@@ -16,7 +16,12 @@ from pathlib import Path
 
 from ds.governance.models import GovernanceRuleV2, OdrlProfile, load_odrl_profile
 from ds.governance.resolver import GovernanceResolver
-from ds.governance.sharing import SharingOffer, SharingOfferCatalogue, load_sharing_offers
+from ds.governance.sharing import (
+    SharingOffer,
+    SharingOfferCatalogue,
+    datasets_by_offer,
+    load_sharing_offers,
+)
 
 from ..config import Settings, get_settings
 
@@ -57,11 +62,40 @@ def _offers_path(settings: Settings) -> Path | None:
     return sibling if sibling.exists() else None
 
 
+@lru_cache(maxsize=1)
+def _datasets_by_offer() -> dict[str, list[str]]:
+    """Offer id → the dataset keys declaring it.
+
+    Datasets declare their offers, so this is the derived view — see
+    `ds.governance.sharing.datasets_by_offer`. Cached with the rest of the
+    deployment configuration and dropped by :func:`reset_caches`.
+    """
+    resolver = get_resolver()
+    declared = {
+        key: resolver.resolve(key).dataspace.sharing_offers
+        for key in resolver.config.sources
+    }
+    return datasets_by_offer(declared)
+
+
+def datasets_for_offer(offer_id: str) -> list[str]:
+    """Which datasets an offer reaches — for expanding it into consent rows."""
+    return list(_datasets_by_offer().get(offer_id, []))
+
+
+def offers_for_dataset(dataset_id: str) -> list[str]:
+    """The offer ids this dataset declares, as authored."""
+    if dataset_id not in known_dataset_keys():
+        return []
+    return list(get_resolver().resolve(dataset_id).dataspace.sharing_offers)
+
+
 def reset_caches() -> None:
     """Drop cached configuration — used by tests and after a governance reload."""
     get_profile.cache_clear()
     get_resolver.cache_clear()
     get_offers.cache_clear()
+    _datasets_by_offer.cache_clear()
 
 
 # ── Datasets ─────────────────────────────────────────────────────────────────
@@ -167,8 +201,11 @@ def offers_covering(
     Non-consent offers are excluded: contract-based processing is disclosed, not
     consented, so there is no question to suppress.
     """
+    catalogue = get_offers()
     candidates = [
-        offer for offer in get_offers().for_dataset(dataset_id) if offer.requires_consent
+        offer
+        for offer in (catalogue.get(oid) for oid in offers_for_dataset(dataset_id))
+        if offer is not None and offer.requires_consent
     ]
     if controller_role:
         candidates = [
@@ -228,8 +265,9 @@ def public_offer_projection(offer: SharingOffer) -> dict:
         "retention": offer.retention,
         "user_visible_hash": offer.user_visible_hash(chain),
         # A count, not the keys: which datasets back an offer is operator
-        # detail the person was never shown.
-        "dataset_count": len(offer.datasets),
+        # detail the person was never shown. Derived from the datasets that
+        # declare this offer, since the offer no longer names them.
+        "dataset_count": len(datasets_for_offer(offer.id)),
         "fallback_text_en": {
             "purpose_label": concept.label if concept else (slug or offer.purpose),
             "purpose_definition": concept.definition if concept else "",

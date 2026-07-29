@@ -26,6 +26,11 @@ sources:
       medallion: silver
       purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
       consent_required: true
+      # The dataset names its offers — see the sibling sharing-offers.yaml.
+      sharing_offers:
+        - test-flexibility
+        - test-incentives
+        - test-grid-planning
       asset:
         id: "datasets.silver.meters"
       data_address:

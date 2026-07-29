@@ -31,7 +31,7 @@ Three vocabularies have to agree before a question can mean anything. The chain 
         │                              ▲     └── dpv_mapping → DPV IRI + relation
         │ groups                       │     └── broader → local hierarchy (enforcement)
         ▼                              │ validated against
- sharing offer ──── resolves to ──► governance.yaml datasets
+ sharing offer ◄──── declared by ──── governance.yaml datasets
    ├── purpose                         │ declare policy.purpose[]
    ├── recipients{controller,          ▼
    │              processors,  ODRL offer constraint
@@ -45,7 +45,7 @@ Three vocabularies have to agree before a question can mean anything. The chain 
               /internal/consent/check
 ```
 
-Every link is checked. `task compliance:validate` fails if an offer names a purpose outside the taxonomy, a dataset that does not resolve, a controller that is not in the owners registry, or a dataset that does not declare the offer's purpose in `policy.purpose[]`.
+Every link is checked. `task compliance:validate` fails if an offer names a purpose outside the taxonomy or a controller that is not in the owners registry, or if a dataset declares an offer id that does not resolve or an offer whose purpose it does not list in `policy.purpose[]`. `POST /provider/sync` applies the same rules at ingest and **refuses to publish** what fails them.
 
 ### Purposes are declared, not inferred from tags
 
@@ -90,7 +90,6 @@ sharing_offers:
   - id: household-energy-flexibility
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
-    datasets: [datasets.silver.meters_15m]
     recipients:
       controller: example-org            # who decides the purpose
       processors:
@@ -106,6 +105,36 @@ sharing_offers:
     revocable: true
     retention: P2Y
 ```
+
+### The dataset names the offer, never the reverse
+
+An offer carries no `datasets` list. The dataset declares which offers it is
+consentable under:
+
+```yaml
+# governance.yaml
+datasets.silver.meters_15m:
+  dataspace:
+    consent_required: true
+    purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+    sharing_offers:
+      - household-energy-flexibility
+      - community-incentive-calculation
+```
+
+Two reasons, and the first is not tidiness. Offers are declared by whoever
+declares the dataset, so an offer free to name arbitrary dataset keys would let
+one producer write the consent text for another producer's data. Here only the
+file that declares a dataset can bind an offer to it.
+
+The second: which datasets back an offer is a schema-migration concern nobody was
+shown, and it must never invalidate consent. That used to be a rule — the hash
+*excluded* `datasets[]`. It is now structural, because there is no field to
+exclude.
+
+An id that does not resolve means the dataset is **not exposed**. "No sharing
+offer" and "not shared" are the same statement: publishing it while skipping only
+the reference would advertise a consent gate that can never open.
 
 ### `legal_basis` is not decoration
 
@@ -225,7 +254,7 @@ Parking is protocol-legal: DSP treats `REQUESTED` as an ordinary non-terminal st
 
 > Never pester. Ask at onboarding, then manage at governance level. The system must never *block* a person because they have not consented to something new.
 
-Consent binds to **the facts the person read**. `user_visible_hash` is a SHA-256 over `purpose` (+ its `broader` chain), `legal_basis`, `recipients.controller`, `recipients.processors.category`, `subject_scope`, `measures`, `resolution`, `coverage`, `retention` and `revocable`. **Explicitly not over `datasets[]`.**
+Consent binds to **the facts the person read**. `user_visible_hash` is a SHA-256 over `purpose` (+ its `broader` chain), `legal_basis`, `recipients.controller`, `recipients.processors.category`, `subject_scope`, `measures`, `resolution`, `coverage`, `retention` and `revocable`. **An offer has no `datasets[]` to hash** — the dataset names the offer, not the reverse, so which datasets back it is structurally outside the bytes a person's consent binds to.
 
 | Change | Re-consent? | Why |
 |---|---|---|
@@ -585,7 +614,7 @@ This ensures that consent can only be granted for subjects who actually belong t
 | `purpose-labels` | A purpose has no English label (a definition is a warning) |
 | `purpose-declared` | A `policy.purpose[]` entry is not in the taxonomy |
 | `offer-purpose` | An offer's purpose is not in the taxonomy, or an id is duplicated |
-| `offer-datasets` | An offer references a key that is not an exposed dataset |
+| `offer-datasets` | A dataset declares an offer id that does not resolve, or an offer no exposed dataset declares |
 | `offer-consent-required` | An offer reaches a PII dataset that does not set `policy.consent.required` |
 | `offer-dataset-purpose` | A dataset does not declare the offer's purpose in `policy.purpose[]` |
 | `offer-controller` | The controller does not resolve, or `controller_role` is not one of that participant's roles |

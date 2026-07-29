@@ -84,6 +84,7 @@
       "type": "object"
     },
     "sharingOffer": {
+      "additionalProperties": false,
       "description": "A purpose-scoped bundle a person is asked to consent to.",
       "properties": {
         "consent_text_version": {
@@ -93,13 +94,6 @@
         },
         "coverage": {
           "$ref": "#/$defs/OfferCoverage"
-        },
-        "datasets": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Datasets",
-          "type": "array"
         },
         "id": {
           "title": "Id",
