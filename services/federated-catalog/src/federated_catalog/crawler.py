@@ -132,16 +132,31 @@ async def crawl_loop(cache: CatalogCache, settings: Settings, token_provider=Non
 
     while True:
         log.info("Starting catalog crawl cycle…")
+        delay = settings.crawl_interval
         try:
             datasets_by_provider, errors = await crawl_all(settings, token_provider=token_provider)
-            cache.swap(datasets_by_provider, errors)
+            applied = cache.swap(datasets_by_provider, errors)
             total = sum(len(v) for v in datasets_by_provider.values())
-            log.info(
-                "Crawl complete: %d datasets from %d providers (%d errors)",
-                total,
-                len(datasets_by_provider),
-                len(errors),
-            )
+            if applied:
+                log.info(
+                    "Crawl complete: %d datasets from %d providers (%d errors)",
+                    total,
+                    len(datasets_by_provider),
+                    len(errors),
+                )
+            else:
+                # Reached nothing. The usual cause is ordering, not breakage: the
+                # crawler starts `startup_delay` after itself, which on a cold
+                # boot can be before ds-connector or the EDC behind it accepts
+                # connections. Waiting a full interval to find out would leave the
+                # catalogue empty for minutes after everything came up healthy.
+                delay = min(settings.crawl_retry_delay, settings.crawl_interval)
+                log.warning(
+                    "Crawl reached no source (%d errors) — keeping the previous "
+                    "catalogue and retrying in %ds",
+                    len(errors),
+                    delay,
+                )
         except Exception as exc:
             log.exception("Crawl loop encountered an unexpected error: %s", exc)
-        await asyncio.sleep(settings.crawl_interval)
+        await asyncio.sleep(delay)

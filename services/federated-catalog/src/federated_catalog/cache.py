@@ -33,8 +33,36 @@ class CatalogCache:
         self,
         datasets_by_provider: dict[str, list[dict]],
         errors: list[CrawlError],
-    ) -> None:
-        """Atomically replace the catalog contents after a crawl cycle."""
+    ) -> bool:
+        """Atomically replace the catalog contents after a crawl cycle.
+
+        Returns whether the contents were replaced.
+
+        **A crawl that reached no source at all is not a crawl.** It is evidence
+        about the network, not about the catalogue, and it must not be published
+        as "the catalogue is empty, as of now":
+
+        - Any previously crawled datasets are **kept**. Discarding good data
+          because one cycle could not connect turns a transient outage into an
+          empty federated catalogue for a full interval.
+        - ``last_crawl`` is **not advanced**, so a freshness check cannot pass on
+          the strength of an attempt that returned nothing. Reporting a fresh,
+          empty catalogue is the worst of both: it reads as "the provider
+          published nothing" when the truth is "we could not ask".
+
+        The errors are always recorded, so ``/catalog/meta`` shows what happened
+        either way.
+
+        A provider that is reachable and genuinely publishes nothing is a
+        different case and swaps normally — it appears in *datasets_by_provider*
+        with an empty list, so the catalogue correctly becomes empty.
+        """
+        reached_nobody = not datasets_by_provider and bool(errors)
+        if reached_nobody:
+            with self._lock:
+                self._crawl_errors = errors
+            return False
+
         merged: dict[str, dict] = {}
         for datasets in datasets_by_provider.values():
             for ds in datasets:
@@ -46,6 +74,7 @@ class CatalogCache:
             self._by_iri = merged
             self._last_crawl = datetime.now(timezone.utc)
             self._crawl_errors = errors
+        return True
 
     def all_datasets(self) -> list[dict]:
         with self._lock:

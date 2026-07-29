@@ -28,6 +28,14 @@ class Settings(BaseSettings):
     # Crawl interval in seconds
     crawl_interval: int = 300
 
+    # Seconds to wait before retrying a cycle that reached no source at all.
+    # `startup_delay` is a guess about how long the connector and the EDC behind
+    # it take to accept connections, and on a cold boot it is regularly wrong.
+    # Waiting a full `crawl_interval` to discover that would leave the catalogue
+    # empty for minutes after the stack is healthy, so a cycle that connected to
+    # nothing retries promptly instead.
+    crawl_retry_delay: int = 15
+
     # Seconds to wait after startup before first crawl (allows connector to be ready)
     startup_delay: int = 10
 
