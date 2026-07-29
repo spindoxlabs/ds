@@ -121,6 +121,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli key rotate` | Rotate key for a DID |
 | `ir-cli status export` | Export StatusList2021 as JSON |
 | `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
+| `ir-cli org apply --file owners.yaml` | Walk that whole lifecycle per `owners.yaml` entry carrying a `dataspace:` block — idempotent, reports every failure in one pass, `--dry-run` available |
 | `ir-cli org list/show/suspend/revoke/import` | Manage organisations |
 | `ir-cli agreement import/list` | Import + list service-agreement definitions |
 | `ir-cli org bundle --alias --format` | Render a connection bundle (same renderers as the HTTP endpoint, so the two cannot drift) |

@@ -11,6 +11,7 @@ never the prose.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import and_, select
@@ -120,8 +121,12 @@ async def upsert_owner_from_application(
     owner.legal_country_code = app.legal_country_code
     owner.parent_organizations = app.parent_organizations
     owner.sub_organizations = app.sub_organizations
+    # `verified_at` is *when the check happened*, not when this ran. Re-running
+    # the promotion (a re-applied seed, a pod restart) must not move it forward,
+    # or the evidence trail drifts away from the verification it records.
+    if owner.status != "verified" or owner.verified_at is None:
+        owner.verified_at = now
     owner.status = "verified"
-    owner.verified_at = now
     owner.verified_by = verified_by or app.verified_by
     owner.evidence_ref = app.evidence_ref
     owner.updated_at = now
@@ -162,6 +167,12 @@ async def record_agreement_acceptance(
         )
     )
     acceptance = result.scalar_one_or_none()
+    already_current = (
+        acceptance is not None
+        and owner.agreement_id == agreement.id
+        and owner.agreement_version == agreement.version
+        and owner.agreement_accepted_at is not None
+    )
     if acceptance is None:
         acceptance = AgreementAcceptance(
             owner_alias=owner.id,
@@ -176,7 +187,10 @@ async def record_agreement_acceptance(
 
     owner.agreement_id = agreement.id
     owner.agreement_version = agreement.version
-    owner.agreement_accepted_at = now
+    # Same reason as `verified_at` above: re-recording an acceptance the owner
+    # already carries must not restamp *when* they accepted it.
+    if not already_current:
+        owner.agreement_accepted_at = now
     owner.agreement_capacity = agreement.capacity
     owner.updated_at = now
     await db.flush()
@@ -406,3 +420,351 @@ async def revoke_owner(db: AsyncSession, owner: Owner) -> None:
     owner.status = "revoked"
     owner.updated_at = datetime.now(UTC)
     await db.flush()
+
+
+# ── Seeding an organisation end to end (T26) ──────────────────────
+#
+# The five lifecycle calls above are individually idempotent, but reaching a
+# promoted organisation still meant an operator running them in order, by hand,
+# once per organisation. `apply_owner_entry` composes them from one declarative
+# entry so a fresh environment can reach a promoted organisation with no human
+# in a browser, and a re-run is a no-op.
+#
+# The entry is an `owners.yaml` owner extended with an optional `dataspace:`
+# block. An entry without that block is not ours — it is there for the other
+# consumers of that file — and is reported as skipped, never guessed at.
+
+
+DEFAULT_ROLES = ["consumer"]
+DEFAULT_SCOPES = ["dataspaces.query"]
+DEFAULT_STS_SECRET = "insecure-dev-secret"
+
+#: Owner columns an `owners.yaml` entry owns directly. `upsert_owner_from_
+#: application` writes the legal identity; these carry the presentation and
+#: lookup keys, so `org apply` alone leaves the same owner row `owner import`
+#: would — governance `ownership[].name` resolves by alias, so dropping them
+#: would publish datasets nobody can resolve an owner for.
+_ENTRY_OWNER_FIELDS = ("type", "url")
+
+
+@dataclass(slots=True)
+class ApplyStep:
+    """What one lifecycle stage did for one entry."""
+
+    step: str  # application | verification | agreement | credential | participant
+    action: str  # created | updated | unchanged | issued | promoted | skipped
+    detail: str = ""
+
+    def __str__(self) -> str:
+        return f"{self.step:<13} {self.action:<9} {self.detail}".rstrip()
+
+
+@dataclass(slots=True)
+class ApplyOutcome:
+    """The per-entry report. ``error`` set means the chain stopped there."""
+
+    alias: str
+    steps: list[ApplyStep] = field(default_factory=list)
+    error: str | None = None
+    #: False when the entry declares no ``dataspace:`` block — not a failure.
+    applied: bool = True
+
+    @property
+    def ok(self) -> bool:
+        return self.error is None
+
+    @property
+    def changed(self) -> bool:
+        return any(s.action not in ("unchanged", "skipped") for s in self.steps)
+
+
+def _require(block: dict, key: str, alias: str) -> object:
+    value = block.get(key)
+    if value in (None, "", [], {}):
+        raise OrgOnboardingError(
+            f"{alias}: dataspace.{key} is required", status_code=422
+        )
+    return value
+
+
+async def _current_org_credential(db: AsyncSession, owner: Owner) -> Credential | None:
+    """An active OrganizationCredential that has not expired.
+
+    ``_active_org_credential`` (the promote gate) only reads ``status``. Here the
+    expiry matters: re-issuing on every run would mint a credential and burn a
+    StatusList index per pod restart, while never re-issuing would let a seeded
+    organisation quietly age out.
+    """
+    cred = await _active_org_credential(db, owner)
+    if cred is None:
+        return None
+    expires_at = cred.expires_at
+    if expires_at is not None:
+        # SQLite hands back naive datetimes where Postgres hands back aware
+        # ones. Assume UTC — everything written here is.
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC):
+            return None
+    return cred
+
+
+async def apply_owner_entry(
+    db: AsyncSession,
+    settings: Settings,
+    entry: dict,
+    *,
+    sts_secret: str | None = None,
+) -> ApplyOutcome:
+    """Walk register → verify → agreement → issue-credential → promote for one entry.
+
+    Idempotent throughout: a second run advances nothing and duplicates nothing.
+    Raises nothing — a gate or a malformed entry lands in ``ApplyOutcome.error``
+    so the caller can report every entry in one pass rather than stopping at the
+    first, the same shape as the connector's sync gate and ``ProductionGuard``.
+    """
+    alias = entry.get("id") or entry.get("alias") or "<unnamed>"
+    outcome = ApplyOutcome(alias=alias)
+
+    block = entry.get("dataspace")
+    if not block:
+        outcome.applied = False
+        outcome.steps.append(
+            ApplyStep("entry", "skipped", "no dataspace: block")
+        )
+        return outcome
+    if not isinstance(block, dict):
+        outcome.error = f"{alias}: dataspace must be a mapping"
+        return outcome
+
+    try:
+        await _apply_steps(db, settings, entry, block, alias, outcome, sts_secret)
+    except OrgOnboardingError as exc:
+        outcome.error = f"{alias}: {exc.message}"
+    return outcome
+
+
+async def _apply_steps(
+    db: AsyncSession,
+    settings: Settings,
+    entry: dict,
+    block: dict,
+    alias: str,
+    outcome: ApplyOutcome,
+    sts_secret: str | None,
+) -> None:
+    legal_name = block.get("legal_name") or entry.get("name") or alias
+    did = block.get("did") or entry.get("did")
+    dsp_address = block.get("dsp_address")
+    roles = list(block.get("roles") or DEFAULT_ROLES)
+    scopes = list(block.get("scopes") or DEFAULT_SCOPES)
+    accepted = block.get("accepted")
+
+    # 'verified' must carry its evidence — the same invariant as the DB CHECK and
+    # `ir-cli owner import`. A seed that promotes an owner without saying who
+    # verified it is exactly the free-verification state T30 closed.
+    verified_by = _require(block, "verified_by", alias)
+    evidence_ref = block.get("evidence_ref")
+
+    # The same vocabulary the admin API enforces. `dataspace.roles` is the
+    # *participant* role, not the Keycloak `organization.role` beside it in the
+    # same entry — a seed that mixes them would register a participant the API
+    # would have refused, and only the seeded environments would carry it.
+    from ..schemas.requests import VALID_REGISTRATION_TYPES, VALID_ROLES
+
+    invalid_roles = set(roles) - VALID_ROLES
+    if invalid_roles:
+        raise OrgOnboardingError(
+            f"dataspace.roles {sorted(invalid_roles)} invalid; must be one of "
+            f"{sorted(VALID_ROLES)} (Keycloak roles belong under organization.role)",
+            status_code=422,
+        )
+    registration_type = block.get("registration_type")
+    if registration_type is not None and registration_type not in (
+        VALID_REGISTRATION_TYPES
+    ):
+        raise OrgOnboardingError(
+            f"dataspace.registration_type {registration_type!r} invalid; must be "
+            f"one of {sorted(VALID_REGISTRATION_TYPES)}",
+            status_code=422,
+        )
+
+    # Refuse a half-declared chain up front rather than promoting an owner and
+    # failing at the gate three steps later, leaving state nobody asked for.
+    if dsp_address and not did:
+        raise OrgOnboardingError(
+            "dataspace.dsp_address needs a did to promote against", status_code=422
+        )
+    if dsp_address and not accepted:
+        raise OrgOnboardingError(
+            "dataspace.dsp_address requires dataspace.accepted — a participant "
+            "cannot be promoted without an accepted agreement",
+            status_code=422,
+        )
+
+    # ── 1. application ────────────────────────────────────────────
+    result = await db.execute(
+        select(OrganizationApplication)
+        .where(OrganizationApplication.alias == alias)
+        .order_by(OrganizationApplication.created_at.desc())
+    )
+    app_row = result.scalars().first()
+    created_app = app_row is None
+    if app_row is None:
+        app_row = OrganizationApplication(alias=alias, legal_name=legal_name)
+        db.add(app_row)
+
+    fields = {
+        "legal_name": legal_name,
+        "registration_number": block.get("registration_number"),
+        "registration_type": registration_type,
+        "hq_country_code": block.get("hq_country_code"),
+        "legal_country_code": block.get("legal_country_code"),
+        "parent_organizations": block.get("parent_organizations"),
+        "sub_organizations": block.get("sub_organizations"),
+        "roles": roles,
+        "did": did,
+        "dsp_address": dsp_address,
+    }
+    changed = created_app or any(
+        getattr(app_row, name) != value for name, value in fields.items()
+    )
+    for name, value in fields.items():
+        setattr(app_row, name, value)
+    if changed:
+        app_row.updated_at = datetime.now(UTC)
+    outcome.steps.append(
+        ApplyStep(
+            "application",
+            "created" if created_app else ("updated" if changed else "unchanged"),
+            alias,
+        )
+    )
+
+    # ── 2. verification → Owner ───────────────────────────────────
+    existing = await db.execute(select(Owner).where(Owner.id == alias))
+    owner_before = existing.scalar_one_or_none()
+    was_verified = owner_before is not None and owner_before.status == "verified"
+
+    if app_row.status != "verified":
+        app_row.status = "verified"
+        app_row.verified_at = datetime.now(UTC)
+    app_row.verified_by = str(verified_by)
+    if evidence_ref is not None:
+        app_row.evidence_ref = evidence_ref
+    await db.flush()
+
+    owner = await upsert_owner_from_application(
+        db, app_row, verified_by=str(verified_by)
+    )
+
+    # The owner's presentation and lookup keys come from the entry itself, so
+    # `org apply` leaves the row `owner import` would have.
+    for name in _ENTRY_OWNER_FIELDS:
+        value = entry.get(name)
+        if value is not None:
+            setattr(owner, name, value)
+    if entry.get("aliases") is not None:
+        owner.aliases = list(entry["aliases"])
+    if entry.get("organization") is not None:
+        owner.organization_config = entry["organization"]
+    await db.flush()
+
+    if was_verified:
+        verification = "unchanged"
+    else:
+        verification = "advanced" if owner_before else "created"
+    outcome.steps.append(
+        ApplyStep("verification", verification, f"verified by {verified_by}")
+    )
+
+    # ── 3. agreement acceptance ───────────────────────────────────
+    if not accepted:
+        outcome.steps.append(
+            ApplyStep("agreement", "skipped", "no dataspace.accepted declared")
+        )
+    else:
+        agreement_id = _require(accepted, "agreement", alias)
+        version = str(_require(accepted, "version", alias))
+        locale = accepted.get("locale", "en")
+        ag_result = await db.execute(
+            select(Agreement).where(
+                and_(Agreement.id == agreement_id, Agreement.version == version)
+            )
+        )
+        agreement = ag_result.scalar_one_or_none()
+        if agreement is None:
+            raise OrgOnboardingError(
+                f"agreement {agreement_id}@{version} is not imported "
+                "(ir-cli agreement import)",
+                status_code=422,
+            )
+        already = (
+            owner.agreement_id == agreement.id
+            and owner.agreement_version == agreement.version
+        )
+        await record_agreement_acceptance(
+            db,
+            owner,
+            agreement,
+            locale=locale,
+            accepted_by=accepted.get("accepted_by"),
+        )
+        outcome.steps.append(
+            ApplyStep(
+                "agreement",
+                "unchanged" if already else "accepted",
+                f"{agreement.id}@{agreement.version} capacity={agreement.capacity}",
+            )
+        )
+
+    # ── 4. organisation credential ────────────────────────────────
+    if not owner.agreement_id:
+        outcome.steps.append(
+            ApplyStep("credential", "skipped", "no accepted agreement to issue against")
+        )
+    else:
+        cred = await _current_org_credential(db, owner)
+        if cred is not None:
+            outcome.steps.append(
+                ApplyStep("credential", "unchanged", f"{cred.id} valid")
+            )
+        else:
+            cred = await issue_organization_credential(
+                db,
+                settings,
+                owner,
+                roles=roles,
+                allowed_scopes=scopes,
+                dsp_address=dsp_address,
+                ttl_days=block.get("credential_ttl_days"),
+            )
+            outcome.steps.append(ApplyStep("credential", "issued", cred.id))
+
+    # ── 5. participant promotion ──────────────────────────────────
+    if not dsp_address:
+        outcome.steps.append(
+            ApplyStep("participant", "skipped", "no dataspace.dsp_address declared")
+        )
+        return
+
+    existing_participant = await db.execute(
+        select(Participant).where(Participant.did == owner.did)
+    )
+    was_participant = existing_participant.scalar_one_or_none() is not None
+    participant = await promote_owner_to_participant(
+        db,
+        settings,
+        owner,
+        dsp_address=dsp_address,
+        roles=roles,
+        allowed_scopes=scopes,
+        sts_secret=sts_secret or block.get("sts_secret") or DEFAULT_STS_SECRET,
+    )
+    outcome.steps.append(
+        ApplyStep(
+            "participant",
+            "unchanged" if was_participant else "promoted",
+            f"{participant.did} dsp={participant.dsp_address}",
+        )
+    )

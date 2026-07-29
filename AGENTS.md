@@ -490,6 +490,7 @@ task provider:portal:run          # portal locally with hot-reload (optional)
 | Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
 | Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
 | Onboard an organisation | `ir-cli org register/verify/agreement/issue-credential/promote` or `/admin/organizations/*` (Block D) |
+| Seed organisations for a deployment | `ir-cli org apply --file owners.yaml` — walks that whole chain per entry carrying a `dataspace:` block, idempotent |
 | Add/change a service agreement | `services/identity-registry/seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 | Add/manage KC organizations | `services/keycloak/organizations.yaml` + `ir-cli keycloak org-sync` |
 | Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |

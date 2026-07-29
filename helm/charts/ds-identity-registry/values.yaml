@@ -82,6 +82,9 @@ bootstrap:
   enabled: true
   seedConfigMap: ""
   seedMountPath: /seed
+  # `ir-cli org apply` walks owners.yaml entries that carry a `dataspace:` block
+  # all the way to a promoted participant. Set secrets.orgStsSecret below to
+  # hand them a real STS secret instead of the dev default.
 
 # Externally reachable base URL of this registry, written into provisioning
 # bundles. Defaults to https://<trust-anchor domain>.
@@ -109,6 +112,8 @@ secrets:
   dbPassword: ""
   keycloakAdminUsername: ""
   keycloakAdminPassword: ""
+  # Optional. STS client secret for organisations seeded by `ir-cli org apply`.
+  orgStsSecret: ""
 
 # ── Global fallbacks ──────────────────────────────────────────────────────────
 # Real values come from helm/values.yaml via helmfile. These exist so the chart

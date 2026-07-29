@@ -1515,6 +1515,78 @@ def org_revoke(
     _run(_revoke())
 
 
+@org_app.command("apply")
+def org_apply(
+    file: Path = typer.Option(..., help="owners.yaml seed file"),
+    sts_secret: str = typer.Option(
+        None,
+        help="STS client secret for every promoted org "
+        "(overrides dataspace.sts_secret; dev default otherwise)",
+    ),
+    dry_run: bool = typer.Option(
+        False, help="Report what would change; roll back instead of committing"
+    ),
+):
+    """Seed organisations end to end from an owners.yaml (idempotent).
+
+    Walks register → verify → agreement → issue-credential → promote for every
+    entry carrying a ``dataspace:`` block, and skips the ones that do not — so
+    the same file keeps serving its other consumers.
+
+    Every entry is attempted and **all** failures are reported together, then
+    the command exits non-zero: an operator seeding ten organisations should get
+    the whole list in one pass, not fix one and rediscover the next.
+    """
+    from ..services import org_onboarding as ops
+
+    async def _apply():
+        import yaml
+
+        if not file.exists():
+            typer.echo(f"File not found: {file}", err=True)
+            raise typer.Exit(1)
+        with file.open("r", encoding="utf-8") as fh:
+            data = yaml.safe_load(fh) or {}
+        entries = data.get("owners") or data.get("organizations") or []
+
+        settings = get_settings()
+        factory = await _ensure_db()
+        outcomes: list[ops.ApplyOutcome] = []
+        async with factory() as session:
+            for entry in entries:
+                outcome = await ops.apply_owner_entry(
+                    session, settings, entry, sts_secret=sts_secret
+                )
+                outcomes.append(outcome)
+                if not outcome.ok:
+                    # One bad entry must not roll back the entries that
+                    # succeeded before it, nor abort the ones after.
+                    await session.rollback()
+                else:
+                    await (session.rollback() if dry_run else session.commit())
+
+        applied = [o for o in outcomes if o.applied]
+        failed = [o for o in outcomes if not o.ok]
+        for outcome in outcomes:
+            typer.echo(f"{outcome.alias}:")
+            for step in outcome.steps:
+                typer.echo(f"  {step}")
+            if outcome.error:
+                typer.echo(f"  ERROR  {outcome.error}", err=True)
+
+        changed = sum(1 for o in applied if o.ok and o.changed)
+        typer.echo(
+            f"\n{len(applied)} organisation(s) applied, {changed} changed, "
+            f"{len(outcomes) - len(applied)} skipped (no dataspace: block), "
+            f"{len(failed)} failed"
+            + (" [dry-run: nothing committed]" if dry_run else "")
+        )
+        if failed:
+            raise typer.Exit(1)
+
+    _run(_apply())
+
+
 @org_app.command("import")
 def org_import(
     file: Path = typer.Option(..., help="organizations.yaml seed file"),

@@ -124,11 +124,21 @@ enabled.
 | `authority.identityRegistry.exposeUserDids` | `false` | publish `users.<baseDomain>`; needed only when **remote** verifiers resolve your user DIDs |
 | `authority.identityRegistry.credentialService.expose` | `false` | publish the DCP presentation-query endpoint; in the EDC DCP flow the holder self-presents, so remote verifiers normally never call it |
 | `authority.identityRegistry.bootstrap.enabled` | `true` | `ir-cli bootstrap` + seed import as an init container |
-| `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | ConfigMap with `owners.yaml` and/or `bootstrap.sh`; empty → the image's baked-in defaults |
+| `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | ConfigMap with `agreements.yaml`, `owners.yaml` and/or `bootstrap.sh`; empty → the image's baked-in defaults |
 | `authority.identityRegistry.bootstrap.seedMountPath` | `/seed` | |
+| `authority.identityRegistry.secrets.orgStsSecret` | `""` | STS client secret for organisations seeded by `ir-cli org apply`; unset → the dev default |
 
 Bootstrap is idempotent by design — every `ir-cli` command has upsert semantics —
 so it is safe on every pod start.
+
+It runs `agreement import` → `owner import` → **`org apply`**, in that order: an
+organisation inherits its capacity by accepting an agreement version, so the
+agreements have to exist first. `org apply` walks the full onboarding chain
+(register → verify → agreement → issue-credential → promote) for every
+`owners.yaml` entry carrying a `dataspace:` block, so a fresh cluster reaches a
+transaction-ready participant with no human in a browser; entries without that
+block are skipped. See
+[Owner Identity & Ownership](../owner-identity-and-ownership.md#seeding-the-whole-chain-ir-cli-org-apply).
 
 ## `participants` — one release group each
 

@@ -58,8 +58,21 @@ spec:
             - |
               ir-cli bootstrap
               SEED={{ .Values.bootstrap.seedMountPath }}
+              # Agreements first: an owner inherits its capacity by accepting a
+              # version, so `org apply` below needs them already imported.
+              if [ -f "$SEED/agreements.yaml" ]; then
+                ir-cli agreement import --file "$SEED/agreements.yaml"
+              fi
               if [ -f "$SEED/owners.yaml" ]; then
                 ir-cli owner import --file "$SEED/owners.yaml"
+                # Entries carrying a `dataspace:` block are walked all the way to
+                # a promoted participant; the rest are skipped. Idempotent, so a
+                # chart re-run is a no-op.
+                {{- if .Values.secrets.orgStsSecret }}
+                ir-cli org apply --file "$SEED/owners.yaml" --sts-secret "$ORG_STS_SECRET"
+                {{- else }}
+                ir-cli org apply --file "$SEED/owners.yaml"
+                {{- end }}
               fi
               if [ -f "$SEED/bootstrap.sh" ]; then
                 sh "$SEED/bootstrap.sh"
@@ -67,6 +80,13 @@ spec:
               echo "identity bootstrap complete"
           env:
             {{- include "ir.env" . | nindent 12 }}
+            {{- if .Values.secrets.orgStsSecret }}
+            - name: ORG_STS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ds.secretName" . }}
+                  key: ORG_STS_SECRET
+            {{- end }}
           securityContext:
             {{- include "ds.containerSecurityContext" . | nindent 12 }}
           volumeMounts:

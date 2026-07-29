@@ -43,7 +43,7 @@ src/identity_registry/
   cli/
     main.py            ir-cli (typer): bootstrap, participant, credential, key, status, owner,
                        membership, org (register/verify/agreement/issue-credential/promote/
-                       list/show/suspend/revoke/import), agreement (import/list) commands
+                       apply/list/show/suspend/revoke/import), agreement (import/list) commands
 ```
 
 ## API tiers
@@ -82,6 +82,21 @@ register (application) → verify (→ Owner row, status=verified)
   → promote           [gate: a valid, unrevoked OrganizationCredential exists]
   → suspend | revoke  [StatusList bit + participant deactivation, one tx]
 ```
+
+- **`ir-cli org apply -f owners.yaml` walks that whole chain per entry** (`apply_owner_entry`),
+  so a fresh environment reaches a promoted participant with no human in a browser — it is the
+  chart's bootstrap init step. It reads the deployment's existing `owners.yaml`, extended with an
+  optional `dataspace:` block; an entry without one belongs to that file's other consumers and is
+  **skipped**, not guessed at. Idempotent throughout: it will not re-issue a still-valid
+  credential, and `verified_at`/`agreement_accepted_at` are **not re-stamped** on a re-run —
+  they record when the check happened, and a bootstrap that runs on every pod start would
+  otherwise walk them away from the event they attest. Every entry is attempted and **all**
+  failures reported in one pass (the sync-gate/`ProductionGuard` shape), then exit non-zero.
+  A half-declared entry (`dsp_address` with no `accepted:`) is refused **before** any write, so
+  no half-onboarded owner is left behind. `dataspace.roles` is the *participant* role, validated
+  against the same `VALID_ROLES` the admin API enforces — the `organization.role` beside it is
+  the Keycloak axis, and mixing them is refused rather than seeding a participant the API would
+  have rejected.
 
 - `Owner` carries Gaia-X-shaped legal identity (`registration_number`/`registration_type` ∈
   `{local,EUID,EORI,vatID,leiCode}`, ISO 3166-2 `hq_country_code`/`legal_country_code`,

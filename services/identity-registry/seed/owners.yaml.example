@@ -1,10 +1,17 @@
+# Owner seed. Consumed by `ir-cli owner import` (the owner registry) and, for
+# entries carrying a `dataspace:` block, by `ir-cli org apply` (the full
+# organisation onboarding chain).
+#
+# The same file is read by other tools in the deployment, so an entry without a
+# `dataspace:` block is not ours — `org apply` reports it as skipped and leaves
+# it alone.
 owners:
   - id: example-org
     type: schema:NGO
     name: Example Organization
     did: did:web:provider.dataspaces.localhost
     aliases: [example]
-    organization:
+    organization:            # Keycloak organisation (celine-policies)
       create: true
       role: community
 
@@ -12,3 +19,56 @@ owners:
     type: schema:Organization
     name: Open Data Provider
     url: https://open-data.example.org
+
+  # ── An organisation seeded end to end ────────────────────────────
+  #
+  # `ir-cli org apply -f owners.yaml` walks register → verify → agreement →
+  # issue-credential → promote for this entry, so a fresh environment reaches a
+  # promoted, transaction-ready participant with no human in a browser. Every
+  # step is idempotent: a re-run advances nothing and duplicates nothing, which
+  # is what makes it safe as a chart init step.
+  - id: example-community
+    type: schema:NGO
+    name: Example Community
+    did: did:web:example-community.dataspaces.localhost
+    aliases: [example-c]
+    organization:
+      create: true
+      role: rec              # Keycloak org role — a different axis from
+                             # dataspace.roles below, which is the *participant*
+                             # role and must be provider|consumer
+    dataspace:
+      legal_name: "Example Community Cooperative"
+      roles: [consumer]
+      dsp_address: https://example-community.example.org/protocol
+
+      # Gaia-X-shaped legal identity, carried into the OrganizationCredential.
+      registration_number: "IT12345678901"
+      registration_type: vatID          # local | EUID | EORI | vatID | leiCode
+      hq_country_code: IT-TN            # ISO 3166-2
+      legal_country_code: IT-TN
+
+      # The agreement the organisation signed. Capacity is *not* declared per
+      # owner — it is a property of the agreement version, inherited by
+      # accepting it. Import the agreements first:
+      #   ir-cli agreement import --file agreements.yaml
+      accepted:
+        agreement: dataspace-participation
+        version: "1.0"
+        locale: en
+        accepted_by: "legal@example-community.org"
+
+      # Verification happens offline; the evidence travels with the import.
+      # `verified_by` is required — an owner that reads as verified without
+      # saying who verified it is the free-verification state the DB CHECK
+      # `ck_owner_verified_has_evidence` makes unrepresentable.
+      verified_by: "ops@example.org"
+      evidence_ref: "OPS-1234"
+
+      # Optional. Defaults: scopes [dataspaces.query], the service's credential
+      # TTL, and the dev STS secret — override the last one per environment
+      # (`ir-cli org apply --sts-secret`, or rotate it afterwards with
+      # `ir-cli org bundle`, which reissues and invalidates the previous one).
+      # scopes: [dataspaces.query]
+      # credential_ttl_days: 365
+      # sts_secret: "…"

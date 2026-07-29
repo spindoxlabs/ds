@@ -332,6 +332,64 @@ register  →  verify  →  agreement  →  issue-credential  →  promote
 The gates are enforced **in code** (`services/org_onboarding.py`, shared by the API and the
 CLI), never in documentation. The CLI is the reference implementation.
 
+### Seeding the whole chain — `ir-cli org apply`
+
+Five commands in order, per organisation, by hand is how a fresh environment reached its first
+promoted participant. `ir-cli org apply --file owners.yaml` walks the same chain from one
+declarative entry, so a deployment can reach a transaction-ready organisation with no human in
+a browser:
+
+```bash
+ir-cli agreement import --file agreements.yaml   # capacity comes from the agreement
+ir-cli org apply --file owners.yaml              # register → … → promote, per entry
+```
+
+It reads the deployment's existing **`owners.yaml`**, extended with an optional `dataspace:`
+block — one file, not a second one to keep in step. An entry without that block belongs to the
+file's other consumers and is reported as **skipped**, never guessed at:
+
+```yaml
+owners:
+  - id: example-community
+    type: schema:NGO
+    name: Example Community
+    did: did:web:example-community.example.org
+    organization: { create: true, role: rec }    # Keycloak org — a different axis
+    dataspace:                                    # ds-only
+      legal_name: "Example Community Cooperative"
+      roles: [consumer]                           # participant role: provider|consumer
+      dsp_address: https://example-community.example.org/protocol
+      registration_number: "IT12345678901"
+      registration_type: vatID
+      accepted: { agreement: dataspace-participation, version: "1.0", locale: en }
+      verified_by: "ops@example.org"
+      evidence_ref: "OPS-1234"
+```
+
+Three properties are what make it safe to run unattended, as the chart's bootstrap init
+container does on every pod start:
+
+- **Idempotent throughout.** A second run advances nothing and duplicates nothing. It will not
+  re-issue a credential that is still valid, and it does not re-stamp `verified_at` or
+  `agreement_accepted_at` — those record *when the check happened*, not when the seed last ran,
+  and a re-running bootstrap would otherwise walk them forward away from the event they attest.
+- **Every entry is attempted and all failures are reported together**, then the command exits
+  non-zero — an operator seeding ten organisations gets the whole list in one pass rather than
+  fixing one and rediscovering the next. Same shape as the connector's sync gate.
+- **A half-declared entry is refused before anything is written.** `dsp_address` without an
+  `accepted:` agreement cannot reach a promotion, so it fails up front instead of leaving a
+  verified owner nobody asked for. `verified_by` is required for the same reason the DB
+  `CHECK` requires it: a seeded owner must not read as verified for free.
+
+`--dry-run` reports what would change and rolls back. `--sts-secret` overrides the promoted
+organisations' STS secret; rotate per organisation afterwards with `ir-cli org bundle`, which
+reissues and invalidates the previous one.
+
+**`dataspace.roles` is the participant role** (`provider`|`consumer`), validated against the
+same vocabulary the admin API enforces. The `organization.role` beside it in the same entry is
+the Keycloak organisation role — a different axis, and mixing them is refused rather than
+silently seeding a participant the API would have rejected.
+
 ### Gaia-X-shaped legal identity
 
 The `Owner` row carries a legal identity shape-compatible with `gx:LegalParticipant`:
