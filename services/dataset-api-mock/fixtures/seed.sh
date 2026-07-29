@@ -11,8 +11,11 @@ set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PG=dataspaces-postgres-1
-API=dataspaces-real-dataset-api-dataset-api-real-1
-REG=dataspaces-real-dataset-api-rec-registry-1
+# API/REG container names are derived from compose below, not hardcoded: the
+# committed `.env` sets COMPOSE_PROJECT_NAME=dataspaces, which docker compose
+# reads and which *overrides* this file's `name:` — so the containers are
+# `dataspaces-*`, not `dataspaces-real-dataset-api-*`. Asking compose for the id
+# is immune to whichever project name wins.
 KEYCLOAK=${KEYCLOAK_URL:-http://localhost:9080}
 
 # `task docker:restart` recreates the ds Postgres, taking these databases with
@@ -24,6 +27,13 @@ ROOT="$(cd "$HERE/../../.." && pwd)"
 docker compose -f "$ROOT/docker-compose.dataset-api.yml" up -d >/dev/null
 docker compose -f "$ROOT/docker-compose.dataset-api.yml" restart dataset-api-real >/dev/null
 sleep 8
+
+API=$(docker compose -f "$ROOT/docker-compose.dataset-api.yml" ps -q dataset-api-real)
+REG=$(docker compose -f "$ROOT/docker-compose.dataset-api.yml" ps -q rec-registry)
+if [ -z "$API" ] || [ -z "$REG" ]; then
+  echo "could not resolve dataset-api/rec-registry containers from compose" >&2
+  exit 1
+fi
 
 echo "→ token"
 TOKEN=$(curl -sf -X POST "$KEYCLOAK/realms/dataspaces/protocol/openid-connect/token" \
