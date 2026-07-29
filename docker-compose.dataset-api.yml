@@ -7,7 +7,7 @@
 # the Playwright journeys exercise the service production uses, unchanged.
 #
 # rec-registry comes with it because it is not optional: every consent-gated
-# dataset in demo3 and celine-dev declares
+# dataset in the producer pipelines declares
 # `row_filters: [{handler: rec_registry, args: {column: device_id}}]`. That
 # handler resolves *devices*, not subject DIDs. Without a real registry the
 # integration would exercise a filter shape production does not use.

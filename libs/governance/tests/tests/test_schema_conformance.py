@@ -3,8 +3,8 @@
 `celine-utils/schema/governance.schema.json` is what every governance.yaml in
 the ecosystem is written to. ds used to keep purpose and consent in its own
 `policy:` block, which the schema tolerates (extra properties are allowed) but
-nothing else reads — so a ds file and a demo3 file describing the same
-arrangement looked different and behaved differently.
+nothing else reads — so a ds file and a producer-authored file describing the
+same arrangement looked different and behaved differently.
 
 Reading both shapes (§18) was half the fix. This is the other half: **ds's own
 files are written in the canonical form**, and a test says so, because a

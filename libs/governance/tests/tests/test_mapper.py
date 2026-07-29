@@ -328,12 +328,12 @@ def test_internal_access_level_adds_membership_even_without_access_requirements(
 # ── Owner DID resolution ─────────────────────────────────────────────────────
 
 def test_assigner_uses_owner_did_when_resolver_provided():
-    did = "did:web:greenland.dataspaces.localhost"
-    mapper = _mapper(owner_did_resolver=lambda name: did if name == "Greenland" else None)
+    did = "did:web:example-org.dataspaces.localhost"
+    mapper = _mapper(owner_did_resolver=lambda name: did if name == "example-org" else None)
     rule = _rule(
         access_level="open",
         classification="green",
-        ownership=[GovernanceOwner(name="Greenland")],
+        ownership=[GovernanceOwner(name="example-org")],
     )
     offer = mapper.to_odrl_offer("ds", rule)
     assert offer["odrl:assigner"]["@id"] == did

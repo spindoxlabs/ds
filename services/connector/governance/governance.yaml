@@ -47,7 +47,7 @@ sources:
     source_system: Local meter sample adapter
     row_filters:
       # `device_id` is what `rec_registry` resolves: a member's meters, not a
-      # subject DID. Every governance.yaml in demo3 and celine-pipelines names
+      # subject DID. Every governance.yaml in the producer pipelines names
       # this column for this handler.
       - handler: rec_registry
         args:

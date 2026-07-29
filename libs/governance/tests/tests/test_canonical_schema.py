@@ -1,7 +1,7 @@
 """Governance authored to the canonical schema must work here unchanged.
 
 `celine-utils/schema/governance.schema.json` is the format every governance.yaml
-in demo3 and celine-pipelines is written to. ds historically kept the same facts
+in the producer pipelines is written to. ds historically kept the same facts
 in its own `policy:` block, and the two never met — until a dataset authored
 elsewhere had to be exposed through this connector.
 
@@ -38,7 +38,7 @@ def _resolve(doc: dict, dataset: str, tmp_path=None):
 
 CANONICAL = {
     "defaults": {
-        # demo3 puts these in `defaults`, exactly like this.
+        # Producer files put these in `defaults`, exactly like this.
         "dataspace": {"odrl_action": "use", "purpose": ["EnergyCommunityOperation"]},
     },
     "sources": {

@@ -114,7 +114,7 @@ class GovernanceResolver:
         # ── Canonical placement wins ────────────────────────────────────────
         # `celine-utils/schema/governance.schema.json` puts these under
         # `dataspace:`; ds historically kept them under its own `policy:` block.
-        # Everything authored outside this repo — demo3, celine-pipelines — uses
+        # Everything authored outside this repo — the producer pipelines — uses
         # the canonical location, so reading only `policy:` means a dataset
         # arrives with **no purpose**, its ODRL policy carries no purpose
         # constraint, and every consent check then denies for want of a stated
@@ -212,9 +212,9 @@ class GovernanceResolver:
             # v2: merged **field by field**, not wholesale.
             #
             # Replacing the whole block loses defaults the source did not
-            # restate — and that is exactly the real-world layout: demo3 puts
-            # `purpose` in `defaults.dataspace` and `consent_required` on the
-            # dataset. Setting the second used to discard the first, leaving a
+            # restate — and that is exactly the real-world layout: a producer
+            # puts `purpose` in `defaults.dataspace` and `consent_required` on
+            # the dataset. Setting the second used to discard the first, leaving a
             # consent-gated dataset with no purpose, which then denies every
             # query for want of a stated reason.
             policy=_merge_policy(base.policy, override.policy),

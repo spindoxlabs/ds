@@ -158,7 +158,7 @@ Caddy also proxies DID resolution requests: requests to `*.dataspaces.localhost`
 
 Services running locally (outside Docker) use `172.17.0.1` to reach containers. Services running inside Docker use container names directly.
 
-> **Overlay deployments** (e.g. demo3) create their own `dataspace` bridge network via their own `docker-compose.yml` rather than joining the `dataspaces` external network defined in this repo. This keeps the overlay self-contained and avoids port conflicts with the base platform network.
+> **Overlay deployments** create their own `dataspace` bridge network via their own `docker-compose.yml` rather than joining the `dataspaces` external network defined in this repo. This keeps the overlay self-contained and avoids port conflicts with the base platform network.
 
 ---
 

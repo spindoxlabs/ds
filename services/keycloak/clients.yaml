@@ -19,7 +19,7 @@ scopes:
 
   # REC Registry — mirrors celine-policies/clients.yaml. A dataspace query on a
   # dataset whose row filter is `handler: rec_registry` cannot be resolved
-  # without it, and every consent-gated dataset in demo3 and celine-dev uses
+  # without it, and every consent-gated dataset in the producer pipelines uses
   # exactly that handler.
   - name: rec-registry.admin
     description: Full administrative access to the registry

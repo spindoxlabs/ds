@@ -1,7 +1,7 @@
 # Catalogue fixture for the **real** dataset-api, used by the ds e2e stack.
 #
-# One consent-gated dataset, declared the way every governance.yaml in demo3 and
-# celine-dev declares one: a `rec_registry` row filter on `device_id`. That
+# One consent-gated dataset, declared the way every governance.yaml in the
+# producer pipelines declares one: a `rec_registry` row filter on `device_id`. That
 # handler resolves *devices from a member*, which is precisely the shape a
 # dataspace query has to work with — the consumer is authorised for the subjects
 # who consented, and their devices are what the rows are keyed by.

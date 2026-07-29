@@ -221,11 +221,16 @@ this domain actually wants:
 2. Citing a separate draft extension is a stronger interop commitment than citing
    core DPV, and should be a deliberate decision rather than a side effect.
 
-**If we want both**, `dpv_mapping` becomes a list and `/ns/policy` emits one
-`skos:*Match` triple per entry — the SKOS model already allows multiple match
-predicates on a concept. That is a small, contained change to `models.py`, the
-namespace endpoint and `check_purpose_taxonomy`. Recorded as an option, not a
-recommendation.
+**Decision: stay on core DPV only, for now.** A single normative, stable IRI per
+concept is worth more than a more precise one from a draft that can be renamed
+under us — and the alignment is documentation, so precision here buys less than
+it would if enforcement followed it. The sector terms are recorded above so the
+option stays open rather than being rediscovered.
+
+**If we later want both**, `dpv_mapping` becomes a list and `/ns/policy` emits
+one `skos:*Match` triple per entry — SKOS already allows multiple match
+predicates on a concept. A contained change to `models.py`, the namespace
+endpoint, `check_purpose_taxonomy`, and `schema_export.purpose_vocabulary`.
 
 ---
 
