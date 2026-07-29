@@ -1,9 +1,19 @@
+# Dev owner seed.
+#
+# These are operator-seeded verified organisations for local dev. Owners now
+# default to `status: pending`, and a 'verified' owner must carry its evidence
+# (`verified_by`) — the DB CHECK, the admin API and `ir-cli owner import` all
+# enforce the pairing. So each entry states *because of what* it is verified:
+# in dev that is the seed itself, recorded honestly rather than defaulted.
 owners:
   - id: example-org
     type: schema:NGO
     name: Example Organization
     did: did:web:provider.dataspaces.localhost
     aliases: [example]
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"
     organization:
       create: true
       role: community
@@ -17,6 +27,9 @@ owners:
     name: Partner Service Provider
     did: did:web:partner.dataspaces.localhost
     aliases: [partner]
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"
     organization:
       create: true
       role: processor
@@ -29,6 +42,9 @@ owners:
     name: Grid Operator
     did: did:web:grid-operator.dataspaces.localhost
     aliases: [grid]
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"
     organization:
       create: true
       role: operator
@@ -37,3 +53,6 @@ owners:
     type: schema:Organization
     name: Open Data Provider
     url: https://open-data.example.org
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"

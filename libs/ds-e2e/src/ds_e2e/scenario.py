@@ -204,12 +204,19 @@ class ScenarioRunner:
         pending_memberships: list[tuple[str, str]] | None = None,
     ) -> None:
         alias = spec["alias"]
+        # Scenario owners stand for verified organisations, and agreement
+        # acceptance is gated on `status == "verified"`. Owners now default to
+        # 'pending', so the fixture states its own verification evidence — the
+        # admin API requires `verified_by` whenever status is 'verified'.
         body = {
             "id": alias,
             "type": spec.get("type", "schema:Organization"),
             "name": spec.get("name", alias),
             "did": spec.get("did"),
             "aliases": spec.get("aliases") or [],
+            "status": spec.get("status", "verified"),
+            "verified_by": spec.get("verified_by", "ds-e2e-scenario"),
+            "evidence_ref": spec.get("evidence_ref", f"e2e-scenario:{alias}"),
         }
         status, payload = self.http.raw(
             "POST", f"{self.ir}/admin/owners", body=body, headers=self.admin

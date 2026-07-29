@@ -65,6 +65,21 @@ async def create_owner(
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Owner already exists")
 
+    status = data.status or "pending"
+    verified_by = data.verified_by
+    verified_at = data.verified_at
+    evidence_ref = data.evidence_ref
+    if status == "verified":
+        # A verified owner must carry its evidence — the same rule the DB CHECK
+        # enforces, surfaced here as a 422 instead of an IntegrityError. This is
+        # what stops a seeded owner from reading as verified for free.
+        if not verified_by:
+            raise HTTPException(
+                status_code=422,
+                detail="status 'verified' requires 'verified_by'",
+            )
+        verified_at = verified_at or datetime.now(UTC)
+
     owner = Owner(
         id=data.id,
         type=data.type,
@@ -73,6 +88,10 @@ async def create_owner(
         url=data.url,
         aliases=data.aliases,
         organization_config=data.organization_config,
+        status=status,
+        verified_by=verified_by,
+        verified_at=verified_at,
+        evidence_ref=evidence_ref,
     )
     db.add(owner)
     await db.commit()

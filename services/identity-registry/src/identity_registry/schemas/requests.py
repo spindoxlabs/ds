@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field, field_validator
 
 VALID_ROLES = {"provider", "consumer"}
@@ -7,6 +9,8 @@ VALID_ROLES = {"provider", "consumer"}
 VALID_REGISTRATION_TYPES = {"local", "EUID", "EORI", "vatID", "leiCode"}
 # Consent capacities (§2.5) — decides coverage vs. its-own-consent.
 VALID_CAPACITIES = {"processor", "joint_controller", "independent_controller"}
+# Owner verification lifecycle.
+VALID_OWNER_STATUSES = {"pending", "verified", "suspended", "revoked"}
 
 
 class CreateDidRequest(BaseModel):
@@ -84,6 +88,22 @@ class CreateOwnerRequest(BaseModel):
     url: str | None = None
     aliases: list[str] = []
     organization_config: dict | None = None
+    # Verification lifecycle. Omitting `status` seeds a 'pending' owner; a caller
+    # asserting 'verified' must carry the evidence (`verified_by`), mirroring the
+    # organisation-application verify path. The endpoint enforces the pairing.
+    status: str | None = None
+    verified_by: str | None = None
+    verified_at: datetime | None = None
+    evidence_ref: str | None = None
+
+    @field_validator("status")
+    @classmethod
+    def _valid_status(cls, v: str | None) -> str | None:
+        if v is not None and v not in VALID_OWNER_STATUSES:
+            raise ValueError(
+                f"status must be one of {sorted(VALID_OWNER_STATUSES)}"
+            )
+        return v
 
 
 class UpdateOwnerRequest(BaseModel):

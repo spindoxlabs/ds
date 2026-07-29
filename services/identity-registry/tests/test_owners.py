@@ -40,6 +40,48 @@ class TestOwnerCRUD:
         assert data["did"] == "did:web:provider.dataspaces.localhost"
         assert data["aliases"] == ["example", "ex-org"]
         assert data["canonical_uri"] == "did:web:provider.dataspaces.localhost"
+        # An owner with no verification claim is 'pending', not verified — a
+        # seeded owner must not read as verified for free.
+        assert data["status"] == "pending"
+        assert data["verified_by"] is None
+
+    @pytest.mark.asyncio
+    async def test_create_verified_requires_evidence(self, client, admin_headers):
+        resp = await client.post(
+            "/admin/owners",
+            json={**EXAMPLE_OWNER, "status": "verified"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_create_verified_with_evidence(self, client, admin_headers):
+        resp = await client.post(
+            "/admin/owners",
+            json={
+                **EXAMPLE_OWNER,
+                "status": "verified",
+                "verified_by": "ops@example.test",
+                "evidence_ref": "ticket-42",
+            },
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["status"] == "verified"
+        assert data["verified_by"] == "ops@example.test"
+        assert data["evidence_ref"] == "ticket-42"
+        # verified_at is stamped server-side when a verified owner is created.
+        assert data["verified_at"] is not None
+
+    @pytest.mark.asyncio
+    async def test_create_rejects_unknown_status(self, client, admin_headers):
+        resp = await client.post(
+            "/admin/owners",
+            json={**EXAMPLE_OWNER, "status": "bogus"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 422
 
     @pytest.mark.asyncio
     async def test_create_duplicate_owner(self, client, admin_headers):

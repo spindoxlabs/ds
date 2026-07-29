@@ -761,6 +761,45 @@ def keycloak_sync(
     _run(_sync())
 
 
+def _owner_verification_fields(
+    *,
+    status: str | None,
+    verified_by: str | None,
+    verified_at: datetime | None,
+    evidence_ref: str | None,
+    context: str,
+) -> dict:
+    """Resolve and validate an owner's verification claim for a CLI/seed path.
+
+    'verified' must carry its evidence — the same invariant the DB CHECK and the
+    admin API enforce — so a seeded owner cannot read as verified for free.
+    Omitting ``status`` yields 'pending'.
+    """
+    from ..schemas.requests import VALID_OWNER_STATUSES
+
+    resolved = status or "pending"
+    if resolved not in VALID_OWNER_STATUSES:
+        typer.echo(
+            f"{context}: invalid status {resolved!r}; "
+            f"must be one of {sorted(VALID_OWNER_STATUSES)}",
+            err=True,
+        )
+        raise typer.Exit(1)
+    if resolved == "verified" and not verified_by:
+        typer.echo(
+            f"{context}: status 'verified' requires 'verified_by'", err=True
+        )
+        raise typer.Exit(1)
+    if resolved == "verified" and verified_at is None:
+        verified_at = datetime.now(UTC)
+    return {
+        "status": resolved,
+        "verified_by": verified_by,
+        "verified_at": verified_at,
+        "evidence_ref": evidence_ref,
+    }
+
+
 @owner_app.command("add")
 def owner_add(
     id: str = typer.Option(..., help="Owner ID (kebab-case)"),
@@ -769,8 +808,24 @@ def owner_add(
     did: str = typer.Option(None, help="did:web: URI"),
     url: str = typer.Option(None, help="Canonical homepage URI"),
     alias: list[str] = typer.Option([], help="Alternative lookup keys (repeatable)"),
+    status: str = typer.Option(
+        None, help="Verification status (default: pending)"
+    ),
+    verified_by: str = typer.Option(
+        None, help="Who verified this owner (required when status=verified)"
+    ),
+    evidence_ref: str = typer.Option(
+        None, help="Verification evidence reference (ticket/document id)"
+    ),
 ):
     """Register an owner (idempotent)."""
+    verification = _owner_verification_fields(
+        status=status,
+        verified_by=verified_by,
+        verified_at=None,
+        evidence_ref=evidence_ref,
+        context=f"owner add {id}",
+    )
 
     async def _add():
         factory = await _ensure_db()
@@ -789,10 +844,13 @@ def owner_add(
                 did=did,
                 url=url,
                 aliases=list(alias),
+                **verification,
             )
             session.add(owner)
             await session.commit()
-            typer.echo(f"Owner registered: {id} ({name})")
+            typer.echo(
+                f"Owner registered: {id} ({name}) [{verification['status']}]"
+            )
 
     _run(_add())
 
@@ -877,6 +935,10 @@ def owner_import(
                 )
                 existing = result.scalar_one_or_none()
 
+                raw_verified_at = entry.get("verified_at")
+                if isinstance(raw_verified_at, str):
+                    raw_verified_at = datetime.fromisoformat(raw_verified_at)
+
                 if existing:
                     existing.type = entry.get("type", existing.type)
                     existing.name = entry.get("name", existing.name)
@@ -886,8 +948,28 @@ def owner_import(
                     org = entry.get("organization")
                     if org is not None:
                         existing.organization_config = org
+                    # Only touch the verification claim when the seed declares
+                    # one — an upsert that omits `status` must not silently
+                    # downgrade an already-verified owner to pending.
+                    if "status" in entry:
+                        existing_verification = _owner_verification_fields(
+                            status=entry.get("status"),
+                            verified_by=entry.get("verified_by"),
+                            verified_at=raw_verified_at,
+                            evidence_ref=entry.get("evidence_ref"),
+                            context=f"owner import {oid}",
+                        )
+                        for field, value in existing_verification.items():
+                            setattr(existing, field, value)
                     existing.updated_at = datetime.now(UTC)
                 else:
+                    verification = _owner_verification_fields(
+                        status=entry.get("status"),
+                        verified_by=entry.get("verified_by"),
+                        verified_at=raw_verified_at,
+                        evidence_ref=entry.get("evidence_ref"),
+                        context=f"owner import {oid}",
+                    )
                     owner = Owner(
                         id=oid,
                         type=entry.get("type", "schema:Organization"),
@@ -896,6 +978,7 @@ def owner_import(
                         url=entry.get("url"),
                         aliases=entry.get("aliases", []),
                         organization_config=entry.get("organization"),
+                        **verification,
                     )
                     session.add(owner)
                 count += 1

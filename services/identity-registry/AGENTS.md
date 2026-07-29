@@ -87,6 +87,10 @@ register (application) → verify (→ Owner row, status=verified)
   `{local,EUID,EORI,vatID,leiCode}`, ISO 3166-2 `hq_country_code`/`legal_country_code`,
   `parent_organizations`/`sub_organizations`), a verification lifecycle (`status`,
   `verified_at`/`_by`, `evidence_ref`) and the current accepted agreement + **capacity** (§2.5).
+  **`status` defaults to `pending`; `verified` must carry `verified_by`** — enforced by the
+  `ck_owner_verified_has_evidence` CHECK, a `422` on `POST /admin/owners`, and `ir-cli owner
+  add`/`import`. A seed states its own evidence (`owners.dev.yaml`); nothing reads verified for
+  free. Any construction path that sets `verified` must set the trail too.
 - `OrganizationCredential` (`vc.py`) is shape-compatible with `gx:LegalParticipant` — not full
   GXDCH compliance.
 - Agreements are YAML-seeded (`seed/agreements.dev.yaml` + `seed/content/*.md`), imported by

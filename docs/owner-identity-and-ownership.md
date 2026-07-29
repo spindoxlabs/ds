@@ -61,6 +61,16 @@ DELETE /admin/owners/{id}      — delete
 GET    /owners/resolve?alias=<name>  — resolve alias or id → OwnerEntry
 ```
 
+**Verification is never free.** A newly created owner is `status: pending`. A
+caller — the admin API, `ir-cli owner add`, or a seed entry — that asserts
+`status: verified` **must** also carry `verified_by` (and normally
+`evidence_ref`); the pairing is refused with a `422` at the API and rejected at
+import, and a DB `CHECK` (`ck_owner_verified_has_evidence`) makes "verified with
+no evidence" unrepresentable. This closes the gap where a seeded or
+service-created owner read as verified — and so landed inside the consent circle
+— without anything having verified it. The org-onboarding path
+(`register → verify → promote`) sets the trail from the application.
+
 ### Seed file format
 
 ```yaml
@@ -70,6 +80,10 @@ owners:
     name: Example Organization
     did: did:web:provider.dataspaces.localhost
     aliases: [example]
+    # A verified seed states its own evidence — otherwise it imports as pending.
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"
     organization:
       create: true
       role: community

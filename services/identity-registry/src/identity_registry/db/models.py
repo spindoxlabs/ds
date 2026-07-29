@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     ForeignKey,
@@ -154,6 +155,16 @@ class KeycloakMapping(Base):
 
 class Owner(Base):
     __tablename__ = "owners"
+    __table_args__ = (
+        # 'verified' is a claim that must carry its evidence. A row that reads
+        # verified while `verified_by` is null asserts a check nobody made — the
+        # exact state that let an operator- or service-seeded owner default into
+        # the consent circle for free. Make it unrepresentable.
+        CheckConstraint(
+            "status <> 'verified' OR verified_by IS NOT NULL",
+            name="ck_owner_verified_has_evidence",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True)
     type: Mapped[str] = mapped_column(
@@ -179,10 +190,12 @@ class Owner(Base):
     parent_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
     sub_organizations: Mapped[list | None] = mapped_column(JsonType, nullable=True)
     # ── Verification lifecycle ────────────────────────────────────────
-    # Operator-seeded owners default to 'verified'; owners promoted from an
-    # OrganizationApplication move pending → verified → suspended | revoked.
+    # Owners default to 'pending'. 'verified' is written only *because*
+    # something verified them — every construction path that sets it also sets
+    # `verified_by`/`evidence_ref`, and `ck_owner_verified_has_evidence` above
+    # holds that invariant. Owners move pending → verified → suspended | revoked.
     status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="verified", server_default="verified"
+        String(16), nullable=False, default="pending", server_default="pending"
     )
     verified_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

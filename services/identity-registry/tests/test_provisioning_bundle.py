@@ -27,6 +27,7 @@ async def _seed(db_session, *, promoted: bool = True) -> None:
             did=DID,
             aliases=[],
             status="verified",
+            verified_by="test",
         )
     )
     if promoted:

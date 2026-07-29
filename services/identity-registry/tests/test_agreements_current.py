@@ -25,6 +25,7 @@ async def _seed_owner(db_session, **overrides) -> Owner:
         did=PARTICIPANT_DID,
         aliases=[],
         status="verified",
+        verified_by="test",
         agreement_id="dataspace-participation",
         agreement_version="1.0",
         agreement_capacity="processor",
