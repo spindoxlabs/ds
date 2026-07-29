@@ -247,8 +247,10 @@ class TestSharingOffers:
         assert "offer-datasets" in codes(result.errors)
 
     def test_duplicate_offer_id_is_an_error(self, tmp_path: Path):
+        """Reported, not raised: "which file do I fix" needs an answer."""
         result = run(tmp_path, offers=[offer(), offer()])
-        assert "offer-purpose" in codes(result.errors)
+        assert "offer-duplicate" in codes(result.errors)
+        assert not result.passed
 
     def test_pii_dataset_must_require_consent(self, tmp_path: Path):
         """An offer over PII promises a control; the dataset must enforce it."""

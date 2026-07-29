@@ -8,7 +8,7 @@ import yaml
 from ..mapper import GovernanceMapper
 from ..models import OdrlProfile, load_odrl_profile
 from ..resolver import GovernanceResolver
-from ..sharing import SharingOfferCatalogue, load_sharing_offers
+from ..sharing import DuplicateOfferError, SharingOfferCatalogue, load_sharing_offers
 from .checks import (
     CHECKS,
     OwnerLookup,
@@ -157,7 +157,15 @@ def validate(
     check_purpose_taxonomy(result, active_profile)
     check_dataset_purposes(result, exposed, active_profile)
 
-    catalogue = load_sharing_offers(sharing_offers_path, overlay_name=overlay_name)
+    # A duplicate id is fatal to *loading* — with no baseline there is no winner
+    # to pick — but the gate must report it like any other finding. A traceback
+    # is a worse answer to "which file should I fix" than a named error.
+    try:
+        catalogue = load_sharing_offers(sharing_offers_path, overlay_name=overlay_name)
+    except DuplicateOfferError as exc:
+        result.error("offer-duplicate", str(exc))
+        return result
+
     if catalogue.offers:
         check_sharing_offers(
             result,

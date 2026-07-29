@@ -7,13 +7,21 @@ import httpx
 
 from pathlib import Path
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from ds.governance.models import GovernanceRuleV2
 from ds.governance.purposes import purpose_failure
-from ds.governance.sharing import SharingOfferCatalogue, load_sharing_offers
+from ds.governance.sharing import (
+    DuplicateOfferError,
+    SharingOfferCatalogue,
+    load_sharing_offers,
+)
 
 from ..clients.edc_management import EdcManagementClient
 from ..schemas.edc import SyncResult
+from .consent_vocabulary import offer_user_visible_hash
 from .governance import ConnectorGovernanceMapper, load_exposed_datasets
+from .offer_drift import offers_with_drift
 from .prov_bridge import ProvBridge
 
 log = logging.getLogger(__name__)
@@ -60,11 +68,27 @@ def _sibling_offers(
     return load_sharing_offers(path if path.exists() else None, overlay_name=overlay_name)
 
 
+async def _drifted_offers(
+    session: AsyncSession | None, catalogue: SharingOfferCatalogue
+) -> dict[str, str]:
+    """Offers whose user-visible text changed under recorded consent.
+
+    Without a session the check cannot run — there is nothing to compare against
+    — so it is skipped rather than assumed clean. That happens only where sync is
+    driven without a database (tests, and a CLI dry run); every real ingest path
+    passes one.
+    """
+    if session is None:
+        return {}
+    return await offers_with_drift(session, catalogue, offer_user_visible_hash)
+
+
 def _reject_unpublishable(
     datasets: dict[str, GovernanceRuleV2],
     mapper: ConnectorGovernanceMapper,
     catalogue: SharingOfferCatalogue,
     result: SyncResult,
+    drifted_offer_ids: set[str] | None = None,
 ) -> set[str]:
     """Datasets that must not be published, with every reason reported at once.
 
@@ -92,13 +116,23 @@ def _reject_unpublishable(
     bad edit: the previously published constraint is the safer of the two states
     to leave standing.
     """
+    drifted = drifted_offer_ids or set()
     rejected: dict[str, list[str]] = {}
     for key, rule in datasets.items():
+        stale = sorted(set(rule.dataspace.sharing_offers) & drifted)
         reasons = [
             reason
             for reason in (
                 purpose_failure(rule, mapper.profile),
                 _offer_failure(rule, catalogue),
+                (
+                    "declares sharing offer "
+                    + ", ".join(repr(o) for o in stale)
+                    + ", whose wording changed under consent already recorded "
+                    "against it"
+                    if stale
+                    else None
+                ),
             )
             if reason
         ]
@@ -119,6 +153,7 @@ async def sync_governance(
     mapper: ConnectorGovernanceMapper,
     prov: ProvBridge,
     overlay_name: str | None = None,
+    session: AsyncSession | None = None,
 ) -> SyncResult:
     result = SyncResult()
     try:
@@ -131,9 +166,24 @@ async def sync_governance(
     # configured path: `POST /provider/sync` may be pointed at another governance
     # file, and validating it against a different deployment's offers would either
     # pass a dangling reference or reject a sound one.
-    catalogue = _sibling_offers(governance_yaml_path, overlay_name)
+    #
+    # A duplicate id across contributing files raises here. It is fatal to the
+    # whole sync rather than to one dataset: until it is resolved, nobody can say
+    # which offer any dataset referencing that id actually means.
+    try:
+        catalogue = _sibling_offers(governance_yaml_path, overlay_name)
+    except DuplicateOfferError as exc:
+        result.errors.append({"error": str(exc)})
+        return result
 
-    rejected = _reject_unpublishable(datasets, mapper, catalogue, result)
+    # Offers whose wording drifted under recorded consent are refused, and so is
+    # every dataset declaring them — republishing would leave stored consent
+    # attesting to text nobody agreed to.
+    drifted = await _drifted_offers(session, catalogue)
+    for offer_id, failure in drifted.items():
+        result.errors.append({"offer": offer_id, "error": f"Not published — it {failure}"})
+
+    rejected = _reject_unpublishable(datasets, mapper, catalogue, result, set(drifted))
 
     for key, rule in datasets.items():
         if key in rejected:

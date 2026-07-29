@@ -164,10 +164,23 @@ class SharingOffer(BaseModel):
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
+class DuplicateOfferError(ValueError):
+    """Two files declared the same offer id.
+
+    Not a merge to resolve: with no privileged baseline there is no winner to
+    pick, and picking one silently would let one producer's file redefine the
+    consent text another producer's subjects already agreed to.
+    """
+
+
 class SharingOfferCatalogue(BaseModel):
     """The loaded set of offers, indexed by id."""
 
     offers: list[SharingOffer] = Field(default_factory=list)
+    #: offer id → the file that declared it. Attribution, and the reason a
+    #: duplicate can name both sides. Offers are contributed by whoever declares
+    #: the datasets, so "who declared this" must be answerable.
+    sources: dict[str, str] = Field(default_factory=dict)
 
     @property
     def by_id(self) -> dict[str, SharingOffer]:
@@ -175,6 +188,9 @@ class SharingOfferCatalogue(BaseModel):
 
     def get(self, offer_id: str) -> SharingOffer | None:
         return self.by_id.get(offer_id)
+
+    def source_of(self, offer_id: str) -> str | None:
+        return self.sources.get(offer_id)
 
     def consent_based(self) -> list[SharingOffer]:
         return [offer for offer in self.offers if offer.requires_consent]
@@ -209,38 +225,83 @@ def _parse(raw: dict[str, Any]) -> SharingOfferCatalogue:
     )
 
 
+#: Producer-contributed offer files, collected beside the base file.
+#:
+#: A directory rather than a ``sharing-offers.*.yaml`` glob, because the glob is
+#: already taken: ``sharing-offers.<name>.yaml`` is the deployment **overlay**,
+#: opted into by name. One convention cannot mean both "contribute an offer" and
+#: "rebind this deployment's offers" — a producer dropping
+#: ``sharing-offers.acme.yaml`` in would silently become an overlay the moment
+#: someone set ``SHARING_OFFERS_OVERLAY_NAME=acme``.
+CONTRIB_DIRNAME = "sharing-offers.d"
+
+
+def _read(path: Path) -> SharingOfferCatalogue:
+    with path.open("r", encoding="utf-8") as f:
+        return _parse(yaml.safe_load(f) or {})
+
+
+def _contributing_files(base_path: Path) -> list[Path]:
+    """The base file plus ``sharing-offers.d/*.yaml``, in deterministic order.
+
+    Sorted by name, never by mtime: a collection order that depends on when a
+    file was touched makes a catalogue that differs between two machines running
+    the same commit. With duplicates rejected outright, order does not affect
+    *correctness* — but a stable order keeps diagnostics reproducible.
+    """
+    files = [base_path] if base_path.exists() else []
+    contrib = base_path.parent / CONTRIB_DIRNAME
+    if contrib.is_dir():
+        files.extend(sorted(contrib.glob("*.yaml")))
+    return files
+
+
 def load_sharing_offers(
     path: Path | str | None,
     overlay_name: str | None = None,
 ) -> SharingOfferCatalogue:
-    """Load ``sharing-offers.yaml``, merging ``sharing-offers.<overlay>.yaml``.
+    """Collect every contributed offer file, then apply the deployment overlay.
 
-    Mirrors ``GovernanceResolver.from_file_with_override``: the overlay replaces
-    offers with the same id and appends new ones, so a deployment can rebind a
-    controller without forking the base file.  A missing base file yields an
-    empty catalogue — a deployment with no offers is valid, it simply has
-    nothing to ask.
+    **Contribution is a union, not a merge.** Offers belong to the producer that
+    declares the datasets, so no file is a baseline others layer onto — there is
+    no override to resolve, and a duplicate id across two files is a
+    :class:`DuplicateOfferError` naming both. That also makes collection order
+    irrelevant to correctness.
+
+    **The overlay is different and stays replace-by-id.** ``sharing-offers.<name>.yaml``
+    is a deliberate, opt-in deployment rebinding (a controller alias for a given
+    site), not a contribution, so it is applied last and may replace.
+
+    A missing base file is fine: a deployment with no offers of its own can still
+    receive contributions, and one with neither simply has nothing to ask.
     """
     if path is None:
         return SharingOfferCatalogue()
     base_path = Path(path)
-    if not base_path.exists():
-        logger.debug("No sharing offers file at %s — empty catalogue", base_path)
-        return SharingOfferCatalogue()
 
-    with base_path.open("r", encoding="utf-8") as f:
-        catalogue = _parse(yaml.safe_load(f) or {})
+    offers: dict[str, SharingOffer] = {}
+    sources: dict[str, str] = {}
+    for file in _contributing_files(base_path):
+        for offer in _read(file).offers:
+            previous = sources.get(offer.id)
+            if previous is not None:
+                raise DuplicateOfferError(
+                    f"Sharing offer '{offer.id}' is declared twice — in "
+                    f"'{previous}' and in '{file.name}'. Offers are contributed, "
+                    "not overridden: rename one, or remove the duplicate."
+                )
+            offers[offer.id] = offer
+            sources[offer.id] = file.name
+
+    if not offers and not base_path.exists():
+        logger.debug("No sharing offers at %s — empty catalogue", base_path)
 
     name = overlay_name or os.getenv("SHARING_OFFERS_OVERLAY_NAME")
-    if not name:
-        return catalogue
+    if name:
+        overlay_path = base_path.parent / f"sharing-offers.{name}.yaml"
+        if overlay_path.exists():
+            for offer in _read(overlay_path).offers:
+                offers[offer.id] = offer
+                sources[offer.id] = overlay_path.name
 
-    overlay_path = base_path.parent / f"sharing-offers.{name}.yaml"
-    if not overlay_path.exists():
-        return catalogue
-    with overlay_path.open("r", encoding="utf-8") as f:
-        overlay = _parse(yaml.safe_load(f) or {})
-
-    merged = {offer.id: offer for offer in catalogue.offers}
-    merged.update({offer.id: offer for offer in overlay.offers})
-    return SharingOfferCatalogue(offers=list(merged.values()))
+    return SharingOfferCatalogue(offers=list(offers.values()), sources=sources)

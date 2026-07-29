@@ -32,6 +32,7 @@ CONSENT_CHECKS = (
     "purpose-labels",
     "purpose-declared",
     "offer-purpose",
+    "offer-duplicate",
     "offer-datasets",
     "offer-consent-required",
     "offer-dataset-purpose",
@@ -183,14 +184,13 @@ def check_sharing_offers(
     profile: OdrlProfile,
     roles: RoleLookup | None = None,
 ) -> None:
-    """Validate the offers a person will actually be shown."""
-    seen_ids: set[str] = set()
+    """Validate the offers a person will actually be shown.
 
+    Duplicate ids are not checked here: ``load_sharing_offers`` raises on one,
+    keyed by id across every contributing file, so a duplicate cannot reach this
+    function. `validator.validate` turns that into an ``offer-duplicate`` finding.
+    """
     for offer in catalogue.offers:
-        if offer.id in seen_ids:
-            result.error("offer-purpose", f"Duplicate sharing offer id '{offer.id}'")
-        seen_ids.add(offer.id)
-
         _check_offer_purpose(result, offer, profile)
         _check_offer_controller(result, offer, roles)
         _check_offer_legal_basis(result, offer)

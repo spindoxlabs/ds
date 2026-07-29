@@ -114,3 +114,57 @@ async def test_an_unrelated_scope_is_refused(client):
         "/provider/agreements", headers=make_headers(scope="connector.consent.provision")
     )
     assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_sync_drops_the_cached_consent_vocabulary(engine, monkeypatch):
+    """The vocabulary gates consent *writes*, not just what is displayed.
+
+    It is cached for the process lifetime by design. Without an invalidation on
+    sync, an offer contributed since startup is accepted by the sync and then
+    rejected as unknown by `POST /consent/my/shares`, and `/ns/sharing-offers`
+    keeps advertising a `consent_text_version` nobody publishes any more.
+
+    Builds its own app so `get_provider_edc` can be overridden — the shared
+    `client` fixture does not expose one.
+    """
+    from httpx import ASGITransport, AsyncClient
+    from sqlalchemy.ext.asyncio import async_sessionmaker
+
+    from connector.dependencies import get_db, get_provider_edc
+    from connector.main import create_app
+    from connector.schemas.edc import SyncResult
+    from connector.services import consent_vocabulary as vocab
+
+    calls: list[int] = []
+    monkeypatch.setattr(vocab, "reset_caches", lambda: calls.append(1))
+
+    async def _fake_sync(*_args, **_kwargs):
+        return SyncResult()
+
+    monkeypatch.setattr(
+        "connector.services.provider_service.sync_governance", _fake_sync
+    )
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def _override_db():
+        async with factory() as session:
+            yield session
+
+    app = create_app()
+    app.dependency_overrides[get_db] = _override_db
+    app.dependency_overrides[get_provider_edc] = lambda: object()
+    app.state.prov = None
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        resp = await ac.post(
+            "/provider/sync",
+            json={},
+            headers=make_headers(scope="connector.provider.write"),
+        )
+
+    assert resp.status_code == 200, resp.text
+    assert calls, "sync did not invalidate the consent vocabulary"

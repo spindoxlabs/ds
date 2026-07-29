@@ -10,6 +10,7 @@ from ds.governance.models import (
 )
 from ds.governance.sharing import (
     CONSENT_BASIS,
+    DuplicateOfferError,
     OfferCoverage,
     OfferRecipients,
     ProcessorCategory,
@@ -373,3 +374,108 @@ def test_datasets_by_offer_is_order_stable_and_deduplicates():
 def test_an_offer_nothing_declares_simply_has_no_datasets():
     """Not an error here — the compliance gate decides what an orphan means."""
     assert datasets_by_offer({"datasets.a": []}) == {}
+
+
+# ── Contributed offer files (T24 / T33) ──────────────────────────────────────
+
+def _offer_yaml(offer_id: str, controller: str = "example-org") -> str:
+    return f"""\
+sharing_offers:
+  - id: {offer_id}
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: {controller}
+      processors:
+        category: appointed-service-providers
+    consent_text_version: "1.0"
+"""
+
+
+def _contrib(tmp_path, name: str, body: str):
+    d = tmp_path / "sharing-offers.d"
+    d.mkdir(exist_ok=True)
+    (d / name).write_text(body)
+
+
+def test_contributed_files_union_with_the_base(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("acme-flexibility"))
+    _contrib(tmp_path, "beta.yaml", _offer_yaml("beta-flexibility"))
+
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert {o.id for o in catalogue.offers} == {
+        "local-offer", "acme-flexibility", "beta-flexibility",
+    }
+
+
+def test_a_contribution_needs_no_base_file(tmp_path):
+    """A deployment with no offers of its own can still receive them."""
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("acme-flexibility"))
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert [o.id for o in catalogue.offers] == ["acme-flexibility"]
+
+
+def test_every_offer_records_which_file_declared_it(tmp_path):
+    """Offers are contributed, so "who declared this" must be answerable."""
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("acme-flexibility"))
+
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert catalogue.source_of("local-offer") == "sharing-offers.yaml"
+    assert catalogue.source_of("acme-flexibility") == "acme.yaml"
+
+
+def test_duplicate_id_across_files_names_both(tmp_path):
+    """No baseline means no winner to pick — and picking one silently would let
+    one producer redefine consent text another producer's subjects agreed to."""
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("shared-id"))
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("shared-id", controller="other-org"))
+
+    with pytest.raises(DuplicateOfferError) as exc:
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert "shared-id" in str(exc.value)
+    assert "sharing-offers.yaml" in str(exc.value)
+    assert "acme.yaml" in str(exc.value)
+
+
+def test_duplicate_between_two_contributions_names_both(tmp_path):
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("shared-id"))
+    _contrib(tmp_path, "beta.yaml", _offer_yaml("shared-id"))
+
+    with pytest.raises(DuplicateOfferError) as exc:
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert "acme.yaml" in str(exc.value)
+    assert "beta.yaml" in str(exc.value)
+
+
+def test_collection_order_is_by_name_not_filesystem_order(tmp_path):
+    """Reproducible diagnostics across machines running the same commit."""
+    for name in ("zulu.yaml", "alpha.yaml", "mike.yaml"):
+        _contrib(tmp_path, name, _offer_yaml(name.removesuffix(".yaml")))
+
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert [o.id for o in catalogue.offers] == ["alpha", "mike", "zulu"]
+
+
+def test_the_overlay_still_replaces_and_is_not_a_contribution(tmp_path):
+    """`sharing-offers.<name>.yaml` is an opt-in deployment rebinding.
+
+    It must keep replace-by-id, and must not be swept up as a contribution —
+    otherwise rebinding a controller would collide with the offer it rebinds.
+    """
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
+    (tmp_path / "sharing-offers.site.yaml").write_text(
+        _offer_yaml("local-offer", controller="site-org")
+    )
+
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml", overlay_name="site")
+
+    assert len(catalogue.offers) == 1
+    assert catalogue.get("local-offer").recipients.controller == "site-org"
+    assert catalogue.source_of("local-offer") == "sharing-offers.site.yaml"

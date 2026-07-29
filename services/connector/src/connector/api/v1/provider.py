@@ -31,6 +31,10 @@ async def sync(
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
     _claims: dict = Depends(require_provider_write),
+    # Recorded consent is what makes the offer-drift check possible: the rows
+    # carry the hash and version they were written with, so the sync can tell an
+    # edit from a revision.
+    db: AsyncSession = Depends(get_db),
     request: Request = None,
 ):
     from ds.governance.models import load_odrl_profile
@@ -62,7 +66,28 @@ async def sync(
         owner_did_resolver=owner_did_resolver,
     )
     prov = request.app.state.prov
-    result = await sync_governance(yaml_path, edc, mapper, prov, overlay_name=settings.governance_overlay_name)
+    result = await sync_governance(
+        yaml_path,
+        edc,
+        mapper,
+        prov,
+        overlay_name=settings.governance_overlay_name,
+        session=db,
+    )
+
+    # A sync re-reads governance and the offer files; the consent vocabulary is
+    # cached for the process lifetime, so without this it keeps serving the view
+    # it had at startup. That is not merely stale output: `resolve_offer` and
+    # `known_dataset_keys` gate consent *writes*, so a freshly contributed offer
+    # would be accepted by this sync and then rejected as unknown by
+    # `POST /consent/my/shares`, and `/ns/sharing-offers` would advertise a
+    # consent_text_version nobody is publishing any more.
+    #
+    # Dropped even when the sync reported errors: the files on disk changed
+    # either way, and the caches are rebuilt lazily on next read.
+    from ...services import consent_vocabulary as vocab
+
+    vocab.reset_caches()
     return result
 
 
