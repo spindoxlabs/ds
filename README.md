@@ -37,14 +37,21 @@ dataspaces/
 │   ├── connector/              port 30001/31001 — EDC orchestrator (Python/FastAPI)
 │   ├── provenance/             port 30000/31000 — PROV-O REST API (Python/FastAPI)
 │   ├── portal/                 port 30004 — web frontend (SvelteKit)
-│   ├── governance/             shared Python library — GovernanceRuleV2 + ODRL mapper
 │   ├── identity-registry/      port 30005 — DID lifecycle, STS, credential service, participant registry
 │   ├── federated-catalog/      port 30003 — DCAT-AP catalog crawler (Python/FastAPI)
 │   ├── dataset-api-mock/       port 30002 — mock dataset API for dev
 │   ├── dataset-api-fiware-adapter/  FIWARE NGSI-LD adapter
 │   ├── edc-connector/          Gradle — DCP-enabled EDC connector fat JAR (v0.16.0)
 │   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
-│   └── keycloak/               OIDC realm import for dev
+│   ├── oauth2-proxy/           the human login surface, behind Caddy forward_auth
+│   └── keycloak/               OIDC realm + client/scope declarations for dev
+├── libs/                       importable shared Python packages (no Dockerfile, no port)
+│   ├── governance/             ds-governance — GovernanceRuleV2 + ODRL mapper + CLI
+│   ├── ds-auth/                ds-auth — JWT verification + role bundles + permissions
+│   ├── ds-edc/                 ds-edc — EDC Management API v3 client
+│   └── ds-e2e/                 ds-e2e — end-to-end verification framework
+├── schemas/                    JSON Schema for the YAML shapes that cross a repo boundary
+├── helm/                       Helm charts + helmfile for Kubernetes deployment
 ├── data/                       runtime data (gitignored) — caddy PKI, gradle cache
 └── docs/                       architecture docs, DSSC blueprint reference
 ```
@@ -195,8 +202,8 @@ Three compose files form the full stack:
 
 | File | Services | Purpose |
 |------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak | Shared infrastructure |
-| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider | Provider participant |
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync, oauth2-proxy | Shared infrastructure |
+| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
 The portal runs in the provider compose. For local dev with hot-reload: `task provider:portal:run`.
@@ -252,6 +259,38 @@ Each participant is identified by a `did:web:` URI:
 DID documents are served dynamically by identity-registry. Caddy rewrites `/.well-known/did.json` requests to the identity-registry API.
 
 DID private keys are generated and stored inside identity-registry, encrypted at rest with Fernet. The `ir-cli` tool (inside the identity-registry container) handles bootstrap and participant registration — see `task identity:bootstrap`.
+
+---
+
+## Authentication and authorisation
+
+Two token kinds reach the same guard, and one permission vocabulary serves both:
+
+- **Service tokens** (Keycloak client credentials) authorise on their `scope`.
+- **User tokens** (OIDC login) authorise on their Keycloak **groups**, never
+  roles. Each group names a **role bundle** — `ds-admin`,
+  `ds-participant-admin`, `ds-participant-viewer`, `ds-onboarding-operator`,
+  `ds-member` — which ds expands into capabilities in its own code.
+
+Five group names rather than one per endpoint is the point: the group vocabulary
+is the part an external realm owner has to reproduce, so it is deliberately small
+and stable, while the ~30 permission names stay an internal API surface. Where a
+realm uses different names, `*_OIDC_GROUP_ALIASES` maps them onto bundles.
+
+**Humans log in through oauth2-proxy**, which Caddy delegates to with
+`forward_auth`. The portal is *not* an OIDC client — it reads the access token the
+proxy forwards. Nothing downstream trusts that header: every service re-verifies
+the JWT against JWKS and re-authorises the request.
+
+A third mechanism exists for the data-subject plane: `/consent/my/*` and
+`/consumer/*` authenticate with `X-Subject-Id` + a verifiable credential
+(`X-User-VC`) checked against the trust anchor. A person's consent authority is a
+credential, not a group.
+
+What each service client may hold is declared in
+`services/keycloak/clients.yaml`; what each bundle may do is
+`libs/ds-auth/src/ds_auth/bundles.py`. A CI test reconciles the two in both
+directions, so a permission no human could ever be granted fails the build.
 
 ---
 

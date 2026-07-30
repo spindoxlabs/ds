@@ -8,9 +8,9 @@
 # Secrets do NOT live here — see secrets.example.yaml → secrets.sops.yaml.
 #
 # Anything absent from this file has a safe default inside the charts.
-# See .agents/helm/plan.md for the design, helm/AGENTS.md for the security
-# contract, and docs/deployment/ for the operator documentation — prerequisites,
-# the full key-by-key reference for this file, secrets, exposure and day-2 ops.
+# See helm/AGENTS.md for the design and the security contract, and
+# docs/deployment/ for the operator documentation — prerequisites, the full
+# key-by-key reference for this file, secrets, exposure and day-2 ops.
 # ==============================================================================
 
 global:
@@ -76,8 +76,33 @@ global:
       # Opt-in provisioning of service clients / organizations into the external
       # Keycloak. Off by default: KC is not ours to mutate.
       enabled: false
-      clientsConfigMap: "" # ConfigMap holding clients.yaml
+      # The **effective** declaration — `task keycloak:merge` output, not the raw
+      # `clients.yaml`. The syncer takes one file and recomputes every client's
+      # grants from it, so handing it the core alone strips whatever a domain
+      # overlay granted, silently and with no flag involved.
+      clientsConfigMap: "" # ConfigMap holding clients.effective.yaml
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
+
+    # ── Layer B — the foreign realm's vocabulary, translated ──────────────────
+    # Empty means "the realm speaks ds's names already", which is true when ds
+    # owns the realm (posture A) and false the moment it does not (posture B).
+    #
+    # Both maps are emitted to **every** service that reads them from this one
+    # block. That is deliberate: a group map wired into some services and not
+    # others is a deployment where a caller's authority depends on which service
+    # answered the request.
+    aliases:
+      # Foreign group name → ds role bundle. Values must be bundle names
+      # (`ds-admin`, `ds-participant-admin`, `ds-participant-viewer`,
+      # `ds-onboarding-operator`, `ds-member`) — never a raw capability. An
+      # unknown target is dropped and logged rather than honoured, so a typo
+      # grants nothing instead of granting something else.
+      #   {"host-manager": "ds-participant-admin"}
+      groups: {}
+      # Foreign organisation alias → ds `Owner` id. Read by the connector's
+      # per-owner perimeter only.
+      #   {"host-org-alias": "example-org"}
+      owners: {}
     # May the identity-registry write to the realm at *runtime*? `sync` above is
     # about boot-time provisioning; this is about promotion creating
     # `svc-ds-connector-<alias>` and handing over its secret.

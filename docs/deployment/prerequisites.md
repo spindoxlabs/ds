@@ -67,9 +67,11 @@ and the per-role passwords in `secrets.sops.yaml`.
 ## 2. Keycloak
 
 The charts never install Keycloak. They need an existing realm that satisfies the
-contract in [Keycloak requirements](keycloak.md) — service
-clients with the right scopes, user groups mirroring those scope names, brute
-force protection, and the three audit event flags NIS2 evidence depends on.
+contract in [Keycloak requirements](keycloak.md) — the service clients from
+`services/keycloak/clients.yaml`, a browser-login client for oauth2-proxy, user
+groups carrying the **five role-bundle names** (not one group per scope — that
+mirror is gone), brute force protection, and the three audit event flags NIS2
+evidence depends on.
 
 Point the charts at it:
 

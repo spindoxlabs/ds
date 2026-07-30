@@ -1,15 +1,19 @@
 # Helm deployment model — Agent Guide
 
-> **Status: all seven charts implemented and rendering end-to-end.** `ds-common`
+> **Status: all eight charts implemented and rendering end-to-end.** `ds-common`
 > (library), `ds-namespaces`, the authority `ds-identity-registry`, and the
 > participant tier `ds-edc` / `ds-connector` / `ds-provenance` /
-> `ds-federated-catalog` / `ds-portal`. `helmfile.yaml.gotmpl` composes an
+> `ds-federated-catalog` / `ds-oauth2-proxy` / `ds-portal`. `helmfile.yaml.gotmpl` composes an
 > authority plus any number of participants through SOPS. Remaining work is
 > hardening and CI gates — see the checklist at the end of this file.
 >
 > The security contract below is the invariant set; the sections after it
-> describe *what exists on disk* and how to work in this folder. See
-> `.agents/helm/plan.md` for the design and phasing.
+> describe *what exists on disk* and how to work in this folder.
+>
+> **This file is self-contained by design.** It used to defer the design and
+> phasing to a document under `.agents/`, which is gitignored — so for anyone who
+> cloned the repository that was a pointer to nothing. Everything needed to work
+> in this folder is here or under `docs/deployment/`.
 
 > **Operator documentation lives in `docs/deployment/`**, published as the
 > Deployment section of the mkdocs site: prerequisites, the Keycloak realm
@@ -41,6 +45,7 @@ helm/
     ├── ds-connector/            # participant: orchestration/consent (internal)
     ├── ds-provenance/           # participant: PROV-O lineage (internal)
     ├── ds-federated-catalog/    # participant: DCAT-AP crawler (internal, optional)
+    ├── ds-oauth2-proxy/         # participant: the human login surface (fronts the portal)
     └── ds-portal/               # participant: SvelteKit UI (only human host, optional)
 ```
 
@@ -48,6 +53,25 @@ The federated catalog crawls the dataspace through a **consumer-capable**
 connector (in dev it targets the consumer connector on 31001). `connectorServiceName`
 defaults to the same-participant connector; set it explicitly if the catalog
 runs under a participant whose connector cannot perform DSP catalog requests.
+
+### What is deliberately *not* charted
+
+A component missing from `charts/` is a decision, not an oversight. Adding one of
+these is reopening the decision, not filling a gap:
+
+| Component | Why not |
+|-----------|---------|
+| `dataset-api-mock` | Dev fixture. The real dataset API is **participant-operated and external** — the charts carry its URL and the credentials to reach it, nothing more. |
+| `dataset-api-fiware-adapter` | No `Dockerfile`, no port. It is a plugin loaded by the dataset API through setuptools entry points, not a deployable unit. |
+| `edc-extensions` | A Java library, already shaded into the `ds-edc-connector` fat JAR. |
+| `caddy` | Dev-only reverse proxy. Its did:web rewrite and API fan-in are replaced by native Ingress rules — see §Exposure. |
+| `keycloak` | **Externally managed.** The charts consume an issuer URL and client secrets; installation is documented (`docs/deployment/keycloak.md`), never performed. |
+| PostgreSQL | **Externally managed via CloudNativePG.** A reference `Cluster` manifest ships under `helm/docs/` as documentation, not as a chart dependency. |
+
+`ds-oauth2-proxy` is the one component that *is* charted despite being upstream
+software rather than a ds service, and it is not optional wherever `ds-portal`
+runs: the portal is no longer an OIDC client, so without it the human-facing host
+has no authentication in front of it at all.
 
 ### Conventions that will bite you if ignored
 
@@ -136,7 +160,8 @@ it at `ds-identity-registry.<authority-ns>.svc.cluster.local:30005`.
   over the Docker network. In-cluster that path is reachable only from the same
   namespace (NetworkPolicy). If the dataset API runs outside the cluster, the
   operator must arrange connectivity (run it in-namespace, or add a dedicated
-  internal Ingress carrying the `X-Api-Key`) — the charts intentionally do not
+  internal Ingress on which it presents its `svc-ds-dataset-api` client
+  credentials) — the charts intentionally do not
   expose `/internal` publicly by default.
 
 ### did:web over HTTPS — where the `:80` Caddy hack went
@@ -255,13 +280,41 @@ itself.
   be exposed.** ClusterIP only, never an Ingress. They create and delete assets,
   policies and transfers.
 
-### 2. Portal (Node/SvelteKit)
+### 2. Portal (Node/SvelteKit) — the portal is not an OIDC client
 
-- **`AUTH_SECRET`** keys Auth.js session encryption. `hooks.server.ts` currently
-  falls back to a literal when it is unset; the chart must always supply it from
-  a Secret. A known value means forgeable portal sessions carrying arbitrary
-  user identity and VC claims.
-- **`ORIGIN`** must match the public HTTPS URL and the Keycloak redirect URI.
+The portal used to be a confidential OIDC client (Auth.js, the `ds-portal` realm
+client, its own `AUTH_SECRET`). **All three are gone.** `hooks.server.ts` builds
+the session from `X-Auth-Request-Access-Token`, forwarded by oauth2-proxy — and it
+**does not verify the signature**. It base64-decodes the payload, deliberately,
+because the header is meant to come from a proxy that already authenticated the
+user and because every ds *service* re-verifies the token via JWKS anyway.
+
+**That design is only safe if something in front does two jobs**: authenticate,
+and make a client-supplied `X-Auth-Request-*` unable to reach the pod. In compose
+that is Caddy `forward_auth` plus a header strip. In the chart it is the
+`ds-oauth2-proxy` release plus three annotations on the portal's Ingress:
+
+| Annotation | Job |
+|---|---|
+| `auth-url` | nginx calls the proxy's `/oauth2/auth` as a subrequest per request |
+| `auth-signin` | where an unauthenticated browser is sent |
+| `auth-response-headers` | **the strip.** Each listed name becomes a `proxy_set_header` from the auth response, overwriting the client's |
+
+A header the portal reads that is *not* in `auth-response-headers` is forwarded
+from the client verbatim — so that list must stay in step with `bearerFrom` and
+`buildSession`. `Authorization` is in it for exactly that reason: `bearerFrom`
+falls back to it, so omitting it would leave a second forgeable path open beside
+the one being closed.
+
+Setting `auth.proxy.enabled: false` does **not** fall back to a portal login —
+there is none. It leaves the portal open and its identity headers
+client-controlled. The blast radius is not just the UI: the portal mints
+`X-Subject-Id` + `X-User-VC` server-side from that session, so a forged header
+reaches the consent plane.
+
+- **`ORIGIN`** must match the public HTTPS URL and the proxy's `redirect_url`.
+- **`secrets.cookieSecret`** (on `ds-oauth2-proxy`) is what `AUTH_SECRET` used to
+  be: a known value means forgeable sessions for every human in the deployment.
 
 ### 3. Keycloak
 
@@ -272,9 +325,23 @@ itself.
   the correct reference; the chart selects it explicitly rather than defaulting.
 - Run Keycloak with `start --optimized`, not `start-dev`.
 - Every entry in `services/keycloak/clients.yaml` defaults its secret to its own
-  `client_id`. Several of those clients hold admin-level scopes
-  (`svc-ds-portal` → `connector.admin`; `svc-ds-onboarding` →
-  `identity-registry.admin`). All must be overridden from Secrets.
+  `client_id`. All must be overridden from Secrets. (The old warning that
+  `svc-ds-portal` holds `connector.admin` and `svc-ds-onboarding` holds
+  `identity-registry.admin` no longer applies — both were narrowed to explicit
+  grants, and no ds service client holds a `*.admin` today. The rule that
+  produced it stands: admin is an operator grant, never a long-lived process's.)
+- **The realm is provisioned from `clients.effective.yaml`, not `clients.yaml`.**
+  The core file is what ds needs; a domain overlay (`clients.<domain>.yaml`)
+  declares what the backend deployed beside it needs; `task keycloak:merge`
+  combines them. The syncer takes a single file and recomputes each client's
+  grants from it, so pointing `sync.clientsConfigMap` at the core file does not
+  merely under-provision — it *strips* whatever an overlay granted, silently.
+  In a guest realm the overlay is omitted on purpose: there those are the host's
+  services, and `task keycloak:mirror` generates the core-only fragment.
+- **Layer B lives in `global.keycloak.aliases`** (`groups`, `owners`). One block
+  feeds every service that reads it, which is deliberate — a group map wired into
+  three services out of four is a deployment where a caller's authority depends
+  on which service answered.
 - Enable `bruteForceProtected`, a `passwordPolicy`, and the audit event flags
   (`eventsEnabled`, `adminEventsEnabled`, `adminEventsDetailsEnabled`) — the last
   three are the only Keycloak-side audit trail available for NIS2 evidence.
@@ -298,7 +365,8 @@ invariant list.
 
 | Host | Chart that owns the Ingress | Serves |
 |------|-----------------------------|--------|
-| `portal.<baseDomain>` | `ds-portal` | `/` — the only human-facing host. SSR, so the dev Caddy `/api/*` fan-in is **not** reproduced. |
+| `portal.<baseDomain>` | `ds-portal` | `/` — the only human-facing host, behind the ingress controller's `auth-url`. SSR, so the dev Caddy `/api/*` fan-in is **not** reproduced. |
+| `portal.<baseDomain>` | `ds-oauth2-proxy` | `/oauth2/*` — sign-in, callback, sign-out. Same host on purpose: one cookie domain, one redirect URI, no cross-origin round trip. It must **not** carry the portal's auth annotations — sending the login endpoints through the auth subrequest is a redirect loop, since a user arrives there precisely because they have no session. It also carries no `cluster-issuer`: the portal's Ingress owns this host's certificate, and two issuers for one host race on the same solver. |
 | `<participant>.<baseDomain>` | `ds-edc` | `/.well-known/did.json` (rewritten to the authority registry via an `ExternalName`), `/protocol/*` → `:19194`, `/public/*` → `:19291`. Nothing else. |
 | `trust-anchor.<baseDomain>` | `ds-identity-registry` | `/.well-known/did.json` (rewritten), `/status/*` (StatusList2021 — must be publicly fetchable, or revocation cannot be checked) |
 | `users.<baseDomain>` | `ds-identity-registry` | `/<id>/did.json`, **only** when `exposeUserDids` — needed just for remote resolution of user DIDs |
@@ -522,7 +590,15 @@ application-repo change the charts depend on; keep it if you rework a Dockerfile
 - `docs/deployment/` — the operator documentation (published as the Deployment
   section of the docs site): prerequisites, Keycloak contract, `values.yaml`
   reference, secret reference, exposure, day-2 operations
-- `.env.example` — the variable catalogue this chart implements
-- `.agents/helm/plan.md` — design and phasing
-- `.agents/security-review.md` — findings and rationale behind these requirements
-- Root `AGENTS.md` → "Security posture"
+- `.env.example` — the variable catalogue this chart implements, and the file
+  `secrets.example.yaml` mirrors 1:1
+- `services/keycloak/AGENTS.md` — the realm side of the contract: the core/overlay
+  split, role bundles, and which provisioning path applies to a running realm
+- Root `AGENTS.md` → "Security posture" — the two authentication mechanisms and
+  the permission model the charts configure
+
+> **Nothing here points into `.agents/`.** That directory is gitignored
+> (`.gitignore:86`), so a reference to it resolves for nobody but the author of
+> the moment — and three of the documents previously linked from this repo do not
+> exist even on the machine that wrote them. If a rationale is worth citing, put
+> it in the committed tree.

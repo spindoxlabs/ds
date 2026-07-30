@@ -725,8 +725,8 @@ async def keycloak_sync(
     # `POST /admin/credentials/data-subject` in its own database instead. So it
     # bought nothing, and it cost the only thing in this endpoint that required
     # **write** access to Keycloak — which a deployment where ds is a guest in
-    # somebody else's realm cannot grant. See
-    # `.agents/plans/ds-identity-and-deployment.md` §4.1.
+    # somebody else's realm cannot grant. The `KeycloakMapping` write below stays:
+    # that row is the DID <-> Keycloak join and is load-bearing.
     #
     # `status` is kept in the response because callers check it; the removed
     # `keycloak_attribute_synced` and `warning` fields were only ever read

@@ -112,31 +112,39 @@ authority over another project's vocabulary.
 
 ## `clients.yaml` — the permission vocabulary
 
-Realm `dataspaces`. 16 scopes in 5 families:
+**Read the file.** This section used to enumerate the scopes and clients, and the
+enumeration was wrong within two releases — it claimed "16 scopes in 5 families"
+against a file that had grown well past that, and it still credited `svc-ds-portal`
+with `connector.admin` long after that grant was removed on purpose. A permission
+table maintained by eye beside the file it describes is a second source of truth
+that only ever disagrees.
 
+What is stable enough to write down:
+
+- **Each secret defaults to its own `client_id`** — a dev convenience, overridden
+  in production via `SVC_<CLIENT>_SECRET` (the `${VAR:-default}` in each entry).
+- **No service client holds a `*.admin`.** Admin is an *operator* grant, held by
+  an interactive revocable human, and it is a superset satisfying every
+  `{service}.*` — including the machine-identity permissions a process should
+  never inherit. `libs/ds-auth/tests/test_vocabulary.py` and the host mirror both
+  enforce this; the mirror drops `*.admin` on the way across.
+- **`connector.internal` and `connector.webhook` are in no bundle**, ever. They
+  are checked with `require_exact_permission` because holding one means "I *am*
+  that component", which is not something an administrator inherits.
+- **`extra_audiences` is not decoration.** `ds_auth` verifies `aud`, so a token
+  minted without the callee listed is rejected before its scopes are read.
+
+To see the current state, and to check it rather than trust it:
+
+```bash
+task keycloak:merge     # what the sync applies (core + overlays)
+task keycloak:mirror    # what a host realm must carry (core only)
+task auth:test          # reconciles clients.yaml against the bundle table, both ways
 ```
-dataset.{admin,query,read,write}
-identity-registry.{admin,read,resolve,membership.read}
-connector.{admin,provider.read,provider.write,history.read,internal,webhook}
-provenance.{read,write}
-catalog.read
-```
 
-Seven service clients. **Each secret defaults to its own `client_id`** — a dev
-convenience that must be overridden in production (see Security below).
-
-| client_id | default_scopes | Override env |
-|-----------|----------------|--------------|
-| `svc-ds-identity-registry` | `identity-registry.admin` | `SVC_DS_IDENTITY_REGISTRY_SECRET` |
-| `svc-ds-onboarding` | `identity-registry.organizations.read`, `identity-registry.credentials.write`, `identity-registry.memberships.write`, `identity-registry.keycloak.sync`, `connector.consent.provision`, `provenance.write` | `SVC_DS_ONBOARDING_SECRET` |
-| `svc-ds-portal` | `dataset.query`, `dataset.read`, `identity-registry.resolve`, `identity-registry.read`, `connector.admin`, `connector.history.read`, `provenance.read`, `catalog.read` | `SVC_DS_PORTAL_SECRET` |
-| `svc-ds-connector` | `identity-registry.read`, `identity-registry.membership.read`, `provenance.write` | `SVC_DS_CONNECTOR_SECRET` |
-| `svc-ds-federated-catalog` | `identity-registry.read` | `SVC_DS_FEDERATED_CATALOG_SECRET` |
-| `svc-ds-dataset-api` | `connector.internal` | `SVC_DS_DATASET_API_SECRET` |
-| `svc-edc` | `identity-registry.read`, `connector.webhook` | `SVC_EDC_SECRET` |
-
-`extra_audiences` lets a client's token be accepted by another service — that is
-how `svc-ds-portal` calls four different backends with one token.
+`test_vocabulary.py` is the real guard: a scope in neither a bundle nor
+`SERVICE_ONLY_PERMISSIONS` fails the build, because it is a permission no human
+could ever be granted — almost always an oversight rather than a decision.
 
 ## How claims reach the services
 

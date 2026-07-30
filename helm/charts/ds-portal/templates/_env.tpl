@@ -39,20 +39,13 @@ ds-<service>-<participant>.
 - name: CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS
   value: {{ .Values.consumer.defaultCounterPartyAddress | quote }}
 {{- end }}
-# Auth.js / Keycloak OIDC login.
-- name: AUTH_KEYCLOAK_ISSUER
-  value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
-- name: AUTH_KEYCLOAK_ID
-  value: {{ .Values.auth.keycloakClientId | quote }}
-- name: AUTH_KEYCLOAK_SCOPE
-  value: {{ .Values.auth.scope | quote }}
-- name: AUTH_KEYCLOAK_SECRET
-  valueFrom:
-    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: AUTH_KEYCLOAK_SECRET}
-# Auth.js session encryption — a known value means forgeable sessions.
-- name: AUTH_SECRET
-  valueFrom:
-    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: AUTH_SECRET}
+# Login is oauth2-proxy's, not the portal's. The portal stopped being a
+# confidential OIDC client — no AUTH_SECRET, no client secret, no callback
+# registration — and reads the access token the proxy forwards as
+# `X-Auth-Request-Access-Token`. This value is only where the browser is sent to
+# start or end a session; the ds-oauth2-proxy release serves it on this host.
+- name: OAUTH2_PROXY_BASE_URL
+  value: {{ include "portal.origin" . | quote }}
 - name: PORTAL_SERVICE_CLIENT_ID
   value: {{ .Values.auth.serviceClientId | quote }}
 - name: PORTAL_SERVICE_CLIENT_SECRET

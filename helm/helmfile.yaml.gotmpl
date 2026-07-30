@@ -171,11 +171,29 @@ releases:
 {{- end }}
 
 {{- if dig "portal" "enabled" false $p }}
+  # The login surface. Deployed BEFORE the portal and named in its `needs`: the
+  # portal's Ingress points `auth-url` at this Service, and an Ingress whose auth
+  # backend does not resolve fails closed — every request 500s. Ordering makes
+  # that a deploy-time wait instead of an outage.
+  - name: ds-oauth2-proxy-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-oauth2-proxy
+    values:
+      - global:
+          {{- $root.Values.global | toYaml | nindent 10 }}
+      - participant:
+          name: {{ $p.name | quote }}
+          role: {{ $p.role | quote }}
+        secrets:
+          cookieSecret: {{ $root.Values.secrets.oauth2ProxyCookieSecret | quote }}
+          clientSecret: {{ $root.Values.secrets.oauth2ProxyClientSecret | quote }}
+
   - name: ds-portal-{{ $p.name }}
     namespace: {{ $ns }}
     chart: ./charts/ds-portal
     needs:
       - {{ $ns }}/ds-connector-{{ $p.name }}
+      - {{ $ns }}/ds-oauth2-proxy-{{ $p.name }}
     values:
       - global:
           {{- $root.Values.global | toYaml | nindent 10 }}
@@ -184,8 +202,6 @@ releases:
           role: {{ $p.role | quote }}
         replicaCount: {{ dig "portal" "replicaCount" 1 $p }}
         secrets:
-          authSecret: {{ $root.Values.secrets.authSecret | quote }}
-          authKeycloakSecret: {{ $root.Values.secrets.authKeycloakSecret | quote }}
           portalServiceClientSecret: {{ $root.Values.secrets.svcDsPortalSecret | quote }}
 {{- end }}
 {{- end }}

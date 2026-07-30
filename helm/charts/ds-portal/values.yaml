@@ -32,11 +32,23 @@ env: {}
 existingSecret: ""
 networkPolicy: {egress: []}
 
-# ── Auth.js / Keycloak (public OIDC login client) ─────────────────────────────
+# ── Auth ──────────────────────────────────────────────────────────────────────
+# The portal is NOT an OIDC client. It was one (Auth.js, `ds-portal`, its own
+# AUTH_SECRET); that client no longer exists in the realm and the app no longer
+# reads those variables. Human login belongs to the ds-oauth2-proxy release.
 auth:
-  keycloakClientId: ds-portal # the PUBLIC redirect client, not a service client
-  scope: openid profile email
   serviceClientId: svc-ds-portal # server-side API calls
+
+  # Fronting the portal with oauth2-proxy via the ingress controller's
+  # `auth-url`. **Disabling this does not fall back to the portal's own login —
+  # there is none.** It leaves the portal open, and leaves the
+  # `X-Auth-Request-*` headers it reads client-controlled. Turn it off only when
+  # something else in the request path performs both jobs, and say what.
+  proxy:
+    enabled: true
+    # Derived from the release name and namespace when empty.
+    authUrl: ""
+    signinUrl: ""
 
 # The dataset-api is external in production (no chart ships it), so it cannot be
 # derived. Leave empty and the catalogue detail view, /my-data's "data held about
@@ -61,8 +73,6 @@ ingress:
   enabled: true
 
 secrets:
-  authSecret: "" # Auth.js session encryption
-  authKeycloakSecret: "" # public OIDC client secret
   portalServiceClientSecret: "" # svc-ds-portal
 
 global:

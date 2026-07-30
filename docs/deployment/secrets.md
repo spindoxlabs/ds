@@ -71,7 +71,7 @@ overwritten.
 | `identityRegistryEncryptionKey` | identity-registry | Fernet passphrase encrypting **every participant DID private key at rest**, and HMAC key for email→subject_id derivation. Leak → impersonate any participant. Rotation changes future subject IDs (existing ones are stored and unaffected). |
 | `oauth2ProxyCookieSecret` | oauth2-proxy | Encrypts the browser session cookie. Leak → forge a session carrying any identity. Must be 16, 24 or 32 bytes. |
 | `oauth2ProxyClientSecret` | oauth2-proxy | The login client's Keycloak secret. Leak → sign in as any user of the realm. |
-| `participants.<name>.edcApiKey` | ds-edc + ds-connector | EDC Management API key, and the `X-Api-Key` accepted by the connector's `/internal/*`. Leak → create and delete assets, policies and transfers; read consented-subject lists; forge audit events. |
+| `participants.<name>.edcApiKey` | ds-edc + ds-connector | EDC Management API key. Leak → create and delete assets, policies and transfers. It no longer opens the connector's `/internal/*`: that was a shared static secret equal to this one, so a single leak yielded contract administration **and** the data-plane signing keys **and** the subject pools. Both callers now present their own Keycloak client credentials. |
 | `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | Signs Endpoint Data References. Distinct from any DID key. |
 | `participants.<name>.stsSecret` | ds-edc | The participant's STS client secret, as registered in the identity registry. |
 
@@ -87,19 +87,21 @@ overwritten.
 ### Keycloak service clients
 
 One per confidential client in `services/keycloak/clients.yaml`. In dev each
-defaults to its own `client_id` — guessable, and three of them hold admin-level
-authority.
+defaults to its own `client_id` — guessable. **None of them holds a `*.admin`**:
+admin is an operator grant, and a superset over every `{service}.*` including the
+machine-identity permissions. The authoritative list is
+`services/keycloak/clients.yaml`; the table below is orientation, not a copy to
+maintain.
 
 | Key | Client | Notable scopes |
 |-----|--------|----------------|
 | `svcDsIdentityRegistrySecret` | `svc-ds-identity-registry` | `identity-registry.admin` |
 | `svcDsOnboardingSecret` | `svc-ds-onboarding` | `identity-registry.{organizations.read,credentials.write,memberships.write,keycloak.sync}`, `connector.consent.provision` |
-| `svcDsPortalSecret` | `svc-ds-portal` | `connector.admin`, `identity-registry.read` |
+| `svcDsPortalSecret` | `svc-ds-portal` | the explicit grants its pages call — **not** `connector.admin`, which was removed deliberately |
 | `svcDsConnectorSecret` | `svc-ds-connector` | `identity-registry.read`, `provenance.write` |
 | `svcDsFederatedCatalogSecret` | `svc-ds-federated-catalog` | `identity-registry.read` |
 | `svcDsDatasetApiSecret` | `svc-ds-dataset-api` | `connector.internal` |
 | `svcEdcSecret` | `svc-edc` | `identity-registry.read`, `connector.webhook` |
-| `authKeycloakSecret` | `ds-portal` | the **public-facing** OIDC login client, not a service client |
 | `keycloakClientSecret` | `ds-identity-registry` | the registry's own Keycloak client |
 
 `keycloakAdminUsername` / `keycloakAdminPassword` are needed **only** when
@@ -157,8 +159,8 @@ detection, so this is a chart responsibility, not a runtime one.
 | Secret | Rotatable | How |
 |--------|-----------|-----|
 | Keycloak client secrets | yes | rotate in Keycloak, update `secrets.sops.yaml`, `helmfile apply` — the Deployment's `checksum/secret` annotation rolls the pods |
-| `edcApiKey` | yes, with coordination | shared by `ds-edc`, `ds-connector` and the external dataset API; update all three together |
-| `authSecret` | yes | invalidates every active portal session |
+| `edcApiKey` | yes, with coordination | shared by `ds-edc` and `ds-connector`; update both together. The external dataset API no longer needs it — it authenticates to `/internal/*` with its own Keycloak client |
+| `oauth2ProxyCookieSecret` | yes | invalidates every active browser session — everyone signs in again |
 | `edrSigningPrivateJwk` | yes | in-flight EDRs signed with the old key stop verifying |
 | DB passwords | yes | rotate the CNPG role first, then the values |
 | `identityRegistryEncryptionKey` | **no automatic path** | requires re-encrypting the DID private-key table |

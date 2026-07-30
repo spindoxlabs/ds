@@ -177,7 +177,7 @@ is what made roles mutually exclusive.
 
 | Axis | Source | Carries | Checked with |
 |---|---|---|---|
-| **Keycloak** | realm roles, any client's `resource_access` roles, realm `groups`, `organization.<alias>.{groups,roles}` | operator and provider authority (`connector.admin`, `connector.provider.*`, `dataset.admin`) | `parseTokenRoles` / `derivePersona` |
+| **Keycloak** | realm roles, realm `groups` and `organization.<alias>.groups` — each group naming a **role bundle** expanded by `bundles.generated.ts` | operator and provider authority (`connector.provider.*`, `dataset.admin`, …) | `parseTokenRoles` / `derivePersona` |
 | **Verifiable credential** | identity-registry `GET /users/resolve` | `ConsumerUser`, `DataSubject` — what the connector's `X-User-VC` calls present | `hasVcRole(session, role)` |
 
 **Roles are additive, never exclusive.** One person legitimately holds several:

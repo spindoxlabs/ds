@@ -29,5 +29,6 @@
   value: {{ .Values.trustAnchor.keyMountPath | quote }}
 - name: PROVENANCE_VC_INSECURE_DEV
   value: "false"
+{{- include "ds.env.aliases" (dict "ctx" . "prefix" "PROVENANCE_") }}
 {{- include "ds.env.extra" . }}
 {{- end -}}

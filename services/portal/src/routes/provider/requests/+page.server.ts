@@ -7,9 +7,9 @@ import { hasGrant } from '$lib/server/auth';
  *
  * The operator-facing half of the consent flow: `GET /consent/my` already shows a
  * *subject* their pending requests, but nothing showed the provider why a
- * consumer's negotiation has been sitting there. That is
- * `.agents/plans/consumer-reconciliation/plan.md` §6.6 — a provider-local read
- * over this connector's own table, no protocol involvement.
+ * consumer's negotiation has been sitting there. This is a provider-local read
+ * over this connector's own table — no protocol involvement, and nothing is asked
+ * of the counterparty.
  *
  * Unlike `GET /consent/pending`, this **does** name subjects: an operator of the
  * provider is looking at their own participant's consent records. The

@@ -1,0 +1,67 @@
+{{/*
+The proxy config, mirroring services/oauth2-proxy/oauth2-proxy.cfg. Two
+differences from the compose file, both structural rather than tuning:
+
+  * **No `whitelist_domains` ports.** Dev runs behind Caddy on :9010 and :9000,
+    so every URL there carries a port; a cluster serves the portal on 443 and a
+    bare domain matches it. Keeping the dev ports here would whitelist hosts that
+    do not exist.
+  * **The cookie secret is a Secret**, not a literal. The dev value is in the
+    same category as `.env.local` — deliberately weak and public.
+
+`upstreams = static://200` is required but unused: nginx calls `/oauth2/auth` as
+an auth subrequest and proxies the real traffic itself. A working upstream here
+would be a second path to the portal that skips the Ingress entirely.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+data:
+  oauth2-proxy.cfg: |
+    provider = "keycloak-oidc"
+    oidc_issuer_url = {{ ((.Values.global).keycloak).issuerUrl | quote }}
+    scope = {{ .Values.auth.scope | quote }}
+
+    client_id = {{ .Values.auth.clientId | quote }}
+
+    code_challenge_method = "S256"
+
+    http_address = "0.0.0.0:{{ .Values.service.port }}"
+    proxy_prefix = "/oauth2"
+
+    redirect_url = "https://{{ include "oauth2proxy.host" . }}/oauth2/callback"
+
+    upstreams = [ "static://200" ]
+
+    email_domains = [ "*" ]
+    cookie_domains = [ {{ .Values.cookie.domain | default (printf ".%s" (.Values.global).baseDomain) | quote }} ]
+    whitelist_domains = [ {{ printf ".%s" (.Values.global).baseDomain | quote }} ]
+
+    reverse_proxy = true
+
+    set_xauthrequest = true
+    pass_user_headers = true
+    pass_authorization_header = true
+    set_authorization_header = true
+    pass_access_token = true
+
+    # A request that already carries a bearer token is a machine, not a browser:
+    # service-to-service calls and CLI tokens pass through instead of being sent
+    # to a login form they cannot complete.
+    skip_jwt_bearer_tokens = true
+
+    cookie_name = {{ .Values.cookie.name | quote }}
+    cookie_secure = {{ .Values.cookie.secure }}
+    cookie_httponly = true
+    cookie_samesite = "lax"
+    cookie_expire = {{ .Values.cookie.expire | quote }}
+    cookie_refresh = {{ .Values.cookie.refresh | quote }}
+    session_store_type = "cookie"
+
+    skip_provider_button = true
+    standard_logging = true
+    auth_logging = true
+    request_logging = false

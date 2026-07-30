@@ -1,0 +1,84 @@
+# Chart defaults. Real values arrive from helm/values.yaml via helmfile.
+
+service:
+  name: oauth2-proxy
+  port: 4180
+  healthPath: /ping
+
+replicaCount: 1
+
+# The participant whose portal this proxy fronts.
+participant:
+  name: provider
+  role: provider
+
+# Not a ds image — upstream oauth2-proxy. `image.repository` is set verbatim
+# rather than derived from `global.image.prefix`, which builds ghcr.io/spindoxlabs/ds-*.
+image:
+  registry: quay.io
+  repository: oauth2-proxy/oauth2-proxy
+  tag: v7.11.0
+  digest: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+serviceAccount: {create: true, name: ""}
+podSecurityContext: {runAsUser: 10001, runAsGroup: 10001, fsGroup: 10001}
+containerSecurityContext: {readOnlyRootFilesystem: true}
+resources: {}
+probes: {livenessInitialDelay: 5, readinessInitialDelay: 3}
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
+env: {}
+existingSecret: ""
+networkPolicy: {egress: []}
+
+# ── The browser login client ─────────────────────────────────────────────────
+# Declared in the realm, never created by these charts. `clients.yaml` names it
+# as `oauth2_proxy_client`, which is what makes the realm syncer attach an
+# audience mapper per service client — so a user's token passes the `aud` check
+# at every ds service instead of each service relaxing it.
+auth:
+  clientId: oauth2_proxy
+  # `organization:*` requests every organisation the user belongs to, which is
+  # what makes Keycloak emit `organization.<alias>.groups` — the claim ds_auth
+  # expands into per-owner authority. Drop it and a participant-scoped seat
+  # grants nothing, and the failure looks like a missing group.
+  scope: openid email profile organization:*
+
+cookie:
+  name: _oauth2_proxy_ds
+  # Only ever false behind a TLS-terminating ingress you control. `true` here is
+  # not a hardening option, it is what stops the session cookie crossing the
+  # network in clear.
+  secure: true
+  expire: 30m
+  refresh: 25m
+  # Defaults to `.<baseDomain>` so one session covers portal and proxy.
+  domain: ""
+
+ingress:
+  enabled: true
+
+secrets:
+  cookieSecret: "" # 32 bytes, base64 — `task secrets:bootstrap` generates it
+  clientSecret: "" # the realm's oauth2_proxy client secret
+
+global:
+  baseDomain: ds.example.org
+  hosts: {portal: portal}
+  image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
+  namespaces: {authority: ds-authority}
+  keycloak: {realm: dataspaces, issuerUrl: ""}
+  ingress:
+    className: nginx
+    annotations: {}
+    tls: {clusterIssuer: "", secretName: ""}
+  networkPolicy: {enabled: true}
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

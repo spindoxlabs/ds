@@ -1,0 +1,78 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ds.fullname" . }}
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+spec:
+  # Sessions live in the cookie (`session_store_type = cookie`), so any replica
+  # can serve any request and this scales without a shared store.
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "ds.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ds.labels" . | nindent 8 }}
+      annotations:
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: oauth2-proxy
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--config=/etc/oauth2-proxy/oauth2-proxy.cfg"]
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.port }}
+              protocol: TCP
+          env:
+            # Kept out of the ConfigMap: a config file is world-readable to
+            # anyone who can `kubectl get cm`, and both of these are secrets.
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: OAUTH2_PROXY_COOKIE_SECRET}
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: OAUTH2_PROXY_CLIENT_SECRET}
+          livenessProbe:
+            httpGet: {path: {{ .Values.service.healthPath | quote }}, port: http}
+            initialDelaySeconds: {{ .Values.probes.livenessInitialDelay }}
+          readinessProbe:
+            httpGet: {path: {{ .Values.service.healthPath | quote }}, port: http}
+            initialDelaySeconds: {{ .Values.probes.readinessInitialDelay }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/oauth2-proxy
+              readOnly: true
+            {{- include "ds.tmpVolumeMount" . | nindent 12 }}
+          {{- include "ds.resources" . | nindent 10 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "ds.fullname" . }}
+        {{- include "ds.tmpVolume" . | nindent 8 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

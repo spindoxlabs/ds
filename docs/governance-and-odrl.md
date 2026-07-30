@@ -119,8 +119,7 @@ Additional constraints:
 > under the upstream package, so it replaces the broken one in the shadow JAR. The
 > published operand is now a plain array of purpose IRIs. See the file header for
 > why a registered transformer cannot work, `verifyForkedTransformer` in
-> `edc-connector/build.gradle.kts` for the packaging guard, and
-> `.agents/plans/portal-review/plan.md` §3b for the full account. **Delete the fork
+> `edc-connector/build.gradle.kts` for the packaging guard. **Delete the fork
 > when the fix lands upstream**, not before.
 >
 > **Do not "simplify" this to `odrl:or` of scalar `isA` constraints.** Tried against

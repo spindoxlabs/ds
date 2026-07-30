@@ -1,0 +1,17 @@
+apiVersion: v2
+name: ds-oauth2-proxy
+description: |
+  The human login surface. The portal is no longer an OIDC client of its own —
+  it reads the access token this proxy forwards — so without this release a
+  portal Ingress has no authentication in front of it at all, and the
+  `X-Auth-Request-*` headers the portal reads are whatever the client sent.
+
+  One release per participant, alongside that participant's portal. Reached only
+  as an Ingress `auth-url` target and on the `/oauth2` path of the portal host.
+type: application
+version: 0.1.0
+appVersion: "7.11.0"
+dependencies:
+  - name: ds-common
+    version: 0.1.0
+    repository: file://../ds-common

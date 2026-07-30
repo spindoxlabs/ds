@@ -7,8 +7,10 @@ the failure mode is a permission nobody can be granted (silently unreachable UI)
 or a bundle granting a name the realm never defines (a grant that matches
 nothing, discovered at 403 time).
 
-These are the CI assertions called for by A2 in
-`.agents/plans/ds-identity-and-deployment.md`.
+Four assertions, run in CI: every declared scope is reachable by some bundle or
+explicitly declared service-only; no bundle invents a permission the realm never
+declares; no bundle reaches into a domain overlay's vocabulary; and no bundle name
+collides with a scope name (which would make expansion depend on edit order).
 """
 from __future__ import annotations
 

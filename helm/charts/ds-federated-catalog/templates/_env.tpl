@@ -27,5 +27,6 @@
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
 - name: CATALOG_OIDC_INSECURE_DEV
   value: "false"
+{{- include "ds.env.aliases" (dict "ctx" . "prefix" "CATALOG_") }}
 {{- include "ds.env.extra" . }}
 {{- end -}}

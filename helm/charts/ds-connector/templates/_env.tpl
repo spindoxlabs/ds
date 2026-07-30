@@ -100,5 +100,15 @@ addressable from the participant name alone — NOT from this release's name.
   value: {{ .Values.notify.portalBaseUrl | default (printf "https://%s.%s" (((.Values.global).hosts).portal | default "portal") (.Values.global).baseDomain) | quote }}
 - name: CONNECTOR_WEBHOOK_ALLOWED_HOSTS
   value: {{ join "," .Values.notify.webhookAllowedHosts | quote }}
+{{- include "ds.env.aliases" (dict "ctx" . "prefix" "CONNECTOR_") }}
+{{- with ((((.Values).global).keycloak).aliases).owners }}
+# The second Layer B map, and the connector is its only consumer: the per-owner
+# perimeter compares the token's organisation alias against the asset's owner.
+# In a realm ds did not name, no claim alias matches any `Owner.id` and the
+# perimeter refuses everything — it fails closed, so the symptom is operators
+# locked out of their own assets rather than a breach.
+- name: CONNECTOR_OWNER_ALIASES
+  value: {{ toJson . | quote }}
+{{- end }}
 {{- include "ds.env.extra" . }}
 {{- end -}}

@@ -5,6 +5,27 @@
 # it is SSR, so there is no per-API fan-in (the dev Caddy /api/* routes exist
 # only because the dev portal runs on the host). ORIGIN must equal this URL and
 # match the Keycloak redirect URI.
+#
+# ── The auth annotations are load-bearing, not hardening ─────────────────────
+#
+# The portal is no longer an OIDC client. `hooks.server.ts` builds the session
+# from `X-Auth-Request-Access-Token` and **does not verify the signature** — it
+# base64-decodes the payload, by design, because the header is meant to arrive
+# from a proxy that authenticated the user and every ds service re-verifies the
+# token anyway.
+#
+# That design holds only if something in front (a) authenticates and (b) makes a
+# client-supplied `X-Auth-Request-*` unable to reach the pod. Without these
+# annotations a chart deployment has neither: anyone could send an unsigned JWT
+# naming any email and the portal would build a session from it — and since the
+# portal mints `X-Subject-Id` + `X-User-VC` server-side from that session, the
+# consequence reaches the consent plane, not just the UI.
+#
+# `auth-response-headers` is what strips them: nginx emits `proxy_set_header`
+# for each listed name from the auth subrequest's response, which **overwrites**
+# whatever the client sent. A header the portal reads but that is not listed
+# here is passed through from the client verbatim — so this list must stay in
+# step with `bearerFrom`/`buildSession` in `hooks.server.ts`.
 # =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -14,6 +35,21 @@ metadata:
     {{- include "ds.labels" . | nindent 4 }}
   annotations:
     {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
+    {{- if .Values.auth.proxy.enabled }}
+    nginx.ingress.kubernetes.io/auth-url: {{ .Values.auth.proxy.authUrl | default (printf "http://ds-oauth2-proxy-%s.%s.svc.cluster.local:4180/oauth2/auth" .Values.participant.name .Release.Namespace) | quote }}
+    nginx.ingress.kubernetes.io/auth-signin: {{ .Values.auth.proxy.signinUrl | default (printf "%s/oauth2/start?rd=$escaped_request_uri" (include "portal.origin" .)) | quote }}
+    # Each name here becomes a proxy_set_header from the auth response, which
+    # overwrites the client's. Omitting one does not drop it — it forwards it.
+    #
+    # `Authorization` is in the list on purpose, and it is not redundant:
+    # `bearerFrom` falls back to `Authorization: Bearer …` when the dedicated
+    # header is absent, so leaving it out would keep a forgeable path open next
+    # to the one being closed. Legitimate machine callers are unaffected —
+    # `skip_jwt_bearer_tokens` means the proxy validates their token and re-emits
+    # it, so what reaches the portal is what the proxy vouched for either way.
+    nginx.ingress.kubernetes.io/auth-response-headers: >-
+      X-Auth-Request-Access-Token,X-Auth-Request-Email,X-Auth-Request-User,X-Auth-Request-Preferred-Username,X-Auth-Request-Groups,Authorization
+    {{- end }}
 spec:
   ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
   {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}

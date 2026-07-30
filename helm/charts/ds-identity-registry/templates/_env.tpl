@@ -93,6 +93,7 @@ registry. Gated on the same flag as org-sync because it is the same access.
       name: {{ include "ds.secretName" . }}
       key: KEYCLOAK_ADMIN_PASSWORD
 {{- end }}
+{{- include "ds.env.aliases" (dict "ctx" . "prefix" "IDENTITY_REGISTRY_") }}
 {{- include "ds.env.extra" . }}
 {{- end -}}
 

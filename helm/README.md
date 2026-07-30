@@ -18,7 +18,7 @@ site** and lives in [`docs/deployment/`](../docs/deployment/):
 In this folder:
 
 - **Security contract & agent guide:** [`AGENTS.md`](./AGENTS.md)
-- **Design & rationale:** [`.agents/helm/plan.md`](../.agents/helm/plan.md)
+- **Design & rationale:** [`AGENTS.md`](./AGENTS.md) — same file; it is self-contained
 - **CNPG reference manifest:** [`docs/cnpg-cluster.example.yaml`](./docs/cnpg-cluster.example.yaml)
 
 ## What deploys
@@ -26,17 +26,21 @@ In this folder:
 | Group | Releases | Cardinality |
 |-------|----------|-------------|
 | authority | `ds-identity-registry` | once per dataspace |
-| participant | `ds-edc`, `ds-connector`, `ds-provenance`, `ds-federated-catalog`, `ds-portal` | once per participant |
+| participant | `ds-edc`, `ds-connector`, `ds-provenance`, `ds-federated-catalog`, `ds-oauth2-proxy`, `ds-portal` | once per participant |
 
 Postgres (CloudNativePG), Keycloak and cert-manager are **not** installed by
 these charts — see [Prerequisites](../docs/deployment/prerequisites.md). The
 dev-only `dataset-api-mock`, `caddy` and `edc-extensions` are intentionally
 excluded.
 
-> **Status:** all seven charts are implemented — `ds-common` (library),
+> **Status:** all eight charts are implemented — `ds-common` (library),
 > `ds-namespaces`, the authority `ds-identity-registry`, and the participant
 > tier `ds-edc` / `ds-connector` / `ds-provenance` / `ds-federated-catalog` /
-> `ds-portal`. The full `helmfile.yaml.gotmpl` composes an authority plus any
+> `ds-oauth2-proxy` / `ds-portal`.
+>
+> `ds-oauth2-proxy` is not optional wherever `ds-portal` is deployed: the portal
+> is no longer an OIDC client, so without it the human-facing host has no login
+> in front of it and the identity headers it reads are client-controlled. The full `helmfile.yaml.gotmpl` composes an authority plus any
 > number of participants and renders end-to-end through SOPS. Remaining work is
 > hardening and CI gates — see the checklist in [`AGENTS.md`](./AGENTS.md).
 

@@ -186,7 +186,9 @@ deviate. They live in `helm/charts/<chart>/values.yaml`.
 | `connectorServiceName` | `ds-edc`, `ds-federated-catalog` | `""` | empty → this participant's own connector |
 | `credentialTtl.defaultDays` / `maxDays` | `ds-identity-registry` | 365 / 730 | issued-credential lifetime |
 | `maxLineageDepth` | `ds-provenance` | `20` | |
-| `auth.keycloakClientId` | `ds-portal` | `ds-portal` | the **public** OIDC redirect client, not a service client |
+| `auth.proxy.enabled` | `ds-portal` | `true` | fronts the portal with oauth2-proxy via the ingress `auth-url`. **Disabling it does not fall back to a portal login — there is none**, so the portal is left open and its identity headers client-controlled |
+| `auth.serviceClientId` | `ds-portal` | `svc-ds-portal` | the portal's own service client, for its server-side API calls |
+| `auth.clientId` | `ds-oauth2-proxy` | `oauth2_proxy` | the realm's browser-login client — the deployment's single human login surface |
 
 !!! note "Two deliberate deviations from the security contract"
     **`edc.sql.schema.autocreate` defaults to `true`, not `false`.** The contract
@@ -199,8 +201,10 @@ deviate. They live in `helm/charts/<chart>/values.yaml`.
     **The connector has no public Ingress, but the dataset API is external.**
     In-cluster, `/internal/*` is reachable only from the same namespace. If your
     dataset API runs outside the cluster, arrange connectivity yourself — run it
-    in-namespace, or add a dedicated internal Ingress carrying the `X-Api-Key`.
-    The charts do not expose `/internal` publicly by default.
+    in-namespace, or add a dedicated internal Ingress on which it presents its
+    `svc-ds-dataset-api` Keycloak client credentials. (`/internal/*` no longer
+    accepts a shared `X-Api-Key`; every caller authenticates as itself.) The
+    charts do not expose `/internal` publicly by default.
 
 ## Replicas and migrations
 

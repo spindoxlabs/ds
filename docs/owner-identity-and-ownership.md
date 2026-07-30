@@ -496,7 +496,9 @@ organizations:
 The dev realm (`realm-dataspaces-dev.json`) includes:
 - `organizationsEnabled: true` — enables the KC native organizations feature
 - `organization` client scope with `oidc-organization-membership-mapper` — maps org memberships to JWT claims
-- `ds-portal` client includes `organization` in its default scopes
+- the `oauth2_proxy` browser-login client requests the `organization:*` scope —
+  without it Keycloak emits no `organization.<alias>.groups` at all, and every
+  participant-scoped seat silently grants nothing
 
 ### JWT claim structure
 

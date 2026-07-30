@@ -17,8 +17,17 @@ provenance or catalog directly. The dev Caddy fan-in (`/api/connector/*`,
 `/api/provenance/*`, `/api/catalog/*`, `/api/datasets/*`) exists only because the
 dev portal runs on the host, and is **not reproduced** in the charts.
 
-The chart sets `ORIGIN=https://portal.<baseDomain>`. It must match the Keycloak
-redirect URI of the public `ds-portal` client, or the login flow fails.
+The chart sets `ORIGIN=https://portal.<baseDomain>`. It must match oauth2-proxy's
+`redirect_url` and the redirect URI registered on the realm's `oauth2_proxy`
+client, or the login flow fails.
+
+`/oauth2/*` on the same host belongs to the `ds-oauth2-proxy` release — sign-in,
+callback and sign-out. Everything else on the host goes to the portal, behind the
+ingress controller's `auth-url`. The portal does not authenticate anyone itself:
+it reads the token the proxy forwards and does not verify its signature, so the
+`auth-response-headers` annotation that overwrites client-supplied
+`X-Auth-Request-*` is part of the authentication boundary, not a hardening
+extra.
 
 ### `<participant>.<baseDomain>` — the DSP and data-plane boundary
 

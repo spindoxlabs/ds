@@ -77,16 +77,27 @@ additive — one human can hold several at once. See `AGENTS.md` for the model.
 
 `ConsentBadge.svelte` — displays consent status with visual indicators.
 
-`session.ts` — Keycloak-based session store. Parses access token claims for `resource_access.ds-portal.roles` and `realm_access.roles` to gate route access.
+`session.ts` — session helpers over the access token oauth2-proxy forwards. Parses realm roles and Keycloak **groups** (each naming a role bundle) to gate route access.
 
 ---
 
 ## Authentication
 
-Keycloak OIDC through Auth.js; the portal client is `ds-portal`. Authorisation
-comes from two places, and conflating them is the commonest mistake here:
+**The portal is not an OIDC client.** Auth.js, the `ds-portal` client and
+`AUTH_SECRET` are all gone: **oauth2-proxy** holds the browser session and
+forwards the access token as `X-Auth-Request-Access-Token`, which `hooks.server.ts`
+turns into a session. One login surface for the deployment, and one fewer client
+registration to negotiate with whoever owns the realm.
 
-- **Keycloak groups** — service permissions (`connector.provider.read`,
+The header is transport, never authority — the proxy layer strips any
+client-supplied `X-Auth-Request-*`, the token here only gates the UI, and every ds
+service re-verifies it via JWKS and re-authorises the request.
+
+Authorisation comes from two places, and conflating them is the commonest mistake
+here:
+
+- **Keycloak groups** — each naming a **role bundle** that expands into service
+  permissions (`connector.provider.read`,
   `identity-registry.organizations.promote`, `provenance.read`, …). Checked with
   `hasGrant` / `requireGrant` in `src/lib/server/auth.ts`, which mirror
   `ds_auth.permissions.grant_satisfies`, so `{service}.admin` satisfies its
@@ -121,7 +132,7 @@ portal reads:
 |---|---|
 | `CONNECTOR_URL`, `PROVENANCE_URL`, `CATALOGUE_URL`, `FEDERATED_CATALOG_URL`, `IDENTITY_REGISTRY_URL` | server-side upstreams |
 | `CONSUMER_CONNECTOR_URL`, `CONSUMER_PARTICIPANT_DID`, `CONSUMER_DEFAULT_ASSIGNER`, `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | consumer-side wiring |
-| `AUTH_KEYCLOAK_ISSUER`, `AUTH_KEYCLOAK_ID`, `AUTH_KEYCLOAK_SECRET`, `AUTH_KEYCLOAK_SCOPE`, `AUTH_SECRET` | Auth.js / OIDC login |
+| `OAUTH2_PROXY_BASE_URL` | where a browser is sent to start or end a session |
 | `PORTAL_SERVICE_CLIENT_ID`, `PORTAL_SERVICE_CLIENT_SECRET` | the service account used only for `/users/resolve` |
 
 A DSP address is an **identity**, not a route: `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS`

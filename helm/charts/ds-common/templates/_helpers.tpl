@@ -131,6 +131,31 @@ guard exists to prevent.
 {{- end -}}
 
 {{/*
+Layer B — the foreign realm's vocabulary translated into ds's.
+
+Two maps, both deployment config because both are about *someone else's* naming:
+`groups` turns a host realm's group names into ds role bundles, `owners` turns its
+organisation aliases into ds `Owner` ids. Neither is a permission table — a group
+alias may only name a bundle, and `parse_group_aliases` drops anything else with a
+loud log, because deployment config that could name a raw capability would put the
+permission model back into values.yaml.
+
+**Emitted from one `global.keycloak.aliases` block for every service that takes
+it.** That is the point of putting it here rather than in each chart: a group map
+wired into three services out of four is a deployment where a caller's authority
+depends on which service answered. One source, or none.
+
+Called as: {{ include "ds.env.aliases" (dict "ctx" . "prefix" "CONNECTOR_") }}
+*/}}
+{{- define "ds.env.aliases" -}}
+{{- $aliases := ((((.ctx.Values).global).keycloak).aliases) | default dict -}}
+{{- with $aliases.groups }}
+- name: {{ $.prefix }}OIDC_GROUP_ALIASES
+  value: {{ toJson . | quote }}
+{{- end }}
+{{- end -}}
+
+{{/*
 Extra plain env from .Values.env (map form).
 */}}
 {{- define "ds.env.extra" -}}

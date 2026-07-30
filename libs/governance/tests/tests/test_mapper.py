@@ -533,7 +533,8 @@ def test_several_purposes_stay_one_multi_valued_isanyof():
     whole Management API list response and leaves the DSP catalogue empty.
 
     Unreadable purposes beat no catalogue, so the multi-valued operand stays and
-    this test pins it. See `.agents/plans/portal-review/plan.md` §3b.
+    this test pins it. `docs/governance-and-odrl.md` carries the full account and
+    names the packaging guard that keeps the forked transformer in the shadow JAR.
     """
     mapper = _mapper(profile=_ENERGY_PROFILE)
     rule = _rule(
