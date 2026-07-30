@@ -137,6 +137,9 @@ clients:
       # client no longer creates owners; a missing organisation is a startup
       # failure, not something to auto-create (see `Owner.status`).
       - identity-registry.organizations.read
+      # Resolve an existing DID by email before minting, so a re-onboarded
+      # person reuses their existing subject identity.
+      - identity-registry.resolve
       # Issue a data-subject credential on approval, and revoke it on removal.
       - identity-registry.credentials.write
       # Register and delete the person's organisation membership.

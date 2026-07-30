@@ -107,7 +107,8 @@ assessment rather than being assumed.
 
 ### Subject identifier hardening
 
-User DIDs are derived from a hash of the login email, which correctly keeps personal data out
-of DID paths. Because the hash is unsalted, a DID is computable from a known email address and
-therefore correlatable across deployments. A per-deployment salt closes this; it is small,
-independent, and low urgency.
+**Done.** User DIDs are derived from an HMAC of the login email keyed by
+`ENCRYPTION_KEY`, which keeps personal data out of DID paths and makes the
+identifier uncomputable without the deployment's key. Previously an unsalted
+SHA-256 hash was used, making DIDs correlatable across deployments. Existing
+DIDs are stored and unaffected by the change.
