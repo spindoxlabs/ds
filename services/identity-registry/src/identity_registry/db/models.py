@@ -130,6 +130,17 @@ class Participant(Base):
 
 class KeycloakMapping(Base):
     __tablename__ = "keycloak_mappings"
+    __table_args__ = (
+        # One Keycloak user, one DID. Without this a second identity for the same
+        # human is representable — and it was reachable, because resolution used to
+        # derive a new subject id whenever an *email* lookup missed, and the email
+        # is the identifier an IdP lets people change. The data plane resolves both
+        # DIDs to the same username, so a revocation against one leaves the other
+        # disclosing. See migration 0010.
+        UniqueConstraint(
+            "keycloak_realm", "keycloak_user_id", name="uq_keycloak_mappings_realm_user"
+        ),
+    )
 
     did: Mapped[str] = mapped_column(
         Text, ForeignKey("dids.did"), primary_key=True

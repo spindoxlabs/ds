@@ -660,6 +660,30 @@ async def keycloak_sync(
     if not data.did.startswith("did:web:"):
         raise HTTPException(status_code=400, detail="Invalid DID format")
 
+    # Before writing: does some *other* DID already answer to this Keycloak user?
+    # A second mapping for one identity is how a person ends up with two DIDs whose
+    # consent states diverge — the data plane resolves both to the same username
+    # and a revocation against one leaves the other disclosing.
+    clash = await db.execute(
+        select(KeycloakMapping).where(
+            KeycloakMapping.keycloak_realm == data.keycloak_realm,
+            KeycloakMapping.keycloak_user_id == data.keycloak_user_id,
+            KeycloakMapping.did != data.did,
+        )
+    )
+    existing = clash.scalar_one_or_none()
+    if existing is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Keycloak user {data.keycloak_user_id} in realm "
+                f"{data.keycloak_realm} is already bound to {existing.did}. "
+                "Rebinding is an explicit operator act, never a side effect of a "
+                "sync — the two identities' consent states would diverge while the "
+                "data plane resolved both to the same person."
+            ),
+        )
+
     result = await db.execute(
         select(KeycloakMapping).where(KeycloakMapping.did == data.did)
     )
@@ -668,6 +692,9 @@ async def keycloak_sync(
     if mapping:
         mapping.keycloak_realm = data.keycloak_realm
         mapping.keycloak_user_id = data.keycloak_user_id
+        # An email change is the ordinary case and must keep the DID: the email is
+        # a bootstrap seed, not the identity. Re-deriving on an email miss is what
+        # mints a duplicate.
         mapping.email = data.email
         # Only overwrite when the caller actually supplied one: a sync from an
         # older caller must not erase a username a newer one already recorded.

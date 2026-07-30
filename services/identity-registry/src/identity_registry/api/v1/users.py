@@ -48,9 +48,80 @@ def _to_credential_response(credential: Credential) -> UserCredentialResponse:
     )
 
 
+async def resolve_mapping(
+    db: AsyncSession,
+    *,
+    realm: str | None = None,
+    user_id: str | None = None,
+    username: str | None = None,
+    email: str | None = None,
+) -> tuple[KeycloakMapping | None, str | None]:
+    """Find a user's mapping by the cascade ``id > username > email``.
+
+    Three identifiers, three different jobs, and only one of them means "the same
+    human":
+
+    * ``(realm, user_id)`` — the **continuity key**. Stable within a realm, and the
+      only one an IdP does not let people change.
+    * ``username`` — the **data-plane join**. The REC registry resolves a member by
+      it, so it is load-bearing and mutable at the same time.
+    * ``email`` — a **bootstrap seed**. It is the identifier that actually moves,
+      and deriving a subject id from it is a convenience for a first-time user, not
+      a statement about who someone is.
+
+    Returns ``(mapping, conflict)``. ``conflict`` is set when a *weaker* identifier
+    matched a row that already carries a **different** stronger one — the caller
+    must not reconcile that, because two irreconcilable situations look identical
+    from here: an IdP that deleted and re-created the account (same human, new
+    ``user_id``) and a username or address **recycled to a different human**. The
+    first should update the row; the second would hand one person's DID,
+    credentials and consent history to somebody else. ds cannot tell them apart,
+    and in a realm it does not administer it cannot ask.
+    """
+    if realm and user_id:
+        result = await db.execute(
+            select(KeycloakMapping).where(
+                KeycloakMapping.keycloak_realm == realm,
+                KeycloakMapping.keycloak_user_id == user_id,
+            )
+        )
+        mapping = result.scalar_one_or_none()
+        if mapping:
+            return mapping, None
+
+    for column, value in (
+        (KeycloakMapping.username, username),
+        (KeycloakMapping.email, email),
+    ):
+        if not value:
+            continue
+        result = await db.execute(
+            select(KeycloakMapping).where(func.lower(column) == value.strip().lower())
+        )
+        # `.all()` rather than `scalar_one_or_none()`: a duplicate must be reported,
+        # not raised as a 500 from deep inside the ORM.
+        rows = result.scalars().all()
+        if len(rows) > 1:
+            return None, "ambiguous"
+        if rows:
+            mapping = rows[0]
+            if user_id and mapping.keycloak_user_id and mapping.keycloak_user_id != user_id:
+                return mapping, "conflict"
+            return mapping, None
+
+    return None, None
+
+
 @router.get("/resolve", response_model=UserResolveResponse)
 async def resolve_user_by_email(
-    email: str = Query(..., description="User email address"),
+    email: str | None = Query(None, description="User email address"),
+    realm: str | None = Query(
+        None, description="Keycloak realm — with user_id, the continuity key"
+    ),
+    user_id: str | None = Query(
+        None, description="Keycloak user id — the only identifier that cannot change"
+    ),
+    username: str | None = Query(None, description="Keycloak preferred_username"),
     derive: bool = Query(
         False,
         description="When true, derive a subject_id if no mapping exists yet",
@@ -71,16 +142,40 @@ async def resolve_user_by_email(
     ``ENCRYPTION_KEY``, keeping the mapping between emails and DID paths inside
     one service.
     """
-    result = await db.execute(
-        select(KeycloakMapping).where(
-            func.lower(KeycloakMapping.email) == email.strip().lower()
+    if not any((email, username, (realm and user_id))):
+        raise HTTPException(
+            status_code=422,
+            detail="Provide (realm, user_id), username, or email",
         )
+
+    mapping, conflict = await resolve_mapping(
+        db, realm=realm, user_id=user_id, username=username, email=email
     )
-    mapping = result.scalar_one_or_none()
+    if conflict:
+        # Quarantine, not a guess. See `resolve_mapping` for why this cannot be
+        # auto-reconciled.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"identifier {conflict}: the identifier given matches a mapping that "
+                "carries a different Keycloak user id. This is either a re-created "
+                "account or a recycled identifier, and they are indistinguishable "
+                "from here — an operator must decide."
+            ),
+        )
     if not mapping:
         if not derive:
             raise HTTPException(
-                status_code=404, detail="No mapping found for this email"
+                status_code=404, detail="No mapping found for this user"
+            )
+        if not email:
+            # Derivation is seeded by the email and nothing else. Without one there
+            # is nothing to derive *from*, and inventing a subject id from a
+            # username would mint a second identity for a person who may already
+            # have one.
+            raise HTTPException(
+                status_code=422,
+                detail="derive=true requires an email to derive the subject id from",
             )
         return UserResolveResponse(
             subject_id=derive_email_subject_id(email, ir_settings.encryption_key),
