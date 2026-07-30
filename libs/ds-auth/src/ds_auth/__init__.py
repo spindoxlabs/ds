@@ -33,6 +33,7 @@ from .errors import (
 from .jwt import (
     extract_groups,
     extract_organizations,
+    extract_realm_groups,
     extract_scopes,
     get_bearer_token,
     is_service_account,
@@ -51,6 +52,7 @@ __all__ = [
     "get_bearer_token",
     "extract_groups",
     "extract_organizations",
+    "extract_realm_groups",
     "extract_scopes",
     "is_service_account",
     "grant_satisfies",

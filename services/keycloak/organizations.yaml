@@ -27,3 +27,24 @@ organizations:
         groups: [ds-member]
       - email: consumer@example.test
         groups: [ds-member]
+
+  # A **second** participant, which exists so per-owner scoping can be proven
+  # rather than asserted.
+  #
+  # `gridops@example.test` holds no realm groups at all: its only authority is the
+  # `ds-participant-admin` below, inside this organisation. Every other dev
+  # operator carries a realm-level grant, which is deployment-wide by design and
+  # therefore crosses owners — so none of them can demonstrate a cross-owner
+  # refusal. `ds-e2e --flow user-authority` uses this seat for exactly that.
+  #
+  # `grid-operator` is already a verified owner in
+  # `services/identity-registry/seed/owners.dev.yaml` (alias `grid`), so the alias
+  # resolution the perimeter performs has something real to resolve.
+  - alias: grid-operator
+    name: Grid Operator
+    domains: []
+    attributes:
+      type: ["dso"]
+    members:
+      - email: gridops@example.test
+        groups: [ds-participant-admin]

@@ -402,6 +402,23 @@
       "groups": [
         "/ds-member"
       ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000006",
+      "username": "gridops@example.test",
+      "email": "gridops@example.test",
+      "firstName": "Grid",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "gridops",
+          "temporary": false
+        }
+      ],
+      "groups": []
     }
   ]
 }

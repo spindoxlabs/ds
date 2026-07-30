@@ -125,6 +125,26 @@ class Settings(BaseSettings):
     credential_status_url: str | None = None
     allow_unknown_participants: bool = False
 
+    # Per-owner scoping of provider writes: how to treat a caller carrying **no**
+    # organisation claims at all.
+    #
+    # False (default) — allow. A deployment that models no organisations is not one
+    #   where every operator has lost their rights, and refusing there pushes
+    #   operators towards `connector.admin`, which crosses every owner and is
+    #   strictly worse than the thing being prevented.
+    # True — refuse. Correct wherever organisations *are* modelled, because then a
+    #   missing claim means the caller was never scoped rather than that scoping is
+    #   off. A deployment with owners should set this.
+    #
+    # Callers who do carry organisation claims are always scoped, flag or not.
+    owner_scoping_strict: bool = Field(
+        default=False,
+        description=(
+            "Refuse a provider write when the caller carries no organisation "
+            "claims. Set true where Keycloak organisations model dataset owners."
+        ),
+    )
+
     oidc_issuer_url: str | None = Field(
         default=None,
         description="OIDC issuer URL for JWT verification (Keycloak realm URL)",

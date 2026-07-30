@@ -892,13 +892,26 @@ tasks:
         tok=$(curl -s -X POST "$TOKEN_URL" -d grant_type=client_credentials \
           -d client_id="${SVC_DS_E2E_ID:-svc-ds-e2e}" -d client_secret="${SVC_DS_E2E_SECRET:-svc-ds-e2e}" \
           | python3 -c 'import sys,json;print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null)
+        # Wait for the **expected** dataset, not merely a non-zero count.
+        #
+        # `ds-e2e clean` deletes and re-syncs the provider's assets, so right after
+        # it the catalogue still holds the *previous* crawl. A count check passes
+        # instantly against that stale result — and with more than one dataset in
+        # governance it passes even when the one the flows assert on has not been
+        # crawled yet. That is a race the `catalog-discovery` flow reports as a
+        # missing dataset and `smoke` as a query with no authorized rows, i.e. as
+        # two product failures rather than as "not yet".
+        want="${E2E_ASSET_ID:-datasets.silver.meters_15m}"
         for i in $(seq 1 60); do
-          n=$(curl -s -H "Authorization: Bearer $tok" http://172.17.0.1:30003/catalog/meta \
-            | python3 -c 'import sys,json;print(json.load(sys.stdin).get("dataset_count",0))' 2>/dev/null)
-          [ -n "$n" ] && [ "$n" != "0" ] && break
+          body=$(curl -s -H "Authorization: Bearer $tok" http://172.17.0.1:30003/catalog)
+          n=$(printf '%s' "$body" | python3 -c 'import sys,json;print(len(json.load(sys.stdin).get("dcat:dataset") or []))' 2>/dev/null)
+          if printf '%s' "$body" | grep -q "$want"; then break; fi
           sleep 3
         done
-        echo "federated catalogue datasets: ${n:-0}"
+        if ! printf '%s' "$body" | grep -q "$want"; then
+          echo "federated catalogue never listed ${want} (datasets: ${n:-0}) — flows that assert on it will fail" >&2
+        fi
+        echo "federated catalogue datasets: ${n:-0} (contains ${want}: $(printf '%s' "$body" | grep -qc "$want" && echo yes || echo no))"
         exit 0
 
   e2e:prepare:

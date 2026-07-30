@@ -72,6 +72,30 @@ def extract_groups(claims: dict) -> list[str]:
     return result
 
 
+def extract_realm_groups(claims: dict) -> list[str]:
+    """Realm-level groups only, without any organisation's.
+
+    A realm group is a **deployment-wide** grant; an organisation group is scoped
+    to that organisation. Keeping them apart is what lets
+    :meth:`ds_auth.Principal.grants_in` answer "may this caller act on *this
+    owner's* data" — :func:`extract_groups` deliberately loses the distinction,
+    and every existing call site wants it to.
+    """
+    realm = claims.get("groups")
+    if not isinstance(realm, list):
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for g in realm:
+        if not isinstance(g, str):
+            continue
+        normalized = g.lstrip("/")
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            result.append(normalized)
+    return result
+
+
 def extract_organizations(claims: dict) -> list[Organization]:
     """Parse the ``organization`` claim into structured objects."""
     orgs = claims.get("organization")

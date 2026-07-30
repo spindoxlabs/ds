@@ -139,3 +139,106 @@ def test_org_level_groups_expand_too():
     )
     assert principal.grants("connector.provider.write")
     assert principal.is_member_of("example-org")
+
+
+# ── Per-organisation authority (grants_in) ───────────────────────────────────
+#
+# `grants` asks *what* a caller may do; `grants_in` asks *whose* data they may do
+# it to. Before it existed the second question could not be asked at all:
+# `extract_groups` flattens every organisation's groups into one list, so a
+# read-only auditor for one participant who administers another reported as an
+# administrator everywhere. That is the one failure in this area that failed
+# *open*, which is why these are the assertions that matter most.
+
+
+def _multi_org(realm: list[str], orgs: dict[str, list[str]]) -> Principal:
+    return Principal.from_claims(
+        {
+            "sub": "u",
+            "email": "u@example.test",
+            "groups": realm,
+            "organization": {a: {"groups": g} for a, g in orgs.items()},
+        }
+    )
+
+
+def test_org_groups_are_no_longer_discarded():
+    principal = _multi_org([], {"acme": ["ds-participant-admin"]})
+    assert principal.get_organization("acme").groups == ("ds-participant-admin",)
+
+
+def test_authority_is_confined_to_the_granting_organisation():
+    """The fail-open case: admin in one org must not carry into another."""
+    principal = _multi_org(
+        [],
+        {
+            "acme": ["ds-participant-viewer"],
+            "globex": ["ds-participant-admin"],
+        },
+    )
+    assert principal.grants_in("globex", "connector.provider.write")
+    assert not principal.grants_in("acme", "connector.provider.write")
+    # Flattened authority still reports the write — which is exactly why the
+    # per-organisation question had to be asked separately rather than derived.
+    assert principal.grants("connector.provider.write")
+
+
+def test_read_still_works_where_only_read_was_granted():
+    principal = _multi_org([], {"acme": ["ds-participant-viewer"]})
+    assert principal.grants_in("acme", "connector.provider.read")
+
+
+def test_non_membership_is_refused():
+    principal = _multi_org([], {"acme": ["ds-participant-admin"]})
+    assert not principal.grants_in("globex", "connector.provider.write")
+    assert not principal.grants_in("", "connector.provider.write")
+
+
+def test_realm_groups_are_deployment_wide():
+    """A realm-level grant is not organisation-scoped, and must not be treated as
+    if it were: a single-participant deployment legitimately grants at realm level
+    and models no organisations at all."""
+    principal = _multi_org(["ds-participant-admin"], {"acme": []})
+    assert principal.grants_in("acme", "connector.provider.write")
+
+
+def test_realm_admin_bundle_reaches_a_member_organisation():
+    principal = _multi_org(["ds-admin"], {"acme": []})
+    assert principal.grants_in("acme", "connector.provider.write")
+
+
+def test_membership_alone_grants_nothing():
+    """Being in an organisation is necessary, never sufficient."""
+    principal = _multi_org([], {"acme": []})
+    assert principal.is_member_of("acme")
+    assert not principal.grants_in("acme", "connector.provider.write")
+
+
+def test_machine_identity_is_unreachable_per_organisation_too():
+    principal = _multi_org(["ds-admin"], {"acme": ["ds-participant-admin"]})
+    # The superset rule applies to `grants_in` as it does to `grants`…
+    assert principal.grants_in("acme", "connector.internal")
+    # …and `grants_exactly` remains the guard that actually protects it.
+    assert not principal.grants_exactly(["connector.internal"])
+
+
+def test_a_service_has_no_per_organisation_authority():
+    """Services authorise on scopes and carry no organisations. Call sites that
+    must let them through check `is_service` explicitly, so the exemption is
+    visible where it is granted."""
+    service = Principal.from_claims(
+        {
+            "sub": "s",
+            "preferred_username": "service-account-svc-ds-portal",
+            "scope": "connector.provider.write",
+        }
+    )
+    assert service.grants("connector.provider.write")
+    assert not service.grants_in("acme", "connector.provider.write")
+
+
+def test_legacy_scope_named_org_group_still_works():
+    """Pass-through applies inside an organisation too, so a realm carrying the
+    old scope-named groups keeps authorising during migration."""
+    principal = _multi_org([], {"acme": ["connector.provider.write"]})
+    assert principal.grants_in("acme", "connector.provider.write")

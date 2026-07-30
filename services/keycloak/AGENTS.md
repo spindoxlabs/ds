@@ -115,6 +115,13 @@ Three rules matter when reading `bundles.py`:
 - **The table is code, not configuration.** A permission table that can be edited
   at deploy time is a privilege-escalation surface. Mapping a *foreign* IdP's
   group names onto these bundles is a separate, deployment-owned concern.
+- **Realm group vs org group is a real distinction, not two ways to spell one
+  thing.** A realm group is a **deployment-wide** grant; an `organization.<alias>.groups`
+  entry is scoped to that organisation. `ds_auth.Principal.grants_in(alias, perm)`
+  asks the per-organisation question and the connector's provider perimeter uses it,
+  so an operator who administers one owner and only reads another cannot write to the
+  second. `extract_groups` still flattens both — that is correct for "may this caller
+  do X at all" and useless for "to whose data", which is why both exist.
 - **No bundle contains `connector.internal` or `connector.webhook`**, and
   `connector.admin` inside `ds-admin` cannot reach them either —
   `has_exact_permission` ignores the superset. CI asserts both

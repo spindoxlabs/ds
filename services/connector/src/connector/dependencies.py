@@ -67,41 +67,103 @@ require_provider_read = require_permission("connector.provider.read", "connector
 require_provider_write = require_permission("connector.provider.write", "connector.admin")
 
 
+def _asset_owner(properties: dict) -> str:
+    """The owning organisation's alias, read by **local name**.
+
+    The property is written as ``f"{prefix}:owner"`` where the prefix comes from the
+    active ODRL profile (``services/connector/services/governance.py``) — today
+    ``dsp-policy``, and a deployment may change it. EDC also returns properties
+    JSON-LD-compacted, so the key that comes back is not necessarily the key that
+    went in.
+
+    A hardcoded key is therefore wrong in two independent ways, and it fails
+    **silently**: an unrecognised key reads as "no owner", which the perimeter
+    treats as unowned and allows. That is exactly how the first cut of this guard
+    passed its unit tests (against a key those tests invented) while enforcing
+    nothing at all against a real EDC. Match on the local name and the prefix stops
+    mattering.
+    """
+    for key, value in (properties or {}).items():
+        if not isinstance(key, str) or not isinstance(value, str):
+            continue
+        local = key.rsplit("#", 1)[-1].rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+        if local == "owner" and value.strip():
+            return value.strip()
+    return ""
+
+
+async def _canonical_owner(request: Request, alias: str) -> str:
+    """Resolve an owner alias to its canonical ``Owner.id``.
+
+    An owner answers to more than one name: ``Owner.aliases[]`` means ``example-org``
+    is also ``example``. A governance file using the short form and a realm using
+    the long one describe the same organisation and compare unequal as strings, so
+    both sides go through the registry — which resolves aliases server-side
+    (``GET /owners/resolve`` falls back to scanning them) and is already TTL-cached
+    in this process.
+
+    Falls back to the alias itself when there is no registry or the owner is
+    unknown, so a deployment without one is scoped on literal names rather than
+    silently unscoped.
+    """
+    registry = getattr(request.app.state, "owners_registry", None)
+    if registry is None:
+        return alias
+    try:
+        entry = await registry.by_id(alias)
+    except Exception:  # noqa: BLE001 — a registry blip must not decide authority
+        return alias
+    return entry.id if entry is not None else alias
+
+
 async def _own_owner_only(principal: Principal, request: Request) -> bool:
-    """Confine a provider write to the owners the caller actually represents.
+    """Confine a provider write to the owner the caller holds authority *for*.
 
     ``connector.provider.write`` says *what* a caller may do; it never said *whose*
     data they may do it to. The portal filtered its buttons by owner, but the API
     accepted the call regardless — so an operator for one participant could delete
-    another participant's asset, policy or contract. The role bundle
-    ``ds-participant-admin`` is documented as scoped to one participant; this is
-    what makes that true rather than aspirational.
+    another participant's asset. The bundle ``ds-participant-admin`` is documented
+    as scoped to one participant; this is what makes that true.
 
-    Three deliberate outcomes:
+    **Authority, not membership.** The question asked is
+    :meth:`Principal.grants_in` — "does this caller hold ``connector.provider.write``
+    *within* this owner" — not "is a member of it". Membership alone was the
+    fail-open case: a read-only auditor for owner A who administers owner B was
+    reported by flattened authority as an administrator, and A's assets were
+    writable.
 
-    * ``connector.admin`` passes. It is the *operator* grant — a superset held by a
-      human running the deployment, not by a participant's staff.
-    * An asset with **no** owner passes. Ownership is optional in
-      ``governance.yaml``, and an unowned asset belongs to the participant as a
-      whole; refusing here would break every deployment that declares none. This
-      mirrors the portal's own ``canManageAsset``.
-    * An owner the caller is not a member of is refused, **including** when the
-      caller has no organisations at all.
+    Membership and per-organisation authority both come from the Keycloak
+    ``organization`` claim, which is the *operator → owner* relation. Deliberately
+    **not** the identity-registry's ``OrganizationMembership``: that is the consent
+    subject-pool keyed by a data subject's DID, and an operator legitimately has no
+    DID at all. The two membership systems stay separate, as documented.
 
-    Membership comes from ``Principal.organizations`` — the KC ``organization``
-    claim, which is the *operator → owner* relation. It is deliberately **not** the
-    identity-registry's ``OrganizationMembership``: that table is the consent
-    subject-pool, keyed by a data subject's DID, and an operator legitimately has
-    no DID at all. The two membership systems stay separate, as documented.
+    Four exemptions, each deliberate:
+
+    * ``connector.admin`` — the *deployment operator's* grant, not a participant's.
+      It crosses owners by design; that is what distinguishes it from
+      ``ds-participant-admin``.
+    * **service principals** — they authorise on scopes, hold no organisations, and
+      run the syncs. Checked explicitly here so the exemption is visible.
+    * an asset with **no owner** — ownership is optional in ``governance.yaml`` and
+      an unowned asset belongs to the participant as a whole. Mirrors the portal.
+    * a caller with **no organisation claims at all**, unless
+      ``owner_scoping_strict``. A deployment that models no organisations is not
+      one where every operator has lost their rights; refusing there would push
+      operators towards ``connector.admin``, which is strictly worse than the
+      thing being prevented. Deployments that *do* model owners can set the flag
+      and get the tighter posture.
     """
     if principal.grants("connector.admin"):
+        return True
+    if principal.is_service:
         return True
 
     asset_id = request.path_params.get("asset_id")
     if not asset_id:
         # Policies and contracts are not owner-labelled in EDC, so there is
-        # nothing to scope against. Left to `connector.provider.write` alone, and
-        # named here so the gap is visible rather than implied.
+        # nothing to scope against here. Named so the gap is visible rather than
+        # implied — scoping them means going through governance, not EDC.
         return True
 
     edc = getattr(request.app.state, "provider_edc", None)
@@ -110,18 +172,35 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
 
     try:
         asset = await edc.get_asset(asset_id)
-    except Exception:
+    except Exception:  # noqa: BLE001
         # A missing asset is the endpoint's 404 to report, not an authorization
         # decision. Refusing here would turn "does not exist" into "not yours",
         # which is a worse answer and a weaker one.
         return True
 
-    properties = (asset or {}).get("properties") or {}
-    owner = str(properties.get("ds:owner") or "").strip()
+    owner = _asset_owner((asset or {}).get("properties") or {})
     if not owner:
         return True
 
-    return principal.is_member_of(owner)
+    if not principal.organizations:
+        strict = get_settings().owner_scoping_strict
+        if not strict:
+            log.info(
+                "owner scoping: caller %s holds no organisation claims; allowing "
+                "write to owner %r. Set CONNECTOR_OWNER_SCOPING_STRICT=true where "
+                "organisations are modelled.",
+                principal.subject,
+                owner,
+            )
+        return not strict
+
+    target = await _canonical_owner(request, owner)
+    for alias in principal.organization_aliases:
+        if await _canonical_owner(request, alias) != target:
+            continue
+        if principal.grants_in(alias, "connector.provider.write"):
+            return True
+    return False
 
 
 # Owner-scoped variant. Used where the target carries an owner; the unscoped

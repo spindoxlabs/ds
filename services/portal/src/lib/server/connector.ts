@@ -243,12 +243,34 @@ export async function syncGovernance(token: string): Promise<{ synced: number }>
 	return apiFetch<{ synced: number }>(connectorUrl('/provider/sync'), { method: 'POST' }, token);
 }
 
+/**
+ * Read an EDC asset property by its **local name**, ignoring the prefix.
+ *
+ * The connector writes these as `${prefix}:owner` where the prefix comes from the
+ * active ODRL profile (`dsp-policy` today, and a deployment may change it), and EDC
+ * returns them JSON-LD-compacted — so the key that comes back is not the key that
+ * went in. This file previously read a hardcoded `ds:` prefix, which matched
+ * nothing: `owner`, `classification`, `sourceSystem` and `tags` were all silently
+ * empty, and `canManageAsset` consequently treated **every** asset as unowned and
+ * therefore manageable. A wrong key here is invisible — it looks like an asset with
+ * no metadata rather than like a bug.
+ */
+function prop(properties: Record<string, unknown>, localName: string): string {
+	for (const [key, value] of Object.entries(properties ?? {})) {
+		const local = key.split(/[#/:]/).pop();
+		if (local === localName && (typeof value === 'string' || typeof value === 'number')) {
+			return String(value);
+		}
+	}
+	return '';
+}
+
 export async function listProviderAssets(token: string): Promise<ProviderAsset[]> {
 	const assets = await apiFetch<Record<string, unknown>[]>(connectorUrl('/provider/assets'), {}, token);
 	return assets.map((asset) => {
 		const properties = (asset.properties ?? asset['edc:properties'] ?? {}) as Record<string, unknown>;
 		const id = String(asset['@id'] ?? asset.id ?? properties.id ?? properties['edc:id'] ?? '');
-		const tags = String(properties['ds:tags'] ?? '')
+		const tags = prop(properties, 'tags')
 			.split(',')
 			.map((tag) => tag.trim())
 			.filter(Boolean);
@@ -256,12 +278,12 @@ export async function listProviderAssets(token: string): Promise<ProviderAsset[]
 			asset_id: id,
 			name: String(properties.name ?? id),
 			description: String(properties.description ?? ''),
-			access_level: String(properties['ds:accessLevel'] ?? ''),
-			classification: String(properties['ds:classification'] ?? ''),
-			source_system: String(properties['ds:sourceSystem'] ?? ''),
+			access_level: prop(properties, 'accessLevel'),
+			classification: prop(properties, 'classification'),
+			source_system: prop(properties, 'sourceSystem'),
 			tags,
-			owner: String(properties['ds:owner'] ?? ''),
-			ownerDid: String(properties['ds:ownerDid'] ?? ''),
+			owner: prop(properties, 'owner'),
+			ownerDid: prop(properties, 'ownerDid'),
 			edc_synced: true,
 		};
 	});

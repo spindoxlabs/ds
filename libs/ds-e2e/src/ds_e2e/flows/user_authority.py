@@ -196,6 +196,61 @@ class UserAuthorityFlow(BaseFlow):
             "identity-registry.organizations.read",
         )
 
+        # ── Authority is confined to the caller's own owner ──────────────────
+        #
+        # `connector.provider.write` says what a caller may do; it never said whose
+        # data they may do it to. The connector's unit tests prove the guard with
+        # synthetic claims; this proves the **wiring** — a real Keycloak token, a
+        # real organisation claim, and a real owner alias resolved through the
+        # registry.
+        #
+        # The two assertions are a pair on purpose. A 403 on its own would also be
+        # produced by a token that is simply not authorised, which would make this
+        # pass for the wrong reason; so the same seat is first shown to reach the
+        # provider surface it *is* entitled to.
+        try:
+            other_owner = self.http.user_headers(
+                s.grid_operator_email, s.grid_operator_password
+            )
+        except Exception as exc:
+            result.fail_step(
+                "cross-owner seat",
+                f"could not obtain a token for {s.grid_operator_email}: {exc}",
+            )
+            return result
+
+        status, body = self.http.raw("GET", assets, headers=other_owner)
+        if status in _REFUSED:
+            result.fail_step(
+                "cross-owner seat is authorised at all",
+                f"{s.other_org} operator was refused {assets} ({status}) — the "
+                f"refusal below would then prove nothing: {str(body)[:200]}",
+            )
+        else:
+            result.pass_step(
+                "cross-owner seat is authorised at all",
+                f"{s.other_org} operator reaches the provider surface ({status})",
+            )
+
+        # A refused DELETE mutates nothing, so this is safe to assert in place.
+        status, body = self.http.raw(
+            "DELETE", f"{s.connector_url}/provider/assets/{s.asset_id}",
+            headers=other_owner,
+        )
+        if status in _REFUSED:
+            result.pass_step(
+                "cross-owner write is refused",
+                f"{s.other_org} operator cannot delete an asset owned by "
+                f"{s.owning_org} ({status})",
+            )
+        else:
+            result.fail_step(
+                "cross-owner write is refused",
+                f"{s.other_org} operator deleted or was allowed to delete "
+                f"{s.asset_id}, owned by {s.owning_org} ({status}): "
+                f"{str(body)[:200]}",
+            )
+
         # ── Machine identity is unreachable ──────────────────────────────────
         #
         # `/internal/edr-jwks` is guarded by `require_exact_permission

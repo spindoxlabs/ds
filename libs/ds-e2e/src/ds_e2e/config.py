@@ -115,6 +115,17 @@ class E2ESettings(BaseSettings):
     admin_password: str = "admin"
     provider_email: str = "provider@example.test"
     provider_password: str = "provider"
+    # A second participant's operator, holding `ds-participant-admin` **only inside
+    # the `grid-operator` organisation** and no realm groups at all. It is the one
+    # dev seat that can demonstrate a cross-owner refusal: every other operator
+    # carries a realm-level grant, which is deployment-wide by design.
+    grid_operator_email: str = "gridops@example.test"
+    grid_operator_password: str = "gridops"
+    # The owner that owns `asset_id` in the dev governance file, and one that does
+    # not. The perimeter compares canonical `Owner.id`s, so both must be real
+    # owners in the registry.
+    owning_org: str = "example-org"
+    other_org: str = "grid-operator"
     consumer_password: str = "consumer"
     data_subject_password: str = "subject"
 

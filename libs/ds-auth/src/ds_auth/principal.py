@@ -5,7 +5,13 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 from .bundles import expand_bundles
-from .jwt import extract_groups, extract_organizations, extract_scopes, is_service_account
+from .jwt import (
+    extract_groups,
+    extract_organizations,
+    extract_realm_groups,
+    extract_scopes,
+    is_service_account,
+)
 from .models import Organization
 from .permissions import has_exact_permission, has_permission
 
@@ -32,6 +38,10 @@ class Principal:
     scopes: tuple[str, ...]
     groups: tuple[str, ...]
     organizations: tuple[Organization, ...] = ()
+    # Realm-level groups only — deployment-wide grants, as distinct from the
+    # per-organisation ones carried on each :class:`Organization`. `groups` above
+    # is the flattened union both call sites and history expect.
+    realm_groups: tuple[str, ...] = ()
     claims: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -43,6 +53,7 @@ class Principal:
             scopes=tuple(extract_scopes(claims)),
             groups=tuple(extract_groups(claims)),
             organizations=tuple(extract_organizations(claims)),
+            realm_groups=tuple(extract_realm_groups(claims)),
             claims=claims,
         )
 
@@ -76,6 +87,35 @@ class Principal:
 
     def grants_any(self, required: Iterable[str]) -> bool:
         return has_permission(self.authority, required)
+
+    def grants_in(self, alias: str, *required: str) -> bool:
+        """True if this principal holds a required permission **for one organisation**.
+
+        :meth:`grants` asks *what* a caller may do; this asks *whose* data they may
+        do it to. The difference is not cosmetic: a person can legitimately be a
+        read-only auditor for one participant and an administrator for another, and
+        flattened authority reports them as an administrator everywhere.
+
+        The rule:
+
+        * not a member of ``alias`` → **False**. Membership is necessary.
+        * authority within ``alias`` = that organisation's groups **plus** the
+          realm-level groups, expanded through the role bundles. Realm groups are
+          deployment-wide by construction: a realm that grants
+          ``ds-participant-admin`` at realm level is asserting authority across the
+          deployment, and that is a legitimate configuration for a single-participant
+          one.
+
+        A service principal has no organisations and therefore no per-organisation
+        authority — services authorise on scopes and are never owner-scoped. Callers
+        that must let services through should check :attr:`is_service` first, so the
+        exemption is visible where it is granted rather than hidden in here.
+        """
+        organization = self.get_organization(alias)
+        if organization is None:
+            return False
+        authority = expand_bundles([*organization.groups, *self.realm_groups])
+        return has_permission(authority, required)
 
     def grants_exactly(self, required: Iterable[str]) -> bool:
         """True only if a required permission is held by name.

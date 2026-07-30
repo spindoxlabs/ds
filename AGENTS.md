@@ -653,11 +653,19 @@ All bootstrap and provisioning operations must be idempotent. `task identity:boo
 | `consumer@example.test` | `consumer` | `ds-member` | — | `ConsumerUser` | Data consumer |
 | `subject@example.test` | `subject` | `ds-member` | — | `DataSubject` | Consent management |
 | `dual@example.test` | `dual` | `ds-member` | — | `ConsumerUser` **and** `DataSubject` | Role coexistence |
+| `gridops@example.test` | `gridops` | `ds-participant-admin` **org-scoped only** (`grid-operator`) | — | — | Per-owner scoping |
 
 `provider@` deliberately holds its bundle **twice** — as a realm group in the
 import and as an `organization.<alias>.groups` entry in `organizations.yaml` — so
-both provisioning paths are exercised. `ds-e2e --flow user-authority` asserts each
-seat reaches exactly its own surface.
+both provisioning paths are exercised.
+
+**`gridops@example.test` holds no realm group at all**, and that is the point: a
+realm-level bundle is deployment-wide by design, so every other operator crosses
+owners and none of them can demonstrate a cross-owner *refusal*. `gridops` is an
+operator for a second participant (`grid-operator`) and nothing else, which is what
+lets `ds-e2e --flow user-authority` prove that a provider write is confined to the
+owner the caller holds authority for — with a real token, a real organisation claim
+and a real owner alias resolved through the registry.
 
 **`dual@example.test` exists to stop role exclusivity from looking correct.** VC
 roles are additive: the same human is a data subject about their own consumption
