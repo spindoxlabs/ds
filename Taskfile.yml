@@ -1266,6 +1266,13 @@ tasks:
     cmds:
       - task -d libs/ds-auth bundles:generate
 
+  keycloak:merge:
+    desc: "Regenerate the effective clients.yaml the sync applies (OVERLAYS=energy)"
+    vars:
+      OVERLAYS: '{{.OVERLAYS | default "energy"}}'
+    cmds:
+      - cd services/identity-registry && uv run ir-cli keycloak merge {{range $o := splitList "," .OVERLAYS}}--overlay {{$o}} {{end}}
+
   keycloak:mirror:
     desc: Regenerate the ds section a host realm's clients.yaml must carry
     cmds:

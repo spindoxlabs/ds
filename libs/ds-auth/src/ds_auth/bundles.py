@@ -142,17 +142,18 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # `identity-registry.admin`. Listed so the coverage test does not report
         # it as unreachable.
         "identity-registry.organizations.promote",
-        # Not ds endpoints. `dataset.*` belongs to the data-plane service and
-        # `rec-registry.*` to a domain registry; both are here only because ds
-        # service clients call them. See the `clients.<domain>.yaml` overlay.
+        # Not ds endpoints — `dataset.*` belongs to the data-plane service, and is
+        # here only because ds service clients call it.
+        #
+        # A *domain backend's* scopes are not listed at all, and deliberately:
+        # they live in a `clients.<domain>.yaml` overlay rather than in ds's core
+        # declaration, so naming them here would put a domain vocabulary back into
+        # ds's code — and would fail this list's own staleness check in any
+        # deployment that runs a different backend, or none.
         "dataset.admin",
         "dataset.query",
         "dataset.read",
         "dataset.write",
-        "rec-registry.admin",
-        "rec-registry.import",
-        "rec-registry.export",
-        "rec-registry.lookup",
     }
 )
 

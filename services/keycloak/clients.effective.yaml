@@ -1,23 +1,31 @@
 # GENERATED FILE — DO NOT EDIT.
 #
-# Source: services/keycloak/clients.yaml
-# Regenerate: task keycloak:mirror
+# Source:     services/keycloak/clients.yaml
+# Overlays:   energy
+# Regenerate: task keycloak:merge
 #
-# The ds section of a *host* realm's clients.yaml, for a deployment where ds is a
-# guest rather than the realm's owner. Merge these entries into the host's file;
-# everything else there is the host's own and is left alone.
+# The **effective** realm declaration: what ds needs, widened by the domain
+# backends this deployment runs. `keycloak-sync` applies this file rather than the
+# core one, because `celine-policies keycloak sync` takes a single file and
+# recomputes each client's grants from it — syncing the core alone would strip an
+# overlay's grants off a client the core also declares, with no flag involved.
 #
-# `svc-ds-e2e` is excluded (dev/CI only, deliberately over-granted) and every
-# `*.admin` grant is dropped: admin is an operator grant, and a long-lived process
-# should not hold a superset over every permission of a service.
+# Change the core or an overlay, then regenerate. Editing this file is editing the
+# output.
 
+realm: dataspaces
+oauth2_proxy_client: oauth2_proxy
 scopes:
+- name: dataset.admin
+  description: Full access to Dataset service (includes restricted datasets)
 - name: dataset.query
   description: Execute dataset queries
 - name: dataset.read
   description: Read dataset metadata and schema
 - name: dataset.write
   description: Write dataset data
+- name: identity-registry.admin
+  description: Admin access to dataspace identity-registry API
 - name: identity-registry.read
   description: Read participant registry and request credential presentations
 - name: identity-registry.resolve
@@ -40,6 +48,8 @@ scopes:
   description: Register or delete an organisation membership
 - name: identity-registry.keycloak.sync
   description: Bind a Keycloak user to a dataspace DID
+- name: connector.admin
+  description: Provider management (sync, assets, policies, contracts)
 - name: connector.provider.read
   description: Read provider assets, policies, contracts, transfers, authorizations
 - name: connector.provider.write
@@ -64,18 +74,28 @@ scopes:
   description: Write provenance events and audit log entries
 - name: catalog.read
   description: Query federated catalog
+- name: rec-registry.admin
+  description: Full administrative access to the registry
+- name: rec-registry.import
+  description: Permission to import into the registry
+- name: rec-registry.export
+  description: Permission to export from the registry
+- name: rec-registry.lookup
+  description: Permission to lookup data
 clients:
 - client_id: svc-ds-identity-registry
   name: Dataspace Identity Registry
   secret: ${SVC_DS_IDENTITY_REGISTRY_SECRET:-svc-ds-identity-registry}
-  default_scopes:
-  - connector.registry.invalidate
   scopes_prefix: identity-registry
+  default_scopes:
+  - identity-registry.admin
+  - connector.registry.invalidate
   extra_audiences:
   - svc-ds-connector
 - client_id: svc-ds-onboarding
   name: Dataspace Onboarding
   secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
+  scopes_prefix: null
   default_scopes:
   - identity-registry.organizations.read
   - identity-registry.resolve
@@ -91,6 +111,8 @@ clients:
 - client_id: svc-ds-portal
   name: Dataspace Portal
   secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
+  service_account_enabled: true
+  scopes_prefix: null
   default_scopes:
   - dataset.query
   - dataset.read
@@ -107,15 +129,42 @@ clients:
   - svc-ds-connector
   - svc-ds-provenance
   - svc-ds-federated-catalog
+- client_id: svc-ds-e2e
+  name: Dataspace E2E Harness (dev/CI only)
+  secret: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}
+  service_account_enabled: true
+  scopes_prefix: null
+  default_scopes:
+  - dataset.query
+  - dataset.read
+  - identity-registry.resolve
+  - identity-registry.read
+  - identity-registry.membership.read
+  - connector.provider.read
+  - connector.provider.write
+  - connector.history.read
+  - connector.consent.provision
+  - connector.ingestion.record
+  - connector.internal
+  - provenance.read
+  - provenance.write
+  - catalog.read
+  - rec-registry.admin
+  extra_audiences:
+  - svc-ds-identity-registry
+  - svc-ds-connector
+  - svc-ds-provenance
+  - svc-ds-federated-catalog
+  - svc-rec-registry
 - client_id: svc-ds-connector
   name: Dataspace Connector
   secret: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+  scopes_prefix: connector
   default_scopes:
   - identity-registry.read
   - identity-registry.membership.read
   - provenance.write
   - connector.consent.read
-  scopes_prefix: connector
   extra_audiences:
   - svc-ds-identity-registry
   - svc-ds-provenance
@@ -123,27 +172,30 @@ clients:
 - client_id: svc-ds-provenance
   name: Dataspace Provenance
   secret: ${SVC_DS_PROVENANCE_SECRET:-svc-ds-provenance}
-  default_scopes: []
   scopes_prefix: provenance
+  default_scopes: []
 - client_id: svc-ds-federated-catalog
   name: Dataspace Federated Catalog
   secret: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
+  scopes_prefix: catalog
   default_scopes:
   - identity-registry.read
-  scopes_prefix: catalog
   extra_audiences:
   - svc-ds-identity-registry
 - client_id: svc-ds-dataset-api
   name: Dataspace Dataset API
   secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
+  scopes_prefix: dataset
   default_scopes:
   - connector.internal
-  scopes_prefix: dataset
+  - rec-registry.lookup
   extra_audiences:
   - svc-ds-connector
+  - svc-rec-registry
 - client_id: svc-edc
   name: Eclipse Dataspace Connector
   secret: ${SVC_EDC_SECRET:-svc-edc}
+  scopes_prefix: null
   default_scopes:
   - identity-registry.read
   - connector.webhook
@@ -151,3 +203,9 @@ clients:
   extra_audiences:
   - svc-ds-identity-registry
   - svc-ds-connector
+- client_id: svc-rec-registry
+  name: REC Registry Service
+  secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
+  scopes_prefix: rec-registry
+  default_scopes:
+  - rec-registry.admin

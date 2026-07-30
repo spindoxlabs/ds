@@ -1,3 +1,14 @@
+# What **ds** needs from a Keycloak realm. Where ds owns the realm this is
+# applied; where ds is a guest the host's own file must carry the same entries
+# (`task keycloak:mirror` generates that section).
+#
+# **This file names no domain system.** A deployment's backend — the energy/REC
+# registry in dev — declares its own scopes and clients in a domain overlay,
+# `clients.<domain>.yaml`, and `ir-cli keycloak merge` combines them into the
+# effective file the sync applies. The two are separate because which one applies
+# is a deployment question: the overlay is precisely what must *not* cross into a
+# host realm, where those are the host's services and not ds's to declare.
+#
 # Local dev realm. In production, ds clients are in the celine realm
 # via celine-policies/clients.yaml.
 realm: dataspaces
@@ -28,19 +39,6 @@ scopes:
     description: Read dataset metadata and schema
   - name: dataset.write
     description: Write dataset data
-
-  # REC Registry — mirrors celine-policies/clients.yaml. A dataspace query on a
-  # dataset whose row filter is `handler: rec_registry` cannot be resolved
-  # without it, and every consent-gated dataset in the producer pipelines uses
-  # exactly that handler.
-  - name: rec-registry.admin
-    description: Full administrative access to the registry
-  - name: rec-registry.import
-    description: Permission to import into the registry
-  - name: rec-registry.export
-    description: Permission to export from the registry
-  - name: rec-registry.lookup
-    description: Permission to lookup data
 
   # Dataspace Identity Registry
   - name: identity-registry.admin
@@ -221,10 +219,6 @@ clients:
       - connector.provider.write
       - connector.history.read
       - connector.consent.provision
-      # Seeds the REC registry so a `rec_registry` row filter has data to resolve.
-      - rec-registry.admin
-      # The registry validates its own audience, so the harness's token must
-      # carry it — a scope without the audience is refused before it is read.
       - connector.ingestion.record
       # Machine-identity permissions: granted by name because they are exempt
       # from the admin superset (ds_auth.require_exact_permission).
@@ -237,7 +231,6 @@ clients:
       - svc-ds-connector
       - svc-ds-provenance
       - svc-ds-federated-catalog
-      - svc-rec-registry
 
   - client_id: svc-ds-connector
     name: Dataspace Connector
@@ -286,18 +279,8 @@ clients:
     scopes_prefix: dataset
     default_scopes:
       - connector.internal
-      - rec-registry.lookup
     extra_audiences:
       - svc-ds-connector
-      - svc-rec-registry
-
-  - client_id: svc-rec-registry
-    name: REC Registry Service
-    secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
-    scopes_prefix: rec-registry
-    default_scopes:
-      # Own resources
-      - rec-registry.admin
 
   - client_id: svc-edc
     name: Eclipse Dataspace Connector

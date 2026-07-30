@@ -37,14 +37,28 @@ def _core_scopes() -> set[str]:
     return _declared_scopes(KEYCLOAK / "clients.yaml")
 
 
-def _all_scopes() -> set[str]:
-    """Core plus any domain overlay (`clients.<domain>.yaml`).
+#: Generated artefacts that sit beside the overlays and match the same glob.
+#: Excluded deliberately: `clients.effective.yaml` is core + every overlay, so
+#: counting it as a source would make every assertion below tautological — a
+#: permission declared nowhere would still appear "declared".
+_GENERATED = {"clients.effective.yaml", "clients.host.generated.yaml"}
 
-    Domain scopes are being lifted out of the core file, so a permission may
-    legitimately live in an overlay. The union is what a realm actually gets.
+
+def _overlay_paths() -> list[Path]:
+    return sorted(
+        p for p in KEYCLOAK.glob("clients.*.yaml") if p.name not in _GENERATED
+    )
+
+
+def _all_scopes() -> set[str]:
+    """Core plus every domain overlay (`clients.<domain>.yaml`).
+
+    Domain scopes are lifted out of the core file (R1), so a permission may
+    legitimately live in an overlay. The union is what a realm actually gets — it
+    is what `ir-cli keycloak merge` hands the sync.
     """
-    scopes: set[str] = set()
-    for path in sorted(KEYCLOAK.glob("clients*.yaml")):
+    scopes = _core_scopes()
+    for path in _overlay_paths():
         scopes |= _declared_scopes(path)
     return scopes
 
@@ -76,14 +90,37 @@ def test_no_bundle_grants_an_undeclared_permission():
     A bundle granting a name the realm never declares as a scope produces a
     grant that satisfies nothing — visible only when a route 403s.
     """
-    invented = all_bundled_permissions() - _all_scopes()
+    invented = all_bundled_permissions() - _core_scopes()
     assert not invented, (
         f"bundles grant permissions absent from clients.yaml: {sorted(invented)}"
     )
 
 
+def test_no_bundle_reaches_into_a_domain_backends_vocabulary():
+    """Layer A is ds's own semantics, and stops at ds's own permissions.
+
+    A domain overlay (`clients.<domain>.yaml`) declares what the backend deployed
+    alongside ds needs. Granting one of its scopes through a ds bundle would make
+    a ds seat mean something different depending on which backend happens to be
+    deployed — and would break outright in a deployment carrying a different
+    overlay, or none.
+    """
+    overlay_scopes = _all_scopes() - _core_scopes()
+    reached = all_bundled_permissions() & overlay_scopes
+    assert not reached, (
+        f"bundles grant domain-overlay permissions: {sorted(reached)} — a ds bundle "
+        "may only expand to scopes declared in the core clients.yaml"
+    )
+
+
 def test_service_only_declarations_are_not_stale():
-    stale = SERVICE_ONLY_PERMISSIONS - _all_scopes()
+    """Checked against the **core** file only.
+
+    A domain overlay's scopes are not ds's to classify, and a deployment may carry
+    a different overlay or none at all — so naming one here would make this suite
+    fail on a stack that is perfectly correct.
+    """
+    stale = SERVICE_ONLY_PERMISSIONS - _core_scopes()
     assert not stale, (
         f"SERVICE_ONLY_PERMISSIONS names scopes that no longer exist: {sorted(stale)}"
     )

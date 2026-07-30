@@ -14,8 +14,20 @@ breaks authorization across every service at once.
 services/keycloak/
 ├── realm-dataspaces-dev.json        Dev realm import — users, groups, clients, org mapper
 ├── realm-production.example.json    Production realm reference (nothing selects it today)
-├── clients.yaml                     Scopes + 7 service clients (celine-policies CLI)
+├── clients.yaml                     What **ds** needs from a realm (hand-written)
+├── clients.energy.yaml              What the **domain backend** needs (hand-written overlay)
+├── clients.effective.yaml           GENERATED — core + overlays; what keycloak-sync applies
+├── clients.host.generated.yaml      GENERATED — the ds section a *host* realm must carry
 └── organizations.yaml               KC native organizations + members (ir-cli org-sync)
+```
+
+Two hand-written declarations, two generated ones. Regenerate both after any edit
+to either hand-written file — `libs/ds-auth/tests/test_vocabulary.py` and
+`services/identity-registry/tests/test_keycloak_merge.py` fail on a stale copy:
+
+```bash
+task keycloak:merge     # → clients.effective.yaml   (core + overlays)
+task keycloak:mirror    # → clients.host.generated.yaml (core only)
 ```
 
 ## Runtime
@@ -40,7 +52,8 @@ completed:
 1. **`keycloak`** — imports `realm-dataspaces-dev.json`, becomes healthy.
 2. **`keycloak-sync`** — image `ghcr.io/celine-eu/celine-policies:dev`. Runs
    `celine-policies keycloak bootstrap` then `keycloak sync --secrets-file`,
-   reading `clients.yaml`. Creates the scopes and the service clients.
+   reading **`clients.effective.yaml`** (not `clients.yaml` — see the overlay
+   section below). Creates the scopes and the service clients.
 3. **`keycloak-org-sync`** — built from the identity-registry Dockerfile. Runs
    `ir-cli keycloak org-sync --config /app/organizations.yaml`. Creates KC native
    organizations and assigns members.
@@ -50,6 +63,52 @@ completed:
 > The realm import only seeds users, groups and the `ds-portal` client. Service
 > clients come from `clients.yaml` via step 2 — editing the realm JSON to add a
 > service client is the wrong layer.
+
+## The core / overlay split — and why the sync never sees the core file
+
+`clients.yaml` declares what **ds** needs from a realm. `clients.<domain>.yaml`
+declares what the **domain backend deployed alongside it** needs. Which one applies
+is a deployment question, not a dev convenience:
+
+| | declares | posture A (ds owns the realm) | posture B (ds is a guest) |
+|---|---|---|---|
+| `clients.yaml` | what **ds** needs | applied | mirrored across |
+| `clients.<domain>.yaml` | what the **backend** needs | applied | **omitted** — the host declares its own services |
+
+Dev only looks like the sole consumer because dev *is* a posture-A deployment that
+happens to have an energy-domain backend.
+
+> ### The merge is mandatory, and the reason is a silent failure
+>
+> `celine-policies keycloak sync` takes **exactly one file** — `config_path` is
+> `dir_okay=False`, the load is a single `yaml.safe_load`. There is no include, no
+> merge, no repeatable `--config`.
+>
+> `--prune` is opt-in and guards only orphan *scopes* and *clients*, so a split file
+> will not delete them. **But scope assignments and audience mappers are recomputed
+> and removed unconditionally**, outside the prune branch, for every client present
+> in the file it was handed.
+>
+> So syncing the core alone does not delete `rec-registry.lookup` — it **strips the
+> grant from `svc-ds-dataset-api`**, with no flag involved. The data-plane symptom
+> is a row filter that resolves nobody: fewer rows, no error, no log.
+>
+> A client absent from the synced file entirely *is* left alone (it is an orphan).
+> That asymmetry is the whole point: moving `svc-rec-registry` out is safe, moving a
+> grant off a client that stays is not.
+
+`ir-cli keycloak merge --overlay energy` resolves this by emitting the effective
+file before the sync runs. An overlay may **add** scopes, **add** clients, and
+**widen** a core client's `default_scopes` / `extra_audiences`. It may **not**
+redefine a core client's identity (`secret`, `scopes_prefix`, `name`) or set
+`realm` / `oauth2_proxy_client` — an overlay is a backend asking for grants, not a
+second copy of the authority file. A named overlay that does not exist is an error,
+never a thinner realm.
+
+The host mirror (`task keycloak:mirror`) reads the **core** file and so carries no
+domain system by construction: in a host realm those are the host's own services,
+declared on the host's terms, and a mirror asking for them would be ds claiming
+authority over another project's vocabulary.
 
 ## `clients.yaml` — the permission vocabulary
 
@@ -192,10 +251,12 @@ table. All four users have `password == username` and `"temporary": false`.
 
 | Task | Where |
 |------|-------|
-| Add a scope | `clients.yaml` → `scopes:` |
-| Add a service client | `clients.yaml` → `clients:` |
-| Grant a service a new permission | `clients.yaml` → that client's `default_scopes` |
-| Let service A call service B | add B's client_id to A's `extra_audiences` |
+| Add a scope | `clients.yaml` → `scopes:`, then `task keycloak:merge` + `keycloak:mirror` |
+| Add a service client | `clients.yaml` → `clients:`, then regenerate both |
+| Grant a service a new permission | `clients.yaml` → that client's `default_scopes`, then regenerate both |
+| Add a **domain backend's** scope or client | `clients.<domain>.yaml`, then `task keycloak:merge` |
+| Grant a ds client a **domain** permission | `clients.<domain>.yaml` → that client's `default_scopes` (widens the core entry) |
+| Let service A call service B | add B's client_id to A's `extra_audiences`, then regenerate |
 | Add a realm-wide seat | realm JSON `groups:` (a bundle name) — needs a KC db reset |
 | Add a participant-scoped seat | `organizations.yaml` member `groups:` — live, no reset |
 | Change what a seat may do | `libs/ds-auth/src/ds_auth/bundles.py`, then `task auth:bundles:generate` |
@@ -241,7 +302,7 @@ difference bites:
 
 | | Defined in | Applied by | On a running stack |
 |---|---|---|---|
-| **Client scopes** | `clients.yaml` | `keycloak-sync` init container | re-applied every run |
+| **Client scopes** | `clients.yaml` + `clients.<domain>.yaml`, merged into `clients.effective.yaml` | `keycloak-sync` init container | re-applied every run |
 | **Realm groups** | `realm-*.json` | Keycloak's realm import | **only at first startup** |
 | **Org groups** | `organizations.yaml` | `ir-cli keycloak org-sync` | re-applied every run |
 

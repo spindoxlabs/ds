@@ -33,6 +33,8 @@ src/identity_registry/
     presentation.py    build_presentation_response — VP JWT for DCP queries
     status_list.py     StatusList2021 bitstring ops (131072 slots)
     keycloak_admin.py   Keycloak admin API integration
+    keycloak_merge.py   core clients.yaml + clients.<domain>.yaml → the effective file the sync applies
+    keycloak_mirror.py  core clients.yaml → the ds section a *host* realm must carry (core only, no domain)
   db/
     models.py          SQLAlchemy models: Key, Did, Credential, Participant, KeycloakMapping, Owner,
                        OrganizationApplication, Agreement, AgreementAcceptance, OrganizationMembership, StatusList
@@ -224,4 +226,7 @@ connector's circle check, and the connector holds that grant, not an onboarding 
 one does *not* affect a running realm. In dev that means `task docker:restart`
 (which recreates the Keycloak database); in production the realm is provisioned by
 `celine-policies`. `clients.yaml` scopes, by contrast, are re-applied on every
-`keycloak-sync` run.
+`keycloak-sync` run — from `clients.effective.yaml`, which `ir-cli keycloak merge`
+generates from the core file plus the deployment's domain overlays. `ir-cli keycloak
+mirror` generates the *host* fragment from the core file only, so a domain backend's
+vocabulary never crosses into a realm ds does not own.

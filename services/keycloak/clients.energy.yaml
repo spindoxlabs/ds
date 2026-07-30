@@ -1,0 +1,71 @@
+# Domain overlay — the energy/REC backend, not ds.
+#
+# `clients.yaml` declares what **ds** needs from a realm. This file declares what
+# the **domain backend behind ds** needs from the same realm, and the two are
+# applied by different deployments:
+#
+#   posture A (ds owns the realm)   core applied, overlay applied — ds provisions
+#                                   the realm for the backend it is deployed with.
+#   posture B (ds is a guest)       core mirrored across, overlay **omitted** —
+#                                   there `rec-registry` is the host's own service,
+#                                   not ds's to declare.
+#
+# Dev only looks like the sole consumer because dev *is* a posture-A deployment
+# that happens to have an energy-domain backend.
+#
+# Merged with the core by `ir-cli keycloak merge --overlay energy`, which is what
+# `keycloak-sync` applies. It is never synced on its own: an overlay may add a
+# grant to a core client, and the sync recomputes a client's grants from whatever
+# single file it is given.
+#
+# An overlay may **add** scopes, add clients, and widen an existing client's
+# `default_scopes` / `extra_audiences`. It may not redefine a core client's
+# identity (`secret`, `scopes_prefix`, `name`) or the realm-level keys — see
+# `identity_registry/services/keycloak_merge.py`.
+
+overlay: energy
+
+scopes:
+  # A dataspace query on a dataset whose row filter is `handler: rec_registry`
+  # cannot be resolved without these, and every consent-gated dataset in the
+  # energy producer pipelines uses exactly that handler.
+  - name: rec-registry.admin
+    description: Full administrative access to the registry
+  - name: rec-registry.import
+    description: Permission to import into the registry
+  - name: rec-registry.export
+    description: Permission to export from the registry
+  - name: rec-registry.lookup
+    description: Permission to lookup data
+
+clients:
+  - client_id: svc-rec-registry
+    name: REC Registry Service
+    secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
+    scopes_prefix: rec-registry
+    default_scopes:
+      # Own resources
+      - rec-registry.admin
+
+  # ── Grants the overlay adds to *core* clients ─────────────────────────────
+  #
+  # These are the entries that make merge-before-sync mandatory rather than a
+  # convenience. `celine-policies keycloak sync` recomputes each client's scope
+  # assignments from the file it is handed and removes whatever is not in it —
+  # outside the `--prune` branch, so no flag is involved. Syncing the core file
+  # alone would leave `rec-registry.lookup` declared here and **stripped** from
+  # the live client, and the symptom is a row filter that resolves nobody.
+
+  - client_id: svc-ds-dataset-api
+    default_scopes:
+      # The PEP resolves a subject to their meters before filtering rows.
+      - rec-registry.lookup
+    extra_audiences:
+      - svc-rec-registry
+
+  - client_id: svc-ds-e2e
+    default_scopes:
+      # Seeds the REC registry so a `rec_registry` row filter has data to resolve.
+      - rec-registry.admin
+    extra_audiences:
+      - svc-rec-registry
