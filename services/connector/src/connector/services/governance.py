@@ -220,3 +220,38 @@ def load_governance_policy_matrix(
     datasets = load_exposed_datasets(governance_yaml_path, overlay_name=overlay_name)
     mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url, profile=profile)
     return build_policy_matrix(datasets, mapper)
+
+
+def owner_by_edc_id(
+    governance_yaml_path: str, overlay_name: str | None = None
+) -> dict[str, str]:
+    """Map every EDC object id this connector publishes to its owning organisation.
+
+    EDC labels **assets** with `ds:owner`, so an asset can be owner-scoped by
+    reading the object itself. Policy definitions and contract definitions carry no
+    such property — but they are not anonymous either: their ids are *derived from
+    the dataset key* (`{key}-policy`, `{key}-contract`, or the explicit override in
+    `dataspace.contract`), which is exactly the mapping needed, in the one place
+    that already knows both sides.
+
+    The alternative — asking EDC — does not work: a contract definition references
+    assets only through a selector, and a policy definition references nothing at
+    all. Governance is the only thing that knows a policy belongs to an owner.
+
+    Unowned datasets are omitted rather than mapped to `""`, so a caller cannot
+    tell "unowned" from "unknown id" by the shape of the result.
+    """
+    index: dict[str, str] = {}
+    for key, rule in load_exposed_datasets(
+        governance_yaml_path, overlay_name=overlay_name
+    ).items():
+        owner = rule.ownership[0].name if rule.ownership else ""
+        if not owner:
+            continue
+        ds = rule.dataspace
+        policy_id = ds.contract.access_policy_id or f"{key.replace('.', '-')}-policy"
+        contract_id = ds.contract.access_policy_id or f"{key.replace('.', '-')}-contract"
+        for object_id in (policy_id, contract_id, ds.contract.contract_policy_id):
+            if object_id:
+                index[object_id] = owner
+    return index

@@ -158,6 +158,64 @@ async def _canonical_owner(request: Request, alias: str) -> str:
     return entry.id if entry is not None else alias
 
 
+async def _target_owner(request: Request) -> str:
+    """The owning organisation of whatever this request is about to mutate.
+
+    Two different lookups, because EDC labels only one of the three object kinds:
+
+    * **assets** carry `ds:owner` (well, ``f"{profile_prefix}:owner"`` — see
+      :func:`_asset_owner`), so the object answers for itself.
+    * **policy and contract definitions** carry nothing. Their ids are *derived
+      from the dataset key*, so governance is the only thing that knows which
+      owner they belong to. Asking EDC cannot work: a contract definition
+      references assets only through a selector and a policy definition
+      references nothing at all.
+
+    Returns ``""`` when there is no owner to scope against — an unowned dataset,
+    an id governance does not know, or a lookup that failed. Every one of those is
+    "not an authorization decision": a missing object is the endpoint's 404 to
+    report, and refusing here would turn "does not exist" into "not yours", which
+    is a worse answer and a weaker one.
+    """
+    asset_id = request.path_params.get("asset_id")
+    if asset_id:
+        edc = getattr(request.app.state, "provider_edc", None)
+        if edc is None:
+            return ""
+        try:
+            asset = await edc.get_asset(asset_id)
+        except Exception:  # noqa: BLE001
+            return ""
+        return _asset_owner((asset or {}).get("properties") or {})
+
+    object_id = request.path_params.get("policy_id") or request.path_params.get(
+        "contract_id"
+    )
+    if not object_id:
+        return ""
+
+    settings = get_settings()
+    try:
+        from .services.governance import owner_by_edc_id
+
+        index = owner_by_edc_id(
+            settings.governance_yaml_path,
+            overlay_name=settings.governance_overlay_name,
+        )
+    except Exception as exc:  # noqa: BLE001
+        # Governance is a file this process may fail to read. Say so rather than
+        # deciding authority from an empty index, which would silently unscope
+        # every policy and contract in the deployment.
+        log.error(
+            "owner scoping: could not read governance to resolve %r (%s) — the "
+            "delete is left to `connector.provider.write` alone.",
+            object_id,
+            exc,
+        )
+        return ""
+    return index.get(object_id, "")
+
+
 async def _own_owner_only(principal: Principal, request: Request) -> bool:
     """Confine a provider write to the owner the caller holds authority *for*.
 
@@ -187,8 +245,10 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
       ``ds-participant-admin``.
     * **service principals** — they authorise on scopes, hold no organisations, and
       run the syncs. Checked explicitly here so the exemption is visible.
-    * an asset with **no owner** — ownership is optional in ``governance.yaml`` and
-      an unowned asset belongs to the participant as a whole. Mirrors the portal.
+    * a target with **no owner** — ownership is optional in ``governance.yaml`` and
+      an unowned dataset belongs to the participant as a whole. Mirrors the portal.
+      Assets are labelled by EDC; policies and contracts are resolved through
+      governance, because EDC labels neither (:func:`_target_owner`).
     * a caller with **no organisation claims at all**, unless
       ``owner_scoping_strict``. A deployment that models no organisations is not
       one where every operator has lost their rights; refusing there would push
@@ -201,26 +261,7 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
     if principal.is_service:
         return True
 
-    asset_id = request.path_params.get("asset_id")
-    if not asset_id:
-        # Policies and contracts are not owner-labelled in EDC, so there is
-        # nothing to scope against here. Named so the gap is visible rather than
-        # implied — scoping them means going through governance, not EDC.
-        return True
-
-    edc = getattr(request.app.state, "provider_edc", None)
-    if edc is None:
-        return True
-
-    try:
-        asset = await edc.get_asset(asset_id)
-    except Exception:  # noqa: BLE001
-        # A missing asset is the endpoint's 404 to report, not an authorization
-        # decision. Refusing here would turn "does not exist" into "not yours",
-        # which is a worse answer and a weaker one.
-        return True
-
-    owner = _asset_owner((asset or {}).get("properties") or {})
+    owner = await _target_owner(request)
     if not owner:
         return True
 

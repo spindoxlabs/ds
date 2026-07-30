@@ -168,7 +168,13 @@ async def list_policies(edc=Depends(get_provider_edc), _c: dict = Depends(requir
 
 
 @router.delete("/policies/{policy_id}", status_code=204)
-async def delete_policy(policy_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_write)):
+async def delete_policy(
+    policy_id: str,
+    edc=Depends(get_provider_edc),
+    # Owner-scoped through governance: EDC labels no owner on a policy, but its id
+    # is derived from the dataset key. See `_target_owner`.
+    _c: dict = Depends(require_provider_write_own),
+):
     await edc.delete_policy(policy_id)
 
 
@@ -178,7 +184,11 @@ async def list_contracts(edc=Depends(get_provider_edc), _c: dict = Depends(requi
 
 
 @router.delete("/contracts/{contract_id}", status_code=204)
-async def delete_contract(contract_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_write)):
+async def delete_contract(
+    contract_id: str,
+    edc=Depends(get_provider_edc),
+    _c: dict = Depends(require_provider_write_own),
+):
     await edc.delete_contract_definition(contract_id)
 
 

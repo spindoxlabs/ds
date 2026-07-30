@@ -66,6 +66,12 @@ class _FakeEdc:
     async def delete_asset(self, asset_id: str):
         self.deleted.append(asset_id)
 
+    async def delete_policy(self, policy_id: str):
+        self.deleted.append(policy_id)
+
+    async def delete_contract_definition(self, contract_id: str):
+        self.deleted.append(contract_id)
+
 
 @pytest.fixture
 def owned_by(client):
@@ -421,3 +427,101 @@ async def test_a_malformed_owner_map_does_not_open_the_perimeter(
     )
     assert r.status_code == 403
     assert edc.deleted == []
+
+
+# ── Policies and contracts: owner resolved through governance ────────────────
+#
+# EDC labels an **asset** with its owner and labels a policy or contract
+# definition with nothing at all. They are not anonymous, though: their ids are
+# derived from the dataset key, so governance is the one place that knows which
+# owner they belong to. Asking EDC cannot work — a contract definition references
+# assets only through a selector and a policy definition references nothing.
+#
+# Left unscoped, an operator for one participant could delete the *policy* under
+# which another participant's data is offered. The asset survives; the terms it is
+# offered on do not.
+
+
+@pytest.fixture
+def governed(monkeypatch, owned_by):
+    """Stub the governance→owner index the perimeter consults."""
+
+    def _install(index: dict[str, str]):
+        from connector import dependencies
+
+        # The route still resolves its own EDC dependency; only the *owner* lookup
+        # goes through governance for these object kinds.
+        owned_by(None)
+        monkeypatch.setattr(
+            "connector.services.governance.owner_by_edc_id", lambda *a, **k: index
+        )
+        return dependencies
+
+    return _install
+
+
+POLICY = "datasets-silver-meters_15m-policy"
+CONTRACT = "datasets-silver-meters_15m-contract"
+
+
+@pytest.mark.asyncio
+async def test_policy_delete_is_owner_scoped(client, governed):
+    governed({POLICY: "example-org"})
+    r = await client.delete(
+        f"/provider/policies/{POLICY}",
+        headers=_user_headers(
+            organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_contract_delete_is_owner_scoped(client, governed):
+    governed({CONTRACT: "example-org"})
+    r = await client.delete(
+        f"/provider/contracts/{CONTRACT}",
+        headers=_user_headers(
+            organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_the_owning_operator_may_delete_a_policy(client, governed):
+    """So the refusals above are not passing for want of any authority."""
+    governed({POLICY: "example-org"})
+    r = await client.delete(
+        f"/provider/policies/{POLICY}",
+        headers=_user_headers(
+            organizations={"example-org": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code != 403
+
+
+@pytest.mark.asyncio
+async def test_an_id_governance_does_not_know_is_not_confined(client, governed):
+    """"Unknown id" is the endpoint's 404 to report, not an authorization
+    decision. Refusing here would turn "does not exist" into "not yours"."""
+    governed({POLICY: "example-org"})
+    r = await client.delete(
+        "/provider/policies/some-other-policy",
+        headers=_user_headers(
+            organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code != 403
+
+
+def test_the_index_covers_policies_and_contracts_from_real_governance():
+    """Against the shipped governance file, not a fabricated one — the M9 lesson:
+    an index keyed on ids the test invented proves only that it agrees with itself."""
+    from connector.services.governance import owner_by_edc_id
+
+    index = owner_by_edc_id("governance/governance.yaml")
+    assert index, "no owned datasets resolved from the real governance file"
+    assert any(k.endswith("-policy") for k in index)
+    assert any(k.endswith("-contract") for k in index)
+    assert all(v for v in index.values()), "an unowned dataset leaked in as empty"
