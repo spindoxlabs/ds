@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 
+from ds_auth import Principal
 from ds_auth.fastapi import require_exact_permission, require_permission
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,6 +65,71 @@ def get_prov(request: Request):
 require_admin = require_permission("connector.admin")
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
 require_provider_write = require_permission("connector.provider.write", "connector.admin")
+
+
+async def _own_owner_only(principal: Principal, request: Request) -> bool:
+    """Confine a provider write to the owners the caller actually represents.
+
+    ``connector.provider.write`` says *what* a caller may do; it never said *whose*
+    data they may do it to. The portal filtered its buttons by owner, but the API
+    accepted the call regardless — so an operator for one participant could delete
+    another participant's asset, policy or contract. The role bundle
+    ``ds-participant-admin`` is documented as scoped to one participant; this is
+    what makes that true rather than aspirational.
+
+    Three deliberate outcomes:
+
+    * ``connector.admin`` passes. It is the *operator* grant — a superset held by a
+      human running the deployment, not by a participant's staff.
+    * An asset with **no** owner passes. Ownership is optional in
+      ``governance.yaml``, and an unowned asset belongs to the participant as a
+      whole; refusing here would break every deployment that declares none. This
+      mirrors the portal's own ``canManageAsset``.
+    * An owner the caller is not a member of is refused, **including** when the
+      caller has no organisations at all.
+
+    Membership comes from ``Principal.organizations`` — the KC ``organization``
+    claim, which is the *operator → owner* relation. It is deliberately **not** the
+    identity-registry's ``OrganizationMembership``: that table is the consent
+    subject-pool, keyed by a data subject's DID, and an operator legitimately has
+    no DID at all. The two membership systems stay separate, as documented.
+    """
+    if principal.grants("connector.admin"):
+        return True
+
+    asset_id = request.path_params.get("asset_id")
+    if not asset_id:
+        # Policies and contracts are not owner-labelled in EDC, so there is
+        # nothing to scope against. Left to `connector.provider.write` alone, and
+        # named here so the gap is visible rather than implied.
+        return True
+
+    edc = getattr(request.app.state, "provider_edc", None)
+    if edc is None:
+        return True
+
+    try:
+        asset = await edc.get_asset(asset_id)
+    except Exception:
+        # A missing asset is the endpoint's 404 to report, not an authorization
+        # decision. Refusing here would turn "does not exist" into "not yours",
+        # which is a worse answer and a weaker one.
+        return True
+
+    properties = (asset or {}).get("properties") or {}
+    owner = str(properties.get("ds:owner") or "").strip()
+    if not owner:
+        return True
+
+    return principal.is_member_of(owner)
+
+
+# Owner-scoped variant. Used where the target carries an owner; the unscoped
+# `require_provider_write` remains for endpoints that act on the participant as a
+# whole (e.g. the governance sync, which publishes every owner's datasets at once).
+require_provider_write_own = require_permission(
+    "connector.provider.write", "connector.admin", perimeter=_own_owner_only
+)
 require_history_read = require_permission("connector.history.read", "connector.admin")
 # Machine identity, not administrative authority — so the admin superset must
 # not reach them (require_exact_permission). `connector.webhook` means "I am the

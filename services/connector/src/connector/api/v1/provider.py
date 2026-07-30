@@ -15,6 +15,7 @@ from ...dependencies import (
     get_settings_dep,
     require_provider_read,
     require_provider_write,
+    require_provider_write_own,
 )
 from ...services.authorization_service import get_authorized_datasets
 
@@ -144,7 +145,13 @@ async def get_asset(asset_id: str, edc=Depends(get_provider_edc), _c: dict = Dep
 
 
 @router.delete("/assets/{asset_id:path}", status_code=204)
-async def delete_asset(asset_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_write)):
+async def delete_asset(
+    asset_id: str,
+    edc=Depends(get_provider_edc),
+    # Owner-scoped: `connector.provider.write` says what may be done, not
+    # whose data it may be done to. See `_own_owner_only`.
+    _c: dict = Depends(require_provider_write_own),
+):
     await edc.delete_asset(asset_id)
 
 
