@@ -13,25 +13,21 @@ Every significant event in the dataspace — a dataset being published, a contra
 
 Consumers of the API can reconstruct the full lineage of any data product: who generated it, who it was attributed to, what it was derived from, and what agreements governed its use.
 
+> **Concepts live in the docs site, not here.** This README is the local entry
+> point: what runs, which endpoints exist, how to configure and start it. The
+> reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with
+> [Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/).
+> Working on the code? Read `AGENTS.md` in this directory first.
+
 ---
 
 ## Core concepts
 
-The data model follows W3C PROV-O with three node types and seven relation types.
-
-Node types:
-- `prov:Entity` — a data product, dataset, contract agreement, or other artefact
-- `prov:Activity` — a time-bounded process (catalogue publication, negotiation, transfer)
-- `prov:Agent` — a participant, system, or organisation
-
-Relation types:
-- `prov:wasGeneratedBy` — entity produced by activity
-- `prov:wasAttributedTo` — entity attributed to agent
-- `prov:wasDerivedFrom` — entity derived from another entity
-- `prov:wasAssociatedWith` — activity associated with agent
-- `prov:used` — activity consumed an entity
-- `prov:actedOnBehalfOf` — agent delegated to another agent
-- `prov:wasInformedBy` — activity was triggered by another activity
+W3C PROV-O: three node types (`Entity`, `Activity`, `Agent`) and seven relation
+types. The node and relation catalogue, the domain events the connector emits,
+the acting-principal attribution on policy-authoring events, and the
+no-PII rule are documented at
+[Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/).
 
 ---
 

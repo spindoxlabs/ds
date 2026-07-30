@@ -189,7 +189,7 @@ not need that, so onboarding is split into grants that name what they permit:
 | `identity-registry.participants.write` | create / update / delete a participant |
 | `identity-registry.credentials.write` | issue a data-subject credential, revoke a credential |
 | `identity-registry.memberships.write` | register / delete an organisation membership |
-| `identity-registry.keycloak.sync` | push the `dataspace_did` attribute onto a Keycloak user |
+| `identity-registry.keycloak.sync` | bind a Keycloak user to a dataspace DID (the `KeycloakMapping` row) |
 
 The last three are what an **external onboarding application** actually does.
 Until they existed such a service had to hold `identity-registry.admin` — the

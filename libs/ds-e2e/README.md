@@ -2,6 +2,9 @@
 
 End-to-end verification framework for the dataspaces platform. Exercises the full consumer-pull DSP flow against a running stack and reports step-by-step results.
 
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Data exchange flow](https://spindoxlabs.github.io/ds/data-exchange-flow/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+
 ## Install
 
 ```bash

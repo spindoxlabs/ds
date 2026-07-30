@@ -8,6 +8,10 @@ decides which rows actually leave.
 - **Port**: 30002
 - **Stack**: Python 3.12, FastAPI
 
+
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) and [Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+
 ## Run
 
 ```bash
@@ -57,7 +61,10 @@ Environment variables use the `DATASET_API_` prefix.
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATASET_API_CONNECTOR_INTERNAL_URL` | `http://172.17.0.1:30001` | ds-connector base URL |
-| `DATASET_API_CONNECTOR_API_KEY` | `insecure-dev-key` | `X-Api-Key` for `/internal/*` |
+| `DATASET_API_KEYCLOAK_TOKEN_URL` | `http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token` | where the PEP mints its own token |
+| `DATASET_API_SERVICE_CLIENT_ID` | `svc-ds-dataset-api` | this service's identity on `/internal/*` |
+| `DATASET_API_SERVICE_CLIENT_SECRET` | `svc-ds-dataset-api` | dev default; `DS_ENV=production` refuses it |
+| `DATASET_API_VERIFY_EDR` | `true` | verify the EDR token signature against ds's JWKS proxy. Off, a bearer string is an assertion — production refuses it |
 | `DATASET_API_ENFORCE_CONSENT` | `true` | Set false to bypass consent filtering — dev only |
 | `DATASET_API_EXTERNAL_QUERY_URL` | — | Proxy a dataset to a real upstream dataset-api |
 | `DATASET_API_EXTRA_DATASETS_PATH` | — | JSON file adding datasets at startup |

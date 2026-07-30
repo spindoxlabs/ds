@@ -53,6 +53,8 @@ Creates:
 - Agent (the provider participant)
 - Relations: `wasGeneratedBy`, `wasAssociatedWith`, `wasAttributedTo`
 
+Carries an **`acting_principal`** — see [Attributing the authoring act](#attributing-the-authoring-act).
+
 ### CatalogViewed
 
 Emitted when a consumer browses a provider's catalog.
@@ -200,7 +202,7 @@ Creates:
 - Agent (the provider), when known
 
 Key fields: `dataset_id`, `source_ref`, `record_count`, `consent_snapshot_hash`,
-`agreement_ref`.
+`agreement_ref`, and an **`acting_principal`** — see below.
 
 ### DataDisclosed
 
@@ -215,6 +217,39 @@ Creates:
 
 Key fields: `recipient_ref`, `purpose`, `columns[]` (column *names*, not
 values), `subject_count`, `consent_snapshot_hash`, `agreement_ref`.
+
+### Attributing the authoring act
+
+Every other event names the **participant** — `provider_did`, `subject_did` — which
+answers *which organisation* and never *which human*. For a disclosure that is
+enough: the organisation is the controller.
+
+It is not enough for the acts that decide **what the terms are**. `POST /provider/sync`
+turns `governance.yaml` into ODRL offers — purposes, the membership operand, the
+assigner DID — and every later disclosure is evaluated against those. So a
+wrongly-authorised operator does not *read* anybody's data; they change the terms
+under which someone else's data subjects' data is disclosed. In GDPR terms that is
+Art. 4(7) before it is Art. 32, and "who published this offer, for which
+organisation" had no answer anywhere in the system.
+
+`CataloguePublished` and `DataIngested` therefore carry an `acting_principal`,
+built from the **verified** principal on the request:
+
+| Field | What it is |
+|---|---|
+| `subject` | the token's `sub` — opaque, realm-scoped, **never** a name, email or username |
+| `issuer` | the realm that minted it; a `sub` means nothing without one |
+| `on_behalf_of` | the `Owner` id the actor claimed to act for, when the act was owner-scoped |
+
+Pseudonymous by construction: resolving it back to a person needs realm access,
+which is exactly the separation the rest of this model keeps. It is an Art. 5(2)
+accountability record, not an identity.
+
+> A Keycloak access token carries `sub` **only if the client has a mapper for it.**
+> A realm that declares its own `clientScopes` replaces the stock set, and a missing
+> `basic` scope is silently ignored — so the token authenticates, authorises, and
+> identifies nobody, and every attribution here records `""`. An ID token carries
+> `sub` regardless, so a browser login hides it completely.
 
 ### No PII in provenance
 

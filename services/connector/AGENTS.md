@@ -59,7 +59,57 @@ src/connector/
 | Change EDC API calls | `../../libs/ds-edc/src/ds_edc/client.py` (shared lib) |
 | Add a new provenance event | `services/prov_bridge.py`, `clients/provenance.py` |
 | Add/change config settings | `config.py` (Pydantic settings with env vars) |
+| Add or change an auth guard | `dependencies.py` — and read the owner perimeter below first |
 | Database schema change | `db/models.py` → run `task db:revision MESSAGE=description` |
+
+## The per-owner perimeter — `dependencies.py`
+
+A participant may host datasets for **several owners**, and
+`connector.provider.write` on its own says nothing about *which*. Until this
+landed, per-owner authority was enforced **nowhere on the server**: the portal
+filtered its buttons by owner, which made the gap invisible — the UI looked scoped
+and the API was not, so any `connector.provider.write` holder could delete any
+owner's asset.
+
+`require_provider_write_own` (`_own_owner_only`) now guards all three provider
+deletes. Four decisions in it, each with a test in
+`tests/test_provider_owner_perimeter.py`:
+
+| Case | Behaviour | Why |
+|---|---|---|
+| `connector.admin` | crosses owners | it is the deployment operator's grant |
+| an **unowned** asset | not confined | ownership is optional in `governance.yaml`, and this matches the portal |
+| a holder with **no** organisations | refused | the absence of a claim is not authority |
+| service tokens | unaffected | they carry no organisations and run the syncs |
+
+Three things it does that are easy to get wrong if you write a similar guard:
+
+- **`_asset_owner` matches on the local name, not a prefix.** A real EDC returns
+  `dsp-policy:owner`, not `ds:owner` — the prefix comes from the active ODRL
+  profile and EDC JSON-LD-compacts it. The first version read `ds:owner`, found no
+  owner, treated every asset as unowned and allowed every write; its six unit tests
+  passed because they asserted against a key the tests themselves invented. Only a
+  real token against a real EDC caught it. **A guard that reads a field written
+  elsewhere needs one end-to-end assertion against the real writer.**
+- **`_canonical_owner` resolves the claim's alias through the owners registry**, so
+  `Owner.aliases[]` is honoured — a governance file saying `example` and a realm
+  saying `example-org` describe the same owner.
+- **It asks the per-organisation question** (`Principal.grants_in`), not "is a
+  member of X *and* holds the permission somewhere". The latter passes a caller who
+  is a viewer in owner A and an admin in owner B.
+
+Policies and contracts carry no owner in EDC — a contract references assets only
+through a selector and a policy references nothing — so their deletes resolve the
+owner **through governance** (`owner_by_edc_id()` maps the derived ids back). Left
+unscoped, an operator could delete the *terms* another participant's data is
+offered on: the asset survives, the offer does not.
+
+**`POST /provider/sync` is deliberately participant-wide.** It republishes the
+whole governance file in one act, so there is no single owner to scope it to. The
+consequence, stated rather than implied: in a participant hosting datasets for
+several owners, a `ds-participant-admin` for one of them can republish all of them.
+Per-owner sync is a governance-model change, not a guard change — **do not fake it
+with a guard.**
 
 ## Coding conventions
 

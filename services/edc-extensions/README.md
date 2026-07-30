@@ -2,6 +2,9 @@
 
 Java EDC extensions that register custom ODRL constraint functions for the dataspace policy vocabulary. These functions are evaluated by the EDC policy engine during contract negotiation.
 
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+
 ---
 
 ## Purpose

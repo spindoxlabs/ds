@@ -2,6 +2,9 @@
 
 Gradle project that builds a self-contained EDC connector fat JAR with DCP (Dataspace Credential Protocol) support and the custom `edc-extensions` ODRL functions bundled together.
 
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) and [Data exchange flow](https://spindoxlabs.github.io/ds/data-exchange-flow/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+
 ---
 
 ## Purpose

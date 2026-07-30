@@ -3,6 +3,9 @@
 A DCAT-AP 3.0 catalog crawler that aggregates dataset offerings from all dataspace participants into a single federated view.
 
 Port: `30003`
+
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Architecture](https://spindoxlabs.github.io/ds/architecture/) and [Data exchange flow](https://spindoxlabs.github.io/ds/data-exchange-flow/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
 URL: `http://portal.dataspaces.localhost:9010/api/catalog/`
 
 ---

@@ -132,8 +132,11 @@ matched by dataset key.
 
 - **Upstream**: EDC data plane (proxied consumer queries), ds-e2e flows, the portal's
   `/my-data` detail view (`GET /subjects/{id}/datasets`)
-- **Downstream**: ds-connector `/internal/*` — authenticated with `X-Api-Key`, one of
-  the three auth mechanisms in this repo (see the root `AGENTS.md`)
+- **Downstream**: ds-connector `/internal/*` — the PEP authenticates **as itself**,
+  with `svc-ds-dataset-api`'s Keycloak client credentials (scope `connector.internal`,
+  audience `svc-ds-connector`). It used to present a static `X-Api-Key` that was the
+  *same value* as EDC's Management API key, so one leak crossed two trust boundaries
+  and every `/internal/*` call arrived as the same anonymous bearer
 
 ## Testing
 

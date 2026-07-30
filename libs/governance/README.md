@@ -4,6 +4,9 @@ Shared Python library used by `ds-connector`. Contains the `GovernanceRuleV2` Py
 
 Not a running service — imported as a library.
 
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/). This README covers the
+> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+
 ---
 
 ## Purpose

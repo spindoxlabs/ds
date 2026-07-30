@@ -1,5 +1,8 @@
 site_name: Dataspaces
 site_description: DSSC Blueprint-aligned dataspace platform for energy communities
+# Published by GitHub Pages. Set explicitly so canonical URLs resolve and so the
+# per-unit READMEs can link into the site by a stable address.
+site_url: https://spindoxlabs.github.io/ds/
 repo_url: https://github.com/spindoxlabs/ds
 edit_uri: edit/main/docs/
 

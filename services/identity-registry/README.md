@@ -6,6 +6,12 @@ Port: `30005`
 
 DSSC alignment: BB02 (Identity & Attestation) — participant identity management, DID resolution, VC lifecycle, trust anchor bootstrapping.
 
+> **Concepts live in the docs site, not here.** This README is the local entry
+> point: what runs, which endpoints exist, how to configure and start it. The
+> reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) and
+> [the security model](https://spindoxlabs.github.io/ds/identity-registry-security/).
+> Working on the code? Read `AGENTS.md` in this directory first.
+
 ---
 
 ## Technology
@@ -128,39 +134,13 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 
 ---
 
-## Services layer
+## Internals
 
-### `crypto.py`
-
-EC P-256 key generation (`generate_key_pair`), JWK serialization, ES256 signing (`sign_es256`), JWS creation (`create_jws`), `generate_credential_id` (urn:uuid), `next_key_index` for rotation.
-
-### `did.py`
-
-`build_did_document` — W3C DID document builder. Supports participant and user types. Participant DIDs get `authentication` + `assertionMethod` arrays. Optional `service` entries (DSPEndpoint, CredentialService) from service_endpoints.
-
-### `vc.py`
-
-`build_membership_credential` + `build_data_subject_credential` + `build_organization_credential` builders. `sign_credential` adds `JsonWebSignature2020` proof using ES256 JWS. Includes `credentialStatus` with StatusList2021Entry. The `OrganizationCredential` subject is shape-compatible with `gx:LegalParticipant` (Block D).
-
-### `org_onboarding.py`
-
-Block D: the gated organisation lifecycle (`upsert_owner_from_application`, `record_agreement_acceptance`, `issue_organization_credential`, `promote_owner_to_participant`, `suspend_owner`/`revoke_owner`). Shared by `api/v1/organizations.py` and `cli/main.py` so the HTTP API and the CLI enforce the same gates. Raises `OrgOnboardingError` (mapped to HTTP 409/422).
-
-### `agreements.py`
-
-Block D: `load_agreements_file` (resolves per-locale text paths, computes SHA-256) + `import_agreements` (idempotent upsert). Stores path + hash, never inline prose.
-
-### `token.py`
-
-`create_si_token` — signs Self-Issued JWTs for DCP authentication. Loads the participant's private key from the DB, builds claims with `iss`, `sub`, `aud`, `bearer_access_scope`, signs with ES256. TTL: 300s.
-
-### `presentation.py`
-
-`build_presentation_response` — builds DCP PresentationResponseMessage containing a VP JWT. Matches requested credential types from `presentationDefinition.input_descriptors`, wraps matching VC JWS tokens in a VP, signs with the participant's key.
-
-### `status_list.py`
-
-BITSTRING_SIZE = 16384 (16 KB = 131072 slots). Functions: `create_bitstring`, `set_bit`, `get_bit`, `encode_bitstring` (zlib + base64), `decode_bitstring`, `next_available_index`, `build_status_list_credential`.
+The module-by-module walkthrough that used to sit here is in `AGENTS.md`, beside
+the source it describes — it is a map for someone editing the code, not something
+an operator or integrator needs. The security model (trust tiers, key management,
+credential lifecycle, network posture) is published at
+[Identity Registry — security model](https://spindoxlabs.github.io/ds/identity-registry-security/).
 
 ---
 

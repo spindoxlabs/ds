@@ -540,14 +540,16 @@ sequenceDiagram
     Note over User,IR: 1. Onboarding
     User->>Onboarding: Register (optionally accept a data-sharing offer)
     Onboarding->>IR: Create participant + issue DataSubjectCredential
-    IR->>KC: POST /admin/keycloak/sync
-    Note over KC: Sets dataspace_did user attribute
+    Onboarding->>IR: POST /admin/keycloak/sync
+    Note over IR: Records the KeycloakMapping row (DID ↔ Keycloak user).<br/>No write into Keycloak — ds may be a guest in that realm.
     Onboarding->>Conn: POST /consent/admin/shares (offer_id, legal_basis)
     Note over Conn: Wildcard rows provisioned if the user opted in
 
     Note over User,KC: 2. Login
-    User->>KC: Authenticate (OIDC)
-    KC-->>User: JWT with dataspace_did claim
+    User->>KC: Authenticate (OIDC, via oauth2-proxy)
+    KC-->>User: Access token — sub, email, groups
+    Portal->>IR: GET /users/resolve (from the verified token)
+    IR-->>Portal: subject DID + the credentials this human holds
 
     Note over Consumer,Conn: 3. Consent request — a negotiation, not an API call
     Consumer->>EDC: DSP contract negotiation (dataset, purpose)
@@ -577,11 +579,15 @@ sequenceDiagram
 
 Key points:
 
-- Subject identity flows from identity-registry through Keycloak into JWTs as the `dataspace_did` claim
-- The portal reads this claim to identify the subject on consent API calls
+- **The subject's DID is resolved from the identity registry, not carried in a claim.**
+  A `dataspace_did` user attribute was pushed into Keycloak for a while; nothing ever
+  read it, and it was the only part of this flow needing *write* access to a realm ds
+  may not own. The `KeycloakMapping` row is the join, and it lives in ds's database.
+- The portal resolves that DID once per session and sends it to ds-connector as
+  `X-Subject-Id`, alongside the verifiable credential the call requires
 - Row-level filtering at dataset-api uses the same subject DID that was stored in the consent record
 - The purpose is carried on the query and compared against each subject's consent, so the row set depends on *why* the data is being asked for
-- See [consent-subject-id.md](../services/connector/docs/consent-subject-id.md) for detailed subject identity resolution
+- See [Subject identity in the consent system](consent-subject-id.md) for the full resolution chain, the identifier cascade, and why an unbound subject looks like one who consented to nothing
 - An application outside this dataspace can drive step 1 itself. It then owns the
   evidence that its own rendering was what the person read — see
   [external-application-integration.md](external-application-integration.md)

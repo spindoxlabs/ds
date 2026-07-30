@@ -5,6 +5,14 @@ The EDC control-plane orchestration service. Wraps a provider-side and consumer-
 Port: `30001`
 URL: `http://portal.dataspaces.localhost:9010/api/connector/`
 
+> **Concepts live in the docs site, not here.** This README is the local entry
+> point: what runs, which endpoints exist, how to configure and start it. The
+> reasoning behind the ODRL derivation, the consent model and the enforcement
+> matrix is published at **<https://spindoxlabs.github.io/ds/>** — start with
+> [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) and
+> [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/).
+> Working on the code? Read `AGENTS.md` in this directory first.
+
 ---
 
 ## Purpose
@@ -51,7 +59,7 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 - `POST /consent/request` — **provider-local**: an operator or the portal seeds a consent request for a set of subjects. Guarded by `connector.consent.provision`
 - `GET /consent/pending?correlation_id=` — is this negotiation waiting on a consent decision, and since when. Status only, for the counterparty. Guarded by `connector.consent.read`
 - `GET /consent/asks` — operator view: which asks are holding up which negotiation. Guarded by `connector.provider.read`
-- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record. **Granting requires evidence** — `source`, `consent_text_version` and `rendered_text_sha256`, else 422; withdrawal requires none. See `docs/external-application-integration.md`
+- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record. **Granting requires evidence** — `source`, `consent_text_version` and `rendered_text_sha256`, else 422; withdrawal requires none. See [Integrating an external application](https://spindoxlabs.github.io/ds/external-application-integration/)
 - `GET /consent/my` — data subject retrieves their own consent requests (requires `X-Subject-Id` header)
 - `POST /consent/my/{id}/approve` — data subject approves a request; resumes the negotiation it was blocking
 - `POST /consent/my/{id}/reject` — data subject rejects a request; terminates the negotiation only once every subject has refused
@@ -79,79 +87,23 @@ Consent grants and revocations (`/consent/admin/shares`, `/consent/my/shares`, `
 
 ---
 
-## ODRL policy derivation
+## Where the behaviour is documented
 
-The `GovernanceMapper` in `libs/governance/src/ds/governance/mapper.py` converts a `GovernanceRuleV2` into a full ODRL Offer.
+These used to be explained here and in the docs site at once, which is how three
+files ended up describing one mechanism differently. The site is the source:
 
-**Actions**, from `policy.permitted_actions` when set, otherwise derived from `access_level`:
-
-| `access_level` | permitted |
+| Topic | Page |
 |---|---|
-| `open` | profile query action, `odrl:aggregate`, `odrl:transfer` |
-| `internal` | profile query action, `odrl:aggregate` |
-| `restricted` | profile query action |
-| `secret` | none — and the dataset is never exposed at all |
+| How `governance.yaml` becomes an ODRL offer — actions, prohibitions, constraints, obligations | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
+| Why purposes come from `policy.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
+| Consent lifecycle, the circle, material-change rules, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
+| Revocation — why EDC's policy monitor terminates transfers and this service does not | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
+| Subject identity, the identifier cascade, unbound subjects | [Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/) |
+| Provenance events emitted from here | [Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/) |
 
-**Prohibitions**, from `policy.prohibited_actions` when set, otherwise from `classification`:
-
-| `classification` | prohibited |
-|---|---|
-| `pii` | `odrl:transfer`, `odrl:derive`, `odrl:distribute`, `odrl:sublicense` |
-| `red` | `odrl:transfer`, `odrl:sublicense` |
-| `yellow` | `odrl:sublicense` |
-| `green` | none |
-
-**Constraints** on each permission (ANDed):
-
-- **Membership** — `{ns}Membership eq <scope>` whenever `access_requirements` is `partner`/`contract` or `access_level` is `internal`/`restricted`. With an `ownership` block the scope becomes `owner:<alias>:member` (or `:partner`)
-- **`ds:contractRequired eq "true"`** for `restricted` datasets, or when `policy.obligations.contract_required` is set
-- **`odrl:purpose`** — `isA` for a single purpose, `isAnyOf` for several. One constraint listing every permitted purpose, because constraints within a permission are ANDed and one-per-purpose would demand a use serve all of them at once
-- **`{ns}ConsentStatus eq "active"`** plus an `odrl:obtainConsent` pre-duty, when `policy.consent.required` **or** `row_filters` **or** `user_filter_column` is set
-
-**Obligations** from `policy.obligations`: `delete_after_days` → `odrl:delete`, `attribution` → `odrl:attributeTo` with `attributeUrl`.
-
-> **Purposes come from `policy.purpose[]`, and only from there.** The mapper calls
-> `_purpose_iris(policy.purpose)`; `tags` are never consulted at runtime. Tags are
-> DCAT-AP catalogue keywords — a topic is not a reason for processing, and treating
-> one as the other would let a dataset acquire a lawful basis by being labelled.
-> The profile's `tag_to_purpose` map exists only as an authoring default when
-> scaffolding a new rule. An empty `purpose[]` is never a wildcard: for a
-> consent-required dataset it means the person was never told the use, so the
-> check fails closed.
-
-`ConnectorGovernanceMapper._to_edc_constraint` (in `services/connector/src/connector/services/governance.py`) rewrites the purpose constraint on its way to EDC — absolute left operand, right operand flattened to plain strings — because EDC stores operands as literals and re-serialises them. See `services/edc-extensions/AGENTS.md` for how the extensions read them back, and why that is less trivial than it sounds.
-
----
-
-## Governance sync
-
-`POST /provider/sync` calls `load_exposed_datasets()` which reads `governance/governance.yaml` and returns datasets where `expose: true` and `access_level != secret`. For each dataset it creates or upserts:
-
-1. An EDC `Asset` with a `HttpData` data address pointing to `dataset-api`
-2. An EDC `PolicyDefinition` with the derived ODRL Set
-3. An EDC `ContractDefinition` linking the two
-
-The sync is idempotent — calling it multiple times is safe.
-
----
-
-## Consent revocation flow
-
-When a data subject revokes consent:
-
-1. `revoke_consent()` sets the consent status to `revoked` and commits
-2. A `ConsentRevoked` provenance event is emitted after the commit
-3. **EDC's policy monitor terminates any running transfer.** `AgreementConsentFunction`
-   is bound to the `policy.monitor` scope, so the provider re-evaluates the signed
-   agreement's policy on every pass for each started transfer, asks this same consent
-   table, and terminates through EDC's own state machine when the subject pool empties
-
-The connector does **not** terminate transfers itself. It used to try — via a
-`delete_asset` call left in place as a placeholder — which could only ever have
-reached the transfers it happened to have recorded on the consent row, and did so
-by deleting the wrong resource. Termination on the next monitor pass is a moment
-later than a synchronous call, and until it lands the dataset-api PEP already
-returns zero rows for the revoked subject, so no data moves in the interval.
+`POST /provider/sync` reads `governance/governance.yaml`, takes datasets where
+`expose: true` and `access_level != secret`, and upserts an EDC `Asset` +
+`PolicyDefinition` + `ContractDefinition` per dataset. It is idempotent.
 
 ---
 
@@ -182,7 +134,8 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 - `CONNECTOR_PARTICIPANT_DID` — DID URI (e.g. `did:web:provider.dataspaces.localhost`)
 - `EDC_PROVIDER_MANAGEMENT_URL` — provider EDC Management API URL
 - `EDC_CONSUMER_MANAGEMENT_URL` — consumer EDC Management API URL
-- `EDC_API_KEY` — shared API key for EDC Management API auth
+- `EDC_API_KEY` — EDC's **Management API** key. No longer accepted on `/internal/*`;
+  those callers present their own Keycloak client credentials, so do not reuse this value
 - `CONNECTOR_DATABASE_URL` — PostgreSQL connection string
 - `CONNECTOR_PARTICIPANTS_REGISTRY_PATH` — path to participants YAML file (file-based fallback; only used when `CONNECTOR_IDENTITY_REGISTRY_URL` is not set)
 - `CONNECTOR_GOVERNANCE_YAML_PATH` — path to `governance.yaml`

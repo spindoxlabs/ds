@@ -9,6 +9,15 @@ Built with SvelteKit, targeting the latest stable release. Mobile-first componen
 
 ---
 
+> **Concepts live in the docs site, not here.** This README is the local entry
+> point: routes, components, configuration and how to run it. The reasoning is
+> published at **<https://spindoxlabs.github.io/ds/>** — start with
+> [Architecture](https://spindoxlabs.github.io/ds/architecture/) and
+> [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/).
+> Working on the code? Read `AGENTS.md` in this directory first.
+
+---
+
 ## Purpose
 
 The portal makes the dataspace accessible without direct API interaction. It provides:
@@ -81,44 +90,39 @@ additive — one human can hold several at once. See `AGENTS.md` for the model.
 
 ---
 
-## Authentication
+## Authentication — the local facts
 
-**The portal is not an OIDC client.** Auth.js, the `ds-portal` client and
-`AUTH_SECRET` are all gone: **oauth2-proxy** holds the browser session and
-forwards the access token as `X-Auth-Request-Access-Token`, which `hooks.server.ts`
-turns into a session. One login surface for the deployment, and one fewer client
-registration to negotiate with whoever owns the realm.
+**The portal is not an OIDC client.** Auth.js, the `ds-portal` realm client and
+`AUTH_SECRET` are gone: **oauth2-proxy** holds the browser session and forwards the
+access token as `X-Auth-Request-Access-Token`, which `hooks.server.ts` turns into a
+session. The header is transport, never authority — whatever fronts this app must
+strip a client-supplied `X-Auth-Request-*`, and every ds service re-verifies the
+token via JWKS regardless.
 
-The header is transport, never authority — the proxy layer strips any
-client-supplied `X-Auth-Request-*`, the token here only gates the UI, and every ds
-service re-verifies it via JWKS and re-authorises the request.
-
-Authorisation comes from two places, and conflating them is the commonest mistake
+Authority arrives on **two axes**, and conflating them is the commonest mistake
 here:
 
-- **Keycloak groups** — each naming a **role bundle** that expands into service
-  permissions (`connector.provider.read`,
-  `identity-registry.organizations.promote`, `provenance.read`, …). Checked with
-  `hasGrant` / `requireGrant` in `src/lib/server/auth.ts`, which mirror
-  `ds_auth.permissions.grant_satisfies`, so `{service}.admin` satisfies its
-  subordinate grants.
-- **Verifiable credentials** — `ConsumerUser` and `DataSubject`, issued by the
-  identity registry and resolved at login. These travel as `X-Subject-Id` +
-  `X-User-VC`, never as a Keycloak scope.
+| Axis | Carries | Checked with |
+|---|---|---|
+| Keycloak **groups** — each naming a role bundle | operator and provider authority | `hasGrant` / `requireGrant` in `src/lib/server/auth.ts` |
+| **Verifiable credentials** — `ConsumerUser`, `DataSubject` | the data-subject plane | `hasVcRole`, sent as `X-Subject-Id` + `X-User-VC` |
+
+Roles are **additive, never exclusive** — the same person is legitimately both.
+The bundle table is generated from `ds_auth`; run `task auth:bundles:generate`
+after changing it, never hand-edit `src/lib/server/bundles.generated.ts`.
 
 A missing grant renders an **explanation**, not a redirect: bouncing a user to `/`
 makes a missing group look like a broken page.
 
 Operator actions forward the **signed-in user's own token**. The `svc-ds-portal`
 service account deliberately holds no onboarding grant — its single use is the
-login-time `/users/resolve`.
+login-time `/users/resolve`, which is also where the subject's DID comes from
+(there is no `dataspace_did` claim; see
+[Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/)).
 
-### Subject identity
-
-The subject's DID comes from the `dataspace_did` claim, set by the identity
-registry's Keycloak sync, and is sent to ds-connector as `X-Subject-Id` alongside
-the credential the call requires. A user holding several credentials gets the one
-matching the role of that call, not whichever was issued last.
+Login surface, bundles and the realm contract:
+[Architecture](https://spindoxlabs.github.io/ds/architecture/) and
+[Keycloak requirements](https://spindoxlabs.github.io/ds/deployment/keycloak/).
 
 ---
 

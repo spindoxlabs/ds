@@ -4,6 +4,26 @@ A DSSC-aligned dataspace implementation for energy communities, built on top of 
 
 The project delivers the full consumer-pull data exchange flow: catalogue discovery, contract negotiation, EDR-gated data transfer, consent enforcement, and provenance tracking — all aligned to the DSSC Blueprint Building Blocks.
 
+## 📖 Documentation
+
+**<https://spindoxlabs.github.io/ds/>** — architecture, the identity and DCP flow,
+the governance/ODRL pipeline, consent and sovereignty, provenance, and the
+deployment reference.
+
+That site is the single place concepts are explained. This README and the
+per-service ones are **local entry points**: what a unit is, how to run it, what
+it is configured with. Each links out rather than re-explaining, because one
+mechanism described in three files is one mechanism described three different ways.
+
+| Looking for | Go to |
+|---|---|
+| How the pieces fit together | [Architecture](https://spindoxlabs.github.io/ds/architecture/) |
+| DIDs, credentials, the trust anchor | [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) |
+| `governance.yaml` → ODRL offers | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
+| Consent, purposes, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
+| Deploying it | [Deployment](https://spindoxlabs.github.io/ds/deployment/) |
+| Working on the code as an agent | `AGENTS.md`, at the root and in each unit |
+
 ---
 
 ## What it provides
@@ -53,7 +73,7 @@ dataspaces/
 ├── schemas/                    JSON Schema for the YAML shapes that cross a repo boundary
 ├── helm/                       Helm charts + helmfile for Kubernetes deployment
 ├── data/                       runtime data (gitignored) — caddy PKI, gradle cache
-└── docs/                       architecture docs, DSSC blueprint reference
+└── docs/                       the published docs site (spindoxlabs.github.io/ds)
 ```
 
 ---
@@ -344,7 +364,7 @@ task compliance:evidence    # DCAT-AP catalog + ODRL offers → reports/complian
 task e2e                    # smoke flow — requires a running stack
 ```
 
-See `docs/dssc-blueprint-docs/` for the DSSC blueprint reference material.
+See [the DSSC Blueprint reference](https://spindoxlabs.github.io/ds/dssc-blueprint-docs/) for the blueprint material.
 
 ---
 

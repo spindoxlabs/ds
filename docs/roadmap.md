@@ -113,3 +113,20 @@ lives in the IR (`GET /users/resolve?derive=true`), keeping the key inside
 one service instead of sharing it with onboarding. Previously an unsalted
 SHA-256 hash was used, making DIDs correlatable across deployments. Existing
 DIDs are stored and unaffected by the change.
+
+**Also done: the lookup that decides *when* to derive.** Deriving on an email
+miss was a consent-integrity bug rather than a nuisance — an address change in
+the IdP minted a *second* DID for the same human, while the data plane still
+joined both to one username, so a revocation against one DID did not stop
+disclosure authorised under the other. Resolution is now a cascade,
+`(realm, user_id)` → `(realm, username)` → `(realm, email)`, deriving only when
+all three miss, with the continuity key a real uniqueness constraint. A weaker
+match that **conflicts** with a recorded stronger one is quarantined for an
+operator, never rebound: "the account was re-created" and "the username was
+recycled to someone else" are indistinguishable from ds's side, and guessing
+wrong hands one person's credentials and consent history to another.
+
+Two consequences worth knowing before a migration: `user_id` is stable only
+*within* a realm, so a realm migration changes every one at once and quarantines
+the whole population by design; and a realm using **email-as-username** — as ds's
+own dev realm does — moves the continuity seed and the data-plane join together.

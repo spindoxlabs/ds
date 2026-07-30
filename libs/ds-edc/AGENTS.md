@@ -45,7 +45,14 @@ src/ds_edc/
 - All HTTP calls are async via `httpx.AsyncClient`
 - EDC JSON-LD context: `{"@vocab": "https://w3id.org/edc/v0.0.1/ns/"}`
 - Protocol version: `dataspace-protocol-http:2025-1`
-- Authentication via `X-Api-Key` header
+- Authentication via `X-Api-Key` header — this is **EDC's own Management API key**
+  (`web.http.management.auth.key`), and it is still correct here. Not to be confused
+  with the `X-Api-Key` that once fronted ds-connector's `/internal/*`: that was the
+  *same value*, spanning two trust boundaries, and was replaced by per-caller
+  Keycloak client credentials. Do not reuse this one anywhere else.
+- EDC registers an authentication filter only for contexts declaring a type, so
+  `web.http.management.auth.type=tokenbased` is required — the key alone protects
+  nothing.
 
 ## Adding to a service
 
