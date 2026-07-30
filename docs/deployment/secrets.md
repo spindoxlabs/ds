@@ -53,7 +53,7 @@ export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 ### Generating values
 
 ```bash
-openssl rand -hex 32                                        # API keys, AUTH_SECRET
+openssl rand -hex 32                                        # API keys, cookie secrets
 python -c 'import secrets;print(secrets.token_urlsafe(32))' # Fernet passphrase
 task secrets:keygen                                         # EC P-256 key material → secrets/
 ```
@@ -69,7 +69,8 @@ overwritten.
 | Key | Consumer | Blast radius |
 |-----|----------|--------------|
 | `identityRegistryEncryptionKey` | identity-registry | Fernet passphrase encrypting **every participant DID private key at rest**, and HMAC key for email→subject_id derivation. Leak → impersonate any participant. Rotation changes future subject IDs (existing ones are stored and unaffected). |
-| `authSecret` | portal | Auth.js session encryption. Leak → forge portal sessions carrying arbitrary user identity and VC claims. |
+| `oauth2ProxyCookieSecret` | oauth2-proxy | Encrypts the browser session cookie. Leak → forge a session carrying any identity. Must be 16, 24 or 32 bytes. |
+| `oauth2ProxyClientSecret` | oauth2-proxy | The login client's Keycloak secret. Leak → sign in as any user of the realm. |
 | `participants.<name>.edcApiKey` | ds-edc + ds-connector | EDC Management API key, and the `X-Api-Key` accepted by the connector's `/internal/*`. Leak → create and delete assets, policies and transfers; read consented-subject lists; forge audit events. |
 | `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | Signs Endpoint Data References. Distinct from any DID key. |
 | `participants.<name>.stsSecret` | ds-edc | The participant's STS client secret, as registered in the identity registry. |

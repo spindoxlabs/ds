@@ -13,7 +13,7 @@
  * request against the same table.
  */
 import { error, redirect } from '@sveltejs/kit';
-import type { Session } from '@auth/core/types';
+import type { DsSession as Session } from '../../app.d.ts';
 import { expandBundles } from './bundles.generated';
 
 export interface ServerRoles {

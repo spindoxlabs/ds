@@ -182,10 +182,22 @@ Each service manages its own schema via Alembic migrations. There are no cross-d
 ### User authentication (Portal)
 
 ```
-Browser -> Portal -> Keycloak (OIDC)
+Browser -> Caddy (forward_auth) -> oauth2-proxy -> Keycloak (OIDC)
+                |
+                +-> Portal   (receives the access token as a forwarded header)
 ```
 
-Auth.js handles the OIDC flow. Keycloak issues JWTs with roles (`admin`, `dataset.admin`) and scopes (`dataspaces.query`). The portal derives a `UserPersona` to gate UI sections.
+**oauth2-proxy** owns the browser session; the portal is not an OIDC client. Caddy
+delegates authentication to it and forwards the resulting access token, so there is one
+login surface for the whole deployment and one fewer client registration to negotiate
+with whoever administers the realm.
+
+The forwarded header is **transport, never authority**: Caddy strips any client-supplied
+copy, and every service re-verifies the JWT and re-authorises the request. A user's
+authority arrives as Keycloak **groups**, each naming a role bundle that
+`ds_auth.bundles` expands into the same permission vocabulary a service token carries as
+scopes — so a route asks for a capability without knowing which kind of token satisfied
+it. The portal derives a `UserPersona` from the same expansion to gate UI sections.
 
 ### Machine authentication (EDC <-> EDC)
 

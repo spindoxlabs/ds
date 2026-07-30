@@ -22,13 +22,40 @@ Four site blocks:
 |-----------|------|----------|---------|
 | `*.dataspaces.localhost:80` | `/.well-known/did.json` | `identity-registry:30005` | DID document resolution (see below). All other paths `respond 404`. |
 | `keycloak.dataspaces.localhost:9010` | `/*` | `172.17.0.1:9080` | Keycloak OIDC |
+| `sso.dataspaces.localhost:9010` | `/oauth2/*` | `oauth2-proxy:4180` | Login, callback, sign-out. Docker service name: the proxy publishes **no host port**, so this is the only route to it |
+| | `/*` | → portal | Anything else on the SSO host is a stray link |
 | `consumer.dataspaces.localhost:9000` | `/api/connector/*` | `172.17.0.1:31001` | Consumer connector API |
 | | `/api/provenance/*` | `172.17.0.1:31000` | Consumer provenance API |
-| `portal.dataspaces.localhost:9010` | `/api/connector/*` | `172.17.0.1:30001` | Provider connector API |
+| `portal.dataspaces.localhost:9010` | `/oauth2/sign_out` | redirect | Keycloak end_session **first**, then the proxy's sign_out — see below |
+| | `/oauth2/*` | `oauth2-proxy:4180` | |
+| | `/join*`, `/metrics*` | `172.17.0.1:30004` | **Public on purpose.** An applicant has no account; a scraper cannot follow a login redirect |
+| | `/api/connector/*` | `172.17.0.1:30001` | Provider connector API — **not** behind the auth wall |
 | | `/api/provenance/*` | `172.17.0.1:30000` | Provider provenance API |
 | | `/api/catalog/*` | `172.17.0.1:30003` | Federated catalog API |
 | | `/api/datasets/*` | `172.17.0.1:30002` | Dataset API |
-| | `/*` (catch-all) | `172.17.0.1:30004` | Portal SvelteKit app |
+| | `/*` (catch-all) | `172.17.0.1:30004` | Portal SvelteKit app, behind `import auth` |
+
+## The `(auth)` snippet — three things that bite
+
+Adapted from a configuration already proven in the sibling platform. Do not simplify
+any of these without reproducing the failure first:
+
+1. **`/oauth2/sign_out` is intercepted before the generic `/oauth2/*`.** Inside a
+   `route` block the first matching `handle` wins, so the generic one shadows the
+   specific one and only the *proxy* cookie is cleared — Keycloak's SSO session
+   survives and re-authenticates silently, so sign-out appears to do nothing.
+2. **`/oauth2/*` is excluded from the pre-flight** (`@needs_auth not path /oauth2/*`).
+   sign_in and callback must reach the proxy directly; running `forward_auth` on the
+   callback checks for a session that does not exist yet.
+3. **Every URL carries the gateway port.** ds does not own `:80` on a developer
+   machine, so `redirect_url`, the sign-out `post_logout_redirect_uri` and
+   oauth2-proxy's `whitelist_domains` all need `:9010` — a bare domain in the
+   whitelist matches the default port only, and the symptom is a blank page after a
+   successful login rather than an error.
+
+Client-supplied `X-Auth-Request-*` headers are stripped on the portal host: a client
+must never be able to assert its own identity, even though every service also
+re-verifies the JWT.
 
 Gateway upstreams use `172.17.0.1` (Docker host-gateway); the DID block uses Docker DNS (`identity-registry:30005`) because it serves container-to-container traffic. `handle_path` strips the matched prefix before proxying.
 

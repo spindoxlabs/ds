@@ -1,187 +1,137 @@
-import { SvelteKitAuth } from '@auth/sveltekit';
-import Keycloak from '@auth/sveltekit/providers/keycloak';
+/**
+ * Session from oauth2-proxy, not from Auth.js.
+ *
+ * The portal used to be a confidential OIDC client with its own cookie, its own
+ * `AUTH_SECRET`, its own callback registration and its own refresh loop. It now
+ * sits behind oauth2-proxy (see `services/caddy/Caddyfile`), which owns the
+ * browser session and hands the access token to every request as
+ * `X-Auth-Request-Access-Token`. That removes a client registration from whoever
+ * administers the realm — which matters most where that is not us — and leaves
+ * one login surface for the whole deployment instead of two.
+ *
+ * **The header is transport, never authority.** Caddy strips any client-supplied
+ * `X-Auth-Request-*` before this process sees it, the token here is used only to
+ * gate the UI, and every ds service re-verifies it and re-authorises the request.
+ *
+ * The exported session keeps exactly the shape Auth.js produced, so every
+ * `+page.server.ts` and `lib/server/auth.ts` are untouched: `locals.auth()`
+ * still resolves to `{ user, accessToken, userDid, userVcRoles, … }`.
+ */
 import { env } from '$env/dynamic/private';
 import { resolveUserByEmail } from '$lib/server/identity-registry';
 import { redirect, type Handle } from '@sveltejs/kit';
-import { sequence } from '@sveltejs/kit/hooks';
-import { decode } from '@auth/core/jwt';
-import type { JWT } from '@auth/core/jwt';
 
-if (!env.AUTH_SECRET) {
-	console.warn(
-		'[ds-portal] AUTH_SECRET is not set — using the insecure default session ' +
-			'secret. Set a strong AUTH_SECRET in production.',
-	);
-}
-if (!env.AUTH_KEYCLOAK_SECRET) {
-	console.warn(
-		'[ds-portal] AUTH_KEYCLOAK_SECRET is not set for the login client ' +
-			`"${env.AUTH_KEYCLOAK_ID ?? 'ds-portal'}".`,
-	);
+/** Where the browser goes to start or end a session. Caddy routes /oauth2/* here. */
+const SSO_BASE = env.OAUTH2_PROXY_BASE_URL ?? 'http://sso.dataspaces.localhost:9010';
+
+/**
+ * The identity-registry lookup is a network call, and under Auth.js it happened
+ * once per login. Behind a proxy there is no login event to hang it on, so it
+ * would otherwise run on every request — including every asset. Cached per email
+ * with a short TTL: long enough to keep page loads cheap, short enough that a
+ * freshly issued credential appears without a sign-out.
+ */
+const IDENTITY_TTL_MS = 60_000;
+type Identity = Awaited<ReturnType<typeof resolveUserByEmail>>;
+const identityCache = new Map<string, { at: number; identity: Identity }>();
+
+async function cachedIdentity(email: string): Promise<Identity> {
+	const hit = identityCache.get(email);
+	const now = Date.now();
+	if (hit && now - hit.at < IDENTITY_TTL_MS) return hit.identity;
+
+	const identity = await resolveUserByEmail(email);
+	// A failed lookup is cached too, briefly. Without that, a person with no
+	// dataspace identity yet re-queries the registry on every navigation.
+	identityCache.set(email, { at: now, identity });
+	return identity;
 }
 
-async function refreshAccessToken(token: JWT): Promise<JWT> {
-	const issuer = env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:9080/realms/dataspaces';
-	const tokenUrl = `${issuer}/protocol/openid-connect/token`;
+function decodeClaims(token: string): Record<string, unknown> | null {
 	try {
-		const res = await fetch(tokenUrl, {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-			body: new URLSearchParams({
-				grant_type: 'refresh_token',
-				client_id: env.AUTH_KEYCLOAK_ID ?? 'ds-portal',
-				client_secret: env.AUTH_KEYCLOAK_SECRET ?? '',
-				refresh_token: token.refreshToken as string,
-			}),
-		});
-		if (!res.ok) {
-			const body = await res.text().catch(() => '');
-			console.error(`[ds-portal] Token refresh failed: ${res.status}`, body);
-			return { ...token, error: 'RefreshTokenError' };
-		}
-		const data = await res.json();
-		return {
-			...token,
-			accessToken: data.access_token,
-			refreshToken: data.refresh_token ?? token.refreshToken,
-			idToken: data.id_token ?? token.idToken,
-			accessTokenExpires: Date.now() + data.expires_in * 1000,
-			error: undefined,
-		};
-	} catch (e) {
-		console.error('[ds-portal] Token refresh error:', e);
-		return { ...token, error: 'RefreshTokenError' };
+		const parts = token.split('.');
+		if (parts.length !== 3) return null;
+		return JSON.parse(
+			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8'),
+		);
+	} catch {
+		return null;
 	}
 }
 
-const { handle: authHandle, signIn, signOut } = SvelteKitAuth({
-	providers: [
-		Keycloak({
-			clientId: env.AUTH_KEYCLOAK_ID ?? 'ds-portal',
-			clientSecret: env.AUTH_KEYCLOAK_SECRET ?? '',
-			issuer: env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:9080/realms/dataspaces',
-			authorization: {
-				params: {
-					scope: env.AUTH_KEYCLOAK_SCOPE ?? 'openid profile email',
-				},
-			},
-		}),
-	],
-	secret: env.AUTH_SECRET ?? 'dev-secret-change-in-prod',
-	trustHost: true,
-	callbacks: {
-		async jwt({ token, account, profile }) {
-			if (account) {
-				token.accessToken = account.access_token;
-				token.refreshToken = account.refresh_token;
-				token.accessTokenExpires = account.expires_at
-					? account.expires_at * 1000
-					: Date.now() + 300_000;
-				token.idToken = account.id_token;
-				token.error = undefined;
+function bearerFrom(request: Request): string | null {
+	// oauth2-proxy sets both; the dedicated header first because `Authorization`
+	// may instead carry a *service* token when a machine calls through
+	// (`skip_jwt_bearer_tokens`), and that token is not a human session.
+	const forwarded = request.headers.get('x-auth-request-access-token');
+	if (forwarded) return forwarded;
 
-				const email = (profile?.email ?? token.email ?? '') as string;
-				const identity = await resolveUserByEmail(email);
-				token.userDid = identity?.did ?? null;
-				token.userVcRoles = identity?.roles ?? [];
-				token.userVcJwsByRole = identity?.jwsByRole ?? {};
-				token.userVcRole = identity?.role ?? null;
-				token.userVcJws = identity?.vcJws ?? null;
-				token.userSubjectId = identity?.subjectId ?? null;
-			} else if (token.error === 'RefreshTokenError') {
-				return token;
-			} else if (
-				typeof token.accessTokenExpires === 'number' &&
-				Date.now() > token.accessTokenExpires - 60_000
-			) {
-				token = await refreshAccessToken(token);
-			}
-			return token;
-		},
-		async session({ session, token }) {
-			if (token.error === 'RefreshTokenError') {
-				session.error = 'RefreshTokenError';
-			}
-			session.accessToken = token.accessToken as string | undefined;
-			session.userDid = (token.userDid as string) ?? null;
-			session.userVcRoles = (token.userVcRoles as string[]) ?? [];
-			session.userVcJwsByRole = (token.userVcJwsByRole as Record<string, string>) ?? {};
-			session.userVcRole = (token.userVcRole as string) ?? null;
-			session.userVcJws = (token.userVcJws as string) ?? null;
-			session.userSubjectId = (token.userSubjectId as string) ?? null;
-			return session;
-		},
-	},
-});
-
-function readSessionCookie(event: Parameters<Handle>[0]['event']) {
-	const secure = event.cookies.get('__Secure-authjs.session-token');
-	if (secure) return { token: secure, salt: '__Secure-authjs.session-token' as const };
-	const plain = event.cookies.get('authjs.session-token');
-	if (plain) return { token: plain, salt: 'authjs.session-token' as const };
-
-	// Auth.js chunks large JWTs into .0, .1, .2, … cookies
-	const prefix = event.cookies.get('__Secure-authjs.session-token.0')
-		? '__Secure-authjs.session-token'
-		: 'authjs.session-token';
-	const chunks: string[] = [];
-	for (let i = 0; ; i++) {
-		const c = event.cookies.get(`${prefix}.${i}`);
-		if (!c) break;
-		chunks.push(c);
+	const authorization = request.headers.get('authorization');
+	if (authorization?.toLowerCase().startsWith('bearer ')) {
+		return authorization.slice(7).trim() || null;
 	}
-	if (chunks.length)
-		return { token: chunks.join(''), salt: prefix as 'authjs.session-token' | '__Secure-authjs.session-token' };
 	return null;
 }
 
-function clearAuthCookies(event: Parameters<Handle>[0]['event']) {
-	for (const base of [
-		'authjs.session-token', '__Secure-authjs.session-token',
-		'authjs.callback-url', '__Secure-authjs.callback-url',
-		'authjs.csrf-token', '__Secure-authjs.csrf-token',
-	]) {
-		event.cookies.delete(base, { path: '/' });
-		for (let i = 0; ; i++) {
-			if (event.cookies.get(`${base}.${i}`) === undefined) break;
-			event.cookies.delete(`${base}.${i}`, { path: '/' });
-		}
-	}
+async function buildSession(request: Request) {
+	const accessToken = bearerFrom(request);
+	if (!accessToken) return null;
+
+	const claims = decodeClaims(accessToken);
+	if (!claims) return null;
+
+	// An expired token means the proxy's session lapsed mid-request; treat it as
+	// no session so the guard redirects rather than rendering a half-authorised
+	// page against a token the API will refuse.
+	const exp = typeof claims.exp === 'number' ? claims.exp : 0;
+	if (exp && Date.now() >= exp * 1000) return null;
+
+	const email = String(claims.email ?? request.headers.get('x-auth-request-email') ?? '');
+	const identity = email ? await cachedIdentity(email) : null;
+
+	return {
+		user: {
+			name: (claims.name as string) ?? (claims.preferred_username as string) ?? email,
+			email,
+		},
+		accessToken,
+		userDid: identity?.did ?? null,
+		userVcRoles: identity?.roles ?? [],
+		userVcJwsByRole: identity?.jwsByRole ?? {},
+		userVcRole: identity?.role ?? null,
+		userVcJws: identity?.vcJws ?? null,
+		userSubjectId: identity?.subjectId ?? null,
+	};
 }
 
-const keycloakSignout: Handle = async ({ event, resolve }) => {
-	if (event.url.pathname === '/auth/signout' && event.request.method === 'POST') {
-		const issuer = env.AUTH_KEYCLOAK_ISSUER ?? 'http://keycloak:9080/realms/dataspaces';
-		const secret = env.AUTH_SECRET ?? 'dev-secret-change-in-prod';
-
-		let idToken: string | undefined;
-		const session = readSessionCookie(event);
-		if (session) {
-			try {
-				const decoded = await decode({ token: session.token, secret, salt: session.salt });
-				idToken = decoded?.idToken as string | undefined;
-			} catch {
-				// proceed without id_token_hint
-			}
-		}
-
-		clearAuthCookies(event);
-
-		const logoutUrl = new URL(`${issuer}/protocol/openid-connect/logout`);
-		logoutUrl.searchParams.set('client_id', env.AUTH_KEYCLOAK_ID ?? 'ds-portal');
-		if (idToken) {
-			logoutUrl.searchParams.set('id_token_hint', idToken);
-		}
-		logoutUrl.searchParams.set(
-			'post_logout_redirect_uri',
-			`${event.url.origin}/`,
-		);
-
-		throw redirect(303, logoutUrl.toString());
+export const handle: Handle = async ({ event, resolve }) => {
+	// Sign-out is the proxy's, and the redirect chain matters: Caddy intercepts
+	// /oauth2/sign_out to end the *Keycloak* session first, then Keycloak returns
+	// to the proxy to drop its cookie. Clearing only one of the two leaves the
+	// other able to re-authenticate silently, so "sign out" appears to do nothing.
+	if (event.url.pathname === '/auth/signout') {
+		throw redirect(303, `${SSO_BASE}/oauth2/sign_out`);
 	}
+	// `startsWith`, because the layout's form still posts to the Auth.js-shaped
+	// `/auth/signin/keycloak`. Behind the proxy this path is rarely reached at all —
+	// an unauthenticated browser is redirected to Keycloak before it renders a page
+	// with a Sign in button — but a stale bookmark or an in-flight link should still
+	// land somewhere sensible. The proxy decides where sign-in goes, not this app.
+	if (event.url.pathname.startsWith('/auth/signin')) {
+		const target = event.url.searchParams.get('callbackUrl') ?? '/';
+		throw redirect(
+			303,
+			`${SSO_BASE}/oauth2/sign_in?rd=${encodeURIComponent(new URL(target, event.url.origin).toString())}`,
+		);
+	}
+
+	let cached: Awaited<ReturnType<typeof buildSession>> | undefined;
+	event.locals.auth = async () => {
+		// Once per request: several `load` functions call this and each would
+		// otherwise repeat the decode and the cache lookup.
+		if (cached === undefined) cached = await buildSession(event.request);
+		return cached;
+	};
 
 	return resolve(event);
 };
-
-export { signIn, signOut };
-export const handle = sequence(keycloakSignout, authHandle);

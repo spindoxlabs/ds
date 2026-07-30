@@ -101,14 +101,14 @@ class E2ESettings(BaseSettings):
     # (services/identity-registry/.../org_onboarding.py).
     status_list_id: str = Field("1", validation_alias="E2E_STATUS_LIST_ID")
 
-    # The public-facing OIDC client humans log in through. The user-authority
-    # flow needs a *user* token — every other flow uses client_credentials, so
+    # The OIDC client humans log in through — oauth2-proxy's. The user-authority
+    # flow needs a *user* token: every other flow uses client_credentials, so
     # until it existed nothing proved that a human's groups authorise anything.
-    # `directAccessGrantsEnabled` is a dev-realm property; the password grant is
-    # how a test obtains a real user token without driving a browser.
-    user_client_id: str = Field("ds-portal", validation_alias="AUTH_KEYCLOAK_ID")
+    # `directAccessGrantsEnabled` is set on this client in the **dev** realm only,
+    # which is how a test obtains a real user token without driving a browser.
+    user_client_id: str = Field("oauth2_proxy", validation_alias="OAUTH2_PROXY_CLIENT_ID")
     user_client_secret: str = Field(
-        "change-me-local-client-secret", validation_alias="AUTH_KEYCLOAK_SECRET"
+        "oauth2_proxy", validation_alias="OAUTH2_PROXY_CLIENT_SECRET"
     )
     # Dev fixtures: password equals username (services/keycloak/realm-*-dev.json).
     admin_email: str = "admin@example.test"

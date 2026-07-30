@@ -102,7 +102,7 @@ Three compose files form the full stack:
 
 | File | Services | Purpose |
 |------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync | Shared infrastructure |
+| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync, oauth2-proxy | Shared infrastructure |
 | `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
 | `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
 
@@ -168,7 +168,7 @@ resolve to nobody and every flow denies — correctly, and proving nothing.
 | Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
 | Database | PostgreSQL 17.4 (one DB per service, all on port 35432; EDC uses SQL stores with Flyway auto-migration) |
 | Proxy | Caddy 2 (HTTP reverse proxy for portal, connector APIs, and Keycloak) |
-| Auth | Keycloak OIDC via Auth.js |
+| Auth | Keycloak OIDC via **oauth2-proxy** behind Caddy `forward_auth`; services verify the JWT with `ds-auth` |
 | Build | uv (Python), npm (Node), Gradle (Java), Taskfile |
 | Containers | Docker Compose, multi-stage Dockerfiles |
 
@@ -274,7 +274,9 @@ Both preserve existing values, so they are safe to re-run. `task secrets:check` 
 - SvelteKit 2.0 with Svelte 5 runes (`$state`, `$derived`, `$effect`)
 - Mobile-first with Tailwind CSS
 - SSR data loading — API calls in `+page.server.ts`, never in client components
-- Auth.js for Keycloak OIDC, role-based guards in `src/lib/server/auth.ts`
+- No OIDC client in the app: oauth2-proxy holds the session and `hooks.server.ts` builds
+  it per request from the forwarded access token. Route guards in
+  `src/lib/server/auth.ts`, expanding the generated bundle table
 
 ### Java (EDC extensions)
 
@@ -673,11 +675,24 @@ Service accounts are defined in `services/keycloak/clients.yaml`. Default secret
 
 ### Two authentication mechanisms — know which one applies
 
+> **oauth2-proxy is not a third mechanism.** It fronts *human* traffic — Caddy
+> delegates to it with `forward_auth` and it forwards the access token as
+> `X-Auth-Request-Access-Token` — but nothing downstream trusts that header.
+> Services verify the JWT exactly as before. Two consequences when adding routes:
+>
+> - Caddy strips client-supplied `X-Auth-Request-*` on the way in, and `/api/*` is
+>   deliberately **outside** the auth wall: an unauthenticated API call must be a 401
+>   the caller can act on, not a 302 to a login form it cannot complete.
+> - A page whose visitor legitimately has **no account** must be carved out in the
+>   Caddyfile (today `/join`, the organisation application). Behind the wall the
+>   applicant is bounced to a login form for an account that does not exist.
+
+
 Most endpoints use the unified `ds_auth` guard, but **one other mechanism exists**. Using the wrong one when adding an endpoint is the most common security mistake in this repo.
 
 | Mechanism | Where | How it authenticates |
 |-----------|-------|----------------------|
-| **`require_permission`** (default) | Everything except the one below | JWT bearer → scope (service) or groups (user) |
+| **`require_permission`** (default) | Everything except the one below | JWT bearer → scope (service) or expanded groups (user) |
 | **VC-JWT headers** | `/consent/my/*`, `/consent/status` and `/consumer/*` on ds-connector | `X-Subject-Id` + `X-User-VC`, verified against the trust-anchor key by `services/user_credentials.py`. **Not** `require_permission`. |
 
 > **`X-Api-Key` on `/internal/*` is gone.** It was a static shared secret equal to

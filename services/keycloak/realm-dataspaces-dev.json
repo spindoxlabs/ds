@@ -20,19 +20,7 @@
         "name": "dataset.admin",
         "description": "Dataset provider administrator"
       }
-    ],
-    "client": {
-      "ds-portal": [
-        {
-          "name": "admin",
-          "description": "Portal administrator"
-        },
-        {
-          "name": "dataset.admin",
-          "description": "Portal dataset administrator"
-        }
-      ]
-    }
+    ]
   },
   "clientScopes": [
     {
@@ -245,22 +233,21 @@
   ],
   "clients": [
     {
-      "clientId": "ds-portal",
-      "name": "DS Portal",
+      "clientId": "oauth2_proxy",
+      "name": "oauth2-proxy (human login)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
-      "secret": "change-me-local-client-secret",
+      "secret": "oauth2_proxy",
       "standardFlowEnabled": true,
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://portal.dataspaces.localhost:9010/auth/callback/keycloak",
-        "http://localhost:30004/auth/callback/keycloak"
+        "http://sso.dataspaces.localhost:9010/oauth2/callback"
       ],
       "webOrigins": [
         "http://portal.dataspaces.localhost:9010",
-        "http://localhost:30004"
+        "http://sso.dataspaces.localhost:9010"
       ],
       "defaultClientScopes": [
         "web-origins",
@@ -277,7 +264,7 @@
         "microprofile-jwt"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://portal.dataspaces.localhost:9010/*##http://localhost:30004/*"
+        "post.logout.redirect.uris": "http://sso.dataspaces.localhost:9010/oauth2/sign_out##http://portal.dataspaces.localhost:9010/*"
       },
       "protocolMappers": [
         {
@@ -333,12 +320,6 @@
         "ds-admin",
         "dataset.admin"
       ],
-      "clientRoles": {
-        "ds-portal": [
-          "admin",
-          "dataset.admin"
-        ]
-      },
       "groups": [
         "/ds-admin"
       ]
@@ -380,11 +361,6 @@
       "realmRoles": [
         "dataset.admin"
       ],
-      "clientRoles": {
-        "ds-portal": [
-          "dataset.admin"
-        ]
-      },
       "groups": [
         "/ds-participant-admin"
       ]

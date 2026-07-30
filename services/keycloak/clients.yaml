@@ -2,6 +2,18 @@
 # via celine-policies/clients.yaml.
 realm: dataspaces
 
+# The Keycloak client humans log in through, in front of which oauth2-proxy holds
+# the browser session. Naming it here makes `celine-policies keycloak sync` attach
+# a hardcoded-audience mapper for **every** client carrying a `scopes_prefix`, so
+# a user's token passes audience validation at each service instead of each
+# service having to relax its `aud` check.
+#
+# The client itself is declared in the realm import (`realm-*.json`), not created
+# by the sync — the sync only adds mappers to it. A client with no
+# `scopes_prefix` gets no mapper generated and must list the proxy in its own
+# `extra_audiences` if a user token needs to reach it.
+oauth2_proxy_client: oauth2_proxy
+
 # =============================================================================
 # SCOPES
 # =============================================================================
@@ -244,6 +256,20 @@ clients:
       - svc-ds-provenance
       # The counterparty's connector — the audience of GET /consent/pending.
       - svc-ds-connector
+
+  # Declared so the audience the provenance service verifies is a real identity.
+  # It appears in four `extra_audiences` lists above and used to be defined as a
+  # client in **neither** ds's file nor celine-policies': audience mappers emit a
+  # literal string, so it worked — but an undeclared identity is one nobody can
+  # revoke or audit, and with `oauth2_proxy_client` set it is also what makes a
+  # user's token carry `aud: svc-ds-provenance` (the mapper is generated per
+  # `scopes_prefix` client). It holds no grants of its own: nothing authenticates
+  # *as* provenance, callers authenticate *to* it.
+  - client_id: svc-ds-provenance
+    name: Dataspace Provenance
+    secret: ${SVC_DS_PROVENANCE_SECRET:-svc-ds-provenance}
+    scopes_prefix: provenance
+    default_scopes: []
 
   - client_id: svc-ds-federated-catalog
     name: Dataspace Federated Catalog

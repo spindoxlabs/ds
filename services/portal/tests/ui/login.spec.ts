@@ -27,3 +27,38 @@ test.describe('sign-in and role visibility', () => {
 		expect(nav).not.toContain('Admin');
 	});
 });
+
+/**
+ * The auth wall's edges.
+ *
+ * oauth2-proxy fronts the portal, so *everything* is behind a login redirect
+ * unless Caddy carves it out — and the one page that must stay public is the one
+ * whose visitor has no account yet. This was a real regression: putting the proxy
+ * in front sent an applicant following an invite link to a login form for an
+ * account that does not exist. Asserted directly here rather than left to the
+ * operator journey, which caught it only as a missing form field.
+ */
+test.describe('the authentication perimeter', () => {
+	test('an applicant with no account reaches the invite page', async ({ browser }) => {
+		const anonymous = await browser.newContext();
+		const page = await anonymous.newPage();
+		await page.goto('/join?code=whatever');
+
+		// Still on the portal, and the form is rendered — not bounced to Keycloak.
+		expect(new URL(page.url()).pathname).toBe('/join');
+		await expect(page.locator('[name="invite_code"]')).toBeVisible();
+		await anonymous.close();
+	});
+
+	test('an anonymous browser is bounced from an authenticated page', async ({ browser }) => {
+		const anonymous = await browser.newContext();
+		const page = await anonymous.newPage();
+		await page.goto('/provider');
+
+		// The redirect chain ends at Keycloak, and the port survives it — a missing
+		// port in redirect_url or whitelist_domains is what breaks this.
+		await page.waitForURL(/\/realms\/dataspaces\//, { timeout: 30_000 });
+		await expect(page.locator('#username')).toBeVisible();
+		await anonymous.close();
+	});
+});

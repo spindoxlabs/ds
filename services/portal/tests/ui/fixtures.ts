@@ -31,11 +31,14 @@ export type Role = keyof typeof USERS;
  * Not via a seeded cookie or a direct-grant token: the portal derives every
  * authorisation decision from the resulting session, so a fabricated one would
  * make the journeys assert against the fixture instead of the product.
+ *
+ * There is no "Sign in" button to click any more. The portal sits behind
+ * oauth2-proxy, so Caddy answers an unauthenticated request with a redirect to
+ * Keycloak before the portal renders anything — navigating *is* the sign-in.
  */
 export async function login(page: Page, role: Role): Promise<void> {
 	const user = USERS[role];
 	await page.goto('/');
-	await page.getByRole('button', { name: 'Sign in' }).click();
 
 	await page.waitForURL(/\/realms\/dataspaces\//, { timeout: 30_000 });
 

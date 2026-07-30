@@ -6,7 +6,11 @@
 - **Language**: TypeScript, SvelteKit 2.0, Svelte 5.0, Tailwind CSS 4.0
 - **Port**: 30004 (debug: 30904)
 - **URL**: `http://portal.dataspaces.localhost:9010` (via Caddy), direct `http://172.17.0.1:30004`
-- **Auth**: Auth.js with Keycloak OIDC
+- **Auth**: **oauth2-proxy** in front, via Caddy `forward_auth`. The portal is *not* an
+  OIDC client: it reads the access token oauth2-proxy forwards as
+  `X-Auth-Request-Access-Token` and builds the session per request. The header is
+  transport, never authority — Caddy strips client-supplied copies and every ds
+  service re-verifies the JWT.
 
 ## Source layout
 
@@ -59,7 +63,7 @@ src/
 │       ├── identity-registry.ts Identity-registry client (user resolution via service account)
 │       ├── provenance.ts        ds-provenance API client (server-side fetch)
 │       └── odrl.ts              ODRL JSON-LD → human-readable sentence converter
-├── hooks.server.ts              SvelteKit request lifecycle (Auth.js handle)
+├── hooks.server.ts              Session from the oauth2-proxy header + sign-in/out redirects
 └── app.html                     HTML shell
 ```
 
@@ -236,11 +240,8 @@ with no useful error.
 | `FEDERATED_CATALOG_URL` | — | Federated catalog. Preferred source for the catalogue list **and** dataset detail; falls back to `CATALOGUE_URL` |
 | `CATALOGUE_URL` | `http://172.17.0.1:30002` | dataset-api. Backs catalogue fallback, `/my-data`'s "data held about you" list, and the health page's dataset-api probe. **External in production** — no chart ships it |
 | `IDENTITY_REGISTRY_URL` | `http://172.17.0.1:30005` | Identity registry (user resolution at login) |
-| `AUTH_KEYCLOAK_ISSUER` | `http://keycloak:9080/realms/dataspaces` | OIDC issuer (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
-| `AUTH_KEYCLOAK_ID` | `ds-portal` | Keycloak login client ID (public redirect client, **not** a service client) |
-| `AUTH_KEYCLOAK_SECRET` | — | Login client secret (`change-me-local-client-secret` for dev) |
-| `AUTH_KEYCLOAK_SCOPE` | `openid profile email` | OIDC scopes requested at login |
-| `AUTH_SECRET` | `dev-secret-change-in-prod` | Auth.js session encryption secret. A known value means forgeable sessions |
+| `KEYCLOAK_ISSUER_URL` | `http://keycloak:9080/realms/dataspaces` | Realm issuer, used for **this app's own** client-credentials grant as `svc-ds-portal`. Not a login setting — the portal no longer logs anyone in (use `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` for dev) |
+| `OAUTH2_PROXY_BASE_URL` | `http://sso.dataspaces.localhost:9010` | Where a browser is sent to start or end a session. Caddy routes `/oauth2/*` there |
 | `ORIGIN` | — | SvelteKit ORIGIN for CSRF (`http://portal.dataspaces.localhost:9010` for dev) |
 | `PORTAL_SERVICE_CLIENT_ID` | `svc-ds-portal` | Service account. Used for **one** call — `GET /users/resolve` at login; everything else forwards the user's own token |
 | `PORTAL_SERVICE_CLIENT_SECRET` | `svc-ds-portal` | Service account secret |
@@ -337,5 +338,5 @@ docker run --rm -v "$PWD":/w -w /w node:22-alpine \
 - **Downstream**: calls ds-connector REST API (all data operations, JWT-authenticated via `svc-ds-portal`)
 - **Downstream**: calls ds-provenance REST API (lineage, audit)
 - **Downstream**: calls identity-registry `/users/resolve` (user DID/VC lookup on login, via `svc-ds-portal` service account)
-- **Auth**: Keycloak OIDC via Auth.js (`@auth/sveltekit`)
+- **Auth**: Keycloak OIDC via oauth2-proxy (no OIDC client in this app)
 - **No upstream callers** — this is the user-facing frontend

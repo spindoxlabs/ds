@@ -14,19 +14,7 @@
         "name": "dataset.admin",
         "description": "Dataset provider operator"
       }
-    ],
-    "client": {
-      "ds-portal-production": [
-        {
-          "name": "admin",
-          "description": "Portal administrator"
-        },
-        {
-          "name": "dataset.admin",
-          "description": "Portal dataset administration"
-        }
-      ]
-    }
+    ]
   },
   "groups": [
     {
@@ -132,8 +120,8 @@
   ],
   "clients": [
     {
-      "clientId": "ds-portal-production",
-      "name": "Dataspace Portal Production",
+      "clientId": "oauth2_proxy",
+      "name": "oauth2-proxy (human login)",
       "enabled": true,
       "protocol": "openid-connect",
       "publicClient": false,
@@ -141,21 +129,23 @@
       "directAccessGrantsEnabled": false,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "https://portal.dataspaces.example.org/auth/callback/keycloak"
+        "https://sso.dataspaces.example.org/oauth2/callback"
       ],
       "webOrigins": [
-        "https://portal.dataspaces.example.org"
+        "https://portal.dataspaces.example.org",
+        "https://sso.dataspaces.example.org"
       ],
       "defaultClientScopes": [
         "profile",
         "email",
         "roles",
         "groups",
-        "organization",
-        "dataset.query",
-        "dataset.read"
+        "organization"
       ],
-      "optionalClientScopes": []
+      "optionalClientScopes": [],
+      "attributes": {
+        "post.logout.redirect.uris": "https://sso.dataspaces.example.org/oauth2/sign_out"
+      }
     }
   ]
 }

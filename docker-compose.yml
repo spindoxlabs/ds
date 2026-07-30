@@ -30,6 +30,14 @@ services:
           - consumer.dataspaces.localhost
           - trust-anchor.dataspaces.localhost
           - users.dataspaces.localhost
+          # oauth2-proxy performs OIDC discovery against the *browser-facing*
+          # issuer, because that is the `iss` the tokens carry and the URL the
+          # user is redirected to. These aliases let it reach that URL from inside
+          # the network — Caddy listens on the same 9010 internally as it does on
+          # the host — so no extra_hosts entry and no second issuer URL is needed.
+          - keycloak.dataspaces.localhost
+          - sso.dataspaces.localhost
+          - portal.dataspaces.localhost
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
   postgres:
@@ -222,6 +230,31 @@ services:
       interval: 5s
       timeout: 5s
       retries: 15
+    networks: [dataspaces]
+
+  # ── oauth2-proxy — the human login surface ──────────────────────────────────
+  #
+  # Caddy delegates authentication here with `forward_auth`; this process owns the
+  # browser session and nothing else. Every ds service still verifies the JWT and
+  # authorises on its groups, so an injected `X-Auth-Request-*` header buys an
+  # attacker nothing (Caddy strips client-supplied ones on the way in).
+  #
+  # **No published port.** It is reachable only as `oauth2-proxy:4180` on the
+  # compose network, which keeps host 4180 free for another stack's proxy and
+  # means the only way in is through Caddy.
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
+    restart: unless-stopped
+    command: ["--config=/etc/oauth2-proxy/oauth2-proxy.cfg"]
+    volumes:
+      - ./services/oauth2-proxy/oauth2-proxy.cfg:/etc/oauth2-proxy/oauth2-proxy.cfg:ro
+    depends_on:
+      keycloak:
+        condition: service_healthy
+      # Discovery goes through Caddy at the browser-facing issuer URL, so Caddy
+      # has to be up first or the proxy exits on a failed OIDC discovery.
+      caddy:
+        condition: service_started
     networks: [dataspaces]
 
   # ── Keycloak sync — scopes, service clients, audience mappers ───────────────

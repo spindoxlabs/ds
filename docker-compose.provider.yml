@@ -236,11 +236,14 @@ services:
       CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
       CONSUMER_DEFAULT_ASSIGNER: did:web:provider.dataspaces.localhost
       CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
-      AUTH_KEYCLOAK_ISSUER: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
-      AUTH_KEYCLOAK_ID: ds-portal
-      AUTH_KEYCLOAK_SECRET: ${AUTH_KEYCLOAK_SECRET:-change-me-local-client-secret}
-      AUTH_KEYCLOAK_SCOPE: openid profile email
-      AUTH_SECRET: ${AUTH_SECRET:-dev-secret-change-in-prod}
+      # The realm issuer, used for the portal's own client-credentials grant as
+      # `svc-ds-portal` (identity-registry lookups). The portal is no longer an
+      # OIDC *login* client — oauth2-proxy holds the browser session — so there is
+      # no login client id, no client secret and no AUTH_SECRET here any more.
+      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      # Where to send a browser to start or end a session. Caddy routes /oauth2/*
+      # on this host to the proxy.
+      OAUTH2_PROXY_BASE_URL: http://sso.dataspaces.localhost:9010
       ORIGIN: http://portal.dataspaces.localhost:9010
       PORTAL_SERVICE_CLIENT_ID: svc-ds-portal
       PORTAL_SERVICE_CLIENT_SECRET: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
