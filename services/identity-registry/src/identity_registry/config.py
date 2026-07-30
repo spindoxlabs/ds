@@ -140,6 +140,35 @@ class Settings(BaseSettings):
         default=None, validation_alias="KEYCLOAK_ADMIN_PASSWORD"
     )
 
+    # ── Keycloak posture ─────────────────────────────────────────────────────
+    #
+    # May this registry **write** to the realm? Two very different deployments
+    # exist and only one of them may:
+    #
+    # * ds owns the realm — it provisions a promoted third party's connector
+    #   client and hands over the secret. Convenient, and the only way a
+    #   participant gets working credentials without an operator doing it by hand.
+    # * ds is a guest in a realm somebody else administers — `helm/values.yaml`
+    #   states Keycloak is "not ours to mutate", and there are no admin rights to
+    #   have. Creating clients is not merely disabled, it is not ds's to do.
+    #
+    # Until now the difference was *inferred* from whether admin credentials
+    # happened to be set, so a deployment that supplied them for one reason
+    # silently acquired the other behaviour. This makes the posture something a
+    # deployment states.
+    #
+    # Default True preserves today's behaviour; the production guard below
+    # requires it to be stated deliberately outside dev.
+    keycloak_mutate: bool = Field(
+        default=True,
+        validation_alias="KEYCLOAK_MUTATE",
+        description=(
+            "Allow writes into the Keycloak realm (provisioning a promoted "
+            "participant's connector client). Set false where ds is a guest in a "
+            "realm it does not administer."
+        ),
+    )
+
     credentials_context_url: str = Field(
         default="https://dataspaces.localhost/ns/credentials/v1",
         description="Credentials JSON-LD context URL",

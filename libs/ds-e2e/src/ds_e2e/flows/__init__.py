@@ -18,6 +18,7 @@ from ds_e2e.flows.smoke import SmokeFlow
 from ds_e2e.flows.uc1 import UC1Flow
 from ds_e2e.flows.uc2 import UC2Flow
 from ds_e2e.flows.uc3 import UC3Flow
+from ds_e2e.flows.user_authority import UserAuthorityFlow
 
 # Ordered cheapest-and-most-fundamental first: a failing contract or trust-chain
 # assertion explains most downstream failures, so `--flow all` surfaces it before
@@ -25,6 +26,7 @@ from ds_e2e.flows.uc3 import UC3Flow
 FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "api-contract": ApiContractFlow,
     "authz-perimeter": AuthzPerimeterFlow,
+    "user-authority": UserAuthorityFlow,
     "dcp-trust": DcpTrustFlow,
     "consent-purpose": ConsentPurposeFlow,
     "consent-request": ConsentRequestFlow,
@@ -53,6 +55,7 @@ CHAIN_FLOWS: tuple[str, ...] = (
 FAST_FLOWS: tuple[str, ...] = (
     "api-contract",
     "authz-perimeter",
+    "user-authority",
     "dcp-trust",
     "consent-purpose",
     "consent-request",
@@ -61,7 +64,12 @@ FAST_FLOWS: tuple[str, ...] = (
 )
 
 # The security subset: what the API refuses, rather than what it does.
-SECURITY_FLOWS: tuple[str, ...] = ("api-contract", "authz-perimeter", "dcp-trust")
+SECURITY_FLOWS: tuple[str, ...] = (
+    "api-contract",
+    "authz-perimeter",
+    "user-authority",
+    "dcp-trust",
+)
 
 __all__ = [
     "FLOW_REGISTRY",

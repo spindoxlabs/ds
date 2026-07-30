@@ -1240,3 +1240,13 @@ tasks:
     desc: Run the governance validator test suite
     cmds:
       - cd libs/governance && uv run pytest tests/tests/ -q
+
+  auth:test:
+    desc: Run the ds-auth test suite (role bundles, permissions, JWT verification)
+    cmds:
+      - cd libs/ds-auth && uv run pytest tests/ -q
+
+  auth:bundles:generate:
+    desc: Regenerate the portal's copy of the role-bundle table from ds_auth.bundles
+    cmds:
+      - task -d libs/ds-auth bundles:generate

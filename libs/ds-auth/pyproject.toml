@@ -30,6 +30,10 @@ dev = [
     "mypy>=1.11",
     "fastapi>=0.115",
     "httpx>=0.27",
+    # test_vocabulary.py reconciles the bundle table against
+    # services/keycloak/clients.yaml. Test-only: the library itself never reads
+    # the realm's declaration at runtime.
+    "pyyaml>=6",
 ]
 
 [tool.hatch.build.targets.wheel]

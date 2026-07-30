@@ -29,6 +29,7 @@ console = Console()
 class FlowName(str, Enum):
     api_contract = "api-contract"
     authz_perimeter = "authz-perimeter"
+    user_authority = "user-authority"
     dcp_trust = "dcp-trust"
     consent_purpose = "consent-purpose"
     consent_request = "consent-request"

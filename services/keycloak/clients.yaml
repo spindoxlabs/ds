@@ -61,8 +61,11 @@ scopes:
     description: Issue and revoke a data-subject credential
   - name: identity-registry.memberships.write
     description: Register or delete an organisation membership
+  # Records the Keycloak user ↔ DID mapping. It used to also push a
+  # `dataspace_did` attribute onto the Keycloak user; nothing read it, and it was
+  # the only write this endpoint made into a realm ds may not own.
   - name: identity-registry.keycloak.sync
-    description: Push the dataspace_did attribute onto a Keycloak user
+    description: Bind a Keycloak user to a dataspace DID
 
   # Connector
   - name: connector.admin

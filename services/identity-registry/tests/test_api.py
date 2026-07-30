@@ -463,8 +463,42 @@ async def test_keycloak_sync(client):
 
 
 @pytest.mark.asyncio
-async def test_keycloak_sync_reports_synced_flag_when_no_admin_url(client):
-    """With no keycloak_admin_url the attribute push is skipped, not failed."""
+async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp_path):
+    """The endpoint records a mapping and touches Keycloak **not at all**.
+
+    It used to also push a `dataspace_did` user attribute, which no protocol
+    mapper emitted, no service read, and no portal page looked up — while being
+    the only thing here that needed *write* access to a realm ds may not own.
+
+    Asserted the hard way: `keycloak_admin_url` **is** configured, so a
+    reintroduced push would run, and any HTTP client construction fails the test.
+    Asserting on the response body alone would pass even if the call came back.
+    """
+    import httpx
+
+    from conftest import TEST_DATABASE_URL
+
+    from identity_registry.config import Settings
+    from identity_registry.dependencies import get_settings_dep
+
+    settings_with_kc = Settings(
+        database_url=TEST_DATABASE_URL,
+        export_base_path=str(tmp_path),
+        oidc_issuer_url=None,
+        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
+    )
+    assert settings_with_kc.keycloak_admin_url == "http://keycloak.invalid"
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: settings_with_kc
+
+    class NoOutboundHttp:
+        def __init__(self, *a, **k):
+            raise AssertionError(
+                "POST /admin/keycloak/sync made an outbound HTTP call — the "
+                "dataspace_did attribute push must stay removed"
+            )
+
+    monkeypatch.setattr(httpx, "AsyncClient", NoOutboundHttp)
+
     await client.post(
         "/admin/dids",
         json={"did": TEST_DID, "did_type": "participant"},
@@ -475,75 +509,19 @@ async def test_keycloak_sync_reports_synced_flag_when_no_admin_url(client):
         json={"did": TEST_DID, "keycloak_realm": "dataspaces", "keycloak_user_id": "u1"},
         headers=HEADERS,
     )
+
     assert r.status_code == 200
     body = r.json()
-    assert body["status"] == "synced"
-    assert body["keycloak_attribute_synced"] is True
+    assert body == {"status": "synced", "did": TEST_DID}
+    # The removed fields must not come back: onboarding reads them defensively,
+    # so a resurrected `keycloak_attribute_synced: False` would start logging
+    # warnings about an attribute that no longer exists.
+    assert "keycloak_attribute_synced" not in body
     assert "warning" not in body
 
-
-@pytest.mark.asyncio
-async def test_keycloak_sync_partial_on_attribute_push_failure(
-    client, monkeypatch, engine, tmp_path
-):
-    """A failed KC attribute push must surface as status=partial, not silently
-    look like a full sync — while still storing the DID mapping."""
-    import httpx
-
-    from identity_registry.config import Settings
-    from identity_registry.dependencies import get_settings_dep
-    from identity_registry.main import create_app  # noqa: F401 (app already built in client)
-
-    # Point the running app's settings at a Keycloak admin URL so the push runs.
-    from conftest import TEST_DATABASE_URL
-
-    # keycloak_admin_url has validation_alias="KEYCLOAK_ADMIN_URL", so populate
-    # it via the alias.
-    partial_settings = Settings(
-        database_url=TEST_DATABASE_URL,
-        export_base_path=str(tmp_path),
-        oidc_issuer_url=None,
-        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
-    )
-    assert partial_settings.keycloak_admin_url == "http://keycloak.invalid"
-    client._transport.app.dependency_overrides[get_settings_dep] = lambda: partial_settings
-
-    class FailingAsyncClient:
-        async def __aenter__(self):
-            return self
-
-        async def __aexit__(self, *a):
-            return False
-
-        async def post(self, *a, **k):
-            raise httpx.ConnectError("keycloak unreachable")
-
-        async def put(self, *a, **k):
-            raise httpx.ConnectError("keycloak unreachable")
-
-    monkeypatch.setattr(httpx, "AsyncClient", FailingAsyncClient)
-
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
-    r = await client.post(
-        "/admin/keycloak/sync",
-        json={"did": TEST_DID, "keycloak_realm": "dataspaces", "keycloak_user_id": "u2"},
-        headers=HEADERS,
-    )
-
-    assert r.status_code == 200
-    body = r.json()
-    assert body["status"] == "partial"
-    assert body["keycloak_attribute_synced"] is False
-    assert "warning" in body
-
-    # The mapping must still have been stored despite the attribute push failing.
     m = await client.get(f"/admin/keycloak/mapping/{TEST_DID}", headers=HEADERS)
     assert m.status_code == 200
-    assert m.json()["keycloak_user_id"] == "u2"
+    assert m.json()["keycloak_user_id"] == "u1"
 
 
 @pytest.mark.asyncio

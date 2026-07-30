@@ -298,34 +298,19 @@
   ],
   "groups": [
     {
-      "name": "connector.admin"
+      "name": "ds-admin"
     },
     {
-      "name": "connector.provider.read"
+      "name": "ds-onboarding-operator"
     },
     {
-      "name": "connector.provider.write"
+      "name": "ds-participant-admin"
     },
     {
-      "name": "provenance.read"
+      "name": "ds-participant-viewer"
     },
     {
-      "name": "catalog.read"
-    },
-    {
-      "name": "identity-registry.organizations.read"
-    },
-    {
-      "name": "identity-registry.organizations.write"
-    },
-    {
-      "name": "identity-registry.organizations.promote"
-    },
-    {
-      "name": "identity-registry.agreements.read"
-    },
-    {
-      "name": "identity-registry.participants.write"
+      "name": "ds-member"
     }
   ],
   "users": [
@@ -355,14 +340,7 @@
         ]
       },
       "groups": [
-        "/catalog.read",
-        "/connector.admin",
-        "/identity-registry.agreements.read",
-        "/identity-registry.organizations.promote",
-        "/identity-registry.organizations.read",
-        "/identity-registry.organizations.write",
-        "/identity-registry.participants.write",
-        "/provenance.read"
+        "/ds-admin"
       ]
     },
     {
@@ -381,7 +359,7 @@
         }
       ],
       "groups": [
-        "/catalog.read"
+        "/ds-member"
       ]
     },
     {
@@ -408,9 +386,7 @@
         ]
       },
       "groups": [
-        "/connector.provider.read",
-        "/connector.provider.write",
-        "/catalog.read"
+        "/ds-participant-admin"
       ]
     },
     {
@@ -429,7 +405,7 @@
         }
       ],
       "groups": [
-        "/catalog.read"
+        "/ds-member"
       ]
     },
     {
@@ -448,7 +424,7 @@
         }
       ],
       "groups": [
-        "/catalog.read"
+        "/ds-member"
       ]
     }
   ]

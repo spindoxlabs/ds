@@ -14,6 +14,14 @@ approach, not a code dependency.
 """
 from __future__ import annotations
 
+from .bundles import (
+    MACHINE_IDENTITY_PERMISSIONS,
+    ROLE_BUNDLES,
+    SERVICE_ONLY_PERMISSIONS,
+    all_bundled_permissions,
+    bundle_capabilities,
+    expand_bundles,
+)
 from .config import OidcConfig, default_jwks_uri
 from .errors import (
     AuthConfigError,

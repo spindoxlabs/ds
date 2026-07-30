@@ -644,13 +644,18 @@ All bootstrap and provisioning operations must be idempotent. `task identity:boo
 
 ### Dev credentials
 
-| User | Password | KC roles | VC role | Purpose |
-|------|----------|----------|---------|---------|
-| `admin@example.test` | `admin` | `ds-admin`, `dataset.admin`, portal `admin` | — | Platform admin |
-| `provider@example.test` | `provider` | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
-| `consumer@example.test` | `consumer` | — | `ConsumerUser` | Data consumer |
-| `subject@example.test` | `subject` | — | `DataSubject` | Consent management |
-| `dual@example.test` | `dual` | — | `ConsumerUser` **and** `DataSubject` | Role coexistence |
+| User | Password | Bundle (group) | KC roles | VC role | Purpose |
+|------|----------|----------------|----------|---------|---------|
+| `admin@example.test` | `admin` | `ds-admin` | `ds-admin`, `dataset.admin`, portal `admin` | — | Platform admin |
+| `provider@example.test` | `provider` | `ds-participant-admin` (realm **and** org-scoped) | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
+| `consumer@example.test` | `consumer` | `ds-member` | — | `ConsumerUser` | Data consumer |
+| `subject@example.test` | `subject` | `ds-member` | — | `DataSubject` | Consent management |
+| `dual@example.test` | `dual` | `ds-member` | — | `ConsumerUser` **and** `DataSubject` | Role coexistence |
+
+`provider@` deliberately holds its bundle **twice** — as a realm group in the
+import and as an `organization.<alias>.groups` entry in `organizations.yaml` — so
+both provisioning paths are exercised. `ds-e2e --flow user-authority` asserts each
+seat reaches exactly its own surface.
 
 **`dual@example.test` exists to stop role exclusivity from looking correct.** VC
 roles are additive: the same human is a data subject about their own consumption
@@ -700,17 +705,17 @@ Public by design: `/dids/`, `/status/`, `/health`, and the connector's `/ns/poli
 `require_permission("service.resource.action", ...)` authorizes **both** principal kinds against the same permission vocabulary:
 
 - **Service tokens** (Keycloak client-credentials) authorize on their `scope` claim.
-- **User tokens** (OIDC login) authorize on their Keycloak **groups** (realm-level `groups` + org-level `organization.<alias>.groups`, merged by `ds_auth.extract_groups`). Group names mirror the scope names.
+- **User tokens** (OIDC login) authorize on their Keycloak **groups** (realm-level `groups` + org-level `organization.<alias>.groups`, merged by `ds_auth.extract_groups`), each naming a **role bundle** that `ds_auth.bundles.expand_bundles` turns into capabilities. Five seats — `ds-admin`, `ds-onboarding-operator`, `ds-participant-admin`, `ds-participant-viewer`, `ds-member` — rather than one group per scope, because the group vocabulary is the part an external realm owner has to reproduce. An unrecognised group still passes through as its own capability, so a realm carrying the old scope-named groups keeps working.
 - `{service}.admin` is a superset that satisfies any `{service}.*`.
 
 This mirrors the `celine-sdk` claim semantics on purpose (a compatible *approach*, not a code dependency) so a Keycloak realm synced from `clients.yaml` by the shared `celine-policies` CLI authorizes identically across projects.
 
 Verification is **fail-closed**: `ds_auth` verifies signature + audience + issuer via JWKS whenever an OIDC issuer is configured. Local dev without a reachable Keycloak requires the explicit, loud `*_OIDC_INSECURE_DEV=true` opt-in (default in dev settings); production sets the issuer, which enforces verification regardless.
 
-Service clients and their scopes are defined in `services/keycloak/clients.yaml`; user groups live in the realm import (`services/keycloak/realm-*.json`) / are provisioned by the `celine-policies` CLI. The `keycloak-sync` init container provisions clients on startup.
+Service clients and their scopes are defined in `services/keycloak/clients.yaml`, provisioned by the `keycloak-sync` init container (`celine-policies` CLI). What each **bundle** may do is `libs/ds-auth/src/ds_auth/bundles.py` — ds's own code, not deployment config. Who holds a bundle is the realm's business: realm-wide seats come from the realm import (`services/keycloak/realm-*.json`, applied only on an empty KC database), participant-scoped seats from `services/keycloak/organizations.yaml` via `ir-cli keycloak org-sync`, which works against a live realm.
 
 When adding or modifying API endpoints:
-- Define the required permission (`service.resource.action`) in `clients.yaml` (as a scope) so service tokens can hold it, and ensure the matching group exists for user access
+- Define the required permission (`service.resource.action`) in `clients.yaml` (as a scope) so service tokens can hold it, and add it to whichever **bundle** should reach it in `libs/ds-auth/src/ds_auth/bundles.py` — then `task auth:bundles:generate`. A scope in neither a bundle nor `SERVICE_ONLY_PERMISSIONS` fails `libs/ds-auth/tests/test_vocabulary.py`, which is deliberate: it is a permission no human could ever be granted. **Never put a machine-identity permission in a bundle.**
 - Add `Depends(require_permission("service.resource.action"))` (Python)
 - Ensure the calling service's client has the scope in its `default_scopes`
 - Never add unprotected endpoints that accept sensitive data or perform mutations

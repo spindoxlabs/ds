@@ -30,32 +30,19 @@
   },
   "groups": [
     {
-      "name": "dataspace-admins",
-      "realmRoles": [
-        "ds-admin"
-      ],
-      "clientRoles": {
-        "ds-portal-production": [
-          "admin"
-        ]
-      }
+      "name": "ds-admin"
     },
     {
-      "name": "dataset-admins",
-      "realmRoles": [
-        "dataset.admin"
-      ],
-      "clientRoles": {
-        "ds-portal-production": [
-          "dataset.admin"
-        ]
-      }
+      "name": "ds-onboarding-operator"
     },
     {
-      "name": "consumer-users"
+      "name": "ds-participant-admin"
     },
     {
-      "name": "data-subjects"
+      "name": "ds-participant-viewer"
+    },
+    {
+      "name": "ds-member"
     }
   ],
   "clientScopes": [

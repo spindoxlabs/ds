@@ -650,7 +650,6 @@ async def revoke_credential(
 async def keycloak_sync(
     data: KeycloakSyncRequest,
     db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_keycloak_sync),
 ):
     did_result = await db.execute(select(Did).where(Did.did == data.did))
@@ -689,70 +688,23 @@ async def keycloak_sync(
 
     await db.commit()
 
-    # The DB mapping above is the authoritative sync and has now committed.
-    # Pushing the `dataspace_did` attribute onto the Keycloak user itself is a
-    # best-effort secondary step: it can be retried and does not invalidate the
-    # mapping. Previously any failure here was silently swallowed, so callers
-    # (e.g. onboarding) had no way to tell a partial sync from a complete one.
-    # We now log the failure and surface it in the response without failing the
-    # request, so the caller can decide whether to retry.
-    attribute_synced = True
-    warning: str | None = None
-
-    if settings.keycloak_admin_url:
-        import httpx
-
-        kc_url = (
-            f"{settings.keycloak_admin_url}/admin/realms/{data.keycloak_realm}"
-            f"/users/{data.keycloak_user_id}"
-        )
-        try:
-            token_url = (
-                f"{settings.keycloak_admin_url}/realms/{data.keycloak_realm}"
-                f"/protocol/openid-connect/token"
-            )
-            async with httpx.AsyncClient() as client:
-                token_resp = await client.post(
-                    token_url,
-                    data={
-                        "grant_type": "client_credentials",
-                        "client_id": settings.keycloak_client_id,
-                        "client_secret": settings.keycloak_client_secret,
-                    },
-                )
-                token_resp.raise_for_status()
-                kc_token = token_resp.json()["access_token"]
-
-                resp = await client.put(
-                    kc_url,
-                    json={"attributes": {"dataspace_did": [data.did]}},
-                    headers={"Authorization": f"Bearer {kc_token}"},
-                )
-                resp.raise_for_status()
-        except httpx.HTTPError as exc:
-            attribute_synced = False
-            warning = (
-                "Keycloak dataspace_did attribute push failed; the DID mapping "
-                "was stored but the attribute may be missing on the Keycloak user. "
-                "Retry the sync to reconcile."
-            )
-            # Log the cause but never the response body — it can echo tokens/PII.
-            log.error(
-                "Keycloak attribute push failed for did=%s realm=%s user=%s: %s",
-                data.did,
-                data.keycloak_realm,
-                data.keycloak_user_id,
-                type(exc).__name__,
-            )
-
-    response = {
-        "status": "synced" if attribute_synced else "partial",
-        "did": data.did,
-        "keycloak_attribute_synced": attribute_synced,
-    }
-    if warning:
-        response["warning"] = warning
-    return response
+    # The DB mapping above is the whole point of this endpoint, and it has now
+    # committed.
+    #
+    # This used to also push a `dataspace_did` attribute onto the Keycloak user.
+    # That was removed: nothing ever read it — no protocol mapper emitted it into
+    # a token, no ds service and no portal page looked it up, and the one
+    # external consumer (the onboarding funnel) records the DID returned by
+    # `POST /admin/credentials/data-subject` in its own database instead. So it
+    # bought nothing, and it cost the only thing in this endpoint that required
+    # **write** access to Keycloak — which a deployment where ds is a guest in
+    # somebody else's realm cannot grant. See
+    # `.agents/plans/ds-identity-and-deployment.md` §4.1.
+    #
+    # `status` is kept in the response because callers check it; the removed
+    # `keycloak_attribute_synced` and `warning` fields were only ever read
+    # defensively, with `.get()`, to log a partial-sync warning.
+    return {"status": "synced", "did": data.did}
 
 
 # ── Keys ──────────────────────────────────────────────────────────

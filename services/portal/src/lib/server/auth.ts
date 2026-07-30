@@ -3,13 +3,18 @@
  *
  * Parses Keycloak authority from the session access token. Authority is
  * dual-sourced, matching the backend (libs/ds-auth): a user may carry it as
- * Keycloak roles (realm or client) AND/OR as groups whose names mirror the
- * backend permission vocabulary (e.g. `connector.admin`,
- * `connector.provider.write`). This is UI gating only — the backend re-verifies
- * and re-authorizes every request.
+ * Keycloak roles (realm or client) AND/OR as groups. Groups name a **role
+ * bundle** (`ds-participant-admin`, …) which expands into the backend permission
+ * vocabulary; a group that is not a bundle passes through as its own capability,
+ * so a realm still carrying the old scope-named groups keeps working. The
+ * expansion table is generated from `ds_auth.bundles` — never edit it here.
+ *
+ * This is UI gating only — the backend re-verifies and re-authorizes every
+ * request against the same table.
  */
 import { error, redirect } from '@sveltejs/kit';
 import type { Session } from '@auth/core/types';
+import { expandBundles } from './bundles.generated';
 
 export interface ServerRoles {
 	isAdmin: boolean;
@@ -37,8 +42,12 @@ function extractRoles(payload: Record<string, unknown>): string[] {
 
 /**
  * Merge Keycloak groups from realm-level `groups` and org-level
- * `organization.<alias>.groups` (legacy) or `organization.<alias>.roles`
- * (KC 26+ native organizations). Mirrors `ds_auth.extract_groups`.
+ * `organization.<alias>.groups`, emitted by the KC 26
+ * `oidc-organization-membership-mapper`. Mirrors `ds_auth.extract_groups`
+ * exactly — including reading only `groups`. An earlier version also read
+ * `organization.<alias>.roles`, which `ds_auth` never has: the portal granted on
+ * a claim the API would refuse, which is the one direction of drift that shows
+ * users buttons that 403.
  */
 function extractGroups(payload: Record<string, unknown>): string[] {
 	const out: string[] = [];
@@ -48,11 +57,8 @@ function extractGroups(payload: Record<string, unknown>): string[] {
 	if (orgs && typeof orgs === 'object') {
 		for (const org of Object.values(orgs as Record<string, unknown>)) {
 			if (!org || typeof org !== 'object') continue;
-			const o = org as Record<string, unknown>;
-			for (const key of ['groups', 'roles']) {
-				const entries = o[key];
-				if (Array.isArray(entries)) out.push(...entries.filter((x): x is string => typeof x === 'string'));
-			}
+			const entries = (org as Record<string, unknown>).groups;
+			if (Array.isArray(entries)) out.push(...entries.filter((x): x is string => typeof x === 'string'));
 		}
 	}
 	return out.map((g) => g.replace(/^\/+/, ''));
@@ -71,12 +77,13 @@ function extractOrganizations(payload: Record<string, unknown>): string[] {
 
 /**
  * Every permission-shaped authority the token carries: realm roles, any client's
- * roles, realm groups and org-level groups. The backend authorizes on exactly
- * this union (`ds_auth.extract_groups` plus the scope claim).
+ * roles, and the **expansion** of realm and org groups through the role bundles.
+ * The backend authorizes on exactly this union (`Principal.authority`, which
+ * expands the same table, plus the scope claim).
  */
 function extractGrants(payload: Record<string, unknown>): string[] {
 	const scopes = ((payload?.scope as string) ?? '').split(' ').filter(Boolean);
-	return [...extractRoles(payload), ...extractGroups(payload), ...scopes];
+	return [...extractRoles(payload), ...expandBundles(extractGroups(payload)), ...scopes];
 }
 
 /**
@@ -158,8 +165,11 @@ export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
 		const payload = decodeToken(accessToken);
 		if (!payload) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
 
-		// Dual-sourced authority: roles (realm + any client) AND groups.
-		const authorities = new Set<string>([...extractRoles(payload), ...extractGroups(payload)]);
+		// Dual-sourced authority: roles (realm + any client) AND expanded groups.
+		const authorities = new Set<string>([
+			...extractRoles(payload),
+			...expandBundles(extractGroups(payload)),
+		]);
 		const scopes = ((payload?.scope as string) ?? '').split(' ');
 
 		const isAdmin =

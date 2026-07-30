@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 
+from .bundles import expand_bundles
 from .jwt import extract_groups, extract_organizations, extract_scopes, is_service_account
 from .models import Organization
 from .permissions import has_exact_permission, has_permission
@@ -16,11 +17,14 @@ class Principal:
     The unified authorization rule lives in :meth:`grants`:
 
     * **service** principals authorize on their ``scope`` claim;
-    * **user** principals authorize on their group membership.
+    * **user** principals authorize on their group membership, **expanded**
+      through the role bundles in :mod:`ds_auth.bundles`.
 
     Both draw from the same permission vocabulary, so a call site asks for a
     permission (e.g. ``connector.provider.write``) without caring which kind of
-    token satisfied it.
+    token satisfied it. The expansion is what lets the group vocabulary stay
+    small enough to provision in a realm ds does not administer, without the
+    call sites learning anything about it.
     """
 
     subject: str
@@ -57,8 +61,14 @@ class Principal:
 
     @property
     def authority(self) -> tuple[str, ...]:
-        """The grant set that governs this principal (scopes vs groups)."""
-        return self.scopes if self.is_service else self.groups
+        """The grant set that governs this principal (scopes vs expanded groups).
+
+        A service's scopes are already capabilities. A user's groups are role
+        bundles, so they are expanded first — see
+        :func:`ds_auth.bundles.expand_bundles` for the three rules, including why
+        an unrecognised group still passes through as itself.
+        """
+        return self.scopes if self.is_service else expand_bundles(self.groups)
 
     def grants(self, *required: str) -> bool:
         """True if this principal holds any of the ``required`` permissions."""

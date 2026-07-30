@@ -97,6 +97,10 @@ keycloak:
     enabled: false
     clientsConfigMap: ""
     organizationsConfigMap: ""
+  # Runtime writes into the realm (promotion creating a participant's connector
+  # client). Empty → falls back to `sync.enabled`, i.e. guest by default. See the
+  # root helm/values.yaml for the two postures.
+  mutate: ""
 
 # The trust-anchor public JWK is served from the registry's own database; no
 # mount is required here. CONNECTOR_TRUST_ANCHOR_KEY_PATH is a connector concern.

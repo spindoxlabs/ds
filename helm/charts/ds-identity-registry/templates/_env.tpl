@@ -65,6 +65,16 @@ trust anchor.
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
 - name: KEYCLOAK_REALM
   value: {{ ((.Values.global).keycloak).realm | quote }}
+{{/*
+The Keycloak posture, stated rather than inferred. `keycloak.mutate` defaults to
+`keycloak.sync.enabled`, which is `false` — so a chart-deployed registry is a
+*guest* by default and never writes to a realm it does not own, matching this
+file's standing "KC is not ours to mutate". Set it true only where ds owns the
+realm; promotion then creates `svc-ds-connector-<alias>` and the bundle carries
+its secret. See docs/deployment/keycloak.md.
+*/}}
+- name: KEYCLOAK_MUTATE
+  value: {{ (.Values.keycloak.mutate | default .Values.keycloak.sync.enabled) | quote }}
 {{- if .Values.keycloak.sync.enabled }}
 {{/*
 Realm admin credentials, used only to create a third party's connector client at

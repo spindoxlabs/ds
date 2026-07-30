@@ -78,6 +78,20 @@ global:
       enabled: false
       clientsConfigMap: "" # ConfigMap holding clients.yaml
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
+    # May the identity-registry write to the realm at *runtime*? `sync` above is
+    # about boot-time provisioning; this is about promotion creating
+    # `svc-ds-connector-<alias>` and handing over its secret.
+    #
+    #   unset/false — ds is a guest. No client is created; the provisioning bundle
+    #                 carries no Keycloak block, and whoever runs the realm gives
+    #                 the participant its credentials.
+    #   true        — ds owns the realm. Requires the admin credentials under
+    #                 `sync.enabled`, and a dev-default admin password then fails
+    #                 the production guard.
+    #
+    # Defaults to `sync.enabled`, so a chart deployment is a guest unless it says
+    # otherwise — the same posture the comment above states.
+    mutate: false
 
   # ── Posture ─────────────────────────────────────────────────────────────────
   networkPolicy:

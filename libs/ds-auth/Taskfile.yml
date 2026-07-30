@@ -1,0 +1,29 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install library in editable mode (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+
+  test:
+    desc: Run the ds-auth test suite
+    cmds:
+      - uv run pytest tests/ -q
+
+  bundles:generate:
+    desc: Regenerate the portal's copy of the role-bundle table from ds_auth.bundles
+    cmds:
+      # The Python table is the definition; the TypeScript is a build artifact.
+      # test_bundles_export.py fails on drift.
+      - uv run python -c "from pathlib import Path; from ds_auth.bundles_export import write_typescript; print(write_typescript(Path('../..')))"
+      - uv run pytest tests/test_bundles_export.py -q
+
+  lint:
+    cmds:
+      - uv run ruff check src/ tests/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/

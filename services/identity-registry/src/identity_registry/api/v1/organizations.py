@@ -476,13 +476,19 @@ async def generate_provisioning_bundle(
 
     keycloak_client_id = None
     keycloak_secret = None
-    if settings.keycloak_admin_url and settings.keycloak_admin_user:
+    if (
+        settings.keycloak_mutate
+        and settings.keycloak_admin_url
+        and settings.keycloak_admin_user
+    ):
         # A third party's connector authenticates service-to-service against this
         # realm, so its client lives here. Failing to provision it would hand over
         # a bundle that cannot actually talk to the registry.
         #
         # Unconfigured admin credentials are not an error: the bundle is still
         # useful without them, and a deployment may provision clients elsewhere.
+        # `keycloak_mutate=false` says the same thing deliberately — ds is a guest
+        # in this realm and creating clients in it is not ds's to do.
         client = await KeycloakAdminClient.authenticate(
             settings.keycloak_admin_url,
             settings.keycloak_realm,

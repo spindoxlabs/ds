@@ -53,6 +53,22 @@ async def lifespan(app: FastAPI):
         {"insecure-dev-secret"},
         "Set the Keycloak client secret for the identity-registry admin client.",
     )
+    # `KEYCLOAK_MUTATE=true` means this service holds realm-admin rights and
+    # creates clients with them when a participant is promoted. That is correct
+    # where ds owns the realm and wrong where it is a guest — but either way,
+    # holding those rights behind a dev password is the footgun. An *empty*
+    # password is not flagged: the promotion path also requires a username, so it
+    # is inert, and flagging it would fire on every deployment that simply never
+    # needed the feature.
+    if settings.keycloak_mutate and settings.keycloak_admin_password:
+        guard.forbid_default(
+            "KEYCLOAK_ADMIN_PASSWORD",
+            settings.keycloak_admin_password,
+            {"admin", "changeme", "change-me", "password"},
+            "This service can create clients in the realm. Set a real admin "
+            "password, or KEYCLOAK_MUTATE=false where ds does not own the realm "
+            "(see helm/values.yaml: 'KC is not ours to mutate').",
+        )
     guard.enforce()
 
     yield

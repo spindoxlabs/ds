@@ -145,6 +145,35 @@ class HttpClient:
     def bearer_headers_for(self, client_id: str, client_secret: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token_for(client_id, client_secret)}"}
 
+    def user_token(self, username: str, password: str) -> str:
+        """A real **user** access token, via the password grant.
+
+        Every other token in this harness is `client_credentials`, which
+        authorises on the `scope` claim. A user authorises on `groups` expanded
+        through the role bundles — a completely different code path in
+        `Principal.authority`, and one that had no API-level coverage at all
+        before this. Driving a browser would prove the same thing far more
+        slowly; the password grant is enabled on the dev realm's client for
+        exactly this reason.
+        """
+        resp = self._client.post(
+            self._settings.keycloak_token_url,
+            data={
+                "grant_type": "password",
+                "client_id": self._settings.user_client_id,
+                "client_secret": self._settings.user_client_secret,
+                "username": username,
+                "password": password,
+                "scope": "openid profile email organization",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        return resp.json()["access_token"]
+
+    def user_headers(self, username: str, password: str) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.user_token(username, password)}"}
+
     def _request(
         self,
         method: str,

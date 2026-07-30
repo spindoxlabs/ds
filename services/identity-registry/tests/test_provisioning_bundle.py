@@ -195,3 +195,127 @@ async def test_unknown_format_is_refused(client, db_session):
         f"/admin/owners/{ALIAS}/provisioning-bundle?format=propertes", headers=PROMOTE
     )
     assert r.status_code == 422
+
+
+# ── Keycloak posture (KEYCLOAK_MUTATE) ───────────────────────────────────────
+#
+# Promotion is the one runtime path that *writes* into the realm: it creates
+# `svc-ds-connector-<alias>` and hands over the secret. Correct where ds owns the
+# realm, and not ds's to do where it is a guest in one somebody else administers.
+# The posture used to be inferred from whether admin credentials happened to be
+# configured, so these assert that it is now stated and obeyed.
+
+
+def _settings_with(tmp_path, **overrides):
+    from conftest import TEST_DATABASE_URL
+
+    from identity_registry.config import Settings
+
+    return Settings(
+        database_url=TEST_DATABASE_URL,
+        export_base_path=str(tmp_path),
+        oidc_issuer_url=None,
+        **overrides,
+    )
+
+
+@pytest.mark.asyncio
+async def test_guest_posture_never_touches_the_realm(
+    client, db_session, monkeypatch, tmp_path
+):
+    """`KEYCLOAK_MUTATE=false` with admin credentials present must still not write.
+
+    Asserted the hard way — admin credentials *are* configured, so the old
+    inferred gate would have opened — and any attempt to authenticate against the
+    realm fails the test rather than merely being absent from the response.
+    """
+    from identity_registry.dependencies import get_settings_dep
+    from identity_registry.services import keycloak_admin
+
+    await _seed(db_session)
+
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: _settings_with(
+        tmp_path,
+        KEYCLOAK_MUTATE=False,
+        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
+        KEYCLOAK_ADMIN_USERNAME="admin",
+        KEYCLOAK_ADMIN_PASSWORD="admin",
+    )
+
+    async def _forbidden(*a, **k):
+        raise AssertionError(
+            "promotion authenticated against Keycloak while KEYCLOAK_MUTATE=false"
+        )
+
+    monkeypatch.setattr(keycloak_admin.KeycloakAdminClient, "authenticate", _forbidden)
+
+    r = await client.post(
+        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
+    )
+    assert r.status_code == 201
+    # The bundle is still useful — it just carries no Keycloak block at all. A
+    # participant in this posture is given credentials by whoever runs the realm.
+    assert "keycloak" not in r.json()
+
+
+@pytest.mark.asyncio
+async def test_owning_posture_provisions_the_client(
+    client, db_session, monkeypatch, tmp_path
+):
+    """The other half: with the posture stated, the client is created and its
+    secret reaches the bundle. Without this, the test above would pass just as
+    well if provisioning were broken outright."""
+    from identity_registry.dependencies import get_settings_dep
+    from identity_registry.services import keycloak_admin
+
+    await _seed(db_session)
+
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: _settings_with(
+        tmp_path,
+        KEYCLOAK_MUTATE=True,
+        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
+        KEYCLOAK_ADMIN_USERNAME="admin",
+        KEYCLOAK_ADMIN_PASSWORD="admin",
+    )
+
+    created: dict[str, object] = {}
+
+    class FakeAdmin:
+        @classmethod
+        async def authenticate(cls, *a, **k):
+            return cls()
+
+        async def ensure_service_client(self, client_id, *, name, scopes):
+            created["client_id"] = client_id
+            created["scopes"] = scopes
+            return "provisioned-secret"
+
+        async def aclose(self):
+            return None
+
+    monkeypatch.setattr(keycloak_admin, "KeycloakAdminClient", FakeAdmin)
+    import identity_registry.api.v1.organizations as orgs_api
+
+    monkeypatch.setattr(orgs_api, "KeycloakAdminClient", FakeAdmin)
+
+    r = await client.post(
+        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
+    )
+    assert r.status_code == 201
+    assert created["client_id"] == f"svc-ds-connector-{ALIAS}"
+    # A participant's connector is not a more privileged thing than ours.
+    assert "connector.internal" not in created["scopes"]
+    assert r.json()["keycloak"]["client_secret"] == "provisioned-secret"
+
+
+def test_production_guard_flags_realm_admin_on_a_dev_password(monkeypatch):
+    """Holding realm-admin rights behind the password `admin` is the footgun the
+    posture flag exists to make visible."""
+    from ds_auth.production import ProductionGuard
+
+    monkeypatch.setenv("DS_ENV", "production")
+    guard = ProductionGuard("identity-registry")
+    guard.forbid_default(
+        "KEYCLOAK_ADMIN_PASSWORD", "admin", {"admin"}, "set a real password"
+    )
+    assert [v.setting for v in guard.violations] == ["KEYCLOAK_ADMIN_PASSWORD"]

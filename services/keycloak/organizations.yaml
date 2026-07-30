@@ -1,5 +1,13 @@
 realm: dataspaces
 
+# Keycloak native organizations, provisioned by `ir-cli keycloak org-sync`.
+#
+# `groups:` are **role bundles** (ds_auth.bundles), assigned per organisation, so
+# a seat is scoped to one owner rather than the whole realm: an operator for one
+# participant is not an operator for another. `ensure_org_group` creates them
+# idempotently against a live realm — which is why the user-authority vocabulary
+# no longer needs a realm import to provision, unlike the ~30 scope-named groups
+# it replaced.
 organizations:
   - alias: example-org
     name: Example Organization
@@ -7,9 +15,15 @@ organizations:
     attributes:
       type: ["dso"]
     members:
+      # Same bundle this user holds at realm level in the dev import. Both paths
+      # are exercised on purpose: `extract_groups` merges realm `groups` with
+      # `organization.<alias>.groups`, and a per-owner seat has to work through
+      # the second one.
       - email: provider@example.test
-        groups: [dataset.admin]
+        groups: [ds-participant-admin]
+      # A data subject's and a consumer's actual authority is a VC, not a group —
+      # `ds-member` is only "may browse the catalogue". See the bundle's comment.
       - email: subject@example.test
-        groups: [consumer]
+        groups: [ds-member]
       - email: consumer@example.test
-        groups: [consumer]
+        groups: [ds-member]
