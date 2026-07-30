@@ -68,7 +68,7 @@ overwritten.
 
 | Key | Consumer | Blast radius |
 |-----|----------|--------------|
-| `identityRegistryEncryptionKey` | identity-registry | Fernet passphrase encrypting **every participant DID private key at rest**. Leak → impersonate any participant. |
+| `identityRegistryEncryptionKey` | identity-registry | Fernet passphrase encrypting **every participant DID private key at rest**, and HMAC key for email→subject_id derivation. Leak → impersonate any participant. Rotation changes future subject IDs (existing ones are stored and unaffected). |
 | `authSecret` | portal | Auth.js session encryption. Leak → forge portal sessions carrying arbitrary user identity and VC claims. |
 | `participants.<name>.edcApiKey` | ds-edc + ds-connector | EDC Management API key, and the `X-Api-Key` accepted by the connector's `/internal/*`. Leak → create and delete assets, policies and transfers; read consented-subject lists; forge audit events. |
 | `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | Signs Endpoint Data References. Distinct from any DID key. |

@@ -16,7 +16,7 @@ src/identity_registry/
     sts.py             POST /sts/{did}/token (OAuth2 client_credentials, ES256 SI JWT)
     credentials.py     POST /credentials/{did}/presentations/query (DCP VP builder)
     admin.py           /admin/* CRUD — participants, DIDs, keys, credentials, owners, memberships, keycloak sync
-    users.py           GET /users/resolve — resolve user by email
+    users.py           GET /users/resolve — resolve user by email; derive=true derives a subject_id when no mapping exists
     owners.py          /admin/owners CRUD, GET /owners/resolve
     memberships.py     /admin/memberships CRUD, GET /memberships/check
     organizations.py   /admin/organizations/applications, /admin/credentials/organization,
@@ -24,7 +24,7 @@ src/identity_registry/
     agreements.py      GET /agreements, /agreements/current, /agreements/{id},
                        /agreements/{id}/acceptances
   services/
-    crypto.py          EC P-256 keygen, JWK, ES256 signing, JWS
+    crypto.py          EC P-256 keygen, JWK, ES256 signing, JWS, email→subject_id HMAC derivation
     did.py             build_did_document (W3C DID doc)
     vc.py              MembershipCredential + DataSubjectCredential + OrganizationCredential builders, sign_credential
     org_onboarding.py  Block D: gated org lifecycle ops (verify→owner, agreement, issue, promote, suspend/revoke) — shared by API + CLI

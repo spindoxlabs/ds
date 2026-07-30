@@ -187,3 +187,56 @@ async def test_user_with_no_credential_still_resolves_its_did(client, db_session
     assert body["subject_id"] == USER_DID
     assert body["roles"] == []
     assert body["role"] is None
+
+
+# ── derive=true ──────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_derive_returns_subject_id_without_mapping(client):
+    """No mapping → derive a subject_id from the email, no 404."""
+    r = await client.get(
+        "/users/resolve?email=new@example.test&derive=true",
+        headers=_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["did"] is None
+    assert body["subject_id"].startswith("email-")
+    assert body["roles"] == []
+    assert body["credentials"] == []
+
+
+@pytest.mark.asyncio
+async def test_derive_is_deterministic(client):
+    r1 = await client.get(
+        "/users/resolve?email=new@example.test&derive=true", headers=_headers(),
+    )
+    r2 = await client.get(
+        "/users/resolve?email=New@Example.TEST&derive=true", headers=_headers(),
+    )
+    assert r1.json()["subject_id"] == r2.json()["subject_id"]
+
+
+@pytest.mark.asyncio
+async def test_derive_false_still_404s(client):
+    """Backwards compat: without derive, unknown email is a 404."""
+    r = await client.get(
+        "/users/resolve?email=unknown@example.test", headers=_headers(),
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_derive_prefers_existing_mapping(client, db_session):
+    """When a mapping exists, derive=true returns the existing identity, not a
+    fresh derivation."""
+    await _seed_user(db_session)
+
+    r = await client.get(
+        f"/users/resolve?email={EMAIL}&derive=true", headers=_headers(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["did"] == USER_DID
+    assert body["subject_id"] == USER_DID

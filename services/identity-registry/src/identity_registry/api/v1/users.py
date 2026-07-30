@@ -7,13 +7,15 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...config import Settings
 from ...db.models import Credential, KeycloakMapping
-from ...dependencies import get_db, require_read_scope, require_resolve_scope
+from ...dependencies import get_db, get_settings_dep, require_read_scope, require_resolve_scope
 from ...schemas.responses import (
     SubjectIdentityResponse,
     UserCredentialResponse,
     UserResolveResponse,
 )
+from ...services.crypto import derive_email_subject_id
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -49,7 +51,12 @@ def _to_credential_response(credential: Credential) -> UserCredentialResponse:
 @router.get("/resolve", response_model=UserResolveResponse)
 async def resolve_user_by_email(
     email: str = Query(..., description="User email address"),
+    derive: bool = Query(
+        False,
+        description="When true, derive a subject_id if no mapping exists yet",
+    ),
     db: AsyncSession = Depends(get_db),
+    ir_settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_resolve_scope),
 ):
     """Resolve a user's DID and **every** credential they can present.
@@ -57,6 +64,12 @@ async def resolve_user_by_email(
     One human legitimately holds several roles, so this returns all of them and
     lets the caller select the credential the operation requires. See
     ``UserResolveResponse`` for why the singular fields remain.
+
+    With ``derive=true``, a missing mapping is not a 404 — the endpoint derives
+    a deterministic ``subject_id`` from the email so the caller can use it for
+    first-time credential issuance. The derivation is keyed by the registry's
+    ``ENCRYPTION_KEY``, keeping the mapping between emails and DID paths inside
+    one service.
     """
     result = await db.execute(
         select(KeycloakMapping).where(
@@ -65,7 +78,13 @@ async def resolve_user_by_email(
     )
     mapping = result.scalar_one_or_none()
     if not mapping:
-        raise HTTPException(status_code=404, detail="No mapping found for this email")
+        if not derive:
+            raise HTTPException(
+                status_code=404, detail="No mapping found for this email"
+            )
+        return UserResolveResponse(
+            subject_id=derive_email_subject_id(email, ir_settings.encryption_key),
+        )
 
     cred_result = await db.execute(
         select(Credential)

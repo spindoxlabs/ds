@@ -4,6 +4,7 @@ from identity_registry.services.crypto import (
     _b64url_decode,
     _b64url_encode,
     create_jws,
+    derive_email_subject_id,
     generate_key_pair,
     load_private_key,
     next_key_index,
@@ -65,3 +66,29 @@ def test_next_key_index():
     assert next_key_index("did:web:x#key-1") == 2
     assert next_key_index("did:web:x#key-5") == 6
     assert next_key_index("invalid") == 1
+
+
+# ── email subject ID derivation ────────────────────────────────
+
+
+def test_derive_email_subject_id_format():
+    sid = derive_email_subject_id("user@example.com", "test-key")
+    assert sid.startswith("email-")
+    assert len(sid) == len("email-") + 24
+
+
+def test_derive_email_subject_id_deterministic():
+    a = derive_email_subject_id("user@example.com", "test-key")
+    b = derive_email_subject_id("User@Example.COM", "test-key")
+    assert a == b
+
+
+def test_derive_email_subject_id_differs_by_key():
+    a = derive_email_subject_id("user@example.com", "key-a")
+    b = derive_email_subject_id("user@example.com", "key-b")
+    assert a != b
+
+
+def test_derive_email_subject_id_empty_email():
+    with pytest.raises(ValueError, match="empty"):
+        derive_email_subject_id("", "test-key")

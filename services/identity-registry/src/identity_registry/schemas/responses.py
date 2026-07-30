@@ -89,7 +89,7 @@ class UserResolveResponse(BaseModel):
     select by role.
     """
 
-    did: str
+    did: str | None = None
     subject_id: str
     roles: list[str] = []
     credentials: list[UserCredentialResponse] = []

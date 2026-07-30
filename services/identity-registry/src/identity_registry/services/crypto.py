@@ -176,6 +176,16 @@ def hash_sts_secret(secret: str) -> str:
     return f"pbkdf2:sha256:{salt.hex()}:{dk.hex()}"
 
 
+def derive_email_subject_id(email: str, key: str) -> str:
+    normalized = email.strip().lower()
+    if not normalized:
+        raise ValueError("Cannot derive subject id from empty email")
+    digest = hmac.new(
+        key.encode("utf-8"), normalized.encode("utf-8"), hashlib.sha256,
+    ).hexdigest()[:24]
+    return f"email-{digest}"
+
+
 def verify_sts_secret(secret: str, stored: str) -> bool:
     if not stored.startswith("pbkdf2:"):
         return False
