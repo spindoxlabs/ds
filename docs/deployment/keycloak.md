@@ -60,7 +60,7 @@ admin-level authority:
 | Client | Notable scopes | Blast radius if the secret leaks |
 |--------|---------------|----------------------------------|
 | `svc-ds-portal` | `connector.admin`, `identity-registry.read` | full provider management |
-| `svc-ds-onboarding` | `identity-registry.admin`, `connector.consent.provision`, `provenance.write` | register arbitrary participants, provision subject consent, record disclosures |
+| `svc-ds-onboarding` | `identity-registry.{organizations.read,credentials.write,memberships.write,keycloak.sync}`, `connector.consent.provision`, `provenance.write` | issue/revoke a person's credential, register memberships, provision subject consent, record disclosures — **no `*.admin`**, so it cannot reach DID or key management |
 | `svc-ds-identity-registry` | `identity-registry.admin` | full registry control |
 | `svc-ds-connector` | `identity-registry.read`, `provenance.write` | forge provenance |
 | `svc-ds-federated-catalog` | `identity-registry.read` | participant enumeration |

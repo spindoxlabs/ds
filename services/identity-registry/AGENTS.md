@@ -83,6 +83,15 @@ register (application) → verify (→ Owner row, status=verified)
   → suspend | revoke  [StatusList bit + participant deactivation, one tx]
 ```
 
+- **Registration is an upsert on `alias`** (`upsert_application`), shared by
+  `POST /admin/organizations/applications`, `ir-cli org register`/`import` and `org apply` —
+  an alias identifies one organisation, and inserting a row per POST left several live
+  applications for it, so whichever query ran first answered differently about its state.
+  201 on create, 200 on update. Verification state is never written by an intake, and editing
+  a **verified** application's legal identity is a **409**: the issued credential asserts the
+  old value, so that is a re-verification, not an edit. A *call* patches what it names
+  (`exclude_unset`); a *file* is the full desired state. The public invite-gated intake keeps
+  its **409 on a taken alias** — a stranger holding an invite must not mutate an existing org.
 - **`ir-cli org apply -f owners.yaml` walks that whole chain per entry** (`apply_owner_entry`),
   so a fresh environment reaches a promoted participant with no human in a browser — it is the
   chart's bootstrap init step. It reads the deployment's existing `owners.yaml`, extended with an
@@ -176,6 +185,28 @@ not need that, so onboarding is split into grants that name what they permit:
 | `identity-registry.organizations.promote` | promote / suspend / revoke as a participant |
 | `identity-registry.agreements.read` | agreements, versions, acceptances |
 | `identity-registry.participants.write` | create / update / delete a participant |
+| `identity-registry.credentials.write` | issue a data-subject credential, revoke a credential |
+| `identity-registry.memberships.write` | register / delete an organisation membership |
+| `identity-registry.keycloak.sync` | push the `dataspace_did` attribute onto a Keycloak user |
+
+The last three are what an **external onboarding application** actually does.
+Until they existed such a service had to hold `identity-registry.admin` — the
+superset over DID and key management — so a long-lived process that provisions
+people could also mint or delete any identity in the dataspace. `svc-ds-onboarding`
+now holds exactly `organizations.read` (resolve its bound owner at boot) plus those
+three, and **no `*.admin`**, which is what `clients.yaml`'s own comment demands.
+
+Two guards stayed on admin on purpose, and the reasoning generalises:
+
+- `GET /admin/memberships` — *registering* a membership and *enumerating* who
+  belongs to which organisation are different acts. `membership.read` answers one
+  (user, org) pair at a time via `/memberships/check`; this returns the roster.
+- `POST /admin/credentials/membership` — participant bootstrap, not onboarding.
+
+`DELETE /admin/credentials/{id}` is the one deliberate over-reach: it revokes *any*
+credential type, not only the data-subject ones. Revocation fails safe — it removes
+an authorisation, never grants one — so the wider reach is tolerable where the same
+grant over issuance would not be.
 
 Two properties are load-bearing and `tests/test_onboarding_scopes.py` pins both:
 

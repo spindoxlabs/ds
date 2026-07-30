@@ -54,6 +54,15 @@ scopes:
     description: Read service agreements and their acceptances
   - name: identity-registry.participants.write
     description: Register, update or deactivate a DSP participant
+  # What an external onboarding application actually does. Without these it had
+  # to hold `identity-registry.admin` — a superset over DID and key management —
+  # to issue a credential, register a membership and set one Keycloak attribute.
+  - name: identity-registry.credentials.write
+    description: Issue and revoke a data-subject credential
+  - name: identity-registry.memberships.write
+    description: Register or delete an organisation membership
+  - name: identity-registry.keycloak.sync
+    description: Push the dataspace_did attribute onto a Keycloak user
 
   # Connector
   - name: connector.admin
@@ -116,8 +125,24 @@ clients:
     name: Dataspace Onboarding
     secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
     scopes_prefix: null
+    # No `identity-registry.admin` — see the note below, which this entry used
+    # to contradict directly. P6 had split organisations and agreements out of
+    # the admin grant but left credentials, memberships and keycloak-sync on it,
+    # which is most of what this client calls, so the superset stayed. Those
+    # three now have their own permissions and this client holds exactly what
+    # its approval path touches: a process that provisions people cannot also
+    # mint or delete any identity in the dataspace.
     default_scopes:
-      - identity-registry.admin
+      # Resolve the bound community's organisation at boot. Read-only — this
+      # client no longer creates owners; a missing organisation is a startup
+      # failure, not something to auto-create (see `Owner.status`).
+      - identity-registry.organizations.read
+      # Issue a data-subject credential on approval, and revoke it on removal.
+      - identity-registry.credentials.write
+      # Register and delete the person's organisation membership.
+      - identity-registry.memberships.write
+      # Push the `dataspace_did` attribute onto the Keycloak user.
+      - identity-registry.keycloak.sync
       # Provision a subject's standing sharing decision on the connector after
       # onboarding approval (POST /consent/admin/shares).
       - connector.consent.provision

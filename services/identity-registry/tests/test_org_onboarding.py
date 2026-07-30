@@ -344,3 +344,99 @@ async def test_full_lifecycle_and_suspend(client, db_session):
         headers=HEADERS,
     )
     assert check2.json()["allowed"] is False
+
+
+# ── T27 — the intake is an upsert on alias ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_reregistering_an_alias_upserts_instead_of_duplicating(client):
+    """An alias identifies one organisation, so a second POST is the same
+    application. Inserting another row left several live applications for one
+    organisation, and whichever query ran first answered differently about its
+    state."""
+    first = await _register(client)
+
+    r = await client.post(
+        "/admin/organizations/applications",
+        json={
+            "alias": "acme-energy",
+            "legal_name": "Acme Energy",
+            "registration_number": "IT12345678901",
+            "registration_type": "vatID",
+            "roles": ["consumer", "provider"],
+            "did": ORG_DID,
+            "dsp_address": "https://acme/dsp2",
+        },
+        headers=HEADERS,
+    )
+    assert r.status_code == 200, r.text          # 201 creates, 200 updates
+    assert r.json()["id"] == first["id"]
+    assert r.json()["dsp_address"] == "https://acme/dsp2"
+
+    listed = await client.get(
+        "/admin/organizations/applications?alias=acme-energy", headers=HEADERS
+    )
+    assert len(listed.json()) == 1
+
+
+@pytest.mark.asyncio
+async def test_reregistering_preserves_verification_state(client):
+    """A re-registration must not re-open a completed check."""
+    app = await _register(client)
+    await client.patch(
+        f"/admin/organizations/applications/{app['id']}",
+        json={"status": "verified", "verified_by": "op1"},
+        headers=HEADERS,
+    )
+
+    r = await client.post(
+        "/admin/organizations/applications",
+        json={
+            "alias": "acme-energy",
+            "legal_name": "Acme Energy",
+            "registration_number": "IT12345678901",
+            "registration_type": "vatID",
+            "roles": ["consumer"],
+            "did": ORG_DID,
+            "dsp_address": "https://acme/dsp-moved",
+        },
+        headers=HEADERS,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["status"] == "verified"
+    assert body["verified_by"] == "op1"
+    assert body["dsp_address"] == "https://acme/dsp-moved"
+    # The body omitted the country codes; a call patches what it names, so they
+    # survive rather than being cleared — and the verified-lock above therefore
+    # fires on a real edit, not on an omission.
+    assert body["hq_country_code"] == "IT-TN"
+    assert body["legal_country_code"] == "IT-TN"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_verified_legal_identity_is_refused(client):
+    """The issued credential asserts the old value, so this is a
+    re-verification, not an edit."""
+    app = await _register(client)
+    await client.patch(
+        f"/admin/organizations/applications/{app['id']}",
+        json={"status": "verified", "verified_by": "op1"},
+        headers=HEADERS,
+    )
+
+    r = await client.post(
+        "/admin/organizations/applications",
+        json={
+            "alias": "acme-energy",
+            "legal_name": "Acme Energy Renamed",
+            "registration_number": "IT99999999999",
+            "roles": ["consumer"],
+            "did": ORG_DID,
+        },
+        headers=HEADERS,
+    )
+    assert r.status_code == 409, r.text
+    detail = r.json()["detail"]
+    assert "legal_name" in detail and "registration_number" in detail

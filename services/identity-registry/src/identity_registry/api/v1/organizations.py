@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -103,26 +103,53 @@ def _owner_to_response(owner: Owner) -> OwnerResponse:
 )
 async def create_application(
     data: CreateOrganizationApplicationRequest,
+    response: Response,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_org_write),
 ):
-    app = OrganizationApplication(
-        alias=data.alias,
-        legal_name=data.legal_name,
-        registration_number=data.registration_number,
-        registration_type=data.registration_type,
-        hq_country_code=data.hq_country_code,
-        legal_country_code=data.legal_country_code,
-        parent_organizations=data.parent_organizations or None,
-        sub_organizations=data.sub_organizations or None,
-        roles=data.roles,
-        did=data.did,
-        dsp_address=data.dsp_address,
-        notes=data.notes,
-    )
-    db.add(app)
+    """Register an organisation application. **Upsert by alias.**
+
+    An alias identifies one organisation, so re-registering it is the same
+    application — this used to insert another row per POST, leaving several
+    live applications for a single organisation and giving whichever query ran
+    first a different answer about its state. `ir-cli org register` has always
+    resolved by alias; both now come through `ops.upsert_application`, so the
+    CLI and HTTP paths cannot disagree about what a re-registration means.
+
+    201 on create, 200 on update. Verification state is never written here, and
+    editing a *verified* application's legal identity is a 409 — the issued
+    credential asserts the old value, so that is a re-verification.
+
+    The public invite-gated intake (`POST /onboarding/applications`) keeps its
+    409 instead: a stranger holding an invite must not be able to mutate an
+    organisation that already exists.
+    """
+    # Only what the caller actually sent. An omitted optional field used to mean
+    # "set to None", which on a re-registration silently wiped values the caller
+    # never mentioned — and would fire the verified-lock below on fields nobody
+    # touched. A file (`org import`/`apply`) is a full desired state; a call is
+    # a patch of what it names.
+    def _clean(payload: dict) -> dict:
+        out = {k: v for k, v in payload.items() if k != "alias"}
+        for key in ("parent_organizations", "sub_organizations"):
+            if key in out:
+                out[key] = out[key] or None
+        return out
+
+    try:
+        app, created = await ops.upsert_application(
+            db,
+            data.alias,
+            _clean(data.model_dump(exclude_unset=True)),
+            # A partial body must still create a complete row, so the model's
+            # own defaults (`roles: [consumer]`) apply on create only.
+            defaults=_clean(data.model_dump()),
+        )
+    except ops.OrgOnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
     await db.commit()
     await db.refresh(app)
+    response.status_code = 201 if created else 200
     return _app_to_response(app)
 
 

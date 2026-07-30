@@ -1205,23 +1205,36 @@ def org_register(
         raise typer.Exit(1)
 
     async def _register():
+        from ..services import org_onboarding as ops
+
+        # Only the options actually given. Like the HTTP intake, a *command*
+        # patches what it names — an omitted `--did` on a re-register must not
+        # wipe the one already recorded. A *file* (`org import`/`apply`) is the
+        # full desired state and does pass every key.
+        fields = {
+            "legal_name": name,
+            "registration_number": registration_number,
+            "registration_type": type,
+            "hq_country_code": hq_country,
+            "legal_country_code": legal_country,
+            "roles": list(role),
+            "did": did,
+            "dsp_address": dsp_address,
+        }
+        fields = {k: v for k, v in fields.items() if v is not None}
+
         factory = await _ensure_db()
         async with factory() as session:
-            app_row = await _resolve_application(session, alias)
-            if app_row is None:
-                app_row = OrganizationApplication(alias=alias, legal_name=name)
-                session.add(app_row)
-            app_row.legal_name = name
-            app_row.registration_number = registration_number
-            app_row.registration_type = type
-            app_row.hq_country_code = hq_country
-            app_row.legal_country_code = legal_country
-            app_row.roles = list(role)
-            app_row.did = did
-            app_row.dsp_address = dsp_address
-            app_row.updated_at = datetime.now(UTC)
+            try:
+                app_row, created = await ops.upsert_application(
+                    session, alias, fields, defaults=fields
+                )
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
             await session.commit()
-            typer.echo(f"Application registered: {alias} (status={app_row.status})")
+            verb = "registered" if created else "updated"
+            typer.echo(f"Application {verb}: {alias} (status={app_row.status})")
 
     _run(_register())
 
@@ -1602,31 +1615,44 @@ def org_import(
         with file.open("r", encoding="utf-8") as fh:
             data = yaml.safe_load(fh) or {}
 
+        from ..services import org_onboarding as ops
+
         factory = await _ensure_db()
         count = 0
+        errors: list[str] = []
         async with factory() as session:
             for entry in data.get("organizations", []):
                 alias = entry["alias"]
-                app_row = await _resolve_application(session, alias)
-                if app_row is None:
-                    app_row = OrganizationApplication(
-                        alias=alias, legal_name=entry.get("legal_name", alias)
+                try:
+                    await ops.upsert_application(
+                        session,
+                        alias,
+                        {
+                            "legal_name": entry.get("legal_name", alias),
+                            "registration_number": entry.get("registration_number"),
+                            "registration_type": entry.get("registration_type"),
+                            "hq_country_code": entry.get("hq_country_code"),
+                            "legal_country_code": entry.get("legal_country_code"),
+                            "parent_organizations": entry.get("parent_organizations"),
+                            "sub_organizations": entry.get("sub_organizations"),
+                            "roles": entry.get("roles", ["consumer"]),
+                            "did": entry.get("did"),
+                            "dsp_address": entry.get("dsp_address"),
+                        },
                     )
-                    session.add(app_row)
-                app_row.legal_name = entry.get("legal_name", app_row.legal_name)
-                app_row.registration_number = entry.get("registration_number")
-                app_row.registration_type = entry.get("registration_type")
-                app_row.hq_country_code = entry.get("hq_country_code")
-                app_row.legal_country_code = entry.get("legal_country_code")
-                app_row.parent_organizations = entry.get("parent_organizations")
-                app_row.sub_organizations = entry.get("sub_organizations")
-                app_row.roles = entry.get("roles", ["consumer"])
-                app_row.did = entry.get("did")
-                app_row.dsp_address = entry.get("dsp_address")
-                app_row.updated_at = datetime.now(UTC)
+                except ops.OrgOnboardingError as exc:
+                    # Report the whole file's problems in one pass rather than
+                    # turning one revision of the seed into five.
+                    await session.rollback()
+                    errors.append(f"{alias}: {exc.message}")
+                    continue
                 count += 1
             await session.commit()
         typer.echo(f"Imported {count} organisation application(s)")
+        for err in errors:
+            typer.echo(f"  ERROR  {err}", err=True)
+        if errors:
+            raise typer.Exit(1)
 
     _run(_import())
 

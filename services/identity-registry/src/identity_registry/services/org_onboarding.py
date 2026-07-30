@@ -91,6 +91,87 @@ async def resolve_owner(db: AsyncSession, alias: str) -> Owner | None:
     return None
 
 
+# ── Application intake (upsert by alias) ──────────────────────────
+
+#: What an ``OrganizationCredential`` asserts about the organisation. Changing
+#: one of these after verification is a re-verification, not an edit — the
+#: issued credential says the old value. Everything else on an application
+#: (roles, dsp_address, notes) is operational and may change freely.
+LEGAL_IDENTITY_FIELDS = (
+    "legal_name",
+    "registration_number",
+    "registration_type",
+    "hq_country_code",
+    "legal_country_code",
+    "parent_organizations",
+    "sub_organizations",
+    "did",
+)
+
+_APPLICATION_FIELDS = LEGAL_IDENTITY_FIELDS + ("roles", "dsp_address", "notes")
+
+
+async def resolve_application(
+    db: AsyncSession, alias: str
+) -> OrganizationApplication | None:
+    result = await db.execute(
+        select(OrganizationApplication)
+        .where(OrganizationApplication.alias == alias)
+        .order_by(OrganizationApplication.created_at.desc())
+    )
+    return result.scalars().first()
+
+
+async def upsert_application(
+    db: AsyncSession, alias: str, fields: dict, defaults: dict | None = None
+) -> tuple[OrganizationApplication, bool]:
+    """Create or update the application for ``alias``. Returns (row, created).
+
+    An alias identifies an organisation, so a second registration of the same
+    one is the same application — inserting another row instead gave whichever
+    query ran first a different answer about a single organisation's state.
+    Both the HTTP intake and ``ir-cli org register``/``import`` come through
+    here, so the two cannot disagree about what a re-registration means.
+
+    ``fields`` is what the caller declared; verification state
+    (``status``/``verified_*``/``evidence_ref``) is never written here — a
+    re-registration must not silently re-open or re-assert a completed check.
+    ``defaults`` is applied **only on create**, so a caller that sends a partial
+    body still gets a complete new row without those same omissions reading as
+    "clear this" on an update.
+    """
+    app = await resolve_application(db, alias)
+    created = app is None
+    if app is None:
+        app = OrganizationApplication(
+            alias=alias, legal_name=fields.get("legal_name") or alias
+        )
+        db.add(app)
+        for name in _APPLICATION_FIELDS:
+            if defaults and name in defaults:
+                setattr(app, name, defaults[name])
+    elif app.status == "verified":
+        changed = [
+            name
+            for name in LEGAL_IDENTITY_FIELDS
+            if name in fields and getattr(app, name) != fields[name]
+        ]
+        if changed:
+            raise OrgOnboardingError(
+                f"Application {alias!r} is already verified; "
+                f"{', '.join(sorted(changed))} cannot be changed without "
+                "re-verification (the issued credential asserts the old value)",
+                status_code=409,
+            )
+
+    for name in _APPLICATION_FIELDS:
+        if name in fields:
+            setattr(app, name, fields[name])
+    app.updated_at = datetime.now(UTC)
+    await db.flush()
+    return app, created
+
+
 # ── Promotion: application → Owner ────────────────────────────────
 
 
@@ -603,17 +684,6 @@ async def _apply_steps(
         )
 
     # ── 1. application ────────────────────────────────────────────
-    result = await db.execute(
-        select(OrganizationApplication)
-        .where(OrganizationApplication.alias == alias)
-        .order_by(OrganizationApplication.created_at.desc())
-    )
-    app_row = result.scalars().first()
-    created_app = app_row is None
-    if app_row is None:
-        app_row = OrganizationApplication(alias=alias, legal_name=legal_name)
-        db.add(app_row)
-
     fields = {
         "legal_name": legal_name,
         "registration_number": block.get("registration_number"),
@@ -626,20 +696,18 @@ async def _apply_steps(
         "did": did,
         "dsp_address": dsp_address,
     }
-    changed = created_app or any(
-        getattr(app_row, name) != value for name, value in fields.items()
+    before = await resolve_application(db, alias)
+    unchanged = before is not None and all(
+        getattr(before, name) == value for name, value in fields.items()
     )
-    for name, value in fields.items():
-        setattr(app_row, name, value)
-    if changed:
-        app_row.updated_at = datetime.now(UTC)
-    outcome.steps.append(
-        ApplyStep(
-            "application",
-            "created" if created_app else ("updated" if changed else "unchanged"),
-            alias,
-        )
-    )
+    # Same intake as the HTTP route and `org register`, so a seed cannot edit a
+    # verified organisation's legal identity behind its issued credential.
+    app_row, created_app = await upsert_application(db, alias, fields)
+    if created_app:
+        action = "created"
+    else:
+        action = "unchanged" if unchanged else "updated"
+    outcome.steps.append(ApplyStep("application", action, alias))
 
     # ── 2. verification → Owner ───────────────────────────────────
     existing = await db.execute(select(Owner).where(Owner.id == alias))

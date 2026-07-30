@@ -21,6 +21,9 @@ ORG_WRITE = "identity-registry.organizations.write"
 ORG_PROMOTE = "identity-registry.organizations.promote"
 AGREEMENTS_READ = "identity-registry.agreements.read"
 PARTICIPANTS_WRITE = "identity-registry.participants.write"
+CREDENTIALS_WRITE = "identity-registry.credentials.write"
+MEMBERSHIPS_WRITE = "identity-registry.memberships.write"
+KEYCLOAK_SYNC = "identity-registry.keycloak.sync"
 ADMIN = "identity-registry.admin"
 
 
@@ -117,7 +120,15 @@ async def test_org_grants_do_not_reach_participant_writes(client):
 async def test_onboarding_grants_do_not_reach_key_management(client):
     """The reason for the split: an onboarding reviewer must not inherit the DID and
     key surface that `identity-registry.admin` carries."""
-    for scope in (ORG_READ, ORG_WRITE, ORG_PROMOTE, AGREEMENTS_READ):
+    for scope in (
+        ORG_READ,
+        ORG_WRITE,
+        ORG_PROMOTE,
+        AGREEMENTS_READ,
+        CREDENTIALS_WRITE,
+        MEMBERSHIPS_WRITE,
+        KEYCLOAK_SYNC,
+    ):
         r = await client.post(
             "/admin/dids",
             headers=h(scope),
@@ -130,5 +141,93 @@ async def test_onboarding_grants_do_not_reach_key_management(client):
 async def test_unrelated_scope_is_refused(client):
     r = await client.get(
         "/admin/organizations/applications", headers=h("some.other.scope")
+    )
+    assert r.status_code == 403
+
+
+# ── T28 — what an onboarding service actually does ────────────────────────────
+#
+# These three are the reason `svc-ds-onboarding` had to hold
+# `identity-registry.admin`: P6 split organisations and agreements out of it but
+# left credentials, memberships and keycloak-sync behind, which is most of what
+# such a service calls. Dropping the admin grant is only safe if each of these
+# reaches its own endpoints and none reaches anything else.
+
+MEMBER_DID = "did:web:users.example.test:someone"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [MEMBERSHIPS_WRITE, ADMIN])
+async def test_memberships_write_registers_a_membership(client, scope):
+    """404 (unknown DID) proves the guard let the request through — the point
+    here is reachability, not the endpoint's own preconditions."""
+    r = await client.post(
+        "/admin/memberships",
+        headers=h(scope),
+        json={
+            "user_did": f"{MEMBER_DID}-{scope.split('.')[-1]}",
+            "organization_alias": "example-org",
+        },
+    )
+    assert r.status_code != 403, r.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [KEYCLOAK_SYNC, ADMIN])
+async def test_keycloak_sync_is_reachable(client, scope):
+    """404 (unknown DID) proves the guard let the request through; a 403 would
+    not distinguish "refused" from "no such DID"."""
+    r = await client.post(
+        "/admin/keycloak/sync",
+        headers=h(scope),
+        json={
+            "did": "did:web:users.example.test:nobody",
+            "realm": "dataspaces",
+            "user_id": "00000000-0000-4000-a000-000000000001",
+        },
+    )
+    assert r.status_code != 403, r.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [CREDENTIALS_WRITE, ADMIN])
+async def test_credentials_write_reaches_data_subject_issuance(client, scope):
+    r = await client.post(
+        "/admin/credentials/data-subject",
+        headers=h(scope),
+        json={"subject_id": "someone", "role": "DataSubject"},
+    )
+    assert r.status_code != 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_credentials_write_cannot_register_a_participant(client):
+    """Issuing a person's credential is not authority to admit a DSP counterparty."""
+    r = await client.post(
+        "/admin/participants",
+        headers=h(CREDENTIALS_WRITE),
+        json={
+            "did": "did:web:sneaky2.example.test",
+            "dsp_address": "http://example.test/protocol/2025-1",
+            "roles": ["consumer"],
+        },
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_memberships_write_cannot_enumerate_the_roster(client):
+    """Registering a membership is not permission to read who belongs to what —
+    that stays on admin, and `membership.read` answers one pair at a time."""
+    r = await client.get("/admin/memberships", headers=h(MEMBERSHIPS_WRITE))
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_keycloak_sync_cannot_issue_a_credential(client):
+    r = await client.post(
+        "/admin/credentials/data-subject",
+        headers=h(KEYCLOAK_SYNC),
+        json={"subject_id": "someone", "role": "DataSubject"},
     )
     assert r.status_code == 403

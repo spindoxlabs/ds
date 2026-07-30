@@ -322,7 +322,7 @@ register  →  verify  →  agreement  →  issue-credential  →  promote
 
 | Stage | CLI | API | Effect |
 |-------|-----|-----|--------|
-| Register | `ir-cli org register` | `POST /admin/organizations/applications` | Creates a pre-verification `OrganizationApplication` (`status: pending`) |
+| Register | `ir-cli org register` | `POST /admin/organizations/applications` | Creates a pre-verification `OrganizationApplication` (`status: pending`). **Upsert by alias** — 201 on create, 200 on update |
 | Verify | `ir-cli org verify` | `PATCH /admin/organizations/applications/{id}` (`status: verified`) | Promotes the legal identity into an `Owner` row (`status: verified`) |
 | Agreement | `ir-cli org agreement` | `POST /admin/owners/{alias}/agreement` | Records acceptance (capacity + `text_sha256`) and stamps the owner's current agreement |
 | Issue credential | `ir-cli org issue-credential` | `POST /admin/credentials/organization` | Issues an `OrganizationCredential` — **refused unless verified and an agreement is accepted** |

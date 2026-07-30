@@ -198,7 +198,7 @@ During DSP negotiation, each EDC instance obtains an SI token and a VP from the 
 
 ### Identity-registry admin authentication
 
-The identity-registry's `/admin/*` endpoints require a JWT with the `identity-registry.admin` scope. This is typically issued by Keycloak to service accounts (e.g. `svc-onboarding`) that need to manage participant records, issue credentials, or trigger Keycloak sync.
+The identity-registry's `/admin/*` endpoints require a JWT carrying the permission each one names — `identity-registry.admin` reaches all of them, but a service account should hold only what it calls (`credentials.write`, `memberships.write`, `keycloak.sync`, `organizations.*`, `participants.write`). Keycloak issues these to service accounts; see `services/identity-registry/AGENTS.md` for the full grant table.
 
 ### Internal API authentication
 

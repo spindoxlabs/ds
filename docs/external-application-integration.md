@@ -33,8 +33,11 @@ an assertion.
 ## What you need
 
 1. **A service client** in the dataspace realm holding `connector.consent.provision`
-   (and `identity-registry.admin` if you also provision identities). Ask the
-   operator; it is a Keycloak client-credentials grant.
+   — plus, if you also provision identities, `identity-registry.credentials.write`,
+   `identity-registry.memberships.write`, `identity-registry.keycloak.sync` and
+   `identity-registry.organizations.read`. **Do not ask for `identity-registry.admin`**:
+   it is a superset reaching DID and key management, and an operator should refuse it
+   to a long-lived process. Ask the operator; it is a Keycloak client-credentials grant.
 2. **The subject's dataspace DID.** If your application creates users, the identity
    registry issues a DID and a credential per person — see
    `docs/identity-and-dcp.md`. The DID is what the connector keys consent on; your
@@ -98,8 +101,16 @@ drift from the copy the person read.
 | `source`, `consent_text_version`, `rendered_text_sha256`, `locale`, `accepted_at`, `submission_ref` | **you** — evidence only you hold |
 | `offer_id`, `controller`, `controller_role`, `user_visible_hash`, `basis_iri` | **the connector**, from the resolved offer |
 
-Anything you send for the second group is ignored. That is the point: a caller
-cannot record consent to something other than what the offer describes.
+You cannot set the second group — the connector derives it from the offer, so a
+caller cannot record consent to something other than what the offer describes.
+
+**Send only the fields in the first group.** Anything else in `legal_basis` —
+a field from the second group, a typo, or an extra of your own — is a `422`,
+naming the key. It is deliberately not ignored: accepting an unknown evidence
+field and dropping it would answer `200` and leave you holding written proof the
+connector never stored, which is the one failure an evidence record must not
+have. If you need to attach something the model has no field for, that is a
+change to this contract, not a key to add to the payload.
 
 ### The three required fields
 

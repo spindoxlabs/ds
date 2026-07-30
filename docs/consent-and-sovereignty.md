@@ -356,7 +356,7 @@ Vocabulary endpoints are public; consent endpoints authenticate on `X-Subject-Id
 
 | Endpoint | Purpose |
 |----------|---------|
-| `POST /consent/admin/shares` | Record a subject's standing sharing decision from an `offer_id`. Guarded by `connector.consent.provision` (a **service** scope, not the subject's VC-JWT). `422` unknown offer, `409` non-consent offer, `403` subject not a member of the offer's controller org, `422` granting without `source` / `consent_text_version` / `rendered_text_sha256` evidence (withdrawal needs none) |
+| `POST /consent/admin/shares` | Record a subject's standing sharing decision from an `offer_id`. Guarded by `connector.consent.provision` (a **service** scope, not the subject's VC-JWT). `422` unknown offer, `409` non-consent offer, `403` subject not a member of the offer's controller org, `422` granting without `source` / `consent_text_version` / `rendered_text_sha256` evidence (withdrawal needs none), `422` on **any unknown key** in `legal_basis` — accepting and dropping one would answer `200` and leave the caller holding proof nothing recorded |
 
 The onboarding wizard calls this after it syncs a newly-approved participant's DID. It names an `offer_id`, never a dataset, so it cannot drift from the copy the person read. The connector expands the offer into one **wildcard-scoped** row per dataset (`consumer_id = "*"`), stamping purpose, controller-role, `legal_basis` and `user_visible_hash` from the offer. Idempotent.
 

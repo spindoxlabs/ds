@@ -487,3 +487,45 @@ async def test_withdrawing_one_offer_leaves_the_other_granted(client):
     assert by_offer[OFFER_A]["status"] == "granted", (
         "stopping one purpose must not silently withdraw another"
     )
+
+
+# ── T29 — an evidence record rejects what it cannot record ────────
+
+
+@pytest.mark.asyncio
+async def test_admin_shares_rejects_unknown_evidence_field(client):
+    """Pydantic's default would accept, drop and answer 200.
+
+    That is the worst outcome an evidence model can produce: the caller comes
+    away holding written proof the connector never stored. A 422 says so.
+    """
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": {**EVIDENCE, "evidence_document_ref": "DOC-1"},
+        },
+    )
+    assert r.status_code == 422, r.text
+    assert "evidence_document_ref" in r.text
+
+
+@pytest.mark.asyncio
+async def test_admin_shares_rejects_a_server_owned_field(client):
+    """`user_visible_hash` is the connector's to compute from the resolved
+    offer. A caller sending one has misunderstood who owns it — and silently
+    ignoring it looked like agreement."""
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": {**EVIDENCE, "user_visible_hash": "deadbeef"},
+        },
+    )
+    assert r.status_code == 422, r.text

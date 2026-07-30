@@ -223,6 +223,14 @@ stop, and demanding proof to stop would make stopping harder than starting.
 them is rejected. That check catches the commonest leak, not every one; the
 codes-and-hashes rule remains the caller's obligation.
 
+**`AdminShareLegalBasis` is `extra="forbid"`.** Pydantic's default accepts an
+unknown key, drops it and answers `200` — for an evidence model that is the worst
+available outcome, because the caller walks away holding written proof the
+connector never stored. A `422` naming the key says so instead. That applies to the
+connector-owned fields above too: sending one is a misunderstanding of who owns it,
+and silence read as agreement. **Any new model that records evidence should carry
+the same `model_config`.**
+
 An external application driving this path is documented in
 `docs/external-application-integration.md`. Surfaced on `GET /consent/my`, `GET /consent/status` and
 `GET /internal/consent/check` (the deciding row's basis, for the PEP audit trail).

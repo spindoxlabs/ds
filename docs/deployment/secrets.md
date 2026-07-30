@@ -92,7 +92,7 @@ authority.
 | Key | Client | Notable scopes |
 |-----|--------|----------------|
 | `svcDsIdentityRegistrySecret` | `svc-ds-identity-registry` | `identity-registry.admin` |
-| `svcDsOnboardingSecret` | `svc-ds-onboarding` | `identity-registry.admin` |
+| `svcDsOnboardingSecret` | `svc-ds-onboarding` | `identity-registry.{organizations.read,credentials.write,memberships.write,keycloak.sync}`, `connector.consent.provision` |
 | `svcDsPortalSecret` | `svc-ds-portal` | `connector.admin`, `identity-registry.read` |
 | `svcDsConnectorSecret` | `svc-ds-connector` | `identity-registry.read`, `provenance.write` |
 | `svcDsFederatedCatalogSecret` | `svc-ds-federated-catalog` | `identity-registry.read` |

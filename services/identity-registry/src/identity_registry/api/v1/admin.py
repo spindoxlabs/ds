@@ -22,6 +22,8 @@ from ...dependencies import (
     get_settings_dep,
     require_admin_or_read_scope,
     require_admin_scope,
+    require_credentials_write,
+    require_keycloak_sync,
     require_participants_write,
     require_read_scope,
 )
@@ -501,7 +503,7 @@ async def issue_data_subject_credential(
     data: IssueDataSubjectRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_credentials_write),
 ):
     trust_anchor_key = await _get_trust_anchor_key(db, settings)
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
@@ -619,7 +621,11 @@ async def list_credentials(
 async def revoke_credential(
     cred_id: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    # Broader than issuance: this revokes *any* credential type, not only the
+    # data-subject ones an onboarding service issued. Revocation fails safe —
+    # it removes an authorisation, never grants one — so the wider reach is
+    # tolerable where the same grant over issuance would not be.
+    _claims: dict = Depends(require_credentials_write),
 ):
     result = await db.execute(select(Credential).where(Credential.id == cred_id))
     cred = result.scalar_one_or_none()
@@ -645,7 +651,7 @@ async def keycloak_sync(
     data: KeycloakSyncRequest,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_keycloak_sync),
 ):
     did_result = await db.execute(select(Did).where(Did.did == data.did))
     did_record = did_result.scalar_one_or_none()

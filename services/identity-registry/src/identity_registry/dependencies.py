@@ -65,3 +65,24 @@ require_agreements_read = require_permission(
 require_participants_write = require_permission(
     "identity-registry.admin", "identity-registry.participants.write"
 )
+
+# ── What an onboarding service actually does ─────────────────────────────────
+#
+# P6 split organisations and agreements out of the admin grant but left
+# credentials, memberships and keycloak-sync on it — which is most of what an
+# external onboarding application calls, so such a service still had to hold
+# `identity-registry.admin`. That is a superset over every endpoint here,
+# including DID and key management: one long-lived process able to mint or
+# delete any identity in the dataspace, to do three narrow things.
+#
+# These name the three. `clients.yaml` refuses `*.admin` to a service client in
+# a comment; this is what makes that possible to honour.
+require_credentials_write = require_permission(
+    "identity-registry.admin", "identity-registry.credentials.write"
+)
+require_memberships_write = require_permission(
+    "identity-registry.admin", "identity-registry.memberships.write"
+)
+require_keycloak_sync = require_permission(
+    "identity-registry.admin", "identity-registry.keycloak.sync"
+)

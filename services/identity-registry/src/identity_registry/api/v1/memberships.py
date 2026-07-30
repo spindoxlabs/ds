@@ -11,6 +11,7 @@ from ...dependencies import (
     get_db,
     require_admin_scope,
     require_membership_read_scope,
+    require_memberships_write,
 )
 from ...schemas.requests import CreateMembershipRequest
 from ...schemas.responses import MembershipCheckResponse, MembershipResponse
@@ -36,7 +37,7 @@ def _to_response(m: OrganizationMembership) -> MembershipResponse:
 async def create_membership(
     data: CreateMembershipRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_memberships_write),
 ):
     existing = await db.execute(
         select(OrganizationMembership).where(
@@ -73,6 +74,10 @@ async def list_memberships(
     organization: str | None = Query(default=None),
     user_did: str | None = Query(default=None),
     db: AsyncSession = Depends(get_db),
+    # Stays on admin deliberately. Registering a membership and *enumerating*
+    # who belongs to which organisation are different acts: `membership.read`
+    # answers one (user, org) question at a time via `/memberships/check`, and
+    # widening it to this list would hand every holder the whole roster.
     _claims: dict = Depends(require_admin_scope),
 ):
     stmt = select(OrganizationMembership)
@@ -89,7 +94,7 @@ async def delete_membership(
     user_did: str,
     organization_alias: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_scope),
+    _claims: dict = Depends(require_memberships_write),
 ):
     result = await db.execute(
         select(OrganizationMembership).where(

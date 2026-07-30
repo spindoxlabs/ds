@@ -69,7 +69,7 @@ convenience that must be overridden in production (see Security below).
 | client_id | default_scopes | Override env |
 |-----------|----------------|--------------|
 | `svc-ds-identity-registry` | `identity-registry.admin` | `SVC_DS_IDENTITY_REGISTRY_SECRET` |
-| `svc-ds-onboarding` | `identity-registry.admin` | `SVC_DS_ONBOARDING_SECRET` |
+| `svc-ds-onboarding` | `identity-registry.organizations.read`, `identity-registry.credentials.write`, `identity-registry.memberships.write`, `identity-registry.keycloak.sync`, `connector.consent.provision`, `provenance.write` | `SVC_DS_ONBOARDING_SECRET` |
 | `svc-ds-portal` | `dataset.query`, `dataset.read`, `identity-registry.resolve`, `identity-registry.read`, `connector.admin`, `connector.history.read`, `provenance.read`, `catalog.read` | `SVC_DS_PORTAL_SECRET` |
 | `svc-ds-connector` | `identity-registry.read`, `identity-registry.membership.read`, `provenance.write` | `SVC_DS_CONNECTOR_SECRET` |
 | `svc-ds-federated-catalog` | `identity-registry.read` | `SVC_DS_FEDERATED_CATALOG_SECRET` |

@@ -7,7 +7,7 @@ from datetime import datetime
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
-from pydantic import BaseModel, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -135,7 +135,14 @@ class AdminShareLegalBasis(BaseModel):
     Codes, versions and hashes only — never a name, email, CF or POD. The
     connector supplies ``offer_id``, ``controller``, ``controller_role`` and
     ``user_visible_hash`` itself from the resolved offer, so the caller cannot
-    drift from what the person read; anything it sends for those is ignored.
+    drift from what the person read.
+
+    **Unknown keys are rejected, not ignored** (``extra="forbid"``). Pydantic's
+    default would accept an extra evidence field, drop it, and answer ``200`` —
+    the worst outcome an evidence model can produce, because the caller has
+    written proof it does not hold. That includes the connector-supplied fields
+    above: sending one is a misunderstanding of who owns it, and a ``422`` says
+    so where silence looked like agreement.
 
     **Three fields are required**, because without them the record proves nothing:
     a consent provisioned by a service is only defensible if it can be tied back to
@@ -145,6 +152,8 @@ class AdminShareLegalBasis(BaseModel):
     missing any of them is decorative, and decorative evidence is worse than none
     because it looks like proof.
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     source: str
     consent_text_version: str
