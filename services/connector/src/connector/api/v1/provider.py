@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import ContractAgreementORM
+from ds_auth import Principal
+
+from ...services.prov_bridge import acting_principal
 from ...dependencies import (
     get_db,
     get_provider_edc,
@@ -31,7 +34,10 @@ async def sync(
     req: SyncRequest | None = None,
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
-    _claims: dict = Depends(require_provider_write),
+    # The verified caller, carried through so the published offers can name who
+    # published them. `require_permission` yields a Principal; the old `_claims:
+    # dict` annotation was wrong about that and nothing used it.
+    principal: Principal = Depends(require_provider_write),
     # Recorded consent is what makes the offer-drift check possible: the rows
     # carry the hash and version they were written with, so the sync can tell an
     # edit from a revision.
@@ -74,6 +80,7 @@ async def sync(
         prov,
         overlay_name=settings.governance_overlay_name,
         session=db,
+        acted_by=acting_principal(principal),
     )
 
     # A sync re-reads governance and the offer files; the consent vocabulary is

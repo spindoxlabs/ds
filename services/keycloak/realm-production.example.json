@@ -145,7 +145,19 @@
       "optionalClientScopes": [],
       "attributes": {
         "post.logout.redirect.uris": "https://sso.dataspaces.example.org/oauth2/sign_out"
-      }
+      },
+      "protocolMappers": [
+        {
+          "name": "subject",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-sub-mapper",
+          "consentRequired": false,
+          "config": {
+            "access.token.claim": "true",
+            "introspection.token.claim": "true"
+          }
+        }
+      ]
     }
   ]
 }

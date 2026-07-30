@@ -94,6 +94,31 @@ class UserAuthorityFlow(BaseFlow):
             )
             return result
 
+        # A token that authorises but identifies nobody is a realm-configuration
+        # failure that looks like success everywhere else: `Principal.subject` is
+        # empty, and every provenance attribution of a human act is recorded as "".
+        # In Keycloak the cause is a login client missing the `basic` client scope,
+        # which is what puts `sub` in an **access** token (the ID token has it
+        # regardless, so a browser flow hides this entirely).
+        import base64
+        import json as _json
+
+        for seat, headers in seats.items():
+            payload = headers["Authorization"].split(".")[1]
+            payload += "=" * (-len(payload) % 4)
+            claims = _json.loads(base64.urlsafe_b64decode(payload))
+            if claims.get("sub"):
+                result.pass_step(
+                    f"{seat} token identifies its subject", "carries a `sub` claim"
+                )
+            else:
+                result.fail_step(
+                    f"{seat} token identifies its subject",
+                    "the access token carries no `sub` — add the `basic` client "
+                    f"scope to {s.user_client_id}; every act by this seat would be "
+                    "recorded as performed by nobody",
+                )
+
         assets = f"{s.connector_url}/provider/assets"
         negotiations = f"{s.connector_url}/history/negotiations"
         applications = f"{s.identity_registry_url}/admin/organizations/applications"

@@ -4,9 +4,48 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from ds_auth import Principal
+
 from ..clients.provenance import ProvenanceClient
 
 log = logging.getLogger(__name__)
+
+
+def acting_principal(
+    principal: "Principal | None", *, on_behalf_of: str | None = None
+) -> dict | None:
+    """Render a verified caller as the `acted_by` block of a provenance event.
+
+    Built from the **verified** `Principal` — never from a header or a body field —
+    so the record cannot be authored by the party it names.
+
+    Deliberately narrow: the opaque `sub`, the issuer that gives it meaning, whether
+    it was a machine, and the owner the caller claimed to act for. No email, no
+    username, no display name. The rest of the provenance model keeps to codes,
+    pseudonymous identifiers and hashes, and an audit trail is not a reason to start
+    storing people's names.
+    """
+    if principal is None:
+        return None
+    if not principal.subject:
+        # The token authenticated and authorised, and identifies nobody. In
+        # Keycloak this means the client is missing the `basic` client scope, which
+        # is what puts `sub` in an *access* token — so the act is recorded as having
+        # been performed by "". Loud, because a blank attribution is worse than an
+        # absent one: it looks answered.
+        log.error(
+            "provenance attribution has no subject — the token carries no `sub`. "
+            "Add the `basic` client scope to the login client; until then this act "
+            "is unattributable."
+        )
+    issuer = principal.claims.get("iss") if isinstance(principal.claims, dict) else None
+    return {
+        "subject": principal.subject,
+        "issuer": issuer if isinstance(issuer, str) else None,
+        "on_behalf_of": on_behalf_of,
+        "is_service": principal.is_service,
+    }
+
 
 
 def _now() -> str:
@@ -32,6 +71,7 @@ class ProvBridge:
         title: str | None = None,
         description: str | None = None,
         event_id: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event({
             "event_type": "CataloguePublished",
@@ -41,6 +81,7 @@ class ProvBridge:
             "provider_did": _did(self._participant_id),
             "title": title,
             "description": description,
+            "acted_by": acted_by,
         })
 
     async def catalog_viewed(
@@ -369,6 +410,7 @@ class ProvBridge:
         consent_snapshot_hash: str | None = None,
         agreement_ref: str | None = None,
         event_id: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event({
             "event_type": "DataIngested",
@@ -380,6 +422,7 @@ class ProvBridge:
             "record_count": record_count,
             "consent_snapshot_hash": consent_snapshot_hash,
             "agreement_ref": agreement_ref,
+            "acted_by": acted_by,
         })
 
     async def data_disclosed(

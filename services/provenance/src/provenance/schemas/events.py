@@ -7,6 +7,46 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field
 
 
+class ActingPrincipal(BaseModel):
+    """Who performed an act that *determined* how data may be processed.
+
+    Every other event names the **participant** — `provider_did`, `subject_did` —
+    which answers "which organisation" and never "which human". That is enough for
+    a disclosure, where the organisation is the controller. It is not enough for
+    the acts that decide *what the terms are*: publishing a catalogue turns
+    `governance.yaml` into ODRL offers, with the purposes and the assigner that
+    every later disclosure is evaluated against.
+
+    Under GDPR Art. 5(2) an operator has to be able to answer "who could have
+    published this offer, and for which organisation were they acting" — and until
+    now the system could answer neither. That is the whole reason this exists.
+
+    **Pseudonymous by construction.** The subject claim is an opaque realm-scoped
+    identifier, not a name, an email or a username, and it is recorded with the
+    issuer that minted it because a `sub` means nothing without its realm. Resolving
+    it back to a person needs realm access, which is exactly the separation the rest
+    of the provenance model already keeps (`docs/provenance-and-lineage.md`: codes,
+    pseudonymous DIDs and hashes only — never PII).
+    """
+
+    subject: str
+    """The token's `sub`. Opaque, realm-scoped, never a name or an address."""
+
+    issuer: str | None = None
+    """The realm that minted it. A `sub` is only unique within its issuer."""
+
+    on_behalf_of: str | None = None
+    """The `Owner` id the actor claimed to act for, when the act was owner-scoped.
+
+    The claim, not a verification — the perimeter is what verifies it. Recording it
+    is what makes "acting for whom" answerable at all.
+    """
+
+    is_service: bool = False
+    """True when a service client acted, so an automated publish is not mistaken
+    for a person's decision."""
+
+
 class CataloguePublished(BaseModel):
     event_type: Literal["CataloguePublished"] = "CataloguePublished"
     event_id: str | None = None
@@ -15,6 +55,9 @@ class CataloguePublished(BaseModel):
     provider_did: str
     title: str | None = None
     description: str | None = None
+    # Who published it. Optional so a deployment that predates this keeps
+    # validating, and so an automated publish is recorded honestly as one.
+    acted_by: ActingPrincipal | None = None
 
 
 class CatalogViewed(BaseModel):
@@ -215,6 +258,9 @@ class DataIngested(BaseModel):
     record_count: int | None = None
     consent_snapshot_hash: str | None = None  # SHA-256 over the authorising consent tuples
     agreement_ref: str | None = None     # identifies the DPA, never its contents
+    # An offline handover is recorded *by a person*; without this the record says
+    # a participant ingested data and cannot say who decided to.
+    acted_by: ActingPrincipal | None = None
 
 
 class DataDisclosed(BaseModel):

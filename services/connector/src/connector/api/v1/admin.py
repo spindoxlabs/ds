@@ -8,6 +8,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
+from ds_auth import Principal
+
+from ...services.prov_bridge import acting_principal
 from ...dependencies import (
     get_db,
     get_participant_registry,
@@ -86,7 +89,8 @@ class IngestionRecord(BaseModel):
 @router.post("/ingestion")
 async def record_ingestion(
     body: IngestionRecord,
-    _claims: dict = Depends(require_ingestion_record),
+    # An offline handover is a person's decision; the record has to say whose.
+    principal: Principal = Depends(require_ingestion_record),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     prov: ProvBridge | None = Depends(get_prov),
@@ -116,6 +120,7 @@ async def record_ingestion(
             consent_snapshot_hash=snapshot_hash,
             agreement_ref=body.agreement_ref,
             event_id=body.event_id,
+            acted_by=acting_principal(principal),
         )
 
     return {

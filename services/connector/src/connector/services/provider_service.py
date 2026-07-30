@@ -154,6 +154,9 @@ async def sync_governance(
     prov: ProvBridge,
     overlay_name: str | None = None,
     session: AsyncSession | None = None,
+    # Who published. Optional so `ir-cli` and tests can sync without one, and so
+    # an unattributed publish is recorded as unattributed rather than guessed at.
+    acted_by: dict | None = None,
 ) -> SyncResult:
     result = SyncResult()
     try:
@@ -215,6 +218,7 @@ async def sync_governance(
                 title=rule.title,
                 description=rule.description,
                 event_id=f"sync:{asset_create.id}",
+                acted_by=acted_by,
             )
 
             result.synced.append(key)

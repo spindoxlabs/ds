@@ -148,6 +148,25 @@ The portal expands the same table from a **generated** file
 (`src/lib/server/bundles.generated.ts`). Never edit it — run
 `task auth:bundles:generate`; `test_bundles_export.py` fails on drift.
 
+### The login client needs an explicit `sub` mapper
+
+A Keycloak **access** token carries `sub` only if the client has a mapper for it —
+normally via the stock `basic` client scope. This realm does not have `basic`: a
+realm import that declares its own `clientScopes` replaces the stock set, and
+`celine-policies keycloak sync` manages the client's default scopes afterwards.
+Listing a scope that does not exist is **silently ignored**.
+
+The result was a token that authenticated, authorised and identified **nobody**:
+`Principal.subject` was empty, so every provenance attribution of a human act
+recorded `""`. An ID token carries `sub` regardless, so a browser login hides this
+completely — it only surfaces where the access token is the identity, which is
+everywhere ds authorises.
+
+`oauth2_proxy` therefore carries an explicit `oidc-sub-mapper`, which owes nothing
+to the realm's scope set. `ds-e2e --flow user-authority` asserts every seat's token
+carries a `sub`, and `acting_principal` logs an error rather than writing a blank
+attribution.
+
 ## `organizations.yaml`
 
 Defines KC native organizations and their members, keyed by email, each with a
