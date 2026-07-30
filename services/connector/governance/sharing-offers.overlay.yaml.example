@@ -1,0 +1,32 @@
+# Sharing-offers overlay example
+#
+# Copy this file to sharing-offers.<name>.yaml (e.g. sharing-offers.production.yaml)
+# and set CONNECTOR_SHARING_OFFERS_OVERLAY_NAME=production.
+#
+# The overlay replaces offers by id — an offer id present here overwrites the
+# same id from the base file or any contributed file in sharing-offers.d/.
+# Use it to rebind controller aliases to real organisation identities per
+# deployment without editing the base file.
+#
+# This applies after all contributions are collected, so it can override an
+# offer regardless of whether it came from the base file or a producer.
+
+sharing_offers:
+  - id: household-energy-flexibility
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: real-org-alias     # ← the production controller alias
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: real-org-alias
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P2Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P2Y

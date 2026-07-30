@@ -8,6 +8,15 @@ version: "3"
 # All local dev defaults live in .env.local (committed).
 # Override per-machine in .env (gitignored).
 #
+# Deployment-specific tasks (paths to pipeline repos, overlay directories)
+# go in taskfile.local.yaml — see taskfile.local.example.yaml.
+#
+includes:
+  local:
+    taskfile: taskfile.local.yaml
+    optional: true
+    flatten: true
+
 dotenv: [".env", ".env.local"]
 
 env:

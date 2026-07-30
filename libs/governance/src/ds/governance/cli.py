@@ -270,6 +270,81 @@ def evidence(
     raise typer.Exit(0 if result.passed else 1)
 
 
+@app.command("collect-offers")
+def collect_offers(
+    pattern: str = typer.Argument(
+        ..., help="Glob matching sharing-offers.yaml files to collect"
+    ),
+    out_dir: Path = typer.Option(
+        ..., "--out-dir", "-o", help="Target directory (e.g. sharing-offers.d/)"
+    ),
+    verbose: bool = typer.Option(False, "--verbose", "-v"),
+):
+    """Collect sharing-offers.yaml from pipeline apps into sharing-offers.d/.
+
+    Scans for sharing-offers.yaml files matching PATTERN (use recursive globs),
+    loads each with its per-app overlay if present, and writes the result to
+    OUT_DIR/<app>.yaml where <app> is the parent directory name.
+
+    The overlay convention matches the runtime: a file named
+    sharing-offers.<app>.yaml beside sharing-offers.yaml is loaded as a
+    deployment overlay (replace-by-offer-id).
+
+    Existing *.yaml files in OUT_DIR are removed first so that apps deleted
+    since the last run do not leave stale contributions behind.
+    """
+    from glob import glob as globfn
+
+    import yaml
+
+    from .sharing import load_sharing_offers
+
+    matches = sorted(globfn(pattern, recursive=True))
+    if not matches:
+        typer.echo(f"No files matched: {pattern}", err=True)
+        raise typer.Exit(1)
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for old in out_dir.glob("*.yaml"):
+        old.unlink()
+
+    collected = 0
+    for match_str in matches:
+        source = Path(match_str)
+        app_name = source.parent.name
+
+        catalogue = load_sharing_offers(source, overlay_name=app_name)
+        if not catalogue.offers:
+            if verbose:
+                typer.echo(f"  skip {app_name} (no offers)")
+            continue
+
+        data = {
+            "sharing_offers": [
+                offer.model_dump(exclude_none=True)
+                for offer in catalogue.offers
+            ]
+        }
+        dest = out_dir / f"{app_name}.yaml"
+        dest.write_text(
+            yaml.dump(data, default_flow_style=False, sort_keys=False),
+            encoding="utf-8",
+        )
+        collected += 1
+
+        if verbose:
+            overlay_applied = any(
+                s != source.name for s in catalogue.sources.values()
+            )
+            note = " (with overlay)" if overlay_applied else ""
+            typer.echo(
+                f"  {app_name}{note} → {dest.name} "
+                f"({len(catalogue.offers)} offer{'s' if len(catalogue.offers) != 1 else ''})"
+            )
+
+    typer.echo(f"Collected {collected} sharing-offers file(s) into {out_dir}")
+
+
 def main() -> None:
     sys.exit(app())
 

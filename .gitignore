@@ -90,3 +90,7 @@ site/
 
 # Local governance overlays (contain deployment-specific org bindings)
 *.local.yaml
+
+# Contributed sharing-offers (collected from pipeline apps by
+# `task governance:collect:sharing-offers` — deployment-specific)
+services/connector/governance/sharing-offers.d/

@@ -1,0 +1,50 @@
+version: "3"
+
+# Local task overrides — not committed (*.local.yaml is gitignored).
+#
+# Copy to taskfile.local.yaml and adjust the paths below to your deployment
+# layout. Tasks defined here appear at the top level alongside Taskfile.yml.
+#
+# The governance:collect:sharing-offers task mirrors the governance export
+# pattern in dataset-api: shell finds the files and stages them with overlays,
+# then ds-governance processes them.
+
+tasks:
+  governance:collect:sharing-offers:
+    desc: Collect sharing-offers.yaml from pipeline apps into sharing-offers.d/
+    vars:
+      # Directories containing pipeline apps. Each app directory may carry a
+      # sharing-offers.yaml beside its governance.yaml — this task collects them
+      # into services/connector/governance/sharing-offers.d/<app>.yaml where the
+      # connector's load_sharing_offers() picks them up at startup.
+      PIPELINE_DIRS: ../celine-pipelines/apps ../../../demo3/pipelines/apps
+      # Per-app deployment overlays. A file named sharing-offers.<app>.yaml in
+      # this directory is staged beside the app's base file and merged at
+      # collection time (replace-by-offer-id, same as the runtime overlay).
+      OFFERS_OVERRIDES: ../../../demo3.deployment/recs/governance
+    cmds:
+      - |
+        set -eu
+        TMPDIR=$(mktemp -d)
+        trap "rm -rf $TMPDIR" EXIT
+
+        count=0
+        for f in $(find {{.PIPELINE_DIRS}} -name "sharing-offers.yaml" 2>/dev/null); do
+          app=$(basename "$(dirname "$f")")
+          mkdir -p "$TMPDIR/$app"
+          cp "$f" "$TMPDIR/$app/sharing-offers.yaml"
+          if [ -f "{{.OFFERS_OVERRIDES}}/sharing-offers.${app}.yaml" ]; then
+            cp "{{.OFFERS_OVERRIDES}}/sharing-offers.${app}.yaml" "$TMPDIR/$app/"
+          fi
+          count=$((count + 1))
+        done
+
+        if [ "$count" -eq 0 ]; then
+          echo "No sharing-offers.yaml found in: {{.PIPELINE_DIRS}}"
+          exit 0
+        fi
+
+        cd libs/governance
+        uv run ds-governance collect-offers "$TMPDIR/**/sharing-offers.yaml" \
+          --out-dir ../../services/connector/governance/sharing-offers.d \
+          --verbose

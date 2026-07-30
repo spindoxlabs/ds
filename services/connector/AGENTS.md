@@ -123,6 +123,32 @@ widen a coverage window. Dataset keys are not in the public projection.
 processing is disclosed, not toggled — `POST /consent/my/shares` returns **409** for a
 non-consent-based offer, so a UI bug cannot manufacture a choice that does not exist.
 
+### Producer-contributed offers — `sharing-offers.d/`
+
+When multiple producers contribute datasets, each may define its own sharing offers.
+These live in `governance/sharing-offers.d/<producer>.yaml` — loaded at runtime as a
+**union** (not merge) with the base file:
+
+- Duplicate offer ids across files → `DuplicateOfferError` naming both files
+- No file has precedence — contributions are peers
+- The deployment overlay (`sharing-offers.<name>.yaml`) applies **after** all
+  contributions and may replace by id (deployment rebinding)
+
+**Collecting offers from pipeline apps:**
+
+```bash
+task governance:collect:sharing-offers   # defined in taskfile.local.yaml
+```
+
+The task scans pipeline app directories for `sharing-offers.yaml` beside each
+`governance.yaml`, stages them with per-app deployment overlays, and calls
+`ds-governance collect-offers` (in `libs/governance`) to write the result to
+`sharing-offers.d/`. Stale files from removed apps are cleaned on each run.
+
+Setup: copy `taskfile.local.example.yaml` to `taskfile.local.yaml` and adjust
+`PIPELINE_DIRS` and `OFFERS_OVERRIDES` to your deployment layout. See also
+`governance/sharing-offers.overlay.yaml.example` for the runtime overlay pattern.
+
 ## The consent vocabulary — where writes are validated
 
 `services/consent_vocabulary.py` is the single place the three vocabularies meet.
