@@ -40,7 +40,7 @@ async def authenticate(request: Request, config: OidcConfig) -> Principal:
         raise HTTPException(status_code=401, detail=str(exc)) from exc
     except AuthConfigError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return Principal.from_claims(claims)
+    return Principal.from_claims(claims, group_aliases=config.group_aliases)
 
 
 def require_exact_permission(

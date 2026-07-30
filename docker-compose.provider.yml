@@ -149,6 +149,7 @@ services:
       # The vault seed EDC signs EDR tokens with — /internal/edr-jwks serves
       # its public half so the data plane can verify a token nothing else does.
       CONNECTOR_EDC_VAULT_FILE: /edc-config/provider-vault.properties
+      CONNECTOR_OIDC_GROUP_ALIASES: ${CONNECTOR_OIDC_GROUP_ALIASES:-}
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}

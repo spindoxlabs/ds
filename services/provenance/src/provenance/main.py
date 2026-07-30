@@ -68,12 +68,13 @@ def create_app() -> FastAPI:
     )
 
     # Auth config is static and must be available even without lifespan (tests).
-    from ds_auth import OidcConfig
+    from ds_auth import OidcConfig, parse_group_aliases
 
     app.state.oidc_config = OidcConfig(
         issuer_url=settings.oidc_issuer_url,
         audience=settings.service_client_id,
         insecure_dev=settings.oidc_insecure_dev,
+        group_aliases=parse_group_aliases(settings.oidc_group_aliases),
     )
 
     @app.get("/health")

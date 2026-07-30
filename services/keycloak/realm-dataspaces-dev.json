@@ -298,6 +298,9 @@
     },
     {
       "name": "ds-member"
+    },
+    {
+      "name": "legacy-provider-admin"
     }
   ],
   "users": [
@@ -419,6 +422,25 @@
         }
       ],
       "groups": []
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000007",
+      "username": "legacy@example.test",
+      "email": "legacy@example.test",
+      "firstName": "Legacy",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "legacy",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/legacy-provider-admin"
+      ]
     }
   ]
 }

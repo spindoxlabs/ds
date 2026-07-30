@@ -242,3 +242,91 @@ def test_legacy_scope_named_org_group_still_works():
     old scope-named groups keeps authorising during migration."""
     principal = _multi_org([], {"acme": ["connector.provider.write"]})
     assert principal.grants_in("acme", "connector.provider.write")
+
+
+# ── Layer B: a foreign IdP's group names → ds bundles ────────────────────────
+#
+# Layer A (the bundle table) is ds's own semantics and lives in code. Layer B is
+# about *someone else's* naming and therefore is deployment configuration — which
+# is exactly why it must not be able to grant anything Layer A does not already
+# define. These tests are that boundary.
+
+from ds_auth import parse_group_aliases
+
+
+def test_an_alias_translates_a_foreign_group():
+    aliases = parse_group_aliases('{"celine-manager": "ds-participant-admin"}')
+    assert expand_bundles(["celine-manager"], aliases) == ROLE_BUNDLES[
+        "ds-participant-admin"
+    ]
+
+
+def test_an_alias_cannot_name_a_capability():
+    """The whole point of the layer split: config may rename a role, never invent
+    one. An alias pointing at a permission would make deployment configuration a
+    permission table."""
+    aliases = parse_group_aliases('{"sneaky": "connector.provider.write"}')
+    assert aliases == {}
+    # And the group then falls through to pass-through, granting only itself —
+    # which matches a call site only if that call site asked for "sneaky".
+    assert expand_bundles(["sneaky"], aliases) == ("sneaky",)
+
+
+def test_an_alias_cannot_smuggle_in_a_machine_identity():
+    """Rule 2 is applied *after* translation, so neither route reaches it."""
+    assert parse_group_aliases('{"x": "connector.internal"}') == {}
+    assert expand_bundles(["connector.internal"], {"y": "ds-admin"}) == ()
+
+
+def test_an_alias_to_an_unknown_bundle_is_dropped():
+    assert parse_group_aliases('{"x": "ds-does-not-exist"}') == {}
+
+
+def test_malformed_alias_config_is_empty_not_partial():
+    """A typo must not silently become a *different* map."""
+    assert parse_group_aliases("not json") == {}
+    assert parse_group_aliases('["a", "b"]') == {}
+    assert parse_group_aliases('{"a": 1}') == {}
+    assert parse_group_aliases("") == {}
+    assert parse_group_aliases(None) == {}
+
+
+def test_valid_entries_survive_alongside_invalid_ones():
+    aliases = parse_group_aliases(
+        '{"good": "ds-member", "bad": "connector.admin", "also-good": "ds-admin"}'
+    )
+    assert aliases == {"good": "ds-member", "also-good": "ds-admin"}
+
+
+def test_aliasing_does_not_shadow_a_native_bundle_name():
+    """A ds bundle name still means itself even when aliases are configured."""
+    aliases = parse_group_aliases('{"celine-manager": "ds-participant-admin"}')
+    assert expand_bundles(["ds-member"], aliases) == ROLE_BUNDLES["ds-member"]
+
+
+def test_aliases_apply_to_per_organisation_authority_too():
+    """`authority` and `grants_in` must not disagree about what a foreign name
+    means — the alias map is carried on the Principal for that reason."""
+    principal = Principal.from_claims(
+        {
+            "sub": "u",
+            "email": "u@example.test",
+            "organization": {
+                "acme": {"groups": ["celine-manager"]},
+                "globex": {"groups": ["celine-viewer"]},
+            },
+        },
+        group_aliases=parse_group_aliases(
+            '{"celine-manager": "ds-participant-admin",'
+            ' "celine-viewer": "ds-participant-viewer"}'
+        ),
+    )
+    assert principal.grants_in("acme", "connector.provider.write")
+    assert not principal.grants_in("globex", "connector.provider.write")
+    assert principal.grants_in("globex", "connector.provider.read")
+
+
+def test_no_aliases_configured_changes_nothing():
+    """The default path, and the one every existing deployment is on."""
+    assert expand_bundles(["ds-admin"], {}) == expand_bundles(["ds-admin"])
+    assert expand_bundles(["ds-admin"], None) == expand_bundles(["ds-admin"])

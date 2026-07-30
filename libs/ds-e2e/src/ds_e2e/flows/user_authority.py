@@ -251,6 +251,54 @@ class UserAuthorityFlow(BaseFlow):
                 f"{str(body)[:200]}",
             )
 
+        # ── Layer B: a foreign IdP's group name is translated ────────────────
+        #
+        # `legacy-provider-admin` is not a ds bundle. Unaliased it falls through to
+        # pass-through and grants only itself, which matches no call site — so this
+        # seat can reach the provider surface **only** if the deployment's alias map
+        # turned it into `ds-participant-admin`.
+        #
+        # Paired with a bound: the same seat must still be refused something the
+        # bundle does not contain. Translation that granted more than the bundle
+        # would be a permission table in deployment config, which is the thing the
+        # Layer A/B split exists to prevent.
+        try:
+            legacy = self.http.user_headers(
+                s.legacy_operator_email, s.legacy_operator_password
+            )
+        except Exception as exc:
+            result.fail_step(
+                "aliased seat", f"could not obtain a token for {s.legacy_operator_email}: {exc}"
+            )
+            return result
+
+        status, body = self.http.raw("GET", assets, headers=legacy)
+        if status in _REFUSED:
+            result.fail_step(
+                "foreign group is translated",
+                f"a seat holding only `legacy-provider-admin` was refused {assets} "
+                f"({status}) — the alias map did not translate it: {str(body)[:200]}",
+            )
+        else:
+            result.pass_step(
+                "foreign group is translated",
+                f"`legacy-provider-admin` reaches the provider surface as "
+                f"ds-participant-admin ({status})",
+            )
+
+        status, body = self.http.raw("GET", applications, headers=legacy)
+        if status in _REFUSED:
+            result.pass_step(
+                "translation is bounded",
+                f"the aliased seat gets the bundle and no more ({status})",
+            )
+        else:
+            result.fail_step(
+                "translation is bounded",
+                f"the aliased seat reached the onboarding queue ({status}), which "
+                f"ds-participant-admin does not grant: {str(body)[:200]}",
+            )
+
         # ── Machine identity is unreachable ──────────────────────────────────
         #
         # `/internal/edr-jwks` is guarded by `require_exact_permission

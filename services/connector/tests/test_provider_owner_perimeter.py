@@ -340,3 +340,84 @@ async def test_owner_is_read_by_local_name(client, owned_by, key):
     )
     assert r.status_code == 403, f"owner not recognised from key {key!r}"
     assert edc.deleted == []
+
+
+# ── Layer B: a foreign realm's organisation names ────────────────────────────
+#
+# In a realm ds did not name, the claim's organisation aliases match no `Owner.id`
+# and every comparison fails — the perimeter refuses every operator. Fail-closed,
+# but a lock-out, and the reason posture B needs this map before per-owner scoping
+# is deployable at all.
+
+
+@pytest.fixture
+def owner_aliases(monkeypatch):
+    """Configure CONNECTOR_OWNER_ALIASES for one test."""
+
+    def _set(raw: str):
+        from connector import dependencies
+        from connector.config import get_settings
+
+        dependencies._owner_aliases.cache_clear()
+        settings = get_settings().model_copy(update={"owner_aliases": raw})
+        monkeypatch.setattr(dependencies, "get_settings", lambda: settings)
+
+    yield _set
+    from connector import dependencies
+
+    dependencies._owner_aliases.cache_clear()
+
+
+@pytest.mark.asyncio
+async def test_a_foreign_organisation_name_maps_onto_a_ds_owner(
+    client, owned_by, owner_aliases
+):
+    """The realm calls it `CELINE-REC-01`; ds calls it `example-org`."""
+    owner_aliases('{"CELINE-REC-01": "example-org"}')
+    edc = owned_by("example-org")
+
+    r = await client.delete(
+        f"/provider/assets/{ASSET}",
+        headers=_user_headers(
+            organizations={"CELINE-REC-01": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code == 204
+    assert edc.deleted == [ASSET]
+
+
+@pytest.mark.asyncio
+async def test_an_unmapped_foreign_organisation_is_still_refused(
+    client, owned_by, owner_aliases
+):
+    """The map translates; it does not wave through. A foreign name with no entry
+    keeps its literal value and matches nothing."""
+    owner_aliases('{"CELINE-REC-01": "example-org"}')
+    edc = owned_by("example-org")
+
+    r = await client.delete(
+        f"/provider/assets/{ASSET}",
+        headers=_user_headers(
+            organizations={"CELINE-REC-99": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code == 403
+    assert edc.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_a_malformed_owner_map_does_not_open_the_perimeter(
+    client, owned_by, owner_aliases
+):
+    """A typo yields an empty map — no translation — never a wildcard."""
+    owner_aliases("{not json")
+    edc = owned_by("example-org")
+
+    r = await client.delete(
+        f"/provider/assets/{ASSET}",
+        headers=_user_headers(
+            organizations={"CELINE-REC-01": {"groups": ["ds-participant-admin"]}},
+        ),
+    )
+    assert r.status_code == 403
+    assert edc.deleted == []

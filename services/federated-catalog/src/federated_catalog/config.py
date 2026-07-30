@@ -66,6 +66,16 @@ class Settings(BaseSettings):
             "the issuer URL, which enforces verification regardless of this flag."
         ),
     )
+    # Layer B: a foreign IdP's group names → ds role bundles, as JSON.
+    #
+    #   {"celine-manager": "ds-participant-admin"}
+    #
+    # Empty (the default) means no translation — correct wherever the realm names
+    # its groups the ds way. An alias may only name a **bundle**, never a
+    # capability: `ds_auth.parse_group_aliases` drops and logs anything else, so
+    # deployment config cannot become a permission table.
+    oidc_group_aliases: str = ""
+
     service_client_id: str = "svc-ds-federated-catalog"
     read_scope: str = "catalog.read"
 

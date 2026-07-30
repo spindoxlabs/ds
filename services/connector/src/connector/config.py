@@ -157,6 +157,30 @@ class Settings(BaseSettings):
             "the issuer URL, which enforces verification regardless of this flag."
         ),
     )
+    # Layer B, second map: a foreign IdP's **organisation** aliases → ds `Owner`
+    # ids, as JSON.
+    #
+    #   {"CELINE-REC-01": "example-org"}
+    #
+    # The group map above says what a foreign role *means*; this says which owner a
+    # foreign organisation *is*. Without it, per-owner scoping cannot work in a realm
+    # ds did not name: the claim's aliases match no `Owner.id`, every comparison
+    # fails, and the perimeter refuses every operator — fail-closed, but a lock-out.
+    #
+    # Applied before the owners registry, which then resolves ds's own
+    # `Owner.aliases[]`. Empty means the realm already uses ds owner ids.
+    owner_aliases: str = ""
+
+    # Layer B: a foreign IdP's group names → ds role bundles, as JSON.
+    #
+    #   {"celine-manager": "ds-participant-admin"}
+    #
+    # Empty (the default) means no translation — correct wherever the realm names
+    # its groups the ds way. An alias may only name a **bundle**, never a
+    # capability: `ds_auth.parse_group_aliases` drops and logs anything else, so
+    # deployment config cannot become a permission table.
+    oidc_group_aliases: str = ""
+
     service_client_id: str = Field(
         default="svc-ds-connector",
         description="Keycloak client ID for this service (used as JWT audience)",

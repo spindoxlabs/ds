@@ -1,8 +1,10 @@
 """FastAPI dependency providers for ds-connector."""
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncGenerator
+from functools import lru_cache
 
 from ds_auth import Principal
 from ds_auth.fastapi import require_exact_permission, require_permission
@@ -92,6 +94,41 @@ def _asset_owner(properties: dict) -> str:
     return ""
 
 
+@lru_cache(maxsize=1)
+def _owner_aliases(raw: str) -> dict[str, str]:
+    """Parse the Layer B owner map: a foreign organisation alias → ds ``Owner.id``.
+
+    Cached on the raw string because it is read per request and the value is
+    process-lifetime configuration. Malformed JSON yields an empty map and a logged
+    error rather than a partial one — a typo must not silently become a *different*
+    mapping, and empty means "the realm already uses ds owner ids", which is the
+    pre-existing behaviour.
+    """
+    if not raw or not raw.strip():
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        log.error(
+            "CONNECTOR_OWNER_ALIASES is not valid JSON (%s) — no owner aliases "
+            "applied. Expected {\"foreign-org\": \"ds-owner-id\"}.",
+            exc,
+        )
+        return {}
+    if not isinstance(parsed, dict):
+        log.error("CONNECTOR_OWNER_ALIASES must be a JSON object — ignoring.")
+        return {}
+    aliases = {
+        k: v for k, v in parsed.items() if isinstance(k, str) and isinstance(v, str)
+    }
+    if aliases:
+        log.info(
+            "owner alias map active — %s",
+            ", ".join(f"{k} -> {v}" for k, v in sorted(aliases.items())),
+        )
+    return aliases
+
+
 async def _canonical_owner(request: Request, alias: str) -> str:
     """Resolve an owner alias to its canonical ``Owner.id``.
 
@@ -106,6 +143,11 @@ async def _canonical_owner(request: Request, alias: str) -> str:
     unknown, so a deployment without one is scoped on literal names rather than
     silently unscoped.
     """
+    # Layer B first: translate a *foreign* organisation name into a ds owner id,
+    # then let the registry resolve ds's own aliases. Doing it the other way round
+    # would ask the registry about a name it has never heard of.
+    alias = _owner_aliases(get_settings().owner_aliases).get(alias, alias)
+
     registry = getattr(request.app.state, "owners_registry", None)
     if registry is None:
         return alias

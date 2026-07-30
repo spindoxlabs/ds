@@ -1,7 +1,7 @@
 """The authenticated caller — service or user — normalized to one shape."""
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 
 from .bundles import expand_bundles
@@ -42,10 +42,16 @@ class Principal:
     # per-organisation ones carried on each :class:`Organization`. `groups` above
     # is the flattened union both call sites and history expect.
     realm_groups: tuple[str, ...] = ()
+    # Layer B, carried so every expansion this principal performs uses the same
+    # translation — `authority` and `grants_in` must not disagree about what a
+    # foreign group name means.
+    group_aliases: Mapping[str, str] = field(default_factory=dict, repr=False)
     claims: dict = field(default_factory=dict, repr=False)
 
     @classmethod
-    def from_claims(cls, claims: dict) -> Principal:
+    def from_claims(
+        cls, claims: dict, group_aliases: Mapping[str, str] | None = None
+    ) -> Principal:
         service = is_service_account(claims)
         return cls(
             subject=str(claims.get("sub") or claims.get("client_id") or ""),
@@ -54,6 +60,7 @@ class Principal:
             groups=tuple(extract_groups(claims)),
             organizations=tuple(extract_organizations(claims)),
             realm_groups=tuple(extract_realm_groups(claims)),
+            group_aliases=dict(group_aliases or {}),
             claims=claims,
         )
 
@@ -79,7 +86,9 @@ class Principal:
         :func:`ds_auth.bundles.expand_bundles` for the three rules, including why
         an unrecognised group still passes through as itself.
         """
-        return self.scopes if self.is_service else expand_bundles(self.groups)
+        if self.is_service:
+            return self.scopes
+        return expand_bundles(self.groups, self.group_aliases)
 
     def grants(self, *required: str) -> bool:
         """True if this principal holds any of the ``required`` permissions."""
@@ -114,7 +123,9 @@ class Principal:
         organization = self.get_organization(alias)
         if organization is None:
             return False
-        authority = expand_bundles([*organization.groups, *self.realm_groups])
+        authority = expand_bundles(
+            [*organization.groups, *self.realm_groups], self.group_aliases
+        )
         return has_permission(authority, required)
 
     def grants_exactly(self, required: Iterable[str]) -> bool:

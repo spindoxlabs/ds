@@ -121,6 +121,13 @@ class E2ESettings(BaseSettings):
     # carries a realm-level grant, which is deployment-wide by design.
     grid_operator_email: str = "gridops@example.test"
     grid_operator_password: str = "gridops"
+    # A seat whose only realm group is `legacy-provider-admin` — a deliberately
+    # foreign-looking name that is **not** a ds bundle and therefore grants nothing
+    # on its own. Its authority exists only if the Layer B alias map translated it,
+    # which is what makes this an assertion about the wiring rather than about the
+    # bundle table.
+    legacy_operator_email: str = "legacy@example.test"
+    legacy_operator_password: str = "legacy"
     # The owner that owns `asset_id` in the dev governance file, and one that does
     # not. The perimeter compares canonical `Owner.id`s, so both must be real
     # owners in the registry.

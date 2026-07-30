@@ -114,7 +114,19 @@ Three rules matter when reading `bundles.py`:
 
 - **The table is code, not configuration.** A permission table that can be edited
   at deploy time is a privilege-escalation surface. Mapping a *foreign* IdP's
-  group names onto these bundles is a separate, deployment-owned concern.
+  group names onto these bundles is a separate, deployment-owned concern —
+  **Layer B**, two env-var maps:
+  - `<SVC>_OIDC_GROUP_ALIASES` — foreign group name → ds **bundle**. An alias may
+    only name a bundle, never a capability; anything else is dropped and logged, so
+    deployment config cannot become a permission table. Set it on **every** service
+    or on none: a half-wired map means authority depends on which service answered.
+  - `CONNECTOR_OWNER_ALIASES` — foreign **organisation** name → ds `Owner.id`.
+    Without it, per-owner scoping cannot work in a realm ds did not name.
+
+  The dev realm carries `legacy-provider-admin`, a deliberately foreign-looking
+  group that is **not** a bundle and grants nothing on its own; `.env.local` maps it
+  to `ds-participant-admin` so `ds-e2e --flow user-authority` proves the translation
+  path against a real token instead of only in unit tests.
 - **Realm group vs org group is a real distinction, not two ways to spell one
   thing.** A realm group is a **deployment-wide** grant; an `organization.<alias>.groups`
   entry is scoped to that organisation. `ds_auth.Principal.grants_in(alias, perm)`

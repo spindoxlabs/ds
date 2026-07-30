@@ -21,6 +21,7 @@ from .bundles import (
     all_bundled_permissions,
     bundle_capabilities,
     expand_bundles,
+    parse_group_aliases,
 )
 from .config import OidcConfig, default_jwks_uri
 from .errors import (
@@ -47,6 +48,7 @@ __all__ = [
     "OidcConfig",
     "default_jwks_uri",
     "Organization",
+    "parse_group_aliases",
     "Principal",
     "verify_token",
     "get_bearer_token",

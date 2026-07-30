@@ -32,7 +32,11 @@ because that is about a foreign IAM's naming rather than about what ds permits.
 """
 from __future__ import annotations
 
-from collections.abc import Iterable
+import json
+import logging
+from collections.abc import Iterable, Mapping
+
+logger = logging.getLogger(__name__)
 
 # ── Machine identity ─────────────────────────────────────────────────────────
 #
@@ -163,16 +167,88 @@ def all_bundled_permissions() -> frozenset[str]:
     return frozenset(p for caps in ROLE_BUNDLES.values() for p in caps)
 
 
-def expand_bundles(groups: Iterable[str]) -> tuple[str, ...]:
+def parse_group_aliases(raw: str | None) -> dict[str, str]:
+    """Parse and **validate** a Layer B alias map from its JSON env form.
+
+    Layer B maps a *foreign* IdP's group names onto ds bundles::
+
+        {"celine-manager": "ds-participant-admin", "celine-viewer": "ds-participant-viewer"}
+
+    The values must be **bundle names**, never capabilities. An alias pointing
+    straight at ``connector.provider.write`` would make deployment configuration a
+    permission table, which is the thing Layer A exists to prevent — so an unknown
+    target is dropped and named in the log rather than honoured. Dropping is the
+    safe direction: the group then falls through to pass-through and grants only
+    itself, which matches nothing.
+
+    Malformed JSON yields an empty map and a loud error. That is deliberate: a
+    typo'd alias map must not silently become a *different* map, and an empty one
+    means "no translation", which is the pre-existing behaviour.
+    """
+    if not raw or not raw.strip():
+        return {}
+
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError) as exc:
+        logger.error(
+            "ds-auth: group alias map is not valid JSON (%s) — no aliases applied. "
+            "Expected {\"foreign-group\": \"ds-bundle\"}.",
+            exc,
+        )
+        return {}
+
+    if not isinstance(parsed, dict):
+        logger.error(
+            "ds-auth: group alias map must be a JSON object, got %s — no aliases "
+            "applied.",
+            type(parsed).__name__,
+        )
+        return {}
+
+    aliases: dict[str, str] = {}
+    for foreign, target in parsed.items():
+        if not isinstance(foreign, str) or not isinstance(target, str):
+            logger.error("ds-auth: ignoring non-string alias entry %r -> %r", foreign, target)
+            continue
+        if target not in ROLE_BUNDLES:
+            logger.error(
+                "ds-auth: ignoring alias %r -> %r: %r is not a role bundle. An alias "
+                "may only name a bundle (%s), never a capability — otherwise the "
+                "permission table becomes deployment configuration.",
+                foreign,
+                target,
+                target,
+                ", ".join(sorted(ROLE_BUNDLES)),
+            )
+            continue
+        aliases[foreign] = target
+
+    if aliases:
+        logger.info(
+            "ds-auth: group alias map active — %s",
+            ", ".join(f"{k} -> {v}" for k, v in sorted(aliases.items())),
+        )
+    return aliases
+
+
+def expand_bundles(
+    groups: Iterable[str], aliases: Mapping[str, str] | None = None
+) -> tuple[str, ...]:
     """Expand bundle names into capabilities, preserving order and deduping.
 
-    Three rules, in order:
+    Four rules, in order:
 
+    0. A **Layer B alias** is translated first: a foreign IdP's group name becomes
+       the ds bundle a deployment mapped it to. Aliases are validated at parse time
+       (:func:`parse_group_aliases`) so they can only name bundles, never
+       capabilities — the permission table stays in Layer A, in code.
     1. A known bundle name expands to its capability set.
     2. A **machine-identity** permission is dropped. It is not grantable to a
        human however the group is named — a realm that defines a group called
        ``connector.internal`` must not thereby hand out the connector's own
-       identity.
+       identity. This is checked **after** aliasing, so an alias cannot smuggle one
+       in either.
     3. Anything else passes through **verbatim**, as its own capability.
 
     Rule 3 is what makes the migration free: a realm still carrying the old
@@ -190,9 +266,11 @@ def expand_bundles(groups: Iterable[str]) -> tuple[str, ...]:
             seen.add(permission)
             result.append(permission)
 
-    for group in groups:
-        if not isinstance(group, str) or not group:
+    for raw_group in groups:
+        if not isinstance(raw_group, str) or not raw_group:
             continue
+        # Rule 0: translate a foreign name before anything else looks at it.
+        group = (aliases or {}).get(raw_group, raw_group)
         capabilities = ROLE_BUNDLES.get(group)
         if capabilities is not None:
             for capability in capabilities:
