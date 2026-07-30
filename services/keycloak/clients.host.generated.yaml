@@ -1,0 +1,166 @@
+# GENERATED FILE — DO NOT EDIT.
+#
+# Source: services/keycloak/clients.yaml
+# Regenerate: task keycloak:mirror
+#
+# The ds section of a *host* realm's clients.yaml, for a deployment where ds is a
+# guest rather than the realm's owner. Merge these entries into the host's file;
+# everything else there is the host's own and is left alone.
+#
+# `svc-ds-e2e` is excluded (dev/CI only, deliberately over-granted) and every
+# `*.admin` grant is dropped: admin is an operator grant, and a long-lived process
+# should not hold a superset over every permission of a service.
+
+scopes:
+- name: dataset.query
+  description: Execute dataset queries
+- name: dataset.read
+  description: Read dataset metadata and schema
+- name: dataset.write
+  description: Write dataset data
+- name: rec-registry.import
+  description: Permission to import into the registry
+- name: rec-registry.export
+  description: Permission to export from the registry
+- name: rec-registry.lookup
+  description: Permission to lookup data
+- name: identity-registry.read
+  description: Read participant registry and request credential presentations
+- name: identity-registry.resolve
+  description: Resolve user identity by email
+- name: identity-registry.membership.read
+  description: Check organization membership
+- name: identity-registry.organizations.read
+  description: Read organisation applications and owners
+- name: identity-registry.organizations.write
+  description: Register, verify and credential an organisation
+- name: identity-registry.organizations.promote
+  description: Promote, suspend or revoke an organisation as a participant
+- name: identity-registry.agreements.read
+  description: Read service agreements and their acceptances
+- name: identity-registry.participants.write
+  description: Register, update or deactivate a DSP participant
+- name: identity-registry.credentials.write
+  description: Issue and revoke a data-subject credential
+- name: identity-registry.memberships.write
+  description: Register or delete an organisation membership
+- name: identity-registry.keycloak.sync
+  description: Bind a Keycloak user to a dataspace DID
+- name: connector.provider.read
+  description: Read provider assets, policies, contracts, transfers, authorizations
+- name: connector.provider.write
+  description: Mutate provider config (sync, delete assets/policies/contracts)
+- name: connector.history.read
+  description: Read EDC negotiation, agreement and transfer history
+- name: connector.registry.invalidate
+  description: Invalidate the cached participant registry
+- name: connector.internal
+  description: Internal API (agreement/transfer/consent checks, audit, JWKS)
+- name: connector.webhook
+  description: Accept EDC webhook events (transfer-process, contract-negotiation)
+- name: connector.consent.provision
+  description: Provision a subject's standing sharing decision (POST /consent/admin/shares)
+- name: connector.consent.read
+  description: Is a negotiation awaiting a consent decision (GET /consent/pending)
+- name: connector.ingestion.record
+  description: Record a DSO/offline data handover (POST /admin/ingestion)
+- name: provenance.read
+  description: Query provenance lineage and audit log
+- name: provenance.write
+  description: Write provenance events and audit log entries
+- name: catalog.read
+  description: Query federated catalog
+clients:
+- client_id: svc-ds-identity-registry
+  name: Dataspace Identity Registry
+  secret: ${SVC_DS_IDENTITY_REGISTRY_SECRET:-svc-ds-identity-registry}
+  default_scopes:
+  - connector.registry.invalidate
+  scopes_prefix: identity-registry
+  extra_audiences:
+  - svc-ds-connector
+- client_id: svc-ds-onboarding
+  name: Dataspace Onboarding
+  secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
+  default_scopes:
+  - identity-registry.organizations.read
+  - identity-registry.resolve
+  - identity-registry.credentials.write
+  - identity-registry.memberships.write
+  - identity-registry.keycloak.sync
+  - connector.consent.provision
+  - provenance.write
+  extra_audiences:
+  - svc-ds-identity-registry
+  - svc-ds-connector
+  - svc-ds-provenance
+- client_id: svc-ds-portal
+  name: Dataspace Portal
+  secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
+  default_scopes:
+  - dataset.query
+  - dataset.read
+  - identity-registry.resolve
+  - identity-registry.read
+  - identity-registry.membership.read
+  - connector.provider.read
+  - connector.provider.write
+  - connector.history.read
+  - provenance.read
+  - catalog.read
+  extra_audiences:
+  - svc-ds-identity-registry
+  - svc-ds-connector
+  - svc-ds-provenance
+  - svc-ds-federated-catalog
+- client_id: svc-ds-connector
+  name: Dataspace Connector
+  secret: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+  default_scopes:
+  - identity-registry.read
+  - identity-registry.membership.read
+  - provenance.write
+  - connector.consent.read
+  scopes_prefix: connector
+  extra_audiences:
+  - svc-ds-identity-registry
+  - svc-ds-provenance
+  - svc-ds-connector
+- client_id: svc-ds-provenance
+  name: Dataspace Provenance
+  secret: ${SVC_DS_PROVENANCE_SECRET:-svc-ds-provenance}
+  default_scopes: []
+  scopes_prefix: provenance
+- client_id: svc-ds-federated-catalog
+  name: Dataspace Federated Catalog
+  secret: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
+  default_scopes:
+  - identity-registry.read
+  scopes_prefix: catalog
+  extra_audiences:
+  - svc-ds-identity-registry
+- client_id: svc-ds-dataset-api
+  name: Dataspace Dataset API
+  secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
+  default_scopes:
+  - connector.internal
+  - rec-registry.lookup
+  scopes_prefix: dataset
+  extra_audiences:
+  - svc-ds-connector
+  - svc-rec-registry
+- client_id: svc-rec-registry
+  name: REC Registry Service
+  secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
+  default_scopes: []
+  scopes_prefix: rec-registry
+- client_id: svc-edc
+  name: Eclipse Dataspace Connector
+  secret: ${SVC_EDC_SECRET:-svc-edc}
+  default_scopes:
+  - identity-registry.read
+  - connector.webhook
+  - connector.internal
+  extra_audiences:
+  - svc-ds-identity-registry
+  - svc-ds-connector

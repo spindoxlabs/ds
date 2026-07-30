@@ -112,3 +112,68 @@ def test_bundle_names_do_not_collide_with_scope_names(bundle: str):
 @pytest.mark.parametrize("bundle", sorted(ROLE_BUNDLES))
 def test_every_bundle_grants_something(bundle: str):
     assert ROLE_BUNDLES[bundle], f"{bundle} expands to nothing"
+
+
+# ── The host-realm mirror ────────────────────────────────────────────────────
+#
+# Where ds is a guest, the host realm's `clients.yaml` must carry the same clients
+# and scopes. That copy was hand-maintained, and every row of drift found so far —
+# `svc-edc` missing `connector.internal`, `svc-ds-provenance` declared in neither
+# file, `svc-ds-portal` holding `connector.admin` — is a symptom of two files
+# edited by hand and compared by eye. It is generated now; this is the gate.
+
+
+def _mirror_module():
+    """The generator, imported normally — it lives in the identity-registry package
+    because `ir-cli` already owns the `keycloak` command surface."""
+    import sys
+
+    src = REPO / "services" / "identity-registry" / "src"
+    if str(src) not in sys.path:
+        sys.path.insert(0, str(src))
+    from identity_registry.services import keycloak_mirror
+
+    return keycloak_mirror
+
+
+def test_the_generated_mirror_is_not_stale():
+    """If this fails, `clients.yaml` changed and the mirror did not — run
+    `task keycloak:mirror` and commit the result."""
+    mirror = _mirror_module()
+    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
+    assert mirror.TARGET.exists(), "mirror missing — run `task keycloak:mirror`"
+    assert mirror.TARGET.read_text(encoding="utf-8") == mirror.render(source), (
+        "mirror is stale — run `task keycloak:mirror`"
+    )
+
+
+def test_the_mirror_carries_no_admin_grant():
+    """Admin is an *operator* grant and a superset over every `{service}.*`. A
+    long-lived process should not hold one, and a copy must not quietly widen what
+    the original granted."""
+    mirror = _mirror_module()
+    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
+    built = mirror.build_mirror(source)
+    for client in built["clients"]:
+        leaked = [s for s in client["default_scopes"] if s.endswith(".admin")]
+        assert not leaked, f"{client['client_id']} crosses with {leaked}"
+    assert not [s for s in built["scopes"] if s["name"].endswith(".admin")]
+
+
+def test_the_test_identity_never_crosses():
+    """`svc-ds-e2e` is dev/CI only and deliberately over-granted. A test identity
+    in a production realm is a permanent credential nobody audits."""
+    mirror = _mirror_module()
+    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
+    ids = {c["client_id"] for c in mirror.build_mirror(source)["clients"]}
+    assert "svc-ds-e2e" not in ids
+
+
+def test_every_other_client_does_cross():
+    """Provisioned-but-unused is harmless; missing is a 403 at the worst moment.
+    So a client whose grants are *entirely* admin still crosses, with none."""
+    mirror = _mirror_module()
+    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
+    declared = {c["client_id"] for c in source["clients"]} - {"svc-ds-e2e"}
+    crossed = {c["client_id"] for c in mirror.build_mirror(source)["clients"]}
+    assert declared == crossed

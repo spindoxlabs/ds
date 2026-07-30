@@ -695,6 +695,53 @@ def keycloak_org_sync(
         raise typer.Exit(1)
 
 
+@keycloak_app.command("mirror")
+def keycloak_mirror(
+    check: bool = typer.Option(
+        False, "--check", help="Fail if the generated fragment is stale"
+    ),
+    diff: str = typer.Option(
+        None, "--diff", help="Report what a host realm's clients.yaml is missing"
+    ),
+):
+    """Generate the ds section a *host* realm's clients.yaml must carry.
+
+    `services/keycloak/clients.yaml` is ds's declaration of what it needs from a
+    realm. Where ds owns the realm it is applied directly; where ds is a guest, the
+    host's file must carry the same clients and scopes — and that copy used to be
+    kept by hand, which is where every drift found so far came from.
+
+    `--diff` reports rather than writes: the host's file belongs to the host, and a
+    tool that edits another repository's config is one nobody can review.
+    """
+    import yaml as _yaml
+
+    from ..services import keycloak_mirror as mirror
+
+    source = _yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
+
+    if diff:
+        problems = mirror.diff_against_host(source, Path(diff))
+        for problem in problems:
+            typer.echo(problem)
+        typer.echo(f"\n{len(problems)} problem(s) against {diff}")
+        raise typer.Exit(1 if problems else 0)
+
+    rendered = mirror.render(source)
+    if check:
+        current = (
+            mirror.TARGET.read_text(encoding="utf-8") if mirror.TARGET.exists() else ""
+        )
+        if current != rendered:
+            typer.echo("mirror is stale — run `task keycloak:mirror`")
+            raise typer.Exit(1)
+        typer.echo("mirror is current")
+        return
+
+    mirror.TARGET.write_text(rendered, encoding="utf-8")
+    typer.echo(str(mirror.TARGET))
+
+
 @keycloak_app.command("sync")
 def keycloak_sync(
     did: str = typer.Option(..., help="User DID to map"),

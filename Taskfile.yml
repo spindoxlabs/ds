@@ -1265,3 +1265,13 @@ tasks:
     desc: Regenerate the portal's copy of the role-bundle table from ds_auth.bundles
     cmds:
       - task -d libs/ds-auth bundles:generate
+
+  keycloak:mirror:
+    desc: Regenerate the ds section a host realm's clients.yaml must carry
+    cmds:
+      - cd services/identity-registry && uv run ir-cli keycloak mirror
+
+  keycloak:mirror:diff:
+    desc: "Report what a host realm is missing: HOST=<path to its clients.yaml>"
+    cmds:
+      - cd services/identity-registry && uv run ir-cli keycloak mirror --diff {{.HOST}}
