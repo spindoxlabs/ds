@@ -26,6 +26,7 @@ def make_headers(scope: str = "connector.admin") -> dict:
 def make_vc_headers(
     subject_did: str = "did:web:users.dataspaces.localhost:sub-001",
     role: str = "DataSubject",
+    linked_participant: str = "did:web:provider.dataspaces.localhost",
 ) -> dict:
     """VC-JWT headers for the ``/consent/*`` and ``/consumer/*`` surfaces.
 
@@ -35,6 +36,11 @@ def make_vc_headers(
     verified here because the test settings leave the trust-anchor key unset
     (``CONNECTOR_VC_INSECURE_DEV`` default), but every other claim is checked,
     so the token still has to be well-formed.
+
+    ``linked_participant`` has to match whichever participant the route checks
+    against: the ``/consent/*`` routes are the provider's, while ``/consumer/*``
+    checks ``CONNECTOR_CONSUMER_PARTICIPANT_DID``. Defaulting it to the provider
+    and forgetting to override it produces a 403 that looks like a scope problem.
     """
     header = _b64url(json.dumps({"alg": "ES256", "typ": "JWT"}))
     payload = _b64url(json.dumps({
@@ -45,7 +51,7 @@ def make_vc_headers(
             "credentialSubject": {
                 "id": subject_did,
                 "role": role,
-                "linkedParticipant": "did:web:provider.dataspaces.localhost",
+                "linkedParticipant": linked_participant,
             },
         },
     }))

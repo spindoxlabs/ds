@@ -107,6 +107,17 @@ def _guarded_routes(s: Any) -> list[tuple[str, str, str, dict[str, Any] | None]]
         # ── connector: webhooks (the EDC calls these) ────────────────────────
         ("connector", "POST", "/webhooks/contract-negotiation", {}),
         ("connector", "POST", "/webhooks/transfer-process", {}),
+        # ── consumer connector: DSP catalogue discovery ──────────────────────
+        # Had no guard of any kind (defect P0-1, rulebook C-19), which is also
+        # why the federated catalogue's crawler worked while sending nothing.
+        # It takes either a `ConsumerUser` VC-JWT or `connector.consumer.read`,
+        # and this battery proves it takes neither by default.
+        (
+            "consumer-connector",
+            "POST",
+            "/consumer/catalog",
+            {"counter_party_address": "http://provider.invalid/protocol/2025-1"},
+        ),
         # ── connector: history ───────────────────────────────────────────────
         ("connector", "GET", "/history/agreements", None),
         ("connector", "GET", "/history/negotiations", None),

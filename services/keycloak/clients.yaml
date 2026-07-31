@@ -93,6 +93,11 @@ scopes:
   # /internal/edr-jwks. A cache hint should not carry either.
   - name: connector.registry.invalidate
     description: Invalidate the cached participant registry
+  # Drive the consumer side on the participant's behalf — today the federated
+  # catalogue's crawler, calling POST /consumer/catalog. A *person* reaches the
+  # same route with a ConsumerUser VC-JWT instead, so this is service-only.
+  - name: connector.consumer.read
+    description: Fetch a counterparty catalogue through the consumer connector
   - name: connector.internal
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
@@ -268,10 +273,16 @@ clients:
     name: Dataspace Federated Catalog
     secret: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
     scopes_prefix: catalog
+    service_account_enabled: true
     default_scopes:
       - identity-registry.read
+      # The crawl calls POST /consumer/catalog on the consumer-role connector.
+      # It held no `connector.*` scope at all and worked only because that route
+      # was unguarded — defects P0-1 and P1-3, which had to be fixed together.
+      - connector.consumer.read
     extra_audiences:
       - svc-ds-identity-registry
+      - svc-ds-connector
 
   - client_id: svc-ds-dataset-api
     name: Dataspace Dataset API

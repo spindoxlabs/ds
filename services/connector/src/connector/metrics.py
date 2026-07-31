@@ -59,6 +59,19 @@ class HttpMetrics:
 
 
 def install_metrics(app: FastAPI, service: str) -> None:
+    """Collect HTTP metrics and expose them at ``/metrics``.
+
+    **Deliberately unauthenticated, and not a gap.** Reachability is a
+    deployment control, not an application one: under Helm a default-deny
+    NetworkPolicy (`global.networkPolicy.enabled`, true by default) makes this
+    port reachable by nothing, and turning on `global.monitoring.serviceMonitor`
+    opens it to the Prometheus namespace alone. It is never placed on an
+    Ingress. Compose is a development topology and does not model this.
+
+    An app-layer guard here would be actively wrong: a Prometheus scraper holds
+    no Keycloak token, so requiring one breaks collection in the deployment
+    where the control already exists.
+    """
     metrics = HttpMetrics(service)
     app.state.metrics = metrics
 

@@ -32,6 +32,18 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/internal", tags=["internal"])
 
 
+class EdcUnreachable(RuntimeError):
+    """The EDC could not be asked — as distinct from having answered "no".
+
+    Rulebook `CR-4`: an undecidable constraint is a denial, never a permission.
+    The failure mode this type exists to prevent is subtler than a wrong verdict:
+    both helpers below used to answer ``None`` for *"no such agreement"* and for
+    *"the connection was refused"*, so ``GET /internal/agreements/{id}/status``
+    reported a definite 404 for a question it had not managed to ask. A caller
+    cannot fail closed on an answer that does not admit it is missing.
+    """
+
+
 class DataPlaneAuthorizeRequest(BaseModel):
     """What a data plane knows about a request it has already authenticated.
 
@@ -70,27 +82,57 @@ async def agreement_status(
     status = await get_agreement_status(db, agreement_id)
     if status is not None:
         return status
-    edc_status = await _check_edc_agreement(agreement_id)
+    try:
+        edc_status = await _check_edc_agreement(agreement_id)
+    except EdcUnreachable as exc:
+        # **Not a 404.** "We could not ask" and "there is no such agreement" are
+        # different answers, and only one of them is safe to cache as a negative.
+        raise HTTPException(
+            503, f"Cannot determine agreement status: {exc}"
+        ) from exc
     if edc_status is not None:
         return edc_status
     raise HTTPException(404, f"Agreement {agreement_id!r} not found")
 
 
+def _edc_management_url(settings) -> str:
+    """The management API of *this* connector's own EDC.
+
+    The internal router mounts in both roles (`main.py`), so reading the provider
+    URL unconditionally pointed a consumer-role connector at the other
+    participant's EDC — which, when it happened to be reachable, answered about
+    the wrong runtime's agreements.
+    """
+    url = (
+        settings.edc_provider_management_url
+        if settings.role == "provider"
+        else settings.edc_consumer_management_url
+    )
+    return url.rstrip("/")
+
+
 async def _check_edc_agreement(agreement_id: str) -> dict | None:
-    """Check EDC management API for a contract agreement (provider-side fallback)."""
+    """Check EDC management API for a contract agreement (role-local fallback).
+
+    ``None`` means the EDC answered and holds no such agreement. Anything that
+    stops us getting an answer raises :class:`EdcUnreachable`.
+    """
     settings = get_settings()
-    edc_url = settings.edc_provider_management_url.rstrip("/")
+    edc_url = _edc_management_url(settings)
     headers = {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(f"{edc_url}/v3/contractagreements/{agreement_id}", headers=headers)
-        if resp.status_code == 404:
-            return None
-        if resp.status_code != 200:
-            return None
-        return {"active": True, "agreement_id": agreement_id, "source": "edc"}
-    except (httpx.RequestError, Exception):
+    except httpx.HTTPError as exc:
+        raise EdcUnreachable(f"EDC management API unreachable: {exc}") from exc
+    if resp.status_code == 404:
         return None
+    if resp.status_code != 200:
+        raise EdcUnreachable(
+            f"EDC management API answered {resp.status_code} for agreement "
+            f"{agreement_id!r}"
+        )
+    return {"active": True, "agreement_id": agreement_id, "source": "edc"}
 
 
 @router.get("/transfers/{transfer_id}/status")
@@ -114,7 +156,15 @@ async def transfer_status(
     )
     transfer = result.scalar_one_or_none()
     if not transfer:
-        active = await _check_edc_transfer(transfer_id, agreement_id)
+        try:
+            active = await _check_edc_transfer(transfer_id, agreement_id)
+        except EdcUnreachable as exc:
+            # Deny, as `CR-4` requires — but say which denial this is. Reporting
+            # `transfer_not_found` for an unreachable EDC states a fact we do not
+            # have, and it is the fact an operator would use to conclude the
+            # consumer never started a transfer.
+            log.warning("Transfer status for %s undecidable: %s", transfer_id, exc)
+            return {"active": False, "reason": "edc_unreachable"}
         if active is not None:
             return active
         return {"active": False, "reason": "transfer_not_found"}
@@ -147,9 +197,13 @@ async def transfer_status(
 
 
 async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dict | None:
-    """Check EDC management API for a transfer by correlationId (provider-side lookup)."""
+    """Check EDC management API for a transfer by correlationId (role-local lookup).
+
+    ``None`` means the EDC answered and knows no such transfer. Anything that
+    stops us getting an answer raises :class:`EdcUnreachable`.
+    """
     settings = get_settings()
-    edc_url = settings.edc_provider_management_url.rstrip("/")
+    edc_url = _edc_management_url(settings)
     headers = {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
     query = {
         "@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"},
@@ -161,17 +215,26 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.post(f"{edc_url}/v3/transferprocesses/request", json=query, headers=headers)
-        if resp.status_code != 200 or not resp.text:
-            return None
-        results = resp.json()
-        if not results:
-            return None
-        tp = results[0]
-        state = tp.get("edc:state", tp.get("state", ""))
-        active = state in ("STARTED", "COMPLETED")
-        return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
-    except (httpx.RequestError, Exception):
+    except httpx.HTTPError as exc:
+        raise EdcUnreachable(f"EDC management API unreachable: {exc}") from exc
+    if resp.status_code != 200:
+        raise EdcUnreachable(
+            f"EDC management API answered {resp.status_code} for transfer "
+            f"{transfer_id!r}"
+        )
+    if not resp.text:
         return None
+    try:
+        results = resp.json()
+    except ValueError as exc:
+        # A body we cannot parse is not an empty result set.
+        raise EdcUnreachable(f"EDC management API returned non-JSON: {exc}") from exc
+    if not results:
+        return None
+    tp = results[0]
+    state = tp.get("edc:state", tp.get("state", ""))
+    active = state in ("STARTED", "COMPLETED")
+    return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
 
 
 @router.post("/dataplane/authorize")

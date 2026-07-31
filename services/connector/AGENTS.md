@@ -1,461 +1,101 @@
-# ds-connector — Agent Guide
+# ds-connector
 
-## Service identity
+Python control plane beside an EDC runtime. One codebase, **two instances** —
+`CONNECTOR_ROLE` selects the EDC client and which routers mount.
 
-- **Role**: EDC orchestration, consent management, governance sync
-- **Language**: Python 3.12, FastAPI
-- **Port**: 30001 (debug: 30901)
-- **URL**: `http://portal.dataspaces.localhost:9010/api/connector/` (via Caddy), direct `http://172.17.0.1:30001`
-- **Database**: PostgreSQL (`connector` DB), async SQLAlchemy + Alembic
+30001 provider / 31001 consumer (debug 30901 / 31901). PostgreSQL.
 
-## Source layout
+## References
 
-```
-src/connector/
-├── main.py              FastAPI app factory with lifespan hooks
-├── config.py            Pydantic settings (ConnectorSettings)
-├── api/v1/
-│   ├── provider.py      POST /provider/sync, GET /provider/{assets,policies,contracts,transfers,agreements,authorizations}
-│   ├── consumer.py      POST /consumer/catalog, POST /consumer/{negotiate,transfer,flow}, GET /consumer/{negotiations,transfers,edr}/*
-│   ├── consent.py       POST /consent/request (provider-local seeding), GET /consent/pending, GET /consent/asks, GET/POST /consent/my/shares, POST /consent/admin/shares, POST /consent/my/{id}/{approve,reject,revoke}
-│   ├── history.py       GET /history/{negotiations,agreements,transfers} — paginated EDC state queries
-│   ├── internal.py      GET /internal/agreements/*/status, GET /internal/consent/check, POST /internal/consent/asks, POST /consent/register-transfer, GET /internal/edr-jwks
-│   ├── admin.py         GET /admin/participants, POST /admin/ingestion (record a DSO handover → DataIngested)
-│   └── namespace.py     GET /ns/policy, GET /ns/sharing-offers — public vocabularies
-├── services/
-│   ├── governance.py    GovernanceService — loads governance.yaml, filters by expose flag
-│   ├── consent_vocabulary.py Resolution + matching for datasets, purposes and offers
-│   ├── circle.py        Who is a covered processor vs an independent controller
-│   ├── provider_service.py   ProviderService — sync assets/policies/contracts to EDC
-│   ├── consumer_service.py   ConsumerService — negotiate/transfer/poll/edr
-│   ├── consent_service.py    ConsentService — CRUD, the subject pool, the ask ↔ negotiation link
-│   ├── pending_sweep.py      TTL on a negotiation parked waiting for a person (§6.2)
-│   ├── agreement_service.py  AgreementService — EDC contract agreement queries
-│   └── prov_bridge.py        ProvBridge — emit provenance events to ds-provenance
-├── clients/
-│   ├── edc_management.py  Re-exports EdcManagementClient from shared libs/ds-edc
-│   └── provenance.py     ProvenanceClient — POST events to ds-provenance
-├── registry/
-│   └── participants.py   HttpParticipantRegistry — fetches participants from identity-registry API with TTL cache; file-based fallback when identity_registry_url is empty
-├── notifications/
-│   ├── base.py           Notifier protocol
-│   ├── smtp.py           SMTP email notifier
-│   ├── webhook.py        Webhook notifier
-│   └── null.py           No-op notifier (default)
-└── db/
-    ├── engine.py         async engine + session factory
-    └── models.py         ContractAgreementORM, ConsentRequestORM, ConsumerTransferORM, ConsumerAccessRequestORM
-```
+| | |
+|---|---|
+| Requirements | [DSSC · Access & Usage Policies Enforcement](../../docs/blueprints/dssc/data-sovereignty-and-trust/access-and-usage-policies-enforcement.md) · [DSSC · Data Exchange](../../docs/blueprints/dssc/data-interoperability/data-exchange.md) · [DSSC · Cross-cutting (personal data)](../../docs/blueprints/dssc/cross-cutting.md) |
+| Rules | [Rulebook · Policies](../../docs/rulebook/policies.md) · [Rulebook · Personal data](../../docs/rulebook/personal-data.md) |
+| Code as committed | [docs/services/connector.md](../../docs/services/connector.md) |
 
-## Key files for common tasks
+## Role
 
-| Task | Files to touch |
-|------|---------------|
-| Add a new API endpoint | `api/v1/<group>.py`, register router in `main.py` |
-| Change governance-to-ODRL mapping | `../../libs/governance/src/ds/governance/mapper.py` (shared lib) |
-| Modify consent logic | `services/consent_service.py`, `db/models.py` |
-| Add a purpose, or change purpose matching | `../../libs/governance/.../profiles/energy.yaml`, `services/consent_vocabulary.py` |
-| Add or change a sharing offer | `governance/sharing-offers.yaml`, then `task compliance:validate` |
-| Change EDC API calls | `../../libs/ds-edc/src/ds_edc/client.py` (shared lib) |
-| Add a new provenance event | `services/prov_bridge.py`, `clients/provenance.py` |
-| Add/change config settings | `config.py` (Pydantic settings with env vars) |
-| Add or change an auth guard | `dependencies.py` — and read the owner perimeter below first |
-| Database schema change | `db/models.py` → run `task db:revision MESSAGE=description` |
+| Surface | Responsibility |
+|---|---|
+| `POST /provider/sync` | Publishes `governance.yaml` into EDC as assets, policies, contract definitions |
+| `/internal/*` | The PDP — answers the EDC constraint functions and the data-plane PEP |
+| `/consent/*` | The consent registry |
+| `/consumer/*` | Drives the consumer side of DSP: catalogue → negotiate → transfer → EDR |
+| `/webhooks/*` | Records EDC negotiation and transfer lifecycle |
+| `/ns/*` | Public vocabularies — ODRL profile, sharing offers |
 
-## The per-owner perimeter — `dependencies.py`
+Every act emits a PROV-O event through `services/prov_bridge.py`.
 
-A participant may host datasets for **several owners**, and
-`connector.provider.write` on its own says nothing about *which*. Until this
-landed, per-owner authority was enforced **nowhere on the server**: the portal
-filtered its buttons by owner, which made the gap invisible — the UI looked scoped
-and the API was not, so any `connector.provider.write` holder could delete any
-owner's asset.
+## Where to work
 
-`require_provider_write_own` (`_own_owner_only`) now guards all three provider
-deletes. Four decisions in it, each with a test in
-`tests/test_provider_owner_perimeter.py`:
+| Task | Start at |
+|---|---|
+| New endpoint | `api/v1/<group>.py`, register in `main.py`, guard per root AGENTS.md |
+| Auth guard / per-owner scoping | `dependencies.py` — read [the owner perimeter](#the-owner-perimeter) first |
+| Consent behaviour | `services/consent_service.py` |
+| What a consent write may say | `services/consent_vocabulary.py` — the single validation point; raises 422 |
+| Covered processor vs independent controller | `services/circle.py` |
+| Governance → ODRL | `libs/governance/.../mapper.py` — shared lib, not here |
+| EDC calls | `libs/ds-edc/.../client.py` — shared lib. Never call EDC from a route |
+| Provenance emission | `services/prov_bridge.py` |
+| Schema change | `db/models.py`, then `task db:revision MESSAGE=...` |
 
-| Case | Behaviour | Why |
-|---|---|---|
-| `connector.admin` | crosses owners | it is the deployment operator's grant |
-| an **unowned** asset | not confined | ownership is optional in `governance.yaml`, and this matches the portal |
-| a holder with **no** organisations | refused | the absence of a claim is not authority |
-| service tokens | unaffected | they carry no organisations and run the syncs |
+The **rules** of the consent model — purposes, controller roles, the scoped wildcard,
+legal-basis evidence, what fails closed — are in `docs/rulebook/personal-data.md`. Change
+them there and here in the same commit.
 
-Three things it does that are easy to get wrong if you write a similar guard:
+## The owner perimeter
 
-- **`_asset_owner` matches on the local name, not a prefix.** A real EDC returns
-  `dsp-policy:owner`, not `ds:owner` — the prefix comes from the active ODRL
-  profile and EDC JSON-LD-compacts it. The first version read `ds:owner`, found no
-  owner, treated every asset as unowned and allowed every write; its six unit tests
-  passed because they asserted against a key the tests themselves invented. Only a
-  real token against a real EDC caught it. **A guard that reads a field written
+A participant may host datasets for several owners, and `connector.provider.write` says
+nothing about *which*. `require_provider_write_own` guards the provider deletes; cases and
+reasoning are in `tests/test_provider_owner_perimeter.py`.
+
+Three things to get right if you write a similar guard:
+
+- **`_asset_owner` matches the local name, not a prefix.** EDC JSON-LD-compacts to the
+  active profile's prefix (`dsp-policy:owner`), not `ds:owner`. The first version read the
+  wrong key, found no owner, and allowed every write — with six passing unit tests, because
+  they asserted against a key the tests invented. **A guard reading a field written
   elsewhere needs one end-to-end assertion against the real writer.**
 - **`_canonical_owner` resolves the claim's alias through the owners registry**, so
-  `Owner.aliases[]` is honoured — a governance file saying `example` and a realm
-  saying `example-org` describe the same owner.
-- **It asks the per-organisation question** (`Principal.grants_in`), not "is a
-  member of X *and* holds the permission somewhere". The latter passes a caller who
-  is a viewer in owner A and an admin in owner B.
-
-Policies and contracts carry no owner in EDC — a contract references assets only
-through a selector and a policy references nothing — so their deletes resolve the
-owner **through governance** (`owner_by_edc_id()` maps the derived ids back). Left
-unscoped, an operator could delete the *terms* another participant's data is
-offered on: the asset survives, the offer does not.
-
-**`POST /provider/sync` is deliberately participant-wide.** It republishes the
-whole governance file in one act, so there is no single owner to scope it to. The
-consequence, stated rather than implied: in a participant hosting datasets for
-several owners, a `ds-participant-admin` for one of them can republish all of them.
-Per-owner sync is a governance-model change, not a guard change — **do not fake it
-with a guard.**
-
-## Coding conventions
-
-- All database access is async (`async with session` pattern)
-- Use `httpx.AsyncClient` for HTTP calls, never `requests`
-- EDC Management API calls go through `EdcManagementClient` — never call EDC directly from routes
-- Settings loaded from env vars with sensible local-dev defaults — no `.env` file required
-- Route handlers are thin: validate input, call service, return response
-- Use `tenacity` for retry logic on EDC polling
-- Import the governance library as `from ds.governance.mapper import GovernanceMapper`
-
-## Governance YAML
-
-The governance source of truth is `governance/governance.yaml`. Structure:
-
-```yaml
-defaults:
-  access_level: internal
-  dataspace:
-    expose: false
-
-sources:
-  datasets.gold.metric:
-    title: "Energy Metrics"
-    access_level: open|internal|restricted|secret
-    classification: green|pii
-    tags: [energy, metrics]        # DCAT-AP keywords — no policy meaning
-    policy:
-      purpose: [EnergyCommunityOperation]   # the ONLY runtime purpose source
-      consent:
-        required: true             # gate rows on subject consent
-    dataspace:
-      expose: true
-      medallion: gold|silver|bronze
-      asset:
-        id: "https://..."
-        content_type: application/json
-      data_address:
-        type: HttpData
-        base_url: http://dataset-api:30002/query
-```
-
-The `GovernanceMapper` converts this to ODRL offers + EDC payloads. `secret` datasets are never exposed.
-
-`ConnectorGovernanceMapper._to_edc_constraint` renders purpose IRIs as plain strings
-for the EDC policy while the public ODRL offer keeps `{"@id": <iri>}`. EDC compares
-right operands as literals, and `ConsentStatusFunction` reads the negotiated purposes
-back out of the permission — it needs a string to find.
-
-## Sharing offers — `governance/sharing-offers.yaml`
-
-What a person is actually asked to consent to: a purpose-scoped bundle, from a named
-controller, for a described category of recipient. Same overlay mechanism as
-`governance.yaml` (`sharing-offers.<name>.yaml`; `*.local.yaml` is gitignored).
-
-Served publicly at `GET /ns/sharing-offers` as **codes plus an English fallback**, so
-a frontend composes its own sentences per locale and can never invent a resolution or
-widen a coverage window. Dataset keys are not in the public projection.
-
-`legal_basis` decides the UI: only `dpv:Consent` offers get a control. Contract-based
-processing is disclosed, not toggled — `POST /consent/my/shares` returns **409** for a
-non-consent-based offer, so a UI bug cannot manufacture a choice that does not exist.
-
-### Producer-contributed offers — `sharing-offers.d/`
-
-When multiple producers contribute datasets, each may define its own sharing offers.
-These live in `governance/sharing-offers.d/<producer>.yaml` — loaded at runtime as a
-**union** (not merge) with the base file:
-
-- Duplicate offer ids across files → `DuplicateOfferError` naming both files
-- No file has precedence — contributions are peers
-- The deployment overlay (`sharing-offers.<name>.yaml`) applies **after** all
-  contributions and may replace by id (deployment rebinding)
-
-**Collecting offers from pipeline apps:**
-
-```bash
-task governance:collect:sharing-offers   # defined in taskfile.local.yaml
-```
-
-The task scans pipeline app directories for `sharing-offers.yaml` beside each
-`governance.yaml`, stages them with per-app deployment overlays, and calls
-`ds-governance collect-offers` (in `libs/governance`) to write the result to
-`sharing-offers.d/`. Stale files from removed apps are cleaned on each run.
-
-Setup: copy `taskfile.local.example.yaml` to `taskfile.local.yaml` and adjust
-`PIPELINE_DIRS` and `OFFERS_OVERRIDES` to your deployment layout. See also
-`governance/sharing-offers.overlay.yaml.example` for the runtime overlay pattern.
-
-## The consent vocabulary — where writes are validated
-
-`services/consent_vocabulary.py` is the single place the three vocabularies meet.
-Every consent write resolves through it:
-
-| Function | Guarantees |
-|---|---|
-| `resolve_dataset` | The key is declared in governance — not merely resolvable via `defaults` |
-| `normalise_purposes` | Every purpose exists in the taxonomy; stored as slugs. Raises rather than dropping |
-| `purpose_covered` | `odrl:isA` over the local `broader` chain only |
-| `resolve_offer` / `public_offer_projection` | Offer lookup and the public codes-only shape |
-
-`VocabularyError` surfaces as **422** at the API boundary. Configuration is cached per
-process (`lru_cache`); call `reset_caches()` after a governance reload or in tests.
-
-### Enforcement rules that are easy to get wrong
-
-- **Empty `purpose[]` is never a wildcard for personal data.** For a consent-required
-  dataset it means the person was never told the use, so the row fails closed.
-- **An absent requested purpose also fails closed.** A PEP that predates the purpose
-  chain receives zero rows, not all of them.
-- **An unknown `dataset_id` reaching `/internal/consent/check` is treated as
-  consent-required**, so a mis-keyed request denies rather than leaks.
-- **Consent to a child purpose does not cover its parent** — that would widen consent.
-
-### The circle (`services/circle.py`)
-
-Decides whether a requester is a *covered processor* (disclose, never ask) or an
-*independent controller* (ask). `admitted_by` constraints are ANDed, an empty list
-admits nobody, and an unknown constraint kind is unsatisfiable.
-
-Capacity comes from the participant's current accepted agreement. Until the
-identity-registry exposes agreements, capacity is unprovable and everyone resolves to
-*outside the circle* — which asks rather than assumes. A redundant question is
-recoverable; a skipped one is not.
-
-## Service-provisioned shares and the scoped wildcard (Block B)
-
-`POST /consent/admin/shares` lets a service — the onboarding wizard — record a
-subject's standing data-sharing consent on their behalf after approval. It
-authenticates as a service (`connector.consent.provision`, or `connector.admin`),
-**not** with the subject's VC-JWT: spreading user credentials into onboarding
-would add a fourth auth mechanism to a repo that already flags mixing them as its
-commonest mistake. The body names an `offer_id`, never a dataset — the connector
-expands the offer into per-dataset rows so the caller cannot drift from the copy
-the person read. Only consent-based offers are accepted (409 for contract-based).
-Idempotent; the subject's membership in the offer's controller org is checked
-when a registry is wired.
-
-Rows written this way carry **`consumer_id = "*"`** — the *scoped wildcard*
-(`consent_service.WILDCARD_CONSUMER`). It admits **any party inside the circle**
-for the row's controller and purpose — a processor of the declared controller,
-never a new controller and never a new purpose. Precedence, in both
-`check_consent` and `get_granted_subject_ids` (via `resolve_decision`):
-
-| specific `granted` > wildcard | allow (purpose + role must still match) |
-| specific `revoked`/`rejected` > wildcard | deny — an explicit opt-out always wins |
-| no specific + wildcard `granted` | allow (purpose + role must still match) |
-| no specific + no wildcard | deny — fail-closed |
-
-A *pending* specific row (an unanswered consumer request) neither grants nor
-blocks; it falls through to the subject's standing wildcard decision.
-
-## A decision is scoped to the offer it was made about
-
-Several offers may name the **same dataset** for different purposes and different
-controllers. Those are different questions: agreeing to share meter data for
-flexibility research is not agreeing to share it for grid planning.
-
-`set_subject_data_sharing` therefore looks up the subject's current decision with
-`get_latest_offer_consent` when an `offer_id` is given, and `list_my_data_shares`
-collapses to one row per **(dataset, offer)** rather than per dataset. Keyed on the
-dataset alone — as it was — granting the second offer silently returned the first
-row and wrote nothing, while withdrawing the second revoked the first. The subject
-saw a success either way. Decisions made about a bare `dataset_id` keep the old key.
-
-Found by the portal UI journeys, not by the unit tests or `ds-e2e`; both regression
-directions are pinned in `test_consent_provisioning.py`.
-
-## Legal-basis evidence (Block B)
-
-`ConsentRequestORM.legal_basis` (JSON) records *under what basis* a row was
-written: the DPV `basis_iri`, `consent_text_version`, `locale`, the SHA-256 of
-the rendered text actually shown, the offer's `user_visible_hash`, and a
-`submission_ref`. **Codes and hashes only — never PII.** For service-provisioned
-shares the connector is authoritative for the offer-derived fields (`offer_id`,
-`controller`, `controller_role`, `user_visible_hash`); the caller supplies only
-the evidence it holds.
-
-**Granting requires evidence.** `source`, `consent_text_version` and
-`rendered_text_sha256` are mandatory and non-empty on `POST /consent/admin/shares`
-when `enabled=True` (422 otherwise) — which system asked, which revision, the exact
-bytes displayed. An evidence record missing any of them cannot tie the decision to
-a rendering, and evidence that proves nothing is worse than none because it looks
-like proof. **Withdrawal (`enabled=False`) requires none**: a person may always
-stop, and demanding proof to stop would make stopping harder than starting.
-`source`, `rec_slug` and `submission_ref` are opaque references — an `@` in any of
-them is rejected. That check catches the commonest leak, not every one; the
-codes-and-hashes rule remains the caller's obligation.
-
-**`AdminShareLegalBasis` is `extra="forbid"`.** Pydantic's default accepts an
-unknown key, drops it and answers `200` — for an evidence model that is the worst
-available outcome, because the caller walks away holding written proof the
-connector never stored. A `422` naming the key says so instead. That applies to the
-connector-owned fields above too: sending one is a misunderstanding of who owns it,
-and silence read as agreement. **Any new model that records evidence should carry
-the same `model_config`.**
-
-An external application driving this path is documented in
-`docs/external-application-integration.md`. Surfaced on `GET /consent/my`, `GET /consent/status` and
-`GET /internal/consent/check` (the deciding row's basis, for the PEP audit trail).
-
-## Consent & disclosure provenance (Block C)
-
-`services/prov_bridge.py` gains four emit methods — `consent_granted`,
-`consent_revoked`, `data_ingested`, `data_disclosed` — mapped to PROV-O in
-ds-provenance. Consent events are emitted **from the API layer after the write
-commits** (the `access_revoked` pattern in `consumer.py`), never inside the
-transaction, via `_emit_consent_events` in `api/v1/consent.py`: the row's final
-status picks the event, `event_id` is deterministic (`consent-granted:{id}` /
-`consent-revoked:{id}`) so an idempotent re-provision is deduplicated by the
-provenance store. The `get_prov` dependency returns `None` when provenance is
-unwired (e.g. unit tests), making every emit a no-op.
-
-`POST /admin/ingestion` (guard `connector.ingestion.record`, `connector.admin`
-superset) lets an operator record a manual DSO/offline handover as they perform
-it, emitting `DataIngested`. The connector computes the `consent_snapshot_hash`
-itself from its consent DB (`consent_service.dataset_consent_snapshot`) — a
-recomputable SHA-256 over the sorted `(subject_did, dataset_id, purpose,
-controller_role, consent_text_version)` tuples of the currently-granted rows —
-so the record proves *which* consent state authorised the handover while the
-provenance store holds no subject data. **All Block C events carry codes, DIDs
-and hashes only, never PII.** See `docs/provenance-and-lineage.md`.
-
-## A request records what was asked for *and* why
-
-`POST /consumer/negotiate` accepts an optional **declaration**:
-`declared_purpose[]`, `declared_from`, `declared_until`, `justification_ref`.
-It is persisted on `consumer_access_requests` and emitted on `AccessRequested`
-beside the offer's own purposes — two different facts, two different fields.
-
-Why it exists: a multi-purpose dataset publishes **one** `odrl:purpose`
-constraint with `odrl:isAnyOf` over every permitted purpose, so the agreement
-records "any of these three", permanently. That is a valid contract and a
-useless answer to "why was this data requested".
-
-Why it is recorded here and not negotiated: EDC resolves the contract policy
-from the offer id against the *provider's* contract definition and discards the
-policy body the consumer sent (`ContractNegotiationProtocolServiceImpl`
-`notifyRequested` → `validatableOffer.getTargetedContractPolicy()`). A consumer
-cannot narrow what it is agreeing to, so the declaration is exactly what it says
-it is: a consumer-side statement of intent, not a policy.
-
-Three rules keep it honest, all in `_validated_declaration`:
-
-- it must be in the taxonomy (`normalise_purposes`);
-- it must be permitted by the offer — `odrl:isA` over the local `broader` chain,
-  so declaring a *narrower* purpose than the offer names is fine and a broader
-  one is a 422;
-- without `odrl_policy` there is nothing to check against, so the declaration is
-  refused rather than stored unverified. An unverifiable claim in an audit record
-  is indistinguishable later from a verified one.
-
-`justification_ref` is an opaque external reference — a ticket or document id,
-never free text about a person. An `@` is rejected, the same guard
-`AdminShareLegalBasis` applies.
-
-**It does not gate access.** The provider decides on the offer's purposes,
-because those are what crossed DSP; see `docs/roadmap.md` for what making the
-declaration enforceable would require.
-
-## The negotiation *is* the consent request
-
-A consumer that wants consent-gated data does not call a consent API — it
-negotiates. On the provider side `ConsentPendingGuard` (in `edc-extensions`)
-sees a `REQUESTED` negotiation whose offer carries `ds:consentStatus`, asks
-`GET /internal/consent/check`, and if consent is absent calls
-`POST /internal/consent/asks`. The connector writes one pending row per subject
-in the pool, stamped with `negotiation_id` (ours) and `correlation_id` (the
-counterparty's), and EDC parks the negotiation.
-
-There used to be a cross-participant `POST /consent/request` authenticated by
-`X-User-VC`. It could not work: `_verify_user` required the credential to name
-*this* participant, so a real consumer got 403, and the same call against the
-consumer's own connector wrote a row on the side where
-`/internal/consent/check` never reads. Both defects were symptoms of running a
-header-authenticated request channel parallel to the one DSP already runs — and
-DSP proves the requester cryptographically, via DCP, which is what the guard now
-uses (`counterPartyId`). `POST /consent/request` survives only as the
-provider-local seeding route, authenticated with `connector.consent.provision`.
-
-| Route | Who | Answers |
-|---|---|---|
-| `POST /internal/consent/asks` | the pending guard | never raises for a business outcome — always 200 with `asked` + `reason`, so policy stays in Python |
-| `GET /consent/asks` | provider operator/portal | which asks are holding up which negotiation, subjects included |
-| `GET /consent/pending?correlation_id=` | the counterparty | *status only* — a boolean and a timestamp. Never who, how many, or what they decided |
-| `POST {edc-management}/dataspaces/negotiations/{id}/resume` | this connector, on a grant | clears `pending` — the one thing EDC's Management API cannot do |
-
-Decision handling, in `api/v1/consent.py`:
-
-- **one grant resumes** — the consent constraint passes as soon as anybody is in
-  the pool, so the negotiation moves without waiting for the rest;
-- **one refusal decides nothing** — only when every ask is settled and none
-  granted (`negotiation_ask_tally`) is the negotiation terminated;
-- both are best-effort: the subject's decision is committed either way, and a
-  control plane that is briefly unreachable must not fail a person's own request.
-
-`pending_sweep.py` is the deadline (`CONNECTOR_CONSENT_PENDING_TTL`, default
-`P30D`). Expired asks are marked `expired`, not `rejected` — a refusal is a
-choice and is evidence of one; an expiry is the absence of a decision.
-`negotiation_closed_at` is what makes the retry loop terminate: "no pending and
-no granted ask" stays true forever once true, so without a marker every past
-negotiation would be re-terminated on every pass.
-
-## Participant registry
-
-Participants are registered in the identity-registry service and discovered via `GET /admin/participants`. The `ParticipantRegistry` class (`registry/participants.py`) implements an `HttpParticipantRegistry` that fetches participants from identity-registry with a TTL cache.
-
-Used by `edc-extensions` `AccessScopeFunction` at negotiation time and by the federated catalog for provider discovery.
-
-## Docker stack
-
-This service runs as part of the provider (`docker-compose.provider.yml`) or consumer (`docker-compose.consumer.yml`) stacks:
-- `edc-provider` / `edc-consumer` (Java EDC fat JARs)
-- `ds-connector-provider` / `ds-connector-consumer` (this service)
-- `ds-provenance-provider` / `ds-provenance-consumer`
-- `dataset-api-provider` (provider only)
-- `ds-federated-catalog-provider` (provider only)
-- DB init containers (create DB + Alembic migrations)
-
-Shared infra (caddy, postgres, identity-registry, keycloak) must be running first via `task infra:start`.
+  `Owner.aliases[]` is honoured.
+- **Ask the per-organisation question** (`Principal.grants_in`), not "member of X *and*
+  holds the permission somewhere" — the latter admits a viewer in A who is admin in B.
+
+Policies and contracts carry no owner in EDC, so their deletes resolve it through governance
+(`owner_by_edc_id()`). `POST /provider/sync` is deliberately participant-wide — it
+republishes the whole file, so there is no owner to scope it to. Per-owner sync is a
+governance-model change; **do not fake it with a guard.**
+
+## Governance files
+
+`governance/governance.yaml` and `governance/sharing-offers.yaml`, each with a
+`<name>.yaml` overlay (`*.local.yaml` gitignored). Producer-contributed offers land in
+`governance/sharing-offers.d/` as a **union**: duplicate ids raise, no file has precedence,
+the deployment overlay applies last. Field meanings and the mandatory set:
+`docs/rulebook/catalogue-and-metadata.md`.
+
+**The image and `governance.yaml` travel together.** The file is mounted, the parser is not
+— editing governance without rebuilding the connector can leave the running code unable to
+read the new shape. That has published a policy with no purpose constraint, so every
+negotiation parked forever on a question nobody could answer. No error, no log.
+
+## Conventions
+
+- Route handlers stay thin: validate, call a service, return
+- `tenacity` for EDC polling retries
+- Any model recording **evidence** is `extra="forbid"`. Pydantic's default drops an unknown
+  key and answers 200 — leaving the caller holding written proof of something never stored
 
 ## Testing
 
-```bash
-task setup          # install deps
-task run            # dev server with hot-reload
-task db:migrate     # apply migrations
-pytest              # run tests
-ruff check src/     # lint
-```
+`task -d services/connector test` · `lint` · `db:migrate`. pytest-asyncio, respx, SQLite
+in-memory.
 
-Tests use `pytest-asyncio` and `respx` for HTTP mocking. Test database is SQLite (in-memory).
+`tests/conftest.py` points the consent vocabulary at `tests/fixtures/` before settings are
+read and clears the caches per test, so the suite asserts against a stable vocabulary rather
+than the dev catalogue. `tests/__init__.py` provides `make_headers` (service token),
+`make_user_headers` (groups) and `make_vc_headers` (the `X-Subject-Id` + `X-User-VC`
+mechanism the `/consent/*` routes actually use).
 
-`tests/conftest.py` points the consent vocabulary at `tests/fixtures/` before any
-settings are read, so the suite asserts against a stable vocabulary rather than the
-dev catalogue, and clears the vocabulary caches per test. `tests/__init__.py` provides
-`make_headers` (service token), `make_user_headers` (user groups) and `make_vc_headers`
-(the `X-Subject-Id` + `X-User-VC` mechanism the `/consent/*` routes actually use).
-
-> Three tests fail on `main` for reasons unrelated to consent
-> (`test_internal_wrong_scope_returns_403`, `test_webhook_wrong_scope_returns_403`,
-> `test_asset_create_basic`). Treat that as the baseline, not as regressions.
-
-## Integration points
-
-- **Upstream**: Portal calls this service's REST API (JWT-authenticated via `svc-ds-portal` service account)
-- **Downstream**: calls EDC Management API, ds-provenance, identity-registry (`/participants` for registry, `/users/resolve` for user lookup)
-- **Internal API**: EDC extensions and dataset-api call `/internal/*` endpoints during policy evaluation (JWT-authenticated via `svc-edc` / `svc-ds-dataset-api` service accounts)
-- **Shared libs**: imports `ds-governance` (governance rules/ODRL), `ds-auth` (JWT auth), `ds-edc` (EDC client + schemas) — all editable path dependencies under `../../libs/`
+Known-failing tests are tracked in `.agents/defect-per-service.md`, not here.

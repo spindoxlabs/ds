@@ -4,13 +4,15 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from functools import lru_cache
 
 from ds_auth import Principal
 from ds_auth.fastapi import require_exact_permission, require_permission
+from ds_auth.user_credentials import verify_user_vc_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import Request
+from fastapi import Header, Request
 
 from .config import Settings, get_settings
 from .db.engine import get_session_factory
@@ -325,6 +327,93 @@ require_consent_read = require_permission(
 require_ingestion_record = require_permission(
     "connector.ingestion.record", "connector.admin"
 )
+
+
+# `/consumer/catalog` — a service driving the consumer side. A *person* browsing
+# a counterparty's catalogue authenticates with a `ConsumerUser` VC-JWT instead;
+# see `require_consumer_catalog_caller`, which accepts either.
+require_consumer_read = require_permission("connector.consumer.read", "connector.admin")
+
+
+@dataclass(frozen=True)
+class CatalogCaller:
+    """Who asked for a counterparty's catalogue, having proved it.
+
+    ``subject_id`` is the DID of a natural person when one presented a
+    ``ConsumerUser`` credential, and ``None`` when a service authenticated on a
+    scope. ``actor`` is whichever of the two is present, and is what provenance
+    attributes the ``CatalogViewed`` event to.
+    """
+
+    subject_id: str | None
+    actor: str
+    is_service: bool
+
+
+async def require_consumer_catalog_caller(
+    request: Request,
+    x_subject_id: str | None = Header(default=None),
+    x_user_vc: str | None = Header(default=None),
+) -> CatalogCaller:
+    """Authenticate a catalogue request by **either** mechanism, never neither.
+
+    This route has two legitimate caller classes and they authenticate
+    differently, which is why it gets its own dependency rather than one of the
+    two standard guards:
+
+    * a **person** acting for a consumer organisation, carrying
+      ``X-Subject-Id`` + ``X-User-VC`` — the same mechanism every other
+      ``/consumer/*`` route uses, and the one `ds-e2e`'s smoke flow presents;
+    * a **service** driving the consumer side on the participant's behalf —
+      today `ds-federated-catalog`'s crawler — carrying a Keycloak
+      client-credentials token with ``connector.consumer.read``.
+
+    The route previously had no guard at all, which is rulebook `C-19`
+    (`DSSC-PUB-27`, a discovering consumer must be a registered participant) and
+    defect **P0-1**. It also meant `CatalogViewed` was attributed to a
+    caller-supplied header — rulebook `D-16`, which requires the recorded
+    identity to be a verified one. Both close here: what this returns is the
+    *verified* identity, and the route has nothing else to attribute to.
+
+    Presenting a VC takes precedence over presenting a token, so a person whose
+    client also happens to hold the service scope is still recorded as that
+    person.
+    """
+    settings = get_settings()
+    if x_user_vc or x_subject_id:
+        credential = verify_user_vc_jwt(
+            x_user_vc,
+            x_subject_id,
+            settings.trust_anchor_key_path,
+            {"ConsumerUser"},
+            expected_issuer=settings.trust_anchor_did,
+            expected_linked_participant=settings.consumer_participant_did,
+            credential_status_path=settings.credential_status_path,
+            credential_status_url=settings.credential_status_url,
+            insecure_dev=settings.vc_insecure_dev,
+        )
+        return CatalogCaller(
+            subject_id=credential.subject_id,
+            actor=credential.subject_id,
+            is_service=False,
+        )
+
+    principal = await require_consumer_read(
+        request, get_oidc_config_for(request)
+    )
+    return CatalogCaller(subject_id=None, actor=principal.subject, is_service=True)
+
+
+def get_oidc_config_for(request: Request):
+    """The app's OIDC config, for composing a ds_auth guard by hand.
+
+    ``require_permission`` returns a FastAPI dependency whose second parameter is
+    normally filled by ``Depends``. Calling it directly — which is what an
+    either/or guard has to do — means supplying it here.
+    """
+    from ds_auth.fastapi import get_oidc_config
+
+    return get_oidc_config(request)
 
 
 # Back-compat aliases (unchanged call sites in admin/internal/consent/webhooks).

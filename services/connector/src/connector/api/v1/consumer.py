@@ -11,7 +11,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
-from ...dependencies import get_consumer_service, get_db, get_settings_dep
+from ...dependencies import (
+    CatalogCaller,
+    get_consumer_service,
+    get_db,
+    get_settings_dep,
+    require_consumer_catalog_caller,
+)
 from ...registry.participants import UnknownParticipantError
 from ...schemas.edc import FlowRequest, FlowResult
 from ...services.agreement_service import (
@@ -110,8 +116,14 @@ async def request_catalog(
     req: CatalogRequest,
     svc=Depends(get_consumer_service),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
+    caller: CatalogCaller = Depends(require_consumer_catalog_caller),
 ):
+    """Fetch a counterparty's catalogue over DSP.
+
+    Guarded by either mechanism — see :func:`require_consumer_catalog_caller`.
+    The identity recorded against the resulting ``CatalogViewed`` is the one that
+    guard verified, never a header the caller chose (rulebook `D-16`).
+    """
     try:
         catalog = await svc.request_catalog(req.counter_party_address, req.counter_party_id)
         prov = getattr(svc, "_prov", None)
@@ -119,10 +131,16 @@ async def request_catalog(
             await prov.catalog_viewed(
                 provider_id=req.counter_party_id or settings.participant_did,
                 consumer_id=settings.consumer_participant_did,
-                user_id=x_subject_id,
+                # `None` for a service: the event records that the participant
+                # fetched a catalogue, and there is no natural person to name.
+                # Putting the service's client id in `user_id` would make an
+                # automated crawl indistinguishable from a person browsing.
+                user_id=caller.subject_id,
                 counter_party_address=req.counter_party_address,
                 dataset_count=len(catalog.get("dataset") or []),
-                event_id=f"catalog-view:{x_subject_id or 'anonymous'}:{req.counter_party_address}",
+                # Keyed on the verified actor, so two callers cannot collide on
+                # one event id — and so a caller cannot pick another's key.
+                event_id=f"catalog-view:{caller.actor}:{req.counter_party_address}",
             )
         return catalog
     except UnknownParticipantError as exc:

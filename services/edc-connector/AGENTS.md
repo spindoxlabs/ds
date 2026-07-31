@@ -1,100 +1,72 @@
-# edc-connector — Agent Guide
+# edc-connector
 
-## Service identity
+**No source code.** A Gradle Shadow build that assembles an Eclipse EDC 0.16.0 runtime
+(DCP-enabled) from upstream BOMs plus `:edc-extensions`, and a two-stage Dockerfile. One
+image, deployed once per participant with its own config, database and DID.
 
-- **Role**: Eclipse Dataspace Connector fat JAR build — DCP-enabled EDC v0.16.0
-- **Language**: Java 21, Gradle (Shadow plugin)
-- **Type**: Build project (produces a fat JAR, no application code)
-- **Ports**: Provider 19191-19291, Consumer 29191-29291
+## References
 
-## Source layout
+| | |
+|---|---|
+| Requirements | [DSSC · Data Exchange](../../docs/blueprints/dssc/data-interoperability/data-exchange.md) · [DSSC · Control and Data Plane](../../docs/blueprints/dssc/control-and-data-plane.md) |
+| Rules | [Rulebook · Data exchange](../../docs/rulebook/data-exchange.md) — the accepted protocols, the version pin, and the specification inventory |
+| Code as committed | [docs/services/edc-connector.md](../../docs/services/edc-connector.md) |
 
-```
-edc-connector/
-├── build.gradle.kts      Shadow JAR configuration + EDC BOM dependencies
-├── Dockerfile            Multi-stage build (Gradle 8.12/JDK21 → Alpine JRE21)
-└── Dockerfile.base       Dependency cache base image (ds-edc-base:0.16.0)
-```
+## Where to work
 
-Configuration lives in `services/connector/config/`:
+| Task | File |
+|---|---|
+| Add or remove an EDC module | `build.gradle.kts` |
+| Change the EDC version | `build.gradle.kts` `edcVersion` — **and** the four places the tag is duplicated (`Dockerfile`, `Dockerfile.base`, two Taskfile entries) |
+| Change connector runtime settings | `services/connector/config/{provider,consumer}.properties` |
 
-```
-config/
-├── provider.properties       EDC properties for provider connector
-├── consumer.properties       EDC properties for consumer connector
-├── provider-key.json         EC P-256 private key (JWK)
-├── consumer-key.json         EC P-256 private key (JWK)
-├── provider-vault.properties Vault secrets
-└── consumer-vault.properties Vault secrets
-```
+## Configuration: environment, never `${}` in a properties file
 
-## EDC modules included
+`services/connector/config/*.properties` is loaded by EDC's `FsConfigurationExtension`, a
+plain `Properties.load()` — **no interpolation**. A `${EDC_API_KEY}` written there is stored
+as that literal string, and the failure is silent wherever the value is not actually checked.
 
-| Module | Purpose |
-|--------|---------|
-| `controlplane-dcp-bom` | DCP identity/trust + VP verification |
-| `control-plane-sql` | SQL-backed control plane stores (replaces in-memory) |
-| `dataplane-base-bom` | HTTP data plane for EDR-gated transfers |
-| `data-plane-store-sql` | SQL-backed data plane stores |
-| `sql-pool-apache-commons` | JDBC connection pool |
-| `edr-index-sql` | SQL-backed EDR index |
-| `transaction-local` | Local transaction manager for SQL stores |
-| `postgresql` (42.7.5) | PostgreSQL JDBC driver |
-| `configuration-filesystem` | Reads `.properties` config files |
-| `identity-did-web` | `did:web:` DID resolver |
-| `:edc-extensions` | Custom `ds:` ODRL constraint functions |
+EDC *does* read the environment: `ConfigurationLoader` merges `ConfigFactory.fromEnvironment`,
+converting `ENVIRONMENT_NOTATION` to `dot.notation`. So a secret-bearing or
+deployment-specific setting is an env var whose name **is** the setting:
 
-## Key files for common tasks
+| Env var | Setting |
+|---|---|
+| `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` |
+| `DS_CONNECTOR_INTERNAL_CLIENT_ID` | `ds.connector.internal.client.id` |
+| `EDC_DATASOURCE_DEFAULT_PASSWORD` | `edc.datasource.default.password` |
 
-| Task | Files to touch |
-|------|---------------|
-| Add/remove EDC modules | `build.gradle.kts` (dependencies block) |
-| Change EDC version | `build.gradle.kts` (edcVersion variable) |
-| Change connector properties | `services/connector/config/*.properties` |
-| Rebuild base image | `Dockerfile.base` |
+Set those in the compose `environment:` block or from a Kubernetes Secret, and leave the
+setting out of the properties file entirely.
+
+## Ports
+
+| Suffix | Provider / consumer | Context |
+|---|---|---|
+| x9191 | 19191 / 29191 | default — `/api/check/health` |
+| x9193 | 19193 / 29193 | Management API |
+| x9194 | 19194 / 29194 | DSP protocol (`/protocol/2025-1`) |
+
+`x9195` (version) and `x9291` (public) are configured and published but **no packaged module
+registers them** — those ports refuse connections. Tracked in `.agents/defect-per-service.md`.
+
+**`web.http.management.auth.type=tokenbased` is required, not just `auth.key`.** EDC installs
+an authentication filter only for contexts that declare a type, so the key alone protects
+nothing. The same applies to the control context, which is currently unauthenticated.
 
 ## Persistence
 
-EDC uses PostgreSQL SQL stores instead of in-memory. Schema is auto-created via Flyway on startup (`edc.sql.schema.autocreate=true`). Databases:
+PostgreSQL SQL stores. `SqlSchemaBootstrapperExtension` creates the tables from the JAR's
+`*-schema.sql` resources at first start — **not Flyway**, which is credited in five comments
+and is not on the classpath. Init containers create the databases only.
 
-| Database | Participant | Compose init container |
-|----------|------------|----------------------|
-| `edc_provider` | Provider | `edc-db-create-provider` |
-| `edc_consumer` | Consumer | `edc-db-create-consumer` |
-
-The init containers only create the database; Flyway within the EDC JVM creates all tables on first start. On `reset-demo-state`, the databases are dropped and recreated — Flyway re-runs on next EDC startup.
-
-## Build commands
+## Build
 
 ```bash
-# Build dependency cache base image (once per EDC version bump)
-task edc:base
-
-# Build fat JAR (requires Java 21 + Gradle on host)
-task edc:build
-# or: gradle :edc-connector:shadowJar --no-daemon
-
-# Build Docker image (requires ds-edc-base:0.16.0)
-task edc:docker
-
-# Watch mode — continuous rebuild + auto-restart (two terminals):
-task edc:watch-build      # Terminal 1: Gradle --continuous rebuild
-task edc-provider:watch   # Terminal 2: auto-restart EDC on JAR change
+task edc:base       # dependency-cache base image, once per version bump
+task edc:build      # fat JAR, via Docker, cached in data/gradle
+task edc:docker     # image (requires ds-edc-base:0.16.0)
+task edc:restart    # rebuild + force-recreate both containers
 ```
 
-## EDC port scheme
-
-| Port | Provider | Consumer | Purpose |
-|------|----------|----------|---------|
-| x9191 | 19191 | 29191 | Management API |
-| x9193 | 19193 | 29193 | Management API (alt) |
-| x9194 | 19194 | 29194 | DSP Protocol |
-| x9195 | 19195 | 29195 | Version/health |
-| x9291 | 19291 | 29291 | Public data plane |
-
-## Integration points
-
-- **Includes**: edc-extensions (compiled as project dependency)
-- **Called by**: ds-connector via EDC Management API
-- **Calls**: identity-registry for STS token issuance (`/sts/{did}/token`) and DCP credential queries (`/credentials/{did}/presentations/query`), ds-connector `/internal/*` for constraint evaluation
-- **Network**: runs on `dataspaces` Docker network, launched by `docker-compose.provider.yml` / `docker-compose.consumer.yml`
+No Gradle wrapper is committed. The unit has no test sources.

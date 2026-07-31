@@ -24,7 +24,13 @@ def test_asset_create_basic():
     asset = mapper.to_asset_create("datasets.gold.test", rule)
     assert asset.id.startswith("https://provider.dataspaces.localhost")
     assert asset.properties["name"] == "Test Dataset"
-    assert asset.properties["ds:medallion"] == "gold"
+    # Asset properties are namespaced by the **active profile's** prefix, which a
+    # deployment may change (`CONNECTOR_ODRL_PROFILE_PATH`). Asserting the literal
+    # `ds:` was how this test came to disagree with every writer and reader of the
+    # property — `dependencies._asset_owner` matches on the local name for the
+    # same reason. Read the prefix off the mapper under test.
+    pfx = mapper.profile.prefix
+    assert asset.properties[f"{pfx}:medallion"] == "gold"
 
 
 def test_asset_data_address_query_params():

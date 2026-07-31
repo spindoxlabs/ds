@@ -131,6 +131,10 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # Consumer connector → provider connector. Participant-to-participant,
         # never a person.
         "connector.consent.read",
+        # Federated catalogue → consumer connector. A person reaching
+        # POST /consumer/catalog authenticates with a ConsumerUser VC-JWT, not
+        # with a group, so no bundle expands to this.
+        "connector.consumer.read",
         # The onboarding funnel's three narrow grants. A human operator reaches
         # the same endpoints through `identity-registry.admin` in `ds-admin`.
         "identity-registry.credentials.write",

@@ -87,7 +87,11 @@ async def test_audit_query_requires_scope(auth_client):
     assert r.status_code == 401
 
 
-# ── Admin endpoints require connector.admin ──────────────────────
+# ── /admin/participants requires connector.provider.read ─────────
+#
+# Not `connector.admin`, which this section used to claim. Admin satisfies it as
+# a superset, so asserting only with an admin token left the requirement the
+# route actually declares — the weaker one — untested.
 
 @pytest.mark.asyncio
 async def test_admin_without_token_returns_401(auth_client):
@@ -105,12 +109,37 @@ async def test_admin_wrong_scope_returns_403(auth_client):
 
 
 @pytest.mark.asyncio
-async def test_admin_with_correct_scope(auth_client):
+async def test_admin_with_provider_read_scope(auth_client):
+    """The requirement as declared: `require_provider_read`."""
+    r = await auth_client.get(
+        "/admin/participants",
+        headers=make_headers(scope="connector.provider.read"),
+    )
+    assert r.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_admin_with_admin_scope_as_superset(auth_client):
     r = await auth_client.get(
         "/admin/participants",
         headers=make_headers(scope="connector.admin"),
     )
     assert r.status_code == 200
+
+
+# ── /metrics is unauthenticated, deliberately ────────────────────
+#
+# Reachability is a deployment control: under Helm a default-deny NetworkPolicy
+# makes the port reachable by nothing, and `global.monitoring.serviceMonitor`
+# opens it to the Prometheus namespace alone — never through an Ingress. An
+# app-layer guard would break a scraper, which holds no Keycloak token.
+# Asserted so a future change has to argue with this comment first.
+
+@pytest.mark.asyncio
+async def test_metrics_is_deliberately_open(auth_client):
+    r = await auth_client.get("/metrics")
+    assert r.status_code == 200
+    assert "ds_service_up" in r.text
 
 
 # ── Webhook endpoints require connector.webhook ──────────────────

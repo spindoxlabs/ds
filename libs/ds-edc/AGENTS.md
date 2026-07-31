@@ -1,62 +1,42 @@
-# ds-edc — Agent Guide
+# ds-edc
 
-## Library identity
+`import ds_edc`. Wraps the EDC Management API v3 in a typed async client plus Pydantic
+request/response models, and owns the JSON-LD shapes the platform sends to an EDC control
+plane — the `@context`, `@type`, camelCase names and the DSP protocol identifier — along with
+the polling loops that turn EDC's asynchronous state machines into one awaited result.
 
-- **Role**: Shared EDC Management API v3 client and Pydantic models
-- **Language**: Python 3.12
-- **Import**: `import ds_edc` or `from ds_edc import EdcManagementClient`
-- **No Dockerfile, no port** — consumed as an editable path dependency
+Holds no state, reads no configuration; constructed per control plane with a base URL and an
+API key. Consumed by `services/connector` and `libs/ds-e2e`.
 
-## Source layout
+## References
 
-```
-src/ds_edc/
-├── __init__.py      Re-exports all public symbols
-├── client.py        EdcManagementClient — async httpx wrapper for EDC Management API v3
-├── schemas.py       Pydantic models for EDC request/response payloads
-└── webhooks.py      EDC webhook event models (transfer, negotiation)
-```
+| | |
+|---|---|
+| Requirements | [DSSC · Data Exchange](../../docs/blueprints/dssc/data-interoperability/data-exchange.md) |
+| Rules | [Rulebook · Data exchange](../../docs/rulebook/data-exchange.md) — the protocol version pin and the quality-of-service rules |
+| Code as committed | [docs/services/libs/ds-edc.md](../../docs/services/libs/ds-edc.md) |
 
-## Key types
+## Rules that are not visible from the code
 
-| Type | Purpose |
-|------|---------|
-| `EdcManagementClient` | Async httpx client wrapping all EDC v3 Management API endpoints |
-| `AssetCreate` | Asset creation payload with `to_edc()` serialization |
-| `PolicyCreate` | ODRL policy definition payload |
-| `ContractDefCreate` | Contract definition payload |
-| `CatalogRequest` | Catalog request with counter-party address |
-| `NegotiationRequest` | Contract negotiation initiation |
-| `NegotiationState` | Negotiation polling result |
-| `TransferRequest` | Transfer process initiation |
-| `TransferState` | Transfer polling result |
-| `EdrResponse` | Endpoint Data Reference (auth token + endpoint) |
-| `TransferProcessEvent` | EDC transfer webhook event |
-| `ContractNegotiationEvent` | EDC negotiation webhook event |
+- **This library owns the protocol pin.** `DATASPACE_PROTOCOL = "dataspace-protocol-http:2025-1"`
+  occurs once in the repository, and changing it is a dataspace-wide breaking change — see
+  the rulebook's governance-of-the-protocol section before touching it.
+- **`X-Api-Key` here is EDC's own Management API key** (`web.http.management.auth.key`), and
+  it is correct in this one place. Not to be confused with the `X-Api-Key` that once fronted
+  ds-connector's `/internal/*`: that was the *same value* spanning two trust boundaries and
+  was replaced by per-caller Keycloak credentials. **Do not reuse this one anywhere else.**
+- **EDC installs an authentication filter only for contexts declaring a type**, so
+  `web.http.management.auth.type=tokenbased` is required — the key alone protects nothing.
+- **`resume_negotiation` targets a path upstream EDC does not serve.** It is implemented by
+  this repository's `services/edc-extensions`; the two must agree on the outcome vocabulary.
+- **A failure must reach the caller as a failure.** Several methods currently swallow 404,
+  405 and 409, and both polls synthesise a `"TIMEOUT"` state that callers then compare against
+  real EDC state names. Treat that as the pattern to fix, not to copy — see
+  `.agents/defect-per-service.md`.
 
-## Consumers
+Pure Pydantic + httpx. No FastAPI, no SQLAlchemy. All calls async.
 
-- `services/connector` — primary consumer (re-exports via shim modules for back-compat)
-- `libs/ds-e2e` — e2e test framework (depends on ds-edc for shared constants)
-
-## Coding conventions
-
-- Pure Pydantic models + httpx — no FastAPI, no SQLAlchemy
-- All HTTP calls are async via `httpx.AsyncClient`
-- EDC JSON-LD context: `{"@vocab": "https://w3id.org/edc/v0.0.1/ns/"}`
-- Protocol version: `dataspace-protocol-http:2025-1`
-- Authentication via `X-Api-Key` header — this is **EDC's own Management API key**
-  (`web.http.management.auth.key`), and it is still correct here. Not to be confused
-  with the `X-Api-Key` that once fronted ds-connector's `/internal/*`: that was the
-  *same value*, spanning two trust boundaries, and was replaced by per-caller
-  Keycloak client credentials. Do not reuse this one anywhere else.
-- EDC registers an authentication filter only for contexts declaring a type, so
-  `web.http.management.auth.type=tokenbased` is required — the key alone protects
-  nothing.
-
-## Adding to a service
-
-In the service's `pyproject.toml`:
+## Depending on it
 
 ```toml
 [project]
@@ -66,4 +46,4 @@ dependencies = ["ds-edc"]
 ds-edc = { path = "../../libs/ds-edc", editable = true }
 ```
 
-In `Dockerfile`, add `COPY libs/ds-edc/ /build/ds-edc/` and install it.
+Plus `COPY libs/ds-edc/ /build/ds-edc/` in the service Dockerfile.

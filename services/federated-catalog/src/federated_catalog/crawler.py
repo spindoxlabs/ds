@@ -17,17 +17,31 @@ async def crawl_provider(
     provider: Provider,
     connector_url: str,
     max_datasets: int,
+    headers: dict[str, str] | None = None,
 ) -> tuple[str, list[dict]]:
     """Fetch catalog for a single provider via ds-connector /consumer/catalog.
+
+    ``headers`` carries the crawler's own client-credentials token. It is not
+    optional in a real deployment: the route requires ``connector.consumer.read``
+    (rulebook `C-4`, `C-19`). The crawl used to send nothing and succeeded only
+    because the route was unguarded — defects **P0-1** and **P1-3**.
+
+    ``counter_party_id`` is sent so the connector attributes the catalogue to the
+    provider being crawled. Without it the connector substitutes its **own**
+    ``participant_did`` for every provider, so every crawled dataset was recorded
+    as coming from the crawler's participant.
 
     Returns (provider_id, list_of_dataset_dicts).
     Raises on failure — caller handles and records the error.
     """
     url = f"{connector_url.rstrip('/')}/consumer/catalog"
-    payload = {"counter_party_address": provider.dsp_address}
+    payload = {
+        "counter_party_address": provider.dsp_address,
+        "counter_party_id": provider.id,
+    }
 
     async with httpx.AsyncClient(timeout=30.0) as client:
-        resp = await client.post(url, json=payload)
+        resp = await client.post(url, json=payload, headers=headers or {})
         resp.raise_for_status()
         data = resp.json()
 
@@ -78,11 +92,15 @@ async def crawl_all(
     token_provider=None,
 ) -> tuple[dict[str, list[dict]], list[CrawlError]]:
     """Crawl all registered providers and DCAT sources. Returns (datasets_by_source, errors)."""
+    # One token for the whole cycle, used for both the registry read and every
+    # connector call. Minted once rather than per provider: the crawl fans out,
+    # and a token request per provider would multiply Keycloak load by the
+    # participant count for no gain.
+    headers: dict[str, str] | None = None
+    if token_provider:
+        headers = {"Authorization": f"Bearer {await token_provider()}"}
+
     if settings.identity_registry_url:
-        headers: dict[str, str] | None = None
-        if token_provider:
-            token = await token_provider()
-            headers = {"Authorization": f"Bearer {token}"}
         providers = load_providers_from_registry(settings.identity_registry_url, headers=headers)
     else:
         providers = load_providers(settings.participants_yaml)
@@ -99,7 +117,14 @@ async def crawl_all(
     source_ids: list[str] = []
 
     for p in providers:
-        tasks.append(crawl_provider(p, settings.connector_url, settings.max_datasets_per_provider))
+        tasks.append(
+            crawl_provider(
+                p,
+                settings.connector_url,
+                settings.max_datasets_per_provider,
+                headers=headers,
+            )
+        )
         source_ids.append(p.id)
 
     for s in dcat_sources:
