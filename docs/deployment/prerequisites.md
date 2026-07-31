@@ -1,19 +1,18 @@
 # Prerequisites
 
-These charts deploy the dataspace application only. Four things must exist in the
-cluster first — none of them is installed here, by design: they are stateful,
-long-lived, and usually owned by a platform team rather than by an application
-release.
+These charts deploy the dataspace application only. Four things must exist in the cluster
+first, and none of them is installed here by design: they are stateful, long-lived, and usually
+owned by a platform team rather than by an application release.
 
 | Prerequisite | Why it is not in the chart |
-|--------------|----------------------------|
-| **CloudNativePG** + a `Cluster` | Backup, PITR, failover and major-version upgrades are the operator's job. A chart-owned StatefulSet would silently own data it cannot protect. |
-| **Keycloak** | Already operated externally. These charts consume its issuer and clients; they never mutate the realm unless `global.keycloak.sync.enabled` is set. |
-| **cert-manager** + a `ClusterIssuer` | The charts only reference the issuer or a pre-created secret. |
-| **An ingress controller** (nginx assumed) | Cluster-wide singleton. |
+|---|---|
+| **CloudNativePG** and a `Cluster` | Backup, PITR, failover and major-version upgrades are the operator's job. A chart-owned StatefulSet would silently own data it cannot protect |
+| **Keycloak** | Already operated externally. These charts consume its issuer and clients |
+| **cert-manager** and a `ClusterIssuer` | The charts reference an issuer, or a pre-created secret |
+| **An ingress controller** (nginx assumed) | Cluster-wide singleton |
 
-Optional: Prometheus Operator (for `ServiceMonitor`), External Secrets Operator
-(for `global.externalSecrets.enabled`).
+Optional: the Prometheus Operator (for `ServiceMonitor`), the External Secrets Operator (for
+`ExternalSecret` delivery).
 
 ---
 
@@ -31,26 +30,30 @@ kubectl apply -f helm/docs/cnpg-cluster.example.yaml
 
 ### One database and one role per service
 
-Dev uses a single Postgres superuser for all six databases. Production must not.
-`.env.example` already carries a separate URL per service precisely so this split
-costs no code change.
+Development runs every database under a single Postgres superuser. Production must not.
+`.env.example` already carries a separate URL per service precisely so this split costs no code
+change.
 
 | Database | Owner role | Used by |
-|----------|-----------|---------|
+|---|---|---|
 | `identity_registry` | `identity_registry` | ds-identity-registry |
 | `connector_<participant>` | `connector_<participant>` | ds-connector |
 | `provenance_<participant>` | `provenance_<participant>` | ds-provenance |
 | `edc_<participant>` | `edc_<participant>` | ds-edc |
 
-Each role owns its own database and has no rights on any other. CNPG's
-`spec.managed.roles` and `spec.bootstrap.initdb.postInitApplicationSQL` handle
-this declaratively — see the example manifest.
+One authority database plus **three per participant** — seven for the two-participant example
+shipped in `helm/values.yaml`. Each role owns its own database and has no rights on any other.
+CNPG's `spec.managed.roles` and `spec.bootstrap.initdb.postInitApplicationSQL` handle this
+declaratively; see the example manifest.
 
-The EDC needs DDL rights on its own schema at first boot (Flyway migrates
-in-process), but `edc.sql.schema.autocreate` stays `false`: migrations run as a
-gated step, not as superuser DDL on every restart.
+**The EDC needs DDL rights on its own database at first boot.** It creates its schema itself
+from resources inside its JAR, and **Flyway is not on its classpath**, so "run migrations
+out-of-band" means applying those `*-schema.sql` resources yourself. The least-privilege role
+above is what removes the actual risk — DDL as a cluster superuser — while keeping the connector
+self-migrating. Set `sqlSchemaAutocreate: false` on the `ds-edc` chart if you want the stricter
+posture and are prepared to apply the DDL as a gated step.
 
-Set the resulting coordinates in `helm/values.yaml`:
+Set the coordinates in `helm/values.yaml`:
 
 ```yaml
 global:
@@ -66,14 +69,8 @@ and the per-role passwords in `secrets.sops.yaml`.
 
 ## 2. Keycloak
 
-The charts never install Keycloak. They need an existing realm that satisfies the
-contract in [Keycloak requirements](keycloak.md) — the service clients from
-`services/keycloak/clients.yaml`, a browser-login client for oauth2-proxy, user
-groups carrying the **five role-bundle names** (not one group per scope — that
-mirror is gone), brute force protection, and the three audit event flags NIS2
-evidence depends on.
-
-Point the charts at it:
+The charts never install Keycloak. They need an existing realm satisfying the contract in
+[Keycloak requirements](keycloak.md).
 
 ```yaml
 global:
@@ -84,9 +81,11 @@ global:
     tokenUrl: https://sso.example.org/realms/dataspaces/protocol/openid-connect/token
 ```
 
-Setting `issuerUrl` is what makes `ds_auth` verify JWT signature, audience and
-issuer via JWKS. It is not optional: with `DS_ENV=production` every service
-refuses to start without it.
+`issuerUrl` is what makes every service verify a JWT's signature, audience and issuer via JWKS.
+It is not optional: under `DS_ENV=production` every service refuses to start without it.
+
+`tokenUrl` is likewise not optional — `ds-edc` declares it required and its render fails
+without it.
 
 ---
 
@@ -101,61 +100,56 @@ helm install cert-manager jetstack/cert-manager \
 Then either let the charts request certificates through a `ClusterIssuer`:
 
 ```yaml
-global:
-  ingress:
-    tls:
-      clusterIssuer: letsencrypt-prod
+global: {ingress: {tls: {clusterIssuer: letsencrypt-prod}}}
 ```
 
-or supply a pre-created certificate secret and leave the issuer unused:
+or supply a pre-created certificate secret, which suppresses the issuer annotation entirely:
 
 ```yaml
-global:
-  ingress:
-    tls:
-      secretName: ds-wildcard-tls
+global: {ingress: {tls: {secretName: ds-wildcard-tls}}}
 ```
 
 ### DNS
 
-Every public host is a subdomain of `global.baseDomain`. All of these must
-resolve to the ingress controller:
+Every public host is a subdomain of `global.baseDomain`, and all of them must resolve to the
+ingress controller:
 
 | Host | Purpose |
-|------|---------|
-| `portal.<baseDomain>` | the only human-facing host |
-| `<participant>.<baseDomain>` | did:web identity + DSP protocol + data plane, one per participant |
-| `trust-anchor.<baseDomain>` | trust anchor DID document + StatusList2021 |
-| `users.<baseDomain>` | user DID resolution — only if `authority.identityRegistry.exposeUserDids` |
+|---|---|
+| `portal.<baseDomain>` | the only human-facing host — the portal **and** `/oauth2/*` |
+| `<participant>.<baseDomain>` | `did:web` identity + DSP protocol + data plane, one per participant |
+| `trust-anchor.<baseDomain>` | the trust-anchor DID document and the revocation list |
+| `users.<baseDomain>` | user DID resolution — only when `exposeUserDids` is on |
 
-A wildcard `*.<baseDomain>` record and a wildcard certificate cover all of them
-and keep adding a participant a values-only change.
+A wildcard `*.<baseDomain>` record and a wildcard certificate cover all of them and keep adding
+a participant a values-only change.
 
-**did:web resolves over HTTPS on port 443.** The dev stack's `:80` Caddy hack
-does not carry over, and `edc.iam.did.web.use.https` is `true` in these charts:
-DID documents carry the public keys every trust decision rests on, so fetching
-them over plaintext would put participant identity in an on-path attacker's
-hands.
+!!! danger "`did:web` must resolve over HTTPS"
+    The dev stack's plaintext `:80` rewrite does not carry over, and `edc.iam.did.web.use.https`
+    is `true` here. DID documents carry the public keys every trust decision rests on, so
+    fetching them over plaintext would put participant identity verification in an on-path
+    attacker's hands.
 
 ---
 
 ## 4. Ingress controller
 
 nginx is assumed (`global.ingress.className: nginx`). The charts use
-`nginx.ingress.kubernetes.io/rewrite-target` for did:web path rewriting. On a
-different controller, that annotation and the `use-regex` rules in the
-identity-registry ingress are the only controller-specific pieces to port.
+`nginx.ingress.kubernetes.io/rewrite-target` for `did:web` path rewriting, `use-regex` on the
+user-DID rule, and the `auth-url` / `auth-signin` / `auth-response-headers` annotations on the
+portal.
 
-If your controller does not run in `ingress-nginx`, set the namespace so the
-NetworkPolicies allow it through:
+Those annotations are the pieces to port to a different controller — and
+**`auth-response-headers` is part of the authentication boundary**, not a hardening extra, so
+port it before deploying the portal, not after. See [oauth2-proxy](../services/oauth2-proxy.md).
+
+The NetworkPolicies admit ingress from exactly one namespace:
 
 ```yaml
 global:
   ingress:
     controllerNamespace: ingress-nginx
 ```
-
----
 
 ## Preflight checklist
 
@@ -164,12 +158,12 @@ kubectl get clusters.postgresql.cnpg.io -A          # CNPG cluster healthy
 kubectl get clusterissuer                           # cert-manager issuer Ready
 kubectl get ingressclass                            # nginx present
 curl -sf $ISSUER/.well-known/openid-configuration   # Keycloak realm reachable
-dig +short portal.$BASE_DOMAIN                      # DNS resolves to the LB
+dig +short portal.$BASE_DOMAIN                      # DNS resolves to the load balancer
 helmfile -e production template >/dev/null          # every required secret is wired
 ```
 
-The last line is the real gate: the Secret templates use `required`, so a render
-that succeeds proves every mandatory secret has a value, and a render that fails
-names the missing key. See [Secrets](secrets.md).
+The last line is the intended gate: the Secret templates use `required`, so a render that
+succeeds proves every mandatory secret has a value, and a render that fails names the missing
+key.
 
 Next: [Keycloak requirements](keycloak.md) → [Configuration reference](configuration.md).

@@ -1,0 +1,90 @@
+# Rulebook
+
+The rulebook is the set of decisions a data space has made, written down. The DSSC
+Blueprint asks for one directly (`DSSC-TRF-01`) and then, across nine building blocks,
+repeatedly requires that a specific decision be *taken* and *recorded here* — which
+protocols are accepted, which events are logged, what the minimum metadata set is, how
+policy conflicts resolve, who may access the logs. Those rows cannot be closed by code.
+They are closed by this section.
+
+## What this is, and what it is not
+
+**It is not documentation of the implementation.** That is [Services](../services/connector.md),
+which describes the code as committed. This section states what participants in a
+deployment of this platform are required to do and what the platform guarantees in return.
+The two are meant to be read together: a rule here without an enforcement point in the code
+is a rule nobody keeps.
+
+**It is not a contract.** A real deployment layers its own legal agreements, its own
+participation criteria and its own domain rules on top. The service agreements in
+`services/identity-registry/seed/agreements.dev.yaml` are the machine-readable hook for
+that; this section is the technical and governance baseline they attach to.
+
+**It is a default, and it is overridable.** Every rule here is either a property of the
+code (in which case changing it means changing code) or a deployment decision (in which
+case a deployment may decide otherwise, and should record that it did). Each page marks
+which is which.
+
+## Honesty rule
+
+Each rule carries an **enforcement status**:
+
+| Marker | Meaning |
+|---|---|
+| **Enforced** | Code refuses the violating case, and a test covers it |
+| **Enforced, untested** | Code refuses the violating case; no test asserts it |
+| **Declared** | The rule is a decision, not a check — nothing could enforce it automatically |
+| **Not enforced** | The rule is stated, the code does not currently keep it. Carries a link to the defect task |
+
+A rulebook that overstates enforcement is worse than no rulebook, because it converts a
+known gap into an unknown one. Where the platform does not currently keep a rule, that is
+recorded here rather than in a separate place a reader might not reach. The open items are
+tracked in `.agents/defects.md`.
+
+## Contents
+
+| Page | Covers | Principal blueprint rows |
+|---|---|---|
+| [Participation and trust](participation.md) | Who may join, how identity and attestations work, credential lifecycle, revocation, the trust anchor | `DSSC-TRF-*`, `DSSC-IAM-*` |
+| [Data exchange](data-exchange.md) | Accepted protocols and versions, the control/data plane split, interaction patterns, quality of service | `DSSC-DEX-*`, `DSSC-CDP-*` |
+| [Catalogue and metadata](catalogue-and-metadata.md) | Catalogue architecture, DCAT-AP, the minimum metadata set, the offering lifecycle | `DSSC-PUB-*`, `DSSC-DSO-*` |
+| [Policies](policies.md) | The ODRL profile, its required elements, conflict resolution, the enforcement points | `DSSC-AUP-*` |
+| [Personal data](personal-data.md) | Legal bases, purposes, consent, controller roles, subject rights, what may be logged | `DSSC-XCT-*` |
+| [Provenance and logging](provenance-and-logging.md) | Which events are recorded, in what model, stored where, readable by whom, kept how long | `DSSC-PTO-*` |
+| [Data models](data-models.md) | Semantic models, the vocabulary surface, the management process | `DSSC-DMO-*`, `CEEDS-STD-11/12/23` |
+| [Scope and deviations](scope-and-deviations.md) | What this platform deliberately does not do, and where it departs from the blueprints | `DSSC-VCS-01`, register |
+
+## Coverage of the "decide and record" rows
+
+The blueprint rows that exist purely to force a decision, and where each is answered:
+
+| Row | Question | Answered in |
+|---|---|---|
+| `DSSC-DEX-01`, `-25`, `-26` | Which data exchange protocols are used | [Data exchange](data-exchange.md) §1 |
+| `DSSC-DEX-33`, `-34` | An inventory of protocol specifications, available to participants | [Data exchange](data-exchange.md) §5 |
+| `DSSC-DEX-60`, `-61` | The governance process for the protocol | [Data exchange](data-exchange.md) §6 |
+| `DSSC-PUB-06` | The architectural option for catalogue services | [Catalogue and metadata](catalogue-and-metadata.md) §1 |
+| `DSSC-DSO-19`, `-21` | The minimum metadata set per type of data product | [Catalogue and metadata](catalogue-and-metadata.md) §3 |
+| `DSSC-AUP-39`, `-50`–`53` | Policy interpretation and conflict-resolution rules | [Policies](policies.md) §4 |
+| `DSSC-AUP-44`, `-45`, `-46` | The profile's vocabulary, conflict rules and validation rules | [Policies](policies.md) §2, §4 |
+| `DSSC-PTO-05`–`09` | Which events must be logged, for which data products | [Provenance and logging](provenance-and-logging.md) §2 |
+| `DSSC-PTO-10`–`13` | The data model for logs, and any domain profile | [Provenance and logging](provenance-and-logging.md) §3 |
+| `DSSC-PTO-14`–`17` | Where logs are stored and who may read them | [Provenance and logging](provenance-and-logging.md) §4 |
+| `DSSC-PTO-19`–`21` | How these agreements are governed and maintained | [Provenance and logging](provenance-and-logging.md) §6 |
+| `DSSC-DMO-35`, `-37`–`39` | Agreements on data models, and the management process | [Data models](data-models.md) §2, §4 |
+| `DSSC-VCS-04`–`07` | Which value creation services the data space includes | [Scope and deviations](scope-and-deviations.md) §1 |
+| `DSSC-TRF-01` | That a rulebook exists at all | this section |
+
+## Changing a rule
+
+1. Change the page. Every rule states whether it is a code property or a deployment
+   decision; a code property cannot be changed here alone.
+2. If the rule has an enforcement point, change it in the same commit. A rule and its check
+   drifting apart is the failure mode this whole section exists to prevent — the repository
+   has a ledger of what that looks like.
+3. If the rule binds participants operationally, it belongs in a service agreement as well:
+   `services/identity-registry/seed/agreements.dev.yaml` plus `seed/content/*.md`, then
+   `ir-cli agreement import`. Acceptance is recorded per participant and is visible at
+   `GET /agreements/{id}/acceptances`.
+4. Note the change in [Scope and deviations](scope-and-deviations.md) if it introduces a
+   departure from either blueprint.

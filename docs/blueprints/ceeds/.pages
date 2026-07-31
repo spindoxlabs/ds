@@ -1,0 +1,10 @@
+title: CEEDS Blueprint
+nav:
+  - index.md
+  - data-space-concept.md
+  - business-use-cases.md
+  - architecture.md
+  - edscp-implementations.md
+  - governance.md
+  - interoperability.md
+  - energy-standards.md

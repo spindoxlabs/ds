@@ -1,86 +1,81 @@
 # Keycloak requirements
 
-Keycloak is **externally managed**. These charts consume it and never install it.
-This document is the contract the external realm must satisfy.
+Keycloak is **externally managed**. These charts consume it and never install it. This page is
+the contract the external realm must satisfy.
 
-> **This page does not list scopes or clients, on purpose.** It used to, and the
-> list was wrong within two releases — it claimed nineteen scopes and seven
-> clients against a realm that had neither, and it still said group names must
-> mirror scope names long after they stopped doing so. The declaration is
-> `services/keycloak/clients.yaml`; a copy in prose rots and a pointer does not.
-> What is written down here is the *shape* of the contract, which changes rarely,
-> and the two places it is Keycloak-specific.
+The declaration itself — every scope, every client, the group vocabulary — lives in
+`services/keycloak/clients.yaml` and is described on the
+[keycloak service page](../services/keycloak.md). This page is what an operator has to
+provision, and the two places the contract is Keycloak-specific.
 
-The dev realm (`services/keycloak/realm-dataspaces-dev.json`) must never be
-imported into a production deployment: it ships users whose password equals their
-username, a literal client secret, `directAccessGrantsEnabled: true` and
-`sslRequired: external`. `services/keycloak/realm-production.example.json` is the
-correct reference.
+!!! danger "Never import the dev realm into a production deployment"
+    `services/keycloak/realm-dataspaces-dev.json` ships users whose password equals their
+    username, a literal client secret, `directAccessGrantsEnabled: true` and
+    `sslRequired: external`. `realm-production.example.json` is the correct reference.
 
 ## 1. Realm settings
 
 | Setting | Required value | Why |
-|---------|---------------|-----|
+|---|---|---|
 | `sslRequired` | `all` | dev uses `external`, which leaves internal traffic in plaintext |
 | `bruteForceProtected` | `true` | credential-stuffing resistance |
-| `passwordPolicy` | length, complexity, history — set something | no policy at all in dev |
+| `passwordPolicy` | length, complexity, history — set something | there is no policy at all in dev |
 | `eventsEnabled` | `true` | login/logout audit trail |
-| `adminEventsEnabled` | `true` | realm mutation audit trail |
+| `adminEventsEnabled` | `true` | realm-mutation audit trail |
 | `adminEventsDetailsEnabled` | `true` | *what* changed, not only *that* it changed |
-| `eventsExpiration` | ≥ your retention window | Art. 23 reporting deadlines need retained evidence |
+| `eventsExpiration` | ≥ your retention window | reporting deadlines need retained evidence |
 | `directAccessGrantsEnabled` (per client) | `false` | dev enables the password grant on every client |
 
-The three event flags are the only Keycloak-side audit trail available. Ship them
-to the same log sink as the application logs — an audit trail that expires inside
-Keycloak's own database is not evidence.
+The three event flags are the only Keycloak-side audit trail available. **Ship them to the same
+log sink as the application logs** — an audit trail that expires inside Keycloak's own database
+is not evidence.
 
-**Do not use email-as-username.** ds's own dev realm sets
-`registrationEmailAsUsername: true`, and that is a mistake to copy: a person's
-DID is derived from their email while the data plane joins on their username, so
-in such a realm one address change moves both at once. See
-[Identifier changes](#7-identifier-changes) below.
+**Do not use email-as-username.** A person's DID derives from their email while the data plane
+joins on their username, so in such a realm one address change moves both at once. See
+[Identifier changes](#identifier-changes).
 
 ## 2. What ds actually asks of a realm
 
-Five requirements. They are not equally portable, and treating them as one thing
-is what makes "can ds run on our IdP?" look harder than it is.
+Five requirements. They are not equally portable, and treating them as one thing is what makes
+"can ds run on our IdP?" look harder than it is.
 
 | # | Requirement | Portable? |
 |---|---|---|
-| 1 | The confidential clients in `clients.yaml`, with `client_credentials`, their scopes and their audiences | Yes — any OIDC provider. Somebody must perform the **registration**. |
+| 1 | The confidential clients in `clients.yaml`, with `client_credentials`, their scopes and their audiences | Yes — any OIDC provider. Somebody must perform the **registration** |
 | 2 | A login client emitting `groups`, `organization.<alias>.groups` and `email` | Yes — the group vocabulary is **five names**, not one per endpoint |
-| 3 | Resolving a user to a DID (`realm`, `user_id`, `email`) | Yes, but ds needs a funnel to be told (`POST /admin/users/provision`) |
-| 4 | **Write** access to the realm | ✗ Not required. Off by default — see `KEYCLOAK_MUTATE` and §5 |
-| 5 | Native organizations | Convenience only. The identity-registry is the authority for data decisions |
+| 3 | Resolving a user to a DID (realm, user id, email) | Yes — ds resolves on demand and derives a subject id when no mapping exists |
+| 4 | **Write** access to the realm | ✗ Not required. Off by default |
+| 5 | Native organisations | Convenience only. The identity registry is the authority for data decisions |
 
 ### The scope vocabulary — point, do not copy
 
-Every scope and client ds needs is declared in **`services/keycloak/clients.yaml`**.
-It is tool-agnostic: apply it with `celine-policies keycloak sync`, by hand, or
-with any provisioner that can create client scopes and confidential clients.
+Every scope and client ds needs is declared in **`services/keycloak/clients.yaml`**. It is
+tool-agnostic: apply it with the shipped syncer, by hand, or with any provisioner that can
+create client scopes and confidential clients.
 
 Two derived files matter to an operator:
 
-| File | Generated by | What it is for |
+| File | Generated by | For |
 |---|---|---|
-| `clients.effective.yaml` | `task keycloak:merge` | **What gets synced.** The core file plus this deployment's domain overlays |
-| `clients.host.generated.yaml` | `task keycloak:mirror` | **What to merge into a realm you already own.** Core only |
+| `clients.effective.yaml` | `task keycloak:merge` | **what gets synced** — the core file plus this deployment's domain overlays |
+| `clients.host.generated.yaml` | `task keycloak:mirror` | **what to merge into a realm you already own** — core only |
 
-`task keycloak:mirror --diff <your clients.yaml>` reports exactly what your realm
-is missing, as a list rather than a reading exercise.
+```bash
+task keycloak:mirror:diff HOST=/path/to/your/clients.yaml
+```
 
-> **Sync the effective file, never the core one.** A domain overlay
-> (`clients.<domain>.yaml`) declares what the backend deployed beside ds needs,
-> including grants on clients the core also declares. The syncer takes one file
-> and recomputes each client's grants from it, so handing it the core alone does
-> not under-provision — it **removes** the overlay's grants from the live realm,
-> silently and with no flag involved.
+reports exactly what your realm is missing, as a list rather than a reading exercise.
+
+!!! warning "Sync the effective file, never the core one"
+    A domain overlay declares what the backend deployed beside ds needs, including grants on
+    clients the core also declares. The syncer takes **one** file and recomputes each client's
+    grants from it — so handing it the core alone does not under-provision, it **removes** the
+    overlay's grants from the live realm, silently and with no flag involved.
 
 ### The group vocabulary — five names, not thirty
 
-A human's authority arrives as Keycloak **groups**, never roles. Each group names
-a **role bundle**, and ds expands it into capabilities in its own code
-(`libs/ds-auth/src/ds_auth/bundles.py`):
+A human's authority arrives as Keycloak **groups**, never roles. Each group names a *role
+bundle* that ds expands into capabilities in its own code:
 
 ```
 ds-admin                 the deployment operator
@@ -90,71 +85,63 @@ ds-onboarding-operator   reviews organisation applications
 ds-member                an authenticated human who may browse the catalogue
 ```
 
-This is the part an external realm owner has to reproduce, which is why it is five
-names and not one per endpoint family. What each bundle may do is ds's code and
-versioned with the enforcement it feeds — adding an endpoint is a ds release, not
-a change request against your realm.
+This is the part an external realm owner has to reproduce, which is why it is five names and
+not one per endpoint family. What each bundle may do is ds's code, versioned with the
+enforcement it feeds — **adding an endpoint is a ds release, not a change request against your
+realm**.
 
-Realm-level groups carry deployment-wide seats; `organization.<alias>.groups`
-carries participant-scoped ones. An unrecognised group passes through as its own
-literal capability, so a realm still carrying the old scope-named groups keeps
-working.
+Realm-level groups carry deployment-wide seats; `organization.<alias>.groups` carries
+participant-scoped ones. An unrecognised group passes through as its own literal capability, so
+a realm still carrying older group names keeps working.
 
-**If your realm cannot use these names**, do not rename anything — map them.
-`global.keycloak.aliases.groups` translates your group names into bundle names,
-and `.owners` translates your organisation aliases into ds `Owner` ids. Both are
-deployment configuration; a group alias may only name a *bundle*, never a raw
-capability, and anything else is dropped and logged.
+**If your realm cannot use these names, do not rename anything — map them.**
+`global.keycloak.aliases.groups` translates your group names into bundle names, and
+`.owners` translates your organisation aliases into ds owner ids. Both are deployment
+configuration; a group alias may only name a *bundle*, never a raw capability, and anything else
+is dropped and logged.
 
 ## 3. The two Keycloak-specific things
 
 Everything above is ordinary OIDC. Exactly two items assume Keycloak:
 
-1. **The `organization.<alias>.groups` claim shape**, produced by the
-   `organization` client scope with an `oidc-organization-membership-mapper`
-   (Keycloak 24+ native organizations). On another IdP, emit the same claim shape
-   or scope authority realm-wide and accept that per-owner scoping is unavailable.
-2. **The syncer.** `celine-policies keycloak sync` is a Keycloak admin-API client.
-   Nothing at runtime depends on it having run in a particular way.
+1. **The `organization.<alias>.groups` claim shape**, produced by the `organization` client
+   scope with an organisation-membership mapper (Keycloak 24+ native organisations). On another
+   IdP, emit the same claim shape — or scope authority realm-wide and accept that per-owner
+   scoping is unavailable.
+2. **The syncer**, which is a Keycloak admin-API client. Nothing at runtime depends on it having
+   run in a particular way.
 
-## 4. Human login — oauth2-proxy
+## 4. Human login — one browser client
 
-The portal is **not** an OIDC client. It has no client secret, no callback
-registration and no session of its own; it reads the access token oauth2-proxy
-forwards. One login surface for the whole deployment, and one fewer registration
-to negotiate with whoever owns the realm.
+The portal is **not** an OIDC client. It has no client secret, no callback registration and no
+session of its own; it reads the access token oauth2-proxy forwards. One login surface for the
+whole deployment, and one fewer registration to negotiate.
 
-So the realm needs **one browser-login client**, named as `oauth2_proxy_client:`
-in `clients.yaml`:
+So the realm needs **one browser-login client**, named as `oauth2_proxy_client:` in
+`clients.yaml`:
 
-- redirect URI `https://portal.<baseDomain>/oauth2/callback`
-- it must request the scope `organization:*`, or Keycloak emits no
-  `organization.<alias>.groups` and every participant-scoped seat silently grants
-  nothing
-- naming it in `clients.yaml` is what makes the syncer attach an audience mapper
-  per service client, so a user's token passes the `aud` check at each service
+- redirect URI `https://portal.<baseDomain>/oauth2/callback`;
+- it must request the scope `organization:*`, or Keycloak emits no `organization.<alias>.groups`
+  and every participant-scoped seat silently grants nothing;
+- naming it in `clients.yaml` is what makes the syncer attach an audience mapper per service
+  client, so a user's token passes the `aud` check at each service.
 
-> A Keycloak access token carries `sub` only if the client has a mapper for it —
-> the stock route is the `basic` client scope. A realm import that declares its
-> own `clientScopes` **replaces** the stock set, and listing a scope that does not
-> exist is silently ignored. The token then authenticates, authorises, and
-> identifies nobody. An ID token carries `sub` regardless, so a browser login
-> hides this completely; it surfaces as provenance attributing acts to `""`.
+!!! warning "A Keycloak access token carries `sub` only if the client has a mapper for it"
+    The stock route is the `basic` client scope. A realm import that declares its own
+    `clientScopes` **replaces** the stock set, and listing a scope that does not exist is
+    silently ignored. The token then authenticates, authorises, and identifies nobody. An ID
+    token carries `sub` regardless, so a browser login hides this completely — it surfaces as
+    provenance attributing acts to `""`.
 
-## 5. Organizations (optional)
+## 5. Organisations (optional)
 
-Keycloak native organizations gate the portal per owner, in parallel with
-identity-registry memberships. Configured in
-`services/keycloak/organizations.yaml`.
+Keycloak native organisations gate the portal per owner, in parallel with identity-registry
+memberships.
 
-The org claim **is** the correct source for *operator* authority — who may act on
-behalf of an organisation. It is not, and must never become, the source for
-*disclosure* decisions: whose data may be shared is keyed by the data subject's
-DID and answered by the identity-registry. The two membership systems never query
-each other, deliberately.
-
-What a guest posture forbids is ds **writing** those organisations, which
-`global.keycloak.sync.enabled` and `mutate` already govern.
+The org claim **is** the correct source for *operator* authority — who may act on behalf of an
+organisation. It is not, and must never become, the source for *disclosure* decisions: whose
+data may be shared is keyed on the data subject's DID and answered by the identity registry. The
+two membership systems never query each other, deliberately.
 
 ## 6. Optional sync from the charts
 
@@ -163,23 +150,26 @@ global:
   keycloak:
     sync:
       enabled: true
-      clientsConfigMap: ds-keycloak-clients # holds clients.effective.yaml
+      clientsConfigMap: ds-keycloak-clients        # holds clients.effective.yaml
       organizationsConfigMap: ds-keycloak-organizations
-    mutate: false # runtime writes at participant promotion; separate switch
+    mutate: false   # runtime writes at participant promotion; a separate switch
 ```
 
-Off by default: an externally managed Keycloak is not ours to mutate. When
-enabled, init containers run `celine-policies keycloak sync` and
-`ir-cli keycloak org-sync` against `global.keycloak.adminUrl`. Both are idempotent.
+Off by default: an externally managed Keycloak is not ours to mutate. When enabled, init
+containers apply the clients and the organisations against `global.keycloak.adminUrl`. Both are
+idempotent.
 
-Enabling this requires Keycloak admin credentials in `secrets.sops.yaml`. Prefer
-provisioning the realm out-of-band and leaving it off — it keeps admin credentials
-out of the application namespace entirely.
+`sync` is boot-time provisioning. `mutate` is different: it governs whether the identity
+registry may create a per-participant client at promotion time and hand over its secret.
 
-## 7. Identifier changes
+Enabling either requires Keycloak admin credentials in `secrets.sops.yaml`. **Prefer
+provisioning the realm out-of-band and leaving both off** — it keeps admin credentials out of
+the application namespace entirely.
 
-ds keys a person on three identifiers with three different jobs, and only one of
-them means "the same human":
+## Identifier changes
+
+ds keys a person on three identifiers with three different jobs, and only one of them means
+"the same human":
 
 | Identifier | Role | Mutable? |
 |---|---|---|
@@ -189,16 +179,15 @@ them means "the same human":
 
 Two consequences for whoever runs the realm:
 
-- **A weaker-identifier match that conflicts with a recorded stronger one is
-  quarantined, not reconciled.** "The account was deleted and re-created" and "the
-  username was recycled to a different person" are indistinguishable from ds's
-  side, and guessing wrong hands one person's credentials and consent history to
-  somebody else. Resolving it is an operator action.
-- **A realm migration changes every `user_id` at once**, so it quarantines the
-  whole population by design. That is the right default — a migration should be
-  deliberate — but it means the bulk re-key operation must be run as part of it.
+- **A weaker-identifier match that conflicts with a recorded stronger one is quarantined, not
+  reconciled.** "The account was deleted and re-created" and "the username was recycled to a
+  different person" are indistinguishable from ds's side, and guessing wrong hands one person's
+  credentials and consent history to somebody else. Resolving it is an operator action.
+- **A realm migration changes every user id at once**, so it quarantines the whole population by
+  design. That is the right default — a migration should be deliberate — but it means the bulk
+  re-key operation must be run as part of it.
 
-## 8. Verification
+## Verification
 
 ```bash
 ISSUER=https://sso.example.org/realms/dataspaces
@@ -213,9 +202,8 @@ curl -sf -X POST $ISSUER/protocol/openid-connect/token \
   | jq -r '.access_token' | cut -d. -f2 | base64 -d 2>/dev/null | jq '{scope, aud}'
 ```
 
-If `aud` does not contain the services this client calls, `ds_auth` rejects its
-tokens at the callee. And from the ds checkout, the same question asked of the
-whole realm at once:
+If `aud` does not contain the services this client calls, its tokens are rejected at the callee.
+And from the ds checkout, the same question asked of the whole realm at once:
 
 ```bash
 task keycloak:mirror:diff HOST=/path/to/your/clients.yaml

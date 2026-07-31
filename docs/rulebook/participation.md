@@ -1,0 +1,139 @@
+# Participation and trust
+
+Who may take part, how they prove it, and what happens when that proof is withdrawn.
+
+Covers `DSSC-TRF-01`–`14`, `-38`, `-41` and `DSSC-IAM-04`–`08`, `-13`, `-14`, `-26`–`-30`.
+
+## 1. Kinds of participant
+
+| Kind | Identified by | Held where |
+|---|---|---|
+| **Organisation** (participant) | a `did:web:` DID with a registered P-256 key, plus a `MembershipCredential` | identity-registry participant registry |
+| **Owner** | a named alias resolving to a canonical URI (DID preferred over URL) | identity-registry `Owner` table |
+| **Natural person** | a subject DID, plus a `DataSubjectCredential` and/or `ConsumerUser` credential | identity-registry, mapped from a Keycloak user |
+| **Service** | a Keycloak client with `client_credentials` and a declared scope set | `services/keycloak/clients.yaml` |
+
+An organisation and an owner are not the same thing and the distinction is load-bearing: a
+participant is a party that speaks DSP, an owner is a party that datasets are attributed
+to. One organisation may be the owner of several dataset collections, and a dataset's owner
+may be a party that operates no connector at all. `governance.yaml` `ownership[].name`
+resolves through the owners registry to the ODRL assigner.
+
+**Deployment decision.** The set of admissible participant kinds is fixed by the code. Who
+may hold each is a deployment decision, expressed through the onboarding criteria below and
+the Keycloak realm.
+
+## 2. Joining
+
+An organisation joins through the onboarding lifecycle in the identity-registry:
+
+```
+application → verification → owner created → agreement accepted
+  → OrganizationCredential issued → promoted to participant → provisioning bundle
+```
+
+Each step is a distinct API call and a distinct state; `ir-cli org apply --file owners.yaml`
+walks the whole chain per entry and is idempotent. The public application form is
+deliberately outside the authentication wall — an applicant has no account by definition.
+
+**Rules:**
+
+| # | Rule | Status |
+|---|---|---|
+| P-1 | An organisation is not a participant until it has been promoted. Promotion requires a verified application, a resolved owner, and an accepted agreement | **Enforced** |
+| P-2 | Promotion issues an `OrganizationCredential` signed by the trust anchor | **Enforced** |
+| P-3 | Every participant holds at minimum a data space membership credential (`DSSC-IAM-08`) | **Enforced** |
+| P-4 | Onboarding is idempotent — re-running it must not duplicate a participant, an owner, a credential or an agreement acceptance | **Enforced, untested** at the task level; the `identity:bootstrap` task does not fail on a partially applied seed (defect P2-1) |
+| P-5 | Assurance levels for verification are the deployment's responsibility and must be recorded in its own agreement text (`DSSC-IAM-14`, KYC/KYB) | **Declared** — the platform records *that* verification happened, never *how*. A deployment claiming an assurance level must be able to evidence it outside this system |
+
+## 3. Identity and attestation
+
+**Decision: DIDs are `did:web:`, keys are EC P-256 (ES256), credentials are W3C
+Verifiable Credentials, and exchange follows DCP.**
+
+| Mechanism | Choice |
+|---|---|
+| Identifier | `did:web:<host>`, resolved over HTTP in dev and HTTPS in production (`edc.iam.did.web.use.https`) |
+| Key type | EC P-256, `ES256` |
+| Credential format | W3C VC, JWT-serialised, signed by the trust anchor key |
+| Credential exchange | Decentralized Claims Protocol — self-issued token to `/sts/{did}/token`, presentation query to `/credentials/{did}/presentations/query` |
+| Revocation | StatusList2021, published at `GET /status/{list_id}` |
+
+Three credential types exist: `MembershipCredential` (an organisation is in the data
+space), `DataSubjectCredential` (a natural person may exercise subject rights),
+`OrganizationCredential` (an organisation's onboarding outcome). `ConsumerUser` is a VC
+role for a person acting on an organisation's behalf.
+
+**VC roles are additive.** The same human may be a data subject about their own consumption
+and a consumer user acting for an organisation. Nothing may assume one role per person.
+
+| # | Rule | Status |
+|---|---|---|
+| P-6 | A DID document is served only for a DID the registry holds a key for | **Enforced** |
+| P-7 | A DID's private key never leaves the identity-registry, and is encrypted at rest | **Enforced** (Fernet, `IDENTITY_REGISTRY_ENCRYPTION_KEY`) |
+| P-8 | A presentation query is answered only for a self-issued token signed by the requested DID's registered key (`DSSC-IAM-13`, proof of control) | **Enforced** |
+| P-9 | Every issued credential is allocated a distinct StatusList index | **Not enforced** — consecutive issuances share index 0, so revoking one credential revokes others. Defect **P0-3**; blocks `DSSC-IAM-05` and `DSSC-TRF-05` |
+| P-10 | A credential's status bit is set **only** on revocation, never at issuance | **Not enforced** — two issuance paths set it at creation, publishing the credential as revoked from birth. Defect **P0-3** |
+| P-11 | Signature verification is never skipped in production | **Enforced** for Python services via `ProductionGuard`; **not enforced** for the EDC, where `DS_DEMO_IDENTITY_ENABLED` defaults to `true` in both compose files and accepts unsigned self-issued tokens. Defect **P0-2** |
+
+## 4. The trust anchor
+
+**Decision: this platform runs a single centralised trust anchor — the identity-registry —
+which is simultaneously the participant registry, the credential issuer, the Secure Token
+Service and the Credential Service for every participant.**
+
+This is a deliberate deviation from `DSSC-IAM-06` / `DSSC-SVD-30`, which describe a
+*participant-controlled* credential store as part of each participant agent. See
+[Scope and deviations](scope-and-deviations.md) §3. The consequence a deployment must
+accept: **the trust anchor can impersonate any participant.** It is a single point of
+compromise, and its encryption key is a single point of unrecoverable loss.
+
+| # | Rule | Status |
+|---|---|---|
+| P-12 | The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`) | **Enforced** — `GET /admin/participants`; note the federated catalogue does not filter on `active` (defect P1-3) |
+| P-13 | The revocation list is public and unauthenticated | **Enforced** — `GET /status/{list_id}` |
+| P-14 | Trust services validate attestations submitted by participants against the criteria (`DSSC-TRF-38`) | **Enforced** for DCP presentation queries; **not enforced** as a rulebook-conformity check — see the gap below |
+| P-15 | The trust anchor's encryption key must be backed up outside the cluster; losing it makes every DID key unrecoverable | **Declared** |
+
+## 5. Compliance verification — the open gap
+
+`DSSC-TRF-02`, `-03` and `-04` require that the rulebook support **automated conformity
+assessment**, and that compliance verification services validate participants and services
+against it.
+
+**This does not exist.** `task compliance:validate` validates a *governance file* against
+the ODRL profile and the registries — it does not validate a *participant* against this
+rulebook. The name is misleading and should not be read as conformity assessment.
+
+What would close it, in rough order of cost:
+
+1. A machine-readable projection of the rules on this page (participant must hold
+   credential types X, must have accepted agreement version Y, must publish a catalogue
+   reachable at Z).
+2. A periodic check run by the trust anchor against every registered participant.
+3. Suspension as a state distinct from deactivation, with the StatusList bit as the
+   enforcement point — which requires **P0-3** fixed first.
+
+Until then, conformity is asserted at onboarding and never re-checked.
+
+## 6. Leaving, suspension and revocation
+
+| # | Rule | Status |
+|---|---|---|
+| P-16 | Revoking a participant's membership credential removes their ability to negotiate — the DCP presentation query stops satisfying the membership constraint | **Enforced** in design; blocked in fact by **P0-3** |
+| P-17 | Revocation does not retroactively invalidate completed transfers. What was lawfully transferred stays transferred; the obligations attached to it (retention, deletion) survive | **Declared** |
+| P-18 | Revocation of a *consent* is different from revocation of a *credential* and terminates a running transfer | **Enforced** — `AgreementConsentFunction` on EDC's `policy.monitor` scope. See [Personal data](personal-data.md) §5 |
+| P-19 | A departing participant's provenance records are retained; they are evidence about the data space, not the participant's property | **Declared** |
+
+## Blueprint rows
+
+**Closed by this page:** `DSSC-TRF-01`, `-05`, `-08`, `-12`, `-13`, `-14`; `DSSC-IAM-08`,
+`-13`, `-14`, `-26`, `-27`, `-28`, `-30`.
+
+**Stated but blocked by a defect:** `DSSC-IAM-05` (validation — P0-3), `DSSC-TRF-05`
+(revoked listing — P0-3), `DSSC-IAM-04` (issuance is implemented but produces
+revoked-at-birth organisation credentials — P0-3).
+
+**Open:** `DSSC-TRF-02`, `-03`, `-04` (§5). `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41`,
+`DSSC-SVD-30` — participant-controlled credential stores; deviation recorded in
+[Scope and deviations](scope-and-deviations.md) §3.

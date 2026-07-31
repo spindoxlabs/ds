@@ -1,0 +1,15 @@
+title: Services
+nav:
+  - connector.md
+  - identity-registry.md
+  - provenance.md
+  - portal.md
+  - federated-catalog.md
+  - dataset-api-mock.md
+  - dataset-api-fiware-adapter.md
+  - edc-connector.md
+  - edc-extensions.md
+  - caddy.md
+  - keycloak.md
+  - oauth2-proxy.md
+  - libs

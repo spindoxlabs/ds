@@ -1,30 +1,25 @@
 # Secrets
 
-The charts never invent a secret value. Every Secret template uses Helm's
-`required`, so a missing value **fails the render and names the key** instead of
-deploying a default nobody chose. A successful `helmfile template` is therefore
-proof that every mandatory secret is wired.
+The charts never invent a secret value. Every Secret template uses Helm's `required`, so a
+missing value **fails the render and names the key** instead of deploying a default nobody chose.
 
-`.env.example` in the repository root is the authoritative catalogue of every
-variable, what it does, and its blast radius if leaked.
-`helm/secrets.example.yaml` mirrors it 1:1 — a variable documented there and
-missing here is a gap.
+`.env.example` in the repository root is the authoritative catalogue of every variable, what it
+does and its blast radius if leaked. `helm/secrets.example.yaml` mirrors the subset the charts
+need.
 
 ## Three delivery modes
 
-Switchable without touching a template, because all consumption already goes
-through `envFrom` / `secretKeyRef`:
+Switchable without touching a template, because all consumption already goes through `envFrom`
+and `secretKeyRef`:
 
 | Mode | How | When |
-|------|-----|------|
+|---|---|---|
 | **SOPS** (default) | values in `secrets.sops.yaml` → one rendered `Secret` per service | single source, GitOps-friendly, no extra operator |
-| **External Secrets** | `global.externalSecrets.enabled: true` → `ExternalSecret` CRs against `global.externalSecrets.secretStoreRef` | you already run Vault / AWS SM / GCP SM |
+| **External Secrets** | `global.externalSecrets.enabled: true` → `ExternalSecret` CRs against your store | you already run Vault / AWS SM / GCP SM |
 | **Pre-created** | `existingSecret: <name>` per chart → the chart references it and creates nothing | secrets provisioned by another process entirely |
 
-With External Secrets, the chart declares **which** keys it needs and where they
-live, never their values. Remote keys are looked up under
-`global.externalSecrets.remotePrefix` (default `dataspace`), refreshed on
-`refreshInterval` (default `1h`).
+With External Secrets the chart declares **which** keys it needs and where they live, never
+their values.
 
 ## The SOPS path
 
@@ -36,92 +31,85 @@ $EDITOR .sops.yaml                 # set your age or KMS recipient
 sops --encrypt --in-place secrets.sops.yaml
 ```
 
-`secrets.sops.yaml` is committed **encrypted** and decrypted by helmfile at
-render time. `.sops.yaml` sets `encrypted_regex: ^(secrets)$`, so keys stay
-readable and only values are encrypted — diffs remain reviewable.
+`secrets.sops.yaml` is committed **encrypted** and decrypted by helmfile at render time.
+`.sops.yaml` sets `encrypted_regex: ^(secrets)$`, so keys stay readable and only values are
+encrypted — diffs remain reviewable.
 
 ```bash
-age-keygen -o ~/.config/sops/age/keys.txt   # generate a recipient
+age-keygen -o ~/.config/sops/age/keys.txt
 export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 ```
 
 !!! danger "The plaintext form must never be committed"
-    `helm/.gitignore` blocks the usual staging names (`secrets.dec.yaml`,
-    `secrets.yaml`), but the responsibility is yours. `secrets.sops.yaml` itself
-    is *intentionally not ignored* — it is meant to be committed, encrypted.
+    `helm/.gitignore` blocks the usual staging names, but the responsibility is yours.
+    `secrets.sops.yaml` itself is *intentionally not ignored* — it is meant to be committed,
+    encrypted.
 
 ### Generating values
 
 ```bash
-openssl rand -hex 32                                        # API keys, cookie secrets
-python -c 'import secrets;print(secrets.token_urlsafe(32))' # Fernet passphrase
+openssl rand -hex 32                                        # API keys, client secrets
+openssl rand -base64 32                                     # the oauth2-proxy cookie secret
+python -c 'import secrets;print(secrets.token_urlsafe(32))' # the registry encryption passphrase
 task secrets:keygen                                         # EC P-256 key material → secrets/
 ```
 
-`task secrets:keygen` writes the EDR signing keys for both EDC vaults and the
-trust-anchor keypair. It is idempotent: existing key files are preserved, never
-overwritten.
+`task secrets:keygen` writes the EDR signing keys for both EDC vaults and the trust-anchor
+keypair. It is idempotent — existing key files are preserved, never overwritten.
 
-## Key reference
+## The keys
 
 ### Critical — each is a full compromise if leaked
 
 | Key | Consumer | Blast radius |
-|-----|----------|--------------|
-| `identityRegistryEncryptionKey` | identity-registry | Fernet passphrase encrypting **every participant DID private key at rest**, and HMAC key for email→subject_id derivation. Leak → impersonate any participant. Rotation changes future subject IDs (existing ones are stored and unaffected). |
-| `oauth2ProxyCookieSecret` | oauth2-proxy | Encrypts the browser session cookie. Leak → forge a session carrying any identity. Must be 16, 24 or 32 bytes. |
-| `oauth2ProxyClientSecret` | oauth2-proxy | The login client's Keycloak secret. Leak → sign in as any user of the realm. |
-| `participants.<name>.edcApiKey` | ds-edc + ds-connector | EDC Management API key. Leak → create and delete assets, policies and transfers. It no longer opens the connector's `/internal/*`: that was a shared static secret equal to this one, so a single leak yielded contract administration **and** the data-plane signing keys **and** the subject pools. Both callers now present their own Keycloak client credentials. |
-| `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | Signs Endpoint Data References. Distinct from any DID key. |
-| `participants.<name>.stsSecret` | ds-edc | The participant's STS client secret, as registered in the identity registry. |
+|---|---|---|
+| `identityRegistryEncryptionKey` | identity-registry | encrypts **every participant DID private key at rest**, and derives subject ids. Leak → impersonate any participant |
+| `oauth2ProxyCookieSecret` | oauth2-proxy | encrypts the browser session cookie. Leak → forge a session carrying any identity. Must be 16, 24 or 32 bytes |
+| `oauth2ProxyClientSecret` | oauth2-proxy | the login client's Keycloak secret. Leak → sign in as any user of the realm |
+| `participants.<name>.edcApiKey` | ds-edc + ds-connector | the EDC Management API key. Leak → create and delete assets, policies and transfers |
+| `participants.<name>.connectorClientSecret` | ds-edc | this EDC's own Keycloak client for the connector's internal API and webhooks. **The extension refuses to start without it** |
+| `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | signs Endpoint Data References. Distinct from any DID key |
+| `participants.<name>.stsSecret` | ds-edc | the participant's STS client secret, as registered in the identity registry |
 
 !!! danger "`identityRegistryEncryptionKey` must be backed up outside the cluster"
-    **Losing it makes every stored private key unrecoverable.** A cluster Secret
-    is not a backup. Rotating it requires re-encrypting the key table — there is
-    no automatic migration path today.
+    **Losing it makes every stored private key unrecoverable.** A cluster Secret is not a
+    backup. Rotating it requires re-encrypting the key table; there is no automatic migration
+    path.
 
-    The KDF uses a per-key random salt stored alongside each ciphertext, so two
-    deployments sharing a passphrase produce different blobs. The salt prevents
-    precomputation; it does not compensate for a weak passphrase.
+    The key derivation uses a per-key random salt stored beside each ciphertext, so two
+    deployments sharing a passphrase produce different blobs. The salt prevents precomputation;
+    it does not compensate for a weak passphrase.
 
-### Keycloak service clients
+### Where each key goes
 
-One per confidential client in `services/keycloak/clients.yaml`. In dev each
-defaults to its own `client_id` — guessable. **None of them holds a `*.admin`**:
-admin is an operator grant, and a superset over every `{service}.*` including the
-machine-identity permissions. The authoritative list is
-`services/keycloak/clients.yaml`; the table below is orientation, not a copy to
-maintain.
+| Key | Reaches |
+|---|---|
+| `identityRegistryEncryptionKey`, `keycloakClientSecret`, `keycloakAdminUsername`, `keycloakAdminPassword` | `ds-identity-registry` |
+| `svcDsConnectorSecret`, `trustAnchorPublicJwk` | `ds-connector` |
+| `svcDsFederatedCatalogSecret` | `ds-federated-catalog` |
+| `svcDsPortalSecret` | `ds-portal` |
+| `oauth2ProxyCookieSecret`, `oauth2ProxyClientSecret` | `ds-oauth2-proxy` |
+| `postgres.<db>` | the owning service |
+| `participants.<name>.*` | `ds-edc` (and the EDC API key also to `ds-connector`) |
 
-| Key | Client | Notable scopes |
-|-----|--------|----------------|
-| `svcDsIdentityRegistrySecret` | `svc-ds-identity-registry` | `identity-registry.admin` |
-| `svcDsOnboardingSecret` | `svc-ds-onboarding` | `identity-registry.{organizations.read,credentials.write,memberships.write,keycloak.sync}`, `connector.consent.provision` |
-| `svcDsPortalSecret` | `svc-ds-portal` | the explicit grants its pages call — **not** `connector.admin`, which was removed deliberately |
-| `svcDsConnectorSecret` | `svc-ds-connector` | `identity-registry.read`, `provenance.write` |
-| `svcDsFederatedCatalogSecret` | `svc-ds-federated-catalog` | `identity-registry.read` |
-| `svcDsDatasetApiSecret` | `svc-ds-dataset-api` | `connector.internal` |
-| `svcEdcSecret` | `svc-edc` | `identity-registry.read`, `connector.webhook` |
-| `keycloakClientSecret` | `ds-identity-registry` | the registry's own Keycloak client |
+`keycloakAdminUsername` / `keycloakAdminPassword` are needed **only** when Keycloak sync or
+runtime mutation is enabled. Prefer provisioning the realm out-of-band and leaving both empty —
+it keeps admin credentials out of the application namespace entirely.
 
-`keycloakAdminUsername` / `keycloakAdminPassword` are needed **only** when
-`global.keycloak.sync.enabled` is true. Prefer provisioning the realm
-out-of-band and leaving both empty — it keeps admin credentials out of the
-application namespace.
-
-### Trust anchor
+### The trust anchor
 
 | Key | Consumer | Notes |
-|-----|----------|-------|
-| `trustAnchorPublicJwk` | ds-connector | Public JWK from `task secrets:keygen` (`secrets/trust-anchor.public.jwk.json`), mounted as a file at `trustAnchor.keyMountPath`. It verifies user VCs on the consent and consumer APIs. |
+|---|---|---|
+| `trustAnchorPublicJwk` | ds-connector **and** ds-provenance | the public JWK from `task secrets:keygen`, mounted as a file |
 
-Leaving it unset in production means the data-subject sovereignty control is off,
-which is why the template requires it.
+It verifies user Verifiable Credentials on the consent and consumer APIs, and on a data
+subject's own provenance view. Leaving it unset means the data-subject sovereignty control is
+off, which is why both templates require it.
 
 ### Database roles
 
-One password per least-privilege role, keyed `<service>_<participant>` for
-participant-scoped services:
+One password per least-privilege role, keyed `<service>_<participant>` for participant-scoped
+services:
 
 ```yaml
 secrets:
@@ -135,35 +123,38 @@ secrets:
     edc_consumer: …
 ```
 
-The role names match the databases provisioned in
+Role names match the databases provisioned in
 [`helm/docs/cnpg-cluster.example.yaml`](https://github.com/spindoxlabs/ds/blob/main/helm/docs/cnpg-cluster.example.yaml).
-Adding a participant means adding three entries here.
+Adding a participant means adding three entries.
 
 ## The committed dev material is public
 
-Two categories of committed secret-looking files are **zero-config dev
-fixtures**, published on purpose so the stack runs with no setup:
+Two categories of committed secret-looking files are **zero-config dev fixtures**, published on
+purpose so the stack runs with no setup:
 
-- `services/connector/config/{provider,consumer}-vault.properties` — EC P-256
-  private keys and `insecure-dev-secret`
-- `services/keycloak/realm-dataspaces-dev.json` — four users whose password
-  equals their username
+- `services/connector/config/{provider,consumer}-vault.properties` — EC P-256 private keys and a
+  literal dev secret;
+- `services/keycloak/realm-dataspaces-dev.json` — users whose password equals their username, a
+  literal client secret, direct access grants enabled.
 
-A production deployment must not mount or import either. The `ds-edc` chart
-renders its vault from `secrets.sops.yaml`, never from the committed files;
-`FilesystemVaultSeederExtension` loads whatever it is given without placeholder
-detection, so this is a chart responsibility, not a runtime one.
+**A production deployment must not mount or import either.** The `ds-edc` chart renders its
+vault from `secrets.sops.yaml`, never from the committed files: the vault seeder loads whatever
+it is given with no placeholder detection, so this is a chart responsibility, not a runtime one.
 
 ## Rotation
 
 | Secret | Rotatable | How |
-|--------|-----------|-----|
-| Keycloak client secrets | yes | rotate in Keycloak, update `secrets.sops.yaml`, `helmfile apply` — the Deployment's `checksum/secret` annotation rolls the pods |
-| `edcApiKey` | yes, with coordination | shared by `ds-edc` and `ds-connector`; update both together. The external dataset API no longer needs it — it authenticates to `/internal/*` with its own Keycloak client |
-| `oauth2ProxyCookieSecret` | yes | invalidates every active browser session — everyone signs in again |
+|---|---|---|
+| Keycloak client secrets | yes | rotate in Keycloak, update `secrets.sops.yaml`, apply — the `checksum/secret` annotation rolls the pods |
+| `edcApiKey` | yes, with coordination | shared by `ds-edc` and `ds-connector`; update both together |
+| `oauth2ProxyCookieSecret` | yes | invalidates every active browser session |
 | `edrSigningPrivateJwk` | yes | in-flight EDRs signed with the old key stop verifying |
-| DB passwords | yes | rotate the CNPG role first, then the values |
+| Database passwords | yes | rotate the CNPG role first, then the values |
 | `identityRegistryEncryptionKey` | **no automatic path** | requires re-encrypting the DID private-key table |
+
+The identity registry additionally **rotates a participant's STS secret on every
+provisioning-bundle call**, storing only a hash. It cannot re-show a secret, so rotation is the
+only honest meaning of "send it again" — and it is what makes a leaked bundle invalidatable.
 
 ## Verifying
 
@@ -173,7 +164,6 @@ export SOPS_AGE_KEY_FILE=~/.config/sops/age/keys.txt
 helmfile -e production template >/dev/null && echo "every required secret is wired"
 ```
 
-A failed render names the missing key. This is the check to wire into CI —
-along with `task secrets:check`, which refuses any file still carrying a
-`CHANGE_ME`, a known dev default, a service secret equal to its client id,
-`DS_DEMO_IDENTITY_ENABLED=true`, or a missing `DS_ENV=production`.
+This is the check to wire into CI, together with `task secrets:check`, which refuses any file
+still carrying a `CHANGE_ME`, a known dev default, a service secret equal to its own client id,
+the demo-identity flag, or a missing `DS_ENV=production`.

@@ -1,0 +1,13 @@
+title: DSSC Blueprint
+nav:
+  - index.md
+  - foundational-standards.md
+  - control-and-data-plane.md
+  - data-interoperability
+  - data-sovereignty-and-trust
+  - data-value-creation-enablers
+  - service-definitions.md
+  - cross-cutting.md
+  - business.md
+  - co-creation.md
+  - glossary.md
