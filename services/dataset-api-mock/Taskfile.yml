@@ -8,6 +8,12 @@ tasks:
     sources: [pyproject.toml]
     generates: [.venv/bin/uvicorn]
 
+  test:
+    desc: Run unit tests
+    deps: [setup]
+    cmds:
+      - uv run pytest -q
+
   run:
     desc: Run dev server with hot-reload on :30002
     deps: [setup]

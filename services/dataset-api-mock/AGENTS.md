@@ -36,18 +36,22 @@ Two modes, chosen by the presence of `Edc-Contract-Agreement-Id`.
    is the consumer DID: the one identity fact that never comes from a header.
 2. **Ask ds** — `POST /internal/dataplane/authorize`. One call, one decision: agreement live
    and belonging to this consumer, covering these datasets, transfer usable, purpose
-   permitted, plus the row filter.
-3. **Enforce** — `deny` → 403; a row filter narrows the rows.
+   permitted, plus the row filter. Parsed as `ds.governance.DataplaneDecision` — the shared
+   shape, not this service's reading of it.
+3. **Enforce** — `deny` → 403; a row filter narrows the rows. `_apply_row_filter` dispatches
+   on the filter's `handler`.
 4. **Audit** — `POST /internal/audit/query` emits `QueryExecuted`.
 
 **No-header mode** is the non-dataspace path and contacts ds not at all. **Dataspace mode
 never falls back to it** — a fallback between two authorization regimes is a bypass with
 extra steps.
 
-Three things that are easy to get wrong:
+Four things that are easy to get wrong:
 
-- **An unreachable ds is a denial, never an allow.** This service assembles nothing; ds
-  decides and this enforces.
+- **An unreachable ds is a denial, never an allow** — and so is an *unreadable* one. This
+  service assembles nothing; ds decides and this enforces.
+- **An allow carrying a row filter says *these rows*, not *all rows*.** A filter this plane
+  cannot apply withholds everything; it is never a permission to serve unfiltered.
 - **Send the shared agreement id.** EDC keeps `ContractAgreement.getId()` (runtime-local,
   different on each side) apart from `getAgreementId()` (shared). The local one is refused
   as `agreement_unknown`.
@@ -64,5 +68,10 @@ An entry in `DATASETS`, or a JSON file via `DATASET_API_EXTRA_DATASETS_PATH`.
 
 ## Testing
 
-No unit suite. The behaviour that matters is covered by `ds-e2e run -f smoke`, which asserts
-both the allow and the deny paths.
+`task -d services/dataset-api-mock test` — what this PEP does with a decision, the half of
+the `/internal/*` contract the connector's own tests cannot reach. `ds-e2e run -f smoke`
+covers the rest, against a live stack.
+
+The fixture's subject vocabulary does not line up with `governance.yaml`'s or ds's, so
+`datasets.silver.meters_15m` refuses rather than guessing. Tracked in
+`.agents/defect-per-service.md`.

@@ -3,7 +3,7 @@
 The dataspace web frontend. Covers the full portal surface for all participant roles: dataset consumer, dataset provider, operator, and data subject.
 
 Port: `30004`
-URL: `http://portal.dataspaces.localhost:9010`
+URL: `http://portal.dataspaces.localhost`
 
 Built with SvelteKit, targeting the latest stable release. Mobile-first component design.
 

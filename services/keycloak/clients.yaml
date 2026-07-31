@@ -69,6 +69,12 @@ scopes:
   # to issue a credential, register a membership and set one Keycloak attribute.
   - name: identity-registry.credentials.write
     description: Issue and revoke a data-subject credential
+  # One (subject, type) question, not the roster. `GET /admin/credentials`
+  # enumerates what a person holds and stays on `.admin`; this answers whether
+  # they hold one named thing, which is what a sharing offer's `admitted_by`
+  # needs. The connector may not hold `*.admin` — see the note below.
+  - name: identity-registry.credentials.read
+    description: Check whether a subject holds a valid credential of a given type
   - name: identity-registry.memberships.write
     description: Register or delete an organisation membership
   # Records the Keycloak user ↔ DID mapping. It used to also push a
@@ -244,6 +250,12 @@ clients:
     default_scopes:
       - identity-registry.read
       - identity-registry.membership.read
+      # A sharing offer may admit by credential type as well as by membership
+      # (`admitted_by: [{credential_type: OrganizationCredential}]`). Both
+      # constraints are evaluated in `services/circle.py`, and this is the second
+      # one's read — narrow by design, because the alternative was the `.admin`
+      # this file refuses a service client.
+      - identity-registry.credentials.read
       - provenance.write
       # A consumer connector asks the provider whether one of its own
       # negotiations is parked on a consent decision, so a long REQUESTED can be

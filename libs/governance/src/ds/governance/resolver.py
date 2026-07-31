@@ -141,7 +141,10 @@ class GovernanceResolver:
             row_filters=[
                 RowFilter(
                     handler=f["handler"],
-                    args=RowFilterArgs(column=f["args"]["column"]),
+                    # Every argument, not just `column` — the handler named here
+                    # is the only thing that knows which of them it needs, and it
+                    # runs in the data plane. See `RowFilterArgs`.
+                    args=RowFilterArgs.model_validate(f["args"]),
                 )
                 for f in (block.get("row_filters") or [])
                 if isinstance(f, dict) and f.get("handler") and isinstance(f.get("args"), dict)

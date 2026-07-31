@@ -87,7 +87,7 @@ tasks:
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
-        echo "Provider started — gateway http://localhost:9010 — portal: task provider:portal:run"
+        echo "Provider started — portal http://portal.dataspaces.localhost — or run it on the host: task provider:portal:run"
 
   provider:stop:
     desc: Stop provider participant stack
@@ -118,7 +118,7 @@ tasks:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.consumer.yml up -d --build
-        echo "Consumer started — gateway http://localhost:9000"
+        echo "Consumer started — gateway http://consumer.dataspaces.localhost"
 
   consumer:stop:
     desc: Stop consumer participant stack

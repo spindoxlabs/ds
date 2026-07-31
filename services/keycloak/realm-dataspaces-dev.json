@@ -243,11 +243,11 @@
       "directAccessGrantsEnabled": true,
       "serviceAccountsEnabled": false,
       "redirectUris": [
-        "http://sso.dataspaces.localhost:9010/oauth2/callback"
+        "http://sso.dataspaces.localhost/oauth2/callback"
       ],
       "webOrigins": [
-        "http://portal.dataspaces.localhost:9010",
-        "http://sso.dataspaces.localhost:9010"
+        "http://portal.dataspaces.localhost",
+        "http://sso.dataspaces.localhost"
       ],
       "defaultClientScopes": [
         "web-origins",
@@ -264,7 +264,7 @@
         "microprofile-jwt"
       ],
       "attributes": {
-        "post.logout.redirect.uris": "http://sso.dataspaces.localhost:9010/oauth2/sign_out##http://portal.dataspaces.localhost:9010/*"
+        "post.logout.redirect.uris": "http://sso.dataspaces.localhost/oauth2/sign_out##http://portal.dataspaces.localhost/*"
       },
       "protocolMappers": [
         {

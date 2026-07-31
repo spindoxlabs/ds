@@ -5,9 +5,9 @@
  * timeouts that reads like a broken portal rather than a portal that was never
  * started.
  */
-const PORTAL_URL = process.env.PORTAL_URL ?? 'http://portal.dataspaces.localhost:9010';
+const PORTAL_URL = process.env.PORTAL_URL ?? 'http://portal.dataspaces.localhost';
 const KEYCLOAK_URL =
-	process.env.KEYCLOAK_URL ?? 'http://keycloak.dataspaces.localhost:9010';
+	process.env.KEYCLOAK_URL ?? 'http://keycloak.dataspaces.localhost';
 
 async function reachable(url: string): Promise<string | null> {
 	try {

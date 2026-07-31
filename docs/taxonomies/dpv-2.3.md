@@ -268,5 +268,7 @@ only real gate.
 - Permanent identifier / namespace — <https://w3id.org/dpv>
 - DPVCG home — <https://w3c-cg.github.io/dpv/>
 - The profile itself — `libs/governance/src/ds/governance/profiles/energy.yaml`
-- How purposes are enforced — [Consent & sovereignty](../consent-and-sovereignty.md),
-  [Governance & ODRL](../governance-and-odrl.md)
+- How purposes are enforced — [ds-governance](../services/libs/governance.md) (the taxonomy,
+  and the ODRL a rule becomes), [ds-connector](../services/connector.md) (the purpose check on
+  every data-plane decision), [Rulebook · Policies](../rulebook/policies.md),
+  [Rulebook · Personal data](../rulebook/personal-data.md)

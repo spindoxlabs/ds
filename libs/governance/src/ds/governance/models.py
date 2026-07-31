@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,20 @@ class GovernanceOwner(BaseModel):
 
 
 class RowFilterArgs(BaseModel):
+    """Arguments for one row-filter handler.
+
+    `extra="allow"`: `column` is the only argument every handler in use takes,
+    but a handler defines its own and governance is not the place that knows
+    them — `rec_registry` reads a `urn_template` in the FIWARE adapter. Dropping
+    an unrecognised argument here silently truncates it out of the
+    `DataplaneRowFilter` the PDP puts on the wire, leaving the handler to run
+    with a missing input. For `rec_registry` that resolves to an empty device
+    set, which the adapter reads as *deny* — a correctly-configured dataset
+    refused because a model narrower than its input threw the rest away.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
     column: str
 
 

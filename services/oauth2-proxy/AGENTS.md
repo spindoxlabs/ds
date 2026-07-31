@@ -37,7 +37,7 @@ proxy forwards. That design is only safe if the thing in front does two jobs: au
 
 ## When editing the config
 
-- Every URL carries the gateway port (`:9010`) — see the three traps in `services/caddy/AGENTS.md`.
+- Every URL is portless: the gateway owns `:80` — see the traps in `services/caddy/AGENTS.md`.
 - `cookie_secret` and `client_secret` are committed literals. They are dev fixtures; in
   production both come from a Secret (`secrets.cookieSecret` on `ds-oauth2-proxy`). A known
   cookie secret means forgeable sessions for every human in the deployment.

@@ -201,25 +201,41 @@ async def _holds_credential(
 
     Returns False when the registry cannot answer — an unverifiable credential
     claim must not admit anyone.
+
+    Asks `GET /credentials/check`, the sibling of the `/memberships/check` above.
+    It used to ask `GET /admin/credentials` and decide validity itself, which was
+    wrong three times over and is worth recording because two of the three fail
+    *open*:
+
+    1. that route requires `identity-registry.admin`, which this client does not
+       hold and `clients.yaml` refuses a service client — so every check 403'd;
+    2. it ignores the `type` parameter, so the answer covered every credential
+       the subject holds, of any type;
+    3. its `CredentialSummary` has a `status`, never a `revoked` field, so
+       `item.get("revoked", False)` was `False` for every entry and the `any()`
+       was satisfied by the mere existence of one.
+
+    Widening the grant would therefore have turned an always-negative check into
+    an always-positive one. Validity is now decided where the state lives.
     """
     try:
         async with httpx.AsyncClient(
             base_url=identity_registry_url.rstrip("/"), timeout=10.0
         ) as client:
             resp = await client.get(
-                "/admin/credentials",
+                "/credentials/check",
                 params={"subject_did": subject_did, "type": credential_type},
                 headers=await _headers(token_provider),
             )
             if resp.status_code != 200:
+                log.warning(
+                    "Credential check for %s (%s) answered %s — not admitted",
+                    subject_did,
+                    credential_type,
+                    resp.status_code,
+                )
                 return False
-            body = resp.json()
-            items = body if isinstance(body, list) else body.get("items") or []
-            return any(
-                not item.get("revoked", False)
-                for item in items
-                if isinstance(item, dict)
-            )
+            return bool(resp.json().get("holds", False))
     except httpx.HTTPError as exc:
         log.error("Credential check failed for %s: %s", subject_did, exc)
         return False

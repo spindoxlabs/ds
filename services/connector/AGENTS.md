@@ -36,6 +36,7 @@ Every act emits a PROV-O event through `services/prov_bridge.py`.
 | What a consent write may say | `services/consent_vocabulary.py` — the single validation point; raises 422 |
 | Covered processor vs independent controller | `services/circle.py` |
 | Governance → ODRL | `libs/governance/.../mapper.py` — shared lib, not here |
+| The `/internal/dataplane/authorize` answer's shape | `libs/governance/.../dataplane.py` — shared lib, not here |
 | EDC calls | `libs/ds-edc/.../client.py` — shared lib. Never call EDC from a route |
 | Provenance emission | `services/prov_bridge.py` |
 | Schema change | `db/models.py`, then `task db:revision MESSAGE=...` |

@@ -80,6 +80,16 @@ require_participants_write = require_permission(
 require_credentials_write = require_permission(
     "identity-registry.admin", "identity-registry.credentials.write"
 )
+# One (subject, type) question at a time — `GET /credentials/check`. Deliberately
+# not `identity-registry.read`, and deliberately not the `admin` that guards
+# `GET /admin/credentials`: enumerating what a person holds and asking whether
+# they hold one named thing are different disclosures, exactly as
+# `/admin/memberships` and `/memberships/check` are. The connector needs the
+# second to evaluate a sharing offer's `admitted_by`, and a service client may
+# not hold `*.admin`.
+require_credential_read = require_permission(
+    "identity-registry.admin", "identity-registry.credentials.read"
+)
 require_memberships_write = require_permission(
     "identity-registry.admin", "identity-registry.memberships.write"
 )

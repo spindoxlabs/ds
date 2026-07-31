@@ -140,6 +140,10 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         "identity-registry.credentials.write",
         "identity-registry.memberships.write",
         "identity-registry.keycloak.sync",
+        # Connector → identity-registry, evaluating a sharing offer's
+        # `admitted_by`. No page asks it: a person reaching the same fact does so
+        # through `identity-registry.admin` in `ds-admin`.
+        "identity-registry.credentials.read",
         # Email → subject-id resolution, used by the funnel to mint an identity.
         "identity-registry.resolve",
         # Organisation promotion: reachable by a human, but only through

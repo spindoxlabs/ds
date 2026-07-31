@@ -7,10 +7,15 @@ from typing import Any
 
 import httpx
 import jwt
+from ds.governance import (
+    DIRECT_USER_MATCH,
+    DataplaneDecision,
+    DataplaneRowFilter,
+)
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from fastapi import FastAPI, Header, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .metrics import install_metrics
@@ -359,22 +364,22 @@ async def _dataspace_query(
         purpose=[p.strip() for p in (purpose or "").split(",") if p.strip()],
         dataset_ids=[DATASETS[n]["asset_id"] for n in dataset_names],
     )
-    if decision.get("decision") != "allow":
+    if not decision.allowed:
         # The reason is ds's, and it is safe to relay: it names the gate, never
         # who else holds the agreement.
-        raise HTTPException(403, f"Refused by ds: {decision.get('reason')}")
+        raise HTTPException(403, f"Refused by ds: {decision.reason}")
 
     rows, spec = await _rows_for(dataset_names)
-    verdict = next(
-        (d for d in decision.get("datasets", []) if d["dataset_id"] == spec["asset_id"]),
-        None,
-    )
-    row_filter = (verdict or {}).get("row_filter")
-    subject_ids = None
-    if row_filter:
-        column = row_filter["column"]
-        subject_ids = row_filter["subject_ids"]
-        rows = [row for row in rows if row.get(column) in subject_ids]
+    verdict = decision.verdict_for(spec["asset_id"])
+    if verdict is None or not verdict.allowed:
+        # The envelope allowed, this dataset did not — or ds never mentioned it.
+        # Either way nothing here has been permitted to serve it.
+        raise HTTPException(
+            403, f"Refused by ds: {verdict.reason if verdict else 'dataset_undecided'}"
+        )
+
+    if verdict.row_filter is not None:
+        rows = _apply_row_filter(rows, verdict.row_filter)
 
     await _audit_query(
         dataset_id=spec["asset_id"],
@@ -383,9 +388,58 @@ async def _dataspace_query(
         agreement_id=agreement_id,
         transfer_id=transfer_id,
         row_count=len(rows),
-        authorized_subject_ids=subject_ids,
+        # **Deliberately not the filter's principals.** `/internal/audit/query`
+        # declares `authorized_subject_ids`, and a PEP structurally cannot fill
+        # it: ds translates subject DIDs into registry-native principals before
+        # the filter leaves, precisely so a DID does not travel with the payload.
+        # Sending the principals instead would put usernames into a `QueryExecuted`
+        # provenance event, which rulebook `L-3` limits to codes, pseudonymous
+        # DIDs and hashes. The field is the PDP's to fill, not this one's.
+        authorized_subject_ids=None,
     )
     return _page(rows, body)
+
+
+def _apply_row_filter(
+    rows: list[dict[str, Any]], row_filter: DataplaneRowFilter
+) -> list[dict[str, Any]]:
+    """Narrow `rows` to the ones the filter admits.
+
+    The filter arrives whole — handler, args and principals — because the
+    handler is what knows how a principal maps to values in the column. This
+    service implements one handler; the real dataset-api registers several
+    through `celine.dataset...row_filters`.
+
+    **An unimplemented handler withholds every row.** It is not a permission to
+    serve unfiltered: an *allow* carrying a filter says "these rows", and a PEP
+    that cannot work out which rows has not been told it may serve them all.
+    That is the whole failure this shape exists to prevent — the previous reading
+    (`row_filter["column"]`) matched no key the connector sends, so the request
+    died as a 500 with the narrowing never applied.
+    """
+    if row_filter.handler != DIRECT_USER_MATCH:
+        log.warning(
+            "No implementation for row filter handler %r — withholding every row",
+            row_filter.handler,
+        )
+        raise HTTPException(
+            403,
+            f"Cannot enforce row filter handler {row_filter.handler!r}: "
+            "this data plane implements no such handler, so no rows may be served",
+        )
+
+    column = row_filter.args.get("column")
+    if not column:
+        raise HTTPException(
+            403,
+            f"Row filter handler {row_filter.handler!r} names no column to filter on",
+        )
+
+    # An empty principal set narrows to nothing. It never widens to everything:
+    # ds denies before sending one, and reading it as "no filter" is precisely
+    # how a consent-gated dataset leaks.
+    principals = set(row_filter.principals)
+    return [row for row in rows if row.get(column) in principals]
 
 
 _jwks_cache: dict[str, Any] = {}
@@ -497,12 +551,16 @@ async def _authorize(
     transfer_id: str | None,
     purpose: list[str],
     dataset_ids: list[str],
-) -> dict[str, Any]:
+) -> DataplaneDecision:
     """Ask ds whether rows may flow, and which.
 
     One call, one decision. This service assembles nothing: agreement validity,
     the agreement↔consumer binding, purpose admissibility and the consent pool
     are all ds's to answer, because ds is the control plane.
+
+    The answer is parsed as `ds.governance.DataplaneDecision` — the shared shape,
+    so a change on the connector side that this service has not caught up with
+    fails here rather than downstream of the narrowing.
     """
     url = f"{settings.connector_internal_url.rstrip('/')}/internal/dataplane/authorize"
     payload = {
@@ -522,7 +580,14 @@ async def _authorize(
         # ds unreachable is a denial, never an allow: the control plane not
         # answering is exactly when the data plane must not improvise.
         raise HTTPException(502, "ds-connector unreachable") from exc
-    return response.json()
+    try:
+        return DataplaneDecision.model_validate(response.json())
+    except (ValueError, ValidationError) as exc:
+        # A decision we cannot read is a decision we did not receive. The
+        # tempting alternative — read the keys we recognise and ignore the rest —
+        # is what serves rows past a narrowing that arrived under a new name.
+        log.error("Unreadable decision from ds-connector: %s", exc)
+        raise HTTPException(502, "ds-connector returned an unreadable decision") from exc
 
 
 async def _internal_headers() -> dict[str, str]:

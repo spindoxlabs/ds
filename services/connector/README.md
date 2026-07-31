@@ -3,7 +3,7 @@
 The EDC control-plane orchestration service. Wraps a provider-side and consumer-side Eclipse Dataspace Connector instance and exposes a unified REST API for governance sync, data flow management, consent sovereignty, and participant registry.
 
 Port: `30001`
-URL: `http://portal.dataspaces.localhost:9010/api/connector/`
+URL: `http://portal.dataspaces.localhost/api/connector/`
 
 > **Concepts live in the docs site, not here.** This README is the local entry
 > point: what runs, which endpoints exist, how to configure and start it. The

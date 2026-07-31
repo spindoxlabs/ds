@@ -19,6 +19,15 @@ from .models import (
     load_odrl_profile,
     subject_column,
 )
+from .dataplane import (
+    ALLOW,
+    DENY,
+    DIRECT_USER_MATCH,
+    DataplaneDecision,
+    DataplaneRowFilter,
+    DatasetVerdict,
+    DecisionCache,
+)
 from .sharing import (
     CONSENT_BASIS,
     DPV_LEGAL_BASES,
@@ -59,6 +68,13 @@ __all__ = [
     "SKOS_MATCH_RELATIONS",
     "load_odrl_profile",
     "subject_column",
+    "ALLOW",
+    "DENY",
+    "DIRECT_USER_MATCH",
+    "DataplaneDecision",
+    "DataplaneRowFilter",
+    "DatasetVerdict",
+    "DecisionCache",
     "purpose_failure",
     "unresolved_purposes",
     "CONSENT_BASIS",

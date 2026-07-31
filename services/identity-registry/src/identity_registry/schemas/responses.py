@@ -110,6 +110,19 @@ class MembershipCheckResponse(BaseModel):
     member: bool
 
 
+class CredentialCheckResponse(BaseModel):
+    """Does this subject hold a valid credential of this type?
+
+    A boolean and the question it answers — never the credential, its id or its
+    dates. The caller is deciding admission, and everything else is disclosure
+    it does not need.
+    """
+
+    subject_did: str
+    credential_type: str
+    holds: bool
+
+
 class OwnerResponse(BaseModel):
     id: str
     type: str

@@ -36,6 +36,8 @@ scopes:
   description: Register, update or deactivate a DSP participant
 - name: identity-registry.credentials.write
   description: Issue and revoke a data-subject credential
+- name: identity-registry.credentials.read
+  description: Check whether a subject holds a valid credential of a given type
 - name: identity-registry.memberships.write
   description: Register or delete an organisation membership
 - name: identity-registry.keycloak.sync
@@ -115,6 +117,7 @@ clients:
   default_scopes:
   - identity-registry.read
   - identity-registry.membership.read
+  - identity-registry.credentials.read
   - provenance.write
   - connector.consent.read
   scopes_prefix: connector

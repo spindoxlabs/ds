@@ -12,7 +12,11 @@ from ...config import Settings
 from ...db.models import ConsumerAccessRequestORM
 from ...dependencies import get_db, get_settings_dep, require_webhook_scope
 from ...schemas.webhooks import ContractNegotiationEvent, TransferProcessEvent
-from ...services.agreement_service import terminate_agreement, upsert_agreement
+from ...services.agreement_service import (
+    get_agreement_status,
+    terminate_agreement,
+    upsert_agreement,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -42,19 +46,66 @@ async def transfer_process_event(
     settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_webhook_scope),
 ):
+    """Record what a transfer's lifecycle settles on this side.
+
+    Delivered by ``TransferEventPublisher`` in the EDC extensions, which forwards
+    EDC's own transfer-process events. DSP carries no signal the connector could
+    use to learn that a transfer started or completed; EDC's internal event
+    router does.
+
+    **This is the only place a provider emits ``DataTransferCompleted``** — one
+    of the sixteen events rulebook ``L-1`` makes mandatory for every participant.
+    The consumer emits it from ``consumer_service.run_flow``, the
+    ``/consumer/flow`` convenience path, and from nowhere else. The route
+    previously had no producer at all, so a provider emitted the event never.
+
+    Started and completed are **different events**, not one recorded twice: a
+    transfer that has started has moved no data yet.
+    """
     event_type = event.type
     log.info("Transfer-process webhook: %s transfer=%s", event_type, event.transfer_id)
 
-    if "COMPLETED" in event_type or "STARTED" in event_type:
-        prov = request.app.state.prov
-        await prov.data_transfer_completed(
-            transfer_id=event.transfer_id or "unknown",
-            agreement_id=event.agreement_id or "unknown",
-            data_product_id=event.asset_id or "unknown",
-            provider_id=settings.participant_id,
-            consumer_id="consumer",
-            event_id=event.transfer_id,
+    started = "STARTED" in event_type
+    completed = "COMPLETED" in event_type
+    if not (started or completed):
+        # Every other transfer state is EDC's business. This is a projection, so
+        # an event we have no record to settle is logged and dropped.
+        return {"status": "ok"}
+
+    # **Never a literal.** One codebase runs both roles and the same event shape
+    # reaches both, so the counterparties come from the agreement this connector
+    # recorded when the negotiation finalized — not from a hardcoded "consumer",
+    # which is what every completed transfer used to be attributed to, and not
+    # from the event, which is the counterparty's own account of itself.
+    agreement = (
+        await get_agreement_status(db, event.agreement_id)
+        if event.agreement_id
+        else None
+    )
+    if agreement is None:
+        log.warning(
+            "Transfer-process webhook: no agreement %s on record — %s for transfer "
+            "%s not attributed",
+            event.agreement_id,
+            event_type,
+            event.transfer_id,
         )
+        return {"status": "ok"}
+
+    prov = request.app.state.prov
+    common = {
+        "transfer_id": event.transfer_id or "unknown",
+        "agreement_id": event.agreement_id or "unknown",
+        "data_product_id": event.asset_id or agreement.get("asset_id") or "unknown",
+        "provider_id": agreement.get("provider_id") or settings.participant_id,
+        "consumer_id": agreement.get("consumer_id") or "unknown",
+    }
+    if started:
+        await prov.transfer_started(
+            **common, event_id=f"transfer-started:{event.transfer_id}"
+        )
+    else:
+        await prov.data_transfer_completed(**common, event_id=event.transfer_id)
 
     return {"status": "ok"}
 

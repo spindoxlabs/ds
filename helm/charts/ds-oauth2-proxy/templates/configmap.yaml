@@ -1,13 +1,13 @@
 {{/*
-The proxy config, mirroring services/oauth2-proxy/oauth2-proxy.cfg. Two
-differences from the compose file, both structural rather than tuning:
+The proxy config, mirroring services/oauth2-proxy/oauth2-proxy.cfg. One
+difference from the compose file, structural rather than tuning:
 
-  * **No `whitelist_domains` ports.** Dev runs behind Caddy on :9010 and :9000,
-    so every URL there carries a port; a cluster serves the portal on 443 and a
-    bare domain matches it. Keeping the dev ports here would whitelist hosts that
-    do not exist.
   * **The cookie secret is a Secret**, not a literal. The dev value is in the
     same category as `.env.local` — deliberately weak and public.
+
+`whitelist_domains` carries no port in either place: dev runs behind Caddy on
+:80 and a cluster serves the portal on 443, and a bare domain matches the
+default port for the scheme in both cases.
 
 `upstreams = static://200` is required but unused: nginx calls `/oauth2/auth` as
 an auth subrequest and proxies the real traffic itself. A working upstream here

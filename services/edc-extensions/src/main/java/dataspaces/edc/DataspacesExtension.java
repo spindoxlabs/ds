@@ -3,6 +3,7 @@ package dataspaces.edc;
 import org.eclipse.edc.connector.controlplane.contract.spi.event.contractnegotiation.ContractNegotiationEvent;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.ContractNegotiationPendingGuard;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.store.ContractNegotiationStore;
+import org.eclipse.edc.connector.controlplane.transfer.spi.event.TransferProcessEvent;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
 import org.eclipse.edc.iam.oauth2.spi.client.Oauth2Client;
 import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
@@ -148,6 +149,16 @@ public class DataspacesExtension implements ServiceExtension {
         eventRouter.register(
             ContractNegotiationEvent.class,
             new NegotiationEventPublisher(connector, typeManager, context.getMonitor())
+        );
+
+        // ── Transfer lifecycle → ds-connector ────────────────────────────────
+        // The same gap on the transfer half. `POST /webhooks/transfer-process`
+        // existed with no producer in any deployment, which left a *provider*
+        // emitting no `DataTransferCompleted` — one of the sixteen events
+        // rulebook L-1 makes mandatory for every participant.
+        eventRouter.register(
+            TransferProcessEvent.class,
+            new TransferEventPublisher(connector, context.getMonitor())
         );
 
         // ── ds-connector → this control plane ────────────────────────────────

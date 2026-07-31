@@ -23,7 +23,7 @@ from ds_auth import Principal
 from connector.services.prov_bridge import acting_principal
 from tests.test_provenance_events import prov_client  # noqa: F401 — shared fixture
 
-ISSUER = "http://keycloak.dataspaces.localhost:9010/realms/dataspaces"
+ISSUER = "http://keycloak.dataspaces.localhost/realms/dataspaces"
 
 
 def _human(**extra) -> Principal:

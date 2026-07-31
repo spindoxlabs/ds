@@ -1,7 +1,7 @@
 # ds-portal
 
 SvelteKit web front end for every participant role. Port 30004 (debug 30904), reached at
-`http://portal.dataspaces.localhost:9010`.
+`http://portal.dataspaces.localhost`.
 
 **Not an OIDC client.** oauth2-proxy holds the browser session behind Caddy `forward_auth`
 and forwards the access token as `X-Auth-Request-Access-Token`; `hooks.server.ts` builds the

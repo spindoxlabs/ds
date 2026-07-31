@@ -244,8 +244,7 @@ All containers share the `dataspaces` bridge network.
 | 31001 | ds-connector (consumer) |
 | 35432 | PostgreSQL |
 | 9080 | Keycloak |
-| 9000 | Caddy consumer gateway |
-| 9010 | Caddy provider gateway |
+| 80 | Caddy gateway — every `*.dataspaces.localhost` host, split by Host header |
 | 19xxx | EDC provider (management, protocol, public, control) |
 | 29xxx | EDC consumer (management, protocol, public, control) |
 | 30900+ | debugpy ports |

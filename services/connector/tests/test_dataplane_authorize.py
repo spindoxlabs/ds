@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from connector.services import subject_identities
 from connector.services.agreement_service import terminate_agreement, upsert_agreement
 from connector.services.consent_service import set_subject_data_sharing
+from ds.governance import DataplaneDecision
 from tests import make_headers
 
 HEADERS = make_headers(scope="connector.internal")
@@ -292,3 +293,85 @@ async def test_the_ttl_is_published(engine, client):
     await _agreement(engine, "agr-1", GATED)
     await _consent(engine, purpose=["FlexibilityResearch"])
     assert (await _authorize(client)).json()["cache"]["ttl_seconds"] > 0
+
+
+# ── the answer is the shared shape, not this service's own ───────────────────
+
+
+@pytest.mark.asyncio
+async def test_every_answer_parses_as_the_published_decision(engine, client):
+    """The response is `ds.governance.DataplaneDecision`, on both branches.
+
+    The shape is published because this route has readers it does not ship
+    with — the celine `dataset-api` and `services/dataset-api-mock`. Both parse
+    with `extra="forbid"`, so a key added here and not there is a data plane that
+    stops. Asserting it here is what turns that from a runtime discovery into a
+    failing unit test.
+    """
+    await _agreement(engine, "agr-1", GATED)
+    await _consent(engine, purpose=["FlexibilityResearch"])
+
+    allowed = DataplaneDecision.model_validate((await _authorize(client)).json())
+    assert allowed.allowed
+    assert allowed.verdict_for(GATED).row_filter is not None
+
+    refused = DataplaneDecision.model_validate(
+        (await _authorize(client, agreement_id="agr-nope")).json()
+    )
+    assert not refused.allowed
+    assert refused.reason == "agreement_unknown"
+
+
+@pytest.mark.asyncio
+async def test_a_refusal_carries_the_same_keys_as_an_allow(engine, client):
+    """A PEP must not branch on the envelope to know which fields it may read.
+
+    `transfer_id` and `purpose` used to be absent from the deny shape, so a
+    reader of the allow shape hit a `KeyError` on exactly the responses it most
+    needed to log.
+    """
+    await _agreement(engine, "agr-1", GATED)
+    await _consent(engine, purpose=["FlexibilityResearch"])
+    allowed = (await _authorize(client)).json()
+    refused = (await _authorize(client, agreement_id="agr-nope")).json()
+    assert set(allowed) == set(refused)
+
+
+@pytest.mark.asyncio
+async def test_the_filter_reaches_the_wire_with_the_handlers_own_arguments(
+    engine, client, monkeypatch
+):
+    """Governance's args travel verbatim — the PDP does not interpret them.
+
+    `rec_registry` in the FIWARE adapter reads a `urn_template` it must be given.
+    Both models between here and there once admitted only `column`, so the
+    handler ran with a missing input and resolved an empty device set, which that
+    adapter reads as *deny*: a correctly-configured dataset refused because a
+    model narrower than its input threw the rest away.
+    """
+    from ds.governance.models import RowFilter, RowFilterArgs
+
+    from connector.api.v1 import internal
+
+    real = internal._row_filter_spec
+
+    def with_template(rule):
+        spec = real(rule)
+        if spec is None:
+            return None
+        row_filter = RowFilter(
+            handler=spec["handler"],
+            args=RowFilterArgs.model_validate(
+                {**spec["args"], "urn_template": "urn:ngsi-ld:Device:{device_id}"}
+            ),
+        )
+        return {"handler": row_filter.handler, "args": row_filter.args.model_dump()}
+
+    monkeypatch.setattr(internal, "_row_filter_spec", with_template)
+
+    await _agreement(engine, "agr-1", GATED)
+    await _consent(engine, purpose=["FlexibilityResearch"])
+    decision = DataplaneDecision.model_validate((await _authorize(client)).json())
+    args = decision.verdict_for(GATED).row_filter.args
+    assert args["urn_template"] == "urn:ngsi-ld:Device:{device_id}"
+    assert args["column"]

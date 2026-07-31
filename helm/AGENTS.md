@@ -15,7 +15,7 @@ the boundary where that stops being safe.
 |---|---|
 | Requirements | [DSSC · Service Definitions](../docs/blueprints/dssc/service-definitions.md) — the eleven deployable-component definitions this chart set realises · [DSSC · Trust Framework](../docs/blueprints/dssc/data-sovereignty-and-trust/trust-framework.md) |
 | Rules | [Rulebook · Participation and trust](../docs/rulebook/participation.md) · [Rulebook · Provenance and logging](../docs/rulebook/provenance-and-logging.md) (observability obligations) |
-| Operator docs | [docs/deployment/](../docs/deployment/index.md) — prerequisites, the Keycloak realm contract, the `values.yaml` reference, secrets, exposure, day-2 operations, and the **Known gaps** list. **Keep it in sync when you change a chart's values contract or its public surface**; it is the only operator-facing description of either. This file is agent- and security-facing and is not a substitute |
+| Operator docs | [docs/deployment/](../docs/deployment/index.md) — prerequisites, the Keycloak realm contract, the `values.yaml` reference, secrets, exposure, day-2 operations. **Keep it in sync when you change a chart's values contract or its public surface**; it is the only operator-facing description of either. This file is agent- and security-facing and is not a substitute |
 
 ## `DS_ENV=production` is the mechanism
 

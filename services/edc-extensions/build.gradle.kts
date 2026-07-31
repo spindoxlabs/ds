@@ -12,6 +12,10 @@ dependencies {
     // Contract agreements + negotiations: the policy-monitor consent check reads
     // the signed agreement, and the pending guard reads the negotiation.
     api("org.eclipse.edc:contract-spi:$edcVersion")
+    // TransferProcessEvent — the transfer half of the lifecycle the connector
+    // cannot see over DSP. Without a producer for it, a provider emitted no
+    // `DataTransferCompleted` at all (rulebook L-1).
+    api("org.eclipse.edc:transfer-spi:$edcVersion")
     // PolicyMonitorContext — the `policy.monitor` scope, where a revoked consent
     // terminates a transfer that is already running.
     api("org.eclipse.edc:policy-monitor-spi:$edcVersion")

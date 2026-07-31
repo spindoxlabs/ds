@@ -75,7 +75,7 @@ services:
       # `base_url` must equal the `iss` claim; `jwks_uri` must be *reachable
       # from the container*. They differ here, which is exactly why the settings
       # keep them apart.
-      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       CELINE_OIDC_JWKS_URI: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/certs
       CELINE_OIDC_AUDIENCE: svc-rec-registry
       # `/admin/*` and `/me/*` require a JWT regardless of this flag — the
@@ -143,7 +143,7 @@ services:
       # `svc-ds-dataset-api` holds `connector.internal` in **both** realms —
       # it is already in celine-policies/clients.yaml with the same name — so
       # the same identity works here and in production.
-      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      CELINE_OIDC_BASE_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       CELINE_OIDC_JWKS_URI: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/certs
       CELINE_OIDC_AUDIENCE: svc-dataset-api
       # `OidcSettings` reads `CELINE_OIDC_*`. `SERVICE_CLIENT_*` is read by

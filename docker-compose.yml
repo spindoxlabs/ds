@@ -14,13 +14,19 @@ volumes:
   postgres_data:
 
 services:
-  # ── Reverse proxy — consumer (:9000) and provider (:9010) gateways ───────────
+  # ── Reverse proxy — the single :80 gateway, routed by Host header ────────────
+  #
+  # One published port for every virtual host. :80 is not optional: a portless
+  # `did:web` DID resolves to `http://<host>/.well-known/did.json` and no
+  # resolver will try another port, so a gateway on 9010 could never serve the
+  # DID documents the participants are identified by. If another stack on this
+  # machine wants :80, front both with a host-level proxy rather than moving
+  # this one.
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
     ports:
-      - "9000:9000"
-      - "9010:9010"
+      - "80:80"
     volumes:
       - ./services/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
     networks:
@@ -33,7 +39,7 @@ services:
           # oauth2-proxy performs OIDC discovery against the *browser-facing*
           # issuer, because that is the `iss` the tokens carry and the URL the
           # user is redirected to. These aliases let it reach that URL from inside
-          # the network — Caddy listens on the same 9010 internally as it does on
+          # the network — Caddy listens on the same :80 internally as it does on
           # the host — so no extra_hosts entry and no second issuer URL is needed.
           - keycloak.dataspaces.localhost
           - sso.dataspaces.localhost
@@ -112,7 +118,7 @@ services:
       IDENTITY_REGISTRY_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       IDENTITY_REGISTRY_OIDC_GROUP_ALIASES: ${IDENTITY_REGISTRY_OIDC_GROUP_ALIASES:-}
       KEYCLOAK_ADMIN_URL: http://172.17.0.1:9080
-      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       KEYCLOAK_REALM: dataspaces
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
@@ -220,7 +226,7 @@ services:
       KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
       KC_HTTP_ENABLED: "true"
       KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: http://keycloak.dataspaces.localhost:9010
+      KC_HOSTNAME: http://keycloak.dataspaces.localhost
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
       KC_PROXY_HEADERS: xforwarded
       KC_SPI_LOGIN_DEFAULT_REALM_NAME: dataspaces

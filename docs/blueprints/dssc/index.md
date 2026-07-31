@@ -36,10 +36,6 @@ blocks each**, plus **two framing sections** that are deliberately not building 
 | **[Data Sovereignty and Trust](data-sovereignty-and-trust/index.md)** | [Identity & Attestation Management](data-sovereignty-and-trust/identity-and-attestation-management.md) · [Trust Framework](data-sovereignty-and-trust/trust-framework.md) · [Access & Usage Policies Enforcement](data-sovereignty-and-trust/access-and-usage-policies-enforcement.md) |
 | **[Data Value Creation Enablers](data-value-creation-enablers/index.md)** | [Data, Services, and Offerings Descriptions](data-value-creation-enablers/data-services-and-offerings-descriptions.md) · [Publication and Discovery](data-value-creation-enablers/publication-and-discovery.md) · [Value creation services](data-value-creation-enablers/value-creation-services.md) |
 
-**The building blocks are named, never numbered.** The blueprint assigns them no
-identifiers; any `BB01`-style numbering seen elsewhere is a local invention and does not
-appear here.
-
 ### Framing sections — not building blocks
 
 - **[Building on Top of Foundational Standards](foundational-standards.md)** — the

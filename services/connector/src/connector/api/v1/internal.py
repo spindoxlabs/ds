@@ -25,7 +25,14 @@ from ...dependencies import (
 )
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
-from ds.governance import subject_column
+from ds.governance import (
+    ALLOW,
+    DENY,
+    DIRECT_USER_MATCH,
+    DataplaneDecision,
+    DataplaneRowFilter,
+    subject_column,
+)
 
 log = logging.getLogger(__name__)
 
@@ -237,7 +244,7 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
     return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
 
 
-@router.post("/dataplane/authorize")
+@router.post("/dataplane/authorize", response_model=DataplaneDecision)
 async def dataplane_authorize(
     body: DataPlaneAuthorizeRequest,
     request: Request,
@@ -267,6 +274,11 @@ async def dataplane_authorize(
     The verdict is **per dataset** because one SQL statement can touch several,
     and the overall answer is the strictest of them: a join must not return rows
     the strictest of its inputs would refuse.
+
+    The answer's shape is `ds.governance.DataplaneDecision` — declared in the
+    shared library because this route has readers it does not ship with. Do not
+    add a key here without adding it there; `response_model` will refuse it,
+    which is the point.
     """
     from ...services import consent_vocabulary as vocab
     from ...services.odrl_reader import extract_purposes
@@ -274,13 +286,24 @@ async def dataplane_authorize(
     ttl = {"ttl_seconds": settings.dataplane_decision_ttl}
 
     def refuse(reason: str, **extra):
-        """One deny shape. The data plane returns no rows for any of them."""
+        """One deny shape. The data plane returns no rows for any of them.
+
+        Deliberately the *same* key set as the allow below — a PEP should not
+        have to branch on the envelope to know which fields it may read.
+        """
         return {
-            "decision": "deny",
+            "decision": DENY,
             "reason": reason,
             "agreement_id": body.agreement_id,
+            "transfer_id": body.transfer_id,
+            "purpose": [],
             "datasets": [
-                {"dataset_id": d, "decision": "deny", "reason": reason, "row_filter": None}
+                {
+                    "dataset_id": d,
+                    "decision": DENY,
+                    "reason": reason,
+                    "row_filter": None,
+                }
                 for d in body.dataset_ids
             ],
             "cache": ttl,
@@ -340,9 +363,9 @@ async def dataplane_authorize(
             )
         )
 
-    denied = next((d for d in datasets if d["decision"] == "deny"), None)
+    denied = next((d for d in datasets if d["decision"] == DENY), None)
     return {
-        "decision": "deny" if denied else "allow",
+        "decision": DENY if denied else ALLOW,
         "reason": denied["reason"] if denied else None,
         "agreement_id": body.agreement_id,
         "transfer_id": body.transfer_id,
@@ -376,35 +399,35 @@ async def _authorize_dataset(
         }
 
     if dataset_id != agreement.get("asset_id"):
-        return verdict("deny", "dataset_not_in_agreement")
+        return verdict(DENY, "dataset_not_in_agreement")
 
     try:
         rule = vocab.resolve_dataset(dataset_id)
     except vocab.VocabularyError:
-        return verdict("deny", "dataset_unknown")
+        return verdict(DENY, "dataset_unknown")
 
     if not vocab.requires_consent(rule):
         # No data subject behind these rows, so nothing to filter on. The
         # agreement gates it and the agreement said yes.
-        return verdict("allow")
+        return verdict(ALLOW)
 
     if not purposes:
         # The same rule `/internal/consent/check` applies: no stated reason, no
         # rows. A consent-gated dataset cannot be read "just because".
-        return verdict("deny", "purpose_required")
+        return verdict(DENY, "purpose_required")
 
     subject_ids = await get_granted_subject_ids(
         db, dataset_id, consumer_did, purpose=purposes, consent_required=True
     )
     if not subject_ids:
-        return verdict("deny", "no_consent")
+        return verdict(DENY, "no_consent")
 
     spec = _row_filter_spec(rule)
     if spec is None:
         # Consent is required but governance names no row filter, so nothing can
         # be applied and every row would leave. Refuse and let the
         # misconfiguration surface.
-        return verdict("deny", "no_row_filter")
+        return verdict(DENY, "no_row_filter")
 
     # The data plane filters on **its own** identifiers, not on DIDs. For
     # `rec_registry` the column holds device ids resolved from a *member*, so
@@ -420,18 +443,18 @@ async def _authorize_dataset(
         # data. Denying is the only honest answer: an empty principal set with
         # an allow would be read as "filter to nothing", and a missing filter as
         # "no filter".
-        return verdict("deny", "subjects_unresolvable")
+        return verdict(DENY, "subjects_unresolvable")
 
     return verdict(
-        "allow",
-        row_filter={
-            "handler": spec["handler"],
-            "args": spec["args"],
+        ALLOW,
+        row_filter=DataplaneRowFilter(
+            handler=spec["handler"],
+            args=spec["args"],
             # Registry-native identifiers. Never DIDs: a DID is derived from an
             # unsalted email hash, so it is re-identifiable by anyone who later
             # holds the payload.
-            "principals": principals,
-        },
+            principals=principals,
+        ),
     )
 
 
@@ -460,7 +483,7 @@ def _row_filter_spec(rule) -> dict | None:
     # so both sides agree on what it means.
     column = subject_column(rule)
     if column:
-        return {"handler": "direct_user_match", "args": {"column": column}}
+        return {"handler": DIRECT_USER_MATCH, "args": {"column": column}}
     return None
 
 

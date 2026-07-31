@@ -241,11 +241,11 @@ services:
       # `svc-ds-portal` (identity-registry lookups). The portal is no longer an
       # OIDC *login* client — oauth2-proxy holds the browser session — so there is
       # no login client id, no client secret and no AUTH_SECRET here any more.
-      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost:9010/realms/dataspaces
+      KEYCLOAK_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       # Where to send a browser to start or end a session. Caddy routes /oauth2/*
       # on this host to the proxy.
-      OAUTH2_PROXY_BASE_URL: http://sso.dataspaces.localhost:9010
-      ORIGIN: http://portal.dataspaces.localhost:9010
+      OAUTH2_PROXY_BASE_URL: http://sso.dataspaces.localhost
+      ORIGIN: http://portal.dataspaces.localhost
       PORTAL_SERVICE_CLIENT_ID: svc-ds-portal
       PORTAL_SERVICE_CLIENT_SECRET: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
     depends_on:

@@ -22,7 +22,7 @@ import { resolveUserByEmail } from '$lib/server/identity-registry';
 import { redirect, type Handle } from '@sveltejs/kit';
 
 /** Where the browser goes to start or end a session. Caddy routes /oauth2/* here. */
-const SSO_BASE = env.OAUTH2_PROXY_BASE_URL ?? 'http://sso.dataspaces.localhost:9010';
+const SSO_BASE = env.OAUTH2_PROXY_BASE_URL ?? 'http://sso.dataspaces.localhost';
 
 /**
  * The identity-registry lookup is a network call, and under Auth.js it happened

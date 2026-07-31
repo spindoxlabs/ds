@@ -14,7 +14,7 @@ import { defineConfig, devices } from '@playwright/test';
  * portal's whole authorisation model is derived from the token and the user's
  * credentials, so a faked session tests the mock.
  */
-const PORTAL_URL = process.env.PORTAL_URL ?? 'http://portal.dataspaces.localhost:9010';
+const PORTAL_URL = process.env.PORTAL_URL ?? 'http://portal.dataspaces.localhost';
 
 export default defineConfig({
 	testDir: './tests/ui',

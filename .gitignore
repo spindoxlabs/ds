@@ -94,3 +94,5 @@ site/
 # Contributed sharing-offers (collected from pipeline apps by
 # `task governance:collect:sharing-offers` — deployment-specific)
 services/connector/governance/sharing-offers.d/
+
+.docs.**

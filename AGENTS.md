@@ -1,754 +1,344 @@
-# Dataspaces — Agent Guide
+# ds — Agent Guide
 
-## What this repo is
+Root guide. Load this plus the `AGENTS.md` of whatever you are working on
+(`services/<name>/`, `libs/<name>/`, `helm/`). 
 
-A DSSC Blueprint-aligned dataspace platform for energy communities. Implements the full consumer-pull data exchange flow: catalogue discovery, contract negotiation (ODRL), EDR-gated data transfer, consent-based row filtering, and W3C PROV-O provenance tracking.
+Consult .agents/facts as you load AGENTS.md, the facts structure is parallel to repository structure (eg .agents/facts/services/connector.md and facts.md map for repo wise details)
 
-Built on Eclipse Dataspace Connector (v0.16.0) with Python/FastAPI orchestration and a SvelteKit frontend.
+Nothing else is required reading.
 
-The approach should be generalizable and support different use-cases, ensure to not over specify or specialize on a domain. 
 
-Domain specific implementaion should be oriented toward modularization and extension of the platform.
+## What this repository is
 
-## Privacy
+A DSSC-Blueprint-aligned dataspace platform, specialised for energy communities via
+CEEDS. It implements the consumer-pull exchange end to end: catalogue discovery,
+ODRL contract negotiation, EDR-gated transfer, consent-based row filtering, and
+PROV-O provenance.
 
-Integration to data plane components should not expose private organizations references or cross-project requirements and references in this reposiotories.
+**It is a platform, not a deployment.** Keep it generalisable — domain specifics belong
+in extension points (the ODRL profile, governance overlays, Keycloak client overlays),
+never in platform code.
 
-Ensure to not cite organizations, projects and datasets that are not public and not explicitly allowed by the user.
+### Publishing boundary — this repo is open source
 
-This apply to all resource such as docs, tests, codebase, AGENTS.md, samples and dev defaults.
+Do not commit, in code, docs, tests, fixtures or dev defaults:
+
+- names of real organisations, people, sites or customers
+- real dataset names, table names or identifiers from a deployment
+- private project or repository references beyond the integration facts in
+  [Relation to celine](#relation-to-celine)
+
+Dev fixtures use `example-org`, `grid-operator`, `*@example.test`, `*.dataspaces.localhost`.
+Keep it that way. When a real deployment needs a real binding, it goes in a gitignored
+overlay (`*.local.yaml`, `.env`, `taskfile.local.yaml`).
+
+### What is documented where
+
+| Question | Source |
+|---|---|
+| How do I work on this unit? | this file + the unit's `AGENTS.md` |
+| **What must a dataspace implement?** | **`docs/blueprints/`** — DSSC v3.0 and CEEDS v3.0, rendered as citable requirements. **This is the requirements source for the whole platform** |
+| What has this dataspace decided? | `docs/rulebook/` — the recorded decisions, each with an enforcement status |
+| What does the code currently do? | `docs/services/*` — one page per unit: its role, how it works, its configuration reference |
+| How is it built and run? | `docs/development/*` |
+| How is it deployed? | `docs/deployment/*` — prerequisites, the realm contract, `values.yaml`, secrets, exposure, day-2 operations |
+| What is broken? | `.agents/defects.md` (by theme), `.agents/defect-per-service.md` (by unit) |
+
+**Requirements come from the blueprints.** `docs/blueprints/dssc/` carries the obligations;
+`docs/blueprints/ceeds/` carries the energy-domain bindings; `docs/blueprints/comparison.md`
+reconciles them. Every unit's `AGENTS.md` links to the building block it implements. Read the
+building block before changing behaviour in the unit that implements it.
+
+### How to use `AGENTS.md` and `docs/` together
+
+`AGENTS.md` files are **navigation and constraints only**. They do not restate what is in
+`docs/`, and they are not the place to learn how something works.
+
+**Read `docs/` on demand**, when you need something that cannot be derived from the code or
+obtained from the user: a requirement, a cross-cutting architectural decision, why a rule
+exists, what a counterparty expects. Do not read the docs tree speculatively — each unit's
+guide names the two or three pages that matter for it.
+
+**Propose deviations; do not take them.** If the code must depart from a blueprint
+requirement, a rulebook rule, or the conventions in this file, say so, state the reason and
+the alternative, and get agreement before implementing. Record what was agreed in
+`docs/rulebook/scope-and-deviations.md`. An undeclared deviation is indistinguishable from a
+defect, which is exactly how the current ledger got as long as it is.
+
+## Relation to celine
+
+`ds` is the dataspace layer; **celine** is the domain platform deployed with it. Four
+integration points, and no others:
+
+| Point | What crosses |
+|---|---|
+| **Data plane** | celine `dataset-api` is the real data-plane interface. `ds` addresses it as an HTTP endpoint and calls it back at `POST /internal/dataplane/authorize` |
+| **Realm sync** | `celine-policies` CLI applies `services/keycloak/clients.effective.yaml` to a Keycloak realm |
+| **Governance schemas** | `governance.yaml` (dataset definitions) and `owners.yaml` (organisation definitions) are shared shapes. `ds` publishes the ones it defines under `schemas/`; `governance.schema.json` is defined on the celine side and cached here |
+| **Dev workspace** | `docker-compose.dataset-api.yml` builds sibling checkouts. Paths are `.env` overrides (`DATASET_API_PATH`, `REC_REGISTRY_PATH`, `CELINE_SDK_PATH`); no layout is baked in |
+
+celine services read their OIDC client from `CELINE_OIDC_*`, not `OIDC_*`.
 
 ## Repository structure
 
 ```
-dataspaces/
-├── services/
-│   ├── connector/              Python/FastAPI — EDC orchestration, consent, governance sync
-│   ├── provenance/             Python/FastAPI — W3C PROV-O event logging and lineage
-│   ├── portal/                 SvelteKit — web frontend for all participant roles
-│   ├── identity-registry/      Python/FastAPI — DID lifecycle, STS, credential service, participant registry
-│   ├── federated-catalog/      Python/FastAPI — DCAT-AP catalog crawler
-│   ├── dataset-api-mock/       Python/FastAPI — mock dataset API for dev
-│   ├── dataset-api-fiware-adapter/  Python — FIWARE NGSI-LD adapter
-│   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
-│   ├── edc-connector/          Gradle — EDC fat JAR build (DCP-enabled, v0.16.0)
-│   ├── caddy/                  Config — reverse proxy for portal, connector APIs, and Keycloak
-│   └── keycloak/               Config — OIDC realm import for dev
-├── libs/                       Importable shared Python packages (no Dockerfile, no port)
-│   ├── governance/             ds-governance — GovernanceRuleV2, ODRL mapper, `ds-governance` CLI (import `ds.governance`)
-│   ├── ds-auth/                ds-auth — JWT auth + unified scope/group authorization (import `ds_auth`)
-│   ├── ds-edc/                 ds-edc — EDC Management API v3 client + Pydantic models (import `ds_edc`)
-│   └── ds-e2e/                 ds-e2e — end-to-end verification framework (`ds-e2e` CLI)
-├── schemas/                    JSON Schema for the YAML shapes that cross a repo boundary
-├── docs/                       mkdocs site — architecture, deployment reference, blueprints
-├── helm/                       Helm charts + helmfile for Kubernetes deployment
-├── data/                       Runtime data (gitignored) — caddy PKI, gradle cache
-├── docker-compose.yml          Shared infra — caddy, postgres, identity-registry, keycloak
-├── docker-compose.provider.yml Provider participant stack
-├── docker-compose.consumer.yml Consumer participant stack
-├── Taskfile.yml                Root orchestration
-├── build.gradle.kts            Gradle root for Java subprojects
-└── settings.gradle.kts         Includes edc-extensions + edc-connector
+services/     deployable units — Dockerfile + port. One AGENTS.md each
+libs/         importable Python packages — no Dockerfile, no port. Editable path deps
+helm/         Kubernetes charts + helmfile. See helm/AGENTS.md
+schemas/      JSON Schema for YAML shapes that cross a repo boundary (generated)
+docs/         mkdocs site — services, rulebook, blueprints, development
+.agents/      working documents: defect ledger, analyses, plans (gitignored)
 ```
 
-Each service has its own `Taskfile.yml` and `Dockerfile`. Most have an `AGENTS.md` and `README.md`.
-
-**When working on a specific service, always load its `services/<name>/AGENTS.md` first.** It contains the source layout, key files, coding conventions, and integration points specific to that service.
-
-### Shared libraries: `libs/`
-
-Importable Python packages shared across services live under **`libs/`**, not `services/`. The rule:
-
-- **`libs/`** — a package with no `Dockerfile` and no port; consumed via an editable path dependency. Today: `libs/governance` (`ds-governance`, imported as `ds.governance`), `libs/ds-auth` (`ds-auth`, imported as `ds_auth`), and `libs/ds-edc` (`ds-edc`, imported as `ds_edc` — shared EDC Management API v3 client and Pydantic models).
-- **`services/`** — a deployable unit with a `Dockerfile` and a `task <participant>:<service>:run`.
-
-To depend on a lib, add it to the service's `pyproject.toml` `[project].dependencies` and point `[tool.uv.sources]` at it, e.g. `ds-auth = { path = "../../libs/ds-auth", editable = true }`. In the service `Dockerfile`, `COPY libs/<lib>/ /build/<lib>/`, `uv pip install` it, and strip its name from the copied `pyproject.toml` before installing the rest (see `services/connector/Dockerfile`). New shared code goes in `libs/`; never add a library under `services/`.
-
-## Service interaction map
-
-```
-Portal (30004) ──→ ds-connector (30001/31001) ──→ EDC Provider/Consumer
-                                               ──→ ds-provenance (30000/31000)
-                                               ──→ Federated Catalog (30003)
-
-EDC Provider ←──DSP──→ EDC Consumer
-  ├──→ identity-registry (30005)   STS token issuance (/sts/{did}/token)
-  ├──→ identity-registry (30005)   VP queries (/credentials/{did}/presentations/query)
-  └──→ ds-connector /internal/*    ODRL constraint evaluation
-
-identity-registry (30005)
-  ├── DID documents      GET /dids/{did}/did.json (EDC resolves directly via identity-did-web)
-  ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
-  ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
-  ├── Participant registry GET /admin/participants, GET /admin/participants/check?did=&scope=
-  ├── Owners registry    GET /owners/resolve?alias=<name>, CRUD /admin/owners
-  ├── Memberships        GET /memberships/check?user_did=&organization=, CRUD /admin/memberships
-  ├── Org onboarding     /admin/organizations/applications, /admin/credentials/organization,
-  │                      /admin/owners/{alias} (PATCH), /promote, /agreement  (Block D)
-  ├── Agreements         GET /agreements, /agreements/{id}, /agreements/{id}/acceptances
-  └── StatusList2021     GET /status/{list_id}
-
-Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
-ds-connector ──→ identity-registry /participants (HttpParticipantRegistry with TTL cache)
-ds-connector ──→ identity-registry /owners/resolve (HttpOwnersRegistry with TTL cache)
-ds-connector ──→ identity-registry /memberships/check (consent-time subject-pool validation)
-
-dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + consent checks
-```
-
-## Compose topology
-
-Three compose files form the full stack:
-
-| File | Services | Purpose |
-|------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync, oauth2-proxy | Shared infrastructure |
-| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
-| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
-
-The portal runs in the provider compose. For local dev with hot-reload: `task provider:portal:run`.
-
-All containers share the `dataspaces` bridge network.
-
-### Assumed workspace layout
-
-`docker-compose.dataset-api.yml` builds sibling repositories from source, so it
-has to know where they are. The default is a **sibling checkout two levels up**:
-
-```
-<workspace>/
-├── celine-eu/celine-dev/repositories/   dataset-api, rec-registry, celine-sdk
-└── spindoxlabs/ds/                      this repo
-```
-
-Every path is an override, so no other layout needs a code change — set them in
-`.env` (per machine, gitignored) rather than editing compose:
-
-| Variable | Default |
+| Unit | Role |
 |---|---|
-| `DATASET_API_PATH` | `../../celine-eu/celine-dev/repositories/dataset-api` |
-| `REC_REGISTRY_PATH` | `../../celine-eu/celine-dev/repositories/rec-registry` |
-| `CELINE_SDK_PATH` | `../../celine-eu/celine-dev/repositories/celine-sdk` |
+| `services/connector` | Control plane beside the EDC: governance sync, consent registry, `/internal/*` PDP, consumer-side DSP driver |
+| `services/identity-registry` | Trust anchor: DIDs, VCs, STS, DCP credential service, participant/owner/membership registries, org onboarding |
+| `services/portal` | SvelteKit UI for every role. SSR only, not an OIDC client |
+| `services/provenance` | PROV-O graph and lineage, one instance per participant |
+| `services/federated-catalog` | Crawls participants, republishes the union as one DCAT catalogue. Advisory index, never authority |
+| `services/edc-extensions` | Java: ODRL constraint functions, pending guard, negotiation resume, event publisher |
+| `services/edc-connector` | Gradle fat-JAR build of the EDC runtime. No source of its own |
+| `services/dataset-api-mock` | Stand-in for the celine dataset-api. See [Data plane](#the-data-plane) |
+| `services/dataset-api-fiware-adapter` | FIWARE/QuantumLeap plugin for the host dataset-api. Currently unwired |
+| `services/caddy` | Dev edge: DID resolution, `/api/*` fan-out, the auth wall |
+| `services/keycloak` | Realm contract: permission vocabulary, clients, organizations, realm imports |
+| `services/oauth2-proxy` | Browser session holder. Caddy `forward_auth` target |
+| `libs/governance` | `ds-governance` — governance/offer models, ODRL mapper, validation CLI |
+| `libs/ds-auth` | `ds_auth` — JWT verification, principals, role bundles, `require_permission` |
+| `libs/ds-edc` | `ds_edc` — EDC Management API v3 client and models |
+| `libs/ds-e2e` | `ds-e2e` CLI — live end-to-end flows against a running stack |
 
-These matter only for the real-dataset-api stack below. `task start` and the
-mock need none of them.
+New shared code goes in `libs/`, never under `services/`. To depend on one: add it to
+`pyproject.toml` `[project].dependencies`, point `[tool.uv.sources]` at the path, and in
+the Dockerfile `COPY libs/<lib>/` then `uv pip install` it before the service.
 
-### Testing against the real dataset-api
+## How the services talk
 
-`services/dataset-api-mock` is a stand-in. The service that runs in production is
-the sibling `dataset-api` (`DATASET_API_PATH`, above), and **a flow that passes
-only against the mock is evidence about an API nobody runs** — so the mock mirrors
-the real signature (`POST /query` with `{sql, limit, offset, skip_count}`), and the
-real one can be swapped in without changing anything downstream:
+```
+Portal ──▶ connector (provider 30001 / consumer 31001) ──▶ EDC Management API
+                    ├──▶ provenance (30000 / 31000)
+                    └──▶ federated-catalog (30003)
 
-```bash
-./services/dataset-api-mock/fixtures/seed.sh    # brings the stack up + seeds
+EDC provider ◀──DSP──▶ EDC consumer
+  ├──▶ identity-registry   STS tokens, DCP presentation queries, did:web
+  └──▶ connector /internal/*   ODRL constraint evaluation
+
+dataset-api ──▶ connector /internal/dataplane/authorize   per-query decision + row filter
+connector, federated-catalog ──▶ identity-registry   participants, owners, memberships
 ```
 
-That starts `docker-compose.dataset-api.yml` — the real `dataset-api` on **30002**
-(the mock's port, so the connector, the EDR endpoint and the portal address it
-unchanged) plus `rec-registry` on 30013, both on the ds Postgres — and seeds the
-catalogue entry, the physical table and the REC members. The mock moves aside via
-`DATASET_API_MOCK_PORT` in `.env.local`.
+### Ports
 
-`task e2e:all` and `npm run test:ui` then exercise the real service.
+| Port | Unit | | Port | Unit |
+|---|---|---|---|---|
+| 30000 / 31000 | provenance (provider / consumer) | | 9080 | Keycloak |
+| 30001 / 31001 | connector (provider / consumer) | | 80 | Caddy gateway (all hosts) |
+| 30002 | dataset-api (real, or the mock) | | 19xxx / 29xxx | EDC provider / consumer |
+| 30003 | federated-catalog | | 35432 | PostgreSQL (one DB per service) |
+| 30004 | portal | | 30022 | dataset-api mock, when the real one holds 30002 |
+| 30005 | identity-registry | | 309xx / 319xx | debugpy |
 
-The fixtures matter as much as the wiring: the REC members are named for the ds
-dev users (so `DID → username → member → device` resolves), and the table carries
-a device owned by **nobody** as a negative control. Members named anything else
-resolve to nobody and every flow denies — correctly, and proving nothing.
+### Host binding — the rule that makes local and Docker interchangeable
 
-## Tech stack
+| Direction | Address |
+|---|---|
+| Browser-facing, OIDC issuer, `ORIGIN`, callbacks | `*.dataspaces.localhost` through Caddy on `:80` — portless, split by Host header |
+| Any backend call, host↔container in either direction | `172.17.0.1:<port>` |
+| Container-to-container inside one compose stack | Docker DNS service name |
 
-| Layer | Technology |
-|-------|-----------|
-| Python services | FastAPI, SQLAlchemy async, Alembic, Pydantic, httpx |
-| Frontend | SvelteKit 2.0, Svelte 5.0, Tailwind CSS 4.0, Cytoscape.js |
-| Identity (BB02) | identity-registry: DID lifecycle, STS (ES256 SI JWTs), DCP credential service, participant registry, StatusList2021 |
-| Data exchange (BB05) | Eclipse EDC 0.16.0, `did:web:`, DCP, ODRL, DSP |
-| Database | PostgreSQL 17.4 (one DB per service, all on port 35432; EDC uses SQL stores with Flyway auto-migration) |
-| Proxy | Caddy 2 (HTTP reverse proxy for portal, connector APIs, and Keycloak) |
-| Auth | Keycloak OIDC via **oauth2-proxy** behind Caddy `forward_auth`; services verify the JWT with `ds-auth` |
-| Build | uv (Python), npm (Node), Gradle (Java), Taskfile |
-| Containers | Docker Compose, multi-stage Dockerfiles |
+**Never `localhost:<port>` for a service URL.** `172.17.0.1` is the Docker host gateway and
+resolves identically from the host and from a container, which is the whole reason a service
+can be stopped in Docker and restarted on the host without anything else changing.
 
-## Port scheme
+## The data plane
 
-| Port | Service |
-|------|---------|
-| 30000 | ds-provenance (provider) |
-| 30001 | ds-connector (provider) |
-| 30002 | dataset-api (provider) — the **mock**, or the real one under test |
-| 30003 | federated-catalog (provider) |
-| 30004 | portal (standalone, run locally) |
-| 30005 | identity-registry (shared infra) |
-| 31000 | ds-provenance (consumer) |
-| 31001 | ds-connector (consumer) |
-| 35432 | PostgreSQL |
-| 9080 | Keycloak |
-| 9000 | Caddy consumer gateway |
-| 9010 | Caddy provider gateway |
-| 19xxx | EDC provider (management, protocol, public, control) |
-| 29xxx | EDC consumer (management, protocol, public, control) |
-| 30013 | rec-registry (real dataset-api stack only) |
-| 30022 | dataset-api **mock**, when the real one has taken 30002 |
-| 30900+ | debugpy ports |
+**The real data plane is the celine `dataset-api`.** It owns the query surface
+(`POST /query` with `{sql, limit, offset, skip_count}`), and it is the policy enforcement
+point: it verifies the EDR bearer, calls `POST /internal/dataplane/authorize`, applies the
+returned row filter, and emits a query-audit event.
 
-## Identity architecture
+`services/dataset-api-mock` is a **stand-in**, and that has two consequences:
 
-The identity-registry is a centralized trust anchor service (DSSC BB02 — Identity & Attestation). It replaces previously separate STS, VC-wallet, and static DID file services.
+- **Exclude it from assessments.** It is not a deployed component. Its defects are only
+  interesting where they reveal a contract mismatch.
+- **Keep it aligned anyway.** It mirrors the real signature deliberately. A flow that
+  passes only against the mock is evidence about an API nobody runs — so when the
+  connector's `/internal/*` contract changes, the mock changes with it, in the same commit.
 
-**Key principle:** DID private keys never leave the identity-registry. The EDC vault contains only a separate EDR signing key used for Endpoint Data Reference tokens.
+`./services/dataset-api-mock/fixtures/seed.sh` swaps the real dataset-api onto 30002 and
+moves the mock to 30022, so `task e2e:all` and the UI tests can run against the real thing.
 
-**Encryption at rest:** Private keys are Fernet-encrypted in the database using `IDENTITY_REGISTRY_ENCRYPTION_KEY`. STS client secrets are PBKDF2-hashed (never stored in cleartext). The dev default key works out of the box; production deployments must set a strong key.
-
-How DID resolution works:
-1. EDC resolves `did:web:provider.dataspaces.localhost` using its `identity-did-web` module over HTTP (`edc.iam.did.web.use.https=false`)
-2. `*.dataspaces.localhost` resolves to Caddy via Docker network aliases (defined on the caddy service in `docker-compose.yml`)
-3. Caddy rewrites `GET /.well-known/did.json` → `GET /dids/did:web:{host}/did.json` and proxies to the identity-registry
-4. The identity-registry builds and returns the DID document from its database
-
-**When running EDC on the host** (`task edc-provider:run` / `task edc-consumer:run`), Docker network aliases are not available. Either add `*.dataspaces.localhost` entries to `/etc/hosts` and publish Caddy port 80, or rely on the `DemoIdentityFallbackExtension` (`ds.demo.identity.enabled=true` in EDC properties).
-
-The `ir-cli` tool (installed in the identity-registry container) handles bootstrap and participant registration. See `task identity:bootstrap` for the full setup sequence.
-
-## Deployment / production configuration
-
-**See `helm/AGENTS.md` for the full deployment contract**, and `docs/deployment/` for the operator documentation (prerequisites, Keycloak realm contract, `values.yaml` reference, secrets, exposure, day-2 operations — published as the Deployment section of the docs site). The essentials:
-
-### The `DS_ENV` production guard
-
-Dev is zero-config on purpose. The safety net is a single environment switch.
-
-Every Python service builds a `ProductionGuard` (`libs/ds-auth/src/ds_auth/production.py`) at startup and registers its dangerous defaults:
-
-| `DS_ENV` | Behaviour |
-|----------|-----------|
-| unset / `dev` | Logs a warning per violation, starts normally |
-| `production` | Logs **all** violations together and **refuses to start** |
-
-The Helm chart must set `DS_ENV=production` on every service container.
-
-**When you add a setting with a dev default, register it with the guard in the same change** — an unregistered insecure default is invisible to the chart.
-
-### Env file roles
+## Environment
 
 | File | Role |
-|------|------|
-| `.env.local` | Committed zero-config dev defaults. Makes `task start` and the e2e smoke tests work with no setup. Deliberately weak and public. |
-| `.env.example` | The documented reference for **every** variable — purpose, blast radius, generation command. Not a working config; the model the Helm chart is built from. |
-| `.env` | Per-machine overrides, gitignored. |
-
-### Secret bootstrap
-
-```bash
-task secrets:bootstrap   # generate .env.production + EC P-256 keys, idempotent
-task secrets:check       # fail if any dev default or CHANGE_ME remains
-```
-
-Both preserve existing values, so they are safe to re-run. `task secrets:check` belongs in the release pipeline.
-
-### Non-Python surfaces the guard cannot reach
-
-- **`DS_DEMO_IDENTITY_ENABLED`** — never set it in production. It makes the EDC accept self-issued DCP tokens *without signature verification*, bypassing DSP authentication entirely. Defaults to `false`; dev compose sets it `true` explicitly.
-- **EDC vault properties** (`services/connector/config/*-vault.properties`) — zero-config dev fixtures containing placeholder EC keys and `insecure-dev-secret`, in the same category as `.env.local`. Production renders them from `task secrets:keygen` output via Kubernetes secrets.
-- **`AUTH_SECRET`** (portal) — `hooks.server.ts` falls back to a literal when unset; the chart must always supply it.
-- **Keycloak realm** — the dev realm has four users whose password equals their username and `directAccessGrantsEnabled: true`. Production must select `realm-production.example.json` and run `start --optimized`, not `start-dev`.
-- **`IDENTITY_REGISTRY_ENCRYPTION_KEY`** — Fernet-encrypts all DID private keys at rest. Losing it makes them unrecoverable; back it up outside the cluster.
-
-## Coding conventions
-
-### Python services
-
-- Python 3.12, FastAPI, async throughout
-- `pydantic-settings` for config — defaults work for local dev, override via env vars
-- Package structure: `src/<package>/{main,config,services/,clients/,api/,db/,schemas/}.py`
-- Use `httpx.AsyncClient` for HTTP, never `requests`
-- Database access via async SQLAlchemy sessions
-- Alembic for migrations: `task db:revision MESSAGE=...`, `task db:migrate`
-- Linting: `ruff`, type checking: `mypy`, testing: `pytest` + `pytest-asyncio`
-- Use `uv` for dependency management
-
-### Frontend (Portal)
-
-- SvelteKit 2.0 with Svelte 5 runes (`$state`, `$derived`, `$effect`)
-- Mobile-first with Tailwind CSS
-- SSR data loading — API calls in `+page.server.ts`, never in client components
-- No OIDC client in the app: oauth2-proxy holds the session and `hooks.server.ts` builds
-  it per request from the forwarded access token. Route guards in
-  `src/lib/server/auth.ts`, expanding the generated bundle table
-
-### Java (EDC extensions)
-
-- Java 21, Gradle with Shadow plugin
-- EDC SPI interfaces — `AtomicConstraintFunction<Permission>`
-- Use `Monitor` for logging (EDC's abstraction)
-- Build: `gradle :edc-extensions:build`, `gradle :edc-connector:shadowJar`
-
-### General
-
-- Each service runs via `task run` (no global orchestration needed for dev)
-- Port scheme: 30000+ for Python services, 30900+ for debuggers, 19xxx/29xxx for EDC
-- All `*.dataspaces.localhost` domains resolve locally via Caddy
-- No `.env` files required — all defaults baked into settings classes
-- Docker network: `dataspaces` (bridge), all containers share it
-
-## Governance and policy model
-
-Datasets are declared in `services/connector/governance/governance.yaml`. The pipeline:
-
-```
-governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
-  → ODRL Offer + EDC Asset + EDC PolicyDefinition + EDC ContractDefinition
-  → POST /provider/sync pushes to EDC Management API
-  → EDC serves to consumers via DSP
-  → edc-extensions evaluate constraints at negotiation time
-```
-
-See `docs/governance-and-odrl.md` for the full pipeline documentation.
-
-### Published schemas — `schemas/`
-
-Governance is authored in repos ds does not control, so the shapes that cross
-that boundary are published as JSON Schema for the producer to validate against
-first. **A schema lives where the shape is defined:** ds owns
-`sharing-offers.schema.json`, `odrl-profile.schema.json` and
-`purpose-vocabulary.json` — all *generated from the Pydantic models*, never
-hand-edited (`task -d libs/governance schema:generate`, with a no-diff test).
-`governance.schema.json` is the one shape celine-utils defines, cached here so
-the conformance test runs offline (`task -d libs/governance schema:refresh`).
-
-`purpose-vocabulary.json` carries the slug `enum` the *active profile* accepts —
-no static governance schema can, because the taxonomy is deployment
-configuration. Regenerate it whenever the ODRL profile changes. See
-`schemas/README.md`.
-
-### Validating governance before import
-
-`ds-governance` (the CLI shipped by `libs/governance`) gates a governance file **before**
-`POST /provider/sync` pushes it into an EDC. It validates *input* — it deliberately does not
-re-assert the mapper's output, which is covered by `libs/governance/tests/tests/test_mapper.py`:
-
-- EDC asset/policy/contract id collisions between dataset keys (an import would silently clobber)
-- referential integrity of `ownership[].name` against the owners registry, and owner DIDs
-  against the participant registry
-- coherence of a rule's own declarations (consent vs row filters, retention, validity window)
-- `--deny-key <glob>` for keys that must not reach a given environment
-
-```bash
-task compliance:validate           # offline, against the YAML seeds
-task compliance:validate:runtime   # against a running identity-registry
-task compliance:evidence           # DCAT-AP catalog + ODRL offers → reports/compliance
-```
-
-Registries resolve either from YAML seeds (`--owners`, `--participants`) or from a live
-deployment (`--identity-registry-url`), so the same gate runs in CI and against production.
-Every deployment-specific value is a flag — `--participant-id`, `--base-url`,
-`--participant-did`, `--profile`. **Pass `--participant-did` outside dev**: without it the
-mapper's ODRL assigner fallback is `did:web:<participant-id>.dataspaces.localhost`.
-
-### Ownership & owner resolution
-
-Governance rules can declare an `ownership` block binding datasets to named organizations:
-
-```yaml
-defaults:
-  ownership:
-    - name: example-org
-      type: DATA_OWNER
-```
-
-The **owners registry** lives in the identity-registry DB (`Owner` table), seeded by `ir-cli owner import --file owners.dev.yaml`. The connector resolves owner aliases at sync time via `HttpOwnersRegistry` (calls `GET /owners/resolve?alias=<name>`).
-
-Resolution chain:
-1. `governance.yaml` ownership alias → identity-registry `Owner` → `canonical_uri` (DID > URL)
-2. ODRL assigner = resolved owner DID (falls back to participant DID if unresolved)
-3. Membership constraint operand = `owner:<alias>:member` (for `internal`) or `owner:<alias>:partner`
-4. Consent subject-pool: connector checks `GET /memberships/check` before creating consent records
-
-**Governance overlay:** `governance.<name>.yaml` merges on top of the base file. Set `CONNECTOR_GOVERNANCE_OVERLAY_NAME` or pass `overlay_name`. `*.local.yaml` is gitignored for deployment-specific bindings.
-
-### The consent vocabulary — purposes, sharing offers, the circle
-
-Three vocabularies have to agree before a person can be asked anything meaningful:
-
-```
-purpose slug ──► ODRL profile taxonomy (SKOS, /ns/policy)
-     │ groups                    dpv_mapping → DPV IRI (docs only)
-     ▼                           broader     → local hierarchy (enforcement)
-sharing offer ◄── governance.yaml datasets (declare policy.purpose[]
-     │ declared by                 and dataspace.sharing_offers[])
-     │ consented as
-     ▼
-consent row (dataset + purpose + controller-role, all validated)
-     │ compared at
-     ▼
-GET /internal/consent/check?purpose=…&controller_role=…
-```
-
-| Rule | Why |
 |---|---|
-| `policy.purpose[]` is the **only** runtime source of a dataset's purposes | `tags` are DCAT-AP keywords — a topic is not a reason for processing. `tag_to_purpose` is an authoring default for scaffolding only |
-| `odrl:isA` matching follows **only** the local `broader` chain, never `dpv_mapping` | A `broadMatch` to a generic DPV term would let an unrelated use satisfy a specific consent |
-| Empty `purpose[]` is **never** a wildcard for personal data | The person was never told the use, so the consent fails GDPR Art. 4(11). Fail closed — this applies to the requested purpose too |
-| Consent to a child purpose does **not** cover its parent | That would widen consent |
-| The consent key is **(subject, purpose, controller-role)** | Controller ≠ legal entity: a DSO's grid-operations and metering functions are distinct controllers |
-| Only `dpv:Consent` offers get a UI control | Contract-based processing is disclosed, not toggled; asking implies a choice that does not exist |
-| A **covered processor** is disclosed, never asked | Same controller, same operation (Art. 28). `POST /consent/request` returns 409, and `/internal/consent/check` returns `should_ask: false` so the pending guard does not park |
-| An offer has no `datasets[]` — the **dataset** names the offer | Offers are declared by whoever declares the dataset, so an offer naming arbitrary keys would let one producer write the consent text for another's data. It also puts the schema-migration concern nobody was shown structurally outside `user_visible_hash` |
+| `.env.example` | **The reference.** Every variable the platform reads, with purpose and blast radius. Not a working config |
+| `.env.local` | Committed zero-config dev defaults. Makes `task start` work with no setup. Deliberately weak and public |
+| `.env` | Per-machine overrides. Gitignored |
 
-Sharing offers live in `services/connector/governance/sharing-offers.yaml` (same overlay mechanism as `governance.yaml`) and are served publicly at `GET /ns/sharing-offers` as **codes plus an English fallback** — translation is entirely the frontend's job, and dataset keys are not in the public projection.
+Adding a setting means adding it to `.env.example` in the same commit. A variable that
+exists in code and not there is invisible to anyone configuring a deployment.
 
-Consent writes resolve through `services/connector/src/connector/services/consent_vocabulary.py`; anything outside the declared vocabulary is a **422**. `task compliance:validate` gates the whole chain before an import.
+Dev is zero-config on purpose; the safety net is `DS_ENV`. Every Python service builds a
+`ProductionGuard` (`libs/ds-auth/src/ds_auth/production.py`) and registers its dangerous
+defaults — under `DS_ENV=production` it logs all violations and refuses to start.
+**Register a new dev default with the guard in the same change**, or the chart cannot see it.
 
-**Service-provisioned shares & the scoped wildcard.** The onboarding wizard records a subject's standing consent after approval via `POST /consent/admin/shares` (scope `connector.consent.provision` on `svc-ds-onboarding`). It names an `offer_id`, not a dataset; the connector expands it into `consumer_id = "*"` rows — the **scoped wildcard**, which admits any party inside the circle for that controller and purpose (never a new controller or purpose). A per-party specific row overrides the wildcard: an explicit grant or opt-out both win. Each row carries a `legal_basis` evidence record (DPV basis IRI, consent-text version, locale, rendered-text SHA-256, `user_visible_hash`, `submission_ref` — **codes and hashes only, never PII**), surfaced on `GET /consent/my`, `/consent/status` and `/internal/consent/check`.
-
-**A consumer asks by negotiating, not by calling an API.** A provider-side
-contract negotiation for a consent-gated dataset is parked by
-`ConsentPendingGuard` (an EDC `ContractNegotiationPendingGuard`) when no consent
-covers the requester; the connector records the ask from EDC's DCP-verified
-`counterPartyId` and the offer's asset and purpose constraints. The subject
-decides through the existing `/consent/my/*` routes; a grant clears `pending`
-via a resume endpoint in our EDC extension and the negotiation continues. There
-is no cross-participant consent API — DSP already carries the requester's
-identity, cryptographically, and re-deriving it from a header proved it more
-weakly. `POST /consent/request` remains only as the provider-local seeding route
-(an operator or the portal), authenticated as a service.
-
-**Consent is re-checked while a transfer runs.** `AgreementConsentFunction` is
-bound to EDC's `policy.monitor` scope, so a revocation terminates a running
-transfer through EDC's own state machine rather than through a manual call from
-the connector.
-
-See `docs/consent-and-sovereignty.md` for the full model and the enforcement matrix.
-
-**Consent & disclosure provenance (Block C).** The connector emits four PROV-O
-events to ds-provenance: `ConsentGranted` / `ConsentRevoked` (on grant/revoke,
-from the API layer after commit), `DataIngested` (an operator records a manual
-DSO handover via `POST /admin/ingestion`, guard `connector.ingestion.record`),
-and `DataDisclosed` (the onboarding CSV export, when a `--recipient` is named,
-using `svc-ds-onboarding`'s `provenance.write` scope). All four carry **codes,
-pseudonymous DIDs and hashes only — never PII**: a `consent_snapshot_hash` (a
-recomputable SHA-256 over the authorising consent tuples) proves *which* consent
-state backed a handover without the provenance store holding subject data. See
-`docs/provenance-and-lineage.md`.
-
-### Organization memberships
-
-The `OrganizationMembership` table in identity-registry tracks which user DIDs belong to which owner organizations. Seeded by `ir-cli membership add` or `ir-cli membership import --community-registry`.
-
-The connector's consent endpoint checks membership before accepting consent requests for datasets with ownership. The portal reads KC JWT claims for UX; data access decisions always go through the IR API.
-
-### KC organizations (portal UX gating)
-
-Keycloak native organizations (KC 24+ feature) provide portal-level gating parallel to IR memberships. Configured in `services/keycloak/organizations.yaml` and provisioned by `ir-cli keycloak org-sync` (runs as the `keycloak-org-sync` init container). The `organization` client scope with `oidc-organization-membership-mapper` in the dev realm maps org memberships to JWT claims (`organization.<alias>.groups`). The portal extracts org membership from JWTs to gate provider actions (sync, asset management) per-owner.
-
-## Quick start
+## Running it
 
 ```bash
-# Start everything (infra + identity bootstrap + provider + consumer)
-task start
-
-# Or step by step:
-task infra:start                  # shared infra (postgres, caddy, identity-registry, keycloak)
-task identity:bootstrap           # trust anchor + participant registration
-task provider:start               # provider stack (EDC + connector + provenance + dataset-api + catalog)
-task consumer:start               # consumer stack (EDC + connector + provenance)
-task provider:portal:run          # portal locally with hot-reload (optional)
+task start                 # infra → identity bootstrap → provider → consumer
+task docker:restart        # everything in containers (slow, exercises Dockerfiles + compose env)
+task dev:restart           # containers up, then hot-reload services in a tmux session `ds`
+task status                # running containers
 ```
 
-## Key documentation
+Both restart families take `BUILD=false` to reuse images.
 
-| Document | Path |
-|----------|------|
-| Architecture overview | `docs/architecture.md` |
-| Governance & ODRL pipeline | `docs/governance-and-odrl.md` |
-| Identity & DCP flow | `docs/identity-and-dcp.md` |
-| Data exchange flow | `docs/data-exchange-flow.md` |
-| Provenance & lineage | `docs/provenance-and-lineage.md` |
-| Roadmap & deferred work | `docs/roadmap.md` |
-| Consent & sovereignty | `docs/consent-and-sovereignty.md` |
-| DPV alignment of the purpose taxonomy | `docs/taxonomies/dpv-2.3.md` |
-| Integrating an external application | `docs/external-application-integration.md` |
-| Owner identity & ownership | `docs/owner-identity-and-ownership.md` |
-| DSSC Blueprint reference | `docs/dssc-blueprint-docs/` |
-| Per-service guides | `services/*/AGENTS.md` and `services/*/README.md` |
+**Ask which mode before restarting.** `dev:*` replaces ~12 services with host processes that
+read `.env.local` through the Taskfile's `dotenv` and never see the compose `environment:`
+block — so a change to a `Dockerfile`, a compose env block, a `pyproject.toml` dependency or
+`build.gradle.kts` is **not verified** by `dev:*`. Usual sequence for a substantial change:
+`dev:restart` to find logic bugs cheaply, then `docker:restart` to prove the container path.
 
-## Common agent tasks
+`docker compose up -d` returns success even when an init container exited non-zero. After a
+restart, check `docker ps -a` for non-zero `Exited` init containers before trusting a result.
 
-| Task | Where to start |
-|------|---------------|
-| Add a new dataset to the catalogue | `services/connector/governance/governance.yaml` |
-| Add or change a sharing offer | `services/connector/governance/sharing-offers.yaml`, then `task compliance:validate` |
-| Add a purpose to the taxonomy | `libs/governance/src/ds/governance/profiles/energy.yaml`, then record the DPV alignment in `docs/taxonomies/dpv-2.3.md` |
-| Add a new ODRL constraint type | `libs/governance/` (mapper) + `services/edc-extensions/` (function, **plus a rule binding**) |
-| Add a new API endpoint to connector | `services/connector/src/connector/api/v1/` |
-| Add a new portal page | `services/portal/src/routes/` (add a journey in `tests/ui/`, run `task test:ui`) |
-| Run the flows against the **real** dataset-api | `./services/dataset-api-mock/fixtures/seed.sh`, then `task e2e:all` |
-| Change what the data plane may return | `POST /internal/dataplane/authorize` in `services/connector/src/connector/api/v1/internal.py` |
-| Add a new provenance event type | `services/provenance/src/provenance/schemas/events.py` + `services/connector/src/connector/services/prov_bridge.py` |
-| Change consent behavior | `services/connector/src/connector/services/consent_service.py` |
-| Add a new participant | `task identity:bootstrap` or `ir-cli participant add` in the identity-registry container |
-| Add/manage owners | `ir-cli owner add/list/import/remove` or `POST /admin/owners` |
-| Add/manage memberships | `ir-cli membership add/list/import/remove` or `POST /admin/memberships` |
-| Onboard an organisation | `ir-cli org register/verify/agreement/issue-credential/promote` or `/admin/organizations/*` (Block D) |
-| Seed organisations for a deployment | `ir-cli org apply --file owners.yaml` — walks that whole chain per entry carrying a `dataspace:` block, idempotent |
-| Add/change a service agreement | `services/identity-registry/seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
-| Add/manage KC organizations | `services/keycloak/organizations.yaml` + `ir-cli keycloak org-sync` |
-| Declare what a **domain backend** needs from the realm | `services/keycloak/clients.<domain>.yaml`, then `task keycloak:merge` |
-| Add identity-registry API endpoints | `services/identity-registry/src/identity_registry/api/v1/` |
-| Modify EDC connector build | `services/edc-connector/build.gradle.kts` |
-| Issue a new credential type | `services/identity-registry/src/identity_registry/services/vc.py` + `admin.py` (or `organizations.py` for org credentials) |
+### Dev users
 
-## Gotchas
+All passwords equal the username. Realm `dataspaces`.
 
-- **Async SQLAlchemy sessions auto-begin.** Never call `session.begin()` inside `async with factory() as session:` — just do the work and `await session.commit()`.
-- **Dockerfiles use repo root as build context.** `COPY` paths in `services/*/Dockerfile` are relative to root, not the service directory. `.dockerignore` at root excludes `data/`, `.git`, `node_modules`, `.venv`.
-- **Python services must be installed as packages** in Dockerfiles (`uv pip install .`) so console script entry points (e.g., `ir-cli`) are created. Don't manually list deps.
-- **`172.17.0.1`** is the standard host-gateway address in all compose files.
-- `uv run` for python commands is generally better in the context of a service.
-- **The portal's `package-lock.json` must be generated in the build image.** A plain
-  `npm install` on the host prunes the musl-only optional deps, so `npm ci` inside
-  `node:22-alpine` refuses and the Docker build breaks while everything local still
-  works. Regenerate with `docker run --rm -v "$PWD":/w -w /w node:22-alpine sh -c
-  'npm install --package-lock-only --include=optional'`.
-- **`task docker:restart` recreates the Postgres volume.** Any database created by
-  hand disappears with it, and services that survive keep a dead connection pool.
-  The ds databases are recreated by their own `*-db-create` init containers; the
-  real dataset-api stack's are recreated by `seed.sh`, which is why it must be
-  re-run after every restart.
-- **The connector image and `governance.yaml` travel together.** The file is
-  mounted, the parser is not: editing governance without rebuilding the connector
-  can leave the running code unable to read the new shape. That produced a
-  published ODRL policy with *no purpose constraint*, so every negotiation parked
-  forever on a consent question nobody could answer — no error, no log.
-- **`test_governance_mapper.py::test_asset_create_basic` has been failing for a
-  long time** (a medallion `KeyError`), unrelated to whatever you are changing.
-  Every other connector test passing is the bar.
-- **`celine-*` services read their OIDC client from `CELINE_OIDC_*`.**
-  `OidcSettings` carries its own `env_prefix`, so `OIDC_ISSUER_URL` and
-  `SERVICE_CLIENT_ID` are read by nothing — the service silently keeps its
-  defaults and every call is refused with a 401 that surfaces somewhere else
-  entirely.
-- **`docker compose` without `COMPOSE_PROJECT_NAME=dataspaces` builds a second,
-  parallel stack.** The containers get `ds-*` names, port binds collide with the
-  real ones, and health checks answer `200` from the *old* containers — so a
-  rebuild looks verified when nothing was replaced. The Taskfile always sets it;
-  ad-hoc compose commands must too.
-
-## Dev environment conventions
-
-### URL addressing
-
-Two address schemes depending on the call direction:
-
-| Context | Scheme | Example |
-|---------|--------|---------|
-| Browser-facing / OIDC issuer / ORIGIN / callback URLs | Caddy-proxied `*.dataspaces.localhost` | `http://keycloak.dataspaces.localhost:9010/realms/dataspaces` |
-| Container-to-host or host-to-container backend calls | `172.17.0.1:<port>` | `http://172.17.0.1:30005` |
-| Container-to-container (inside compose) | Docker DNS service name | `http://identity-registry:30005` |
-
-Never use raw `localhost:<port>` for service URLs — it's ambiguous across host/container boundaries. Use `172.17.0.1` or the Caddy-proxied domain.
-
-Caddy gateway ports: `:9010` (provider), `:9000` (consumer).
-
-### Running services locally
-
-Every service has a `task <participant>:<service>:run` command in the root Taskfile that stops the Docker container and runs the service locally with hot-reload. Environment variables are set to use `172.17.0.1` for backend services and Caddy-proxied domains for browser-facing URLs. This allows running one service locally while the rest remain in Docker.
-
-### Restarting the stack — two modes, ask which
-
-An agent may restart the stack itself. **Ask first which mode**, because they
-verify different things.
-
-Everything starts in Docker. Two task families:
-
-```
-task docker:stop      stop everything: kill watch loops, tmux session,
-                      port holders, then compose down -v
-task docker:start     task build (unless BUILD=false) → task start
-                        task start = infra:start → identity:bootstrap
-                                     → provider:start → consumer:start
-task docker:restart   docker:stop + docker:start          ← everything in containers
-
-task dev:stop         docker:stop
-task dev:start        docker:start, then a tmux session `ds` whose windows each run
-                      `task <participant>:<service>:run` — and *each of those* does
-                      `docker stop <container>` before running the service on the
-                      host with hot-reload                 ← local mode
-task dev:restart      dev:stop + dev:start
-```
-
-So **local mode is docker-then-replace**: `dev:start` brings the full container
-stack up and then replaces the services it wants on the host. Services with no
-tmux window (caddy, keycloak, postgres, the `*-db-init-*` jobs) stay in
-containers in both modes.
-
-Both families take `BUILD=false` to reuse the existing images — much faster, and
-wrong whenever source has changed.
-
-| | `task dev:*` | `task docker:*` |
+| User | Bundle / role | For |
 |---|---|---|
-| Ends with | ~12 host processes, rest in containers | everything in containers |
-| Speed | fast iteration — edit and uvicorn reloads | slow — every image rebuilt |
-| Exercises the service Dockerfiles and compose `environment:` blocks | **not for the replaced services** | **yes** |
+| `admin@example.test` | `ds-admin` | platform admin |
+| `provider@example.test` | `ds-participant-admin`, realm **and** org-scoped | dataset provider; exercises both provisioning paths |
+| `consumer@example.test` | `ds-member` + `ConsumerUser` VC | data consumer |
+| `subject@example.test` | `ds-member` + `DataSubject` VC | consent management |
+| `dual@example.test` | both VC roles | proves roles are additive, not exclusive |
+| `gridops@example.test` | `ds-participant-admin` **org-scoped only** (`grid-operator`) | proves a cross-owner write is refused |
 
-A change touching a `Dockerfile`, a `docker-compose.*.yml` `environment:` block, a
-`pyproject.toml` dependency or `build.gradle.kts` is **not verified** by `dev:*`
-for any service that mode replaces: the host process reads `.env.local` through the
-Taskfile's `dotenv` and never sees the compose env. The usual sequence for a
-substantial change is **`task dev:restart` first** (find and fix logic cheaply),
-**then `task docker:restart`** (prove the container path).
+Service accounts are in `services/keycloak/clients.yaml`; the dev secret equals the client id.
 
-`dev:start` ends with `tmux attach`, which needs a TTY. To drive it
-non-interactively, run `docker:start` and then create the `ds` session with
-`tmux new-session -d` — same windows, no attach — and leave it for the user to
-attach to.
+## Testing
 
-**Killing local mode: watch loops first, by process group.** `tmux kill-session`
-does *not* stop `edc-provider:watch` / `edc-consumer:watch` — they are re-parented
-and survive, and each restarts its JVM as soon as the JVM dies. Freeing a port
-without killing the loop frees it only long enough for the loop to grab it back,
-and the container that wanted it then fails to bind and exits silently.
-`docker:stop` kills the loops by name before it touches any port.
+Four layers. Each proves something the others cannot.
 
-**Check the boot actually succeeded.** `docker compose up -d` returns success
-even when an init container exited non-zero, and a failed `identity-registry-db-init`
-or `keycloak-sync` leaves a stack that looks half-up rather than broken. After a
-restart, check `docker ps -a` for non-zero `Exited` init containers and read their
-logs before concluding anything about a test result.
+| Layer | Command | Proves |
+|---|---|---|
+| **Unit** | `task -d <unit> test` | logic, in isolation. Mandatory for every change |
+| **Local stack** | `task dev:restart` | the code works against real dependencies, with hot reload |
+| **Docker e2e** | `task docker:restart` then `task e2e:all` | the images, compose env and startup order work — **this must pass before e2e means anything** |
+| **Portal UI** | `task -d services/portal test:ui` | Playwright journeys against the running stack |
 
-### EDC configuration: environment, never `${}` in a properties file
+The host-binding rule above is what makes layers 2 and 3 interchangeable: `ds-e2e` and
+Playwright address `172.17.0.1` and the Caddy domains, so they neither know nor care whether
+a given service is a container or a host process.
 
-`services/connector/config/*.properties` is loaded by EDC's
-`FsConfigurationExtension`, which is a plain `Properties.load()` — **no
-interpolation**. A `${EDC_API_KEY}` written there is stored as the literal string
-`${EDC_API_KEY}`, and the failure is silent wherever the value is not actually
-checked.
+**Read the database directly when a result is ambiguous.** One Postgres on 35432, one
+database per service, `postgres`/`postgres` in dev:
 
-EDC *does* read the environment: `ConfigurationLoader` merges
-`ConfigFactory.fromEnvironment(...)`, converting `ENVIRONMENT_NOTATION` to
-`dot.notation`. So a secret-bearing or deployment-specific setting is supplied as
-an env var whose name **is** the setting:
+```bash
+psql -h 172.17.0.1 -p 35432 -U postgres -l                    # list service databases
+psql -h 172.17.0.1 -p 35432 -U postgres -d connector -c '…'   # inspect state precisely
+```
 
-| Env var | Setting |
-|---|---|
-| `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` |
-| `DS_CONNECTOR_INTERNAL_CLIENT_ID` | `ds.connector.internal.client.id` |
-| `EDC_DATASOURCE_DEFAULT_PASSWORD` | `edc.datasource.default.password` |
+An assertion about consent, agreement or provenance state is worth more when it is checked
+against the row than against an API response.
 
-Set those in the compose `environment:` block (dev) or from the Secret in
-`helm/charts/ds-edc/templates/deployment.yaml` (production), and leave the
-setting out of the properties file entirely.
+## Taskfile
 
-### Idempotency
+`Taskfile.yml` at the root is the only entry point a person should need. Namespaces:
+`infra:*`, `provider:*`, `consumer:*`, `db:*`, `edc:*`, `e2e:*`, `keycloak:*`, `secrets:*`,
+`compliance:*`, `docs:*`, plus the `docker:*` / `dev:*` lifecycle pairs. Per-unit Taskfiles
+(`task -d <unit> <task>`) carry `setup`, `run`, `test`, `lint`.
 
-All bootstrap and provisioning operations must be idempotent. `task identity:bootstrap` can be run repeatedly without duplicating participants or credentials. `ir-cli` commands use upsert semantics. Alembic migrations are tracked and skip already-applied revisions. Database init containers check for existing databases before creating them.
+**Keep it aligned as commands change.** A task is the documented way to do a thing; a command
+in a doc that is not a task will be wrong within a month. When you change how something is
+run, change the task — do not add a second way.
 
-### Dev credentials
+`taskfile.local.yaml` is included when present (`optional: true`, `flatten: true`) and is
+gitignored. It is where deployment-local commands live — anything referencing paths outside
+this repo. `taskfile.local.example.yaml` is the committed template.
 
-| User | Password | Bundle (group) | KC roles | VC role | Purpose |
-|------|----------|----------------|----------|---------|---------|
-| `admin@example.test` | `admin` | `ds-admin` | `ds-admin`, `dataset.admin`, portal `admin` | — | Platform admin |
-| `provider@example.test` | `provider` | `ds-participant-admin` (realm **and** org-scoped) | `dataset.admin`, portal `dataset.admin` | — | Dataset provider |
-| `consumer@example.test` | `consumer` | `ds-member` | — | `ConsumerUser` | Data consumer |
-| `subject@example.test` | `subject` | `ds-member` | — | `DataSubject` | Consent management |
-| `dual@example.test` | `dual` | `ds-member` | — | `ConsumerUser` **and** `DataSubject` | Role coexistence |
-| `gridops@example.test` | `gridops` | `ds-participant-admin` **org-scoped only** (`grid-operator`) | — | — | Per-owner scoping |
+## Code style
 
-`provider@` deliberately holds its bundle **twice** — as a realm group in the
-import and as an `organization.<alias>.groups` entry in `organizations.yaml` — so
-both provisioning paths are exercised.
+**Every change carries unit tests and passes lint.** Not negotiable, and not "later" —
+the repository already has six tests failing on `main` and two libraries whose linters are
+configured and invoked by nothing.
 
-**`gridops@example.test` holds no realm group at all**, and that is the point: a
-realm-level bundle is deployment-wide by design, so every other operator crosses
-owners and none of them can demonstrate a cross-owner *refusal*. `gridops` is an
-operator for a second participant (`grid-operator`) and nothing else, which is what
-lets `ds-e2e --flow user-authority` prove that a provider write is confined to the
-owner the caller holds authority for — with a real token, a real organisation claim
-and a real owner alias resolved through the registry.
+### Python (3.12)
 
-**`dual@example.test` exists to stop role exclusivity from looking correct.** VC
-roles are additive: the same human is a data subject about their own consumption
-*and* a consumer user acting for an organisation. Without a fixture that actually
-holds two credentials, every guard and navigation path that assumes one role per
-person passes in dev. Provider is a separate axis again — a Keycloak **group**
-(`connector.provider.*`), not a VC — so it composes with either.
+- FastAPI, async throughout. `httpx.AsyncClient`, never `requests`
+- `pydantic-settings` for config; defaults work for local dev, overridden by env
+- Layout: `src/<pkg>/{main,config,dependencies}.py` + `api/`, `services/`, `clients/`, `db/`, `schemas/`
+- Async SQLAlchemy. **Sessions auto-begin** — never call `session.begin()` inside
+  `async with factory() as session:`; do the work and `await session.commit()`
+- Alembic: `task db:revision MESSAGE=...`, `task db:migrate`
+- `uv` for dependencies. Services install as packages (`uv pip install .`) so console
+  scripts exist in the image
+- `ruff`, `mypy`, `pytest` + `pytest-asyncio`, `respx` for HTTP mocking
 
-`ir-cli credential issue-data-subject` is idempotent **per role**, not per
-subject, which is what makes a dual-role user possible to create.
+### TypeScript / Svelte
 
-Service accounts are defined in `services/keycloak/clients.yaml`. Default secret = client_id (e.g., `svc-ds-portal` / `svc-ds-portal`).
+- SvelteKit 2, Svelte 5 runes (`$state`, `$derived`, `$effect`) — not Svelte 4 stores
+- SSR: upstream calls in `+page.server.ts`, never from a browser component
+- Mobile-first Tailwind
+- Route guards in `src/lib/server/auth.ts`. **A `+server.ts` endpoint does not run
+  `+layout.server.ts`** — guard it itself
+- Playwright journey for any new user-facing flow
 
-## Security posture
+### Java (21)
 
-### Two authentication mechanisms — know which one applies
+- EDC SPI interfaces; `Monitor` for logging
+- Gradle + Shadow. `task edc:build`, `task edc:restart`
+- A constraint function must **deny on error**. Returning `true` when an input is missing or
+  a call fails is the defect class this codebase has the most of
 
-> **oauth2-proxy is not a third mechanism.** It fronts *human* traffic — Caddy
-> delegates to it with `forward_auth` and it forwards the access token as
-> `X-Auth-Request-Access-Token` — but nothing downstream trusts that header.
-> Services verify the JWT exactly as before. Two consequences when adding routes:
->
-> - Caddy strips client-supplied `X-Auth-Request-*` on the way in, and `/api/*` is
->   deliberately **outside** the auth wall: an unauthenticated API call must be a 401
->   the caller can act on, not a 302 to a login form it cannot complete.
-> - A page whose visitor legitimately has **no account** must be carved out in the
->   Caddyfile (today `/join`, the organisation application). Behind the wall the
->   applicant is bounced to a login form for an account that does not exist.
+### Security, on every change
 
+1. Every new or changed endpoint carries `Depends(require_permission("service.resource.action"))`
+2. The permission exists in `services/keycloak/clients.yaml` (then `task keycloak:merge`,
+   `task keycloak:mirror`) and in a bundle in `libs/ds-auth/src/ds_auth/bundles.py`
+   (then `task auth:bundles:generate`). A scope in neither a bundle nor
+   `SERVICE_ONLY_PERMISSIONS` fails `libs/ds-auth/tests/test_vocabulary.py` — deliberately
+3. Never a machine-identity permission in a human bundle
+4. New URLs use `172.17.0.1` or a Caddy domain, never raw `localhost`
+5. Bootstrap and provisioning stay idempotent
+6. No hardcoded secrets outside dev defaults registered with `ProductionGuard`
 
-Most endpoints use the unified `ds_auth` guard, but **one other mechanism exists**. Using the wrong one when adding an endpoint is the most common security mistake in this repo.
+There are **two** authentication mechanisms and using the wrong one is the commonest
+mistake here: `require_permission` (JWT → scope for services, expanded groups for users)
+everywhere, and VC-JWT headers (`X-Subject-Id` + `X-User-VC`) on the subject-facing routes
+(`/consent/my/*`, `/consent/status`, `/consumer/*` on the connector). See `libs/ds-auth/AGENTS.md`.
 
-| Mechanism | Where | How it authenticates |
-|-----------|-------|----------------------|
-| **`require_permission`** (default) | Everything except the one below | JWT bearer → scope (service) or expanded groups (user) |
-| **VC-JWT headers** | `/consent/my/*`, `/consent/status` and `/consumer/*` on ds-connector | `X-Subject-Id` + `X-User-VC`, verified against the trust-anchor key by `services/user_credentials.py`. **Not** `require_permission`. |
+## Maintaining these files
 
-> **`X-Api-Key` on `/internal/*` is gone.** It was a static shared secret equal to
-> `EDC_API_KEY` — which is *also* EDC's Management API key, so one leaked value
-> yielded contract administration **and** the data-plane signing keys behind
-> `/internal/edr-jwks` **and** the subject pools behind `/internal/consent/check`.
-> It defeated attribution too: every call arrived as the same anonymous bearer.
-> Both callers now present their own Keycloak client credentials —
-> `svc-edc` (the Java EDC extensions) and `svc-ds-dataset-api` (the PEP), each
-> holding `connector.internal`. `EDC_API_KEY` survives only as EDC's Management
-> API key. Do not reintroduce a shared static secret across a trust boundary.
->
-> **EDC's Management API needs `web.http.management.auth.type=tokenbased`**, not
-> just `auth.key`: EDC registers an authentication filter only for contexts that
-> declare a type, so the key alone protects nothing.
+The point of an `AGENTS.md` is to get an agent to the right file quickly and stop it making
+a wrong edit. It is not a design document.
 
-The DCP-facing identity-registry endpoints are a fourth case: `/sts/{did}/token` authenticates with the participant's STS client secret, and `/credentials/{did}/presentations/query` requires a self-issued DCP token signed by the requested DID's registered key.
+**Every unit guide opens with a `## References` block** naming the blueprint building block
+it implements, the rulebook page that states its rules, and its `docs/services` page. That
+block is the unit's entry into the requirements; keep it accurate and keep it short.
 
-Public by design: `/dids/`, `/status/`, `/health`, and the connector's `/ns/policy` and `/ns/sharing-offers` static vocabularies. Both are vocabularies rather than data — an onboarding wizard has to render offers before anyone has an identity — and the offer projection deliberately omits dataset keys.
+**Include:** the unit's role and boundary · where things live · which files to touch for
+common tasks · constraints that are not visible from the code · the specific traps that
+have caused wrong edits here.
 
-> `/metrics` on ds-connector, ds-provenance, ds-federated-catalog and dataset-api is currently **unauthenticated** and reachable through Caddy. Treat it as a known gap, not a pattern to copy.
+**Exclude:** full source-tree listings (the tree is the tree) · route and env inventories
+(`docs/services/*` regenerates them; `.env.example` owns variables) · behaviour narration
+and design rationale (`docs/`) · anything already asserted by a test · history of what broke
+and when (`.agents/defects.md`, git log).
 
-### Zero-trust internal APIs
+**Rules:**
 
-`require_permission("service.resource.action", ...)` authorizes **both** principal kinds against the same permission vocabulary:
+- One fact, one home. If it belongs in `docs/`, link to it — a duplicated fact becomes two
+  contradicting facts.
+- Prefer a pointer to a prose explanation: `see services/connector/src/connector/services/consent_service.py`
+  beats three paragraphs describing it.
+- Do not restate the root guide in a sub-guide.
+- Delete on sight. A stale instruction is worse than a missing one, because it is followed.
+- Update the guide in the same commit as the change that dates it.
+- Do not clutter AGENTS.md with transient details, until those are structurally part of the repo. Store in .agents/facts/*.md relevant details, use the same repo folder structure eg (services/connector.md, or libs/ds-auth.md, facts.md for repo wise details). 
 
-- **Service tokens** (Keycloak client-credentials) authorize on their `scope` claim.
-- **User tokens** (OIDC login) authorize on their Keycloak **groups** (realm-level `groups` + org-level `organization.<alias>.groups`, merged by `ds_auth.extract_groups`), each naming a **role bundle** that `ds_auth.bundles.expand_bundles` turns into capabilities. Five seats — `ds-admin`, `ds-onboarding-operator`, `ds-participant-admin`, `ds-participant-viewer`, `ds-member` — rather than one group per scope, because the group vocabulary is the part an external realm owner has to reproduce. An unrecognised group still passes through as its own capability, so a realm carrying the old scope-named groups keeps working.
-- `{service}.admin` is a superset that satisfies any `{service}.*`.
-
-This mirrors the `celine-sdk` claim semantics on purpose (a compatible *approach*, not a code dependency) so a Keycloak realm synced from `clients.yaml` by the shared `celine-policies` CLI authorizes identically across projects.
-
-Verification is **fail-closed**: `ds_auth` verifies signature + audience + issuer via JWKS whenever an OIDC issuer is configured. Local dev without a reachable Keycloak requires the explicit, loud `*_OIDC_INSECURE_DEV=true` opt-in (default in dev settings); production sets the issuer, which enforces verification regardless.
-
-Service clients and their scopes are defined in `services/keycloak/clients.yaml` — **what ds needs from a realm, naming no domain system**. A deployment's domain backend declares its own scopes and clients in a `clients.<domain>.yaml` overlay; `task keycloak:merge` combines them into `clients.effective.yaml`, and that is what the `keycloak-sync` init container (`celine-policies` CLI) applies. The merge is not a convenience: the sync takes one file and recomputes every client's grants from it, so syncing the core alone would silently strip an overlay's grants off a client the core also declares. See `services/keycloak/AGENTS.md`. What each **bundle** may do is `libs/ds-auth/src/ds_auth/bundles.py` — ds's own code, not deployment config. Who holds a bundle is the realm's business: realm-wide seats come from the realm import (`services/keycloak/realm-*.json`, applied only on an empty KC database), participant-scoped seats from `services/keycloak/organizations.yaml` via `ir-cli keycloak org-sync`, which works against a live realm.
-
-When adding or modifying API endpoints:
-- Define the required permission (`service.resource.action`) in `clients.yaml` (as a scope, then `task keycloak:merge` and `task keycloak:mirror`) so service tokens can hold it, and add it to whichever **bundle** should reach it in `libs/ds-auth/src/ds_auth/bundles.py` — then `task auth:bundles:generate`. A scope in neither a bundle nor `SERVICE_ONLY_PERMISSIONS` fails `libs/ds-auth/tests/test_vocabulary.py`, which is deliberate: it is a permission no human could ever be granted. **Never put a machine-identity permission in a bundle.**
-- Add `Depends(require_permission("service.resource.action"))` (Python)
-- Ensure the calling service's client has the scope in its `default_scopes`
-- Never add unprotected endpoints that accept sensitive data or perform mutations
-
-### Cross-checks on edits
-
-When modifying any service, verify:
-1. **Auth guards**: every new/changed endpoint uses `Depends(require_permission(...))` from `ds_auth`
-2. **Scope/group alignment**: the calling service's KC client has the required scope in `clients.yaml`; user access has a matching group in the realm
-3. **URL scheme**: new URLs use `172.17.0.1` (backend) or `*.dataspaces.localhost` (browser-facing), never raw `localhost`
-4. **Idempotency**: bootstrap/provisioning operations remain safe to re-run
-5. **Credential hygiene**: no hardcoded secrets outside dev-default settings; production must override via env vars
+Every unit under `services/` and `libs/` should have one. If one is missing, say so.
