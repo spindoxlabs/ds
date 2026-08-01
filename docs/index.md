@@ -60,6 +60,7 @@ provenance store; the **authority** runs one identity registry for the whole dat
 | know what the dataspace has decided | [Rulebook](rulebook/index.md) |
 | know what a dataspace must implement | [Blueprints](blueprints/index.md) |
 | check the purpose taxonomy | [Taxonomies](taxonomies/dpv-2.3.md) |
+| validate a governance file before syncing it | [Schemas](schemas/index.md) — published JSON Schemas at stable URLs |
 
 ## The five ideas worth knowing first
 

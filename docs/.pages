@@ -6,3 +6,4 @@ nav:
   - Deployment: deployment
   - Blueprints: blueprints
   - Taxonomies: taxonomies
+  - Schemas: schemas

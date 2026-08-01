@@ -4,11 +4,18 @@ ds ingests governance authored in repos it does not control. These schemas let
 that authoring side validate **before** ds ever sees the file, instead of
 discovering a problem when a sync refuses it.
 
+> **These files are published.** The docs site serves each one at the address it
+> declares as its own `$id` — <https://spindoxlabs.github.io/ds/schemas/> — so a
+> producer points `$schema` at the URL and never vendors a copy. The reference
+> page is <https://spindoxlabs.github.io/ds/schemas/>; this README covers the
+> local workflow, i.e. how these files are regenerated and refreshed.
+
 ## The rule: a schema lives where the shape is defined
 
 | File | Defined by | Status here |
 |---|---|---|
 | `sharing-offers.schema.json` | **ds** (`SharingOffer`) | generated — do not edit |
+| `vocabularies.schema.json` | **ds** (`Vocabulary`) | generated — do not edit |
 | `odrl-profile.schema.json` | **ds** (`OdrlProfile`) | generated — do not edit |
 | `purpose-vocabulary.json` | **ds** (the active ODRL profile) | generated — do not edit |
 | `governance.schema.json` | **celine-utils** | **cache** — do not edit |
