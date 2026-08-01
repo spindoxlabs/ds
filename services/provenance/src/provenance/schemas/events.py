@@ -25,8 +25,8 @@ class ActingPrincipal(BaseModel):
     identifier, not a name, an email or a username, and it is recorded with the
     issuer that minted it because a `sub` means nothing without its realm. Resolving
     it back to a person needs realm access, which is exactly the separation the rest
-    of the provenance model already keeps (`docs/provenance-and-lineage.md`: codes,
-    pseudonymous DIDs and hashes only — never PII).
+    of the provenance model already keeps (`docs/rulebook/provenance-and-logging.md`
+    `L-3`: codes, pseudonymous DIDs and hashes only — never PII).
     """
 
     subject: str

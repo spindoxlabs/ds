@@ -123,9 +123,8 @@ Three tables in PostgreSQL (or SQLite for dev):
 
 Settings use the `PROVENANCE_` prefix:
 
-- `PROVENANCE_DATABASE_URL` — SQLAlchemy async URL (default `sqlite+aiosqlite:///./provenance.db`)
-- `PROVENANCE_BASE_URL` — base URL for IRI generation (default `https://provenance.dataspaces.localhost`)
-- `PROVENANCE_CONTEXT_URL` — JSON-LD context URL
+- `PROVENANCE_DATABASE_URL` — SQLAlchemy async URL (default `postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance`)
+- `PROVENANCE_CONTEXT_URL` — the `@context` IRI on every JSON-LD response
 - `PROVENANCE_MAX_LINEAGE_DEPTH` — BFS depth cap (default 20)
 - `PROVENANCE_DEBUG` — enable debug logging
 

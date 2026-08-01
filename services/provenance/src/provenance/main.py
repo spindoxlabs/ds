@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .db.engine import verify_schema
-from .dependencies import require_read_or_write_scope, require_read_scope, require_write_scope
+from .dependencies import require_read_or_write_scope, require_write_scope
 from .metrics import install_metrics
 from .schemas.context import PROV_CONTEXT
 from .api.v1.nodes import router as nodes_router
@@ -110,10 +110,15 @@ def create_app() -> FastAPI:
     # with a verifiable credential, verified inside the route. See
     # `services/subject.py` for why the two models stay on separate routers.
     app.include_router(subject_events_router, prefix="/prov")
+    # Read **or** write, as the nodes and events routers already do. Requiring
+    # `provenance.read` alone locked out the only service that would call it:
+    # `svc-ds-connector` holds `provenance.write` and nothing else here, so every
+    # lineage read 403'd (rulebook `L-13`). A caller trusted to write the graph is
+    # not a narrower principal than one trusted to read it.
     app.include_router(
         lineage_router,
         prefix="/prov",
-        dependencies=[Depends(require_read_scope)],
+        dependencies=[Depends(require_read_or_write_scope)],
     )
     app.include_router(
         audit_router,

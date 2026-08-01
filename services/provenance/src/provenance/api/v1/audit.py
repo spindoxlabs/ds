@@ -1,10 +1,17 @@
-"""Compliance audit log routes."""
+"""Compliance audit log routes.
+
+`access_log` records one dataspace-originated query each. It is written from the
+`QueryExecuted` domain event (`services/event_service._record_access_log`) as
+well as directly through `POST /audit/log`, so a deployment whose data plane
+already reports queries to the connector's PEP route gets the compliance log
+without wiring a second caller.
+"""
 from __future__ import annotations
 
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Query
-from sqlalchemy import select, func
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...dependencies import get_db, require_write_scope
@@ -12,6 +19,21 @@ from ...db.models import AccessLogORM
 from ...schemas.audit import AccessLogEntry, AccessLogRead, AccessLogSummary
 
 router = APIRouter()
+
+MAX_LIMIT = 500
+
+
+def _mentions_subject(db: AsyncSession, subject_id: str):
+    """`access_log.subject_ids` is a JSON array, so membership is dialect-specific.
+
+    Postgres stores JSONB and answers with `@>`; SQLite stores JSON text and needs
+    `json_each`. Both deployments matter — Postgres in production, SQLite under
+    test — which is the same split `alembic/versions/0002` already carries.
+    """
+    if db.bind is not None and db.bind.dialect.name == "postgresql":
+        return AccessLogORM.subject_ids.contains([subject_id])
+    each = func.json_each(AccessLogORM.subject_ids).table_valued("value")
+    return select(1).select_from(each).where(each.c.value == subject_id).exists()
 
 
 @router.post("/audit/log", status_code=201, response_model=AccessLogRead, dependencies=[Depends(require_write_scope)])
@@ -34,8 +56,8 @@ async def query_log(
     subject_id: str | None = None,
     from_: datetime | None = Query(default=None, alias="from"),
     until: datetime | None = None,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(default=100, ge=1, le=MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
     db: AsyncSession = Depends(get_db),
 ):
     stmt = select(AccessLogORM)
@@ -45,6 +67,11 @@ async def query_log(
         stmt = stmt.where(AccessLogORM.dataset_id == dataset_id)
     if agreement_id:
         stmt = stmt.where(AccessLogORM.agreement_id == agreement_id)
+    # Declared since the route was written and never applied, so "show me every
+    # query that touched this person's rows" — the one question the parameter
+    # exists to answer — returned the whole log instead of that person's slice.
+    if subject_id:
+        stmt = stmt.where(_mentions_subject(db, subject_id))
     if from_:
         stmt = stmt.where(AccessLogORM.logged_at >= from_)
     if until:

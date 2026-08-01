@@ -28,9 +28,15 @@ class Settings(BaseSettings):
     oidc_group_aliases: str = ""
 
     service_client_id: str = "svc-ds-provenance"
-    read_scope: str = "provenance.read"
-    write_scope: str = "provenance.write"
-    base_url: str = "https://provenance.dataspaces.localhost"
+    # No `read_scope` / `write_scope`: a permission name is vocabulary, not
+    # configuration. It is declared in `services/keycloak/clients.yaml`, granted
+    # there, reached through a bundle, and checked against a literal in
+    # `dependencies.py`. A per-deployment override would let the guard and the
+    # realm disagree about what a caller must hold, while looking like a knob.
+    #
+    # No `base_url` either — nothing generated an IRI from it. Every IRI this
+    # service mints is a URN (`urn:activity:…`), and `context_url` is the one
+    # absolute URL it publishes.
     context_url: str = "https://provenance.dataspaces.localhost/prov/context"
     max_lineage_depth: int = 20
 

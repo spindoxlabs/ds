@@ -33,9 +33,11 @@ forwarded by the connector.
 | Personal data | `ConsentGranted`, `ConsentRevoked`, `DataIngested`, `DataDisclosed` |
 
 **Materialises each into a graph.** One handler per event type creates or updates the nodes
-and edges the event implies, in a single transaction with the stored payload. Six PROV-O
+and edges the event implies, in a single transaction with the stored payload. Seven PROV-O
 relations are produced across all sixteen: `wasGeneratedBy`, `wasAttributedTo`,
-`wasDerivedFrom`, `wasAssociatedWith`, `used`, `invalidated`.
+`wasDerivedFrom`, `wasAssociatedWith`, `used`, `invalidated`, `actedOnBehalfOf`.
+`tests/test_relation_vocabulary.py` sweeps the materialisers and fails on any term the
+relations schema or the JSON-LD context does not also carry.
 
 **Answers three kinds of question.**
 
@@ -64,9 +66,11 @@ nicely.
 2. **Validate.** The request resolves against a discriminated union on `event_type`; an
    unknown type or a missing required field is a `422` before any handler runs.
 3. **One transaction** wraps the whole ingest.
-4. **Idempotency.** If the caller's `event_id` is already stored, the response is
-   `200 duplicate` and nothing is written. Supply an `event_id` — an event posted twice
-   without one is stored twice.
+4. **Idempotency.** If the event id is already stored, the response is `200 duplicate` and
+   nothing is written. A caller that supplies no `event_id` gets one derived from the event's
+   own content — `sha256:<hex>` over the canonical payload, `occurred_at` included — so a
+   retry is a no-op rather than a second copy. Supplying your own id is still the better
+   choice: it is what lets you decide what "the same event" means.
 5. **Materialise.** Nodes are upserted by IRI, edges are inserted only if that exact
    `(relation, subject, object)` triple does not already exist.
 6. **Store the payload verbatim**, alongside five normalised columns (`agreement_id`,
@@ -87,6 +91,23 @@ Every `/prov/*` response is `application/ld+json` with an `@context` pointing at
 `GET /prov/context` — a self-hosted context document declaring the `prov`, `dcat`, `odrl` and
 `ds` vocabularies plus the energy-domain terms. Lineage responses add `root`, `direction` and
 `depth` alongside the `@graph`.
+
+An **edge** in that graph publishes two separate facts. `ds:source` and `ds:target` carry
+direction and are on every edge, which is what a consumer splits nodes from edges on.
+`prov:entity` / `prov:activity` / `prov:agent` say what each end *is*, read off the node's own
+type — so a `wasAssociatedWith` edge carries `prov:activity` and `prov:agent` and no
+`prov:entity` at all. Where both ends share a type (`wasDerivedFrom`, `actedOnBehalfOf`) the
+typed key holds both IRIs as a list and direction is read from `ds:source` / `ds:target`.
+
+### Lineage direction
+
+Every edge points backwards in time, so `direction` selects which way the walk follows them:
+
+| `direction` | Follows | Answers |
+|---|---|---|
+| `upstream` | subject → object | how this came to be |
+| `downstream` | object → subject | what was made from it |
+| `both` | either | the union |
 
 ## Configuration
 
@@ -121,9 +142,16 @@ Four tables, Alembic-managed.
 | `domain_events` | the verbatim event payload plus the five normalised dimensions and an indexed `subject_id` |
 | `access_log` | the compliance audit log: consumer, dataset, agreement, rows returned, duration |
 
-Two properties worth knowing: a node's **type is fixed by the first event that mentions its
-IRI** — later events update its fields but never change Entity into Activity — and
-`external_meta` is *replaced*, not merged, on each upsert.
+Two properties worth knowing, both of which used to be the opposite: a node's **type follows
+the latest statement about it**, so an IRI first seen in one position is reclassified when a
+later event names it as what it is; and `external_meta` is **merged**, so
+`NegotiationFinalized` adds the agreement id without dropping the offer id
+`NegotiationStarted` recorded on the same node. A `None` on the incoming side means *this
+event does not know* and never overwrites a value.
+
+`access_log` is written from `QueryExecuted` as well as through `POST /audit/log`: the query
+audit already reaches the connector's PEP route and is forwarded here, so the compliance log
+needs no second caller.
 
 ## Integration
 

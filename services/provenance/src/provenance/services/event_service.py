@@ -1,16 +1,18 @@
 """Domain event → PROV-O materialisation in a single transaction."""
 from __future__ import annotations
 
-import uuid
-from datetime import datetime, timezone
+import hashlib
+import json
+import logging
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import DomainEventORM, ProvNodeORM, ProvRelationORM
+from ..db.models import AccessLogORM, DomainEventORM, ProvNodeORM, ProvRelationORM
 from ..schemas.events import (
     AccessRevoked,
     AccessRequested,
+    ActingPrincipal,
     CatalogViewed,
     CataloguePublished,
     ConsentGranted,
@@ -30,21 +32,39 @@ from ..schemas.events import (
 )
 from .prov_service import upsert_node
 
+log = logging.getLogger(__name__)
+
+
+def content_event_id(event: DomainEvent) -> str:
+    """A deterministic idempotency key for an event that carries none.
+
+    Rulebook `L-4` says an event is recorded once and re-posting it is a no-op.
+    A caller that omits `event_id` used to be handed a fresh UUID per post, so
+    the idempotency check could never match and a retry — the ordinary outcome
+    of a timeout on a non-fatal emitter — stored a second copy of the same fact.
+
+    The key is a SHA-256 over the event's own validated payload, `occurred_at`
+    included: two events that differ in nothing at all *are* the same event, and
+    two that differ in when they happened are not. The `sha256:` prefix keeps a
+    derived key distinguishable from a caller-supplied one, which matters when
+    reading the table to work out who is retrying.
+    """
+    payload = event.model_dump(mode="json", exclude={"event_id"})
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(canonical.encode()).hexdigest()
+
 
 async def ingest_event(
     session: AsyncSession, event: DomainEvent
 ) -> EventIngestResponse:
-    # Idempotency check
-    if event.event_id:
-        existing = await session.execute(
-            select(DomainEventORM).where(DomainEventORM.event_id == event.event_id)
-        )
-        if existing.scalar_one_or_none():
-            return EventIngestResponse(
-                event_id=event.event_id, status="duplicate"
-            )
+    event_id = event.event_id or content_event_id(event)
 
-    event_id = event.event_id or str(uuid.uuid4())
+    existing = await session.execute(
+        select(DomainEventORM).where(DomainEventORM.event_id == event_id)
+    )
+    if existing.scalar_one_or_none():
+        return EventIngestResponse(event_id=event_id, status="duplicate")
+
     prov_node: ProvNodeORM | None = None
 
     if isinstance(event, CataloguePublished):
@@ -80,6 +100,9 @@ async def ingest_event(
     elif isinstance(event, DataDisclosed):
         prov_node = await _materialise_data_disclosed(session, event)
 
+    if isinstance(event, QueryExecuted):
+        await _record_access_log(session, event)
+
     orm = DomainEventORM(
         event_type=event.event_type,
         event_id=event_id,
@@ -93,7 +116,6 @@ async def ingest_event(
         provider_did=getattr(event, "provider_did", None),
         consumer_did=getattr(event, "consumer_did", None),
         subject_id=getattr(event, "subject_id", None),
-        processed=True,
     )
     session.add(orm)
     await session.flush()
@@ -105,11 +127,48 @@ async def ingest_event(
     )
 
 
+async def _record_access_log(session: AsyncSession, event: QueryExecuted) -> None:
+    """Project a `QueryExecuted` into the compliance access log.
+
+    `access_log` is the table `GET /audit/log` and `/audit/log/summary` read, and
+    nothing had ever written to it: `POST /audit/log` exists but no component in
+    the platform calls it, so both read surfaces answered honestly about an empty
+    table (rulebook `L-12`).
+
+    The event that already arrives *is* the query audit — the connector's PEP
+    route is literally `POST /internal/audit/query`, and it emits `QueryExecuted`.
+    Deriving the log row from it means one write path for one fact, rather than a
+    second one every data plane would have to be taught to call.
+
+    A row that cannot name who queried is not a compliance record, so an event
+    with no consumer is skipped rather than logged against a placeholder.
+    """
+    if not event.consumer_did:
+        log.info(
+            "QueryExecuted for %s names no consumer — no access-log row written",
+            event.data_product_id,
+        )
+        return
+    session.add(
+        AccessLogORM(
+            consumer_id=event.consumer_did,
+            dataset_id=event.data_product_id,
+            agreement_id=event.agreement_id,
+            transfer_id=event.transfer_id,
+            subject_ids=event.authorized_subject_ids,
+            rows_returned=event.row_count,
+            provider_id=event.provider_did,
+            logged_at=event.occurred_at,
+        )
+    )
+
+
 async def _edge(
     session: AsyncSession,
     relation_type: str,
     subject_id: str,
     object_id: str,
+    role: str | None = None,
 ) -> None:
     existing = await session.execute(
         select(ProvRelationORM).where(
@@ -124,8 +183,62 @@ async def _edge(
         relation_type=relation_type,
         subject_id=subject_id,
         object_id=object_id,
+        role=role,
     )
     session.add(rel)
+
+
+async def _materialise_acting_principal(
+    session: AsyncSession,
+    activity: ProvNodeORM,
+    principal: ActingPrincipal | None,
+) -> None:
+    """Turn `acted_by` into an agent and the edges that make it answerable.
+
+    Rulebook `L-5`: every principal an event names becomes an agent in the graph.
+    `CataloguePublished` and `DataIngested` are the two acts that *decide the
+    terms* rather than execute them, which is why they carry a principal at all —
+    and it was validated, stored verbatim in the payload, and materialised into
+    nothing, so the graph could not answer "who published this offer".
+
+    The agent IRI carries the issuer because a `sub` is only unique within the
+    realm that minted it. It stays pseudonymous: an opaque realm-scoped
+    identifier, never a name or an address.
+    """
+    if principal is None:
+        return
+    iri = (
+        f"urn:ds:principal:{principal.issuer}:{principal.subject}"
+        if principal.issuer
+        else f"urn:ds:principal:{principal.subject}"
+    )
+    actor = await upsert_node(
+        session,
+        iri,
+        "Agent",
+        label=principal.subject,
+        external_meta={
+            "issuer": principal.issuer,
+            "isService": principal.is_service,
+        },
+    )
+    await session.flush()
+    await _edge(
+        session,
+        "wasAssociatedWith",
+        activity.id,
+        actor.id,
+        role="service" if principal.is_service else "actor",
+    )
+    if principal.on_behalf_of:
+        owner = await upsert_node(
+            session,
+            f"urn:ds:owner:{principal.on_behalf_of}",
+            "Agent",
+            label=principal.on_behalf_of,
+        )
+        await session.flush()
+        await _edge(session, "actedOnBehalfOf", actor.id, owner.id)
 
 
 async def _materialise_catalogue_published(
@@ -150,6 +263,8 @@ async def _materialise_catalogue_published(
     await session.flush()
     await _edge(session, "wasGeneratedBy", dataset.id, activity.id)
     await _edge(session, "wasAttributedTo", dataset.id, publisher.id)
+    await _edge(session, "wasAssociatedWith", activity.id, publisher.id)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 
@@ -458,10 +573,18 @@ async def _materialise_access_revoked(
     )
     provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
     consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    # The subject whose access this revoked is named in the event and was the one
+    # principal it never became an agent (rulebook `L-5`) — so the graph recorded
+    # a revocation with no answer to "whose". `prov:role` distinguishes them from
+    # the two parties that *performed* it.
+    subject = await upsert_node(
+        session, event.subject_id, "Agent", label=event.subject_id
+    )
     await session.flush()
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
+    await _edge(session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject")
     return activity
 
 
@@ -557,6 +680,7 @@ async def _materialise_data_ingested(
         await session.flush()
         await _edge(session, "wasAssociatedWith", activity.id, provider.id)
         await _edge(session, "wasAttributedTo", dataset.id, provider.id)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 

@@ -13,9 +13,9 @@ sharply and that difference is the headline of this page.
 
 | Capability | Meaning | Status |
 |---|---|---|
-| **Provenance** — backward-looking: where did the data come from | PROV-O graph of entities, activities and agents | **Implemented**, with defects that stop it rendering |
-| **Traceability** — the whole path: how was the data handled and by whom | The same graph, plus the domain-event record | **Implemented**, with defects |
-| **Observability** — monitoring and troubleshooting | — | **Absent.** No metrics pipeline, no tracing, no OpenTelemetry. `/metrics` endpoints exist, are unauthenticated, and are scraped by nothing |
+| **Provenance** — backward-looking: where did the data come from | PROV-O graph of entities, activities and agents | **Implemented.** The defects that stopped it rendering are closed (`L-5`, `L-7`, `L-8`, `L-12`) |
+| **Traceability** — the whole path: how was the data handled and by whom | The same graph, plus the domain-event record | **Implemented.** The remaining gap is `L-2` and the two event types `L-1` names, not the graph |
+| **Observability** — monitoring and troubleshooting | — | **Absent.** No metrics pipeline, no tracing, no OpenTelemetry. `/metrics` endpoints exist and are scraped by nothing. They are unauthenticated *by design* — reachability is a NetworkPolicy question, not an application one (§5 step 1) |
 
 Note that **CEEDS drops Observability entirely** — its building block is named "Provenance
 & traceability" and the concern appears nowhere in that blueprint. So this gap costs DSSC
@@ -69,8 +69,8 @@ evidence.
 | L-1 | Every participant records all sixteen types. Recording is not optional and not per-dataset (`PTO-40`, `-41`) | **Partly enforced.** Fourteen of the sixteen have a reachable emitter in the connector, asserted by `services/connector/tests/test_prov_bridge_emitters.py`. `DataDisclosed` is emitted **out of this repository**, by the onboarding service after a CSV export — it holds `provenance.write` and posts to `POST /prov/events` directly, so a deployment without that service records none. `UsageObligationFulfilled` is emitted by **nothing, anywhere**: it is a consumer *reporting* an obligation it met, and no inbound route exists to receive that report. Both had a dead method on `ProvBridge` that made them look covered from inside the connector; the methods are gone and the gap is here instead |
 | L-2 | A `DataDisclosed` event carries a `consent_snapshot_hash` — a recomputable SHA-256 over the authorising consent tuples — proving *which* consent state backed the handover | **Not enforced.** The field is `str \| None = None` in `services/provenance/src/provenance/schemas/events.py`, so an event omitting it is accepted and stored; and per `L-1` the connector emits no `DataDisclosed` at all, so the only producer is out of repo and nothing here can compute the hash for it. The *mechanism* exists and works — `consent_service.dataset_consent_snapshot` / `consent_snapshot_hash`, used by `DataIngested` — it is the requirement that is unasserted. A `services/provenance` row |
 | L-3 | Provenance records carry codes, pseudonymous DIDs and hashes only, never PII | **Enforced** — see [Personal data](personal-data.md) D-2 |
-| L-4 | An event is recorded once. Re-posting the same event is a no-op, not a duplicate | **Not enforced** — an event without an `event_id` gets a fresh UUID, so the idempotency check never matches. Defect **P1-4** |
-| L-5 | Every principal named in an event becomes an agent in the graph | **Not enforced** — `AccessRevoked.subject_id` and `acted_by` on two event types are never materialised. Defect **P1-4** |
+| L-4 | An event is recorded once. Re-posting the same event is a no-op, not a duplicate | **Enforced.** An event without an `event_id` now gets a key derived from its own canonical payload (`sha256:<hex>`, `occurred_at` included), so the idempotency check matches on a retry. Emission is non-fatal and therefore retried, which made a duplicate the ordinary outcome of a timeout rather than an edge case. `services/provenance/tests/test_event_idempotency.py` |
+| L-5 | Every principal named in an event becomes an agent in the graph | **Enforced.** `AccessRevoked.subject_id` becomes an agent linked with `prov:role: dataSubject` — distinguishing "it was about them" from the two parties that performed it — and `acted_by` on `CataloguePublished` / `DataIngested` becomes a pseudonymous `urn:ds:principal:<issuer>:<sub>` agent, with `actedOnBehalfOf` to the owner it claimed to act for. `services/provenance/tests/test_event_agents.py` |
 
 ## 3. The data model
 
@@ -91,8 +91,8 @@ not *how*.
 | # | Rule | Status |
 |---|---|---|
 | L-6 | The model is PROV-O. A participant storing logs in another model does not satisfy this rulebook | **Declared** |
-| L-7 | The JSON-LD `@context` defines every relation the ingest path can produce | **Not enforced** — `PROV_CONTEXT` has no term for `invalidated`, which the ingest path writes, and the relation schema accepts two relation types no materialiser produces while rejecting one it does. Defect **P1-4** |
-| L-8 | A node's PROV-O type is a property of the node, not of the position it first appeared in | **Not enforced** — `upsert_node` matches on IRI alone and never updates `node_type`, and edge endpoints are labelled by position rather than by the nodes' actual types. Defect **P1-4** |
+| L-7 | The JSON-LD `@context` defines every relation the ingest path can produce | **Enforced, by a sweep rather than by review.** `invalidated` is defined in `PROV_CONTEXT` and accepted by `POST /prov/relations`, which used to reject the one term its own ingest path writes. `services/provenance/tests/test_relation_vocabulary.py` scans the materialisers and fails on any relation the schema or the context does not also carry. `actedOnBehalfOf` and `wasInformedBy` remain accepted without a materialiser deliberately: this is a general PROV-O graph API, and the manual door should not be narrower than the vocabulary it publishes |
+| L-8 | A node's PROV-O type is a property of the node, not of the position it first appeared in | **Enforced.** `upsert_node` reclassifies a node when a later event names a different type, and `relation_to_jsonld` labels each endpoint from the node's own `node_type` — `prov:entity` / `prov:activity` / `prov:agent` — instead of hardcoding subject→entity, object→activity. Direction moved to `ds:source` / `ds:target`, which is what `services/portal` now splits the graph on: the typed keys cannot carry direction when both ends share a type. `services/provenance/tests/test_jsonld_service.py`, `services/portal/tests/unit/lineage.test.ts` |
 | L-9 | All principles from the Data Models building block apply to this data too (`PTO-59`) | **Declared** — see [Data models](data-models.md) |
 
 ## 4. Storage and access
@@ -128,8 +128,8 @@ ensures it is by having no third-party observer.
 |---|---|---|
 | L-10 | A participant's provenance store is not readable by another participant | **Enforced** — no such route exists |
 | L-11 | A subject may read the record concerning themselves, authenticated by credential rather than by service scope | **Enforced** |
-| L-12 | Mandatory P&T data can be accessed and presented on demand (`PTO-79`) | **Not enforced.** The lineage graph renders zero edges in the portal, and the `access_log` compliance table is never populated because nothing calls the route that writes it. Defect **P1-4** |
-| L-13 | A service reading lineage holds a scope that permits it | **Not enforced** — the lineage router requires `provenance.read`; the only service client that would call it holds `provenance.write` only. Defect **P1-4** |
+| L-12 | Mandatory P&T data can be accessed and presented on demand (`PTO-79`) | **Enforced.** The lineage graph renders edges (see `L-8`), and `access_log` is written from `QueryExecuted` — the connector's PEP route `POST /internal/audit/query` already forwards it, so the compliance log is derived from the event that arrives rather than from a second caller nothing was ever taught to make. `GET /audit/log`'s `subject_id` parameter, declared since the route was written and never applied, now narrows the log. `services/provenance/tests/test_audit_log.py` |
+| L-13 | A service reading lineage holds a scope that permits it | **Enforced.** The lineage router accepts `provenance.read` **or** `.write`, as the nodes and events routers already did. `svc-ds-connector` holds `provenance.write` and nothing else here, so requiring `.read` alone 403'd the only service that would call it — and a caller trusted to write the graph is not a narrower principal than one trusted to read it |
 | L-14 | Recording must not slow the data path (`PTO-83`) | **Declared** — emission is a side call; no measurement exists |
 
 ## 5. Observability — the open gap
@@ -144,15 +144,24 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
 | Transaction observability for monitoring and troubleshooting (`-03`) | absent |
 | Horizontal and vertical requirements satisfied (`-42`, `-43`) | absent |
 | Security controls, audit trails, compliance documentation maintained (`-44`–`-46`) | audit trail partially — see L-12 |
-| Centralised metrics collection and visualisation | absent. `/metrics` is exposed on four services, unauthenticated, and scraped by nothing |
+| Centralised metrics collection and visualisation | absent. `/metrics` is served by four services and scraped by nothing. Every chart can now admit a Prometheus namespace when `global.monitoring.serviceMonitor` is set; no collector is deployed |
 | Real-time monitoring | absent |
 | Global performance metrics, SLIs, SLOs | absent |
 | Regular reports on performance, usage and security incidents | absent |
 
 **Minimum viable close**, in order:
 
-1. Authenticate `/metrics` or move it behind the cluster boundary — it is currently a
-   security item as well as an observability one (defect P0-1).
+1. ~~Authenticate `/metrics`~~ — **done, and not the way this said.** Exposure is a
+   deployment concern, answered by the chart: `global.networkPolicy.enabled` (true by
+   default) applies default-deny and `ds.networkPolicy.metricsFromPrometheus` opens the port
+   to the Prometheus namespace only, gated on `global.monitoring.serviceMonitor` (false by
+   default). With chart defaults `/metrics` is reachable by nobody. Requiring a Keycloak
+   token instead would **break** collection — a scraper holds none — replacing a working
+   production control with a broken one; see decision `D-2` under `services/connector`.
+   What was actually missing was narrower: `ds-provenance`'s chart omitted the
+   `metricsFromPrometheus` include the connector and federated-catalogue charts carry, so
+   enabling `serviceMonitor` produced a ServiceMonitor pointing at a pod default-deny still
+   refused. Added.
 2. A Prometheus-compatible scrape target per service with a documented metric set.
 3. OpenTelemetry traces across the DSP exchange, correlated by agreement id — which
    requires settling the three-names-for-one-agreement-id problem first (defect P3-4).

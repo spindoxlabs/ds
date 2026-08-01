@@ -19,6 +19,21 @@ PROV_CONTEXT: dict = {
     "used":              {"@id": "prov:used",             "@type": "@id"},
     "actedOnBehalfOf":   {"@id": "prov:actedOnBehalfOf",  "@type": "@id"},
     "wasInformedBy":     {"@id": "prov:wasInformedBy",    "@type": "@id"},
+    # Written by the ingest path for `AccessRevoked` and `ConsentRevoked`, and
+    # undefined here until now — a term the graph produces and the context does
+    # not define expands to nothing, so the edge silently left the graph on any
+    # consumer that expands it (rulebook `L-7`). `prov:invalidated` is the
+    # Activity→Entity direction, which is exactly what the materialisers write.
+    "invalidated":       {"@id": "prov:invalidated",      "@type": "@id"},
+
+    # Edge endpoints. `prov:entity` / `prov:activity` / `prov:agent` say *what
+    # each end is*; these two say *which way the edge points*, which a typed key
+    # cannot when both ends share a type (`wasDerivedFrom`, `actedOnBehalfOf`).
+    "prov:entity":   {"@type": "@id"},
+    "prov:activity": {"@type": "@id"},
+    "prov:agent":    {"@type": "@id"},
+    "ds:source":     {"@type": "@id"},
+    "ds:target":     {"@type": "@id"},
 
     # Temporal — coerce to xsd:dateTime
     "startedAtTime":  {"@id": "prov:startedAtTime",  "@type": "xsd:dateTime"},

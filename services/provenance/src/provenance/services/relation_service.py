@@ -11,10 +11,18 @@ from ..schemas.prov import RelationCreate
 async def create_relation(
     session: AsyncSession,
     data: RelationCreate,
-) -> tuple[ProvRelationORM, bool]:
-    """Insert a relation. Returns (relation, created). created=False means duplicate."""
+) -> tuple[ProvRelationORM, bool, dict[str, ProvNodeORM]]:
+    """Insert a relation.
+
+    Returns ``(relation, created, nodes_by_id)``. ``created=False`` means the edge
+    already existed. The endpoint nodes come back with it because the response is
+    serialised by the same `relation_to_jsonld` the lineage graph uses, and that
+    needs their PROV-O types — a route that hand-rolled its own edge shape is how
+    the two came to disagree in the first place.
+    """
     subject = await _require_node(session, data.subject_iri)
     object_ = await _require_node(session, data.object_iri)
+    nodes = {subject.id: subject, object_.id: object_}
     result = await session.execute(
         select(ProvRelationORM).where(
             ProvRelationORM.relation_type == data.relation_type,
@@ -24,7 +32,7 @@ async def create_relation(
     )
     existing = result.scalar_one_or_none()
     if existing:
-        return existing, False
+        return existing, False, nodes
 
     relation = ProvRelationORM(
         relation_type=data.relation_type,
@@ -35,7 +43,7 @@ async def create_relation(
     )
     session.add(relation)
     await session.flush()
-    return relation, True
+    return relation, True, nodes
 
 
 async def get_relations_for_nodes(

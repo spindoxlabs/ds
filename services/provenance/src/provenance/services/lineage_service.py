@@ -1,7 +1,7 @@
 """Async BFS lineage traversal over prov_relations."""
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,6 +23,19 @@ async def get_lineage(
     max_depth: int = 5,
     relation_types: list[str] | None = None,
 ) -> LineageGraph:
+    """Walk the edge table outwards from ``root_iri``.
+
+    **Direction is a property of how the edges are stored.** Every relation this
+    service writes points *backwards in time*: ``wasGeneratedBy(dataset,
+    activity)``, ``used(activity, dataset)``, ``wasDerivedFrom(copy, source)``.
+    So following an edge from its subject to its object walks **upstream**
+    towards the origin, and following it from object back to subject walks
+    **downstream** towards what was made from it.
+
+    ``downstream`` used to select *both* directions, which made it a synonym for
+    ``both`` — a caller asking "what came out of this dataset" was handed its
+    provenance as well, and nothing in the response said so.
+    """
     result = await session.execute(
         select(ProvNodeORM).where(ProvNodeORM.iri == root_iri)
     )
@@ -34,26 +47,28 @@ async def get_lineage(
     depth_map: dict[str, int] = {root.iri: 0}
     nodes: list[ProvNodeORM] = [root]
     edges: list[ProvRelationORM] = []
+    # Nodes were deduplicated by `visited_ids` and edges by nothing, so an edge
+    # whose *both* ends the walk reaches — the common case at depth ≥ 2, and every
+    # edge inside the frontier under `direction=both` — was emitted once per round
+    # that touched it. Measured on the dev graph: 89 edge entries for 48 edges.
+    # The portal draws what it is given, so the graph came out visibly denser than
+    # the provenance record.
+    seen_edges: set[str] = set()
     frontier: set[str] = {root.id}
 
     for depth in range(1, max_depth + 1):
         if not frontier:
             break
 
-        stmt = select(ProvRelationORM).where(
-            ProvRelationORM.subject_id.in_(frontier)
-            if direction in ("upstream", "both")
-            else ProvRelationORM.subject_id.in_([])
-        )
-        if direction in ("downstream", "both"):
-            stmt = select(ProvRelationORM).where(
-                ProvRelationORM.subject_id.in_(frontier)
-                | ProvRelationORM.object_id.in_(frontier)
-            )
+        if direction == "upstream":
+            reach = ProvRelationORM.subject_id.in_(frontier)
+        elif direction == "downstream":
+            reach = ProvRelationORM.object_id.in_(frontier)
         else:
-            stmt = select(ProvRelationORM).where(
-                ProvRelationORM.subject_id.in_(frontier)
+            reach = ProvRelationORM.subject_id.in_(frontier) | (
+                ProvRelationORM.object_id.in_(frontier)
             )
+        stmt = select(ProvRelationORM).where(reach)
 
         if relation_types:
             stmt = stmt.where(ProvRelationORM.relation_type.in_(relation_types))
@@ -63,7 +78,9 @@ async def get_lineage(
 
         next_frontier: set[str] = set()
         for edge in batch_edges:
-            edges.append(edge)
+            if edge.id not in seen_edges:
+                seen_edges.add(edge.id)
+                edges.append(edge)
             for node_id in (edge.subject_id, edge.object_id):
                 if node_id not in visited_ids:
                     visited_ids.add(node_id)

@@ -12,8 +12,13 @@
       key: DB_PASSWORD
 - name: PROVENANCE_DATABASE_URL
   value: {{ include "ds.postgres.url" (dict "ctx" . "database" (include "ds.db.provenance" .) "driver" "asyncpg") | quote }}
-- name: PROVENANCE_BASE_URL
-  value: {{ printf "http://%s:%v" (include "ds.fullname" .) .Values.service.port | quote }}
+# The `@context` IRI on every JSON-LD response. Unset, it stayed at the dev
+# default — so an in-cluster deployment published `provenance.dataspaces.localhost`
+# to every reader, an address that resolves for nobody. This chart mounts no
+# Ingress, so the honest default is the in-cluster Service; a deployment that does
+# expose provenance overrides `contextUrl`.
+- name: PROVENANCE_CONTEXT_URL
+  value: {{ .Values.contextUrl | default (printf "http://%s:%v/prov/context" (include "ds.fullname" .) .Values.service.port) | quote }}
 - name: PROVENANCE_MAX_LINEAGE_DEPTH
   value: {{ .Values.maxLineageDepth | quote }}
 - name: PROVENANCE_OIDC_ISSUER_URL

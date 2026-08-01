@@ -33,6 +33,15 @@
     <div>
       <h1 class="text-xl font-bold text-gray-900">Lineage</h1>
       <p class="text-sm font-mono text-gray-500 break-all">{data.iri}</p>
+      <!--
+        The graph itself draws to a canvas, so a graph with nodes and no edges
+        looks like a sparse graph rather than a broken one — which is exactly how
+        the classifier read the wrong keys unnoticed for months. Stating the
+        counts makes that failure visible to an operator and to a UI journey.
+      -->
+      <p class="text-sm text-gray-500" data-testid="lineage-counts">
+        {data.graphData.nodes.length} nodes · {data.graphData.edges.length} edges
+      </p>
     </div>
     <div class="flex items-center gap-2 flex-wrap text-sm">
       <select

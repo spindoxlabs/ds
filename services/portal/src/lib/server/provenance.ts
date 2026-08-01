@@ -63,12 +63,14 @@ export interface GraphEdge {
 /**
  * Split a lineage `@graph` into nodes and edges for the graph view.
  *
- * An edge is recognised by the keys the provenance service actually emits —
- * `prov:entity` / `prov:activity` (`jsonld_service.relation_to_jsonld`) — not
- * `subject` / `object`, which nothing emits. Reading the wrong keys made every
- * edge fall through to the node branch, so the graph rendered every node and
- * **zero edges**. Kept pure so the classification is unit-tested without a
- * running provenance store.
+ * An edge is recognised by `ds:source` / `ds:target`
+ * (`jsonld_service.relation_to_jsonld`), which every edge carries and no node
+ * does. Reading `prov:entity` / `prov:activity` instead — which is what this did
+ * before, and `subject` / `object` before that — classified by the wrong thing:
+ * those keys name what each end *is*, so an `Agent`-to-`Activity` edge carries
+ * `prov:agent` and no `prov:entity` at all and fell through to the node branch.
+ * Only `wasGeneratedBy` and `used` ever had both. Kept pure so the
+ * classification is unit-tested without a running provenance store.
  */
 export function classifyLineageGraph(
 	graph: Array<Record<string, unknown>>,
@@ -82,13 +84,13 @@ export function classifyLineageGraph(
 	};
 
 	for (const item of graph) {
-		const entity = item['prov:entity'];
-		const activity = item['prov:activity'];
-		if (typeof entity === 'string' && typeof activity === 'string') {
+		const source = item['ds:source'];
+		const target = item['ds:target'];
+		if (typeof source === 'string' && typeof target === 'string') {
 			edges.push({
 				id: String(item['@id']),
-				source: entity,
-				target: activity,
+				source,
+				target,
 				label: lastSegment(item['@type']),
 			});
 		} else {

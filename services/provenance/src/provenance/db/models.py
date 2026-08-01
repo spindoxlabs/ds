@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, DateTime, ForeignKey, Integer, String, Text,
+    DateTime, ForeignKey, Index, Integer, String, Text,
     UniqueConstraint, func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -82,6 +82,14 @@ class DomainEventORM(Base):
     """Raw domain event log with idempotency key."""
 
     __tablename__ = "domain_events"
+    __table_args__ = (
+        # Declared here as well as in migration `0002`, which is the point: it
+        # existed only in the migration, so `alembic revision --autogenerate`
+        # proposed dropping it — a composite index that serves the one query it
+        # was built for ("my events, newest first") would have been removed by
+        # the next unrelated schema change, silently.
+        Index("ix_domain_events_subject_occurred", "subject_id", "occurred_at"),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -99,7 +107,10 @@ class DomainEventORM(Base):
     # Promoted out of the payload so a data subject's own history can be filtered
     # and indexed like every other dimension. Pseudonymous DID, never a name.
     subject_id: Mapped[str | None] = mapped_column(Text, index=True)
-    processed: Mapped[bool] = mapped_column(Boolean, default=False)
+    # No `processed` flag. It was written `True` unconditionally by the only
+    # writer and read by nothing — a column that describes a queue this service
+    # does not have. Ingest is synchronous and transactional: a row exists
+    # because it was materialised, and there is no second state to be in.
 
 
 class AccessLogORM(Base):

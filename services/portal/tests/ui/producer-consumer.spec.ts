@@ -15,10 +15,13 @@ test.describe('producer', () => {
 	test('every producer section is reachable with provider grants alone', async ({ page }) => {
 		// `connector.provider.read/write` and nothing else: if any of these needs
 		// an admin grant, the read-only producer is locked out of their own data.
+		// `/provider/governance` is deliberately absent: it had no `+page.server.ts`,
+		// read nothing, and its own body pointed at Provider Assets, so it was
+		// removed rather than implemented. Listing it here made this journey fail
+		// on a 404 for a page nobody decided to keep.
 		for (const path of [
 			'/provider',
 			'/provider/assets',
-			'/provider/governance',
 			'/provider/contracts',
 			'/provider/requests',
 			'/provider/activity',

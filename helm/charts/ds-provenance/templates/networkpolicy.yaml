@@ -6,6 +6,15 @@
 {{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
     (dict "namespace" .Release.Namespace "name" "ds-connector"))) }}
 ---
+{{/*
+The connector and the federated catalogue both carry this and provenance did not,
+so `global.monitoring.serviceMonitor=true` produced a ServiceMonitor pointing at a
+pod the default-deny baseline still refused — the scrape failed and the operator's
+only signal was a metric that never appeared. Gated on the same flag, so with
+chart defaults `/metrics` here remains reachable by nobody.
+*/}}
+{{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
+---
 # Egress: Keycloak over TLS. Provenance verifies every JWT against the JWKS
 # endpoint, so without this rule the default-deny baseline (DNS + Postgres only)
 # fails every authenticated request.

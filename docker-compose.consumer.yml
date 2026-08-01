@@ -193,6 +193,11 @@ services:
       - "31000:31000"
     environment:
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer
+      # See the provider stack: an unset issuer means tokens are accepted without
+      # signature, audience or issuer verification.
+      PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
+    extra_hosts:
+      - "keycloak.dataspaces.localhost:host-gateway"
     depends_on:
       provenance-db-init-consumer:
         condition: service_completed_successfully

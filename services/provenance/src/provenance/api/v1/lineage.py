@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...dependencies import get_db, get_settings_dep
-from ...schemas.context import JSONLDResponse
 from ...services.lineage_service import get_lineage
 from ...services.jsonld_service import lineage_to_jsonld
 

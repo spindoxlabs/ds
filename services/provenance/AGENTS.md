@@ -33,16 +33,30 @@ row out, in one transaction. Two instances (provider 30000, consumer 31000), two
   it authenticates a *person* from a verifiable credential. `subject_id` is deliberately not
   a parameter — it comes from the verified credential, so a subject cannot read someone
   else's history by changing it. A `provenance.read` token is not a data subject and gets 401.
-- **Events are idempotent on `event_id`.** A caller that omits it defeats the check.
+- **Events are idempotent on `event_id`.** A caller that omits it gets one derived from the
+  event's canonical payload, so a retry is still a no-op — but the caller no longer decides
+  what "the same event" means, which is why every emitter should supply its own.
 - **`AccessRequested` carries `purpose` (what the offer permits) and `declared_purpose`
   (what the consumer stated).** Two different facts; do not collapse them.
 - Both settings the subject route needs (`PROVENANCE_TRUST_ANCHOR_KEY_PATH`,
   `PROVENANCE_VC_INSECURE_DEV`) are registered with `ProductionGuard` — unverified, anyone
   could claim any subject id.
 
+- **A lineage edge publishes direction and type separately, and both have consumers.**
+  `ds:source`/`ds:target` carry direction — `services/portal`'s `classifyLineageGraph` splits
+  the graph on them. `prov:entity`/`prov:activity`/`prov:agent` say what each end *is*, read
+  off the node. Changing either shape changes the portal in the same commit.
+- **`access_log` is derived from `QueryExecuted`, not only from `POST /audit/log`.** The
+  direct route has no caller in the platform; the compliance log would otherwise be empty.
+
 ## Conventions
 
-IRIs are UUID-based URNs (`urn:ds:entity:<uuid>`). BFS lineage uses raw SQL, not the ORM. No
+IRIs are URNs: `urn:activity:<kind>:<id>`, `urn:entity:agreement:<id>`,
+`urn:ds:principal:<issuer>:<sub>`, `urn:ds:owner:<id>`. Datasets and participants keep the
+IRI/DID the emitting event supplies. BFS lineage walks the edge table through the ORM. No
 triple store — relational tables with a `node_type` discriminator.
+
+Every edge points backwards in time, so `direction=upstream` follows subject→object
+("how this came to be") and `downstream` follows object→subject ("what was made from it").
 
 `task -d services/provenance run|test|lint|db:migrate`. Tests use SQLite via `aiosqlite`.

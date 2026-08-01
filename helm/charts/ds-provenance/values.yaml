@@ -42,6 +42,10 @@ trustAnchor:
 
 maxLineageDepth: 20
 
+# The `@context` IRI every JSON-LD response carries. Empty means the in-cluster
+# Service URL, which is where the only readers are — this chart mounts no Ingress.
+contextUrl: ""
+
 migration:
   enabled: true
   mode: initContainer

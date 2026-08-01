@@ -192,6 +192,14 @@ services:
       - "30000:30000"
     environment:
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_provider
+      # Verify bearer tokens in dev too. With no issuer, PROVENANCE_OIDC_INSECURE_DEV
+      # defaults true and ds_auth decodes without checking the signature — so every
+      # scope test in this stack was passing on an unverified claim, including the
+      # ones that read a data subject's record. Same host + extra_hosts pattern the
+      # portal and the celine dataset-api already use.
+      PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
+    extra_hosts:
+      - "keycloak.dataspaces.localhost:host-gateway"
     depends_on:
       provenance-db-init-provider:
         condition: service_completed_successfully
