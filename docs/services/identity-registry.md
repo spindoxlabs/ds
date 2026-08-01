@@ -168,7 +168,7 @@ prefixed form does not work.
 |---|---|---|
 | `IDENTITY_REGISTRY_OIDC_ISSUER_URL` | — | Keycloak realm issuer. Set ⇒ JWTs fully verified |
 | `IDENTITY_REGISTRY_OIDC_INSECURE_DEV` | `true` | accept unverified JWTs when no issuer. **Refused in production** |
-| `IDENTITY_REGISTRY_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-identity-registry` | own credentials; the id is the expected JWT audience |
+| `IDENTITY_REGISTRY_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-identity-registry` | own credentials; the id is the expected JWT audience. The secret is **refused at its dev default in production** |
 | `IDENTITY_REGISTRY_OIDC_GROUP_ALIASES` | `""` | JSON map: foreign group → ds role bundle |
 
 ### Keycloak (no prefix)
@@ -204,13 +204,20 @@ database-touching command verifies the schema revision first, and every command 
 | `agreement` | `import`, `list` |
 | `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `revoke`, `bundle` |
 | `key` | `rotate` |
-| `status` | `export` |
-| `keycloak` | `org-sync`, `merge`, `mirror`, `sync` |
+| `status` | `export`, `check-indices` |
+| `keycloak` | `org-sync`, `merge`, `mirror`, `map-user` |
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
 reports each entry's outcome, rolling back only the failures. `ir-cli keycloak merge` and
 `mirror` do not touch the database at all — they generate the two projections of
 [`services/keycloak/clients.yaml`](keycloak.md).
+
+`ir-cli keycloak map-user` writes a Keycloak-user-to-DID mapping row and **does not contact
+Keycloak** — it was called `sync`, which is also the name of a command that really does apply
+a realm (`celine-policies keycloak sync`). Realm writes are `org-sync` and the promotion path.
+
+`ir-cli status check-indices` reports credentials sharing a StatusList index and exits
+non-zero when it finds any, so it can gate a deployment.
 
 ## Persistence
 

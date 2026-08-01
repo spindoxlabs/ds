@@ -213,7 +213,6 @@ def _settings_with(tmp_path, **overrides):
 
     return Settings(
         database_url=TEST_DATABASE_URL,
-        export_base_path=str(tmp_path),
         oidc_issuer_url=None,
         **overrides,
     )

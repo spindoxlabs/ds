@@ -4,7 +4,10 @@ Used by ``ir-cli keycloak org-sync`` to provision KC native organizations
 (KC 24+) from ``organizations.yaml``.  All operations are idempotent.
 
 KC organizations provide portal-level gating parallel to the identity-registry
-``OrganizationMembership`` table; see ``docs/owner-identity-and-ownership.md``.
+``OrganizationMembership`` table. For the realm side — `organizations.yaml`, the
+`organization.<alias>.groups` claim and the org-sync step — see
+``docs/services/keycloak.md``; for the membership registry itself, see
+``docs/services/identity-registry.md``.
 """
 from __future__ import annotations
 

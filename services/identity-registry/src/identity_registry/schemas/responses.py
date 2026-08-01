@@ -139,7 +139,13 @@ class OwnerResponse(BaseModel):
     legal_country_code: str | None = None
     parent_organizations: list[str] | None = None
     sub_organizations: list[str] | None = None
-    status: str = "verified"
+    # No default. It used to default to "verified", which is the exact defect
+    # migration 0009 removed from the database — a row reading as verified while
+    # nothing verified it. Both constructors pass it today, so the default was
+    # unreachable; it was a trap waiting for a third one. Required means a
+    # caller that forgets it fails loudly instead of silently reporting an
+    # unverified organisation as verified, which is a consent-circle decision.
+    status: str
     verified_at: datetime | None = None
     verified_by: str | None = None
     evidence_ref: str | None = None

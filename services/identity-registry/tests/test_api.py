@@ -483,7 +483,6 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
 
     settings_with_kc = Settings(
         database_url=TEST_DATABASE_URL,
-        export_base_path=str(tmp_path),
         oidc_issuer_url=None,
         KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
     )

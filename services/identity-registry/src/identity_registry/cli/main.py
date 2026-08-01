@@ -59,7 +59,14 @@ app.add_typer(agreement_app, name="agreement")
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    """Run one command's coroutine.
+
+    `asyncio.get_event_loop()` is deprecated from 3.12 when no loop is running
+    and is scheduled to start raising; it also returned a loop nothing ever
+    closed. `asyncio.run` owns the loop for the call and tears it down, which
+    is the right shape here because every `ir-cli` command is one shot.
+    """
+    return asyncio.run(coro)
 
 
 async def _ensure_db():

@@ -37,7 +37,6 @@ ADMIN_HEADERS = make_headers()
 def _settings(tmp_path) -> Settings:
     return Settings(
         database_url="sqlite+aiosqlite:///:memory:",
-        export_base_path=str(tmp_path),
         oidc_issuer_url=None,
     )
 

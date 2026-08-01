@@ -24,7 +24,6 @@ from ...dependencies import (
     require_credentials_write,
     require_keycloak_sync,
     require_participants_write,
-    require_read_scope,
 )
 from ...schemas.requests import (
     CreateDidRequest,
@@ -53,6 +52,7 @@ from ...services.crypto import (
     next_key_index,
 )
 from ...services.did import build_did_document
+from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import (
     allocate_status_list_index,
     revoke_status_list_index,
@@ -69,17 +69,16 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 
 async def _get_trust_anchor_key(db: AsyncSession, settings: Settings) -> Key:
-    trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-    result = await db.execute(
-        select(Key).where(Key.owner_did == trust_anchor_did, Key.active.is_(True))
-    )
-    key = result.scalar_one_or_none()
-    if not key:
-        raise HTTPException(
-            status_code=500,
-            detail="Trust anchor not bootstrapped. Run: ir-cli bootstrap",
-        )
-    return key
+    """The shared lookup, surfaced as an HTTP error.
+
+    A thin adapter rather than a second implementation: this file used to carry
+    a byte-for-byte copy of `org_onboarding.get_trust_anchor_key`, so the two
+    could disagree about what "bootstrapped" means.
+    """
+    try:
+        return await get_trust_anchor_key(db, settings)
+    except OrgOnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
 
 # ── Participants ──────────────────────────────────────────────────

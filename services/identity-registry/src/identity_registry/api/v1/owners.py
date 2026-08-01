@@ -15,6 +15,7 @@ from ...dependencies import (
 )
 from ...schemas.requests import CreateOwnerRequest, UpdateOwnerRequest
 from ...schemas.responses import OwnerResponse
+from ...services.org_onboarding import resolve_owner as ops_resolve_owner
 
 router = APIRouter(tags=["owners"])
 
@@ -176,15 +177,10 @@ async def resolve_owner(
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_admin_or_read_scope),
 ):
-    result = await db.execute(select(Owner).where(Owner.id == alias))
-    owner = result.scalar_one_or_none()
-
-    if not owner:
-        result = await db.execute(select(Owner))
-        for o in result.scalars().all():
-            if alias in (o.aliases or []):
-                owner = o
-                break
+    # The same id-then-alias fallback the onboarding service resolves by. It
+    # was inlined here, so a change to how an alias matches would have had to
+    # be made in two places to hold.
+    owner = await ops_resolve_owner(db, alias)
 
     if not owner:
         raise HTTPException(status_code=404, detail="Owner not found")

@@ -58,7 +58,6 @@ async def client(engine, tmp_path):
 
     test_settings = Settings(
         database_url=TEST_DATABASE_URL,
-        export_base_path=str(tmp_path),
         oidc_issuer_url=None,
     )
 
