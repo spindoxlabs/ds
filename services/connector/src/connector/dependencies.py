@@ -33,10 +33,6 @@ def get_provider_edc(request: Request):
     return request.app.state.provider_edc
 
 
-def get_consumer_edc(request: Request):
-    return request.app.state.consumer_edc
-
-
 def get_edc(request: Request):
     """Return whichever EDC client is configured (provider or consumer)."""
     return request.app.state.provider_edc or request.app.state.consumer_edc
@@ -66,7 +62,12 @@ def get_prov(request: Request):
 # is a superset, so an admin service token or an admin-group user both satisfy the
 # finer provider permissions below.
 
-require_admin = require_permission("connector.admin")
+# There is deliberately no bare `require_admin` guard. `connector.admin` enters
+# only as the second argument below, as the superset that satisfies a finer
+# permission — never as a requirement of its own. A route that demanded admin and
+# nothing weaker would be a route no service client can call, since `clients.yaml`
+# forbids `*.admin` on one; the guard existed, was declared by no route, and its
+# presence invited exactly that.
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
 require_provider_write = require_permission("connector.provider.write", "connector.admin")
 
@@ -432,6 +433,5 @@ def get_oidc_config_for(request: Request):
 # `svc-edc` and `svc-ds-dataset-api`, each holding `connector.internal`. The
 # fallback is removed rather than merely deprecated so it cannot silently
 # persist; `EDC_API_KEY` survives only as EDC's Management API key.
-require_admin_scope = require_admin
 require_internal_scope = require_internal
 require_webhook_scope = require_webhook

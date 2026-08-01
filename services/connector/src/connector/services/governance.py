@@ -3,11 +3,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import Any
 
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import GovernanceRuleV2, OdrlProfile
-from ds.governance.matrix import build_policy_matrix
 from ds.governance.resolver import GovernanceResolver
 
 from ..schemas.edc import AssetCreate, ContractDefCreate, DataAddress, PolicyCreate
@@ -215,19 +213,6 @@ def load_exposed_datasets(
         if rule.dataspace.expose and rule.access_level != "secret":
             result[key] = rule
     return result
-
-
-def load_governance_policy_matrix(
-    governance_yaml_path: str,
-    participant_id: str,
-    participant_base_url: str,
-    profile: OdrlProfile | None = None,
-    overlay_name: str | None = None,
-) -> list[dict[str, Any]]:
-    """Load exposed datasets and return the explainable governance matrix."""
-    datasets = load_exposed_datasets(governance_yaml_path, overlay_name=overlay_name)
-    mapper = GovernanceMapper(participant_id=participant_id, base_url=participant_base_url, profile=profile)
-    return build_policy_matrix(datasets, mapper)
 
 
 def owner_by_edc_id(

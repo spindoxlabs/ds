@@ -400,3 +400,143 @@ class TestValidateAgainstRuntime:
             )
         assert not result.passed
         assert result.errors[0].check == "owner-resolvable"
+
+
+# ── The `dcat:` block reaches the evidence ────────────────────────────────────
+#
+# Evidence is the artefact handed to an auditor, so a producer's DCAT-AP metadata
+# arriving in the resolver and not in the evidence is the whole defect: the file
+# validates, the sync succeeds, and the auditor is shown a dataset with no
+# publisher, no themes, no coverage and no declared semantic model.
+
+SAREF = "https://saref.etsi.org/saref4ener/"
+THEME_ENER = "http://publications.europa.eu/resource/authority/data-theme/ENER"
+LANG_ENG = "http://publications.europa.eu/resource/authority/language/ENG"
+SPATIAL_ITA = "http://publications.europa.eu/resource/authority/atu/ITA"
+FREQ_15MIN = (
+    "http://publications.europa.eu/resource/authority/frequency/QUARTER_HOURLY"
+)
+
+
+@pytest.fixture
+def sample_with_dcat(tmp_path: Path):
+    path = write_governance(
+        tmp_path,
+        {
+            "sources": {
+                "datasets.meters": {
+                    "title": "Meter readings",
+                    "access_level": "open",
+                    "dcat": {
+                        "publisher_uri": "https://example.test/org/grid-operator",
+                        "themes": [THEME_ENER],
+                        "language_uris": [LANG_ENG],
+                        "spatial_uris": [SPATIAL_ITA],
+                        "accrual_periodicity": FREQ_15MIN,
+                        "conforms_to": SAREF,
+                        "temporal": {"start": "2020-01-01", "end": "2026-01-01"},
+                    },
+                    "dataspace": {
+                        "expose": True,
+                        "asset": {"content_type": "application/json"},
+                        "data_address": {"base_url": "https://api.example.org/meters"},
+                    },
+                }
+            }
+        },
+    )
+    resolver = GovernanceResolver.from_file(path)
+    mapper = GovernanceMapper(participant_id=PARTICIPANT, base_url=BASE_URL)
+    return load_exposed(resolver, mapper), mapper
+
+
+def _dataset(exposed, mapper):
+    catalog, _ = build_evidence(
+        exposed,
+        mapper,
+        base_url=BASE_URL,
+        publisher_id=PUBLISHER,
+        publisher_name="Example Provider",
+        catalog_name="core",
+    )
+    return catalog["dcat:dataset"][0]
+
+
+class TestDcatBlock:
+    def test_conforms_to_reaches_the_dataset(self, sample_with_dcat):
+        """`M-4` — the declared payload semantic model, on the dataset node."""
+        dataset = _dataset(*sample_with_dcat)
+        assert dataset["dct:conformsTo"] == {"@id": SAREF}
+
+    def test_dataset_and_distribution_conformance_are_different_claims(
+        self, sample_with_dcat
+    ):
+        """The two `dct:conformsTo` must not collapse into one.
+
+        The distribution's names the *protocol* (DSP — how you fetch it); the
+        dataset's names the *semantic model* (what the columns mean). Putting
+        both on one node would make a reader unable to tell which question a
+        given IRI answers.
+        """
+        dataset = _dataset(*sample_with_dcat)
+        assert dataset["dct:conformsTo"]["@id"] == SAREF
+        assert (
+            dataset["dcat:distribution"][0]["dct:conformsTo"]["@id"]
+            == DSP_PROTOCOL_IRI
+        )
+
+    def test_every_dcat_field_is_emitted(self, sample_with_dcat):
+        dataset = _dataset(*sample_with_dcat)
+        assert dataset["dcat:theme"] == [{"@id": THEME_ENER}]
+        assert dataset["dct:language"] == [{"@id": LANG_ENG}]
+        assert dataset["dct:spatial"] == [{"@id": SPATIAL_ITA}]
+        assert dataset["dct:accrualPeriodicity"] == {"@id": FREQ_15MIN}
+        assert dataset["dct:temporal"] == {
+            "@type": "dct:PeriodOfTime",
+            "dcat:startDate": "2020-01-01",
+            "dcat:endDate": "2026-01-01",
+        }
+
+    def test_the_dataset_publisher_beats_the_catalogue_publisher(
+        self, sample_with_dcat
+    ):
+        """A participant may host datasets for several owners.
+
+        `publisher_id` is who published the catalogue; `dcat.publisher_uri` is who
+        published this dataset. Collapsing them attributes an owner's data to
+        whoever happened to sync it.
+        """
+        dataset = _dataset(*sample_with_dcat)
+        assert dataset["dct:publisher"] == {
+            "@id": "https://example.test/org/grid-operator"
+        }
+
+    def test_no_dcat_block_emits_no_empty_nodes(self, sample):
+        """Absent is absent — not an empty list or a bare typed node.
+
+        `{"@type": "dct:PeriodOfTime"}` with no bounds asserts that a temporal
+        coverage exists and then declines to say what it is, which is a worse
+        answer than saying nothing.
+        """
+        _, _, mapper, exposed = sample
+        dataset = _dataset(exposed, mapper)
+        for absent in (
+            "dct:conformsTo",
+            "dcat:theme",
+            "dct:language",
+            "dct:spatial",
+            "dct:accrualPeriodicity",
+            "dct:temporal",
+        ):
+            assert absent not in dataset, f"{absent} emitted for a rule with no dcat block"
+        assert dataset["dct:publisher"] == {"@id": PUBLISHER}
+
+    def test_an_open_ended_period_keeps_its_start(self, sample_with_dcat):
+        """A dataset still accruing has a start and no end. That is not "no coverage"."""
+        exposed, mapper = sample_with_dcat
+        exposed[0].rule.dcat.temporal.end = None
+        dataset = _dataset(exposed, mapper)
+        assert dataset["dct:temporal"] == {
+            "@type": "dct:PeriodOfTime",
+            "dcat:startDate": "2020-01-01",
+        }

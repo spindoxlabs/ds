@@ -39,6 +39,13 @@ from .sharing import (
     is_iso_duration,
     load_sharing_offers,
 )
+from .vocabularies import (
+    JSONLD,
+    Vocabulary,
+    VocabularyError,
+    VocabularyRegistry,
+    load_vocabularies,
+)
 from .purposes import purpose_failure, unresolved_purposes
 from .resolver import GovernanceConfig, GovernanceResolver
 from .mapper import GovernanceMapper
@@ -86,6 +93,11 @@ __all__ = [
     "SharingOfferCatalogue",
     "is_iso_duration",
     "load_sharing_offers",
+    "JSONLD",
+    "Vocabulary",
+    "VocabularyError",
+    "VocabularyRegistry",
+    "load_vocabularies",
     "GovernanceConfig",
     "GovernanceResolver",
     "GovernanceMapper",

@@ -13,7 +13,15 @@ from typing import Any
 
 import yaml
 
-from .models import GovernanceOwner, GovernanceRuleV2, DataspacePolicy, DataspaceSpec, RowFilter, RowFilterArgs
+from .models import (
+    DataspacePolicy,
+    DataspaceSpec,
+    DcatSpec,
+    GovernanceOwner,
+    GovernanceRuleV2,
+    RowFilter,
+    RowFilterArgs,
+)
 
 
 class GovernanceConfig:
@@ -110,6 +118,11 @@ class GovernanceResolver:
 
         policy_raw = dict(block.get("policy") or {})
         dataspace_raw = block.get("dataspace") or {}
+        # The canonical DCAT-AP block. It used to fall through to `extra` — kept,
+        # but untyped and read by nothing, so a producer's publisher, themes,
+        # spatial and temporal coverage and `conforms_to` reached the resolver and
+        # stopped there. `extra` is for keys ds does not model; this one it does.
+        dcat_raw = block.get("dcat") or {}
 
         # ── Canonical placement wins ────────────────────────────────────────
         # `celine-utils/schema/governance.schema.json` puts these under
@@ -149,9 +162,13 @@ class GovernanceResolver:
                 for f in (block.get("row_filters") or [])
                 if isinstance(f, dict) and f.get("handler") and isinstance(f.get("args"), dict)
             ],
-            extra={k: v for k, v in block.items() if k not in v1_keys | {"policy", "dataspace"}},
+            extra={
+                k: v for k, v in block.items()
+                if k not in v1_keys | {"policy", "dataspace", "dcat"}
+            },
             policy=DataspacePolicy.model_validate(policy_raw) if policy_raw else DataspacePolicy(),
             dataspace=DataspaceSpec.model_validate(dataspace_raw) if dataspace_raw else DataspaceSpec(),
+            dcat=DcatSpec.model_validate(dcat_raw) if dcat_raw else DcatSpec(),
         )
 
     @classmethod
@@ -222,6 +239,7 @@ class GovernanceResolver:
             # query for want of a stated reason.
             policy=_merge_policy(base.policy, override.policy),
             dataspace=_merge_models(base.dataspace, override.dataspace, DataspaceSpec),
+            dcat=_merge_models(base.dcat, override.dcat, DcatSpec),
         )
         return merged
 

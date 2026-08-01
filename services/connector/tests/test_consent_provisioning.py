@@ -159,6 +159,29 @@ async def test_admin_shares_requires_provision_scope(client):
 
 
 @pytest.mark.asyncio
+async def test_admin_shares_refuses_an_anonymous_caller(client):
+    """The perimeter, asserted from outside it.
+
+    This route's production caller is out of repo (`svc-ds-onboarding`), so no
+    in-repo change can break it in a way a caller-side test would catch — what
+    this side owns is the perimeter, and the 403 above only proves that *some*
+    token is rejected. Unauthenticated is the case that matters: this route
+    writes a standing consent decision on a named person's behalf, and the one
+    thing it must never do is accept that claim from nobody in particular.
+    """
+    r = await client.post(
+        "/consent/admin/shares",
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
 async def test_admin_shares_is_idempotent(engine, client):
     body = {
         "subject_id": SUBJECT,

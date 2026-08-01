@@ -114,29 +114,16 @@ async def get_authorizations(
     return {"datasets": datasets}
 
 
-# TODO: move behind admin auth before enabling — exposes full governance
-# policy structure (access levels, classification, consent rules, row-filter
-# columns, enforcement details).
+# A commented-out `GET /governance/matrix` lived here, and the only caller of
+# `load_governance_policy_matrix` was inside the comment — so the function was
+# reachable from nothing and the route was declared to nobody. Both are gone.
 #
-# @router.get("/governance/matrix")
-# async def governance_matrix(
-#     settings: Settings = Depends(get_settings_dep),
-# ):
-#     from ds.governance.models import load_odrl_profile
-#
-#     from ...services.governance import load_governance_policy_matrix
-#
-#     profile = load_odrl_profile(settings.odrl_profile_path)
-#     return {
-#         "source": settings.governance_yaml_path,
-#         "participant_id": settings.participant_id,
-#         "matrix": load_governance_policy_matrix(
-#             settings.governance_yaml_path,
-#             settings.participant_id,
-#             settings.participant_base_url,
-#             profile=profile,
-#         ),
-#     }
+# The one thing worth keeping from it is the reason it was never enabled: the
+# matrix projects **access levels, classification, consent rules and row-filter
+# columns** — the whole enforcement structure, including the columns a row filter
+# keys on. That is an admin disclosure, not a public one, and `require_provider_read`
+# is not enough for it. Anyone rebuilding it should start from
+# `ds.governance.build_policy_matrix`, which is where the logic actually lives.
 
 
 @router.get("/assets")

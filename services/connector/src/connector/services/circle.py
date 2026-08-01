@@ -10,7 +10,17 @@ The distinction this module draws is the consent boundary:
   processing operation, so the party is *disclosed and notified*, never asked.
 - An **independent controller** decides its own purposes.  Consent under
   Art. 4(11) is consent to a specific controller's processing, so a new one is
-  a legitimate new question — delivered non-blocking via ``POST /consent/request``.
+  a legitimate new question.
+
+Where that question comes from is **not** ``POST /consent/request``, which this
+header used to name.  That was a cross-participant push channel and it is gone
+(rulebook §5, `D-16`): a consumer now simply negotiates, ``ConsentPendingGuard``
+parks the negotiation, and the ask is recorded against EDC's DCP-verified
+``counterPartyId``.  The route survives only as **provider-local** seeding for an
+operator or the portal, authenticated as a service.  The distinction matters for
+anyone reading this module to find out how a question reaches a person: nothing
+here delivers one, and this module's verdict is consumed by the pending guard —
+``/internal/consent/check`` answers ``should_ask`` from it (`D-5`, `D-18`).
 
 The system cannot infer capacity; the agreement must declare it.  Until the
 identity-registry carries agreements with a ``capacity`` field, capacity is

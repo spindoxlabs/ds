@@ -114,3 +114,73 @@ def test_canonical_wins_when_a_file_says_both():
         }
     }
     assert _resolve(doc, "d").policy.purpose == ["EnergyCommunityOperation"]
+
+
+# ── The `dcat:` block ─────────────────────────────────────────────────────────
+#
+# `governanceBlock.dcat` has been in the canonical schema all along; ds carried no
+# `dcat` field, so Pydantic's default `extra="ignore"` dropped the whole block.
+# A producer authoring against the published schema got a valid file, no warning
+# and no effect.
+#
+# These read the *canonical* spelling only. There is no ds-side alternative
+# spelling to reconcile, which is the one way this differs from `purpose` above.
+
+DCAT_BLOCK = {
+    "publisher_uri": "https://example.test/org/grid-operator",
+    "themes": ["http://publications.europa.eu/resource/authority/data-theme/ENER"],
+    "language_uris": ["http://publications.europa.eu/resource/authority/language/ENG"],
+    "spatial_uris": ["http://publications.europa.eu/resource/authority/atu/ITA"],
+    "accrual_periodicity": (
+        "http://publications.europa.eu/resource/authority/frequency/QUARTER_HOURLY"
+    ),
+    "conforms_to": "https://saref.etsi.org/saref4ener/",
+    "temporal": {"start": "2020-01-01", "end": "2026-01-01"},
+}
+
+
+def test_the_whole_dcat_block_survives_the_load():
+    """Every field, because the failure mode was losing all of them at once."""
+    rule = _resolve({"sources": {"d": {"dcat": DCAT_BLOCK}}}, "d")
+    assert rule.dcat.publisher_uri == "https://example.test/org/grid-operator"
+    assert rule.dcat.themes == DCAT_BLOCK["themes"]
+    assert rule.dcat.language_uris == DCAT_BLOCK["language_uris"]
+    assert rule.dcat.spatial_uris == DCAT_BLOCK["spatial_uris"]
+    assert rule.dcat.accrual_periodicity == DCAT_BLOCK["accrual_periodicity"]
+    assert rule.dcat.conforms_to == "https://saref.etsi.org/saref4ener/"
+    assert rule.dcat.temporal is not None
+    assert rule.dcat.temporal.start == "2020-01-01"
+    assert rule.dcat.temporal.end == "2026-01-01"
+
+
+def test_conforms_to_is_read_from_the_canonical_location():
+    """`M-4` — the payload semantic model, the field the whole CEEDS layer needs.
+
+    Called out separately from the sweep above because this is the one a
+    deployment binds SAREF or CIM with, and a regression here is the difference
+    between a declared semantic model and a silently domain-less catalogue.
+    """
+    rule = _resolve(
+        {"sources": {"d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}}},
+        "d",
+    )
+    assert rule.dcat.conforms_to == "https://saref.etsi.org/saref4ener/"
+
+
+def test_a_file_with_no_dcat_block_still_loads():
+    """The block is optional and always was — every existing file omits it."""
+    rule = _resolve({"sources": {"d": {"access_level": "open"}}}, "d")
+    assert rule.dcat.conforms_to is None
+    assert rule.dcat.themes == []
+    assert rule.dcat.temporal is None
+
+
+def test_dcat_defaults_are_inherited_like_every_other_block():
+    """`defaults:` is where a producer puts publisher and language, once."""
+    doc = {
+        "defaults": {"dcat": {"publisher_uri": "https://example.test/org/grid-operator"}},
+        "sources": {"d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}},
+    }
+    rule = _resolve(doc, "d")
+    assert rule.dcat.conforms_to == "https://saref.etsi.org/saref4ener/"
+    assert rule.dcat.publisher_uri == "https://example.test/org/grid-operator"

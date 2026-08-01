@@ -15,6 +15,26 @@ def _uuid() -> str:
     return str(uuid.uuid4())
 
 
+#: Every value `ConsentRequestORM.status` can hold, and the one declaration of
+#: them. A plain tuple rather than an enum because the column is `Text` and a
+#: type change would have to migrate rows that are already written.
+#:
+#: `expired` is the one that was missing, and its absence was not harmless: it is
+#: written by the TTL sweep (`services/pending_sweep.py`) and projected by
+#: `GET /consent/pending`, so a reader of this list concluded that a consent row
+#: leaves `pending` only when somebody decides it — hiding the one path that
+#: moves a row with nobody deciding anything.
+#: `tests/test_consent_status_vocabulary.py` reads this tuple and every status
+#: literal the services assign, and fails on a value written but not declared.
+CONSENT_STATUSES: tuple[str, ...] = (
+    "pending",
+    "granted",
+    "rejected",
+    "revoked",
+    "expired",
+)
+
+
 class ContractAgreementORM(Base):
     """Persisted EDC contract agreement for PEP + audit."""
 
@@ -65,8 +85,8 @@ class ConsentRequestORM(Base):
     # POD. The connector DB is not a PII store.
     legal_basis: Mapped[dict | None] = mapped_column(JSON)
     message: Mapped[str | None] = mapped_column(Text)
+    # One of `CONSENT_STATUSES` above — which is the declaration, not this line.
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
-    # pending | granted | rejected | revoked
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

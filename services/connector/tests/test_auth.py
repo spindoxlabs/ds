@@ -1,9 +1,12 @@
 """Tests for JWT scope enforcement on connector endpoints."""
+import httpx
 import pytest
 import pytest_asyncio
+import respx
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
+from connector.config import get_settings
 from connector.db.engine import Base
 from connector.dependencies import get_db, get_participant_registry
 from connector.main import create_app
@@ -12,6 +15,8 @@ from connector.registry.participants import ParticipantRegistry
 from tests import make_headers
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+
+EDC = get_settings().edc_provider_management_url.rstrip("/")
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -65,11 +70,26 @@ async def test_internal_wrong_scope_returns_403(auth_client):
 
 
 @pytest.mark.asyncio
+@respx.mock
 async def test_internal_with_correct_scope(auth_client):
+    """The right scope gets past the guard — whatever the EDC then says.
+
+    The EDC is mocked because this is an *authorization* test and must not
+    depend on one. Unmocked it reached the real management API, so its result
+    tracked whether a stack happened to be running: a live EDC answers 404 for
+    an unknown agreement, an absent one raises `EdcUnreachable` and the route
+    503s (`CON-04`). Both are correct route behaviour and neither is what this
+    test is about, so it asserted 404 and went red exactly when nobody had the
+    stack up. The outcomes themselves are pinned in `test_internal_api.py`.
+    """
+    respx.get(f"{EDC}/v3/contractagreements/test").mock(
+        return_value=httpx.Response(404)
+    )
     r = await auth_client.get(
         "/internal/agreements/test/status",
         headers=make_headers(scope="connector.internal"),
     )
+    assert r.status_code not in (401, 403)
     assert r.status_code == 404
 
 

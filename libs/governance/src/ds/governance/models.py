@@ -147,11 +147,61 @@ class DataspaceSpec(BaseModel):
     sharing_offers: list[str] = Field(default_factory=list)
 
 
+class TemporalCoverage(BaseModel):
+    """`dct:temporal` — the period the data covers, not the period it is offered."""
+
+    start: str | None = None
+    end: str | None = None
+
+
+class DcatSpec(BaseModel):
+    """DCAT-AP metadata for catalogue exposition — the canonical `dcat:` block.
+
+    **This mirrors `dcatConfig` in `schemas/governance.schema.json` field for
+    field, and that is a constraint rather than a coincidence.** That schema is
+    defined by celine-utils and only cached here (`schemas/README.md`), so a
+    field added on this side would be one this platform reads and no producer can
+    validate against before authoring. Extending the shape means extending it
+    upstream first.
+
+    Every one of these was **received and never read** until this model existed.
+    The schema has declared the block since before ds read any of it, and
+    `GovernanceRuleV2` carried no `dcat` field — so the resolver swept it into
+    `extra`, where it survived as an untyped dict that nothing looked at, and
+    `compliance/evidence.py` emitted a DCAT dataset missing all of it. A producer
+    authoring against the published schema got a valid file and no effect, which
+    is worse than a rejection: a rejection is a message.
+
+    Worth being precise about, because *"the data was lost"* would suggest the fix
+    is to stop dropping it. It was never dropped. `extra` is the catch-all for
+    keys ds does not model, and the defect was modelling nothing — so the fix is a
+    typed field plus a reader, and `extra` correctly stops carrying it.
+
+    ``conforms_to`` is a **single string** because that is what the canonical
+    schema says (*"URI of a standard or specification the dataset conforms to"*).
+    A dataset conforming to several models is a real case and a real limitation;
+    widening it to a list is a celine-utils change, not a divergence to ship
+    here. See `.agents/semantic-vocabulary.plan.md` decision `V-1`.
+    """
+
+    publisher_uri: str | None = None
+    themes: list[str] = Field(default_factory=list)
+    language_uris: list[str] = Field(default_factory=list)
+    spatial_uris: list[str] = Field(default_factory=list)
+    accrual_periodicity: str | None = None
+    # The payload semantic model — SAREF, CIM, COSEM. Resolved against the
+    # vocabulary registry (`vocabularies.py`) and served from `/ns/{slug}` when a
+    # local copy exists. Rulebook `M-4`, `M-7`.
+    conforms_to: str | None = None
+    temporal: TemporalCoverage | None = None
+
+
 class GovernanceRuleV2(GovernanceRule):
     """v2 governance rule — extends v1 with ODRL policy and EDC dataspace config."""
 
     policy: DataspacePolicy = Field(default_factory=DataspacePolicy)
     dataspace: DataspaceSpec = Field(default_factory=DataspaceSpec)
+    dcat: DcatSpec = Field(default_factory=DcatSpec)
 
 
 # ── ODRL Profile ─────────────────────────────────────────────────────────────

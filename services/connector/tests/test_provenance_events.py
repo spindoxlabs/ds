@@ -49,8 +49,10 @@ class FakeProv:
     async def data_ingested(self, **kwargs) -> None:
         await self._record("data_ingested", **kwargs)
 
-    async def data_disclosed(self, **kwargs) -> None:
-        await self._record("data_disclosed", **kwargs)
+    # No `data_disclosed`. The double carried one and no test ever asserted on
+    # it, because no route emits it — the event's producer is out of repo
+    # (`tests/test_prov_bridge_emitters.py`). A double that answers for a call
+    # nobody makes is how the dead emitter on the real bridge stayed invisible.
 
     def of(self, name: str) -> list[dict]:
         return [kw for n, kw in self.calls if n == name]

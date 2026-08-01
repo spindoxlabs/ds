@@ -716,8 +716,24 @@ async def admin_provision_share(
 ):
     """Provision a data subject's standing sharing decision from an offer.
 
-    The onboarding service calls this after it syncs a newly-approved
-    participant's DID.  It names an ``offer_id``, never a dataset, so it cannot
+    **Who calls this, since grepping the repo will not tell you.** The production
+    caller is the onboarding service, which is **out of this repository**; it runs
+    as ``svc-ds-onboarding`` and calls here after it syncs a newly-approved
+    participant's DID (``services/keycloak/clients.yaml`` grants it
+    ``connector.consent.provision`` for exactly this).  In-repo the only caller is
+    ``libs/ds-e2e``'s smoke and perimeter flows, which is a harness rather than a
+    driver.  So this route is **not** dead, and it is also not reached by any
+    code shipped here — the two facts a reader needs, and the pair that made
+    `POST /webhooks/transfer-process` look deletable when it was not.
+
+    A third caller class exists and is deliberate: ``connector.consent.provision``
+    is in the ``ds-participant-admin`` bundle, so a participant's operator console
+    can provision as well.  That is why ``legal_basis`` is mandatory and refused
+    when absent — an operator asserting that somebody consented, with no record of
+    what they were shown, is exactly the claim this route must not accept on
+    anyone's word.
+
+    It names an ``offer_id``, never a dataset, so it cannot
     drift from the copy the person read: the connector expands the offer into
     one **wildcard-scoped** row per resolved dataset (§3.1), stamping purpose,
     controller-role and the user-visible-facts hash from the offer itself.

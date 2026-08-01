@@ -34,17 +34,9 @@ class ProvenanceClient:
             log.warning("Failed to emit provenance event: %s", exc)
             return None
 
-    async def get_lineage(self, iri: str, direction: str = "both") -> dict[str, Any] | None:
-        try:
-            from urllib.parse import quote
-            headers = await self._auth_headers()
-            r = await self._http.get(
-                f"/prov/lineage/{quote(iri, safe='')}",
-                params={"direction": direction},
-                headers=headers,
-            )
-            r.raise_for_status()
-            return r.json()
-        except Exception as exc:
-            log.warning("Failed to fetch lineage for %s: %s", iri, exc)
-            return None
+    # This client writes; it does not read. `get_lineage` was the only read
+    # method and had no caller — nothing in the connector consumes lineage. It
+    # would not have worked either: `svc-ds-connector` holds `provenance.write`
+    # and **not** `provenance.read` (provenance row `L-13`), so every call would
+    # have 403'd into the `except` and returned `None`, indistinguishable from a
+    # node with no lineage. Restoring it means granting the scope first.

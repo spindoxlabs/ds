@@ -14,6 +14,7 @@ file outside this repo needs in order to validate before ds ever sees it:
 | ``sharing-offers.schema.json`` | ``sharing-offers.yaml`` |
 | ``odrl-profile.schema.json``   | a deployer's ODRL profile |
 | ``purpose-vocabulary.json``    | the slugs the *active* profile accepts |
+| ``vocabularies.schema.json``   | the semantic vocabulary registry |
 
 ``governance.schema.json`` is not here: celine-utils defines that shape and this
 repo only caches it. A schema lives where the shape is defined.
@@ -26,6 +27,7 @@ from typing import Any
 
 from .models import OdrlProfile, load_odrl_profile
 from .sharing import SharingOffer
+from .vocabularies import Vocabulary
 
 #: Where the published copies live, relative to the repo root.
 SCHEMAS_DIRNAME = "schemas"
@@ -91,6 +93,42 @@ def odrl_profile_schema() -> dict[str, Any]:
     return schema
 
 
+def vocabularies_schema() -> dict[str, Any]:
+    """Schema for a ``vocabularies.yaml`` file — the semantic vocabulary registry.
+
+    Published for the same reason the others are: the file may be authored in a
+    deployment repo, and a slug that is not a legal URL segment or a `format`
+    other than `jsonld` should be caught there rather than at the connector's
+    startup, which by design refuses to boot on it.
+    """
+    vocab = _titled(
+        Vocabulary,
+        "Vocabulary",
+        "A semantic vocabulary this deployment publishes a local copy of.",
+    )
+    defs = vocab.pop("$defs", {})
+    defs["vocabulary"] = vocab
+    return {
+        "$schema": _DIALECT,
+        "$id": f"{_BASE_URI}/vocabularies.schema.json",
+        "title": "ds vocabulary registry",
+        "description": (
+            "Semantic vocabularies served from /ns/{slug}, matched to a dataset "
+            "by dcat.conforms_to. Generated from the Vocabulary model in "
+            "ds-governance — do not edit by hand."
+        ),
+        "type": "object",
+        "required": ["vocabularies"],
+        "properties": {
+            "vocabularies": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/vocabulary"},
+            }
+        },
+        "$defs": defs,
+    }
+
+
 def purpose_vocabulary(profile: OdrlProfile | None = None) -> dict[str, Any]:
     """The purpose slugs the active profile accepts, as a validatable enum.
 
@@ -135,6 +173,7 @@ def generated_schemas() -> dict[str, dict[str, Any]]:
         "sharing-offers.schema.json": sharing_offers_schema(),
         "odrl-profile.schema.json": odrl_profile_schema(),
         "purpose-vocabulary.json": purpose_vocabulary(),
+        "vocabularies.schema.json": vocabularies_schema(),
     }
 
 

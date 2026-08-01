@@ -1,0 +1,67 @@
+{
+  "$defs": {
+    "vocabulary": {
+      "additionalProperties": false,
+      "description": "A semantic vocabulary this deployment publishes a local copy of.",
+      "properties": {
+        "format": {
+          "default": "jsonld",
+          "title": "Format",
+          "type": "string"
+        },
+        "iri": {
+          "title": "Iri",
+          "type": "string"
+        },
+        "slug": {
+          "title": "Slug",
+          "type": "string"
+        },
+        "source": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source"
+        },
+        "title": {
+          "title": "Title",
+          "type": "string"
+        },
+        "version": {
+          "default": "",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": [
+        "slug",
+        "title",
+        "iri"
+      ],
+      "title": "Vocabulary",
+      "type": "object"
+    }
+  },
+  "$id": "https://spindoxlabs.github.io/ds/schemas/vocabularies.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "description": "Semantic vocabularies served from /ns/{slug}, matched to a dataset by dcat.conforms_to. Generated from the Vocabulary model in ds-governance — do not edit by hand.",
+  "properties": {
+    "vocabularies": {
+      "items": {
+        "$ref": "#/$defs/vocabulary"
+      },
+      "type": "array"
+    }
+  },
+  "required": [
+    "vocabularies"
+  ],
+  "title": "ds vocabulary registry",
+  "type": "object"
+}

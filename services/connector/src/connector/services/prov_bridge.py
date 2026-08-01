@@ -303,22 +303,6 @@ class ProvBridge:
             "authorized_subject_ids": authorized_subject_ids,
         })
 
-    async def usage_obligation_fulfilled(
-        self,
-        agreement_id: str,
-        consumer_id: str,
-        obligation_type: str,
-        event_id: str | None = None,
-    ) -> None:
-        await self._prov.emit_event({
-            "event_type": "UsageObligationFulfilled",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "agreement_id": agreement_id,
-            "consumer_did": _did(consumer_id),
-            "obligation_type": obligation_type,
-        })
-
     async def access_revoked(
         self,
         data_product_id: str,
@@ -425,28 +409,20 @@ class ProvBridge:
             "acted_by": acted_by,
         })
 
-    async def data_disclosed(
-        self,
-        recipient_ref: str,
-        purpose: list[str] | None = None,
-        columns: list[str] | None = None,
-        subject_count: int | None = None,
-        source_ref: str | None = None,
-        disclosed_by: str | None = None,
-        consent_snapshot_hash: str | None = None,
-        agreement_ref: str | None = None,
-        event_id: str | None = None,
-    ) -> None:
-        await self._prov.emit_event({
-            "event_type": "DataDisclosed",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "recipient_ref": recipient_ref,
-            "purpose": purpose or [],
-            "columns": columns or [],
-            "subject_count": subject_count,
-            "source_ref": source_ref,
-            "disclosed_by": disclosed_by,
-            "consent_snapshot_hash": consent_snapshot_hash,
-            "agreement_ref": agreement_ref,
-        })
+    # `DataDisclosed` and `UsageObligationFulfilled` had a method here and no
+    # caller, which read as coverage this bridge does not have. Two different
+    # reasons, and the difference is the point:
+    #
+    # - **`DataDisclosed` is emitted, but not from here.** Its producer is the
+    #   out-of-repo onboarding service after a CSV export, which holds
+    #   `provenance.write` (`services/keycloak/clients.yaml`) and posts to
+    #   `POST /prov/events` itself. A Python method on this class was never
+    #   reachable by it. Deleting the method drops no emission.
+    # - **`UsageObligationFulfilled` is emitted by nobody, anywhere.** That is a
+    #   real gap against rulebook `L-1`/`L-15`, and it is recorded as one in
+    #   `docs/rulebook/provenance-and-logging.md` rather than left looking
+    #   covered. The event is a *consumer reporting* an obligation it met, so
+    #   closing it needs an inbound route with a guard — not a bridge method.
+    #
+    # `tests/test_provenance_events.py` asserts this class carries an emitter for
+    # every event type the connector produces, and only those.

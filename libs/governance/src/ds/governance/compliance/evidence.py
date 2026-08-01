@@ -38,6 +38,22 @@ def _slug(asset_id: str) -> str:
     return quote(asset_id.replace(".", "/"), safe="/")
 
 
+def _temporal(dcat: Any) -> dict[str, Any] | None:
+    """`dct:temporal` as a `dct:PeriodOfTime`, or nothing.
+
+    An open-ended period is legitimate — a dataset that started in 2020 and is
+    still accruing has a start and no end — so only a period with *neither* bound
+    is dropped. Emitting a bare `dct:PeriodOfTime` node with no properties would
+    assert that a temporal coverage exists and then decline to say what it is.
+    """
+    period = {
+        "dcat:startDate": dcat.temporal.start,
+        "dcat:endDate": dcat.temporal.end,
+    }
+    period = {k: v for k, v in period.items() if v is not None}
+    return {"@type": "dct:PeriodOfTime", **period} if period else None
+
+
 def to_dcat_dataset(
     item: DatasetEvidence,
     offer: dict[str, Any],
@@ -48,16 +64,38 @@ def to_dcat_dataset(
     rule: GovernanceRuleV2 = item.rule
     root = base_url.rstrip("/")
     slug = _slug(item.asset_id)
+    dcat = rule.dcat
     dataset = {
         "@id": f"{root}/dcat/dataset/{slug}",
         "@type": "dcat:Dataset",
         "dct:identifier": item.asset_id,
         "dct:title": rule.title or item.key,
         "dct:description": rule.description or "",
-        "dct:publisher": {"@id": publisher_id},
+        # The producer's own publisher URI wins over the participant emitting the
+        # evidence. They are different claims: a participant may host datasets for
+        # several owners, so `publisher_id` is who published the *catalogue* and
+        # `dcat.publisher_uri` is who published the *dataset*. Collapsing them
+        # attributes an owner's data to whoever happened to sync it.
+        "dct:publisher": {"@id": dcat.publisher_uri or publisher_id},
         "dcat:keyword": rule.tags,
         "dct:license": rule.license,
         "dct:source": rule.source_system,
+        # ── The canonical `dcat:` block, which ds used to drop entirely ───────
+        "dcat:theme": [{"@id": t} for t in dcat.themes] or None,
+        "dct:language": [{"@id": u} for u in dcat.language_uris] or None,
+        "dct:spatial": [{"@id": u} for u in dcat.spatial_uris] or None,
+        "dct:accrualPeriodicity": (
+            {"@id": dcat.accrual_periodicity} if dcat.accrual_periodicity else None
+        ),
+        # The dataset's payload semantic model (`M-4`). It sits on the **dataset**,
+        # not the distribution: the distribution already carries a `dct:conformsTo`
+        # naming the *protocol* (DSP), and a column's meaning is a property of the
+        # data, not of the way it is fetched. Two different conformance claims, and
+        # putting them on one node would make them indistinguishable to a reader.
+        "dct:conformsTo": (
+            {"@id": dcat.conforms_to} if dcat.conforms_to else None
+        ),
+        "dct:temporal": _temporal(dcat) if dcat.temporal else None,
         "dcat:distribution": [
             {
                 "@id": f"{root}/dcat/distribution/{slug}",
