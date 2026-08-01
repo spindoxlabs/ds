@@ -7,33 +7,29 @@ WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install shared libraries (local path deps)
+# Shared libraries first, installed BY PATH so they land non-editable: the
+# runtime stage carries only /opt/venv, and an editable install leaves a .pth
+# pointing at a /build that no longer exists there.
 COPY libs/governance/ /build/governance/
 COPY libs/ds-auth/ /build/ds-auth/
 COPY libs/ds-edc/ /build/ds-edc/
 RUN uv venv /opt/venv && \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
+    uv pip install --python /opt/venv/bin/python \
       /build/governance /build/ds-auth /build/ds-edc
 
-# Install connector dependencies.
+# Everything else comes from pyproject.toml and from nowhere else. There is no
+# fallback list: a dependency this service declares but the image lacks must
+# fail the build, not fail at import in a container that looked like it built.
 #
-# The second command is a fallback for when `-r pyproject.toml` cannot be
-# resolved, and it must list every runtime dependency the first one would have
-# installed — a package missing here does not fail the build, it fails at
-# import, in a container that looked like it built. `pyjwt[crypto]` was missing:
-# it is what verifies every JWT this service accepts.
+# --no-sources makes uv treat the ds-* entries as plain requirements instead of
+# following [tool.uv.sources] to ../../libs — the installs above already satisfy
+# them, and without it uv reinstalls them editable and breaks the runtime stage.
 COPY services/connector/pyproject.toml /build/
-RUN sed -i '/ds-governance/d; /ds-auth/d; /ds-edc/d' /build/pyproject.toml && \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      -r /build/pyproject.toml 2>/dev/null || \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      fastapi "uvicorn[standard]" httpx "pydantic>=2.7" pydantic-settings \
-      pyyaml tenacity "sqlalchemy[asyncio]" aiosqlite asyncpg alembic aiosmtplib \
-      cryptography "pyjwt[crypto]"
+RUN uv pip install --python /opt/venv/bin/python --no-sources -r /build/pyproject.toml
 
 # ── Runtime ───────────────────────────────────────────────────────────────────
 FROM python:3.12-slim AS runtime
-LABEL org.opencontainers.image.source="https://github.com/spindoxlabs/dataspaces" \
+LABEL org.opencontainers.image.source="https://github.com/spindoxlabs/ds" \
       org.opencontainers.image.description="ds-connector — EDC orchestration and consent service"
 
 WORKDIR /app

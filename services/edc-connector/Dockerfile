@@ -2,7 +2,11 @@
 # Requires ds-edc-base:0.16.0 to be built first (see Dockerfile.base).
 # Builds a DCP-enabled EDC connector fat JAR with custom ODRL extensions.
 
-FROM ds-edc-base:0.16.0 AS builder
+# Locally the base is the one `task edc:base` builds. CI has no such image and
+# passes the published copy instead:
+#   --build-arg EDC_BASE_IMAGE=ghcr.io/spindoxlabs/ds-edc-base:0.16.0
+ARG EDC_BASE_IMAGE=ds-edc-base:0.16.0
+FROM ${EDC_BASE_IMAGE} AS builder
 WORKDIR /build
 
 COPY settings.gradle.kts build.gradle.kts ./

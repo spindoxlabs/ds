@@ -4,16 +4,20 @@ WORKDIR /build
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install shared libraries (local path deps)
+# Shared libraries first, installed BY PATH so they land non-editable: the
+# runtime stage carries only /opt/venv, and an editable install leaves a .pth
+# pointing at a /build that no longer exists there.
 COPY libs/ds-auth/ /build/ds-auth/
 RUN uv venv /opt/venv && \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      /build/ds-auth
+    uv pip install --python /opt/venv/bin/python /build/ds-auth
 
+# Everything else comes from pyproject.toml and from nowhere else. The list this
+# replaces had drifted: it omitted `typer`, which cli/main.py imports.
+# --no-sources makes uv treat ds-auth as a plain requirement instead of
+# following [tool.uv.sources] to ../../libs; the install above satisfies it, and
+# without it uv reinstalls it editable and breaks the runtime stage.
 COPY services/federated-catalog/pyproject.toml ./
-RUN sed -i '/ds-auth/d' /build/pyproject.toml && \
-    UV_PROJECT_ENVIRONMENT=/opt/venv uv pip install --python /opt/venv/bin/python \
-      fastapi "uvicorn[standard]" httpx "pydantic>=2.7" pydantic-settings pyyaml
+RUN uv pip install --python /opt/venv/bin/python --no-sources -r /build/pyproject.toml
 
 FROM python:3.12-slim AS runtime
 LABEL org.opencontainers.image.description="ds-federated-catalog — DCAT-AP federated catalog crawler"

@@ -33,10 +33,15 @@ global:
 
   # ── Images ──────────────────────────────────────────────────────────────────
   # ghcr.io/spindoxlabs/ds-<service>. Assumed public; pullSecrets are optional.
+  #
+  # Leave `tag` empty. Every chart's appVersion is stamped with the release
+  # version by `task release`, so a checkout of tag vX.Y.Z already deploys
+  # :X.Y.Z. To deploy a different release without editing this file:
+  #   DS_IMAGE_TAG=X.Y.Z helmfile -e production apply
   image:
     registry: ghcr.io/spindoxlabs
     prefix: ds-
-    tag: "" # empty → each chart's appVersion
+    tag: "" # empty → each chart's appVersion (the release version)
     pullPolicy: IfNotPresent
     pullSecrets: [] # e.g. [{name: ghcr-credentials}]
 

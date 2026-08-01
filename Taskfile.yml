@@ -22,6 +22,11 @@ dotenv: [".env", ".env.local"]
 env:
   COMPOSE_PROJECT_NAME: dataspaces
 
+vars:
+  # Pinned to a major: the release config in releaserc.toml is written against
+  # python-semantic-release 10.x, and its option names move between majors.
+  SEMANTIC_RELEASE: uvx --from 'python-semantic-release>=10.5,<11' semantic-release -c releaserc.toml
+
 tasks:
   # ── Idempotent workspace setup ────────────────────────────────────────────
   setup:
@@ -1273,6 +1278,24 @@ tasks:
     cmds:
       - cd services/identity-registry && uv run ir-cli keycloak merge {{range $o := splitList "," .OVERLAYS}}--overlay {{$o}} {{end}}
 
+  vocab:fetch:
+    desc: "Cache the registered semantic vocabularies the connector serves at /ns/{slug}"
+    cmds:
+      # The connector does this at startup and refuses to boot when it cannot.
+      # This is the deliberate version: run it before a restart to see every
+      # failure at once rather than one boot at a time.
+      #
+      # REFRESH=true re-fetches copies that are already cached. Off by default —
+      # a cached copy is what the deployment is serving, and replacing it changes
+      # what a running catalogue's `dct:conformsTo` IRIs resolve to.
+      - >-
+        cd libs/governance && uv run ds-governance fetch-vocabularies
+        --file ../../services/connector/governance/vocabularies.yaml
+        --cache-dir ../../services/connector/governance/vocab-cache
+        {{if eq .REFRESH "true"}}--refresh{{end}}
+    vars:
+      REFRESH: '{{.REFRESH | default "false"}}'
+
   keycloak:mirror:
     desc: Regenerate the ds section a host realm's clients.yaml must carry
     cmds:
@@ -1282,3 +1305,30 @@ tasks:
     desc: "Report what a host realm is missing: HOST=<path to its clients.yaml>"
     cmds:
       - cd services/identity-registry && uv run ir-cli keycloak mirror --diff {{.HOST}}
+
+  # ── Release ─────────────────────────────────────────────────────────────────
+  #
+  # One version for the whole repository — see releaserc.toml for why and for
+  # what carries it. Cutting a release is a deliberate local act; publishing is
+  # not. `task release` only writes and pushes a tag; the tag is what makes
+  # .github/workflows/release.yml build and push the images.
+  #
+  # Requires a clean tree on `main`, up to date with origin.
+  release:dry:
+    desc: Show the version the next release would take and every file it would stamp
+    cmds:
+      - "{{.SEMANTIC_RELEASE}} --noop version --no-vcs-release --no-push"
+
+  release:next:
+    desc: Print just the version the next release would take
+    cmds:
+      - "{{.SEMANTIC_RELEASE}} version --print"
+
+  release:
+    desc: "Cut a release: stamp every version, write CHANGELOG.md, commit, tag, push"
+    cmds:
+      # --no-push so the commit and the tag can be inspected before anything
+      # leaves the machine; the push below is what triggers the image build.
+      - "{{.SEMANTIC_RELEASE}} -v version --no-vcs-release --no-push"
+      - git --no-pager show --stat HEAD
+      - git push --follow-tags

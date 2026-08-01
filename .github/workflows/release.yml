@@ -1,0 +1,160 @@
+name: Release
+
+# ==============================================================================
+# Publishes ghcr.io/spindoxlabs/ds-<service>:<version> for every deployable unit.
+#
+# TAG-DRIVEN ON PURPOSE. `task release` stamps the version everywhere, commits,
+# tags vX.Y.Z and pushes; the tag arriving here is the whole trigger. Branch
+# pushes publish nothing — the platform is early and a `:dev` tag that moves
+# under a running cluster is a worse problem than not having one.
+#
+# To start publishing `:dev` from main later: uncomment `branches: [main]`
+# below. The metadata step already carries the matching rule, dormant.
+#
+# Image names are what helm/charts/ds-common/templates/_helpers.tpl resolves:
+#   <global.image.registry>/<global.image.prefix><service.name>:<Chart.AppVersion>
+# Renaming a matrix entry breaks a deployment, not just a build.
+# ==============================================================================
+
+on:
+  push:
+    tags: ["v*"]
+    # branches: [main]        # → publishes ds-<service>:dev on every merge
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build (branch, tag or SHA). Empty → the default branch"
+        required: false
+        default: ""
+      tag:
+        description: "Image tag to publish"
+        required: false
+        default: "dev"
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  REGISTRY: ghcr.io/spindoxlabs
+  # The EDC dependency-cache base image, published by edc-base.yml. Keyed to
+  # `edcVersion` in services/edc-*/build.gradle.kts — bump both together.
+  EDC_BASE_IMAGE: ghcr.io/spindoxlabs/ds-edc-base:0.16.0
+
+jobs:
+  # ── Python and Node services ────────────────────────────────────────────────
+  #
+  # Every Dockerfile here builds from the REPO ROOT as context: the Python
+  # services install libs/ as path dependencies, and the portal copies from
+  # services/portal/. Do not set a per-service context.
+  services:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: connector
+            dockerfile: services/connector/Dockerfile
+          - name: identity-registry
+            dockerfile: services/identity-registry/Dockerfile
+          - name: provenance
+            dockerfile: services/provenance/Dockerfile
+          - name: federated-catalog
+            dockerfile: services/federated-catalog/Dockerfile
+          - name: portal
+            dockerfile: services/portal/Dockerfile
+          # dataset-api-mock is deliberately absent: it is a dev fixture that
+          # stands in for celine's dataset-api, and is never deployed.
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/ds-${{ matrix.name }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  # ── EDC connector (Java) ────────────────────────────────────────────────────
+  #
+  # Separate job because it needs the prebuilt Gradle dependency cache image.
+  # Without it every release spends ~10 minutes resolving EDC's BOMs.
+  edc-connector:
+    name: edc-connector
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Fail here with a legible message rather than inside a Docker build.
+      # The base image is published by edc-base.yml; run that workflow once
+      # manually on a fresh registry.
+      - name: Check the EDC base image exists
+        run: |
+          docker manifest inspect "$EDC_BASE_IMAGE" >/dev/null || {
+            echo "::error::$EDC_BASE_IMAGE is not published. Run the 'EDC base image' workflow first."
+            exit 1
+          }
+
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/ds-edc-connector
+          tags: |
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/v') }}
+            type=raw,value=dev,enable=${{ github.ref == 'refs/heads/main' }}
+            type=raw,value=${{ inputs.tag || 'dev' }},enable=${{ github.event_name == 'workflow_dispatch' }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/edc-connector/Dockerfile
+          build-args: |
+            EDC_BASE_IMAGE=${{ env.EDC_BASE_IMAGE }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=edc-connector
+          cache-to: type=gha,mode=max,scope=edc-connector

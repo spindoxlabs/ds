@@ -1,0 +1,76 @@
+# ==============================================================================
+# Release configuration — python-semantic-release
+# ==============================================================================
+#
+# ONE version for the whole repository. The services are coupled by internal
+# contracts (`/internal/*`, DSP/DCP, the dataplane authorize callback) and are
+# deployed together by one helmfile, so "which version is this dataspace" has to
+# be a single answer.
+#
+# `task release` computes the bump from the conventional-commit log, stamps it
+# into every file below, writes CHANGELOG.md, commits and tags `vX.Y.Z`.
+# **Pushing the tag is the only thing that publishes anything** — see
+# .github/workflows/release.yml. Nothing is published from a developer machine,
+# and nothing is published to PyPI: the container images are the release artifact.
+#
+# Why not [tool.semantic_release] in a root pyproject.toml: `uv run` at the repo
+# root refuses a pyproject.toml that has no [project] table, and `task docs:build`
+# depends on `uv run` working there. Hence a standalone file, passed with `-c`.
+#
+# Chart `version:` is deliberately NOT stamped — it is pinned by each chart's
+# Chart.lock and its vendored ds-common-0.1.0.tgz. Only `appVersion:` moves, and
+# that is what `ds.image` resolves the image tag from.
+#
+# TOML ordering matters here: every bare key below belongs to [semantic_release]
+# and must stay ABOVE the first sub-table, or it silently becomes a key of that
+# sub-table and is ignored.
+# ==============================================================================
+
+[semantic_release]
+tag_format = "v{version}"
+commit_parser = "conventional"
+
+# Pre-1.0: a `feat:` is a minor bump, not a jump to 1.0.0.
+allow_zero_version = true
+major_on_zero = false
+
+# ── What carries the version ──────────────────────────────────────────────────
+
+version_toml = [
+  "services/connector/pyproject.toml:project.version",
+  "services/identity-registry/pyproject.toml:project.version",
+  "services/provenance/pyproject.toml:project.version",
+  "services/federated-catalog/pyproject.toml:project.version",
+  "services/dataset-api-mock/pyproject.toml:project.version",
+  "services/dataset-api-fiware-adapter/pyproject.toml:project.version",
+  "libs/ds-auth/pyproject.toml:project.version",
+  "libs/ds-edc/pyproject.toml:project.version",
+  "libs/governance/pyproject.toml:project.version",
+  "libs/ds-e2e/pyproject.toml:project.version",
+]
+
+# `appVersion` only. ds-oauth2-proxy is absent on purpose: its appVersion is
+# upstream's 7.11.0, not ours.
+version_variables = [
+  "services/portal/package.json:version",
+  "helm/charts/ds-connector/Chart.yaml:appVersion",
+  "helm/charts/ds-identity-registry/Chart.yaml:appVersion",
+  "helm/charts/ds-provenance/Chart.yaml:appVersion",
+  "helm/charts/ds-federated-catalog/Chart.yaml:appVersion",
+  "helm/charts/ds-portal/Chart.yaml:appVersion",
+  "helm/charts/ds-edc/Chart.yaml:appVersion",
+]
+
+# ── Sub-tables — nothing bare may follow ──────────────────────────────────────
+
+[semantic_release.branches.main]
+match = "main"
+
+[semantic_release.commit_parser_options]
+minor_tags = ["feat"]
+patch_tags = ["fix", "perf"]
+parse_squash_commits = true
+ignore_merge_commits = true
+
+[semantic_release.publish]
+upload_to_vcs_release = false

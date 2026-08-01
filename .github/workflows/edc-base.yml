@@ -1,0 +1,70 @@
+name: EDC base image
+
+# ==============================================================================
+# Publishes ghcr.io/spindoxlabs/ds-edc-base:<edcVersion> — the Gradle dependency
+# cache the EDC connector image builds on top of. It carries no source code, so
+# it only changes when the build descriptors or the EDC version change.
+#
+# This is NOT a release artifact. It is never deployed; it exists so the release
+# build does not spend ten minutes resolving EDC's BOMs, and so a developer can
+# `docker pull` it instead of running `task edc:base`.
+#
+# Run this once by hand (workflow_dispatch) on a fresh registry — the release
+# workflow refuses to build the connector until it exists.
+#
+# The tag is the EDC version, and it moves. Bump `EDC_VERSION` here in the same
+# commit as `edcVersion` in the two build.gradle.kts files.
+# ==============================================================================
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "**/*.gradle.kts"
+      - "services/edc-connector/Dockerfile.base"
+      - ".github/workflows/edc-base.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: edc-base
+  cancel-in-progress: true
+
+env:
+  EDC_VERSION: "0.16.0"
+
+jobs:
+  base:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert EDC_VERSION matches the Gradle builds
+        run: |
+          declared=$(grep -hoP 'val edcVersion = "\K[^"]+' \
+            services/edc-extensions/build.gradle.kts \
+            services/edc-connector/build.gradle.kts | sort -u)
+          if [ "$declared" != "$EDC_VERSION" ]; then
+            echo "::error::EDC_VERSION=$EDC_VERSION but build.gradle.kts declares: $declared"
+            exit 1
+          fi
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: services/edc-connector/Dockerfile.base
+          push: true
+          tags: ghcr.io/spindoxlabs/ds-edc-base:${{ env.EDC_VERSION }}
+          cache-from: type=gha,scope=edc-base
+          cache-to: type=gha,mode=max,scope=edc-base

@@ -36,12 +36,30 @@ immutable once a dataspace is live.
 |---|---|---|
 | `global.image.registry` | `ghcr.io/spindoxlabs` | |
 | `global.image.prefix` | `ds-` | composed as `<registry>/<prefix><service>` |
-| `global.image.tag` | `""` | empty → each chart's `appVersion` |
+| `global.image.tag` | `""` | empty → each chart's `appVersion`, which **is** the release version |
 | `global.image.pullPolicy` | `IfNotPresent` | |
 | `global.image.pullSecrets` | `[]` | e.g. `[{name: ghcr-credentials}]` |
 
 A per-chart `image.digest` wins over any tag. **Digest-pinning is the recommended production
 form.**
+
+### Choosing a release
+
+The repository has one version. Cutting a release stamps it into every chart's `appVersion`
+and publishes `ghcr.io/spindoxlabs/ds-<service>:<version>` — see
+[Releasing](../development/releasing.md). So a checkout of tag `vX.Y.Z` deploys `X.Y.Z` with
+nothing to configure.
+
+To deploy a different release from the same checkout — a rollback, or a version bump you have
+not merged the chart changes for — set `DS_IMAGE_TAG` instead of editing `values.yaml`:
+
+```bash
+DS_IMAGE_TAG=1.4.0 helmfile -e production apply
+```
+
+It overrides `global.image.tag` for every release in the helmfile at once. Overriding one
+service alone is deliberately awkward: the services share internal contracts and are versioned
+together.
 
 ### Ingress and TLS
 
