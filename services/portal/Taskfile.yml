@@ -31,6 +31,11 @@ tasks:
     cmds:
       - npm run lint
 
+  test:
+    desc: Vitest unit suite (logic in isolation — no running stack)
+    cmds:
+      - npm run test
+
   test:ui:
     desc: Playwright journeys against a running stack (one per role, plus dual-role)
     cmds:

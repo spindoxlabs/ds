@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
+import { requireConsumerApi } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 function connectorUrl(): string {
@@ -35,13 +35,11 @@ async function connectorErrorMessage(res: Response): Promise<string> {
 }
 
 export const GET: RequestHandler = async ({ params, locals }) => {
-	const session = await locals.auth();
-	const token = session?.accessToken ?? '';
-	const subjectId = session ? getConsumerSubjectId(session) : '';
+	const { token, subjectId, vcJws } = await requireConsumerApi({ locals });
 
 	const res = await fetch(`${connectorUrl()}/consumer/transfers/${params.id}`, {
 		headers: {
-			...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
+			...subjectCredentialHeaders(subjectId, vcJws),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 	});
@@ -54,11 +52,9 @@ export const GET: RequestHandler = async ({ params, locals }) => {
 };
 
 export const POST: RequestHandler = async ({ params, locals }) => {
-	const session = await locals.auth();
-	const token = session?.accessToken ?? '';
-	const subjectId = session ? getConsumerSubjectId(session) : '';
+	const { token, subjectId, vcJws } = await requireConsumerApi({ locals });
 	const headers: Record<string, string> = {
-		...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
+		...subjectCredentialHeaders(subjectId, vcJws),
 		...(token ? { Authorization: `Bearer ${token}` } : {}),
 	};
 

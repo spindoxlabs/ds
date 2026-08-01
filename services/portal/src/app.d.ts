@@ -23,7 +23,6 @@ export interface DsSession {
 	userVcRole?: string | null;
 	userVcJws?: string | null;
 	userSubjectId?: string | null;
-	error?: string;
 }
 
 declare global {
@@ -36,12 +35,6 @@ declare global {
 		interface PageData {
 			session?: DsSession | null;
 		}
-	}
-
-	interface Window {
-		__ENV?: {
-			PUBLIC_KEYCLOAK_CLIENT_ID?: string;
-		};
 	}
 }
 

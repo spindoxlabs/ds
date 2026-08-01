@@ -46,6 +46,17 @@ ds-<service>-<participant>.
 # start or end a session; the ds-oauth2-proxy release serves it on this host.
 - name: OAUTH2_PROXY_BASE_URL
   value: {{ include "portal.origin" . | quote }}
+# The realm issuer. The portal verifies every forwarded access token's signature
+# against this issuer's JWKS (`hooks.server.ts` → `lib/server/token.ts`) and
+# requests its service token from it — with no in-code fallback, so an unset
+# value fails loudly rather than silently redirecting every VC-gated route to
+# `/`. Same source as every other ds service.
+- name: KEYCLOAK_ISSUER_URL
+  value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
+# Layer B group aliases, from the one `global.keycloak.aliases` block every
+# service reads — so the portal's nav and guards translate a foreign realm's
+# group names exactly as the API does.
+{{- include "ds.env.aliases" (dict "ctx" . "prefix" "PORTAL_") }}
 - name: PORTAL_SERVICE_CLIENT_ID
   value: {{ .Values.auth.serviceClientId | quote }}
 - name: PORTAL_SERVICE_CLIENT_SECRET

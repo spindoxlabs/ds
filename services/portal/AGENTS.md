@@ -22,7 +22,7 @@ copies and every ds service re-verifies the JWT.
 |---|---|
 | New page | `src/routes/<path>/+page.svelte` + `+page.server.ts` |
 | Navigation | `src/routes/+layout.svelte` |
-| Route guard, grants | `src/lib/server/auth.ts` (server) · `src/lib/stores/session.ts` (display only) |
+| Route guard, grants | `src/lib/server/auth.ts` (server) · `src/lib/server/persona.ts` (nav persona, server-derived) |
 | Call a backend | `src/lib/server/{connector,provenance,identity-registry}.ts` |
 | ODRL rendering | `src/lib/server/odrl.ts` — `summarisePolicy()` |
 | What a subject is asked | `src/routes/my-data/` + `getSharingOffers()` |
@@ -34,8 +34,9 @@ useful error.
 
 ## Rules that are not visible from the code
 
-- **A `+server.ts` endpoint does not run `+layout.server.ts`.** It must guard itself. Four
-  standalone consumer endpoints currently do not — see `.agents/defect-per-service.md`.
+- **A `+server.ts` endpoint does not run `+layout.server.ts`.** It must guard itself. The four
+  standalone consumer endpoints call `requireConsumerApi` (an API-shaped guard that returns
+  401/403, not a redirect); a new one must do the same.
 - **Authority arrives on two independent axes and they are not exclusive.** Keycloak groups
   (bundles, expanded by `bundles.generated.ts`) carry operator and provider authority; a
   verifiable credential carries `ConsumerUser` / `DataSubject`. One human legitimately holds

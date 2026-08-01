@@ -35,8 +35,9 @@ export interface ProvNode {
 export interface LineageEdge {
 	'@id': string;
 	'@type': string;
-	subject: string;
-	object: string;
+	/** Endpoint keys as the provenance service emits them (JSON-LD qualified-relation properties). */
+	'prov:entity': string;
+	'prov:activity': string;
 }
 
 export interface LineageGraph {
@@ -44,6 +45,63 @@ export interface LineageGraph {
 	root: string;
 	depth: number;
 	'@graph': Array<ProvNode | LineageEdge>;
+}
+
+export interface GraphNode {
+	id: string;
+	label: string;
+	type: string;
+}
+
+export interface GraphEdge {
+	id: string;
+	source: string;
+	target: string;
+	label: string;
+}
+
+/**
+ * Split a lineage `@graph` into nodes and edges for the graph view.
+ *
+ * An edge is recognised by the keys the provenance service actually emits —
+ * `prov:entity` / `prov:activity` (`jsonld_service.relation_to_jsonld`) — not
+ * `subject` / `object`, which nothing emits. Reading the wrong keys made every
+ * edge fall through to the node branch, so the graph rendered every node and
+ * **zero edges**. Kept pure so the classification is unit-tested without a
+ * running provenance store.
+ */
+export function classifyLineageGraph(
+	graph: Array<Record<string, unknown>>,
+): { nodes: GraphNode[]; edges: GraphEdge[] } {
+	const nodes: GraphNode[] = [];
+	const edges: GraphEdge[] = [];
+
+	const lastSegment = (type: unknown): string => {
+		const first = Array.isArray(type) ? type[0] : type;
+		return String(first ?? '').split(':').pop() ?? '';
+	};
+
+	for (const item of graph) {
+		const entity = item['prov:entity'];
+		const activity = item['prov:activity'];
+		if (typeof entity === 'string' && typeof activity === 'string') {
+			edges.push({
+				id: String(item['@id']),
+				source: entity,
+				target: activity,
+				label: lastSegment(item['@type']),
+			});
+		} else {
+			const id = String(item['@id']);
+			nodes.push({
+				id,
+				label: String(item['prov:label'] ?? id.split('/').pop() ?? id),
+				type: lastSegment(item['@type']) || 'Entity',
+			});
+		}
+	}
+
+	return { nodes, edges };
 }
 
 export async function getLineage(
@@ -207,8 +265,4 @@ export async function queryMyEvents(
 		{ headers },
 	);
 	return toPage(raw, query.limit ?? 50, query.offset ?? 0);
-}
-
-export async function getHealth(): Promise<{ status: string }> {
-	return apiFetch<{ status: string }>(provUrl('/health'));
 }

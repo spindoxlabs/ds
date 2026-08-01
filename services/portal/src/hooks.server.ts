@@ -19,6 +19,7 @@
  */
 import { env } from '$env/dynamic/private';
 import { resolveUserByEmail } from '$lib/server/identity-registry';
+import { verifyAccessToken } from '$lib/server/token';
 import { redirect, type Handle } from '@sveltejs/kit';
 
 /** Where the browser goes to start or end a session. Caddy routes /oauth2/* here. */
@@ -47,18 +48,6 @@ async function cachedIdentity(email: string): Promise<Identity> {
 	return identity;
 }
 
-function decodeClaims(token: string): Record<string, unknown> | null {
-	try {
-		const parts = token.split('.');
-		if (parts.length !== 3) return null;
-		return JSON.parse(
-			Buffer.from(parts[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8'),
-		);
-	} catch {
-		return null;
-	}
-}
-
 function bearerFrom(request: Request): string | null {
 	// oauth2-proxy sets both; the dedicated header first because `Authorization`
 	// may instead carry a *service* token when a machine calls through
@@ -77,14 +66,14 @@ async function buildSession(request: Request) {
 	const accessToken = bearerFrom(request);
 	if (!accessToken) return null;
 
-	const claims = decodeClaims(accessToken);
+	// Verify the signature, issuer and expiry — never trust the payload on a bare
+	// decode. A token that fails any check is treated as no session, so the guard
+	// redirects to sign-in rather than building an authorised session (and minting
+	// `X-Subject-Id` / `X-User-VC`) from a token the API would refuse. Expiry is
+	// covered here too: a lapsed proxy session must not render a half-authorised
+	// page.
+	const claims = await verifyAccessToken(accessToken);
 	if (!claims) return null;
-
-	// An expired token means the proxy's session lapsed mid-request; treat it as
-	// no session so the guard redirects rather than rendering a half-authorised
-	// page against a token the API will refuse.
-	const exp = typeof claims.exp === 'number' ? claims.exp : 0;
-	if (exp && Date.now() >= exp * 1000) return null;
 
 	const email = String(claims.email ?? request.headers.get('x-auth-request-email') ?? '');
 	const identity = email ? await cachedIdentity(email) : null;

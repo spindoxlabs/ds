@@ -5,7 +5,7 @@ import { hasVcRole, parseTokenRoles } from '$lib/server/auth';
 
 export const load: PageServerLoad = async ({ locals, fetch, url }) => {
 	const session = await locals.auth();
-	if (!session?.user || session.error === 'RefreshTokenError') {
+	if (!session?.user) {
 		throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(url.pathname)}`);
 	}
 

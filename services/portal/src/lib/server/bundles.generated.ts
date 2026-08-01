@@ -55,12 +55,17 @@ export const MACHINE_IDENTITY_PERMISSIONS: string[] = [
 
 /**
  * Expand role bundles into capabilities — the TypeScript twin of
- * `ds_auth.bundles.expand_bundles`. Three rules, in order: a known bundle
- * expands; a machine-identity permission is dropped (never grantable to a
- * human, however the group is named); anything else passes through verbatim, so
- * a realm still carrying the old scope-named groups keeps working.
+ * `ds_auth.bundles.expand_bundles`. Four rules, in order: a Layer B alias is
+ * translated first (a foreign IdP's group name becomes the ds bundle a
+ * deployment mapped it to); a known bundle expands; a machine-identity
+ * permission is dropped (never grantable to a human, however the group is
+ * named); anything else passes through verbatim, so a realm still carrying the
+ * old scope-named groups keeps working.
  */
-export function expandBundles(groups: Iterable<string>): string[] {
+export function expandBundles(
+	groups: Iterable<string>,
+	aliases: Record<string, string> = {},
+): string[] {
 	const seen = new Set<string>();
 	const result: string[] = [];
 	const machine = new Set(MACHINE_IDENTITY_PERMISSIONS);
@@ -72,8 +77,10 @@ export function expandBundles(groups: Iterable<string>): string[] {
 		}
 	};
 
-	for (const group of groups) {
-		if (typeof group !== 'string' || !group) continue;
+	for (const raw of groups) {
+		if (typeof raw !== 'string' || !raw) continue;
+		// Rule 0: translate a foreign name before anything else looks at it.
+		const group = aliases[raw] ?? raw;
 		const capabilities = ROLE_BUNDLES[group];
 		if (capabilities) {
 			for (const capability of capabilities) add(capability);
@@ -85,4 +92,44 @@ export function expandBundles(groups: Iterable<string>): string[] {
 	}
 
 	return result;
+}
+
+/**
+ * Parse and **validate** a Layer B alias map from its JSON env form — the twin
+ * of `ds_auth.bundles.parse_group_aliases`. Aliases may only name bundles, never
+ * capabilities, so deployment configuration cannot become a permission table:
+ * an entry whose target is not a known bundle is dropped (and warned), and
+ * malformed JSON yields an empty map rather than a silently different one.
+ */
+export function parseGroupAliases(raw: string | null | undefined): Record<string, string> {
+	if (!raw || !raw.trim()) return {};
+
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(raw);
+	} catch (e) {
+		console.error(`[ds-portal] group alias map is not valid JSON — no aliases applied: ${e}`);
+		return {};
+	}
+	if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+		console.error('[ds-portal] group alias map must be a JSON object — no aliases applied.');
+		return {};
+	}
+
+	const aliases: Record<string, string> = {};
+	for (const [foreign, target] of Object.entries(parsed as Record<string, unknown>)) {
+		if (typeof target !== 'string') {
+			console.error(`[ds-portal] ignoring non-string alias entry ${foreign} -> ${String(target)}`);
+			continue;
+		}
+		if (!(target in ROLE_BUNDLES)) {
+			console.error(
+				`[ds-portal] ignoring alias ${foreign} -> ${target}: not a role bundle. ` +
+					`An alias may only name a bundle (${Object.keys(ROLE_BUNDLES).sort().join(', ')}).`,
+			);
+			continue;
+		}
+		aliases[foreign] = target;
+	}
+	return aliases;
 }

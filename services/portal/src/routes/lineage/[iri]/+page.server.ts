@@ -1,5 +1,5 @@
 import type { PageServerLoad } from './$types';
-import { getLineage, type ProvNode, type LineageEdge } from '$lib/server/provenance';
+import { getLineage, classifyLineageGraph } from '$lib/server/provenance';
 
 export const load: PageServerLoad = async ({ params, url, locals }) => {
 	const session = await locals.auth();
@@ -10,35 +10,10 @@ export const load: PageServerLoad = async ({ params, url, locals }) => {
 
 	try {
 		const lineage = await getLineage(iri, { direction, maxDepth }, token);
-		const graph = lineage['@graph'] ?? [];
+		const graph = (lineage['@graph'] ?? []) as Array<Record<string, unknown>>;
+		const graphData = classifyLineageGraph(graph);
 
-		// Split nodes and edges
-		const nodes: { id: string; label: string; type: string }[] = [];
-		const edges: { id: string; source: string; target: string; label: string }[] = [];
-
-		for (const item of graph) {
-			const i = item as Record<string, unknown>;
-			if (i['subject'] && i['object']) {
-				// It's an edge
-				const edge = i as unknown as LineageEdge;
-				edges.push({
-					id: edge['@id'],
-					source: edge['subject'],
-					target: edge['object'],
-					label: String(edge['@type']).split(':').pop() ?? '',
-				});
-			} else {
-				// It's a node
-				const node = i as unknown as ProvNode;
-				nodes.push({
-					id: node['@id'],
-					label: String(node['prov:label'] ?? node['@id'].split('/').pop() ?? node['@id']),
-					type: String(node['@type']).split(':').pop() ?? 'Entity',
-				});
-			}
-		}
-
-		return { iri, graphData: { nodes, edges }, depth: lineage.depth, error: null };
+		return { iri, graphData, depth: lineage.depth, error: null };
 	} catch (e) {
 		return {
 			iri,

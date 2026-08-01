@@ -1,4 +1,5 @@
 import { env } from '$env/dynamic/private';
+import { resolveIssuer } from './token';
 
 function identityRegistryUrl(): string {
 	return env.IDENTITY_REGISTRY_URL ?? 'http://172.17.0.1:30005';
@@ -16,7 +17,10 @@ async function getServiceToken(): Promise<string> {
 		return cachedToken.token;
 	}
 
-	const issuer = env.KEYCLOAK_ISSUER_URL ?? 'http://keycloak:9080/realms/dataspaces';
+	// No compose-shaped fallback: an unset issuer under Helm used to default to a
+	// dev URL, so the service token was requested from the wrong realm and every
+	// VC-gated route silently bounced to `/`. Fail loudly instead.
+	const issuer = resolveIssuer();
 	const tokenUrl = `${issuer}/protocol/openid-connect/token`;
 	const clientId = env.PORTAL_SERVICE_CLIENT_ID ?? DEFAULT_SERVICE_CLIENT;
 	const clientSecret = env.PORTAL_SERVICE_CLIENT_SECRET ?? DEFAULT_SERVICE_CLIENT;

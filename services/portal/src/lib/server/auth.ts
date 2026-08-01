@@ -15,11 +15,11 @@
 import { error, redirect } from '@sveltejs/kit';
 import type { DsSession as Session } from '../../app.d.ts';
 import { expandBundles } from './bundles.generated';
+import { groupAliases } from './aliases';
 
 export interface ServerRoles {
 	isAdmin: boolean;
 	isDatasetAdmin: boolean;
-	canQuery: boolean;
 	organizations: string[];
 }
 
@@ -76,14 +76,20 @@ function extractOrganizations(payload: Record<string, unknown>): string[] {
 }
 
 /**
- * Every permission-shaped authority the token carries: realm roles, any client's
- * roles, and the **expansion** of realm and org groups through the role bundles.
- * The backend authorizes on exactly this union (`Principal.authority`, which
- * expands the same table, plus the scope claim).
+ * Every permission-shaped authority a **user** token carries: realm roles, any
+ * client's roles, and the expansion of realm and org groups through the role
+ * bundles (with Layer B aliases applied first).
+ *
+ * The raw `scope` claim is deliberately **not** included. `ds_auth`
+ * (`Principal.authority`) authorises a *service* on its scopes and a *user* on
+ * expanded groups — never both: a user's scope claim is OpenID plumbing
+ * (`openid profile email`) plus whatever default client scopes the realm
+ * attaches, not the user's authority. Folding it in here let a token gate the UI
+ * on a capability the API would refuse to read from a user's scope, which is the
+ * one drift direction that shows buttons that 403.
  */
 function extractGrants(payload: Record<string, unknown>): string[] {
-	const scopes = ((payload?.scope as string) ?? '').split(' ').filter(Boolean);
-	return [...extractRoles(payload), ...expandBundles(extractGroups(payload)), ...scopes];
+	return [...extractRoles(payload), ...expandBundles(extractGroups(payload), groupAliases())];
 }
 
 /**
@@ -159,43 +165,40 @@ function decodeToken(accessToken: string): Record<string, unknown> | null {
 }
 
 export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
-	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
+	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
 
 	try {
 		const payload = decodeToken(accessToken);
-		if (!payload) return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
+		if (!payload) return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
 
 		// Dual-sourced authority: roles (realm + any client) AND expanded groups.
 		const authorities = new Set<string>([
 			...extractRoles(payload),
-			...expandBundles(extractGroups(payload)),
+			...expandBundles(extractGroups(payload), groupAliases()),
 		]);
-		const scopes = ((payload?.scope as string) ?? '').split(' ');
 
+		// Only realm objects that exist are named here. The `admin` client role,
+		// the `ds-portal` client that would carry it, and the `dataspaces.query`
+		// scope were all removed from `clients.yaml` long ago — matching on them was
+		// dead vocabulary that implied a realm shape the deployment does not have.
 		const isAdmin =
-			authorities.has('ds-admin') || // realm role
-			authorities.has('admin') || // ds-portal client role
+			authorities.has('ds-admin') || // realm role / bundle
 			authorities.has('connector.admin'); // group (backend permission)
 		const isDatasetAdmin =
 			isAdmin ||
 			authorities.has('dataset.admin') ||
 			authorities.has('connector.provider.write') ||
 			authorities.has('connector.provider.read');
-		const canQuery =
-			scopes.includes('dataspaces.query') ||
-			scopes.includes('dataset.query') ||
-			authorities.has('dataset.query');
 
 		const organizations = extractOrganizations(payload);
 
-		return { isAdmin, isDatasetAdmin, canQuery, organizations };
+		return { isAdmin, isDatasetAdmin, organizations };
 	} catch {
-		return { isAdmin: false, isDatasetAdmin: false, canQuery: false, organizations: [] };
+		return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
 	}
 }
 
 export function getConsumerSubjectId(session: Session): string {
-	if (session.userDid && session.userVcJws) return session.userDid;
 	return session.userDid ?? '';
 }
 
@@ -230,11 +233,30 @@ export function vcJwsForRole(
 
 export async function requireAuth(event: { locals: App.Locals; url: URL }) {
 	const session = await event.locals.auth();
-	if (!session?.user || session.error === 'RefreshTokenError') {
+	if (!session?.user) {
 		throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(event.url.pathname)}`);
 	}
 	return session;
 }
+
+/**
+ * The grants that reach **any** page in the `/admin` section.
+ *
+ * The section is not one role: a full admin (`connector.admin`, and
+ * `identity-registry.admin` which satisfies the `identity-registry.*` entries
+ * below via the superset rule) manages everything, while an
+ * `ds-onboarding-operator` holds only the organisation and agreement grants and
+ * must still reach `/admin/onboarding` and `/admin/agreements`. The layout gates
+ * on this union so it does not refuse the operator before each page's own
+ * `requireGrant` runs; a plain member (`catalog.read`) still holds none of these
+ * and is refused. `ds-participant-admin` (a provider) deliberately holds none
+ * either, so the section stays operator/admin-only exactly as before.
+ */
+export const ADMIN_SECTION_GRANTS = [
+	'connector.admin',
+	'identity-registry.organizations.read',
+	'identity-registry.agreements.read',
+] as const;
 
 export async function requireAdmin(event: { locals: App.Locals; url: URL }) {
 	const session = await requireAuth(event);
@@ -285,6 +307,33 @@ export async function requireConsumer(event: { locals: App.Locals; url: URL }) {
 		roles,
 		subjectId,
 		userVcRole: 'ConsumerUser',
+		vcJws: vcJwsForRole(session, 'ConsumerUser'),
+	};
+}
+
+/**
+ * The consumer guard for a standalone `+server.ts` endpoint.
+ *
+ * SvelteKit does **not** run `+layout.server.ts` for `+server.ts` handlers, so
+ * `requireConsumer` on the consumer layout guards the pages but none of these
+ * API routes — each must guard itself. `requireConsumer` also fails with a
+ * `redirect(303,'/')`, which is wrong for a `fetch` caller: it would silently
+ * follow to an HTML page. This fails with a JSON `error` the caller can read —
+ * 401 when there is no session, 403 when the session is not a ConsumerUser.
+ */
+export async function requireConsumerApi(event: { locals: App.Locals }) {
+	const session = await event.locals.auth();
+	if (!session?.user) {
+		throw error(401, 'Authentication required.');
+	}
+	const subjectId = getConsumerSubjectId(session);
+	if (!subjectId || !hasVcRole(session, 'ConsumerUser')) {
+		throw error(403, 'A ConsumerUser credential is required to use the consumer data plane.');
+	}
+	return {
+		session,
+		token: session.accessToken ?? '',
+		subjectId,
 		vcJws: vcJwsForRole(session, 'ConsumerUser'),
 	};
 }

@@ -310,9 +310,3 @@ export interface ContractAgreement {
 	terminated_at?: string | null;
 	termination_reason?: string | null;
 }
-
-// ── Health ────────────────────────────────────────────────────────────────────
-
-export async function getHealth(): Promise<{ status: string; version: string }> {
-	return apiFetch<{ status: string; version: string }>(connectorUrl('/health'));
-}

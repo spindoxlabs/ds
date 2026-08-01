@@ -5,7 +5,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { getConsumerSubjectId, vcJwsForRole } from '$lib/server/auth';
+import { requireConsumerApi } from '$lib/server/auth';
 import { subjectCredentialHeaders } from '$lib/server/connector';
 
 async function connectorErrorMessage(res: Response): Promise<string> {
@@ -19,9 +19,7 @@ async function connectorErrorMessage(res: Response): Promise<string> {
 }
 
 export const POST: RequestHandler = async ({ request, locals }) => {
-	const session = await locals.auth();
-	const token = session?.accessToken ?? '';
-	const subjectId = session ? getConsumerSubjectId(session) : '';
+	const { token, subjectId, vcJws } = await requireConsumerApi({ locals });
 	const body = await request.json();
 	const connectorUrl = env.CONSUMER_CONNECTOR_URL ?? 'http://172.17.0.1:31001';
 	const contractAgreementId =
@@ -59,7 +57,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		method: 'POST',
 		headers: {
 			'Content-Type': 'application/json',
-			...subjectCredentialHeaders(subjectId, vcJwsForRole(session, 'ConsumerUser')),
+			...subjectCredentialHeaders(subjectId, vcJws),
 			...(token ? { Authorization: `Bearer ${token}` } : {}),
 		},
 		body: JSON.stringify(payload),

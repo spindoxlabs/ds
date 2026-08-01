@@ -1,10 +1,11 @@
 <script lang="ts">
   import '../app.css';
   import { page } from '$app/stores';
-  import { derivePersona } from '$lib/stores/session';
 
   let { data, children } = $props();
-  const persona = $derived(derivePersona(data.session));
+  // Persona is computed server-side (src/lib/server/persona.ts) so the nav
+  // matches the route guards; here it is display data like any other.
+  const persona = $derived(data.persona);
 
   // Roles are additive, not exclusive: one person can be both a data subject and
   // a consumer user, and provider comes from Keycloak groups on a separate axis
@@ -107,7 +108,6 @@
   <footer class="border-t border-gray-200 bg-white">
     <div class="max-w-7xl mx-auto px-4 sm:px-6 py-3 text-xs text-gray-400 flex items-center justify-between">
       <span>Dataspaces Platform · DSSC Blueprint BB07</span>
-      <a href="/api/connector/ns/policy" class="hover:text-gray-600">ODRL Vocabulary</a>
     </div>
   </footer>
 </div>

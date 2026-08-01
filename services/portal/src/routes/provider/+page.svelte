@@ -9,7 +9,6 @@
   const sections = [
     { href: '/provider/assets', title: 'Datasets', hint: 'What is published, and its sync state' },
     { href: '/provider/contracts', title: 'Agreements', hint: 'Active and past contracts' },
-    { href: '/provider/governance', title: 'Governance', hint: 'Policy configuration and sync' },
     { href: '/provider/requests', title: 'Consent requests', hint: 'Which decision is holding up which negotiation' },
     { href: '/provider/activity', title: 'Activity', hint: 'What happened to the data you publish' },
   ];
