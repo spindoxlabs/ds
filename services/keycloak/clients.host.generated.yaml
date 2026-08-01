@@ -111,6 +111,7 @@ clients:
   - svc-ds-connector
   - svc-ds-provenance
   - svc-ds-federated-catalog
+  service_account_enabled: true
 - client_id: svc-ds-connector
   name: Dataspace Connector
   secret: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
@@ -140,6 +141,7 @@ clients:
   extra_audiences:
   - svc-ds-identity-registry
   - svc-ds-connector
+  service_account_enabled: true
 - client_id: svc-ds-dataset-api
   name: Dataspace Dataset API
   secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}

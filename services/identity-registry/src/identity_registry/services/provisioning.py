@@ -30,11 +30,36 @@ from .crypto import hash_sts_secret
 # The grants a third-party connector needs against this dataspace. Deliberately
 # the same set `svc-ds-connector` holds in `services/keycloak/clients.yaml` — a
 # participant's connector is not a more privileged thing than ours.
+#
+# This is a **copy**, and it cannot be anything else at runtime: `clients.yaml`
+# is not in the image (the Dockerfile ships `src/` and `alembic/` only), and
+# this list is read by the HTTP promotion path inside a container. So the
+# authority file cannot be consulted here — but the copy is pinned to it by
+# `tests/test_provisioning_scopes.py`, which fails on any divergence.
+#
+# It had already drifted once, silently and in the direction that matters: the
+# connector pass added `identity-registry.credentials.read` to
+# `svc-ds-connector` (a sharing offer may admit by credential type, and
+# `circle.py` reads it), and this list was not updated. Every third-party
+# connector provisioned in between got a client whose credential check 403s.
 CONNECTOR_SCOPES = [
     "identity-registry.read",
     "identity-registry.membership.read",
+    "identity-registry.credentials.read",
     "provenance.write",
     "connector.consent.read",
+]
+
+# The services a third-party connector's token must be accepted by. Every ds
+# service verifies `aud`, so a client created without these mappers holds a
+# token that is refused everywhere it is presented — it authenticates and then
+# fails at each call, which reads like a permission problem and is not one.
+# Same source and same pinning as the scopes above.
+CONNECTOR_AUDIENCES = [
+    "svc-ds-identity-registry",
+    "svc-ds-provenance",
+    # The counterparty's connector — the audience of GET /consent/pending.
+    "svc-ds-connector",
 ]
 
 

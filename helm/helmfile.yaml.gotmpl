@@ -93,7 +93,7 @@ releases:
             organizationsConfigMap: {{ .Values.global.keycloak.sync.organizationsConfigMap | quote }}
         secrets:
           identityRegistryEncryptionKey: {{ .Values.secrets.identityRegistryEncryptionKey | quote }}
-          keycloakClientSecret: {{ .Values.secrets.keycloakClientSecret | quote }}
+          serviceClientSecret: {{ .Values.secrets.svcDsIdentityRegistrySecret | quote }}
           dbPassword: {{ .Values.secrets.postgres.identity_registry | quote }}
           keycloakAdminUsername: {{ .Values.secrets.keycloakAdminUsername | quote }}
           keycloakAdminPassword: {{ .Values.secrets.keycloakAdminPassword | quote }}

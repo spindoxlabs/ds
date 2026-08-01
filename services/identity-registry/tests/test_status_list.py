@@ -4,7 +4,6 @@ from identity_registry.services.status_list import (
     decode_bitstring,
     encode_bitstring,
     get_bit,
-    next_available_index,
     set_bit,
 )
 
@@ -39,13 +38,19 @@ def test_encode_decode_roundtrip():
     assert not get_bit(decoded, 41)
 
 
-def test_next_available_index():
-    bs = create_bitstring()
-    assert next_available_index(bs) == 0
-    bs = set_bit(bs, 0)
-    assert next_available_index(bs) == 1
-    bs = set_bit(bs, 1)
-    assert next_available_index(bs) == 2
+def test_the_module_exposes_no_bitstring_scanning_allocator():
+    """`next_available_index(bitstring)` used to live here and was tested here.
+
+    It was the mechanism of both P0 defects: the register's first unset bit
+    cannot allocate, because leaving the bit clear never advances it and
+    setting it publishes the credential revoked. Allocation is now a counter
+    (`allocate_status_list_index`), and this asserts the old shape has not
+    quietly come back — a scanning helper is the sort of thing that gets
+    re-added as a convenience.
+    """
+    import identity_registry.services.status_list as sl
+
+    assert not hasattr(sl, "next_available_index")
 
 
 def test_build_status_list_credential():

@@ -125,6 +125,36 @@ helm -n ds-provider rollback ds-connector-provider <revision>
     Alembic has no automatic downgrade path here. Treat a schema change as forward-only and roll
     forward with a fix.
 
+### Upgrading past identity-registry schema 0011 — credentials may need re-issuing
+
+Before 0011, the identity registry allocated a credential's StatusList index by scanning the
+**revocation register** for its first unset bit. That register records which credentials are
+revoked, so it cannot also allocate: four issuance paths left the bit clear, which meant the
+scan never advanced and consecutive credentials were issued the *same* index; two set it, which
+allocated correctly but published those credentials revoked from birth.
+
+The consequence for a deployment carrying credentials issued before 0011: **revoking any one of
+a colliding group revokes all of them.**
+
+The 0011 migration fixes allocation and prints any collisions it finds, but it cannot repair
+them, and it does not block the upgrade — refusing would only strand you on the code that
+causes the problem. `status_list_index` is inside the **signed** credential JSON, so changing it
+invalidates the signature. Affected credentials can only be **re-issued**.
+
+Check any environment before and after upgrading:
+
+```bash
+kubectl -n ds-provider exec deploy/ds-identity-registry -- ir-cli status check-indices
+```
+
+It exits non-zero and names every affected credential and subject when there are collisions, so
+it can gate a deployment. The service also logs the same summary on every start.
+
+Re-issue the credentials it names through the normal path for their type — `ir-cli credential
+issue-membership`, `issue-data-subject`, or the organisation onboarding chain — and revoke the
+old ones **after** the replacements are distributed, since revoking first takes down the whole
+colliding group. In development the whole remedy is `ir-cli bootstrap`.
+
 ## Adding a participant
 
 Four edits, all values-only, provided DNS already has a wildcard record:

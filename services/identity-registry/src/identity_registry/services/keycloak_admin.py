@@ -155,6 +155,13 @@ class KeycloakAdminClient:
         Idempotent: an existing client is reused and its secret read back, so
         re-running promotion does not invalidate credentials already handed out.
         Rotation is a separate, explicit act.
+
+        `audiences` is applied on every call, not only at creation. Scopes alone
+        are not enough: every ds service verifies `aud`, so a client that holds
+        the right grants and no audience mapper authenticates successfully and
+        is then refused by each service it calls. Re-applying also repairs a
+        client created before the mappers existed, which is the whole
+        population provisioned until now.
         """
         existing = await self._request(
             "GET", "/clients", params={"clientId": client_id}
@@ -183,10 +190,50 @@ class KeycloakAdminClient:
             raise RuntimeError(f"Keycloak client {client_id} could not be created")
 
         uuid = existing[0]["id"]
+        await self._ensure_audience_mappers(uuid, audiences or [])
         secret = await self._request("GET", f"/clients/{uuid}/client-secret")
         if not secret or not secret.get("value"):
             secret = await self._request("POST", f"/clients/{uuid}/client-secret")
         return str((secret or {}).get("value", ""))
+
+    async def _ensure_audience_mappers(self, uuid: str, audiences: list[str]) -> None:
+        """Add one `oidc-audience-mapper` per audience, skipping those present.
+
+        Existing mappers are read first rather than relying on the 409 that
+        `_request` swallows: Keycloak answers 409 on a duplicate *name*, and a
+        mapper renamed by hand would otherwise be added a second time under a
+        new name, putting the audience in the token twice.
+        """
+        if not audiences:
+            return
+
+        current = (
+            await self._request("GET", f"/clients/{uuid}/protocol-mappers/models")
+            or []
+        )
+        have = {
+            (m.get("config") or {}).get("included.client.audience")
+            for m in current
+            if m.get("protocolMapper") == "oidc-audience-mapper"
+        }
+
+        for audience in audiences:
+            if audience in have:
+                continue
+            await self._request(
+                "POST",
+                f"/clients/{uuid}/protocol-mappers/models",
+                {
+                    "name": f"aud-{audience}",
+                    "protocol": "openid-connect",
+                    "protocolMapper": "oidc-audience-mapper",
+                    "config": {
+                        "included.client.audience": audience,
+                        "access.token.claim": "true",
+                        "id.token.claim": "false",
+                    },
+                },
+            )
 
     async def rotate_service_client_secret(self, client_id: str) -> str:
         """Issue a new secret, invalidating the previous one."""

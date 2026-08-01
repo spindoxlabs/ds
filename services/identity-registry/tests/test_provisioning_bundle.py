@@ -285,9 +285,12 @@ async def test_owning_posture_provisions_the_client(
         async def authenticate(cls, *a, **k):
             return cls()
 
-        async def ensure_service_client(self, client_id, *, name, scopes):
+        async def ensure_service_client(
+            self, client_id, *, name, scopes, audiences=None
+        ):
             created["client_id"] = client_id
             created["scopes"] = scopes
+            created["audiences"] = audiences
             return "provisioned-secret"
 
         async def aclose(self):

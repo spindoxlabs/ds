@@ -88,13 +88,26 @@ Rules that are easy to break:
 | New credential type | `services/vc.py` + `api/v1/admin.py` + `cli/main.py` |
 | DID document shape | `services/did.py` |
 | SI token claims / VP format | `services/token.py`, `services/presentation.py` |
-| StatusList behaviour | `services/status_list.py` |
+| StatusList behaviour | `services/status_list.py` — allocate with `allocate_status_list_index`, revoke with `revoke_status_list_index`. **Never derive an index from the bitstring**; see below |
 | Onboarding logic or a gate | `services/org_onboarding.py` — never in one caller only |
 | Service agreement | `seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 | Keycloak realm interaction | `services/keycloak_{admin,merge,mirror}.py` |
 | DB table | `db/models.py` + `task db:revision MESSAGE=...` |
 
 `task -d services/identity-registry run|debug|test|lint|type-check|db:migrate`.
+
+## The StatusList register is not an allocator
+
+`status_lists.bitstring` answers "is credential *n* revoked". `status_lists.next_index`
+answers "what is the next index". Conflating them is the defect this service shipped: the
+first unset bit does not move unless issuance sets it, so four call sites collided on one
+index (revoking any one revoked all of them) and two set it and published credentials revoked
+from birth. Both at once, which is why it looked intermittent.
+
+Allocation goes through `allocate_status_list_index` (counter, row-locked, never reuses);
+`revoke_status_list_index` is the only thing that may set a bit. The index is inside the
+**signed** credential, so a collision is not repairable in place — `ir-cli status
+check-indices` reports them and re-issuance is the only fix.
 
 ## Realm groups vs client scopes
 

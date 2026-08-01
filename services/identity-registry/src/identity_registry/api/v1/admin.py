@@ -15,7 +15,6 @@ from ...db.models import (
     Key,
     KeycloakMapping,
     Participant,
-    StatusList,
 )
 from ...dependencies import (
     get_db,
@@ -55,9 +54,8 @@ from ...services.crypto import (
 )
 from ...services.did import build_did_document
 from ...services.status_list import (
-    create_bitstring,
-    next_available_index,
-    set_bit,
+    allocate_status_list_index,
+    revoke_status_list_index,
 )
 from ...services.vc import (
     build_data_subject_credential,
@@ -68,22 +66,6 @@ from ...services.vc import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-async def _get_or_create_status_list(
-    db: AsyncSession, list_id: str = "1"
-) -> StatusList:
-    result = await db.execute(select(StatusList).where(StatusList.id == list_id))
-    sl = result.scalar_one_or_none()
-    if not sl:
-        sl = StatusList(
-            id=list_id,
-            purpose="revocation",
-            bitstring=create_bitstring(),
-        )
-        db.add(sl)
-        await db.flush()
-    return sl
 
 
 async def _get_trust_anchor_key(db: AsyncSession, settings: Settings) -> Key:
@@ -168,9 +150,11 @@ async def list_participants(
     active_only: bool = Query(False),
     db: AsyncSession = Depends(get_db),
     principal: Principal = Depends(require_admin_or_read_scope),
-    settings: Settings = Depends(get_settings_dep),
 ):
-    has_admin = principal.grants(settings.admin_scope)
+    # The literal, matching every guard in `dependencies.py`. This used to read
+    # a `Settings` field no guard consulted, so an override would have widened
+    # what this route discloses while leaving the guards on the old name.
+    has_admin = principal.grants("identity-registry.admin")
 
     stmt = select(Participant)
     if active_only or not has_admin:
@@ -307,9 +291,7 @@ async def delete_participant(
         cred.status = "revoked"
         cred.revoked_at = datetime.now(UTC)
         if cred.status_list_index is not None:
-            sl = await _get_or_create_status_list(db)
-            sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-            sl.updated_at = datetime.now(UTC)
+            await revoke_status_list_index(db, cred.status_list_index)
 
     await db.commit()
 
@@ -419,9 +401,7 @@ async def delete_did(
         cred.status = "revoked"
         cred.revoked_at = datetime.now(UTC)
         if cred.status_list_index is not None:
-            sl = await _get_or_create_status_list(db)
-            sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-            sl.updated_at = datetime.now(UTC)
+            await revoke_status_list_index(db, cred.status_list_index)
 
     await db.commit()
 
@@ -453,8 +433,7 @@ async def issue_membership_credential(
         settings.max_credential_ttl_days,
     )
 
-    sl = await _get_or_create_status_list(db)
-    sl_index = next_available_index(sl.bitstring)
+    sl_index = await allocate_status_list_index(db)
 
     cred_id = generate_credential_id()
     vc = build_membership_credential(
@@ -539,8 +518,7 @@ async def issue_data_subject_credential(
         db.add(did_record)
         await db.flush()
 
-    sl = await _get_or_create_status_list(db)
-    sl_index = next_available_index(sl.bitstring)
+    sl_index = await allocate_status_list_index(db)
 
     cred_id = generate_credential_id()
     vc = build_data_subject_credential(
@@ -636,9 +614,7 @@ async def revoke_credential(
     cred.revoked_at = datetime.now(UTC)
 
     if cred.status_list_index is not None:
-        sl = await _get_or_create_status_list(db)
-        sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-        sl.updated_at = datetime.now(UTC)
+        await revoke_status_list_index(db, cred.status_list_index)
 
     await db.commit()
 

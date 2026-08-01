@@ -501,6 +501,7 @@ async def generate_provisioning_bundle(
                 keycloak_client_id,
                 name=f"ds connector — {owner.name or alias}",
                 scopes=provisioning.CONNECTOR_SCOPES,
+                audiences=provisioning.CONNECTOR_AUDIENCES,
             )
         except Exception as exc:  # noqa: BLE001 — surfaced to the operator
             raise HTTPException(

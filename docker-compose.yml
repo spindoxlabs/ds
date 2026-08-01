@@ -168,7 +168,7 @@ services:
         ir-cli credential issue-data-subject \
           --subject-id consumer-user --role ConsumerUser \
           --linked-participant-did did:web:consumer.dataspaces.localhost
-        ir-cli keycloak sync \
+        ir-cli keycloak map-user \
           --did did:web:users.dataspaces.localhost:consumer-user \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000002 \
@@ -176,7 +176,7 @@ services:
         ir-cli credential issue-data-subject \
           --subject-id data-subject --role DataSubject \
           --linked-participant-did did:web:provider.dataspaces.localhost
-        ir-cli keycloak sync \
+        ir-cli keycloak map-user \
           --did did:web:users.dataspaces.localhost:data-subject \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000004 \
@@ -192,7 +192,7 @@ services:
         ir-cli credential issue-data-subject \
           --subject-id dual-user --role ConsumerUser \
           --linked-participant-did did:web:consumer.dataspaces.localhost
-        ir-cli keycloak sync \
+        ir-cli keycloak map-user \
           --did did:web:users.dataspaces.localhost:dual-user \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000005 \

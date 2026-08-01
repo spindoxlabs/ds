@@ -30,7 +30,10 @@ from ..services.crypto import (
     generate_key_pair,
     hash_sts_secret,
 )
-from ..services.status_list import create_bitstring, next_available_index, set_bit
+from ..services.status_list import (
+    allocate_status_list_index,
+    revoke_status_list_index,
+)
 from ..services.vc import build_membership_credential, sign_credential
 
 app = typer.Typer(name="ir-cli", help="Identity Registry CLI")
@@ -205,26 +208,13 @@ def participant_add(
             ta_key = ta_key_result.scalar_one_or_none()
 
             if ta_key:
-                sl_result = await session.execute(
-                    select(StatusList).where(StatusList.id == "1")
-                )
-                sl = sl_result.scalar_one_or_none()
-                if not sl:
-                    sl = StatusList(
-                        id="1",
-                        purpose="revocation",
-                        bitstring=create_bitstring(),
-                    )
-                    session.add(sl)
-                    await session.flush()
-
                 status_list_url = (
                     f"https://{settings.trust_anchor_domain}/status/1"
                 )
                 ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
 
                 for r in roles_list:
-                    sl_index = next_available_index(sl.bitstring)
+                    sl_index = await allocate_status_list_index(session)
                     cred_id = generate_credential_id()
 
                     vc = build_membership_credential(
@@ -250,7 +240,6 @@ def participant_add(
                         expires_at=datetime.now(UTC) + timedelta(days=365),
                     )
                     session.add(cred)
-                    sl.bitstring = set_bit(sl.bitstring, sl_index)
                     typer.echo(f"  Issued MembershipCredential ({r.capitalize()}): {cred_id}")
 
             await session.commit()
@@ -337,16 +326,7 @@ def credential_issue_membership(
                 typer.echo("Trust anchor not bootstrapped. Run: ir-cli bootstrap", err=True)
                 raise typer.Exit(1)
 
-            sl_result = await session.execute(
-                select(StatusList).where(StatusList.id == "1")
-            )
-            sl = sl_result.scalar_one_or_none()
-            if not sl:
-                sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
-                session.add(sl)
-                await session.flush()
-
-            sl_index = next_available_index(sl.bitstring)
+            sl_index = await allocate_status_list_index(session)
             cred_id = generate_credential_id()
             status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
 
@@ -449,16 +429,7 @@ def credential_issue_data_subject(
                 session.add(did_record)
                 await session.flush()
 
-            sl_result = await session.execute(
-                select(StatusList).where(StatusList.id == "1")
-            )
-            sl = sl_result.scalar_one_or_none()
-            if not sl:
-                sl = StatusList(id="1", purpose="revocation", bitstring=create_bitstring())
-                session.add(sl)
-                await session.flush()
-
-            sl_index = next_available_index(sl.bitstring)
+            sl_index = await allocate_status_list_index(session)
             cred_id = generate_credential_id()
 
             from ..services.vc import build_data_subject_credential
@@ -503,8 +474,6 @@ def credential_revoke(
         factory = await _ensure_db()
         from sqlalchemy import select
 
-        from ..services.status_list import set_bit
-
         async with factory() as session:
             result = await session.execute(
                 select(Credential).where(Credential.id == credential_id)
@@ -517,13 +486,7 @@ def credential_revoke(
             cred.status = "revoked"
             cred.revoked_at = datetime.now(UTC)
             if cred.status_list_index is not None:
-                sl_result = await session.execute(
-                    select(StatusList).where(StatusList.id == "1")
-                )
-                sl = sl_result.scalar_one_or_none()
-                if sl:
-                    sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-                    sl.updated_at = datetime.now(UTC)
+                await revoke_status_list_index(session, cred.status_list_index)
             await session.commit()
 
             typer.echo(f"Credential revoked: {credential_id}")
@@ -637,6 +600,54 @@ def status_export():
                 typer.echo(json.dumps(data, indent=2))
 
     _run(_export())
+
+
+@status_app.command("check-indices")
+def status_check_indices():
+    """Report credentials sharing a StatusList index.
+
+    A collision means revoking any one of the group revokes all of them. It is
+    left behind by the pre-0011 allocator, which read the revocation register
+    for a free slot instead of a counter.
+
+    Cannot be repaired in place: the index is inside the signed credential, so
+    correcting it invalidates the signature. Affected credentials must be
+    RE-ISSUED — in dev, re-run `ir-cli bootstrap`.
+
+    Exits non-zero when duplicates are found, so it can gate a deployment.
+    """
+
+    async def _check():
+        factory = await _ensure_db()
+
+        from ..services.status_list import find_duplicate_indices
+
+        async with factory() as session:
+            duplicates = await find_duplicate_indices(session)
+
+        if not duplicates:
+            typer.echo("No duplicate StatusList indices.")
+            return
+
+        affected = sum(len(d.credential_ids) for d in duplicates)
+        noun = "index" if len(duplicates) == 1 else "indices"
+        typer.echo(
+            f"{affected} credentials share {len(duplicates)} StatusList {noun}.",
+            err=True,
+        )
+        for d in duplicates:
+            typer.echo(f"  {d}", err=True)
+            for cred_id in d.credential_ids:
+                typer.echo(f"    {cred_id}", err=True)
+        typer.echo(
+            "\nRevoking one of a group revokes the whole group. The index is "
+            "inside the\nsigned credential and cannot be corrected in place — "
+            "these must be re-issued.\nIn dev: ir-cli bootstrap",
+            err=True,
+        )
+        raise typer.Exit(1)
+
+    _run(_check())
 
 
 @keycloak_app.command("org-sync")
@@ -795,8 +806,8 @@ def keycloak_mirror(
     typer.echo(str(mirror.TARGET))
 
 
-@keycloak_app.command("sync")
-def keycloak_sync(
+@keycloak_app.command("map-user")
+def keycloak_map_user(
     did: str = typer.Option(..., help="User DID to map"),
     realm: str = typer.Option("dataspaces", help="Keycloak realm name"),
     user_id: str = typer.Option(..., help="Keycloak user UUID"),
@@ -810,7 +821,15 @@ def keycloak_sync(
         ),
     ),
 ):
-    """Create or update a Keycloak-to-DID mapping (idempotent)."""
+    """Create or update a Keycloak-to-DID mapping (idempotent).
+
+    Local bookkeeping only — this writes a `keycloak_mappings` row and never
+    contacts Keycloak. It was called `keycloak sync`, which is the name of a
+    real realm-syncing command (`celine-policies keycloak sync`) invoked a few
+    lines away in the same compose bootstrap; a reader had every reason to
+    believe this one applied something to a realm, and nothing here says
+    otherwise. Realm writes live in `services/keycloak_admin.py`.
+    """
 
     async def _sync():
         factory = await _ensure_db()

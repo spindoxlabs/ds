@@ -396,6 +396,17 @@ class StatusList(Base):
         String(32), nullable=False, default="revocation"
     )
     bitstring: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    # The allocator. `bitstring` is a *revocation* register and must never
+    # be read to find a free slot: its first unset bit does not move on
+    # issuance, so every credential would take the same index, and setting
+    # the bit to advance it would publish the credential revoked. See
+    # services/status_list.allocate_status_list_index.
+    next_index: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    # Changes when the register changes — that is, on revocation only. Issuance
+    # moves `next_index` and leaves this alone, because the published
+    # StatusList credential is unaffected by it.
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

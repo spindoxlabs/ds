@@ -47,11 +47,16 @@ async def lifespan(app: FastAPI):
         "Generate with: python -c 'import secrets;print(secrets.token_urlsafe(32))'. "
         "Losing this key means losing every stored DID private key.",
     )
+    # This service's own outbound credential — the one it actually
+    # authenticates with. It ships a dev default equal to the client id and was
+    # the only such secret with no guard. (`KEYCLOAK_CLIENT_SECRET` was guarded
+    # here instead and authenticated nothing; both it and its setting are gone.)
     guard.forbid_default(
-        "KEYCLOAK_CLIENT_SECRET",
-        settings.keycloak_client_secret,
-        {"insecure-dev-secret"},
-        "Set the Keycloak client secret for the identity-registry admin client.",
+        "IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET",
+        settings.service_client_secret,
+        {"svc-ds-identity-registry"},
+        "Set the Keycloak client secret for svc-ds-identity-registry — this is "
+        "the credential the registry presents on its own outbound calls.",
     )
     # `KEYCLOAK_MUTATE=true` means this service holds realm-admin rights and
     # creates clients with them when a participant is promoted. That is correct
@@ -71,7 +76,51 @@ async def lifespan(app: FastAPI):
         )
     guard.enforce()
 
+    await _warn_on_duplicate_status_list_indices()
+
     yield
+
+
+async def _warn_on_duplicate_status_list_indices() -> None:
+    """Surface credentials issued with colliding StatusList indices.
+
+    A warning and never a refusal. The collisions are pre-existing damage from
+    the allocator this service used before schema 0011, and the index lives
+    inside the *signed* credential — so nothing here can repair them, and
+    refusing to start would take a working registry offline over credentials
+    that are already issued. The fix is re-issuance, which is an operator's
+    decision.
+
+    It logs on every start rather than once, because the only action it can
+    prompt is one a person has to take, and a single line in a pod's first log
+    is a line nobody reads.
+    """
+    from .db.engine import get_session_factory
+    from .services.status_list import find_duplicate_indices
+
+    try:
+        async with get_session_factory()() as session:
+            duplicates = await find_duplicate_indices(session)
+    except Exception:  # noqa: BLE001 — diagnostics must never block startup
+        log.exception("could not check StatusList indices for duplicates")
+        return
+
+    if not duplicates:
+        return
+
+    affected = sum(len(d.credential_ids) for d in duplicates)
+    log.warning(
+        "%d credentials share %d StatusList %s — revoking one of a group "
+        "revokes the whole group. These were issued by a pre-0011 allocator and "
+        "cannot be corrected in place (the index is inside the signed "
+        "credential); they must be re-issued. Details: ir-cli status "
+        "check-indices",
+        affected,
+        len(duplicates),
+        "index" if len(duplicates) == 1 else "indices",
+    )
+    for d in duplicates:
+        log.warning("  %s", d)
 
 
 def create_app() -> FastAPI:

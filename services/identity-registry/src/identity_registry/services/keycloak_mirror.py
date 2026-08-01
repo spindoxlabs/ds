@@ -38,7 +38,7 @@ is written down in one place.
     ir-cli keycloak mirror --diff <host clients.yaml>
 
 Lives here rather than in a loose script because `ir-cli` already owns this
-surface — `keycloak sync`, `keycloak org-sync` — is installed in the
+surface — `keycloak map-user`, `keycloak org-sync` — is installed in the
 identity-registry image, and is how the realm provisioning chain is already
 driven. A standalone script had no packaging, no declared dependency and no
 import path a test could use.
@@ -100,6 +100,12 @@ def build_mirror(source: dict) -> dict:
             entry["scopes_prefix"] = client["scopes_prefix"]
         if client.get("extra_audiences"):
             entry["extra_audiences"] = list(client["extra_audiences"])
+        # Without this the host creates the client with no service account, and
+        # every client_credentials grant against it fails. It is declared on
+        # exactly the clients that authenticate as themselves, so dropping it
+        # mirrors a client that cannot do the one thing it exists to do.
+        if client.get("service_account_enabled"):
+            entry["service_account_enabled"] = True
         clients.append(entry)
 
     return {"scopes": scopes, "clients": clients}

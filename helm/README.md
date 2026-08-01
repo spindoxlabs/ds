@@ -104,7 +104,7 @@ reference: [Secrets](../docs/deployment/secrets.md).
 helm dependency update ./charts/ds-identity-registry
 helm lint ./charts/ds-identity-registry \
   --set secrets.identityRegistryEncryptionKey=x \
-  --set secrets.keycloakClientSecret=y --set secrets.dbPassword=z
+  --set secrets.serviceClientSecret=y --set secrets.dbPassword=z
 
 helmfile -e production template                                  # the real gate
 helmfile -e production template | kubeconform -strict -summary   # if installed

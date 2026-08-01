@@ -91,7 +91,6 @@ bootstrap:
 publicUrl: ""
 
 keycloak:
-  clientId: ds-identity-registry
   # Optional realm/organization provisioning against an external Keycloak.
   sync:
     enabled: false
@@ -111,7 +110,7 @@ keycloak:
 # deploying something that starts with a default nobody chose.
 secrets:
   identityRegistryEncryptionKey: ""
-  keycloakClientSecret: ""
+  serviceClientSecret: "" # svc-ds-identity-registry Keycloak secret
   dbUser: "" # defaults to the database name (its owner role)
   dbPassword: ""
   keycloakAdminUsername: ""

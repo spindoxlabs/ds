@@ -44,15 +44,11 @@ it, and the insecure-dev flag is pinned false rather than merely defaulted.
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
 - name: IDENTITY_REGISTRY_OIDC_INSECURE_DEV
   value: "false"
+- name: IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET}
 - name: KEYCLOAK_ADMIN_URL
   value: {{ ((.Values.global).keycloak).adminUrl | quote }}
-- name: KEYCLOAK_CLIENT_ID
-  value: {{ .Values.keycloak.clientId | quote }}
-- name: KEYCLOAK_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef:
-      name: {{ include "ds.secretName" . }}
-      key: KEYCLOAK_CLIENT_SECRET
 {{/*
 Provisioning bundles. A third party configures its own deployment from these, so
 they must be addresses reachable *from outside this cluster*: an in-cluster

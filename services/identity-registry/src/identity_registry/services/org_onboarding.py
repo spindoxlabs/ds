@@ -27,7 +27,6 @@ from ..db.models import (
     OrganizationApplication,
     Owner,
     Participant,
-    StatusList,
 )
 from .crypto import (
     decrypt_private_jwk,
@@ -36,7 +35,7 @@ from .crypto import (
     generate_key_pair,
     hash_sts_secret,
 )
-from .status_list import create_bitstring, next_available_index, set_bit
+from .status_list import allocate_status_list_index, revoke_status_list_index
 from .vc import build_organization_credential, sign_credential
 
 
@@ -51,16 +50,6 @@ class OrgOnboardingError(Exception):
 
 
 # ── Status-list + trust-anchor helpers ────────────────────────────
-
-
-async def get_or_create_status_list(db: AsyncSession, list_id: str = "1") -> StatusList:
-    result = await db.execute(select(StatusList).where(StatusList.id == list_id))
-    sl = result.scalar_one_or_none()
-    if not sl:
-        sl = StatusList(id=list_id, purpose="revocation", bitstring=create_bitstring())
-        db.add(sl)
-        await db.flush()
-    return sl
 
 
 async def get_trust_anchor_key(db: AsyncSession, settings: Settings) -> Key:
@@ -348,8 +337,7 @@ async def issue_organization_credential(
         )
         await db.flush()
 
-    sl = await get_or_create_status_list(db)
-    sl_index = next_available_index(sl.bitstring)
+    sl_index = await allocate_status_list_index(db)
     cred_id = generate_credential_id()
 
     vc = build_organization_credential(
@@ -385,8 +373,6 @@ async def issue_organization_credential(
         expires_at=datetime.now(UTC) + timedelta(days=ttl),
     )
     db.add(cred)
-    sl.bitstring = set_bit(sl.bitstring, sl_index)
-    sl.updated_at = datetime.now(UTC)
     await db.flush()
     return cred
 
@@ -474,9 +460,7 @@ async def _revoke_org_credentials(db: AsyncSession, owner: Owner) -> None:
         cred.status = "revoked"
         cred.revoked_at = now
         if cred.status_list_index is not None:
-            sl = await get_or_create_status_list(db)
-            sl.bitstring = set_bit(sl.bitstring, cred.status_list_index)
-            sl.updated_at = now
+            await revoke_status_list_index(db, cred.status_list_index)
 
 
 async def suspend_owner(db: AsyncSession, owner: Owner) -> None:

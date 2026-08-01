@@ -42,6 +42,17 @@ Revocation is a StatusList2021 bitstring published at `GET /status/{list_id}` �
 necessity, because a verifier that cannot fetch it cannot tell a live credential from a
 revoked one.
 
+**The bitstring records revocations and allocates nothing.** A credential's index comes from
+the `status_lists.next_index` counter, taken under a row lock; a bit is set only when
+something is revoked, and an index is never reused. Reading the register for its first unset
+bit — which is what this service did before schema 0011 — cannot work: leaving the bit clear
+never advances it, so consecutive credentials collide and revoking one revokes them all;
+setting it to make it advance publishes the credential revoked from birth. Both were true at
+once, at different call sites. `ir-cli status check-indices` reports credentials still
+carrying colliding indices; because the index sits inside the signed credential, they can
+only be repaired by re-issuance (see
+[Operations](../deployment/operations.md#upgrading-past-identity-registry-schema-0011-credentials-may-need-re-issuing)).
+
 **DCP endpoints.** `POST /sts/{did}/token` mints a self-issued token for a participant that
 proves the STS client secret; `POST /credentials/{did}/presentations/query` answers a
 presentation query with a signed VP. These replaced what used to be per-participant `ds-sts`
