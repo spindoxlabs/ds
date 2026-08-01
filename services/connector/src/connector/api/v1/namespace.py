@@ -272,7 +272,9 @@ async def vocabulary(slug: str):
     except VocabularyFetchError as exc:
         # The cached file exists and is not readable JSON — the cache is lying
         # about what it holds, which is this deployment's fault, not the caller's.
-        raise HTTPException(500, f"Vocabulary '{slug}' is cached but unreadable") from exc
+        raise HTTPException(
+            500, f"Vocabulary '{slug}' is cached but unreadable"
+        ) from exc
 
     if document is None:
         raise HTTPException(
