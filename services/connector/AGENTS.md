@@ -22,7 +22,7 @@ Python control plane beside an EDC runtime. One codebase, **two instances** —
 | `/consent/*` | The consent registry |
 | `/consumer/*` | Drives the consumer side of DSP: catalogue → negotiate → transfer → EDR |
 | `/webhooks/*` | Records EDC negotiation and transfer lifecycle |
-| `/ns/*` | Public vocabularies — ODRL profile, sharing offers |
+| `/ns/*` | Public vocabularies — the ODRL profile and sharing offers (**policy**), plus cached SAREF/CIM-style definitions (**semantic**). Two layers; see `.agents/facts/services/connector.md` |
 
 Every act emits a PROV-O event through `services/prov_bridge.py`.
 
@@ -36,6 +36,7 @@ Every act emits a PROV-O event through `services/prov_bridge.py`.
 | What a consent write may say | `services/consent_vocabulary.py` — the single validation point; raises 422 |
 | Covered processor vs independent controller | `services/circle.py` |
 | Governance → ODRL | `libs/governance/.../mapper.py` — shared lib, not here |
+| A semantic vocabulary (`/ns/{slug}`) | `governance/vocabularies.yaml`, then `task vocab:fetch`. The models are `libs/governance/.../vocabularies.py` — shared lib |
 | The `/internal/dataplane/authorize` answer's shape | `libs/governance/.../dataplane.py` — shared lib, not here |
 | EDC calls | `libs/ds-edc/.../client.py` — shared lib. Never call EDC from a route |
 | Provenance emission | `services/prov_bridge.py` |

@@ -27,6 +27,7 @@ from urllib.parse import urlparse
 from ..mapper import GovernanceMapper
 from ..models import GovernanceRuleV2
 from ..resolver import GovernanceResolver
+from ..vocabularies import VocabularyRegistry
 
 ACCESS_LEVELS = {"open", "internal", "restricted", "secret"}
 CLASSIFICATIONS = {"pii", "green", "yellow", "red"}
@@ -45,6 +46,7 @@ CHECKS = (
     "owner-resolvable",
     "owner-participant",
     "key-policy",
+    "semantic-model",
 )
 
 
@@ -329,4 +331,56 @@ def check_key_policy(
                 "key-policy",
                 f"Dataset keys matching denied pattern '{pattern}' are exposed: "
                 + ", ".join(matched),
+            )
+
+
+def check_semantic_model(
+    result: ValidationResult,
+    exposed: list[DatasetEvidence],
+    registry: "VocabularyRegistry | None" = None,
+) -> None:
+    """`dcat.conforms_to` — the payload semantic model (rulebook `M-4`, `M-7`).
+
+    Two findings at two severities, and the split is the whole design.
+
+    **A non-absolute URI is an error.** `M-7`: *"an offering's declared model must
+    be resolvable — a bare name is not a model reference"*. `saref4ener` names
+    nothing a consumer can dereference; publishing it into `dct:conformsTo` puts a
+    string that looks like a standard reference into the catalogue and is not one.
+    This is the check that makes `M-7` enforceable rather than merely declared.
+
+    **An absolute URI with no registered local copy is a warning.** An external
+    standard IRI is a legitimate reference whether or not this deployment mirrors
+    it — refusing here would force every participant to cache SAREF before it
+    could say a dataset conforms to SAREF, which inverts what the registry is for.
+    The warning exists because the *usual* cause is a typo or a registry entry
+    somebody forgot, and silence would make those indistinguishable from intent.
+
+    A dataset declaring **no** model is not reported at all. The platform is
+    domain-agnostic and mandates no payload model (`M-6`); requiring one here
+    would be this repository imposing a decision the rulebook gives a deployment.
+    """
+    for item in exposed:
+        declared = item.rule.dcat.conforms_to
+        if not declared:
+            continue
+
+        parsed = urlparse(declared.strip())
+        if parsed.scheme not in ("http", "https") or not parsed.netloc:
+            result.error(
+                "semantic-model",
+                f"dcat.conforms_to '{declared}' is not an absolute http(s) URI — "
+                "a bare name is not a model reference (M-7)",
+                item.key,
+            )
+            continue
+
+        if registry is not None and registry.resolve(declared) is None:
+            result.warning(
+                "semantic-model",
+                f"dcat.conforms_to '{declared}' is not in the vocabulary registry, "
+                "so this participant serves no local copy of it. Register it to "
+                "publish it at /ns/{slug}, or leave it if the IRI is meant to "
+                "resolve elsewhere.",
+                item.key,
             )

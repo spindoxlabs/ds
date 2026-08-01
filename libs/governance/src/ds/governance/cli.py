@@ -33,6 +33,7 @@ from .mapper import GovernanceMapper
 from .models import load_odrl_profile
 from .owners import load_owners_yaml
 from .resolver import GovernanceResolver
+from .vocabularies import load_vocabularies
 
 app = typer.Typer(
     name="ds-governance",
@@ -160,6 +161,12 @@ def validate(
     profile: Path = ProfileOpt,
     overlay: str = OverlayOpt,
     sharing_offers: Path = SharingOffersOpt,
+    vocabularies: Path = typer.Option(
+        None,
+        "--vocabularies",
+        help="Path to vocabularies.yaml. Given, a dataset naming a semantic model "
+        "nobody registered is reported; omitted, registration is not checked at all.",
+    ),
     deny_key: list[str] = DenyKeyOpt,
     output_format: str = typer.Option(
         "text", "--format", help="text | json | markdown"
@@ -185,6 +192,11 @@ def validate(
             deny_key_patterns=list(deny_key or []),
             sharing_offers_path=_resolve_sharing_offers(file, sharing_offers),
             participant_roles=participant_roles,
+            vocabularies=(
+                load_vocabularies(vocabularies, overlay_name=overlay)
+                if vocabularies
+                else None
+            ),
         )
     finally:
         for close in closers:
@@ -343,6 +355,57 @@ def collect_offers(
             )
 
     typer.echo(f"Collected {collected} sharing-offers file(s) into {out_dir}")
+
+
+@app.command("fetch-vocabularies")
+def fetch_vocabularies(
+    file: Path = typer.Option(
+        Path("vocabularies.yaml"), "--file", "-f", help="Path to vocabularies.yaml"
+    ),
+    cache_dir: Path = typer.Option(
+        ..., "--cache-dir", help="Directory the JSON-LD copies are written to"
+    ),
+    # Not `OverlayOpt` — that one's help says `governance.<name>.yaml`, and this
+    # command loads `vocabularies.<name>.yaml`. A shared option object whose text
+    # names the wrong file is worse than a duplicated line.
+    overlay: str | None = typer.Option(
+        None,
+        "--overlay",
+        help="Deployment overlay name (loads vocabularies.<name>.yaml)",
+    ),
+    refresh: bool = typer.Option(
+        False,
+        "--refresh",
+        help="Re-fetch entries that are already cached. Off by default: a cached "
+        "copy is what the deployment is serving, and replacing it changes what a "
+        "running catalogue's dct:conformsTo IRIs resolve to.",
+    ),
+) -> None:
+    """Fill the local cache for every registered semantic vocabulary.
+
+    The connector does this at startup too, and refuses to boot when it cannot —
+    this command exists so an operator can do it deliberately, see the failures
+    all at once, and refresh on purpose rather than by restarting.
+    """
+    from .vocabulary_cache import VocabularyFetchError, ensure_cached, status
+
+    registry = load_vocabularies(file, overlay_name=overlay)
+    if not registry.vocabularies:
+        typer.echo(f"No vocabularies registered in {file} — nothing to fetch.")
+        return
+
+    try:
+        written = ensure_cached(cache_dir, registry, refresh=refresh)
+    except VocabularyFetchError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
+
+    for entry in status(cache_dir, registry):
+        mark = "cached" if entry.cached else "MISSING"
+        typer.echo(f"  {entry.slug}: {mark} → {entry.path}")
+    typer.echo(
+        f"{len(registry.vocabularies)} registered, {len(written)} fetched now."
+    )
 
 
 def main() -> None:

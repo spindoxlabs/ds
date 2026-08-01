@@ -59,6 +59,26 @@ agreed policy, not the current one. The transfer webhook emits `TransferStarted`
 both to the counterparties named in its own agreement record, never to anything the event
 claims about them.
 
+**Publishes the vocabularies.** `/ns/*` is public and unauthenticated — an onboarding wizard
+renders purposes and offers before anyone has an identity. Two layers, and confusing them is
+the easy mistake:
+
+| Endpoint | Layer | Serves |
+|---|---|---|
+| `GET /ns` | — | the index of everything below |
+| `GET /ns/policy` | **policy** | the ODRL profile as SKOS — purposes, operands, actions, DPV alignment |
+| `GET /ns/sharing-offers` | **policy** | offer codes plus an English fallback, no dataset keys |
+| `GET /ns/vocabularies` | **semantic** | the registry — slug, title, version, canonical IRI, cached or not |
+| `GET /ns/{slug}` | **semantic** | a cached JSON-LD vocabulary — SAREF, CIM, COSEM |
+
+The policy vocabulary is this dataspace's own and is compiled from the ODRL profile. The
+semantic ones are external standards this participant serves a **local copy** of; a dataset
+points at one through `dcat.conforms_to`, which travels into the catalogue as `dct:conformsTo`
+on the EDC asset. Serving is from disk only — never a live fetch, because a public
+unauthenticated route that retrieved an operator-configured URL would proxy for any caller.
+The cache is filled by `task vocab:fetch` or at startup, and **a registered vocabulary with no
+local copy stops the connector booting**.
+
 **Emits provenance.** Every act above produces a PROV-O domain event posted to
 [`ds-provenance`](provenance.md), fire-and-forget, so a provenance outage never fails an
 exchange.
@@ -154,6 +174,9 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_SHARING_OFFERS_PATH` | *(beside the governance file)* | the sharing-offer catalogue |
 | `CONNECTOR_SHARING_OFFERS_OVERLAY_NAME` | — | same, for offers |
 | `CONNECTOR_ODRL_PROFILE_PATH` | *(bundled energy profile)* | the purpose taxonomy and operand names |
+| `CONNECTOR_VOCABULARIES_PATH` | *(beside the governance file)* | the semantic vocabulary registry. **A registered vocabulary with no cached copy stops startup** — empty by default, so this costs a default install nothing |
+| `CONNECTOR_VOCABULARIES_OVERLAY_NAME` | — | merges `vocabularies.<name>.yaml`, replace-by-slug |
+| `CONNECTOR_VOCABULARY_CACHE_DIR` | `data/vocabularies` | where the JSON-LD copies live — fetched material, so under `data/` like every other cache. Must be writable if any entry has a `source:` |
 | `CONNECTOR_DATAPLANE_DECISION_TTL` | `30` | seconds a data plane may reuse an `allow` |
 | `CONNECTOR_CONSENT_PENDING_TTL` | `P30D` | ISO-8601: how long a negotiation may wait on a subject |
 | `CONNECTOR_CONSENT_PENDING_SWEEP_INTERVAL` | `3600.0` | seconds between expiry sweeps |

@@ -699,3 +699,68 @@ def test_participant_did_defaults_to_legacy_dev_domain():
     """Backward compatibility: omitting participant_did keeps the old value."""
     mapper = GovernanceMapper(participant_id="acme", base_url="https://acme.example")
     assert mapper.participant_did == "did:web:acme.dataspaces.localhost"
+
+
+# ── `dct:conformsTo` on the EDC asset ─────────────────────────────────────────
+#
+# The declared payload semantic model has to survive into the DSP catalogue, or a
+# consumer only learns what a dataset's columns mean after negotiating for it.
+
+def _rule_with_conforms_to(iri):
+    from ds.governance.models import DcatSpec, GovernanceRuleV2
+
+    return GovernanceRuleV2(title="Meters", dcat=DcatSpec(conforms_to=iri))
+
+
+def test_asset_carries_the_declared_semantic_model():
+    mapper = GovernanceMapper(participant_id="p", base_url="https://p.example.org")
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters",
+        _rule_with_conforms_to("https://saref.etsi.org/saref4ener/"),
+    )
+    assert asset["properties"]["dct:conformsTo"] == "https://saref.etsi.org/saref4ener/"
+
+
+def test_the_dct_prefix_is_declared_when_it_is_used():
+    """EDC compacts against the context it is given.
+
+    An emitted `dct:conformsTo` with no `dct` in the `@context` is not a DCAT-AP
+    term — it is an opaque string that happens to contain a colon.
+    """
+    mapper = GovernanceMapper(participant_id="p", base_url="https://p.example.org")
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters",
+        _rule_with_conforms_to("https://saref.etsi.org/saref4ener/"),
+    )
+    assert asset["@context"]["dct"] == "http://purl.org/dc/terms/"
+
+
+def test_the_dct_prefix_is_absent_when_nothing_uses_it():
+    """A context prefix an asset never references claims a vocabulary it does not speak."""
+    from ds.governance.models import GovernanceRuleV2
+
+    mapper = GovernanceMapper(participant_id="p", base_url="https://p.example.org")
+    asset = mapper.to_asset_create("datasets.silver.meters", GovernanceRuleV2(title="M"))
+    assert "dct" not in asset["@context"]
+    assert asset["properties"]["dct:conformsTo"] is None
+
+
+def test_the_semantic_model_is_not_respelled_under_the_profile_prefix():
+    """`dct:conformsTo` is a DCAT-AP term, not a local one.
+
+    Spelling it `{prefix}:conformsTo` would make a private property that merely
+    looks standard — readable only by something that already knows this
+    dataspace's profile, which is the opposite of why it is published.
+    """
+    from ds.governance.models import OdrlProfile
+
+    profile = OdrlProfile(namespace="https://example.test/p/", prefix="ex-policy")
+    mapper = GovernanceMapper(
+        participant_id="p", base_url="https://p.example.org", profile=profile
+    )
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters",
+        _rule_with_conforms_to("https://saref.etsi.org/saref4ener/"),
+    )
+    assert "ex-policy:conformsTo" not in asset["properties"]
+    assert asset["properties"]["dct:conformsTo"] == "https://saref.etsi.org/saref4ener/"

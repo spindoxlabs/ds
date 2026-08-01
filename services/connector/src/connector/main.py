@@ -32,6 +32,47 @@ from .api.v1.admin import router as admin_router
 from .api.v1.history import router as history_router
 
 
+def _load_vocabulary_cache(settings) -> None:
+    """Ensure every registered semantic vocabulary has a local copy, or refuse to start.
+
+    **Fail-closed on purpose.** A connector that boots while `/ns/{slug}` 404s has
+    published a vocabulary reference it cannot honour — and the catalogue it syncs
+    names that IRI in `dct:conformsTo`, so a consumer is pointed at an address
+    this participant serves nothing from. Better to not come up.
+
+    Cheap where it costs nothing: the shipped registry is empty, so a zero-config
+    dev stack never opens a socket here. A deployment opts into the startup
+    dependency by registering entries — and if it would rather not depend on
+    `saref.etsi.org` at boot, it ships the cached files and leaves `source:` unset.
+
+    An already-cached vocabulary is never re-fetched, even if the source moved:
+    replacing it on a restart would silently change what a running catalogue's
+    IRIs resolve to. Refreshing is `task vocab:fetch -- --refresh`, deliberately.
+    """
+    from ds.governance.vocabulary_cache import VocabularyFetchError, ensure_cached
+
+    from .services.consent_vocabulary import get_vocabularies
+
+    registry = get_vocabularies()
+    if not registry.vocabularies:
+        return
+
+    try:
+        written = ensure_cached(settings.vocabulary_cache_dir, registry)
+    except VocabularyFetchError as exc:
+        raise RuntimeError(
+            f"{exc}\n\nRegistered vocabularies must be available at startup. "
+            f"Run `task vocab:fetch`, or place the JSON-LD files in "
+            f"{settings.vocabulary_cache_dir!r} and restart."
+        ) from exc
+
+    log.info(
+        "Vocabulary cache ready: %d registered, %d fetched now",
+        len(registry.vocabularies),
+        len(written),
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -85,6 +126,8 @@ async def lifespan(app: FastAPI):
             "bundled energy profile deliberately.",
         )
     guard.enforce()
+
+    _load_vocabulary_cache(settings)
 
     provider_edc = None
     consumer_edc = None

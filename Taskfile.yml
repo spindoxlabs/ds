@@ -1291,7 +1291,7 @@ tasks:
       - >-
         cd libs/governance && uv run ds-governance fetch-vocabularies
         --file ../../services/connector/governance/vocabularies.yaml
-        --cache-dir ../../services/connector/governance/vocab-cache
+        --cache-dir ../../data/vocabularies
         {{if eq .REFRESH "true"}}--refresh{{end}}
     vars:
       REFRESH: '{{.REFRESH | default "false"}}'

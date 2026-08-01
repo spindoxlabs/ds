@@ -63,6 +63,34 @@ governance:
   configMap: "" # "" → the image's baked-in governance.yaml
   mountPath: /governance
 
+# ── Semantic vocabularies (GET /ns/{slug}) ────────────────────────────────────
+# The models a dataset's `dcat.conforms_to` points at — SAREF, CIM, COSEM.
+#
+# **The pod refuses to start** if a registered vocabulary has no local copy and
+# cannot be fetched. Nothing is registered by default, so this costs a default
+# install nothing; the two ways to satisfy it are below and they are a real
+# choice, not a default to accept blindly.
+vocabularies:
+  # ConfigMap carrying vocabularies.yaml. "" → nothing registered, and none of
+  # the rest of this block applies.
+  configMap: ""
+  mountPath: /vocabularies
+  cache:
+    # ConfigMap carrying the pre-fetched `<slug>.jsonld` copies.
+    #
+    # **Set this and the pod never reaches the internet at startup** — the copies
+    # are already there, mounted read-only, and the whole thing is reproducible
+    # from git. This is the right choice for a cluster with restricted egress or
+    # a GitOps flow, and it is the one to prefer. Build it with
+    # `task vocab:fetch` then `kubectl create configmap … --from-file`.
+    #
+    # Leave it empty and the cache is an emptyDir the pod fills at startup, which
+    # means **every pod start depends on the vocabulary sources being reachable**
+    # — a new replica, a node drain or a rollout can fail on somebody else's
+    # outage. ConfigMaps cap around 1 MiB, which is the reason not to.
+    configMap: ""
+    mountPath: /data/vocabularies
+
 # ── Consent notifications ─────────────────────────────────────────────────────
 # Webhook URLs are rejected unless their host is allowlisted (SSRF guard).
 notify:

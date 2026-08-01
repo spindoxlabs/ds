@@ -145,6 +145,12 @@ services:
       CONNECTOR_PROVENANCE_URL: http://172.17.0.1:30000
       CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_provider
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
+      # The registry is committed configuration and rides the read-only
+      # `/governance` mount. The fetched copies are cache, so they live under
+      # `./data/` (root AGENTS.md) on a second, writable mount — the connector
+      # must never be able to rewrite governance.yaml.
+      CONNECTOR_VOCABULARIES_PATH: /governance/vocabularies.yaml
+      CONNECTOR_VOCABULARY_CACHE_DIR: /data/vocabularies
       # The vault seed EDC signs EDR tokens with — /internal/edr-jwks serves
       # its public half so the data plane can verify a token nothing else does.
       CONNECTOR_EDC_VAULT_FILE: /edc-config/provider-vault.properties
@@ -162,6 +168,11 @@ services:
     volumes:
       - ./services/connector/config:/edc-config:ro
       - ./services/connector/governance:/governance:ro
+      # Shared with the host on purpose: `task vocab:fetch` fills it from
+      # outside, and anything the container fetches lands there too — so a
+      # restart is never the thing that repairs a cache. Narrow by design: `./data`
+      # also holds credentials and keys, which this service has no business seeing.
+      - ./data/vocabularies:/data/vocabularies
     healthcheck:
       # Same probe as the image's, overridden only for the faster timings that
       # `depends_on: service_healthy` waits on. The port comes from

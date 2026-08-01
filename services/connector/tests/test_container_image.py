@@ -35,9 +35,45 @@ ROLES = [
 ]
 
 
-def test_the_fallback_install_list_carries_pyjwt():
-    fallback = DOCKERFILE.split("-r /build/pyproject.toml 2>/dev/null || ")[1]
-    assert "pyjwt[crypto]" in fallback
+def test_there_is_no_fallback_install_list():
+    """The dependency set has one source, and a resolution failure fails the build.
+
+    This replaces an assertion that the fallback list carried `pyjwt[crypto]`.
+    The fallback is **gone** — a better fix than the one that test was written
+    for: two lists that must agree eventually disagree, and the failure mode was
+    silent, because `|| ` turns an unresolvable `-r pyproject.toml` into a
+    *successful* build of an image missing a package. `pyjwt` verifies every JWT
+    this service accepts, so that landed on the first authenticated request.
+
+    Asserted as the absence of the `|| ` fallback rather than as the presence of
+    a package, because the invariant is now structural: if the install cannot be
+    satisfied, `docker build` must stop.
+    """
+    install = [
+        line for line in DOCKERFILE.splitlines()
+        if "pyproject.toml" in line and "uv pip install" in line
+    ]
+    assert install, "no pyproject-driven install in the Dockerfile"
+    for line in install:
+        assert "||" not in line, (
+            "a fallback install list has come back. A dependency the image lacks "
+            "must fail the build, not fail at import in a container that looked "
+            "like it built."
+        )
+        assert "2>/dev/null" not in line, "the resolver's error must not be discarded"
+
+
+def test_the_declared_dependencies_are_what_gets_installed():
+    """`pyjwt[crypto]` is in `pyproject.toml`, which is now the only list.
+
+    With the fallback gone, the Dockerfile no longer names packages — so the
+    place this can regress is the declaration itself. `crypto` is the extra, not
+    the package: plain `pyjwt` imports fine and then cannot verify an RS256
+    signature, which is every token this service is issued.
+    """
+    pyproject = (UNIT / "pyproject.toml").read_text(encoding="utf-8")
+    assert "pyjwt[crypto]" in pyproject
+    assert "cryptography" in pyproject
 
 
 def test_the_healthcheck_does_not_hardcode_a_port():

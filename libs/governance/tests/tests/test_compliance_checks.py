@@ -505,3 +505,86 @@ class TestResultSerialization:
         )
         errors = run(path).asdict()["errors"]
         assert errors[0]["dataset"] == "mine"
+
+
+# ── semantic-model (`M-4`, `M-7`) ─────────────────────────────────────────────
+
+class TestSemanticModel:
+    """`dcat.conforms_to` — error on unresolvable, warn on unregistered, silent on absent.
+
+    The three-way split is the design: `M-7` makes a bare name an error, but an
+    external standard IRI is legitimate whether or not this deployment mirrors it,
+    and `M-6` (the platform mandates no payload model) makes "declared nothing"
+    a deployment's choice rather than a finding.
+    """
+
+    @staticmethod
+    def _run(conforms_to, registry=None):
+        from ds.governance.compliance.checks import (
+            DatasetEvidence,
+            ValidationResult,
+            check_semantic_model,
+        )
+        from ds.governance.models import DcatSpec, GovernanceRuleV2
+
+        rule = GovernanceRuleV2(title="M", dcat=DcatSpec(conforms_to=conforms_to))
+        item = DatasetEvidence(
+            key="datasets.silver.meters",
+            rule=rule,
+            asset_id="datasets.silver.meters",
+            policy_id="datasets-silver-meters-policy",
+            contract_id="datasets-silver-meters-contract",
+        )
+        result = ValidationResult(governance_path="x")
+        check_semantic_model(result, [item], registry)
+        return result
+
+    def test_a_bare_name_is_an_error(self):
+        """`M-7` — 'saref4ener' names nothing a consumer can dereference."""
+        result = self._run("saref4ener")
+        assert [f.check for f in result.errors] == ["semantic-model"]
+        assert "not an absolute" in result.errors[0].message
+
+    def test_a_urn_is_an_error(self):
+        assert self._run("urn:iso:std:iec:61970").errors
+
+    def test_an_absolute_iri_with_no_registry_passes_silently(self):
+        """`None` registry means 'do not check registration', not 'nothing registered'.
+
+        A caller that runs no vocabulary registry must not get a warning on every
+        dataset that declares a model.
+        """
+        result = self._run("https://saref.etsi.org/saref4ener/")
+        assert not result.errors and not result.warnings
+
+    def test_an_unregistered_iri_warns_but_does_not_fail(self):
+        """Refusing here would make a deployment mirror SAREF before naming it."""
+        from ds.governance.vocabularies import VocabularyRegistry
+
+        result = self._run("https://saref.etsi.org/saref4ener/", VocabularyRegistry())
+        assert not result.errors
+        assert [f.check for f in result.warnings] == ["semantic-model"]
+
+    def test_a_registered_iri_is_clean(self):
+        from ds.governance.vocabularies import Vocabulary, VocabularyRegistry
+
+        registry = VocabularyRegistry(
+            vocabularies=[
+                Vocabulary(
+                    slug="saref4ener",
+                    title="SAREF4ENER",
+                    iri="https://saref.etsi.org/saref4ener/",
+                )
+            ]
+        )
+        result = self._run("https://saref.etsi.org/saref4ener/", registry)
+        assert not result.errors and not result.warnings
+
+    def test_declaring_no_model_is_not_a_finding(self):
+        """`M-6` — the platform ships no payload model and imposes none.
+
+        Requiring one here would be this repository taking a decision the rulebook
+        explicitly leaves to a deployment.
+        """
+        result = self._run(None)
+        assert not result.errors and not result.warnings

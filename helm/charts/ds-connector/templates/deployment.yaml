@@ -78,6 +78,21 @@ spec:
           configMap:
             name: {{ .Values.governance.configMap }}
         {{- end }}
+        {{- if .Values.vocabularies.configMap }}
+        - name: vocabularies
+          configMap:
+            name: {{ .Values.vocabularies.configMap }}
+        - name: vocabulary-cache
+          {{- if .Values.vocabularies.cache.configMap }}
+          configMap:
+            name: {{ .Values.vocabularies.cache.configMap }}
+          {{- else }}
+          # No supplied cache, so the pod fetches at startup — and every pod
+          # start then depends on the vocabulary sources being reachable. See
+          # `vocabularies.cache.configMap` in values.yaml for why to set it.
+          emptyDir: {}
+          {{- end }}
+        {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

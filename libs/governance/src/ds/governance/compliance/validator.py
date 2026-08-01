@@ -9,6 +9,7 @@ from ..mapper import GovernanceMapper
 from ..models import OdrlProfile, load_odrl_profile
 from ..resolver import GovernanceResolver
 from ..sharing import DuplicateOfferError, SharingOfferCatalogue, load_sharing_offers
+from ..vocabularies import VocabularyRegistry
 from .checks import (
     CHECKS,
     OwnerLookup,
@@ -20,6 +21,7 @@ from .checks import (
     check_key_policy,
     check_owners,
     check_retention,
+    check_semantic_model,
     check_validity_window,
     load_exposed,
 )
@@ -96,6 +98,11 @@ def validate(
     deny_key_patterns: list[str] | None = None,
     sharing_offers_path: Path | None = None,
     participant_roles: dict[str, list[str]] | None = None,
+    # The semantic vocabulary registry, when the caller has one. `None` means
+    # "do not check registration" rather than "nothing is registered": the
+    # difference is a warning that would otherwise fire on every dataset for a
+    # caller that simply does not run a vocabulary registry.
+    vocabularies: VocabularyRegistry | None = None,
 ) -> ValidationResult:
     """Validate a governance file as a deployable catalogue.
 
@@ -152,6 +159,7 @@ def validate(
     check_validity_window(result, exposed)
     check_owners(result, exposed, owners, participant_dids)
     check_key_policy(result, exposed, deny_key_patterns or [])
+    check_semantic_model(result, exposed, vocabularies)
 
     # ── Consent vocabulary ────────────────────────────────────────────────
     check_purpose_taxonomy(result, active_profile)

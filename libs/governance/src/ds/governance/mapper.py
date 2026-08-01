@@ -309,14 +309,29 @@ class GovernanceMapper:
         for k, v in ds.data_address.query_params.items():
             data_address[f"queryParam:{k}"] = v
 
+        # `dct` is declared only when something uses it. An asset carrying a
+        # context prefix it never references is a claim about vocabularies this
+        # asset speaks, and EDC compacts against the context it is given.
+        context: dict[str, Any] = {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"}
+        if rule.dcat.conforms_to:
+            context["dct"] = "http://purl.org/dc/terms/"
+
         return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": context,
             "@type": "Asset",
             "@id": asset_id,
             "properties": {
                 "name": rule.title or dataset_key,
                 "description": rule.description or "",
                 "contenttype": ds.asset.content_type,
+                # The payload semantic model (`M-4`), carried into the DSP
+                # catalogue so a consumer discovers it at browse time rather than
+                # after negotiating. A `dct:` term where every sibling is
+                # `{prefix}:` — deliberately: `dct:conformsTo` is a DCAT-AP term
+                # with a meaning outside this dataspace, and re-spelling it under
+                # the local profile prefix would make it a private property that
+                # merely looks standard.
+                "dct:conformsTo": rule.dcat.conforms_to,
                 f"{pfx}:medallion": medallion,
                 f"{pfx}:classification": rule.classification,
                 f"{pfx}:sourceSystem": rule.source_system,

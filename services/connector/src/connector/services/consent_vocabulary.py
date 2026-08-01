@@ -22,6 +22,7 @@ from ds.governance.sharing import (
     datasets_by_offer,
     load_sharing_offers,
 )
+from ds.governance.vocabularies import VocabularyRegistry, load_vocabularies
 
 from ..config import Settings, get_settings
 
@@ -53,6 +54,29 @@ def get_offers() -> SharingOfferCatalogue:
         _offers_path(settings),
         overlay_name=settings.sharing_offers_overlay_name,
     )
+
+
+@lru_cache(maxsize=1)
+def get_vocabularies() -> VocabularyRegistry:
+    """The semantic vocabulary registry — `/ns/{slug}` and `dcat.conforms_to`.
+
+    Cached beside the profile and the offers because it is the same kind of
+    thing: deployment configuration read from a file, not request state. Dropped
+    by :func:`reset_caches`, so `POST /provider/sync` picks up a registry change
+    for the same reason it picks up a profile change.
+    """
+    settings = get_settings()
+    return load_vocabularies(
+        _vocabularies_path(settings),
+        overlay_name=settings.vocabularies_overlay_name,
+    )
+
+
+def _vocabularies_path(settings: Settings) -> Path | None:
+    if settings.vocabularies_path:
+        return Path(settings.vocabularies_path)
+    sibling = Path(settings.governance_yaml_path).parent / "vocabularies.yaml"
+    return sibling if sibling.exists() else None
 
 
 def _offers_path(settings: Settings) -> Path | None:
@@ -95,6 +119,7 @@ def reset_caches() -> None:
     get_profile.cache_clear()
     get_resolver.cache_clear()
     get_offers.cache_clear()
+    get_vocabularies.cache_clear()
     _datasets_by_offer.cache_clear()
 
 

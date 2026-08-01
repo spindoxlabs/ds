@@ -74,6 +74,17 @@ governance.yaml, which the governance ConfigMap carries.
 - name: CONNECTOR_GOVERNANCE_OVERLAY_NAME
   value: {{ .Values.governance.overlayName | quote }}
 {{- end }}
+{{/*
+Semantic vocabularies. Rendered only when a registry ConfigMap is named —
+otherwise the connector's default path finds nothing, which is the intended
+"nothing registered" state and must not become "points at an empty mount".
+*/}}
+{{- if .Values.vocabularies.configMap }}
+- name: CONNECTOR_VOCABULARIES_PATH
+  value: {{ printf "%s/vocabularies.yaml" .Values.vocabularies.mountPath | quote }}
+- name: CONNECTOR_VOCABULARY_CACHE_DIR
+  value: {{ .Values.vocabularies.cache.mountPath | quote }}
+{{- end }}
 - name: CONNECTOR_TRUST_ANCHOR_DID
   value: {{ .Values.trustAnchor.did | default (printf "did:web:%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
 - name: CONNECTOR_TRUST_ANCHOR_KEY_PATH

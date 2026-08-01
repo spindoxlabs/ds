@@ -87,8 +87,39 @@ libs/         importable Python packages — no Dockerfile, no port. Editable pa
 helm/         Kubernetes charts + helmfile. See helm/AGENTS.md
 schemas/      JSON Schema for YAML shapes that cross a repo boundary (generated)
 docs/         mkdocs site — services, rulebook, blueprints, development
+data/         everything generated, fetched or scratch. Gitignored in full
 .agents/      working documents: defect ledger, analyses, plans (gitignored)
 ```
+
+### `data/` — the one place for generated and fetched material
+
+**Anything a process writes, downloads or caches goes under `./data/<concern>/`, and
+nowhere else.** It is gitignored in full, and nothing in it is tracked — not even a
+`.gitkeep`. A fresh clone has no `data/`, so whatever needs a directory creates it.
+
+| Existing | Holds |
+|---|---|
+| `data/gradle` | the EDC build's Gradle home |
+| `data/caddy` | Caddy's config and state |
+| `data/credentials` | per-role EDC credentials |
+| `data/keys` | generated key material |
+| `data/vocabularies` | fetched semantic vocabulary copies (`GET /ns/{slug}`) |
+
+**Do not put a cache beside the thing it caches.** `services/connector/governance/vocab-cache`
+was the wrong answer for two reasons: it mixed fetched state into a directory of committed
+configuration, and it added one more place to look for scratch data. The rule exists so that
+list stays short — an ever-growing set of cache directories scattered across units is the
+failure mode, and it arrives one reasonable-looking exception at a time.
+
+Three consequences worth stating, because each has already been got wrong:
+
+- **A setting that names a writable path defaults under `data/`.** Add it to `.env.example`
+  in the same change, like any other variable.
+- **Committed configuration is not cache and does not move.** A registry, a profile or a
+  governance file stays with its unit; only what a process *produces* is `data/`. Putting a
+  committed file under `data/` deletes it from a fresh clone.
+- **Compose mounts the specific subdirectory, never `./data` wholesale** — that directory also
+  holds credentials and keys, which most services have no business seeing.
 
 | Unit | Role |
 |---|---|
