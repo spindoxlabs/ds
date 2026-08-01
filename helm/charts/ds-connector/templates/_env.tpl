@@ -21,14 +21,6 @@ addressable from the participant name alone — NOT from this release's name.
 {{- printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority -}}
 {{- end -}}
 
-{{- define "conn.protocolPublicUrl" -}}
-{{- if .Values.edc.protocolPublicUrl -}}
-{{- .Values.edc.protocolPublicUrl -}}
-{{- else -}}
-{{- printf "https://%s/protocol/2025-1" (include "ds.participantHost" .) -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "conn.env" -}}
 {{- $edc := include "conn.edcService" . -}}
 {{- include "ds.env.common" . }}
@@ -40,18 +32,20 @@ addressable from the participant name alone — NOT from this release's name.
   value: {{ printf "https://%s" (include "ds.participantHost" .) | quote }}
 - name: CONNECTOR_PARTICIPANT_DID
   value: {{ include "ds.participantDid" . | quote }}
+{{/*
+Management only. The connector never dials a protocol (DSP) endpoint: a
+counter-party is resolved by DSP address through the identity registry, and this
+participant's own callback address is `edc.dsp.callback.address` in the ds-edc
+chart. EDC_*_PROTOCOL_URL was set here and read by nothing.
+*/}}
 {{- if eq .Values.participant.role "provider" }}
 - name: EDC_PROVIDER_MANAGEMENT_URL
   value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
-- name: EDC_PROVIDER_PROTOCOL_URL
-  value: {{ include "conn.protocolPublicUrl" . | quote }}
 {{- else }}
 - name: CONNECTOR_CONSUMER_PARTICIPANT_DID
   value: {{ include "ds.participantDid" . | quote }}
 - name: EDC_CONSUMER_MANAGEMENT_URL
   value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
-- name: EDC_CONSUMER_PROTOCOL_URL
-  value: {{ include "conn.protocolPublicUrl" . | quote }}
 {{- end }}
 # The EDC API key doubles as the /internal X-Api-Key. Read from a mounted file
 # (the connector's preferred form) so it never appears in the process env.
@@ -69,10 +63,11 @@ addressable from the participant name alone — NOT from this release's name.
   value: {{ include "conn.irUrl" . | quote }}
 - name: CONNECTOR_PROVENANCE_URL
   value: {{ printf "http://%s:30000" (include "conn.provenanceService" .) | quote }}
-{{- if .Values.datasetApi.url }}
-- name: CONNECTOR_DATASET_API_URL
-  value: {{ .Values.datasetApi.url | quote }}
-{{- end }}
+{{/*
+No CONNECTOR_DATASET_API_URL: the dataset API calls the connector, never the
+reverse. The address a consumer is handed is the asset's data_address.base_url in
+governance.yaml, which the governance ConfigMap carries.
+*/}}
 - name: CONNECTOR_GOVERNANCE_YAML_PATH
   value: {{ printf "%s/governance.yaml" .Values.governance.mountPath | quote }}
 {{- if .Values.governance.overlayName }}

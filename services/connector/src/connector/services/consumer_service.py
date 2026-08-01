@@ -70,7 +70,13 @@ class ConsumerService:
         consumer_edc: EdcManagementClient,
         registry: ParticipantRegistry,
         prov: ProvBridge,
-        poll_interval: float = 2.0,
+        # One interval per phase, because they are not the same wait. A
+        # negotiation can park for as long as a data subject takes to answer; a
+        # transfer either starts or fails. A single `poll_interval` served both,
+        # which made `CONNECTOR_TRANSFER_POLL_INTERVAL` a setting the platform
+        # documented and ignored.
+        negotiation_poll_interval: float = 2.0,
+        transfer_poll_interval: float = 2.0,
         negotiation_timeout: float = 120.0,
         transfer_timeout: float = 120.0,
         participant_id: str = "consumer",
@@ -80,7 +86,8 @@ class ConsumerService:
         self._edc = consumer_edc
         self._registry = registry
         self._prov = prov
-        self._poll_interval = poll_interval
+        self._neg_poll_interval = negotiation_poll_interval
+        self._tx_poll_interval = transfer_poll_interval
         self._neg_timeout = negotiation_timeout
         self._tx_timeout = transfer_timeout
         self._participant_id = participant_id
@@ -186,7 +193,7 @@ class ConsumerService:
         # 2. Poll until FINALIZED
         neg_state = await self._edc.poll_negotiation(
             negotiation_id,
-            poll_interval=self._poll_interval,
+            poll_interval=self._neg_poll_interval,
             timeout=self._neg_timeout,
         )
         if neg_state.state not in ("FINALIZED", "VERIFIED", "AGREED") or not neg_state.contract_agreement_id:
@@ -219,7 +226,7 @@ class ConsumerService:
         # 5. Poll until STARTED
         tx_state = await self._edc.poll_transfer(
             transfer_id,
-            poll_interval=self._poll_interval,
+            poll_interval=self._tx_poll_interval,
             timeout=self._tx_timeout,
         )
         if tx_state.state not in ("STARTED",):

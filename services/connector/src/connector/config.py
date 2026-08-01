@@ -29,22 +29,23 @@ class Settings(BaseSettings):
     participant_did: str = "did:web:provider.dataspaces.localhost"
     consumer_participant_did: str = "did:web:consumer.dataspaces.localhost"
 
-    # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix)
+    # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix).
+    #
+    # Management only, deliberately. The *protocol* (DSP) URLs are not here: this
+    # connector never dials its own EDC's protocol endpoint, and a counter-party's
+    # is looked up by DSP address in the participant registry
+    # (`registry/participants.py`), which is the only thing that knows which
+    # participant an address belongs to. `EDC_PROVIDER_PROTOCOL_URL` and
+    # `EDC_CONSUMER_PROTOCOL_URL` were carried here from compose and Helm and read
+    # by nothing; the EDC's own callback address is `edc.dsp.callback.address`,
+    # set in the ds-edc chart and in `services/connector/config/*.properties`.
     edc_provider_management_url: str = Field(
         default="http://localhost:19193/management",
         validation_alias="EDC_PROVIDER_MANAGEMENT_URL",
     )
-    edc_provider_protocol_url: str = Field(
-        default="http://localhost:19194/protocol/2025-1",
-        validation_alias="EDC_PROVIDER_PROTOCOL_URL",
-    )
     edc_consumer_management_url: str = Field(
         default="http://localhost:29193/management",
         validation_alias="EDC_CONSUMER_MANAGEMENT_URL",
-    )
-    edc_consumer_protocol_url: str = Field(
-        default="http://localhost:29194/protocol/2025-1",
-        validation_alias="EDC_CONSUMER_PROTOCOL_URL",
     )
     edc_api_key: str = Field(
         default="insecure-dev-key",
@@ -60,7 +61,12 @@ class Settings(BaseSettings):
     # Empty disables it and the consumer simply shows REQUESTED.
     provider_connector_url: str = ""
 
-    dataset_api_url: str = "http://localhost:30002"
+    # No `dataset_api_url`: the data plane is not something this service calls.
+    # The dataset API calls *it* (`POST /internal/dataplane/authorize`), and the
+    # address the EDC hands a consumer is the asset's `data_address.base_url` in
+    # `governance.yaml`. `CONNECTOR_DATASET_API_URL` still exists — `ds-e2e`
+    # reads it under that name — but nothing here does, and setting it never
+    # moved this service's data plane.
     provenance_url: str = "http://localhost:30000"
 
     # How long a contract negotiation may stay parked waiting for a data
@@ -93,6 +99,10 @@ class Settings(BaseSettings):
     edc_vault_file: str | None = None
     edr_signer_alias: str = "participant-private-key"
 
+    # Both intervals are read. They used to share one: `ConsumerService` took a
+    # single `poll_interval` and used it for the negotiation *and* the transfer
+    # poll, so `CONNECTOR_TRANSFER_POLL_INTERVAL` was documented, settable, and
+    # silently overridden by the negotiation value.
     negotiation_poll_interval: float = 2.0
     negotiation_timeout: float = 120.0
     transfer_poll_interval: float = 2.0
@@ -185,9 +195,13 @@ class Settings(BaseSettings):
         default="svc-ds-connector",
         description="Keycloak client ID for this service (used as JWT audience)",
     )
-    admin_scope: str = "connector.admin"
-    internal_scope: str = "connector.internal"
-    webhook_scope: str = "connector.webhook"
+    # No `admin_scope` / `internal_scope` / `webhook_scope`. A permission name is
+    # vocabulary, not deployment configuration: it is declared in
+    # `services/keycloak/clients.yaml`, granted there, and checked against a
+    # literal in `dependencies.py` (`require_exact_permission("connector.internal")`
+    # and friends). These three read like a knob that could rename a scope per
+    # deployment; nothing read them, and had anything done so the guard and the
+    # realm would have been able to disagree about what a caller must hold.
 
     keycloak_token_url: str = Field(
         default="http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",

@@ -127,7 +127,6 @@ services:
     build:
       context: .
       dockerfile: services/connector/Dockerfile
-    command: ["uvicorn", "connector.main:app", "--host", "0.0.0.0", "--port", "31001"]
     ports:
       - "31001:31001"
     env_file:
@@ -135,8 +134,11 @@ services:
         required: false
     environment:
       CONNECTOR_ROLE: consumer
+      # Drives the server *and* the image's HEALTHCHECK — see the Dockerfile.
+      # The check probed 30001 regardless of role, so this container was never
+      # healthy no matter how well it served.
+      CONNECTOR_PORT: 31001
       EDC_CONSUMER_MANAGEMENT_URL: http://172.17.0.1:29193/management
-      EDC_CONSUMER_PROTOCOL_URL: http://172.17.0.1:29194/protocol/2025-1
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       CONNECTOR_PARTICIPANT_ID: consumer
       CONNECTOR_PARTICIPANT_BASE_URL: https://consumer.dataspaces.localhost
@@ -161,7 +163,10 @@ services:
     volumes:
       - ./services/connector/governance:/governance:ro
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:31001/health', timeout=2)\""]
+      # Same probe as the image's, overridden only for the faster timings that
+      # `depends_on: service_healthy` waits on. The port comes from
+      # CONNECTOR_PORT so this cannot drift from what the server bound.
+      test: ["CMD-SHELL", "python -c \"import os, urllib.request; urllib.request.urlopen('http://localhost:%s/health' % os.environ['CONNECTOR_PORT'], timeout=2)\""]
       interval: 10s
       start_period: 20s
       retries: 10

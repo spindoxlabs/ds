@@ -113,8 +113,14 @@ unless `CONNECTOR_OWNER_SCOPING_STRICT` is set.
 
 ## Configuration
 
-`pydantic-settings`, prefix `CONNECTOR_`. Six `EDC_*` fields are read under their literal
-name, without the prefix.
+`pydantic-settings`, prefix `CONNECTOR_`. Four `EDC_*` fields are read under their literal
+name, without the prefix — all Management API, none of them DSP: the connector never dials
+a protocol endpoint, and a counter-party's is resolved by DSP address through the identity
+registry.
+
+One variable is read by the container rather than by the settings model: `CONNECTOR_PORT`
+(default `30001`) is the port the image binds *and* health-checks, so the provider and the
+consumer run the same image on 30001 and 31001 without the probe drifting from the server.
 
 ### Identity and role
 
@@ -135,7 +141,7 @@ name, without the prefix.
 | `EDC_API_KEY` | `insecure-dev-key` | **secret** — Management API key |
 | `EDC_API_KEY_FILE` | — | read the key from a file instead |
 | `CONNECTOR_NEGOTIATION_POLL_INTERVAL` / `_TIMEOUT` | `2.0` / `120.0` | seconds |
-| `CONNECTOR_TRANSFER_TIMEOUT` | `120.0` | seconds |
+| `CONNECTOR_TRANSFER_POLL_INTERVAL` / `_TIMEOUT` | `2.0` / `120.0` | seconds. Separate from the negotiation pair: a negotiation can park on a person, a transfer cannot |
 | `CONNECTOR_EDC_VAULT_FILE` | — | EDC filesystem vault; unset ⇒ `/internal/edr-jwks` serves no key |
 | `CONNECTOR_EDR_SIGNER_ALIAS` | `participant-private-key` | vault alias of the EDR signing key |
 

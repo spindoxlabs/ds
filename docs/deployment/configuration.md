@@ -143,7 +143,11 @@ A list. Each entry produces up to **six** releases named `ds-<service>-<name>`, 
 | `enabled` | — | false → the whole group is skipped |
 | `role` | — | `provider` or `consumer`; surfaces as a pod label and in service config |
 | `did` | `""` | empty → derived. Override only to pin an existing DID |
-| `datasetApi.url` | `""` | the dataset API is **participant-operated and external**; the charts only pass its URL |
+
+The dataset API takes no key here. It is participant-operated and external, and
+the charts have nothing to tell it: it calls the connector at
+`/internal/dataplane/authorize`, not the other way round, and where a consumer
+is sent for data is the asset's `data_address.base_url` in `governance.yaml`.
 
 ### Per-service keys
 

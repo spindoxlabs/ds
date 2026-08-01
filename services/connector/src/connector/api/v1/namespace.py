@@ -1,12 +1,10 @@
 """ODRL custom namespace vocabulary endpoint."""
 from __future__ import annotations
 
-from functools import lru_cache
-
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
-from ds.governance.models import OdrlProfile, PurposeConcept, load_odrl_profile
+from ds.governance.models import OdrlProfile
 
 router = APIRouter(tags=["namespace"])
 
@@ -94,12 +92,27 @@ def _build_vocab(profile: OdrlProfile) -> dict:
     }
 
 
-@lru_cache(maxsize=1)
 def _get_vocab() -> dict:
-    """Load the ODRL profile and build the vocabulary once."""
-    import os
-    profile = load_odrl_profile(os.environ.get("CONNECTOR_ODRL_PROFILE_PATH"))
-    return _build_vocab(profile)
+    """Build the vocabulary from the **active** ODRL profile.
+
+    Two things this deliberately does not do, both of which it used to.
+
+    It does not read ``CONNECTOR_ODRL_PROFILE_PATH`` from ``os.environ``: the
+    profile is deployment configuration and `Settings` is the one reader of it,
+    so a second reader is a second answer. `provider.py` and
+    `consent_vocabulary` go through `Settings`, and this route serving a
+    different profile from the one the sync publishes is a vocabulary nobody can
+    negotiate against.
+
+    It does not cache the built dict either. `POST /provider/sync` re-reads the
+    profile and drops the vocabulary caches (`vocab.reset_caches()`); a cache
+    here would survive that and keep serving the taxonomy the process booted
+    with. The profile itself *is* cached — `vocab.get_profile()` — so what runs
+    per request is the dict construction, over a handful of purposes.
+    """
+    from ...services import consent_vocabulary as vocab
+
+    return _build_vocab(vocab.get_profile())
 
 
 @router.get("/ns/policy")

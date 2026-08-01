@@ -71,6 +71,7 @@ async def sync(
         settings.participant_base_url,
         profile=profile,
         owner_did_resolver=owner_did_resolver,
+        participant_did=settings.participant_did,
     )
     prov = request.app.state.prov
     result = await sync_governance(

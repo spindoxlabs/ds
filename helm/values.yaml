@@ -180,10 +180,11 @@ participants:
     # did: "" → derived as did:web:<name>.<global.baseDomain>. Override to pin.
     did: ""
 
-    # The dataset API is participant-operated and NOT deployed by these charts.
-    # It authenticates to the connector's /internal/* with the EDC API key.
-    datasetApi:
-      url: "" # e.g. https://datasets.internal.example.org
+    # The dataset API is participant-operated and NOT deployed by these charts,
+    # and it needs no value here: it authenticates to the connector's
+    # /internal/dataplane/authorize with the EDC API key, so ds is the callee.
+    # Where a consumer is sent for the data is governance.yaml's
+    # data_address.base_url, carried by the governance ConfigMap.
 
     connector:
       replicaCount: 1
@@ -213,8 +214,6 @@ participants:
     enabled: true
     role: consumer
     did: ""
-    datasetApi:
-      url: ""
     connector:
       replicaCount: 1
       notifyBackends: "null"

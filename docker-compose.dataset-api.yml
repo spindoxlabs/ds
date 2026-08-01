@@ -21,7 +21,12 @@
 #
 # The mock keeps port 30002; this stack takes 30012 (dataset-api) and 30013
 # (rec-registry) so both can run side by side and be compared on the same
-# request. Point `CONNECTOR_DATASET_API_URL` at whichever is under test.
+# request.
+#
+# Which one a flow exercises is decided by the **asset's** `data_address.base_url`
+# in `governance.yaml` — the EDC hands that address to the consumer. There is no
+# connector variable for it: `fixtures/seed.sh` swaps the real dataset-api onto
+# 30002 and moves the mock to 30022 for exactly that reason.
 
 name: dataspaces-real-dataset-api
 

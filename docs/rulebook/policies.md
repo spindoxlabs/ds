@@ -37,6 +37,10 @@ optional fields.
 and unauthenticated — an onboarding wizard has to render purposes before anyone has an
 identity.
 
+`POST /provider/sync` re-reads the profile and drops the cached vocabulary, so a change is
+published without a restart, and the taxonomy served is always the one the catalogue was
+mapped against — one profile, not two.
+
 ### 2.1 Vocabulary (`AUP-44`)
 
 Namespace `https://w3id.org/dsp/policy/`, prefix `dsp-policy`.

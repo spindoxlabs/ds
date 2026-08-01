@@ -138,8 +138,6 @@ releases:
           role: {{ $p.role | quote }}
           did: {{ $p.did | default "" | quote }}
         replicaCount: {{ $p.connector.replicaCount | default 1 }}
-        datasetApi:
-          url: {{ $p.datasetApi.url | default "" | quote }}
         notify:
           backends: {{ dig "connector" "notifyBackends" "null" $p | quote }}
           webhookAllowedHosts: {{ dig "connector" "webhookAllowedHosts" list $p | toJson }}

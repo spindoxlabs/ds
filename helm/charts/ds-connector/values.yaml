@@ -34,20 +34,20 @@ migration:
   mode: initContainer
 
 # ── Data source ───────────────────────────────────────────────────────────────
-# Participant-operated, NOT deployed by these charts. It authenticates to
-# /internal/* with the EDC API key.
-datasetApi:
-  url: "" # e.g. https://datasets.internal.example.org
+# The dataset API is participant-operated and NOT deployed by these charts. It
+# is deliberately absent from this chart's values: the connector never calls it.
+# The traffic goes the other way — the dataset API authenticates to
+# /internal/dataplane/authorize with the EDC API key — and the address a consumer
+# is handed comes from governance.yaml's data_address.base_url.
 
 # ── EDC wiring ────────────────────────────────────────────────────────────────
 # In-cluster address of this participant's ds-edc release.
 edc:
   serviceName: "" # "" → "<release>-ds-edc" in this namespace
+  # Management only. The public DSP protocol URL is not configured here: other
+  # participants reach it through the ds-edc Ingress, and this connector resolves
+  # a counter-party by DSP address through the identity registry.
   managementPort: 19193
-  protocolPort: 19194
-  # Public DSP protocol URL other participants dial. "" → derived as
-  # https://<name>.<baseDomain>/protocol/2025-1
-  protocolPublicUrl: ""
 
 # ── Trust anchor ──────────────────────────────────────────────────────────────
 # did:web of the trust anchor; "" → did:web:<trustAnchor host>.<baseDomain>.

@@ -22,14 +22,22 @@ class ConnectorGovernanceMapper:
         participant_base_url: str,
         profile: OdrlProfile | None = None,
         owner_did_resolver: Callable[[str], str | None] | None = None,
+        participant_did: str | None = None,
     ):
         self.participant_id = participant_id
         self.base_url = participant_base_url.rstrip("/")
+        # `participant_did` is the ODRL assigner for any dataset whose owner has
+        # no DID of its own — that is, the identity a consumer verifies the offer
+        # against. `GovernanceMapper` falls back to
+        # `did:web:{participant_id}.dataspaces.localhost`, which is the dev
+        # domain: a deployment that did not forward `CONNECTOR_PARTICIPANT_DID`
+        # published every policy under a DID that resolves to nothing.
         self._mapper = GovernanceMapper(
             participant_id=participant_id,
             base_url=participant_base_url,
             profile=profile,
             owner_did_resolver=owner_did_resolver,
+            participant_did=participant_did,
         )
 
     @property
