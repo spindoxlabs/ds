@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import textwrap
 
-from federated_catalog.registry import DcatSource, Provider, load_dcat_sources, load_providers
+from federated_catalog.registry import (
+    DcatSource,
+    Provider,
+    load_dcat_sources,
+    load_providers,
+)
 
 
 def test_load_providers(tmp_path):
@@ -42,7 +47,11 @@ def test_load_dcat_sources(tmp_path):
     """))
     sources = load_dcat_sources(str(yaml_file))
     assert len(sources) == 2
-    assert sources[0] == DcatSource(id="dataset-api", url="http://api.example.com/datasets/catalogue", type="dcat-ap")
+    assert sources[0] == DcatSource(
+        id="dataset-api",
+        url="http://api.example.com/datasets/catalogue",
+        type="dcat-ap",
+    )
     assert sources[1].defaults == {
         "consent_required": True,
         "data_address": {"base_url": "http://ext.example.com/query"},
@@ -69,3 +78,15 @@ def test_load_dcat_sources_skips_invalid_entries(tmp_path):
     sources = load_dcat_sources(str(yaml_file))
     assert len(sources) == 1
     assert sources[0].id == "valid"
+
+
+def test_load_providers_empty_string():
+    """`""` means "no participants file", not "the working directory".
+
+    `Path("")` is `Path(".")`, which exists — so the guard `load_dcat_sources`
+    has always had was missing here, and the default `participants_yaml=""`
+    reached `open()` on a directory and raised `IsADirectoryError`. That is what
+    made `fc-cli status` with no arguments exit 1.
+    """
+    assert load_providers("") == []
+

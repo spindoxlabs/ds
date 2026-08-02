@@ -5,16 +5,17 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from ds_auth.production import ProductionGuard
+from ds_auth.service_token import ServiceTokenProvider
+from ds_obs import configure_logging, install_metrics
 from fastapi import Depends, FastAPI, Request
 
+from .api.catalog import public_router as public_catalog_router
+from .api.catalog import router as catalog_router
 from .cache import CatalogCache
 from .config import get_settings
 from .crawler import crawl_loop
 from .dependencies import require_read_scope
-from .metrics import install_metrics
-from .api.catalog import router as catalog_router
-from ds_auth.production import ProductionGuard
-from ds_auth.service_token import ServiceTokenProvider
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +53,9 @@ async def lifespan(app: FastAPI):
         client_secret=settings.service_client_secret,
     )
 
-    task = asyncio.create_task(crawl_loop(cache, settings, token_provider=ir_token_provider))
+    task = asyncio.create_task(
+        crawl_loop(cache, settings, token_provider=ir_token_provider)
+    )
 
     yield
 
@@ -65,6 +68,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # First, before anything in this process logs. Unconfigured, the root
+    # logger drops INFO, so every `log.info` in this service reached nobody
+    # and only failures were visible.
+    configure_logging("ds-federated-catalog")
 
     app = FastAPI(
         title="ds-federated-catalog",
@@ -95,6 +103,12 @@ def create_app() -> FastAPI:
 
     install_metrics(app, "ds-federated-catalog")
 
+    # Order matters and is load-bearing. `catalog_router` carries the catch-all
+    # `GET /catalog/{dataset_iri:path}`, which matches `/catalog/context` as
+    # readily as any dataset IRI. The public router must be included first so
+    # the context resolves to its own handler instead of a 401 from the guard on
+    # a dataset lookup. `tests/test_routing.py` pins this.
+    app.include_router(public_catalog_router)
     app.include_router(
         catalog_router,
         dependencies=[Depends(require_read_scope)],

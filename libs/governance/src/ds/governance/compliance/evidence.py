@@ -11,19 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
+from ..dcat import CATALOG_CONTEXT, DSP_PROTOCOL_IRI, to_catalog_record, to_data_service
 from ..mapper import GovernanceMapper
 from ..models import GovernanceRuleV2, OdrlProfile
 from .checks import DatasetEvidence, ValidationResult
 
-DCAT_CONTEXT = {
-    "dcat": "http://www.w3.org/ns/dcat#",
-    "dct": "http://purl.org/dc/terms/",
-    "foaf": "http://xmlns.com/foaf/0.1/",
-    "odrl": "http://www.w3.org/ns/odrl/2/",
-    "xsd": "http://www.w3.org/2001/XMLSchema#",
-}
-
-DSP_PROTOCOL_IRI = "https://w3id.org/dspace/protocol/2025-1"
+DCAT_CONTEXT = CATALOG_CONTEXT
 
 
 def odrl_context(profile: OdrlProfile) -> dict[str, str]:
@@ -119,17 +112,54 @@ def to_dcat_catalog(
     title: str,
     publisher_id: str,
     publisher_name: str,
+    service_endpoint: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    """The evidence catalogue as a `dcat:Catalog`.
+
+    ``dcat:service`` and ``dcat:record`` are mandatory (`DSSC-PUB-41`, `-45`;
+    rulebook `C-7`, `C-8`) and both were absent. The shapes come from
+    :mod:`ds.governance.dcat`, shared with the federated index so the two
+    catalogues this platform publishes cannot answer the same requirement
+    differently.
+
+    ``dcat:dataset`` stays inlined alongside the records. `PUB-45` asks that a
+    catalogue reference its entries; it does not ask that the description be
+    withheld, and dropping the inline datasets would break every consumer for
+    no gain in conformance. A record carries what the *catalogue* knows about
+    the entry, which is exactly what was previously unsayable.
+    """
+    issued = datetime.now(timezone.utc).date().isoformat()
+    entry_ids = [ds["@id"] for ds in datasets if ds.get("@id")]
+    catalog: dict[str, Any] = {
         "@context": DCAT_CONTEXT,
         "@id": catalog_id,
         "@type": "dcat:Catalog",
         "dct:title": title,
         "dct:description": "Governance-derived dataspace catalog.",
         "dct:publisher": {"@id": publisher_id, "foaf:name": publisher_name},
-        "dct:issued": datetime.now(timezone.utc).date().isoformat(),
+        "dct:issued": issued,
         "dcat:dataset": datasets,
+        "dcat:record": [
+            to_catalog_record(
+                dataset_id=iri,
+                record_id=f"{catalog_id}/record/{quote(iri, safe='')}",
+                modified=issued,
+                source=catalog_id,
+            )
+            for iri in entry_ids
+        ],
     }
+    if service_endpoint:
+        catalog["dcat:service"] = [
+            to_data_service(
+                service_id=f"{catalog_id}#dsp",
+                title=f"{publisher_name} DSP endpoint",
+                endpoint_url=service_endpoint,
+                serves_dataset=entry_ids,
+                conforms_to=DSP_PROTOCOL_IRI,
+            )
+        ]
+    return catalog
 
 
 def build_evidence(
@@ -140,8 +170,16 @@ def build_evidence(
     publisher_id: str,
     publisher_name: str,
     catalog_name: str,
+    service_endpoint: str | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Return (dcat_catalog, odrl_offers)."""
+    """Return (dcat_catalog, odrl_offers).
+
+    ``service_endpoint`` is this participant's DSP protocol URL. It is optional
+    because the evidence bundle is generated from governance files alone and a
+    caller may not know the deployment's endpoint; when it is not supplied the
+    catalogue omits ``dcat:service`` rather than inventing a URL, which would be
+    worse than the absence it replaces.
+    """
     offers = [mapper.to_odrl_offer(item.key, item.rule) for item in exposed]
     datasets = [
         to_dcat_dataset(item, offer, base_url=base_url, publisher_id=publisher_id)
@@ -153,6 +191,7 @@ def build_evidence(
         title=f"{publisher_name} {catalog_name} catalog",
         publisher_id=publisher_id,
         publisher_name=publisher_name,
+        service_endpoint=service_endpoint,
     )
     return catalog, offers
 

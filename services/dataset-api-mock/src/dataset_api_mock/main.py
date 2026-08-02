@@ -14,11 +14,11 @@ from ds.governance import (
 )
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
+from ds_obs import configure_logging, install_metrics
 from fastapi import FastAPI, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from .metrics import install_metrics
 
 log = logging.getLogger(__name__)
 
@@ -46,6 +46,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# Before anything in this process logs. Unconfigured, the root logger drops
+# INFO, so every `log.info` here reached nobody and only failures were visible.
+configure_logging("dataset-api-mock")
+
 app = FastAPI(title="dataset-api-mock", version="0.1.0")
 install_metrics(app, "dataset-api")
 

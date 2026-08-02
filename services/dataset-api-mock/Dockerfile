@@ -12,8 +12,10 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # longer exists there.
 COPY libs/ds-auth/ /build/ds-auth/
 COPY libs/governance/ /build/governance/
+COPY libs/ds-obs/ /build/ds-obs/
 RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv/bin/python /build/ds-auth /build/governance
+    uv pip install --python /opt/venv/bin/python \
+      /build/ds-auth /build/governance /build/ds-obs
 
 # Everything else comes from pyproject.toml and from nowhere else. --no-sources
 # makes uv treat the ds-* entries as plain requirements instead of following

@@ -16,6 +16,7 @@ dependencies = [
     # /internal/* API as svc-ds-dataset-api rather than with the shared
     # X-Api-Key, which is also EDC's Management API key.
     "ds-auth",
+    "ds-obs",
     # The `/internal/dataplane/authorize` contract. The decision shape is
     # governance's, not this service's — see ds/governance/dataplane.py.
     "ds-governance",
@@ -27,6 +28,7 @@ dependencies = [
 
 [tool.uv.sources]
 ds-auth = { path = "../../libs/ds-auth", editable = true }
+ds-obs = { path = "../../libs/ds-obs", editable = true }
 ds-governance = { path = "../../libs/governance", editable = true }
 
 [project.optional-dependencies]

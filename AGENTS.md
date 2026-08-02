@@ -137,6 +137,7 @@ Three consequences worth stating, because each has already been got wrong:
 | `services/oauth2-proxy` | Browser session holder. Caddy `forward_auth` target |
 | `libs/governance` | `ds-governance` — governance/offer models, ODRL mapper, validation CLI |
 | `libs/ds-auth` | `ds_auth` — JWT verification, principals, role bundles, `require_permission` |
+| `libs/ds-obs` | `ds_obs` — logging configuration and HTTP metrics, shared by every service |
 | `libs/ds-edc` | `ds_edc` — EDC Management API v3 client and models |
 | `libs/ds-e2e` | `ds-e2e` CLI — live end-to-end flows against a running stack |
 

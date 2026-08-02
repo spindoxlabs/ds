@@ -41,27 +41,66 @@ def _is_provider(participant: dict[str, Any]) -> bool:
     return participant.get("role") == "provider" or roles == "provider"
 
 
+def _is_active(participant: dict[str, Any]) -> bool:
+    """Whether a registry participant is still admitted to the dataspace.
+
+    Deactivated participants must not be crawled (rulebook `C-3`). A missing
+    ``active`` key is read as **not** active: the field is part of the response
+    model, so its absence means this is not a payload we understand, and an
+    index that guesses "probably still admitted" republishes the offerings of a
+    participant that was removed.
+    """
+    return participant.get("active") is True
+
+
 def load_providers_from_registry(
     identity_registry_url: str,
     headers: dict[str, str] | None = None,
 ) -> list[Provider]:
-    """Fetch providers from the identity-registry /admin/participants API."""
+    """Fetch active providers from the identity-registry /admin/participants API.
+
+    ``active_only`` and the ``active`` filter below are deliberately both here.
+    The route already narrows to active participants for any caller without
+    ``identity-registry.admin``, and this service holds only
+    ``identity-registry.read`` — so today the filter is defence in depth. It is
+    one grant away from being the only thing standing between a deactivated
+    participant and the federated catalogue, and the crawl is the side that
+    knows it must not publish one (rulebook `C-3`).
+    """
     url = f"{identity_registry_url.rstrip('/')}/admin/participants"
     try:
-        resp = httpx.get(url, timeout=10.0, headers=headers or {})
+        resp = httpx.get(
+            url, timeout=10.0, headers=headers or {}, params={"active_only": "true"}
+        )
         resp.raise_for_status()
-        return [
-            Provider(id=p["did"], dsp_address=p.get("dsp_address") or "")
-            for p in resp.json()
-            if _is_provider(p) and p.get("dsp_address")
-        ]
+        providers = []
+        for p in resp.json():
+            if not (_is_provider(p) and p.get("dsp_address")):
+                continue
+            if not _is_active(p):
+                log.info("Skipping deactivated participant %s", p.get("did"))
+                continue
+            providers.append(
+                Provider(id=p["did"], dsp_address=p.get("dsp_address") or "")
+            )
+        return providers
     except httpx.HTTPError as exc:
         log.error("Failed to fetch providers from identity-registry: %s", exc)
         return []
 
 
 def load_providers(yaml_path: str) -> list[Provider]:
-    """Return all participants with role=provider from the YAML file."""
+    """Return all participants with role=provider from the YAML file.
+
+    The empty-string guard is not cosmetic. ``participants_yaml`` defaults to
+    ``""`` — it is the fallback used only when no registry URL is configured —
+    and ``Path("")`` is ``Path(".")``, which *exists*. So "no file configured"
+    reached ``open()`` on the working directory and raised ``IsADirectoryError``
+    instead of returning nothing, which is what ``fc-cli status`` did with no
+    arguments. ``load_dcat_sources`` has had this guard all along.
+    """
+    if not yaml_path:
+        return []
     path = Path(yaml_path)
     if not path.exists():
         return []

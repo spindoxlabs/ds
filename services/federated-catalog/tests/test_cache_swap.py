@@ -30,11 +30,15 @@ def test_a_crawl_that_reached_nobody_keeps_the_previous_catalogue():
     cache.swap({PROVIDER: _datasets("urn:a", "urn:b")}, [])
     crawled_at = cache.meta["last_crawl"]
 
-    applied = cache.swap({}, [CrawlError(provider_id=PROVIDER, message="All connection attempts failed")])
+    applied = cache.swap(
+        {}, [CrawlError(provider_id=PROVIDER, message="All connection attempts failed")]
+    )
 
     assert applied is False
     assert len(cache.all_datasets()) == 2, "good data was discarded over one bad cycle"
-    assert cache.meta["last_crawl"] == crawled_at, "an attempt that returned nothing counted as a crawl"
+    assert (
+        cache.meta["last_crawl"] == crawled_at
+    ), "an attempt that returned nothing counted as a crawl"
 
 
 def test_the_errors_are_still_reported():

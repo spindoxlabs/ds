@@ -1,10 +1,13 @@
 version: "3"
 
+vars:
+  SRC: src/federated_catalog
+
 tasks:
   setup:
     desc: Install Python dependencies (idempotent)
     cmds:
-      - uv sync
+      - uv sync --extra dev
     sources: [pyproject.toml]
     generates: [.venv/bin/uvicorn]
 
@@ -24,3 +27,19 @@ tasks:
     desc: (noop — managed by CI/CD)
     cmds:
       - echo "release not configured"
+
+  test:
+    cmds:
+      - uv run pytest tests/ -v
+
+  lint:
+    cmds:
+      - uv run ruff check {{.SRC}} tests/
+
+  format:
+    cmds:
+      - uv run ruff format {{.SRC}} tests/
+
+  type-check:
+    cmds:
+      - uv run mypy {{.SRC}}

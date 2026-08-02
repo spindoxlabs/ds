@@ -43,10 +43,13 @@ catalogue without being DSP participants.
 | `GET /catalog/context` | the JSON-LD `@context` every response points at |
 | `GET /health` | includes `cache_age_seconds` — the honest staleness signal |
 
-Everything under `/catalog` requires `catalog.read`.
+Everything under `/catalog` requires `catalog.read`, except `/catalog/context`.
 
-**Ships `fc-cli`**, which reuses the crawler in the opposite direction: it maps DCAT-AP
-datasets into EDC assets, policies and contract definitions and pushes them into a connector.
+`GET /catalog/context` is the one route outside the guard: every response advertises it as
+its `@context`, so a JSON-LD processor dereferences it holding no credential.
+
+**Ships `fc-cli`**, a read-only CLI — `crawl` and `status`. It publishes nothing; see the
+unit README for why a push path does not belong here.
 
 ## How it works
 
@@ -121,6 +124,5 @@ groups — `ds-member` and every operator bundle carry it.
 | `task -d services/federated-catalog debug` | debugpy on `:30903` |
 | `task e2e:catalog` | the live catalogue-discovery flow |
 
-Port **30003**. `fc-cli` is available in a development checkout; the container image installs
-the package on `PYTHONPATH` rather than as a distribution, so the console script is not
-present there.
+Port **30003**. `fc-cli` is available both in a development checkout and in the container —
+the image installs the package as a distribution, so the console script exists on `PATH`.

@@ -220,6 +220,14 @@ def evidence(
         None, help="Publisher IRI for the DCAT catalog (default: did:web of base URL host)"
     ),
     publisher_name: str = typer.Option("Dataspace Provider", help="Publisher display name"),
+    dsp_endpoint: str = typer.Option(
+        None,
+        help=(
+            "DSP protocol URL that serves these datasets. Emitted as the "
+            "catalogue's dcat:DataService (DSSC-PUB-41). Omitted when unset — "
+            "the catalogue says nothing rather than guessing an endpoint."
+        ),
+    ),
     participant_did: str = ParticipantDidOpt,
     owners: Path = OwnersOpt,
     participants: Path = ParticipantsOpt,
@@ -273,6 +281,7 @@ def evidence(
         publisher_id=publisher_id or f"did:web:{base_url.split('://')[-1].rstrip('/')}",
         publisher_name=publisher_name,
         catalog_name=name,
+        service_endpoint=dsp_endpoint,
     )
     write_artifacts(
         result, catalog, offers, out_dir, profile=mapper.profile, name=name

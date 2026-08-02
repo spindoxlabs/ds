@@ -50,7 +50,10 @@ class Settings(BaseSettings):
 
     keycloak_token_url: str = Field(
         default="http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",
-        description="Keycloak token endpoint for service-to-service client-credentials grants",
+        description=(
+            "Keycloak token endpoint for service-to-service "
+            "client-credentials grants"
+        ),
     )
     service_client_secret: str = Field(
         default="svc-ds-federated-catalog",
@@ -77,10 +80,13 @@ class Settings(BaseSettings):
     oidc_group_aliases: str = ""
 
     service_client_id: str = "svc-ds-federated-catalog"
-    read_scope: str = "catalog.read"
 
-    port: int = 30003
-    debug: bool = False
+    # No `read_scope`, `port` or `debug`. All three were settings nothing read:
+    # `dependencies.py` names `catalog.read` literally, and the port is fixed by
+    # the Dockerfile, compose and the chart. A scope name is vocabulary, not
+    # configuration — an override would have silently widened what a deployment
+    # accepts while every guard stayed on the old name. `test_settings_are_read`
+    # is what stops another one appearing.
 
 
 @lru_cache(maxsize=1)

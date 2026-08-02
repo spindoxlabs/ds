@@ -7,8 +7,9 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # runtime stage carries only /opt/venv, and an editable install leaves a .pth
 # pointing at a /build that no longer exists there.
 COPY libs/ds-auth/ /build/ds-auth/
+COPY libs/ds-obs/ /build/ds-obs/
 RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv/bin/python /build/ds-auth
+    uv pip install --python /opt/venv/bin/python /build/ds-auth /build/ds-obs
 
 COPY services/identity-registry/pyproject.toml ./
 COPY services/identity-registry/src/ src/

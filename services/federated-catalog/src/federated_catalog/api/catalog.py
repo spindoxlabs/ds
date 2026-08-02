@@ -1,11 +1,24 @@
 """Federated catalog API endpoints."""
 from __future__ import annotations
 
+from urllib.parse import quote
+
+from ds.governance.dcat import to_catalog_record, to_data_service
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/catalog", tags=["catalog"])
+
+#: `GET /catalog/context` is mounted here instead of on `router`, and this
+#: router is included **without** the read guard. Every response this service
+#: returns advertises the context as its `@context`, so a JSON-LD processor
+#: dereferences it as a matter of course — holding no token, because it is a
+#: parser and not a participant. Guarding it made every one of our own documents
+#: unprocessable while protecting nothing: the document is a fixed list of
+#: vocabulary prefixes, identical for every caller, and discloses no dataset,
+#: participant or offer.
+public_router = APIRouter(prefix="/catalog", tags=["catalog"])
 
 JSONLD_MEDIA_TYPE = "application/ld+json"
 
@@ -16,6 +29,56 @@ def _jsonld(data: dict, base_url: str) -> JSONResponse:
         **data,
     }
     return JSONResponse(content=wrapper, media_type=JSONLD_MEDIA_TYPE)
+
+
+def _records(page: list[dict], cache, base_url: str) -> list[dict]:
+    """A `dcat:CatalogRecord` per entry on the page (`DSSC-PUB-45`, `C-8`).
+
+    The record carries what *this* catalogue knows about the entry and the
+    provider does not: when the crawl last saw it, and which source it came
+    from. `dcat:dataset` stays alongside — see the note in
+    :func:`ds.governance.dcat.to_catalog_record`'s module docstring.
+    """
+    modified = cache.last_crawl_iso
+    root = base_url.rstrip("/")
+    records = []
+    for ds in page:
+        iri = ds.get("@id") or ds.get("id")
+        if not iri:
+            continue
+        records.append(
+            to_catalog_record(
+                dataset_id=iri,
+                record_id=f"{root}/catalog/record/{quote(iri, safe='')}",
+                modified=modified,
+                source=cache.source_of(iri),
+            )
+        )
+    return records
+
+
+def _services(cache, base_url: str) -> list[dict]:
+    """A `dcat:DataService` per crawled source (`DSSC-PUB-41`, `C-7`).
+
+    The index does not serve these datasets — it republishes descriptions of
+    them — so the endpoint a consumer needs is the source's, not ours. A source
+    that published nothing this cycle still gets a service entry: the endpoint is
+    a fact about the participant, not about how many datasets it happened to
+    offer.
+    """
+    ids_by_source = cache.dataset_ids_by_source()
+    root = base_url.rstrip("/")
+    return [
+        to_data_service(
+            service_id=f"{root}/catalog/service/{quote(source_id, safe='')}",
+            title=f"{source_id} data service",
+            endpoint_url=endpoint.url,
+            serves_dataset=ids_by_source.get(source_id) or None,
+            conforms_to=endpoint.conforms_to,
+        )
+        for source_id, endpoint in cache.endpoints().items()
+        if endpoint.url
+    ]
 
 
 @router.get("")
@@ -34,6 +97,8 @@ async def get_catalog(
             "@type": "dcat:Catalog",
             "dct:title": "Dataspaces Federated Catalog",
             "dcat:dataset": page,
+            "dcat:record": _records(page, cache, settings.base_url),
+            "dcat:service": _services(cache, settings.base_url),
             "hydra:totalItems": len(datasets),
             "hydra:offset": offset,
             "hydra:limit": limit,
@@ -42,19 +107,21 @@ async def get_catalog(
     )
 
 
-@router.get("/context")
-async def get_context(request: Request):
+@public_router.get("/context")
+async def get_context():
     """JSON-LD context document."""
-    settings = request.app.state.settings
     context = {
         "@context": {
             "dcat": "http://www.w3.org/ns/dcat#",
             "dct": "http://purl.org/dc/terms/",
             "odrl": "http://www.w3.org/ns/odrl/2/",
             "xsd": "http://www.w3.org/2001/XMLSchema#",
+            "foaf": "http://xmlns.com/foaf/0.1/",
             "ds": "https://dataspaces.localhost/ns/energy#",
             "hydra": "http://www.w3.org/ns/hydra/core#",
             "dcat:dataset": {"@container": "@set"},
+            "dcat:record": {"@container": "@set"},
+            "dcat:service": {"@container": "@set"},
             "dct:publisher": {"@type": "@id"},
         }
     }
@@ -132,6 +199,8 @@ async def search_catalog(body: SearchRequest, request: Request):
         {
             "@type": "dcat:Catalog",
             "dcat:dataset": page,
+            "dcat:record": _records(page, cache, settings.base_url),
+            "dcat:service": _services(cache, settings.base_url),
             "hydra:totalItems": len(results),
             "hydra:offset": body.offset,
             "hydra:limit": body.limit,

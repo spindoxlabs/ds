@@ -12,12 +12,12 @@ from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
 from .config import get_settings
 from .db.engine import get_session_factory, verify_schema
-from .metrics import install_metrics
 from .notifications.factory import build_notifier
 from ds.governance.owners import HttpOwnersRegistry
 from ds.governance.models import profile_path_is_missing
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
+from ds_obs import configure_logging, install_metrics
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.pending_sweep import parse_duration, run_sweeper
@@ -240,6 +240,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # First, before anything in this process logs. Unconfigured, the root
+    # logger drops INFO, so every `log.info` in this service reached nobody
+    # and only failures were visible.
+    configure_logging("ds-connector")
 
     app = FastAPI(
         title="ds-connector",

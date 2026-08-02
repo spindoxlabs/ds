@@ -1,0 +1,41 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ds-obs"
+version = "0.1.0"
+description = "Shared logging configuration and HTTP metrics for the dataspaces platform"
+requires-python = ">=3.12"
+# Deliberately dependency-free at runtime. The Prometheus exposition format is
+# rendered by hand rather than through `prometheus_client`, which is what the
+# four per-service copies this replaces already did — adding a client library
+# would also drag in its multiprocess registry model, and every service here
+# runs `--workers 1`. `fastapi` is an extra, so a CLI can configure logging
+# without pulling a web framework in.
+dependencies = []
+
+[project.optional-dependencies]
+fastapi = [
+    "fastapi>=0.115",
+]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "fastapi>=0.115",
+    "httpx>=0.27",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ds_obs"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.mypy]
+strict = true

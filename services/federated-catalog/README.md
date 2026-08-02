@@ -61,22 +61,42 @@ Besides crawling DSP providers via the connector, the catalog can crawl external
 
 ## CLI (fc-cli)
 
-Entry point: `fc-cli` (defined in `pyproject.toml`).
+Entry point: `fc-cli` (defined in `pyproject.toml`, installed as a console script in the
+image).
 
-A Typer CLI with three commands:
+**Read-only, deliberately.** A Typer CLI with two commands:
 
 | Command | Purpose |
 |---------|---------|
-| `fc-cli sync --sources <path>` | Crawl DCAT sources, map datasets to EDC payloads, register via `POST /provider/sync` |
 | `fc-cli crawl` | One-shot crawl of all configured sources (DSP + DCAT), print results |
 | `fc-cli status` | Show configured sources and their stats |
 
-### DCAT-to-EDC mapper
+### Why there is no `sync`
 
-`cli/mapper.py` provides `dcat_to_edc_payloads(dataset, source_defaults)` with two mapping paths:
+A `sync` command used to map crawled DCAT-AP datasets into EDC assets, policies and
+contract definitions and push them at `POST /provider/sync`. It never worked: that route's
+body is `{governance_yaml_path}`, so the payloads were dropped as extra keys and the call
+triggered an unrelated sync of the participant's *own* `governance.yaml` — returning 200,
+which the CLI reported as `✓` per dataset.
 
-1. **ODRL pass-through** — extracts `odrl:hasPolicy` from the DCAT distribution and converts the Offer to a Set
-2. **Governance-override-based** — builds an ODRL Set from `catalogues.yaml` defaults (`access_requirements`, `consent_required`, `retention_days`)
+It is removed rather than repaired, because the contract it needed should not exist here.
+This data space's recorded catalogue architecture is *distributed catalogues with an
+optional federated index*, pull-synchronised (rulebook §1, answering `DSSC-PUB-06`/`-46`).
+Publication belongs to the Participant Agent (`DSSC-PUB-12`) and only an authenticated,
+authorized data provider may publish its own offering (`DSSC-PUB-13`/`-14`/`-19`). A push
+path here would let the index publish a third party's metadata into this participant's EDC
+under this participant's contract.
+
+It also could not carry the material required to do so. DCAT-AP supplies the descriptive
+half — title, description, keywords, publisher, `dct:temporal`, `dct:conformsTo`, a
+distribution `accessURL` — which maps onto `governance.yaml`'s `dcat:` block. It supplies
+none of `policy.audience`, `policy.consent`, `policy.purpose`, `dataspace.sharing_offers` or
+`dataspace.data_address`, which are decisions of the importing participant rather than facts
+of the source catalogue.
+
+An external DCAT-AP catalogue is folded in through the **read** side instead — a
+`catalogues.yaml` entry crawled by `crawl_dcat_source`, where the index is advisory
+(rulebook `C-2`) and claims no authority over what it republishes.
 
 The mapper builds EDC Asset + PolicyDefinition + ContractDefinition payloads. Datasets with `access_level=secret` are skipped.
 

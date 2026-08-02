@@ -31,6 +31,20 @@ global:
     authority: ds-authority
     participantPrefix: ds-
 
+  # ── Logging ─────────────────────────────────────────────────────────────────
+  # Applied to every Python service through `ds.env.common`, deliberately from
+  # one place: a deployment where services log at different levels or in
+  # different formats is one where a single request is reconstructed from
+  # several incompatible logs.
+  logging:
+    level: INFO # DEBUG | INFO | WARNING | ERROR | CRITICAL
+    format: json # json for a log shipper, text for a person
+    # Successful /health and /metrics access lines are dropped by default: a
+    # probe every 10s and a scrape every 15s are the highest-volume,
+    # lowest-information lines a service emits. A *failing* probe is always
+    # logged. Set true to restore them.
+    accessHealth: false
+
   # ── Images ──────────────────────────────────────────────────────────────────
   # ghcr.io/spindoxlabs/ds-<service>. Assumed public; pullSecrets are optional.
   #

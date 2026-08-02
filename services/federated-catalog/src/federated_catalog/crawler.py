@@ -5,10 +5,17 @@ import asyncio
 import logging
 
 import httpx
+from ds.governance.dcat import DSP_PROTOCOL_IRI
 
-from .cache import CatalogCache, CrawlError
+from .cache import CatalogCache, CrawlError, SourceEndpoint
 from .config import Settings
-from .registry import DcatSource, Provider, load_dcat_sources, load_providers, load_providers_from_registry
+from .registry import (
+    DcatSource,
+    Provider,
+    load_dcat_sources,
+    load_providers,
+    load_providers_from_registry,
+)
 
 log = logging.getLogger(__name__)
 
@@ -90,8 +97,15 @@ async def crawl_dcat_source(
 async def crawl_all(
     settings: Settings,
     token_provider=None,
-) -> tuple[dict[str, list[dict]], list[CrawlError]]:
-    """Crawl all registered providers and DCAT sources. Returns (datasets_by_source, errors)."""
+) -> tuple[dict[str, list[dict]], list[CrawlError], dict[str, SourceEndpoint]]:
+    """Crawl all registered providers and DCAT sources.
+
+    Returns ``(datasets_by_source, errors, endpoints)``. The third value is what
+    lets the republished catalogue carry a ``dcat:DataService`` (`DSSC-PUB-41`):
+    the index does not serve anything itself, so the only honest answer to
+    "which endpoint provides these datasets" is the source each entry was
+    crawled from, and that is known here and nowhere downstream.
+    """
     # One token for the whole cycle, used for both the registry read and every
     # connector call. Minted once rather than per provider: the crawl fans out,
     # and a token request per provider would multiply Keycloak load by the
@@ -101,14 +115,18 @@ async def crawl_all(
         headers = {"Authorization": f"Bearer {await token_provider()}"}
 
     if settings.identity_registry_url:
-        providers = load_providers_from_registry(settings.identity_registry_url, headers=headers)
+        providers = load_providers_from_registry(
+            settings.identity_registry_url, headers=headers
+        )
     else:
         providers = load_providers(settings.participants_yaml)
     dcat_sources = load_dcat_sources(settings.dcat_sources_yaml)
 
+    endpoints: dict[str, SourceEndpoint] = {}
+
     if not providers and not dcat_sources:
         log.warning("No providers or DCAT sources configured — catalog will be empty")
-        return {}, []
+        return {}, [], endpoints
 
     results: dict[str, list[dict]] = {}
     errors: list[CrawlError] = []
@@ -126,10 +144,14 @@ async def crawl_all(
             )
         )
         source_ids.append(p.id)
+        endpoints[p.id] = SourceEndpoint(
+            url=p.dsp_address, conforms_to=DSP_PROTOCOL_IRI
+        )
 
     for s in dcat_sources:
         tasks.append(crawl_dcat_source(s, settings.max_datasets_per_provider))
         source_ids.append(s.id)
+        endpoints[s.id] = SourceEndpoint(url=s.url)
 
     outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
@@ -143,10 +165,12 @@ async def crawl_all(
             results[sid] = datasets
             log.info("Crawled %d datasets from %s", len(datasets), sid)
 
-    return results, errors
+    return results, errors, endpoints
 
 
-async def crawl_loop(cache: CatalogCache, settings: Settings, token_provider=None) -> None:
+async def crawl_loop(
+    cache: CatalogCache, settings: Settings, token_provider=None
+) -> None:
     """Async background task: wait startup_delay, then crawl on interval."""
     log.info(
         "Federated catalog crawler starting (startup delay: %ds, interval: %ds)",
@@ -159,8 +183,10 @@ async def crawl_loop(cache: CatalogCache, settings: Settings, token_provider=Non
         log.info("Starting catalog crawl cycle…")
         delay = settings.crawl_interval
         try:
-            datasets_by_provider, errors = await crawl_all(settings, token_provider=token_provider)
-            applied = cache.swap(datasets_by_provider, errors)
+            datasets_by_provider, errors, endpoints = await crawl_all(
+                settings, token_provider=token_provider
+            )
+            applied = cache.swap(datasets_by_provider, errors, endpoints)
             total = sum(len(v) for v in datasets_by_provider.values())
             if applied:
                 log.info(

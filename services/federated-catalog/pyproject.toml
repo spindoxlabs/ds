@@ -17,13 +17,21 @@ dependencies = [
     "typer>=0.12",
     "pyjwt[crypto]>=2.9",
     "ds-auth",
+    "ds-obs",
+    # For `ds.governance.dcat` only — the `dcat:DataService` / `dcat:record`
+    # shapes, shared with the compliance evidence catalogue so the two
+    # catalogues this platform publishes cannot answer `DSSC-PUB-41`/`-45`
+    # differently. The index reads no governance file and resolves no policy.
+    "ds-governance",
 ]
 
 [project.optional-dependencies]
-test = [
+dev = [
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
     "respx>=0.22",
+    "ruff>=0.6",
+    "mypy>=1.11",
 ]
 
 [project.scripts]
@@ -31,9 +39,14 @@ fc-cli = "federated_catalog.cli.main:run"
 
 [tool.uv.sources]
 ds-auth = { path = "../../libs/ds-auth", editable = true }
+ds-obs = { path = "../../libs/ds-obs", editable = true }
+ds-governance = { path = "../../libs/governance", editable = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/federated_catalog"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

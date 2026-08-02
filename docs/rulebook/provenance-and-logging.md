@@ -134,19 +134,19 @@ ensures it is by having no third-party observer.
 
 ## 5. Observability — the open gap
 
-**Nothing here is implemented.** Recording it as a gap rather than omitting it is the point
-of this section.
+**Still an open gap.** Two of the four steps below have moved and none is closed; recording
+that precisely, rather than omitting the section or claiming the capability, is its point.
 
 What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
 
 | Asked | Status |
 |---|---|
-| Transaction observability for monitoring and troubleshooting (`-03`) | absent |
+| Transaction observability for monitoring and troubleshooting (`-03`) | **absent for transactions; the troubleshooting floor now exists.** Until `libs/ds-obs`, *no Python service configured logging at all* — the root logger dropped INFO, so every service's own `log.info` reached nobody and only failures were visible. A successful crawl and no crawl were indistinguishable in `docker logs`. That is now one configured, level-controlled format across every service (`DS_LOG_LEVEL`, `DS_LOG_FORMAT`, `DS_LOG_ACCESS_HEALTH`). It is a floor, not the capability: nothing correlates a transaction across services |
 | Horizontal and vertical requirements satisfied (`-42`, `-43`) | absent |
 | Security controls, audit trails, compliance documentation maintained (`-44`–`-46`) | audit trail partially — see L-12 |
-| Centralised metrics collection and visualisation | absent. `/metrics` is served by four services and scraped by nothing. Every chart can now admit a Prometheus namespace when `global.monitoring.serviceMonitor` is set; no collector is deployed |
+| Centralised metrics collection and visualisation | **absent, but the targets are now worth collecting.** `/metrics` is served by four services and scraped by nothing: no collector is deployed and **no chart emits a ServiceMonitor** — `global.monitoring.serviceMonitor` gates only the NetworkPolicy, so with it on the network path opens and nothing walks through it. `ds-identity-registry` serves no `/metrics` at all |
 | Real-time monitoring | absent |
-| Global performance metrics, SLIs, SLOs | absent |
+| Global performance metrics, SLIs, SLOs | **possible, not built.** Latency was a bare `_sum` with no `_count`, no buckets and no path label, so no quantile was derivable from any service. `libs/ds-obs` makes it a histogram, which is what an SLI needs. Nothing consumes it yet, and the three *cross-service* operations below are still unmeasurable |
 | Regular reports on performance, usage and security incidents | absent |
 
 **Minimum viable close**, in order:
@@ -160,13 +160,34 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    production control with a broken one; see decision `D-2` under `services/connector`.
    What was actually missing was narrower: `ds-provenance`'s chart omitted the
    `metricsFromPrometheus` include the connector and federated-catalogue charts carry, so
-   enabling `serviceMonitor` produced a ServiceMonitor pointing at a pod default-deny still
-   refused. Added.
+   with `serviceMonitor` on, its pod was still refused by default-deny. Added.
+
+   **Correction:** an earlier draft of this step said that enabling `serviceMonitor`
+   "produced a ServiceMonitor". It does not — **no chart in this repository emits a
+   `ServiceMonitor` resource**, and the flag gates the NetworkPolicy alone. That is part of
+   step 2, not a detail of step 1.
 2. A Prometheus-compatible scrape target per service with a documented metric set.
+   **Half done.** `libs/ds-obs` replaced four byte-identical copies of a per-service
+   `metrics.py` with one implementation, and fixed the two things that made the targets not
+   worth scraping: latency is a **histogram** (`_bucket`/`_sum`/`_count`, labelled by method
+   and path) instead of a bare sum, and an unmatched route reports `<unmatched>` instead of
+   its raw URL — which had been minting one permanent Prometheus series per URL anyone
+   tried. The redundant `ds_http_5xx_total` family is gone.
+
+   Still open, and all three are needed before a collector is useful:
+   `ds-identity-registry` serves no `/metrics` and its chart carries no
+   `metricsFromPrometheus`; **no chart emits a `ServiceMonitor`**, so nothing tells
+   Prometheus what to scrape; and the metric set is described in `libs/ds-obs/AGENTS.md` but
+   is **not documented in `docs/`**, which is what this step asks for.
 3. OpenTelemetry traces across the DSP exchange, correlated by agreement id — which
    requires settling the three-names-for-one-agreement-id problem first (defect P3-4).
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to
    agreement, transfer to first row, consent decision to negotiation resume.
+   **Unblocked for one of the four.** *Catalogue fetch* is a single HTTP request and the new
+   histogram measures it directly. The other three are **cross-service business latencies** —
+   they span the connector, the EDC, the data plane and a human consent decision, and no
+   per-request HTTP histogram can express them. They need either step 3's traces or
+   purpose-built domain timers, and they remain unmeasurable.
 
 ## 6. Governance of these rules
 

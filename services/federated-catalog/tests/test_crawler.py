@@ -11,6 +11,26 @@ from federated_catalog.config import Settings
 from federated_catalog.crawler import crawl_all, crawl_dcat_source
 from federated_catalog.registry import DcatSource
 
+CONNECTOR_URL = "http://ds-connector:30001"
+
+
+def _yaml_only_settings(participants_yaml, catalogues_yaml) -> Settings:
+    """Settings for the YAML-fallback path, with the registry explicitly off.
+
+    Two defaults made these tests unrunnable and neither is visible from the
+    test body. `identity_registry_url` defaults to a **non-empty** URL, so
+    leaving it alone sent `crawl_all` down the registry branch and straight into
+    an unmocked HTTP call — the trap `AGENTS.md` warns about. And `connector_url`
+    defaults to `172.17.0.1:31001` while the mock below answers on
+    `ds-connector:30001`, so the one test that reaches a provider missed it too.
+    """
+    return Settings(
+        identity_registry_url="",
+        connector_url=CONNECTOR_URL,
+        participants_yaml=str(participants_yaml),
+        dcat_sources_yaml=str(catalogues_yaml),
+    )
+
 
 @respx.mock
 async def test_crawl_dcat_source_success(sample_dcat_catalog):
@@ -110,11 +130,8 @@ async def test_crawl_all_includes_dcat_sources(tmp_path, sample_dcat_catalog):
         return_value=httpx.Response(200, json=sample_dcat_catalog)
     )
 
-    settings = Settings(
-        participants_yaml=str(participants_yaml),
-        dcat_sources_yaml=str(catalogues_yaml),
-    )
-    results, errors = await crawl_all(settings)
+    settings = _yaml_only_settings(participants_yaml, catalogues_yaml)
+    results, errors, _ = await crawl_all(settings)
     assert "test-api" in results
     assert len(results["test-api"]) == 2
     assert errors == []
@@ -136,11 +153,8 @@ async def test_crawl_all_dcat_error_is_failsafe(tmp_path):
         return_value=httpx.Response(500, text="Internal Server Error")
     )
 
-    settings = Settings(
-        participants_yaml=str(participants_yaml),
-        dcat_sources_yaml=str(catalogues_yaml),
-    )
-    results, errors = await crawl_all(settings)
+    settings = _yaml_only_settings(participants_yaml, catalogues_yaml)
+    results, errors, _ = await crawl_all(settings)
     assert results == {}
     assert len(errors) == 1
     assert errors[0].provider_id == "broken-api"
@@ -163,20 +177,19 @@ async def test_crawl_all_mixed_dsp_and_dcat(tmp_path, sample_dcat_catalog):
             url: http://api.test/catalogue
     """))
 
-    respx.post("http://ds-connector:30001/consumer/catalog").mock(
+    respx.post(f"{CONNECTOR_URL}/consumer/catalog").mock(
         return_value=httpx.Response(200, json={
-            "dcat:dataset": [{"@id": "https://dsp.example/ds1", "dct:title": "DSP Dataset"}]
+            "dcat:dataset": [
+                {"@id": "https://dsp.example/ds1", "dct:title": "DSP Dataset"}
+            ]
         })
     )
     respx.get("http://api.test/catalogue").mock(
         return_value=httpx.Response(200, json=sample_dcat_catalog)
     )
 
-    settings = Settings(
-        participants_yaml=str(participants_yaml),
-        dcat_sources_yaml=str(catalogues_yaml),
-    )
-    results, errors = await crawl_all(settings)
+    settings = _yaml_only_settings(participants_yaml, catalogues_yaml)
+    results, errors, _ = await crawl_all(settings)
     assert "did:web:provider" in results
     assert "dcat-api" in results
     assert errors == []

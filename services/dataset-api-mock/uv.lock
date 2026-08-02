@@ -206,6 +206,7 @@ dependencies = [
     { name = "cryptography" },
     { name = "ds-auth" },
     { name = "ds-governance" },
+    { name = "ds-obs" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic" },
@@ -226,6 +227,7 @@ requires-dist = [
     { name = "cryptography" },
     { name = "ds-auth", editable = "../../libs/ds-auth" },
     { name = "ds-governance", editable = "../../libs/governance" },
+    { name = "ds-obs", editable = "../../libs/ds-obs" },
     { name = "fastapi" },
     { name = "httpx" },
     { name = "pydantic", specifier = ">=2.7" },
@@ -316,6 +318,23 @@ requires-dist = [
     { name = "typer", specifier = ">=0.12" },
 ]
 provides-extras = ["dev"]
+
+[[package]]
+name = "ds-obs"
+version = "0.1.0"
+source = { editable = "../../libs/ds-obs" }
+
+[package.metadata]
+requires-dist = [
+    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115" },
+    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.115" },
+    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8" },
+    { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.24" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
+]
+provides-extras = ["fastapi", "dev"]
 
 [[package]]
 name = "fastapi"

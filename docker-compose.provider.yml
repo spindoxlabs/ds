@@ -297,6 +297,15 @@ services:
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
       CATALOG_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CATALOG_SERVICE_CLIENT_SECRET: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
+      # Without an issuer, `oidc_insecure_dev` defaults true and `ds_auth`
+      # decodes the bearer without checking a signature — so every catalogue
+      # authorization decision in dev was asserted against unverified claims,
+      # and a forged token carrying `catalog.read` was accepted. Same defect and
+      # same fix as `PROVENANCE_OIDC_ISSUER_URL` above. The audience path was
+      # checked first: `svc-ds-portal` and `svc-ds-e2e` both carry
+      # `svc-ds-federated-catalog` in `extra_audiences`, and user tokens get it
+      # from the `scopes_prefix: catalog` mapper on oauth2_proxy.
+      CATALOG_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
     depends_on:
       ds-connector-provider:
         condition: service_healthy
@@ -305,4 +314,6 @@ services:
       interval: 10s
       start_period: 20s
       retries: 10
+    extra_hosts:
+      - "keycloak.dataspaces.localhost:host-gateway"
     networks: [dataspaces]

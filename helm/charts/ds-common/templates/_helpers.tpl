@@ -128,6 +128,23 @@ guard exists to prevent.
   valueFrom:
     fieldRef:
       fieldPath: metadata.namespace
+{{- /*
+Logging, read by `ds_obs.configure_logging` in every Python service. Here rather
+than in each chart for the same reason as the alias block above: a deployment
+whose services log at different levels, or in different formats, is one where a
+single request is reconstructed from four incompatible logs.
+
+`json` is the default in a cluster and `text` in compose — a log shipper wants
+one object per line, a person reading `docker logs` does not.
+*/}}
+- name: DS_LOG_LEVEL
+  value: {{ ((.Values.global).logging).level | default "INFO" | quote }}
+- name: DS_LOG_FORMAT
+  value: {{ ((.Values.global).logging).format | default "json" | quote }}
+{{- with ((.Values.global).logging).accessHealth }}
+- name: DS_LOG_ACCESS_HEALTH
+  value: {{ . | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*

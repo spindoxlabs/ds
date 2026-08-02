@@ -25,8 +25,8 @@ distributed catalogues.
 |---|---|---|
 | C-1 | Every participant implements or uses a catalogue service as part of its control plane (`DSSC-PUB-05`) | **Enforced** — the EDC serves it; a participant without one is not reachable over DSP |
 | C-2 | The federated index is advisory. A discrepancy between index and provider is resolved in favour of the provider | **Declared** |
-| C-3 | The index crawls only active participants | **Not enforced** — the registry loader neither passes `active_only` nor filters the returned field, so deactivated participants are crawled. Defect **P1-3** |
-| C-4 | The index authenticates to the connector it crawls through | **Not enforced** — the crawler sends no `Authorization`, and succeeds only because the route it calls is unguarded. Defects **P0-1** and **P1-3**, which must be fixed together |
+| C-3 | The index crawls only active participants | **Enforced** — `load_providers_from_registry` passes `active_only=true` *and* filters the returned `active` field; a payload that omits it is read as not active. Belt and braces on purpose: the identity-registry route already narrows for any caller without `identity-registry.admin`, which is someone else's guard |
+| C-4 | The index authenticates to the connector it crawls through | **Enforced** — the crawl mints a `svc-ds-federated-catalog` client-credentials token per cycle and `POST /consumer/catalog` requires `connector.consumer.read`. Landed together, as it had to be |
 
 ## 2. Syntax
 
@@ -50,8 +50,8 @@ space follows the stricter statement.
 |---|---|---|
 | C-5 | Access and usage control of offerings are expressed as ODRL policies (`DSSC-PUB-38`) | **Enforced** |
 | C-6 | `dcat:keyword` carries no policy meaning. A dataset's permitted purposes come from `policy.purpose[]` and nowhere else | **Enforced** — `tag_to_purpose` is an authoring default used by scaffolding only |
-| C-7 | A catalogue includes at least one `dcat:DataService` referencing the service that provides its datasets (`DSSC-PUB-41`) | **Not enforced** — no `dcat:DataService` is emitted anywhere in the platform. **Open gap**, see §5 |
-| C-8 | A catalogue response references its entries via `dcat:record` rather than inlining them (`DSSC-PUB-45`) | **Not enforced** — entries are inlined. **Open gap**, see §5 |
+| C-7 | A catalogue includes at least one `dcat:DataService` referencing the service that provides its datasets (`DSSC-PUB-41`) | **Enforced** — shape in `ds.governance.dcat`, emitted by both catalogues this platform publishes. The federated index names **each crawled source's** endpoint, not its own: it provides nothing and is advisory (`C-2`), so the service a consumer needs is the provider's |
+| C-8 | A catalogue response references its entries via `dcat:record` rather than inlining them (`DSSC-PUB-45`) | **Enforced, with a declared deviation** — every entry now carries a `dcat:CatalogRecord` (`foaf:primaryTopic`, `dct:modified` = crawl time, `dct:source` = originating catalogue). `dcat:dataset` stays inlined alongside; `PUB-45` says *rather than*. See [scope-and-deviations](scope-and-deviations.md) |
 
 ## 3. The minimum metadata set
 
@@ -129,15 +129,11 @@ they negotiated. **Open gap.**
 
 ## 5. Open gaps, in priority order
 
-1. **`dcat:DataService` (`PUB-41`)** — mandatory, absent, and cheap. The service reference
-   is what tells a consumer which endpoint serves the datasets it just discovered.
-2. **`dcat:record` (`PUB-45`)** — mandatory, and a shape change to the catalogue response.
-   Affects every consumer, so it is a breaking change.
-3. **DCAT-AP conformance checking (`DSO-11`)** — a validator step against the published
+1. **DCAT-AP conformance checking (`DSO-11`)** — a validator step against the published
    DCAT-AP shapes, runnable in `task compliance:validate`.
-4. **Metadata versioning (`DSO-14`, `-15`)** — needs a design decision first: version the
+2. **Metadata versioning (`DSO-14`, `-15`)** — needs a design decision first: version the
    offering, or snapshot it into the agreement?
-5. **Rulebook conformance (`DSO-12`)** — depends on this section having a machine-readable
+3. **Rulebook conformance (`DSO-12`)** — depends on this section having a machine-readable
    projection, which is the same prerequisite as
    [Participation](participation.md) §5.
 

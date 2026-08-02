@@ -1,1 +1,1 @@
-"""ds-federated-catalog — Python-native federated catalog crawler for the dataspaces platform."""
+"""ds-federated-catalog — federated DCAT-AP catalog crawler."""

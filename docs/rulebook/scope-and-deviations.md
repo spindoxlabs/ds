@@ -121,6 +121,32 @@ All of it is in [Personal data](personal-data.md). None of it is in DSSC.
 `CEEDS-STD-10` recommends DCAT; `DSSC-PUB-08` requires DCAT-AP within DSP. This platform
 follows the stricter statement. Not a conflict, recorded for completeness.
 
+### 3.6 `dcat:record` is emitted *alongside* the inlined datasets, not instead of them
+
+**Blueprint:** `DSSC-PUB-45` — a catalogue request returns an instance of `dcat:Catalog`
+which points to the identifiers of its catalogue records via `dcat:record` "**rather than**
+containing all the metadata of its entries".
+
+**This platform:** every catalogue response — the federated index and the compliance
+evidence bundle — carries a `dcat:CatalogRecord` per entry **and** keeps `dcat:dataset`
+inlined.
+
+**Why:** the two properties answer different questions and only one of them was missing. A
+record carries what the *catalogue* knows about an entry (`dct:modified` = when this
+catalogue last saw it, `dct:source` = which catalogue it came from); a dataset carries what
+the *publisher* says about the data. Withholding the second buys no conformance the first
+does not already deliver, and it would break every consumer of the index — the portal's
+catalogue pages and `ds-e2e` both read `dcat:dataset` — in exchange for one extra round
+trip per entry.
+
+**What a deployment must accept:** a strict `PUB-45` reader that asserts the *absence* of
+inlined metadata will not see conformance here. Nothing in DCAT-3 forbids both properties
+on one `dcat:Catalog`, and a consumer that only follows `dcat:record` is unaffected.
+
+**How to close it properly, if wanted:** serve records by default and inline datasets only
+under an explicit `?inline=true`, then migrate the portal and `ds-e2e` to the record path.
+That is a breaking change to a published surface and wants its own decision.
+
 ## 4. Known non-conformances
 
 Distinct from §2 and §3: rows this rulebook **states as rules** and the code does not keep.

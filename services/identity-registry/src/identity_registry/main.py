@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from ds_auth.production import ProductionGuard
+from ds_obs import configure_logging
 from fastapi import FastAPI
 
 from .api.v1.admin import router as admin_router
@@ -125,6 +126,11 @@ async def _warn_on_duplicate_status_list_indices() -> None:
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # First, before anything in this process logs. Unconfigured, the root
+    # logger drops INFO, so every `log.info` in this service reached nobody
+    # and only failures were visible.
+    configure_logging("ds-identity-registry")
 
     app = FastAPI(
         title="ds-identity-registry",

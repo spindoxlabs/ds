@@ -8,7 +8,6 @@ from fastapi.responses import JSONResponse
 from .config import get_settings
 from .db.engine import verify_schema
 from .dependencies import require_read_or_write_scope, require_write_scope
-from .metrics import install_metrics
 from .schemas.context import PROV_CONTEXT
 from .api.v1.nodes import router as nodes_router
 from .api.v1.relations import router as relations_router
@@ -17,6 +16,7 @@ from .api.v1.events import subject_router as subject_events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
 from ds_auth.production import ProductionGuard
+from ds_obs import configure_logging, install_metrics
 
 log = logging.getLogger(__name__)
 
@@ -59,6 +59,11 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     settings = get_settings()
+
+    # First, before anything in this process logs. Unconfigured, the root
+    # logger drops INFO, so every `log.info` in this service reached nobody
+    # and only failures were visible.
+    configure_logging("ds-provenance")
 
     app = FastAPI(
         title="ds-provenance",

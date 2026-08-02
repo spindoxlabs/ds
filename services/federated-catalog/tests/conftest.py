@@ -35,7 +35,10 @@ def sample_dcat_catalog() -> dict:
                                         {
                                             "odrl:leftOperand": {"@id": "https://w3id.org/dsp/policy/Membership"},
                                             "odrl:operator": {"@id": "odrl:eq"},
-                                            "odrl:rightOperand": {"@value": "active", "@type": "xsd:string"},
+                                            "odrl:rightOperand": {
+                                                "@value": "active",
+                                                "@type": "xsd:string",
+                                            },
                                         }
                                     ],
                                 }

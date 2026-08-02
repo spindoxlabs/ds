@@ -45,6 +45,20 @@ Configuration is in `.env.example` under the `CATALOG_` prefix.
 - **The crawl is an authenticated call.** It targets a route on someone else's connector; it
   must present a credential and must send `counter_party_id`, or the connector attributes
   every crawled provider to itself.
+- **This unit never publishes.** `fc-cli` is read-only and the service has no write route.
+  The recorded architecture is distributed catalogues with a pull-crawled advisory index
+  (rulebook §1); publication belongs to the Participant Agent (`DSSC-PUB-12`) and to the
+  provider that owns the offering. A `sync` command that pushed crawled DCAT-AP datasets
+  into this participant's EDC was deleted for that reason, not repaired — see the README.
+- **`dcat:DataService` names the *source's* endpoint, never this service's.** The index
+  provides nothing; it republishes descriptions. `DSSC-PUB-41` asks for the service
+  *providing* the datasets, so a consumer following it arrives at the provider it must
+  negotiate with. Shape lives in `ds.governance.dcat`, shared with the compliance evidence
+  catalogue — do not grow a second copy here.
+- **Route order under `/catalog` is behaviour.** `GET /catalog/{dataset_iri:path}` is a
+  catch-all, so anything mounted under `/catalog` must be declared before it. `main.py`
+  includes the unguarded `public_router` (which carries `/catalog/context`) first for
+  exactly this reason; `tests/test_routing.py` pins it.
 
 ## Testing
 

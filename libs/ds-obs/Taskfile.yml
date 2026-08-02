@@ -1,0 +1,21 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install library in editable mode (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+
+  test:
+    desc: Run the ds-obs test suite
+    cmds:
+      - uv run pytest tests/ -q
+
+  lint:
+    cmds:
+      - uv run ruff check src/ tests/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/

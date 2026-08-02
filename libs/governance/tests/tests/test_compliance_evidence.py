@@ -540,3 +540,60 @@ class TestDcatBlock:
             "@type": "dct:PeriodOfTime",
             "dcat:startDate": "2020-01-01",
         }
+
+
+class TestCatalogueConformance:
+    """`C-7` and `C-8` on the evidence catalogue, not just the federated index.
+
+    The rulebook records both as platform gaps rather than one unit's, so closing
+    them in the index alone would leave the status line half true.
+    """
+
+    def test_every_dataset_gets_a_catalogue_record(self, sample):
+        _, _, mapper, exposed = sample
+        catalog, _ = build_evidence(
+            exposed,
+            mapper,
+            base_url=BASE_URL,
+            publisher_id=PUBLISHER,
+            publisher_name="P",
+            catalog_name="core",
+        )
+        records = catalog["dcat:record"]
+        assert len(records) == len(catalog["dcat:dataset"])
+        assert records[0]["@type"] == "dcat:CatalogRecord"
+        assert records[0]["foaf:primaryTopic"]["@id"] == catalog["dcat:dataset"][0]["@id"]
+
+    def test_a_dsp_endpoint_becomes_the_catalogues_data_service(self, sample):
+        _, _, mapper, exposed = sample
+        catalog, _ = build_evidence(
+            exposed,
+            mapper,
+            base_url=BASE_URL,
+            publisher_id=PUBLISHER,
+            publisher_name="P",
+            catalog_name="core",
+            service_endpoint="http://edc:19194/protocol/2025-1",
+        )
+        service = catalog["dcat:service"][0]
+        assert service["@type"] == "dcat:DataService"
+        assert service["dcat:endpointURL"] == {"@id": "http://edc:19194/protocol/2025-1"}
+        assert service["dct:conformsTo"]["@id"].startswith("https://w3id.org/dspace/")
+
+    def test_no_endpoint_means_no_service_rather_than_a_guessed_one(self, sample):
+        """A DCAT-AP catalogue with a wrong endpoint is worse than one with none.
+
+        The evidence bundle is generated from governance files, which do not
+        record the deployment's DSP URL. Inventing it from `base_url` would send
+        a consumer to a host that does not speak DSP.
+        """
+        _, _, mapper, exposed = sample
+        catalog, _ = build_evidence(
+            exposed,
+            mapper,
+            base_url=BASE_URL,
+            publisher_id=PUBLISHER,
+            publisher_name="P",
+            catalog_name="core",
+        )
+        assert "dcat:service" not in catalog
