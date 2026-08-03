@@ -35,7 +35,15 @@ class Key(Base):
     algorithm: Mapped[str] = mapped_column(
         String(16), nullable=False, default="ES256"
     )
-    private_jwk: Mapped[dict] = mapped_column(JsonType, nullable=False)
+    #: **Nullable, and that is the decentralization** (`DID-09`). A trust anchor
+    #: records the *public* key of every participant it has enrolled — it needs
+    #: one to verify their signatures and to bind an issued credential — and must
+    #: hold the private half of none of them. A row with `private_jwk IS NULL` is
+    #: a key this instance knows about but cannot use, which is the correct
+    #: relationship between an issuer and a holder.
+    #:
+    #: `DID-12` is the invariant that asserts the anchor holds no other kind.
+    private_jwk: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
     public_jwk: Mapped[dict] = mapped_column(JsonType, nullable=False)
     kid: Mapped[str] = mapped_column(String, nullable=False, unique=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
@@ -407,6 +415,101 @@ class StatusList(Base):
     # Changes when the register changes — that is, on revocation only. Issuance
     # moves `next_index` and leaves this alone, because the published
     # StatusList credential is unaffected by it.
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+
+class EnrolmentToken(Base):
+    """The out-of-band authorization that lets a verified organisation enrol.
+
+    DCP's Credential Issuance Protocol leaves *how* an issuer decides a client
+    may be issued to deliberately undefined, and names the carrier: **"if the
+    issuer supports a pre-authorization code flow, the client MUST use the
+    `pre-authorized_code` claim in the Self-Issued ID Token"**. This row is that
+    code.
+
+    It is the same primitive as :class:`OnboardingInvite`, one step later in the
+    lifecycle, and for the same reason — the party presenting it has no
+    credentials yet, because acquiring them is what it is doing. So it is treated
+    like a credential: generated with `secrets`, stored as a SHA-256 hash,
+    single-use, expiring, never readable back.
+
+    **It grants nothing on its own.** Redeeming it also requires an SI token
+    signed by the key being registered, so possession of a leaked code without
+    that key binds no DID. The code says *which organisation*; the signature says
+    *which key*. Neither alone is enough, which is what makes this an enrolment
+    rather than a hand-over.
+    """
+
+    __tablename__ = "enrolment_tokens"
+
+    id: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    code_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
+    #: The owner this code enrols. One code, one organisation — a code that
+    #: enrolled "whoever presents it" would let any keyholder claim any verified
+    #: organisation's identity.
+    owner_alias: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    label: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Spent, not deleted — an operator asking "how did this DID get registered"
+    #: needs the answer to still exist.
+    redeemed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: The DID that redeemed it. The audit trail from an organisation's
+    #: verification to the key that now speaks for it.
+    redeemed_did: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class CredentialRequest(Base):
+    """One CIP credential request, and what became of it.
+
+    The protocol is asynchronous by design: the Issuer Service acknowledges
+    receipt (`201` + a `Location`), decides later, and delivers by writing to the
+    client's Credential Service. `GET /issuer/requests/{issuerPid}` is how the
+    client asks in the meantime, so the state has to be somewhere.
+
+    `holder_pid` is the client's own id for the request and is echoed back
+    untouched; `issuer_pid` is ours. Two ids rather than one because either side
+    may be retrying, and a shared id would make "which request is this" a
+    question neither side could answer alone.
+    """
+
+    __tablename__ = "credential_requests"
+
+    issuer_pid: Mapped[str] = mapped_column(
+        String, primary_key=True, default=lambda: str(uuid.uuid4())
+    )
+    holder_pid: Mapped[str] = mapped_column(Text, nullable=False)
+    #: Who asked — the `iss` of the SI token that carried the request. Access
+    #: control on the status endpoint is "only the client that made the request",
+    #: and this is what that comparison reads.
+    holder_did: Mapped[str] = mapped_column(Text, nullable=False, index=True)
+    owner_alias: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: RECEIVED | REJECTED | ISSUED, exactly the CIP vocabulary.
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="RECEIVED"
+    )
+    #: What was asked for: the `credentials[].id` values, resolved against the
+    #: Issuer Metadata.
+    requested: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    #: Why, when REJECTED. Operator-facing; the client sees only the status,
+    #: because a rejection reason on an unauthenticated-ish surface is an oracle.
+    detail: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

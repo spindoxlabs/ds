@@ -286,6 +286,20 @@ class PatchOwnerRequest(BaseModel):
         return v
 
 
+class CreateEnrolmentTokenRequest(BaseModel):
+    """Issue the code an admitted organisation enrols its own key with.
+
+    Shorter-lived than an application invite by default: an invite waits for a
+    human to fill in a form, an enrolment code waits for a deployment that is
+    already being stood up. A code with a long life is a standing authorization
+    to speak as that organisation, for anyone who obtains it.
+    """
+
+    owner_alias: str
+    label: str | None = None
+    ttl_days: int | None = Field(default=14, ge=1, le=365)
+
+
 class CreateInviteRequest(BaseModel):
     """Issue an invite for an organisation to apply with."""
 

@@ -23,17 +23,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...db.models import OrganizationApplication, OnboardingInvite
+from ...db.models import EnrolmentToken, OnboardingInvite, OrganizationApplication
 from ...dependencies import get_db, require_org_read, require_org_write
 from ...schemas.requests import (
+    CreateEnrolmentTokenRequest,
     CreateInviteRequest,
     PublicOrganizationApplicationRequest,
 )
 from ...schemas.responses import (
+    EnrolmentTokenResponse,
     InviteResponse,
+    IssuedEnrolmentTokenResponse,
     IssuedInviteResponse,
     PublicApplicationResponse,
 )
+from ...services import enrolment
 
 # Operator-facing: issuing and listing invites.
 admin_router = APIRouter(prefix="/admin/onboarding", tags=["onboarding"])
@@ -91,6 +95,72 @@ async def create_invite(
         expires_at=invite.expires_at,
         created_at=invite.created_at,
     )
+
+
+@admin_router.post(
+    "/enrolments", status_code=201, response_model=IssuedEnrolmentTokenResponse
+)
+async def create_enrolment_token(
+    data: CreateEnrolmentTokenRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(require_org_write),
+):
+    """Issue the code an admitted organisation enrols its own key with.
+
+    The terminal step of the governance plane, and the *only* thing that used to
+    be an act of issuance now is: previously the operator's chain ran
+    verify → agreement → **mint a keypair** → promote, and handed over a private
+    key the organisation never generated. Now it stops here, and the
+    organisation proves control of a key the anchor never sees.
+
+    Returned once. Only its hash is stored, so it cannot be shown again — reissue
+    instead, which is also how a leaked code is invalidated.
+    """
+    try:
+        issued = await enrolment.create_enrolment_token(
+            db,
+            data.owner_alias,
+            ttl_days=data.ttl_days,
+            label=data.label,
+            created_by=getattr(principal, "subject", None),
+        )
+    except enrolment.EnrolmentError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.public) from exc
+    await db.commit()
+    return IssuedEnrolmentTokenResponse(
+        id=issued.id,
+        code=issued.code,
+        owner_alias=issued.owner_alias,
+        expires_at=issued.expires_at,
+    )
+
+
+@admin_router.get("/enrolments", response_model=list[EnrolmentTokenResponse])
+async def list_enrolment_tokens(
+    db: AsyncSession = Depends(get_db),
+    _principal=Depends(require_org_read),
+):
+    """Outstanding and spent enrolment codes. Codes are never included.
+
+    `redeemed_did` is the audit trail this list exists for: it is the link from
+    an organisation an operator verified to the key that now speaks for it.
+    """
+    result = await db.execute(
+        select(EnrolmentToken).order_by(EnrolmentToken.created_at.desc())
+    )
+    return [
+        EnrolmentTokenResponse(
+            id=t.id,
+            owner_alias=t.owner_alias,
+            label=t.label,
+            created_by=t.created_by,
+            created_at=t.created_at,
+            expires_at=t.expires_at,
+            redeemed_at=t.redeemed_at,
+            redeemed_did=t.redeemed_did,
+        )
+        for t in result.scalars().all()
+    ]
 
 
 @admin_router.get("/invites", response_model=list[InviteResponse])

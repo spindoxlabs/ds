@@ -102,6 +102,34 @@ step optionally produces a **provisioning bundle** — the config a third party 
 up their own connector — and rotates the STS secret every time it is generated, storing only
 a hash. It cannot re-show a secret, which is exactly what makes a leaked bundle invalidatable.
 
+**Enrolment — where an organisation's own key enters.** The chain above ends with the
+governance authority's judgement. What used to follow it was a *mint*: this service generated
+the organisation's keypair, kept the private half and handed back an STS secret. It no longer
+has to. `ir-cli org enrolment-token --alias <owner>` issues a single-use code; the
+organisation generates its own keypair, publishes its own DID document, and presents that code
+inside a self-issued token proving control of the key:
+
+```
+POST /issuer/credentials
+Authorization: Bearer <SI token: iss = sub = its DID, aud = the anchor, pre-authorized_code>
+{ "type": "CredentialRequestMessage", "holderPid": "...", "credentials": [{"id": "..."}] }
+```
+
+The anchor verifies the signature against the key in **the client's own DID document**,
+resolved over did:web — never against a key it happens to hold — reads the DSP and credential
+service endpoints from that same document, and records the DID with its **public** key only.
+
+**Two independent factors, neither sufficient.** The code says which organisation; the
+signature says which key. A leaked code without the key binds nothing. This is where
+`DSSC-IAM-13` (proof of control) is satisfied — previously nowhere, because the issuer
+generated the key and so had nothing to verify.
+
+This is DCP's [Credential Issuance Protocol](https://eclipse-dataspace-dcp.github.io/decentralized-claims-protocol/),
+not a local invention: `POST /issuer/credentials` is its Credential Request API,
+`GET /issuer/metadata` its Issuer Metadata API, `GET /issuer/requests/{id}` its Credential
+Request Status API, and `pre-authorized_code` is the claim the specification names for exactly
+this purpose.
+
 **Identity mapping.** `GET /users/resolve` turns a Keycloak identity into a dataspace DID and
 its credentials; `POST /users/identities` turns DIDs back into the usernames the data plane
 joins on.
@@ -114,7 +142,8 @@ This is the part most easily misread. The API has five tiers and they are not in
 
 | Tier | Credential | Routes |
 |---|---|---|
-| Public | none | `/dids/*`, `/status/*`, `/health`, and the invite-gated onboarding intake |
+| Public | none | `/dids/*`, `/status/*`, `/health`, `GET /issuer/metadata`, and the invite-gated onboarding intake |
+| Issuer | a self-issued JWT proving control of the client's **own** DID, carrying a `pre-authorized_code` | `POST /issuer/credentials`, `GET /issuer/requests/{id}` |
 | STS | the participant's own STS client secret, PBKDF2-verified | `POST /sts/{did}/token` |
 | DCP | a self-issued JWT signed by the requested DID's registered key | `POST /credentials/{did}/presentations/query` |
 | Internal | OIDC scope (`identity-registry.read`, `.resolve`, `.membership.read`, `.credentials.read`) | `/users/*`, `/memberships/check`, `/credentials/check`, `/owners/resolve`, participant reads |
@@ -229,7 +258,7 @@ database-touching command verifies the schema revision first, and every command 
 | `owner` | `add`, `list`, `remove`, `import` |
 | `membership` | `add`, `list`, `remove`, `import` |
 | `agreement` | `import`, `list` |
-| `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `revoke`, `bundle` |
+| `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `revoke`, `bundle`, `enrolment-token` |
 | `key` | `rotate` |
 | `status` | `export`, `check-indices` |
 | `keycloak` | `org-sync`, `merge`, `mirror`, `map-user` |
@@ -246,20 +275,26 @@ a realm (`celine-policies keycloak sync`). Realm writes are `org-sync` and the p
 `ir-cli status check-indices` reports credentials sharing a StatusList index and exits
 non-zero when it finds any, so it can gate a deployment.
 
+`ir-cli org enrolment-token --alias <owner>` issues the code a verified organisation enrols
+its own key with. The code goes to **stdout alone** so a bootstrap script can capture it;
+everything a person needs is on stderr. It is printed once — only the hash is stored.
+
 ## Persistence
 
-Twelve tables in `identity_registry`, Alembic-managed; the service and every CLI command
+Fourteen tables in `identity_registry`, Alembic-managed; the service and every CLI command
 refuse to run against a schema that is not at head.
 
 | Table | Holds |
 |---|---|
-| `keys` | key pairs — public JWK plain, private JWK as Fernet ciphertext with its own salt |
+| `keys` | key pairs — public JWK plain, private JWK as Fernet ciphertext with its own salt. **`private_jwk` is nullable**: an enrolled participant registers only its public key here |
 | `dids` | DID documents: type (`participant` / `user`), service endpoints, active flag |
 | `credentials` | the signed VC JSON, its status and its status-list index |
 | `participants` | DSP address, roles, allowed scopes, hashed STS secret |
 | `owners` | organisations: legal identity, verification evidence, accepted agreement and capacity |
 | `organization_applications` | the onboarding intake, before it becomes an owner |
-| `onboarding_invites` | single-use, hashed invite codes |
+| `onboarding_invites` | single-use, hashed invite codes — the gate on the public application route |
+| `enrolment_tokens` | single-use, hashed enrolment codes, and which DID redeemed each one |
+| `credential_requests` | CIP credential-request state: `RECEIVED` / `REJECTED` / `ISSUED` |
 | `agreements` / `agreement_acceptances` | agreement versions (path + SHA-256 of the text, never the prose) and who accepted which |
 | `organization_memberships` | person → organisation, with a role |
 | `keycloak_mappings` | `(realm, user_id)` → DID, plus username and email |

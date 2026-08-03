@@ -229,6 +229,28 @@ class IssuedInviteResponse(BaseModel):
     created_at: datetime
 
 
+class IssuedEnrolmentTokenResponse(BaseModel):
+    """Returned once. Only the hash is stored, so it cannot be shown again."""
+
+    id: str
+    code: str
+    owner_alias: str
+    expires_at: datetime | None = None
+
+
+class EnrolmentTokenResponse(BaseModel):
+    """An enrolment token as an operator sees it later — without the code."""
+
+    id: str
+    owner_alias: str
+    label: str | None = None
+    created_by: str | None = None
+    created_at: datetime
+    expires_at: datetime | None = None
+    redeemed_at: datetime | None = None
+    redeemed_did: str | None = None
+
+
 class InviteResponse(BaseModel):
     """An invite as an operator sees it later — without the code."""
 

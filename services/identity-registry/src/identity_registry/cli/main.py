@@ -1652,6 +1652,49 @@ def org_revoke(
     _run(_revoke())
 
 
+@org_app.command("enrolment-token")
+def org_enrolment_token(
+    alias: str = typer.Option(..., help="Owner alias to enrol"),
+    ttl_days: int = typer.Option(14, help="Lifetime in days"),
+    label: str = typer.Option(None, help="Note for the operator: who this went to"),
+):
+    """Issue the code a verified organisation enrols its own key with.
+
+    The terminal step of the governance plane. What follows it is not something
+    an operator does: the organisation generates its own keypair, publishes its
+    own DID document, and presents this code inside a self-issued token proving
+    control of that key (`POST /issuer/credentials`).
+
+    **Printed once** — only the hash is stored. Reissue to replace a lost code,
+    which also invalidates the old one.
+    """
+    from ..services import enrolment as enrol_service
+
+    async def _issue():
+        factory = await _ensure_db()
+        async with factory() as session:
+            try:
+                issued = await enrol_service.create_enrolment_token(
+                    session, alias, ttl_days=ttl_days, label=label, created_by="ir-cli"
+                )
+            except enrol_service.EnrolmentError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+
+        # The code on stdout alone, so a bootstrap script can capture it without
+        # parsing prose; everything a person needs goes to stderr.
+        typer.echo(issued.code)
+        typer.echo(
+            f"# Enrolment code for {alias} — expires "
+            f"{issued.expires_at.isoformat() if issued.expires_at else 'never'}. "
+            "Shown once; the registry stores only its hash.",
+            err=True,
+        )
+
+    _run(_issue())
+
+
 @org_app.command("apply")
 def org_apply(
     file: Path = typer.Option(..., help="owners.yaml seed file"),

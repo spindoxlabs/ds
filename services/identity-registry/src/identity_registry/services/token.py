@@ -81,6 +81,17 @@ async def get_participant_key(
     key = key_result.scalar_one_or_none()
     if not key:
         raise LookupError(f"No active key for participant: {participant_did}")
+    if key.private_jwk is None:
+        # An enrolled participant registers its **public** key here (`DID-09`).
+        # Being asked to sign for it means something is treating this instance as
+        # that participant's STS or credential service, which it is not and must
+        # never silently become. Say which instance should have answered rather
+        # than failing inside a decrypt on a None.
+        raise LookupError(
+            f"This registry holds only the public key of {participant_did} — it "
+            "cannot sign for it. That participant's own instance is its STS and "
+            "credential service; check the DID document's service endpoints."
+        )
 
     return key, participant
 
@@ -108,6 +119,28 @@ class PresentationGrant:
 
     verifier_did: str
     scopes: list[str] = field(default_factory=list)
+
+
+@dataclass
+class ClientIdentity:
+    """A caller that proved control of its DID, and the document that proved it.
+
+    The document comes back with the identity because every caller needs it:
+    the Issuer Service reads the client's `service` entries from it to learn
+    where the client's credential service and DSP endpoint are, and the
+    verification key it just used is in it too. Resolving twice would be two
+    chances to resolve differently.
+    """
+
+    did: str
+    claims: dict[str, Any]
+    document: dict[str, Any]
+    public_jwk: dict[str, Any]
+
+    @property
+    def pre_authorized_code(self) -> str | None:
+        code = self.claims.get("pre-authorized_code")
+        return code if isinstance(code, str) and code else None
 
 
 def decode_jwt(token: str) -> DecodedJwt:
@@ -337,3 +370,58 @@ async def verify_presentation_authorization(
         raise SiTokenInvalid("access token carries no scope")
 
     return PresentationGrant(verifier_did=issuer, scopes=scope.split())
+
+
+async def verify_client_identity(
+    token: str,
+    *,
+    audience: str,
+    resolver: DidResolver,
+    leeway: int = DEFAULT_LEEWAY,
+) -> ClientIdentity:
+    """Verify the Self-Issued ID token a client presents to the Issuer Service.
+
+    This is the first half of `verify_presentation_authorization`, and it is
+    deliberately the *same* half rather than a similar one: `iss == sub`, `aud`
+    names us, signature checked against the key in **`iss`'s own DID document**
+    selected by the `kid` header, time claims with leeway. DCP's
+    `base.protocol.md` §Validating Self-Issued ID Tokens defines it once for
+    every exchange in the protocol, so implementing it twice would be two places
+    for it to drift.
+
+    What differs is only what happens next. A presentation query goes on to check
+    an embedded access token, because the verifier must prove it was *granted*
+    something. A credential request does not: the client is asking to be issued
+    to, and its authorization to do so is the `pre-authorized_code` claim, which
+    means nothing without the signature this function checks.
+
+    **There is no local-key shortcut.** The key comes from did:web every time,
+    including for a DID this registry happens to hold a record of. A client that
+    could be verified against a key we already have is a client whose identity we
+    are asserting rather than checking — and in production the enrolling party is
+    a stranger by definition.
+    """
+    decoded = decode_jwt(token)
+    issuer = decoded.claims.get("iss")
+    subject = decoded.claims.get("sub")
+
+    if not isinstance(issuer, str) or not issuer:
+        raise SiTokenInvalid("missing iss")
+    if issuer != subject:
+        raise SiTokenInvalid("issuer/subject mismatch")
+    if audience not in audience_values(decoded.claims):
+        raise SiTokenInvalid("audience does not name this issuer")
+    check_time_claims(decoded.claims, leeway=leeway, what="self-issued token")
+
+    try:
+        document = await resolver.resolve(issuer)
+        jwk = verification_key(document, decoded.kid)
+    except DidResolutionError as exc:
+        raise SiTokenInvalid(f"cannot resolve the client's key: {exc}") from exc
+
+    if not verify_es256(decoded.signing_input, decoded.signature, load_public_key(jwk)):
+        raise SiTokenInvalid("bad signature on the self-issued token")
+
+    return ClientIdentity(
+        did=issuer, claims=decoded.claims, document=document, public_jwk=jwk
+    )

@@ -4,7 +4,7 @@ The dataspace **trust anchor**. Owns the DID lifecycle, issues and revokes crede
 acts as STS and DCP Credential Service for every participant, and holds the participant,
 owner and membership registries plus the organisation onboarding lifecycle.
 
-Port 30005 (debug 30905). PostgreSQL, 11 tables. EC P-256 / ES256.
+Port 30005 (debug 30905). PostgreSQL, 14 tables. EC P-256 / ES256.
 
 **Everything in the platform's trust story depends on this service.** A wrong edit here is
 not a bug in one feature — it is a participant who cannot be revoked.
@@ -39,7 +39,8 @@ Router order in `ROUTERS` is mount order and is load-bearing twice: `credentials
 
 | Tier | Auth | Examples |
 |---|---|---|
-| Public | none | `/dids/`, `/status/`, `/health` — must be reachable for `did:web` and revocation checking |
+| Public | none | `/dids/`, `/status/`, `/health`, `GET /issuer/metadata` — must be reachable for `did:web` and revocation checking |
+| Issuer | self-issued JWT proving control of the **client's own** DID + a `pre-authorized_code` | `POST /issuer/credentials` |
 | STS | participant's STS client secret (PBKDF2-hashed) | `POST /sts/{did}/token` |
 | DCP | self-issued JWT signed by the requested DID's registered key | `POST /credentials/{did}/presentations/query` |
 | Internal | JWT scope (`identity-registry.read` / `.resolve`) | `/participants`, `/users/resolve`, `/memberships/check`, `/owners/resolve` |
@@ -68,10 +69,30 @@ authorisation and never grants one.
 ```
 register (application) → verify (→ Owner, status=verified)
   → accept agreement (records capacity + text SHA-256, never prose)
+  → enrolment-token   [gate: verified. The organisation enrols its own key]
   → issue-credential  [gate: verified AND a current agreement accepted]
   → promote           [gate: a valid, unrevoked OrganizationCredential]
   → suspend | revoke  [StatusList bit + participant deactivation, one tx]
 ```
+
+**Enrolment is where a key enters, and it is not this service's key to make.**
+`services/enrolment.py` + `api/v1/issuer.py` implement DCP's Credential Issuance Protocol:
+the organisation generates its own keypair, publishes its own DID document, and presents a
+single-use `pre-authorized_code` inside a self-issued token proving control of that key. The
+anchor stores the **public** key only — `keys.private_jwk` is nullable and NULL is the correct
+value for anyone but this instance itself.
+
+Rules that are easy to break here:
+
+- **Never verify a client against a key this registry holds.** `verify_client_identity`
+  resolves through did:web every time, with no local shortcut. A shortcut passes in dev — where
+  both parties live in one database — and fails in production, where the enrolling party is a
+  stranger. That is the same shape as the defect `P-8a` exists to prevent.
+- **Endpoints come from the resolved DID document, never from the request body.** Two sources
+  for one fact means a client can claim what it does not publish.
+- **Every refusal on `/issuer/*` answers alike.** Distinguishing "spent" from "unknown"
+  enumerates codes; distinguishing "not verified" discloses an application's state. The
+  operator's log carries the real reason — `EnrolmentError` carries both.
 
 The gates live in **`services/org_onboarding.py`, shared by the HTTP API and the CLI**, so
 both behave identically — the CLI is the reference implementation. Gates raise
@@ -111,6 +132,7 @@ Rules that are easy to break:
 | Service agreement | `seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 | Keycloak realm interaction | `services/keycloak_{admin,merge,mirror}.py` |
 | DB table | `db/models.py` + `task db:revision MESSAGE=...` |
+| Enrolment / CIP | `services/enrolment.py` + `api/v1/issuer.py` — never one without the other |
 
 `task -d services/identity-registry run|debug|test|lint|type-check|db:migrate`.
 

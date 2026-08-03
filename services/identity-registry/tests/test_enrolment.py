@@ -1,0 +1,687 @@
+"""Enrolment — the handshake that replaces the anchor minting somebody's identity.
+
+The client here is a *stranger with a key*: an organisation that generated its own
+keypair, published its own DID document, and holds an out-of-band code. Nothing
+about it is in this registry until it enrols, which is the whole point — the
+previous design had the anchor generate the key and so had nothing to verify.
+
+Shapes are DCP's, not ours: `credential.issuance.protocol.md` §Credential Request
+API, and `base.protocol.md` §Validating Self-Issued ID Tokens for the check. The
+`pre-authorized_code` claim is the spec's own name for the authorization carrier.
+"""
+from __future__ import annotations
+
+import time
+from datetime import UTC, datetime, timedelta
+
+import pytest
+from conftest import make_admin_headers
+from sqlalchemy import select
+
+from identity_registry.db.models import (
+    CredentialRequest,
+    EnrolmentToken,
+    Key,
+    Owner,
+    Participant,
+)
+from identity_registry.services.crypto import (
+    create_jws,
+    generate_key_pair,
+    load_private_key,
+)
+from identity_registry.services.did import build_did_document
+
+HEADERS = make_admin_headers()
+
+ANCHOR = "did:web:trust-anchor.dataspaces.localhost"
+REC_DID = "did:web:rec.dataspaces.localhost"
+DSP = "http://172.17.0.1:19194/protocol/2025-1"
+CS = f"http://rec.dataspaces.localhost/credentials/{REC_DID}"
+
+
+class Client:
+    """An organisation's own instance: a keypair it generated and never shared."""
+
+    def __init__(self, did: str = REC_DID):
+        self.did = did
+        self.kp = generate_key_pair(did)
+        self.private_key = load_private_key(self.kp.private_jwk)
+
+    def document(self, *, dsp: str | None = DSP, cs: str | None = CS) -> dict:
+        endpoints = []
+        if dsp:
+            endpoints.append({"type": "DSPEndpoint", "serviceEndpoint": dsp})
+        if cs:
+            endpoints.append({"type": "CredentialService", "serviceEndpoint": cs})
+        return build_did_document(
+            self.did, self.kp.public_jwk, service_endpoints=endpoints or None
+        )
+
+    def si_token(
+        self,
+        *,
+        code: str | None,
+        audience: str = ANCHOR,
+        iss: str | None = None,
+        sub: str | None = None,
+        ttl: int = 300,
+    ) -> str:
+        now = int(time.time())
+        claims: dict = {
+            "iss": iss or self.did,
+            "sub": sub or self.did,
+            "aud": [audience],
+            "iat": now,
+            "exp": now + ttl,
+        }
+        if code is not None:
+            claims["pre-authorized_code"] = code
+        return create_jws(
+            {"alg": "ES256", "kid": self.kp.kid}, claims, self.private_key
+        )
+
+
+def request_body(*, credentials=("MembershipCredential",), holder_pid="req-1") -> dict:
+    return {
+        "@context": ["https://w3id.org/dspace-dcp/v1.0/dcp.jsonld"],
+        "type": "CredentialRequestMessage",
+        "holderPid": holder_pid,
+        "credentials": [{"id": c} for c in credentials],
+    }
+
+
+async def make_owner(db_session, alias="rec", *, status="verified") -> Owner:
+    owner = Owner(
+        id=alias,
+        type="schema:Organization",
+        name="Riverside Energy Community",
+        status=status,
+        verified_by="ops@example.test" if status == "verified" else None,
+        verified_at=datetime.now(UTC) if status == "verified" else None,
+    )
+    db_session.add(owner)
+    await db_session.commit()
+    return owner
+
+
+async def issue_code(client, alias="rec") -> str:
+    r = await client.post(
+        "/admin/onboarding/enrolments",
+        json={"owner_alias": alias},
+        headers=HEADERS,
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["code"]
+
+
+# ── The happy path ────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_enrolment_registers_the_did_the_key_and_the_endpoints(
+    client, db_session, resolver
+):
+    await make_owner(db_session)
+    code = await issue_code(client)
+
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 201, r.text
+
+    body = r.json()
+    assert body["type"] == "CredentialStatus"
+    assert body["status"] == "RECEIVED"
+    assert body["holderPid"] == "req-1"
+    assert r.headers["Location"] == f"/issuer/requests/{body['issuerPid']}"
+
+    participant = (
+        await db_session.execute(select(Participant).where(Participant.did == org.did))
+    ).scalar_one()
+    assert participant.dsp_address == DSP
+    # The anchor does not decide how a participant authenticates to its own STS.
+    assert participant.sts_client_secret is None
+
+
+@pytest.mark.asyncio
+async def test_the_anchor_stores_the_public_key_and_no_private_key(
+    client, db_session, resolver
+):
+    """The row this whole change exists to produce."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 201
+
+    key = (
+        await db_session.execute(select(Key).where(Key.owner_did == org.did))
+    ).scalar_one()
+    assert key.private_jwk is None
+    assert key.public_jwk["kid"] == org.kp.kid
+    assert "d" not in key.public_jwk
+
+
+@pytest.mark.asyncio
+async def test_the_owner_is_bound_to_the_did_that_enrolled(
+    client, db_session, resolver
+):
+    owner = await make_owner(db_session)
+    assert owner.did is None
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    await db_session.refresh(owner)
+    assert owner.did == org.did
+
+
+@pytest.mark.asyncio
+async def test_the_code_is_spent_and_records_which_did_used_it(
+    client, db_session, resolver
+):
+    """The audit trail from a verification an operator made to the key that speaks."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    token = (await db_session.execute(select(EnrolmentToken))).scalar_one()
+    assert token.redeemed_at is not None
+    assert token.redeemed_did == org.did
+
+
+@pytest.mark.asyncio
+async def test_endpoints_come_from_the_did_document_not_the_request(
+    client, db_session, resolver
+):
+    """A client cannot claim an endpoint its published document does not carry."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document(dsp="http://declared.example/protocol")
+
+    body = request_body()
+    body["dspAddress"] = "http://claimed.example/protocol"  # ignored
+    await client.post(
+        "/issuer/credentials",
+        json=body,
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    participant = (
+        await db_session.execute(select(Participant).where(Participant.did == org.did))
+    ).scalar_one()
+    assert participant.dsp_address == "http://declared.example/protocol"
+
+
+# ── Neither factor is sufficient alone ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_valid_code_without_a_matching_signature_enrols_nothing(
+    client, db_session, resolver
+):
+    """The code says which organisation; the signature says which key.
+
+    Here the token is signed by a key whose DID document publishes a *different*
+    key — a leaked code in the hands of someone who cannot prove control.
+    """
+    await make_owner(db_session)
+    code = await issue_code(client)
+
+    org = Client()
+    impostor = Client()
+    # The document published for org.did carries org's key, not the impostor's.
+    resolver.documents[org.did] = org.document()
+
+    forged = impostor.si_token(code=code, iss=org.did, sub=org.did)
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {forged}"},
+    )
+    assert r.status_code == 401
+    assert (await db_session.execute(select(Participant))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_a_valid_signature_without_a_code_enrols_nothing(
+    client, db_session, resolver
+):
+    await make_owner(db_session)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=None)}"},
+    )
+    assert r.status_code == 401
+    assert (await db_session.execute(select(Participant))).scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_code_and_a_spent_code_answer_identically(
+    client, db_session, resolver
+):
+    """No oracle. Distinguishing the two tells an attacker which codes exist."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    first = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert first.status_code == 201
+
+    spent = await client.post(
+        "/issuer/credentials",
+        json=request_body(holder_pid="req-2"),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    unknown = await client.post(
+        "/issuer/credentials",
+        json=request_body(holder_pid="req-3"),
+        headers={"Authorization": f"Bearer {org.si_token(code='never-issued')}"},
+    )
+    assert spent.status_code == unknown.status_code == 401
+    assert spent.json() == unknown.json()
+
+
+@pytest.mark.asyncio
+async def test_an_expired_code_is_refused(client, db_session, resolver):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    token = (await db_session.execute(select(EnrolmentToken))).scalar_one()
+    token.expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    await db_session.commit()
+
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_unresolvable_did_is_refused(client, db_session, resolver):
+    """No local shortcut: the key comes from did:web or the request fails."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()  # never published
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_token_addressed_to_someone_else_is_refused(
+    client, db_session, resolver
+):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={
+            "Authorization": (
+                f"Bearer {org.si_token(code=code, audience='did:web:elsewhere')}"
+            )
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_iss_must_equal_sub(client, db_session, resolver):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={
+            "Authorization": f"Bearer {org.si_token(code=code, sub='did:web:other')}"
+        },
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_an_expired_token_is_refused(client, db_session, resolver):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code, ttl=-3600)}"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_missing_bearer_is_refused(client, db_session):
+    r = await client.post("/issuer/credentials", json=request_body())
+    assert r.status_code == 401
+
+
+# ── Rebinding, retries and idempotence ────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_re_enrolling_the_same_did_is_idempotent(client, db_session, resolver):
+    """A retry after a network failure must not need an operator."""
+    await make_owner(db_session)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    for pid in ("req-1", "req-2"):
+        code = await issue_code(client)
+        r = await client.post(
+            "/issuer/credentials",
+            json=request_body(holder_pid=pid),
+            headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+        )
+        assert r.status_code == 201, r.text
+
+    keys = (
+        await db_session.execute(select(Key).where(Key.owner_did == org.did))
+    ).scalars().all()
+    assert len(keys) == 1
+    participants = (await db_session.execute(select(Participant))).scalars().all()
+    assert len(participants) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_second_did_cannot_take_over_an_enrolled_owner(
+    client, db_session, resolver
+):
+    """Re-pointing an organisation's identity is not a keyholder's decision."""
+    await make_owner(db_session)
+    first = Client()
+    resolver.documents[first.did] = first.document()
+    code = await issue_code(client)
+    assert (
+        await client.post(
+            "/issuer/credentials",
+            json=request_body(),
+            headers={"Authorization": f"Bearer {first.si_token(code=code)}"},
+        )
+    ).status_code == 201
+
+    second = Client("did:web:usurper.dataspaces.localhost")
+    resolver.documents[second.did] = second.document()
+    code2 = await issue_code(client)
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(holder_pid="req-2"),
+        headers={"Authorization": f"Bearer {second.si_token(code=code2)}"},
+    )
+    assert r.status_code == 409
+
+    owner = (await db_session.execute(select(Owner))).scalar_one()
+    assert owner.did == first.did
+
+
+@pytest.mark.asyncio
+async def test_a_locally_held_did_cannot_be_enrolled(client, db_session, resolver):
+    """A DID this registry generated is not re-bindable by presenting a key.
+
+    Otherwise the trust anchor's own DID could be taken over by anyone holding an
+    enrolment code, which is the worst version of the defect this replaces.
+    """
+    await make_owner(db_session)
+    org = Client()
+    local = generate_key_pair(org.did)
+    db_session.add(
+        Key(owner_did=org.did, kid=local.kid, private_jwk={"fake": "encrypted"},
+            public_jwk=local.public_jwk)
+    )
+    from identity_registry.db.models import Did as DidRow
+
+    db_session.add(DidRow(did=org.did, did_type="participant"))
+    await db_session.commit()
+
+    resolver.documents[org.did] = org.document()
+    code = await issue_code(client)
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 409
+
+
+# ── Governance gates ──────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_unverified_owner_gets_no_enrolment_token(client, db_session):
+    await make_owner(db_session, status="pending")
+    r = await client.post(
+        "/admin/onboarding/enrolments",
+        json={"owner_alias": "rec"},
+        headers=HEADERS,
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_owner_gets_no_enrolment_token(client):
+    r = await client.post(
+        "/admin/onboarding/enrolments",
+        json={"owner_alias": "nobody"},
+        headers=HEADERS,
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_issuing_an_enrolment_token_needs_a_scope(client, db_session):
+    await make_owner(db_session)
+    r = await client.post(
+        "/admin/onboarding/enrolments", json={"owner_alias": "rec"}
+    )
+    assert r.status_code in (401, 403)
+
+
+@pytest.mark.asyncio
+async def test_the_code_is_never_readable_back(client, db_session):
+    await make_owner(db_session)
+    code = await issue_code(client)
+
+    listing = await client.get("/admin/onboarding/enrolments", headers=HEADERS)
+    assert listing.status_code == 200
+    assert code not in listing.text
+    assert listing.json()[0]["owner_alias"] == "rec"
+
+
+# ── The request message and the status endpoint ───────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_unsupported_credential_id_is_a_400(client, db_session, resolver):
+    """Naming what is unsupported is safe: `credentialsSupported` is public."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(credentials=("DriversLicence",)),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 400
+    assert "DriversLicence" in r.text
+
+
+@pytest.mark.asyncio
+async def test_a_wrong_message_type_is_a_400(client, db_session, resolver):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    body = request_body()
+    body["type"] = "SomethingElse"
+    r = await client.post(
+        "/issuer/credentials",
+        json=body,
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_issuer_metadata_is_public_and_names_the_anchor(client):
+    r = await client.get("/issuer/metadata")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["type"] == "IssuerMetadata"
+    assert body["issuer"].startswith("did:web:")
+    ids = {obj["id"] for obj in body["credentialsSupported"]}
+    assert ids == {"MembershipCredential", "OrganizationCredential"}
+    # A natural person is not a holder and does not enrol (`D-49`).
+    assert "DataSubjectCredential" not in ids
+
+
+@pytest.mark.asyncio
+async def test_credentials_supported_carries_every_optional_property(client):
+    """CIP: *"Every CredentialObject in credentialsSupported MUST contain all
+    OPTIONAL properties defined in CredentialObject"*."""
+    body = (await client.get("/issuer/metadata")).json()
+    required = {
+        "id",
+        "type",
+        "credentialType",
+        "bindingMethods",
+        "profile",
+        "issuancePolicy",
+        "offerReason",
+    }
+    for obj in body["credentialsSupported"]:
+        assert required <= set(obj)
+
+
+@pytest.mark.asyncio
+async def test_the_requesting_client_can_read_its_own_request_status(
+    client, db_session, resolver
+):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    created = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    pid = created.json()["issuerPid"]
+
+    r = await client.get(
+        f"/issuer/requests/{pid}",
+        headers={"Authorization": f"Bearer {org.si_token(code=None)}"},
+    )
+    assert r.status_code == 200
+    assert r.json()["status"] == "RECEIVED"
+    assert r.json()["holderPid"] == "req-1"
+
+
+@pytest.mark.asyncio
+async def test_another_client_cannot_read_a_request_status(
+    client, db_session, resolver
+):
+    """*"only the client that made the request MAY access a particular status"*."""
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    created = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    pid = created.json()["issuerPid"]
+
+    stranger = Client("did:web:stranger.dataspaces.localhost")
+    resolver.documents[stranger.did] = stranger.document()
+    r = await client.get(
+        f"/issuer/requests/{pid}",
+        headers={"Authorization": f"Bearer {stranger.si_token(code=None)}"},
+    )
+    # Identical to an unknown request: distinguishing them enumerates holders.
+    assert r.status_code == 404
+
+    missing = await client.get(
+        "/issuer/requests/does-not-exist",
+        headers={"Authorization": f"Bearer {stranger.si_token(code=None)}"},
+    )
+    assert missing.status_code == r.status_code
+    assert missing.json() == r.json()
+
+
+@pytest.mark.asyncio
+async def test_the_request_is_recorded(client, db_session, resolver):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    await client.post(
+        "/issuer/credentials",
+        json=request_body(
+            credentials=("MembershipCredential", "OrganizationCredential")
+        ),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    request = (await db_session.execute(select(CredentialRequest))).scalar_one()
+    assert request.holder_did == org.did
+    assert request.owner_alias == "rec"
+    assert set(request.requested) == {"MembershipCredential", "OrganizationCredential"}
+    assert request.status == "RECEIVED"
