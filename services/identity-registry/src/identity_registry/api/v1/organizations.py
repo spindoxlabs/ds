@@ -450,24 +450,33 @@ async def generate_provisioning_bundle(
     settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_org_promote),
 ):
-    """Everything a promoted organisation needs to stand up its own ds instance.
+    """Everything a verified organisation needs to stand up its own ds deployment.
 
-    **Returns secrets, once.** Generating a bundle *rotates* the participant's STS
-    secret, so a previously issued one stops working — the registry stores a hash
-    and cannot re-show a secret, which makes rotation the only honest meaning of
-    "send it again". It also means a bundle that leaked can be invalidated by
-    generating another.
+    **It no longer hands over an identity** (`DID-10`). It used to return an STS
+    client secret this registry had minted, with `sts_token_url` and
+    `credential_service_url` pointing at **the anchor** — so the artefact an
+    operator sent a third party configured that third party to use somebody
+    else's registry as its own Secure Token Service and credential store.
 
-    Gated on `organizations.promote` rather than `.write`: handing over working
-    credentials for a DSP counterparty is the same class of act as creating one.
+    What it returns now: trust material, the counterparties, and a **single-use
+    enrolment code**. The recipient generates its own key, publishes its own DID
+    document, and proves control of it. The two secrets it needs are *named* in
+    the rendered config and left empty, because they are its to choose.
+
+    **Nothing rotates any more**, and the reason it used to is gone with it: the
+    rotation protected a secret only this registry could mint. Asking twice no
+    longer kills the first copy — though each call does issue a *new* enrolment
+    code, and a code is single-use.
+
+    Gated on `organizations.promote` rather than `.write`: admitting a DSP
+    counterparty is the same class of act as creating one.
 
     `format=env|properties` renders the config files directly, using the same
-    renderers as `ir-cli org bundle` so the two cannot drift. `format=all` returns
-    the bundle *and* both renderings together, because each call rotates: asking
-    three times to obtain three files would leave the first two dead. An unknown
-    format is a 422, not a silent fall-back to JSON — a typo that quietly returns
-    a different artefact than the one asked for is how a `.properties` file ends
-    up holding a secret.
+    renderers as `ir-cli org bundle` so the two cannot drift. `format=all`
+    returns the bundle *and* both renderings together. An unknown format is a
+    422, not a silent fall-back to JSON — a typo that quietly returns a different
+    artefact than the one asked for is how a `.properties` file ends up holding a
+    secret.
     """
     owner = await ops.resolve_owner(db, alias)
     if not owner:

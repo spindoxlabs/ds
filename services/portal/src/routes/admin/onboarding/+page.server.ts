@@ -165,12 +165,17 @@ export const actions: Actions = {
 	/**
 	 * Hand a promoted organisation its connection bundle.
 	 *
-	 * Rotates the STS secret, so the page warns before and after. Returned to the
-	 * page rather than downloaded server-side: the operator saves it once, and it
-	 * never touches disk here.
+	 * Carries a **single-use enrolment code**, so the page warns before and
+	 * after. Returned to the page rather than downloaded server-side: the
+	 * operator saves it once, and it never touches disk here.
+	 *
+	 * It no longer rotates anything — the registry mints no STS secret for a
+	 * participant (`DID-10`/`D-51`). Reissuing is therefore safe for an existing
+	 * deployment, and is *not* revocation: the earlier code stays valid until
+	 * redeemed or expired.
 	 *
 	 * One registry call renders all three artefacts. Asking three times would
-	 * rotate three times and hand over two bundles that no longer authenticate.
+	 * issue three codes where the recipient needs one.
 	 */
 	bundle: async (event) => {
 		const session = await requireGrant(event, 'identity-registry.organizations.promote');

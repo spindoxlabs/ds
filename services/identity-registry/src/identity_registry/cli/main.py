@@ -1895,11 +1895,16 @@ def org_bundle(
     alias: str = typer.Option(..., help="Owner alias"),
     format: str = typer.Option("json", help="json | env | properties"),
 ):
-    """Generate the connection bundle a promoted organisation needs.
+    """Generate the bundle a verified organisation stands its own deployment up from.
 
-    **Rotates the STS secret.** The registry stores only a hash, so a secret cannot
-    be re-shown — issuing a new one is the only honest meaning of "send it again",
-    and it makes a leaked bundle invalidatable.
+    **It hands over no identity** (`DID-10`): trust material, the counterparties,
+    and a single-use enrolment code. The recipient generates its own key and
+    proves control of it; the two secrets it needs are named in the rendered
+    config and left empty, because they are its to choose.
+
+    Nothing rotates — the rotation protected an STS secret this registry minted,
+    and it no longer mints one. Each call does issue a **new** enrolment code,
+    and a code is single-use.
 
     Uses the same renderers as `POST /admin/owners/{alias}/provisioning-bundle`, so
     the CLI and the console cannot emit different config for the same organisation.
@@ -1935,8 +1940,9 @@ def org_bundle(
         else:
             typer.echo(_json.dumps(data, indent=2))
         typer.echo(
-            "\n# The STS secret above is new — any previously issued bundle for "
-            f"{alias} no longer works.",
+            f"\n# The enrolment code above is single-use and new. Any code from a "
+            f"previous bundle for {alias} is still valid until redeemed or "
+            "expired — reissue is not revocation.",
             err=True,
         )
 

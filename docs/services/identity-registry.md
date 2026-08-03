@@ -97,10 +97,17 @@ application → verified owner → agreement acceptance → organization credent
 ```
 
 Each gate refuses to run before its predecessor: a credential needs a verified owner *and* an
-accepted agreement *and* a DID; promotion to participant needs an active credential. The last
-step optionally produces a **provisioning bundle** — the config a third party needs to stand
-up their own connector — and rotates the STS secret every time it is generated, storing only
-a hash. It cannot re-show a secret, which is exactly what makes a leaked bundle invalidatable.
+accepted agreement *and* an **enrolled DID**; promotion to participant needs an active
+credential.
+
+Alongside it sits the **provisioning bundle** — the config a third party stands its own
+deployment up from. It carries the trust anchor's DID and trusted issuers, the counterparties,
+the Keycloak client credentials its connector needs against *this* realm, and a **single-use
+enrolment code**. It carries **no identity of ours**: the STS and credential-service URLs it
+renders are on the recipient's own host, and the two secrets it needs
+(`IDENTITY_REGISTRY_ENCRYPTION_KEY`, `IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET`) are named and
+left empty, because the trust anchor mints neither. Generating one changes nothing about an
+existing deployment; reissuing produces another code and does not revoke the first.
 
 **Enrolment — where an organisation's own key enters.** The chain above ends with the
 governance authority's judgement. What used to follow it was a *mint*: this service generated

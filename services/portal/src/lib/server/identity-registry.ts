@@ -304,24 +304,30 @@ export function createInvite(token: string, body: { label?: string; ttl_days?: n
 }
 
 /**
- * The connection bundle for a promoted organisation.
+ * The bundle a verified organisation stands its own deployment up from.
  *
- * **Generating one rotates the participant's STS secret**, so any bundle issued
- * earlier stops working. The registry stores only a hash and cannot re-show a
- * secret — rotation is the only honest meaning of "send it again", and it is what
- * makes a leaked bundle invalidatable.
+ * **It carries no identity of ours** (`DID-10`). It used to return an STS client
+ * secret the registry had minted, and generating one *rotated* that secret — so
+ * any earlier bundle stopped working. Nothing here mints a secret now: the
+ * recipient generates its own key and proves control of it, and the two secrets
+ * it needs are named in the rendered config and left empty.
+ *
+ * What it does carry is a **single-use enrolment code**. Reissuing produces
+ * another code and does not invalidate the first, so "send it again" is no
+ * longer destructive — but it is also not revocation, and a UI should say so.
  */
 export interface ProvisioningBundle {
 	bundle: Record<string, unknown>;
-	/** `.env` for the third party's connector. **Contains the STS secret.** */
+	/** `.env` for the third party's deployment. **Contains the enrolment code.** */
 	env: string;
 	/** EDC `.properties`. Secret-free by construction — see `provisioning.py`. */
 	properties: string;
 }
 
 export function generateProvisioningBundle(token: string, alias: string) {
-	// `format=all` in one call, deliberately: each call rotates, so fetching the
-	// three artefacts separately would leave the first two dead on arrival.
+	// `format=all` in one call: each call issues a *new* single-use enrolment
+	// code, so fetching the three artefacts separately would hand over three
+	// codes where the recipient needs one.
 	return irFetch<ProvisioningBundle>(
 		`/admin/owners/${alias}/provisioning-bundle?format=all`,
 		token,

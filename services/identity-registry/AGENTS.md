@@ -115,10 +115,14 @@ Rules that are easy to break:
   unknown participant, no accepted agreement, or a non-verified owner all return 404, because
   the caller reads "no answer" as "outside the circle" and asks. Returning a capacity on weak
   evidence suppresses a consent request Art. 4(11) requires.
-- **Every provisioning-bundle call rotates the STS secret.** The registry stores only a hash
-  and cannot re-show a secret, so rotation is the only honest meaning of "send it again" —
-  and it is what makes a leaked bundle invalidatable. Say so in any UI before the button.
-  Use `format=all` for one rotation; three separate calls hand over two dead bundles.
+- **The provisioning bundle hands over no identity** (`DID-10`). It used to carry an STS secret
+  this registry minted, with the STS and credential-service URLs pointing at the *anchor* — so
+  the artefact an operator sent a third party configured that third party to use somebody
+  else's registry as its own. It now carries trust material, the counterparties and a
+  **single-use enrolment code**; the two secrets the recipient needs are *named* in the
+  rendered config and left empty, because they are the recipient's to choose.
+  **Nothing rotates**, so reissuing is safe for a running deployment — and is *not* revocation.
+  Still use `format=all`: each call issues a new code, and the recipient needs one.
 
 ## Where to work
 

@@ -10,8 +10,9 @@
   /**
    * Save an artefact the operator already holds in the page.
    *
-   * Client-side on purpose: the bundle was returned once and rotating the secret
-   * again to produce a download would invalidate the copy on screen.
+   * Client-side on purpose: the bundle was returned once, and asking the
+   * registry again to produce a download would issue a second enrolment code
+   * beside the one on screen.
    */
   function download(name: string, body: string) {
     const url = URL.createObjectURL(new Blob([body], { type: 'text/plain' }));
@@ -126,7 +127,7 @@
             onclick={() => download(`${form.bundleAlias}.properties`, form.bundleProperties)}
           >Download .properties</button>
           <span class="text-xs text-amber-800">
-            <span class="font-mono">.env</span> carries the STS secret;
+            <span class="font-mono">.env</span> carries the single-use enrolment code;
             <span class="font-mono">.properties</span> carries none.
           </span>
         </div>
@@ -326,7 +327,8 @@
                   <input type="hidden" name="alias" value={app.alias} />
                   <button class="ds-btn-secondary text-sm">Generate connection bundle</button>
                   <span class="text-xs text-amber-800">
-                    Rotates their STS secret — any bundle issued earlier stops working.
+                    Issues a single-use enrolment code. It changes nothing they
+                    already run, and does not revoke an earlier code.
                   </span>
                 </form>
               {/if}

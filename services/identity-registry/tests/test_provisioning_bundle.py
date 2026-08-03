@@ -1,15 +1,22 @@
-"""The connection bundle handed to a promoted organisation.
+"""The bundle handed to a verified organisation.
 
-It carries working credentials, so its refusals and its rotation behaviour matter
-more than its contents.
+**It used to carry an identity** — an STS secret this registry minted, and
+`sts_token_url` / `credential_service_url` pointing at the anchor — so the tests
+below were about *rotation*: how to hand over a credential safely. `DID-10`
+removed the credential, and with it the question.
+
+What matters now is the opposite property: that the bundle contains **nothing
+belonging to an identity the recipient should have generated**, and that the
+config it renders points at the recipient's own host rather than ours. Several
+tests here are therefore inverted rather than adjusted, and each says so.
 """
 from __future__ import annotations
 
 import pytest
 from conftest import make_headers
 
-from identity_registry.db.models import Owner, Participant
-from identity_registry.services.crypto import hash_sts_secret, verify_sts_secret
+from identity_registry.db.models import EnrolmentToken, Owner, Participant
+from identity_registry.services.crypto import hash_sts_secret
 
 PROMOTE = make_headers(scope="identity-registry.organizations.promote")
 WRITE = make_headers(scope="identity-registry.organizations.write")
@@ -71,12 +78,39 @@ async def test_unknown_owner_is_404(client):
 
 
 @pytest.mark.asyncio
-async def test_refuses_before_promotion(client, db_session):
-    """A bundle for something nobody can negotiate with is a support ticket."""
+async def test_an_unpromoted_organisation_can_still_get_a_bundle(client, db_session):
+    """**Inverted.** It used to refuse until the owner was a promoted participant.
+
+    That demanded the outcome as a precondition for the means: the bundle is
+    what an organisation configures its deployment *from*, and it becomes a
+    participant by enrolling with the code the bundle carries. Requiring
+    promotion first was only coherent while the anchor could promote somebody
+    into existence on their behalf, which is exactly what `D-51` ends.
+    """
     await _seed(db_session, promoted=False)
     r = await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
-    assert r.status_code == 409
-    assert "promote it first" in r.json()["detail"]
+    assert r.status_code == 201
+    body = r.json()
+    assert body["enrolment"]["code"]
+    assert body["participant"]["roles"] == []
+
+
+@pytest.mark.asyncio
+async def test_an_owner_with_no_did_is_refused(client, db_session):
+    """The one precondition that survives: there must be a DID to enrol as."""
+    db_session.add(
+        Owner(
+            id="no-did",
+            type="organization",
+            name="No DID",
+            aliases=[],
+            status="verified",
+            verified_by="test",
+        )
+    )
+    await db_session.commit()
+    r = await client.post("/admin/owners/no-did/provisioning-bundle", headers=PROMOTE)
+    assert r.status_code == 422
 
 
 # ── contents ──────────────────────────────────────────────────────────────────
@@ -84,50 +118,117 @@ async def test_refuses_before_promotion(client, db_session):
 @pytest.mark.asyncio
 async def test_bundle_carries_what_a_deployment_needs(client, db_session):
     await _seed(db_session)
-    body = (await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)).json()
+    r = await client.post(
+        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
+    )
+    body = r.json()
 
     assert body["participant"]["did"] == DID
     assert body["participant"]["roles"] == ["consumer"]
 
-    identity = body["identity"]
-    assert identity["sts_client_id"] == DID
-    assert identity["sts_client_secret"]
-    assert DID in identity["did_document_url"]
-    assert DID in identity["credential_service_url"]
+    # What they stand up — every URL on **their** host.
+    inst = body["instance"]
+    assert inst["role"] == "participant"
+    assert inst["participant_did"] == DID
+    assert inst["sts_token_url"].startswith("https://acme.example.test/")
+    assert inst["credential_service_url"].startswith("https://acme.example.test/")
+    assert inst["did_document_url"] == "https://acme.example.test/.well-known/did.json"
+    # The two secrets are **named, never valued**: they are the recipient's.
+    assert set(inst["secrets_you_must_set"]) == {
+        "IDENTITY_REGISTRY_ENCRYPTION_KEY",
+        "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET",
+    }
 
+    # Who they trust — the only place the anchor appears.
     assert body["trust"]["trust_anchor_did"].startswith("did:web:")
+    assert body["enrolment"]["code"]
+    assert "/issuer/credentials" in body["enrolment"]["issuer_url"]
+
     # The counterparty it will actually negotiate with, not itself.
-    assert [c["did"] for c in body["counterparties"]] == ["did:web:provider.example.test"]
+    assert [c["did"] for c in body["counterparties"]] == [
+        "did:web:provider.example.test"
+    ]
+
+
+@pytest.mark.asyncio
+async def test_the_bundle_carries_no_identity_of_ours(client, db_session):
+    """The whole of `DID-10`, as one assertion.
+
+    Nothing in it is a credential belonging to an identity the recipient should
+    have generated, and no URL in it makes our registry their STS or their
+    credential store.
+    """
+    await _seed(db_session)
+    body = (
+        await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
+    ).json()
+
+    assert "identity" not in body, "the `identity` block was the defect"
+    flat = str(body)
+    assert "sts_client_secret" not in flat
+    anchor_host = body["trust"]["identity_registry_url"]
+    assert body["instance"]["sts_token_url"].startswith("https://acme.example.test")
+    assert not body["instance"]["credential_service_url"].startswith(anchor_host)
+
+
+@pytest.mark.asyncio
+async def test_the_enrolment_code_is_real_and_single_use(client, db_session):
+    """It is the one thing in the bundle that grants anything — and only with a key."""
+    from sqlalchemy import select
+
+    await _seed(db_session)
+    body = (
+        await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
+    ).json()
+
+    token = (await db_session.execute(select(EnrolmentToken))).scalars().one()
+    assert token.owner_alias == ALIAS
+    assert token.redeemed_at is None
+    assert token.expires_at is not None
+    # Stored as a hash — the bundle is the only copy of the code itself.
+    assert token.code_hash != body["enrolment"]["code"]
 
 
 # ── rotation ──────────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_generating_rotates_the_sts_secret(client, db_session):
-    """The registry stores a hash and cannot re-show a secret, so "send it again"
-    can only mean "issue a new one". That is also what makes a leaked bundle
-    invalidatable."""
-    await _seed(db_session)
+async def test_generating_a_bundle_changes_no_ones_identity(client, db_session):
+    """**Inverted.** Every call used to rotate the participant's STS secret.
 
-    first = (await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)).json()
-    second = (await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)).json()
+    That was right for a secret only this registry could mint: "send it again"
+    could only mean "issue a new one". It no longer mints one, so generating a
+    bundle is not a mutation of somebody's identity, and asking twice no longer
+    kills the first copy — which was a real operational hazard (three downloads,
+    two dead bundles).
 
-    a = first["identity"]["sts_client_secret"]
-    b = second["identity"]["sts_client_secret"]
-    assert a and b and a != b, "each call must issue a fresh secret"
-
-    # …and the stored hash tracks the latest, so the earlier one is dead.
-    # `hash_sts_secret` is salted PBKDF2, so verify rather than re-hash.
+    What each call *does* create is a new enrolment code. Codes are single-use,
+    so that is additive rather than destructive: reissue is not revocation.
+    """
     from sqlalchemy import select
+
+    await _seed(db_session)
+    before = (
+        await db_session.execute(select(Participant).where(Participant.did == DID))
+    ).scalar_one().sts_client_secret
+
+    first = (
+        await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
+    ).json()
+    second = (
+        await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
+    ).json()
 
     participant = (
         await db_session.execute(select(Participant).where(Participant.did == DID))
     ).scalar_one()
     await db_session.refresh(participant)
-    stored = participant.sts_client_secret
-    assert verify_sts_secret(b, stored), "the newest secret must be the one that works"
-    assert not verify_sts_secret(a, stored), "the previous secret must stop working"
-    assert not verify_sts_secret("original-secret", stored)
+    assert participant.sts_client_secret == before, "nothing about the identity moved"
+
+    codes = {first["enrolment"]["code"], second["enrolment"]["code"]}
+    assert len(codes) == 2, "each call issues its own single-use code"
+    tokens = (await db_session.execute(select(EnrolmentToken))).scalars().all()
+    assert len(tokens) == 2
+    assert all(t.redeemed_at is None for t in tokens), "reissue is not revocation"
 
 
 # ── renderers ─────────────────────────────────────────────────────────────────
@@ -141,7 +242,17 @@ async def test_env_format_renders_the_secret(client, db_session):
     assert r.status_code == 201
     body = r.text
     assert f"CONNECTOR_PARTICIPANT_DID={DID}" in body
-    assert "EDC_IAM_STS_OAUTH_CLIENT_SECRET=" in body
+    # **Named and left empty** — the recipient chooses it, we do not know it.
+    assert "EDC_IAM_STS_OAUTH_CLIENT_SECRET=\n" in body
+    assert "IDENTITY_REGISTRY_ENCRYPTION_KEY=\n" in body
+    assert "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET=\n" in body
+    # Their instance, their host.
+    assert "IDENTITY_REGISTRY_ROLE=participant" in body
+    assert "EDC_IAM_STS_OAUTH_TOKEN_URL=https://acme.example.test/" in body
+    # Registry questions stay with the anchor.
+    assert "CONNECTOR_IDENTITY_REGISTRY_URL=" in body
+    # The enrolment code, with the command that redeems it.
+    assert "ir-cli participant init --code" in body
     # The default counterparty is filled in from the registry, not left blank.
     assert "CONSUMER_DEFAULT_ASSIGNER=did:web:provider.example.test" in body
 
@@ -158,17 +269,26 @@ async def test_properties_format_never_contains_a_secret(client, db_session):
     body = r.text
     assert f"edc.participant.id={DID}" in body
     assert "secret.alias" in body
-    # The literal secret must not appear anywhere in it.
-    bundle = (await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)).json()
-    assert bundle["identity"]["sts_client_secret"] not in body
+    # **Their own host**, not ours. This file was the clearest statement of the
+    # centralized model: a generated config telling a participant that its
+    # credential service was another organisation's.
+    assert "edc.iam.sts.oauth.token.url=https://acme.example.test/" in body
+    assert "edc.credential.service.url=https://acme.example.test/" in body
+    # And no enrolment code: this file gets committed.
+    bundle = (
+        await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
+    ).json()
+    assert bundle["enrolment"]["code"] not in body
 
 
 @pytest.mark.asyncio
-async def test_all_format_renders_every_artefact_in_one_rotation(client, db_session):
-    """The operator needs three files and each call rotates.
+async def test_all_format_renders_every_artefact_from_one_code(client, db_session):
+    """Three artefacts, one enrolment code between them.
 
-    Asking three times would hand over two bundles whose secret no longer works,
-    so `format=all` is the only shape a UI can offer downloads from.
+    It used to matter because each call *rotated*: three requests left two dead
+    bundles. Nothing rotates now, but the reason survives in a smaller form —
+    each call issues a **new single-use code**, so three requests would hand over
+    three codes where the recipient needs one.
     """
     await _seed(db_session)
     r = await client.post(
@@ -178,11 +298,11 @@ async def test_all_format_renders_every_artefact_in_one_rotation(client, db_sess
     body = r.json()
     assert set(body) == {"bundle", "env", "properties"}
 
-    secret = body["bundle"]["identity"]["sts_client_secret"]
-    # All three describe the *same* rotation: the env carries the secret the
-    # bundle reports, and the properties file still carries none.
-    assert f"EDC_IAM_STS_OAUTH_CLIENT_SECRET={secret}" in body["env"]
-    assert secret not in body["properties"]
+    code = body["bundle"]["enrolment"]["code"]
+    # All three describe the same handover: the env carries the code the bundle
+    # reports, and the properties file — which gets committed — carries none.
+    assert code in body["env"]
+    assert code not in body["properties"]
     assert f"edc.participant.id={DID}" in body["properties"]
 
 
