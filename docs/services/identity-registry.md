@@ -209,6 +209,9 @@ prefixed form does not work.
 | Variable | Default | Meaning |
 |---|---|---|
 | `IDENTITY_REGISTRY_ROLE` | `trust-anchor` | `trust-anchor` or `participant` — which routes this instance mounts. An unknown value refuses startup |
+| `IDENTITY_REGISTRY_PARTICIPANT_DID` | *(none)* | **Required in the participant role.** The DID this instance holds the key for; without it the service refuses to start rather than 404 everything while reporting healthy |
+| `IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS` | *(none)* | The DSP endpoint this participant publishes in its own DID document |
+| `IDENTITY_REGISTRY_TRUST_ANCHOR_URL` | *(derived)* | The anchor's Issuer Service, used once at enrolment. Defaults to the anchor's did:web host over the `DID_WEB_USE_HTTPS` scheme |
 | `IDENTITY_REGISTRY_DATABASE_URL` | Postgres on `172.17.0.1:35432/identity_registry` | **secret** — one per instance, never shared between roles |
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-change-in-production` | **secret** — encrypts every DID private key at rest, and derives subject ids. Losing it makes stored keys unrecoverable |
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN` | `trust-anchor.dataspaces.localhost` | the trust anchor's DID domain and status-list host |
@@ -253,7 +256,7 @@ database-touching command verifies the schema revision first, and every command 
 | Group | Commands |
 |---|---|
 | *(top level)* | `bootstrap` — create the trust-anchor key pair and DID |
-| `participant` | `add`, `list`, `remove` |
+| `participant` | `init`, `add`, `list`, `remove` |
 | `credential` | `issue-membership`, `issue-data-subject`, `revoke`, `list` |
 | `owner` | `add`, `list`, `remove`, `import` |
 | `membership` | `add`, `list`, `remove`, `import` |
@@ -278,6 +281,18 @@ non-zero when it finds any, so it can gate a deployment.
 `ir-cli org enrolment-token --alias <owner>` issues the code a verified organisation enrols
 its own key with. The code goes to **stdout alone** so a bootstrap script can capture it;
 everything a person needs is on stderr. It is printed once — only the hash is stored.
+
+`ir-cli participant init` is the other side of it, and runs **on the participant's own
+instance**: it generates that instance's keypair, encrypts the private half with its own
+`IDENTITY_REGISTRY_ENCRYPTION_KEY`, publishes the DID document, and — given `--code` — enrols
+with the anchor. Idempotent, and it never rotates: a bootstrap that generated a new key on
+every restart would silently invalidate every credential bound to the old one. Rotation is
+`ir-cli key rotate`, deliberately separate.
+
+The anchor verifies that enrolment by **fetching the participant's DID document over did:web**,
+so the participant must already be serving *and already be routed* before it enrols. An
+instance that is up but not yet reachable at its `did:web` host fails with a resolution error
+naming the URL it could not fetch.
 
 ## Persistence
 

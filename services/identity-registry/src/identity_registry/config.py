@@ -229,6 +229,65 @@ class Settings(BaseSettings):
         description="Dataspace membership URI",
     )
 
+    # ── Participant role ─────────────────────────────────────────────────────
+    #
+    # Only meaningful when `role == "participant"`. An instance in that role is
+    # **one organisation's**, so it has a DID of its own, an anchor to enrol
+    # with, and a DSP endpoint to publish.
+
+    participant_did: str | None = Field(
+        default=None,
+        description=(
+            "The DID this participant instance holds the key for. Required in "
+            "the participant role — an instance that does not know which "
+            "organisation it is has nothing it can serve."
+        ),
+    )
+
+    trust_anchor_url: str | None = Field(
+        default=None,
+        description=(
+            "Base URL of the trust anchor's Issuer Service, for enrolment. "
+            "Defaults to the anchor's own public URL shape when unset."
+        ),
+    )
+
+    participant_dsp_address: str | None = Field(
+        default=None,
+        description=(
+            "The DSP protocol endpoint this participant publishes as a "
+            "`DSPEndpoint` service entry in its DID document. The anchor reads "
+            "it from there — it is never sent in an enrolment request."
+        ),
+    )
+
+    @property
+    def trust_anchor_did(self) -> str:
+        return f"did:web:{self.trust_anchor_domain}"
+
+    @property
+    def issuer_base_url(self) -> str:
+        """Where this instance sends a credential request.
+
+        Falls back to the anchor's `did:web` host over the same scheme the rest
+        of DID resolution uses, so a dev deployment that sets nothing still
+        reaches the right place and a production one cannot accidentally enrol
+        over plain HTTP.
+        """
+        if self.trust_anchor_url:
+            return self.trust_anchor_url.rstrip("/")
+        scheme = "https" if self.did_web_use_https else "http"
+        return f"{scheme}://{self.trust_anchor_domain}"
+
+    def credential_service_url(self, did: str) -> str:
+        """This instance's DCP Credential Service base for *did*.
+
+        The value that goes into the DID document, so it must be reachable by a
+        **counterparty** — same rule as `status_list_url`, and the same reason
+        `public_base_url` exists at all.
+        """
+        return f"{self.public_base_url}/credentials/{did}"
+
     @property
     def public_base_url(self) -> str:
         """Where this registry is reachable from outside the cluster.

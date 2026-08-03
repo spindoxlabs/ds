@@ -32,6 +32,13 @@ READ_ELSEWHERE: dict[str, str] = {
         "call sites used to build the StatusList URL by hand, and every one of "
         "them ignored this setting"
     ),
+    "trust_anchor_url": (
+        "read by `Settings.issuer_base_url` in config.py, the same shape as "
+        "`identity_registry_public_url` above. The fallback it needs — the "
+        "anchor's did:web host, over whichever scheme `did_web_use_https` "
+        "selects — belongs beside the setting rather than at the one call site, "
+        "so that a production instance cannot enrol over plain HTTP by omission"
+    ),
 }
 
 #: ``settings.name``, or the name quoted — a `getattr` is a read like any

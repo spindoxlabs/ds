@@ -28,8 +28,17 @@ from identity_registry.roles import (
 
 
 def paths_for(role: str, monkeypatch: pytest.MonkeyPatch) -> set[str]:
-    """Every path an instance of *role* actually serves."""
+    """Every path an instance of *role* actually serves.
+
+    A participant needs a DID: an instance that does not know which organisation
+    it is refuses to start, because every route it mounts answers *for a DID it
+    holds*. Setting one here is not test scaffolding around an inconvenience —
+    it is the configuration a participant genuinely has.
+    """
     monkeypatch.setenv("IDENTITY_REGISTRY_ROLE", role)
+    monkeypatch.setenv(
+        "IDENTITY_REGISTRY_PARTICIPANT_DID", "did:web:rec.dataspaces.localhost"
+    )
     get_settings.cache_clear()
     try:
         client = TestClient(create_app())
@@ -78,6 +87,9 @@ def test_participant_serves_the_holder_surface(path, monkeypatch):
 
 
 def test_health_is_served_by_both_and_names_the_role(monkeypatch):
+    monkeypatch.setenv(
+        "IDENTITY_REGISTRY_PARTICIPANT_DID", "did:web:rec.dataspaces.localhost"
+    )
     for role in (TRUST_ANCHOR, PARTICIPANT):
         monkeypatch.setenv("IDENTITY_REGISTRY_ROLE", role)
         get_settings.cache_clear()

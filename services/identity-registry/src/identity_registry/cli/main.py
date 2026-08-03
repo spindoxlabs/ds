@@ -253,6 +253,69 @@ def participant_add(
     _run(_add())
 
 
+@participant_app.command("init")
+def participant_init(
+    did: str = typer.Option(None, help="DID to hold (default: PARTICIPANT_DID)"),
+    code: str = typer.Option(
+        None,
+        help="Enrolment code from the trust anchor. Omit to only generate the key.",
+    ),
+):
+    """Generate **this instance's own** DID key, then enrol it with the anchor.
+
+    The participant half of the handshake, and the command that makes the split
+    real: the keypair is generated here, encrypted with this instance's own
+    encryption key, and never leaves. The anchor is sent a *signature*, not a key.
+
+    Idempotent. Re-running keeps the existing key — a bootstrap that rotated on
+    every pod start would invalidate every credential bound to the old key,
+    silently. Rotation is `ir-cli key rotate`, deliberately.
+
+    With no ``--code`` it stops after generating the identity, which is the right
+    thing on a restart: the instance is already enrolled and the code is spent.
+    """
+    from ..services import participant_bootstrap as boot
+
+    async def _init():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            try:
+                identity = await boot.ensure_identity(session, settings, did=did)
+                await session.commit()
+            except boot.ParticipantBootstrapError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+
+            typer.echo(
+                f"{'Generated' if identity.created else 'Already held'}: "
+                f"{identity.did} (kid={identity.kid})"
+            )
+            for endpoint in identity.service_endpoints:
+                typer.echo(
+                    f"  publishes {endpoint['type']}: "
+                    f"{endpoint['serviceEndpoint']}"
+                )
+
+            if not code:
+                typer.echo("No --code given; not enrolling.")
+                return
+
+            try:
+                result = await boot.enrol(
+                    session, settings, code=code, did=identity.did
+                )
+            except boot.ParticipantBootstrapError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            typer.echo(
+                f"Enrolled with {settings.issuer_base_url}: "
+                f"{result.status} (issuerPid={result.issuer_pid})"
+            )
+
+    _run(_init())
+
+
 @participant_app.command("list")
 def participant_list():
     """List all participants."""

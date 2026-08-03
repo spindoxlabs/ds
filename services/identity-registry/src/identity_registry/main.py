@@ -9,7 +9,13 @@ from fastapi import FastAPI
 
 from .config import get_settings
 from .db.engine import verify_schema
-from .roles import RoleConfigurationError, audit, normalize_role, specs_for_role
+from .roles import (
+    PARTICIPANT,
+    RoleConfigurationError,
+    audit,
+    normalize_role,
+    specs_for_role,
+)
 
 log = logging.getLogger(__name__)
 
@@ -177,6 +183,19 @@ def create_app() -> FastAPI:
         mounted.extend(spec.paths())
 
     problems = audit(role, mounted)
+
+    # A participant instance that does not know which organisation it is has
+    # nothing it can serve: every route it mounts answers *for a DID it holds*,
+    # and with none configured all of them 404 while the service reports healthy.
+    # That is the failure mode this whole split is meant to remove, so it is a
+    # refusal rather than a warning.
+    if role == PARTICIPANT and not settings.participant_did:
+        problems.append(
+            "IDENTITY_REGISTRY_PARTICIPANT_DID is unset. A participant instance "
+            "serves only the DIDs it holds keys for; without one it would answer "
+            "404 to everything while reporting healthy"
+        )
+
     if problems:
         raise RoleConfigurationError(
             f"identity-registry role {role!r} is misconfigured:\n  - "
