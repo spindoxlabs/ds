@@ -99,3 +99,104 @@ async def client(engine, tmp_path):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+# ── Registering a participant, after `D-51` ───────────────────────
+#
+# `POST /admin/participants` no longer creates a DID: the anchor does not invent
+# a participant's identity, it records one the participant proved. So a test that
+# needs a participant to exist has to say **which side it is standing on**, and
+# the two are genuinely different rows:
+#
+#   as the anchor sees it        public key only — it can verify, never sign
+#   as the participant holds it  private key too — it is its own STS
+#
+# Before the split those were one thing, which is exactly the conflation the
+# split removes. Passing a test by creating the wrong one would put the old
+# defect back inside the fixture.
+
+
+async def register_holder(db, did: str, *, roles=None, scopes=None, secret="s3cret"):
+    """A participant **on its own instance**: it holds the private key.
+
+    What `ir-cli participant init` produces. Use this for anything exercising the
+    STS or a presentation query — both need to sign.
+    """
+    from identity_registry.config import get_settings
+    from identity_registry.db.models import Did as DidRow
+    from identity_registry.db.models import Key, Participant
+    from identity_registry.services.crypto import (
+        encrypt_private_jwk,
+        generate_key_pair,
+        hash_sts_secret,
+    )
+
+    kp = generate_key_pair(did)
+    key = Key(
+        owner_did=did,
+        kid=kp.kid,
+        private_jwk=encrypt_private_jwk(kp.private_jwk, get_settings().encryption_key),
+        public_jwk=kp.public_jwk,
+    )
+    db.add(key)
+    await db.flush()
+    db.add(DidRow(did=did, did_type="participant", key_id=key.id))
+    db.add(
+        Participant(
+            did=did,
+            roles=list(roles or ["provider"]),
+            allowed_scopes=list(scopes or ["dataspaces.query"]),
+            sts_client_secret=hash_sts_secret(secret),
+        )
+    )
+    await db.commit()
+    return key
+
+
+async def register_did(db, did: str):
+    """Just the DID and its **public** key — no `Participant` row.
+
+    What the anchor holds for a DID that has proved control of a key but has not
+    (yet) been registered as a participant. Kept apart from `register_enrolled`
+    because `POST /admin/participants` legitimately refuses a DID that already
+    has a participant row, so a fixture that seeded both would make that route
+    untestable.
+    """
+    from identity_registry.db.models import Did as DidRow
+    from identity_registry.db.models import Key
+    from identity_registry.services.crypto import generate_key_pair
+
+    kp = generate_key_pair(did)
+    key = Key(owner_did=did, kid=kp.kid, private_jwk=None, public_jwk=kp.public_jwk)
+    db.add(key)
+    await db.flush()
+    db.add(DidRow(did=did, did_type="participant", key_id=key.id))
+    await db.commit()
+    return key
+
+
+async def register_enrolled(db, did: str, *, roles=None, scopes=None):
+    """A participant **as the trust anchor records it**: public key only.
+
+    What enrolment produces. `sts_client_secret` is `None` deliberately — the
+    anchor is not this participant's STS and must not be able to act as it.
+    """
+    from identity_registry.db.models import Did as DidRow
+    from identity_registry.db.models import Key, Participant
+    from identity_registry.services.crypto import generate_key_pair
+
+    kp = generate_key_pair(did)
+    key = Key(owner_did=did, kid=kp.kid, private_jwk=None, public_jwk=kp.public_jwk)
+    db.add(key)
+    await db.flush()
+    db.add(DidRow(did=did, did_type="participant", key_id=key.id))
+    db.add(
+        Participant(
+            did=did,
+            roles=list(roles or ["consumer"]),
+            allowed_scopes=list(scopes or ["dataspaces.query"]),
+            sts_client_secret=None,
+        )
+    )
+    await db.commit()
+    return key

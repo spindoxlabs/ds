@@ -14,7 +14,7 @@ Two properties matter and both are easy to break:
 from __future__ import annotations
 
 import pytest
-from conftest import make_headers
+from conftest import make_headers, register_did
 
 ORG_READ = "identity-registry.organizations.read"
 ORG_WRITE = "identity-registry.organizations.write"
@@ -64,7 +64,10 @@ async def test_agreements_read_lists_agreements(client, scope):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", [PARTICIPANTS_WRITE, ADMIN])
-async def test_participants_write_registers_a_participant(client, scope):
+async def test_participants_write_registers_a_participant(client, db_session, scope):
+    # Registering is now separate from creating: the DID exists because its
+    # holder enrolled (`D-51`), and this route records the participant.
+    await register_did(db_session, f"did:web:{scope.split('.')[-1]}.example.test")
     r = await client.post(
         "/admin/participants",
         headers=h(scope),

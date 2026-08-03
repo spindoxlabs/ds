@@ -262,7 +262,7 @@ database-touching command verifies the schema revision first, and every command 
 | `membership` | `add`, `list`, `remove`, `import` |
 | `agreement` | `import`, `list` |
 | `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `revoke`, `bundle`, `enrolment-token` |
-| `key` | `rotate` |
+| `key` | `rotate`, `custody-check` |
 | `status` | `export`, `check-indices` |
 | `keycloak` | `org-sync`, `merge`, `mirror`, `map-user` |
 
@@ -277,6 +277,13 @@ a realm (`celine-policies keycloak sync`). Realm writes are `org-sync` and the p
 
 `ir-cli status check-indices` reports credentials sharing a StatusList index and exits
 non-zero when it finds any, so it can gate a deployment.
+
+`ir-cli key custody-check` reports every private key this instance holds, classified as its
+**own**, a hosted **data subject** (the declared deviation), or **foreign** — a private key for
+a DID it does not publish, which means it can sign and present as that participant. It exits
+non-zero on any foreign key. The same audit runs at startup: a violation is a warning in dev and
+a refusal to start under `DS_ENV=production`, through the same `ProductionGuard` every other
+dangerous default goes through.
 
 `ir-cli org enrolment-token --alias <owner>` issues the code a verified organisation enrols
 its own key with. The code goes to **stdout alone** so a bootstrap script can capture it;

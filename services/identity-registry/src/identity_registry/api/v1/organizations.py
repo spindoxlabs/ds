@@ -368,7 +368,6 @@ async def promote_owner(
             dsp_address=data.dsp_address,
             roles=data.roles or ["consumer"],
             allowed_scopes=data.allowed_scopes,
-            sts_secret=data.sts_secret,
         )
     except ops.OrgOnboardingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

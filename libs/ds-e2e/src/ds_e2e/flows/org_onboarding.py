@@ -200,6 +200,62 @@ class OrgOnboardingFlow(BaseFlow):
             f"promote refused before a credential exists (HTTP {status})",
         )
 
+        # 8b. GATE — a credential cannot be issued to an organisation that has
+        #     not **enrolled** (`D-51`). This is the newest gate and the one that
+        #     ends the anchor's ability to create a participant on its own: the
+        #     credential binds to a key the organisation generated and proved
+        #     control of, and until then there is nothing to bind to.
+        #
+        #     It replaced a step this flow used to pass by *not existing* — the
+        #     registry generated the organisation's keypair as a side effect of
+        #     issuance, and kept the private half.
+        status, body = self.http.post_raw(
+            f"{ir}/admin/credentials/organization",
+            {"alias": alias, "roles": ["consumer"], "dsp_address": dsp_address},
+            headers=admin,
+        )
+        if status == 201:
+            result.fail_step(
+                "gate: credential needs enrolment",
+                "credential issued to an organisation that never enrolled",
+            )
+            return result
+        result.pass_step(
+            "gate: credential needs enrolment",
+            f"issue-credential refused before enrolment (HTTP {status})",
+        )
+
+        # 8c. Enrol: an operator issues the code, and the organisation presents
+        #     the key it generated itself.
+        #
+        #     **This flow stands in for the organisation's instance**, because a
+        #     synthetic org has none — it generates a keypair here and registers
+        #     the DID. The *real* handshake, with an instance serving its own DID
+        #     document and the anchor fetching it, is what the dev participants
+        #     do at bootstrap and what `dcp-trust` exercises.
+        try:
+            self.http.post(
+                f"{ir}/admin/onboarding/enrolments",
+                {"owner_alias": alias, "roles": ["consumer"]},
+                headers=admin,
+            )
+            registered = self.http.post(
+                f"{ir}/admin/participants",
+                {"did": did, "dsp_address": dsp_address, "roles": ["consumer"],
+                 "allowed_scopes": ["dataspaces.query"]},
+                headers=admin,
+            ) or {}
+            if registered.get("did") != did:
+                result.fail_step("enrolment", "DID not registered", body=registered)
+                return result
+            result.pass_step(
+                "enrolment",
+                "organisation's DID registered — the anchor holds no key for it",
+            )
+        except Exception as exc:
+            result.fail_step("enrolment", str(exc))
+            return result
+
         # 9. Issue the OrganizationCredential (now that the agreement is accepted)
         try:
             cred = self.http.post(
@@ -234,9 +290,20 @@ class OrgOnboardingFlow(BaseFlow):
             result.fail_step("promote", str(exc))
             return result
 
-        # 11. Readiness — the participant is authorised for its scope and its
-        #     did:web resolves publicly. A promoted org negotiates and pulls
-        #     exactly as any participant (covered end to end by `smoke`).
+        # 11. Readiness — the participant is authorised for its scope, and the
+        #     **anchor does not publish its DID document**.
+        #
+        #     That second half is inverted from what it used to assert, and the
+        #     inversion is the point. This step required the anchor to resolve
+        #     the organisation's did:web — which it could only do because it had
+        #     generated that organisation's keypair and kept the private half.
+        #
+        #     A DID document is served by whoever holds the key (`P-6`). The
+        #     anchor holds none for a party it has not been shown one by, so a
+        #     404 here is the correct answer and a 200 would mean the mint came
+        #     back. The organisation publishes its own document from its own
+        #     instance — which is what the dev participants do, and what
+        #     `dcp-trust` verifies end to end.
         try:
             encoded_did = urllib.parse.quote(did, safe="")
             check = self.http.get(
@@ -248,13 +315,18 @@ class OrgOnboardingFlow(BaseFlow):
                     "readiness", "participant not authorised for dataspaces.query", body=check
                 )
                 return result
-            did_doc = self.http.get(f"{ir}/dids/{encoded_did}/did.json") or {}
-            if not did_doc.get("id"):
-                result.fail_step("readiness", "org did:web did not resolve", body=did_doc)
+            status, _ = self.http.get_raw(f"{ir}/dids/{encoded_did}/did.json")
+            if status == 200:
+                result.fail_step(
+                    "readiness",
+                    "the trust anchor published a DID document for an "
+                    "organisation whose key it should not hold",
+                )
                 return result
             result.pass_step(
                 "readiness",
-                "participant authorised and did:web resolves — transaction-ready",
+                "participant authorised; the anchor publishes no document for it "
+                f"(HTTP {status}) — the key is the organisation's",
                 did=did,
             )
         except Exception as exc:

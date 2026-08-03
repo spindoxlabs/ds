@@ -1,6 +1,5 @@
 import pytest
-
-from conftest import make_headers
+from conftest import make_headers, register_did
 
 
 @pytest.mark.asyncio
@@ -73,10 +72,15 @@ async def test_participant_list_with_read_scope(client):
 
 
 @pytest.mark.asyncio
-async def test_participant_list_read_scope_returns_active_only(client):
+async def test_participant_list_read_scope_returns_active_only(client, db_session):
     """Read scope always filters to active participants only."""
     headers_admin = make_headers(scope="identity-registry.admin")
     headers_read = make_headers(scope="identity-registry.read")
+
+    # The DIDs have to be registered first: `POST /admin/participants` no longer
+    # creates one (`D-51`).
+    await register_did(db_session, "did:web:active-one")
+    await register_did(db_session, "did:web:inactive-one")
 
     await client.post(
         "/admin/participants",

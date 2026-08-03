@@ -234,7 +234,6 @@ class PromoteOwnerRequest(BaseModel):
     dsp_address: str
     roles: list[str] | None = None
     allowed_scopes: list[str] = ["dataspaces.query"]
-    sts_secret: str = "insecure-dev-secret"
 
     @field_validator("roles")
     @classmethod

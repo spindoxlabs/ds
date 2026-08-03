@@ -275,6 +275,19 @@ class Settings(BaseSettings):
     def trust_anchor_did(self) -> str:
         return f"did:web:{self.trust_anchor_domain}"
 
+    def is_own_did(self, did: str) -> bool:
+        """Is *did* this instance's own — the one it holds a private key for?
+
+        The line `D-51` actually draws. It is not "never a participant DID":
+        the trust anchor's own DID is a participant DID too, and `ir-cli
+        bootstrap` has to be able to create it. What the anchor must never do is
+        invent an identity for **somebody else**, because that is the identity
+        whose private half it would then hold.
+        """
+        if self.role == "participant":
+            return bool(self.participant_did) and did == self.participant_did
+        return did == self.trust_anchor_did
+
     @property
     def issuer_base_url(self) -> str:
         """Where this instance sends a credential request.

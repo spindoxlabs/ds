@@ -1,5 +1,5 @@
 import pytest
-from conftest import make_admin_headers
+from conftest import make_admin_headers, register_enrolled
 
 from identity_registry.services.crypto import generate_key_pair
 from identity_registry.services.did import build_did_document
@@ -57,24 +57,23 @@ def test_user_did_document_no_auth():
 # rewrite to `/dids/{did}/did.json`, so the service itself could not answer the
 # request the did:web method defines.
 
-import pytest
-from conftest import make_admin_headers
-
 HEADERS = make_admin_headers()
 
 
-async def _add_participant(client, did: str) -> None:
-    r = await client.post(
-        "/admin/participants",
-        json={"did": did, "roles": ["provider"], "allowed_scopes": []},
-        headers=HEADERS,
-    )
-    assert r.status_code == 201
+async def _add_participant(db_session, did: str) -> None:
+    """Register a participant the way one now comes to exist.
+
+    Was `POST /admin/participants`, which created the DID and its keypair as a
+    side effect. It no longer does (`D-51`): the anchor records a key the
+    organisation proved control of. These tests are about DID **resolution**, so
+    what they need is a registered DID with a published public key.
+    """
+    await register_enrolled(db_session, did, roles=["provider"], scopes=[])
 
 
 @pytest.mark.asyncio
-async def test_well_known_resolves_the_host_did(client):
-    await _add_participant(client, "did:web:provider.dataspaces.localhost")
+async def test_well_known_resolves_the_host_did(client, db_session):
+    await _add_participant(db_session, "did:web:provider.dataspaces.localhost")
     r = await client.get(
         "/.well-known/did.json",
         headers={"Host": "provider.dataspaces.localhost"},
@@ -84,11 +83,11 @@ async def test_well_known_resolves_the_host_did(client):
 
 
 @pytest.mark.asyncio
-async def test_well_known_percent_encodes_a_port(client):
+async def test_well_known_percent_encodes_a_port(client, db_session):
     """did:web:127.0.0.1%3A8080 ← host 127.0.0.1:8080. Without this a
     non-standard port cannot be resolved at all, which is what an integration
     test — and any deployment not on :443 — needs."""
-    await _add_participant(client, "did:web:127.0.0.1%3A8080")
+    await _add_participant(db_session, "did:web:127.0.0.1%3A8080")
     r = await client.get("/.well-known/did.json", headers={"Host": "127.0.0.1:8080"})
     assert r.status_code == 200
     assert r.json()["id"] == "did:web:127.0.0.1%3A8080"
@@ -103,7 +102,7 @@ async def test_well_known_is_404_for_an_unknown_host(client):
 
 
 @pytest.mark.asyncio
-async def test_the_did_path_route_does_not_shadow_dids(client):
+async def test_the_did_path_route_does_not_shadow_dids(client, db_session):
     """`/{did_path}/did.json` is a catch-all and is registered last.
 
     A catch-all declared before its siblings is how `/dids/{did}/did.json` would
@@ -111,7 +110,7 @@ async def test_the_did_path_route_does_not_shadow_dids(client):
     `POST /catalog/search` look like a missing dataset in the connector.
     """
     did = "did:web:provider.dataspaces.localhost"
-    await _add_participant(client, did)
+    await _add_participant(db_session, did)
     r = await client.get(f"/dids/{did}/did.json")
     assert r.status_code == 200
     assert r.json()["id"] == did

@@ -97,11 +97,58 @@ async def lifespan(app: FastAPI):
             "Set the secret this participant's own connector presents to its "
             "own STS. It is yours to choose — the trust anchor never mints one.",
         )
+    await _check_key_custody(guard, settings)
     guard.enforce()
 
     await _warn_on_duplicate_status_list_indices()
 
     yield
+
+
+async def _check_key_custody(guard: ProductionGuard, settings) -> None:
+    """`DID-12` — this instance holds its own private key and nobody else's.
+
+    Routed through `ProductionGuard` rather than given its own refusal, because
+    the guard already answers the question this needs answered: *warn in dev,
+    refuse in production*. A hard refusal here would take a whole dataspace's
+    trust anchor offline over a key from before the split; a plain log would let
+    the platform's central claim be false and quiet. The guard is exactly the
+    middle, and reusing it means one place decides what `DS_ENV=production`
+    means.
+
+    Reported per DID, not as a count: "1 foreign key" tells an operator nothing
+    they can act on.
+    """
+    from .db.engine import get_session_factory
+    from .services.custody import REMEDIATION, audit_custody, describe
+
+    try:
+        async with get_session_factory()() as session:
+            report = await audit_custody(session, settings)
+    except Exception:  # noqa: BLE001 — a diagnostic must not block startup
+        log.exception("could not audit key custody")
+        return
+
+    for line in describe(report, settings):
+        log.warning("%s", line)
+
+    for key in report.foreign:
+        guard.add(
+            f"key custody: {key.did}",
+            "this instance holds a private key for a DID it does not publish, "
+            "so it can sign and present as that participant",
+            REMEDIATION,
+        )
+
+    if report.ok:
+        # The allow path logs. A custody check that is silent when it passes
+        # cannot be told apart from one that never ran — the same reason the STS
+        # and the negotiation validator log on success.
+        log.info(
+            "Key custody OK (%s): this instance signs only as itself%s",
+            report.summary(),
+            " and the data subjects it hosts" if report.subjects else "",
+        )
 
 
 async def _warn_on_duplicate_status_list_indices() -> None:

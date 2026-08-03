@@ -1,62 +1,83 @@
 import pytest
-
-from conftest import make_headers
+from conftest import make_headers, register_did
 
 HEADERS = make_headers()
 READ_HEADERS = make_headers(scope="identity-registry.read")
 TEST_DID = "did:web:rec.dataspaces.localhost"
+#: This instance's own — the one DID a trust anchor may still create for itself.
+OWN_DID = "did:web:trust-anchor.dataspaces.localhost"
+
+
+async def seed_did(db_session, did: str = TEST_DID):
+    """Register *did* the way it now comes to exist: by enrolment.
+
+    `POST /admin/dids` created a participant DID **and its private key**, and
+    `POST /admin/participants` did the same as a side effect. Neither does now
+    (`D-51`) — the anchor records a key the organisation proved control of, and
+    holds only the public half. Every test below that merely *needs* a
+    participant to exist goes through here; the ones that test the routes
+    themselves assert the refusal.
+    """
+    return await register_did(db_session, did)
 
 
 @pytest.mark.asyncio
-async def test_create_did(client):
+async def test_create_did_for_this_instances_own_identity(client):
+    """The anchor may still create **its own** DID — it holds that key.
+
+    The line `D-51` draws is "somebody else's identity", not "a participant
+    DID": the anchor's own is a participant DID too, and `ir-cli bootstrap` has
+    to be able to create it.
+    """
     r = await client.post(
         "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
+        json={"did": OWN_DID, "did_type": "participant"},
         headers=HEADERS,
     )
     assert r.status_code == 201
     data = r.json()
-    assert data["did"] == TEST_DID
-    assert data["did_type"] == "participant"
-    assert data["active"] is True
-    assert data["key"]["kid"].startswith(TEST_DID)
-    assert data["did_document"]["id"] == TEST_DID
+    assert data["did"] == OWN_DID
+    assert data["key"]["kid"].startswith(OWN_DID)
 
 
 @pytest.mark.asyncio
-async def test_create_did_duplicate(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_creating_another_partys_participant_did_is_refused(client):
+    """Otherwise the guard on `POST /admin/participants` is theatre.
+
+    Mint a participant DID here, register it there, and the anchor is back to
+    holding an identity it invented.
+    """
     r = await client.post(
         "/admin/dids",
         json={"did": TEST_DID, "did_type": "participant"},
         headers=HEADERS,
     )
+    assert r.status_code == 422
+    assert "enrolment" in r.text
+
+
+@pytest.mark.asyncio
+async def test_create_did_duplicate(client):
+    for _ in range(2):
+        r = await client.post(
+            "/admin/dids",
+            json={"did": OWN_DID, "did_type": "participant"},
+            headers=HEADERS,
+        )
     assert r.status_code == 409
 
 
 @pytest.mark.asyncio
-async def test_get_did(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_get_did(client, db_session):
+    await seed_did(db_session)
     r = await client.get(f"/admin/dids/{TEST_DID}", headers=HEADERS)
     assert r.status_code == 200
     assert r.json()["did"] == TEST_DID
 
 
 @pytest.mark.asyncio
-async def test_delete_did(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_delete_did(client, db_session):
+    await seed_did(db_session)
     r = await client.delete(f"/admin/dids/{TEST_DID}", headers=HEADERS)
     assert r.status_code == 204
 
@@ -65,12 +86,8 @@ async def test_delete_did(client):
 
 
 @pytest.mark.asyncio
-async def test_resolve_did_document(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_resolve_did_document(client, db_session):
+    await seed_did(db_session)
     r = await client.get(f"/dids/{TEST_DID}/did.json")
     assert r.status_code == 200
     doc = r.json()
@@ -79,7 +96,8 @@ async def test_resolve_did_document(client):
 
 
 @pytest.mark.asyncio
-async def test_create_participant(client):
+async def test_create_participant(client, db_session):
+    await seed_did(db_session)
     r = await client.post(
         "/admin/participants",
         json={
@@ -98,7 +116,8 @@ async def test_create_participant(client):
 
 
 @pytest.mark.asyncio
-async def test_create_participant_dual_role(client):
+async def test_create_participant_dual_role(client, db_session):
+    await seed_did(db_session)
     r = await client.post(
         "/admin/participants",
         json={
@@ -114,7 +133,8 @@ async def test_create_participant_dual_role(client):
 
 
 @pytest.mark.asyncio
-async def test_create_participant_invalid_role(client):
+async def test_create_participant_invalid_role(client, db_session):
+    await seed_did(db_session)
     r = await client.post(
         "/admin/participants",
         json={
@@ -127,24 +147,47 @@ async def test_create_participant_invalid_role(client):
 
 
 @pytest.mark.asyncio
-async def test_create_participant_creates_did(client):
+async def test_registering_a_participant_records_a_keyless_did(client, db_session):
+    """It used to create the DID **and its keypair**, and that was the defect.
+
+    Registering a participant silently made the anchor the holder of that
+    participant's private key. It now records a DID with **no key at all** —
+    the honest state for a party this registry has never been shown a key for
+    and is not vouching for.
+
+    `P-6` survives: a keyless DID resolves nowhere, because the anchor does not
+    publish somebody else's document. When the party enrols, its public key
+    lands here with proof of control behind it.
+    """
+    from sqlalchemy import select
+
+    from identity_registry.db.models import Did, Key
+
     r = await client.post(
         "/admin/participants",
-        json={
-            "did": TEST_DID,
-            "roles": ["provider"],
-            "allowed_scopes": ["dataspaces.query"],
-        },
+        json={"did": TEST_DID, "roles": ["provider"]},
         headers=HEADERS,
     )
     assert r.status_code == 201
 
-    r = await client.get(f"/dids/{TEST_DID}/did.json")
-    assert r.status_code == 200
+    did_row = (
+        await db_session.execute(select(Did).where(Did.did == TEST_DID))
+    ).scalar_one()
+    assert did_row.key_id is None
+    assert (
+        await db_session.execute(select(Key).where(Key.owner_did == TEST_DID))
+    ).scalar_one_or_none() is None
+
+    # And nothing resolves for it — the anchor publishes no document it cannot
+    # back with a key.
+    doc = await client.get(f"/dids/{TEST_DID}/did.json")
+    assert doc.status_code == 404
+
 
 
 @pytest.mark.asyncio
-async def test_list_participants(client):
+async def test_list_participants(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={"did": TEST_DID, "roles": ["provider"]},
@@ -156,7 +199,8 @@ async def test_list_participants(client):
 
 
 @pytest.mark.asyncio
-async def test_get_participant_detail(client):
+async def test_get_participant_detail(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={"did": TEST_DID, "roles": ["provider"]},
@@ -169,7 +213,8 @@ async def test_get_participant_detail(client):
 
 
 @pytest.mark.asyncio
-async def test_update_participant(client):
+async def test_update_participant(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={"did": TEST_DID, "roles": ["consumer"]},
@@ -186,7 +231,8 @@ async def test_update_participant(client):
 
 
 @pytest.mark.asyncio
-async def test_delete_participant(client):
+async def test_delete_participant(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={"did": TEST_DID, "roles": ["consumer"]},
@@ -197,7 +243,8 @@ async def test_delete_participant(client):
 
 
 @pytest.mark.asyncio
-async def test_list_participants_read_scope_active_only(client):
+async def test_list_participants_read_scope_active_only(client, db_session):
+    await seed_did(db_session)
     """GET /admin/participants with read scope returns only active participants."""
     await client.post(
         "/admin/participants",
@@ -241,7 +288,8 @@ async def test_list_participants_empty(client):
 
 
 @pytest.mark.asyncio
-async def test_participant_check_allowed(client):
+async def test_participant_check_allowed(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={
@@ -260,7 +308,8 @@ async def test_participant_check_allowed(client):
 
 
 @pytest.mark.asyncio
-async def test_participant_check_denied(client):
+async def test_participant_check_denied(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/participants",
         json={
@@ -279,7 +328,7 @@ async def test_participant_check_denied(client):
 
 
 @pytest.mark.asyncio
-async def test_issue_membership_credential(client):
+async def test_issue_membership_credential(client, db_session):
     # Bootstrap trust anchor first
     await client.post(
         "/admin/dids",
@@ -290,11 +339,7 @@ async def test_issue_membership_credential(client):
         headers=HEADERS,
     )
     # Create subject DID
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+    await seed_did(db_session)
 
     r = await client.post(
         "/admin/credentials/membership",
@@ -355,7 +400,7 @@ async def test_data_subject_creates_user_did(client):
 
 
 @pytest.mark.asyncio
-async def test_get_credential(client):
+async def test_get_credential(client, db_session):
     await client.post(
         "/admin/dids",
         json={
@@ -364,11 +409,7 @@ async def test_get_credential(client):
         },
         headers=HEADERS,
     )
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+    await seed_did(db_session)
     issue = await client.post(
         "/admin/credentials/membership",
         json={"subject_did": TEST_DID, "role": "provider"},
@@ -382,7 +423,7 @@ async def test_get_credential(client):
 
 
 @pytest.mark.asyncio
-async def test_list_credentials(client):
+async def test_list_credentials(client, db_session):
     await client.post(
         "/admin/dids",
         json={
@@ -391,11 +432,7 @@ async def test_list_credentials(client):
         },
         headers=HEADERS,
     )
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+    await seed_did(db_session)
     await client.post(
         "/admin/credentials/membership",
         json={"subject_did": TEST_DID, "role": "provider"},
@@ -408,7 +445,7 @@ async def test_list_credentials(client):
 
 
 @pytest.mark.asyncio
-async def test_revoke_credential(client):
+async def test_revoke_credential(client, db_session):
     await client.post(
         "/admin/dids",
         json={
@@ -417,11 +454,7 @@ async def test_revoke_credential(client):
         },
         headers=HEADERS,
     )
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+    await seed_did(db_session)
     issue = await client.post(
         "/admin/credentials/membership",
         json={"subject_did": TEST_DID, "role": "provider"},
@@ -437,12 +470,8 @@ async def test_revoke_credential(client):
 
 
 @pytest.mark.asyncio
-async def test_keycloak_sync(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_keycloak_sync(client, db_session):
+    await seed_did(db_session)
 
     r = await client.post(
         "/admin/keycloak/sync",
@@ -463,7 +492,7 @@ async def test_keycloak_sync(client):
 
 
 @pytest.mark.asyncio
-async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp_path):
+async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp_path, db_session):
     """The endpoint records a mapping and touches Keycloak **not at all**.
 
     It used to also push a `dataspace_did` user attribute, which no protocol
@@ -475,7 +504,6 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
     Asserting on the response body alone would pass even if the call came back.
     """
     import httpx
-
     from conftest import TEST_DATABASE_URL
 
     from identity_registry.config import Settings
@@ -498,11 +526,7 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
 
     monkeypatch.setattr(httpx, "AsyncClient", NoOutboundHttp)
 
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+    await seed_did(db_session)
     r = await client.post(
         "/admin/keycloak/sync",
         json={"did": TEST_DID, "keycloak_realm": "dataspaces", "keycloak_user_id": "u1"},
@@ -524,12 +548,8 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
 
 
 @pytest.mark.asyncio
-async def test_keycloak_mapping_by_subject_id(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_keycloak_mapping_by_subject_id(client, db_session):
+    await seed_did(db_session)
     await client.post(
         "/admin/keycloak/sync",
         json={
@@ -546,12 +566,8 @@ async def test_keycloak_mapping_by_subject_id(client):
 
 
 @pytest.mark.asyncio
-async def test_key_rotation(client):
-    await client.post(
-        "/admin/dids",
-        json={"did": TEST_DID, "did_type": "participant"},
-        headers=HEADERS,
-    )
+async def test_key_rotation(client, db_session):
+    await seed_did(db_session)
 
     r = await client.post(f"/admin/keys/rotate/{TEST_DID}", headers=HEADERS)
     assert r.status_code == 200

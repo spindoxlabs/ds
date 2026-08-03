@@ -18,7 +18,7 @@ that echoes an index it was given proves nothing about what was stored.
 from __future__ import annotations
 
 import pytest
-from conftest import make_headers
+from conftest import make_headers, register_enrolled
 from sqlalchemy import select
 
 from identity_registry.db.models import Credential, StatusList
@@ -70,10 +70,17 @@ async def _bootstrap_ta(client):
     )
 
 
-async def _issue_membership(client, did: str):
-    await client.post(
-        "/admin/dids", json={"did": did, "did_type": "participant"}, headers=HEADERS
-    )
+async def _issue_membership(client, did: str, db_session=None):
+    """Register the subject the way it comes to exist now, then issue to it.
+
+    `POST /admin/dids` created this DID **and its private key**. It refuses for
+    somebody else's identity (`D-51`): a participant registers by proving control
+    of a key it generated itself. The anchor's row for it holds the public half —
+    which is all issuance needs, since the credential is signed with the anchor's
+    key and merely names the subject.
+    """
+    if db_session is not None:
+        await register_enrolled(db_session, did)
     r = await client.post(
         "/admin/credentials/membership",
         json={
@@ -150,6 +157,11 @@ async def _issue_organization(client, db_session):
         json={"agreement_id": "dataspace-participation", "version": "1.0"},
         headers=HEADERS,
     )
+    # Enrolment sits between the agreement and issuance now (`D-51`): a
+    # credential binds to a key the organisation proved control of, and the
+    # anchor no longer invents one. The row this leaves is public-key-only,
+    # which is all issuance needs.
+    await register_enrolled(db_session, "did:web:acme.dataspaces.localhost")
     cred = await client.post(
         "/admin/credentials/organization",
         json={
@@ -172,8 +184,8 @@ async def test_two_membership_credentials_get_distinct_indices(client, db_sessio
     it, so both were allocated the same index — and one revocation then revoked
     both."""
     await _bootstrap_ta(client)
-    await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     indices = await _indices(db_session)
     assert len(indices) == 2
@@ -187,9 +199,9 @@ async def test_indices_do_not_collide_across_credential_types(client, db_session
     and a data-subject credential issued back to back must not share an index —
     they are separate call sites reading the same bitstring."""
     await _bootstrap_ta(client)
-    await _issue_membership(client, "did:web:one.dataspaces.localhost")
+    await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
     await _issue_data_subject(client, "email-abc123")
-    await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     indices = await _indices(db_session)
     assert len(indices) == 3
@@ -228,7 +240,7 @@ async def test_the_register_is_empty_until_something_is_revoked(client, db_sessi
     """Stated as a whole-register property so it holds no matter which paths
     ran: after N issuances and no revocation, no bit is set anywhere."""
     await _bootstrap_ta(client)
-    await _issue_membership(client, "did:web:one.dataspaces.localhost")
+    await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
     await _issue_data_subject(client, "email-abc123")
 
     assert _set_bits(await _bitstring(db_session)) == []
@@ -243,8 +255,8 @@ async def test_revoking_one_credential_does_not_revoke_the_other(client, db_sess
     revoke the first credential and the second must still be valid, both in its
     row and in the register the world reads."""
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     r = await client.delete(
         f"/admin/credentials/{first['credentialId']}", headers=HEADERS
@@ -279,7 +291,7 @@ async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_sessi
     through a different revocation site than `DELETE /admin/credentials/{id}`.
     A membership credential issued alongside must survive it."""
     await _issue_organization(client, db_session)
-    survivor = await _issue_membership(client, "did:web:bystander.dataspaces.localhost")
+    survivor = await _issue_membership(client, "did:web:bystander.dataspaces.localhost", db_session)
 
     r = await client.patch(
         "/admin/owners/acme-energy", json={"status": "suspended"}, headers=HEADERS
@@ -315,7 +327,7 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
     why it is worth writing down: it forbids the obvious wrong fix.
     """
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost")
+    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
     await client.delete(f"/admin/credentials/{first['credentialId']}", headers=HEADERS)
 
     await db_session.rollback()
@@ -327,7 +339,7 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
         )
     ).scalar_one()
 
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
     await db_session.rollback()
     reissued_index = (
         await db_session.execute(
@@ -352,8 +364,8 @@ async def test_the_counter_survives_deleting_the_highest_credential(
     next issuance reuse its index — the deleted credential's JSON is signed and
     may still be in a holder's wallet."""
     await _bootstrap_ta(client)
-    await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    top = await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    top = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     await db_session.rollback()
     top_row = (
@@ -365,7 +377,7 @@ async def test_the_counter_survives_deleting_the_highest_credential(
     await db_session.delete(top_row)
     await db_session.commit()
 
-    third = await _issue_membership(client, "did:web:three.dataspaces.localhost")
+    third = await _issue_membership(client, "did:web:three.dataspaces.localhost", db_session)
     await db_session.rollback()
     third_index = (
         await db_session.execute(
@@ -389,8 +401,8 @@ async def test_no_duplicates_are_reported_on_a_healthy_register(client, db_sessi
     """The report must be quiet when there is nothing to say, or an operator
     learns to ignore it."""
     await _bootstrap_ta(client)
-    await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     await db_session.rollback()
     assert await find_duplicate_indices(db_session) == []
@@ -408,8 +420,8 @@ async def test_duplicates_are_reported_with_every_affected_subject(
     they cannot re-issue a credential whose holder the report omits.
     """
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     await db_session.rollback()
     rows = (await db_session.execute(select(Credential))).scalars().all()
@@ -437,8 +449,8 @@ async def test_the_report_ignores_credentials_with_no_index(client, db_session):
     """A NULL `status_list_index` is not a collision, however many rows share
     it. Grouping on NULL would report every un-indexed credential as damage."""
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost")
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost")
+    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
 
     await db_session.rollback()
     rows = (await db_session.execute(select(Credential))).scalars().all()

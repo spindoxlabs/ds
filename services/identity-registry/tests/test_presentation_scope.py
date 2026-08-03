@@ -16,7 +16,7 @@ import base64
 import json
 
 import pytest
-from conftest import make_admin_headers
+from conftest import make_admin_headers, register_holder
 from test_dcp_auth import (
     HOLDER,
     MEMBERSHIP_SCOPE,
@@ -38,13 +38,16 @@ HEADERS = make_admin_headers()
 SUBJECT_SCOPE = "org.eclipse.dspace.dcp.vc.type:DataSubjectCredential:read"
 
 
-async def _create_participant(client, did: str) -> None:
-    r = await client.post(
-        "/admin/participants",
-        json={"did": did, "roles": ["provider"], "allowed_scopes": []},
-        headers=HEADERS,
-    )
-    assert r.status_code == 201
+async def _create_participant(db_session, did: str) -> None:
+    """A participant **on its own instance** — it holds the private key.
+
+    Was `POST /admin/participants`, which now refuses to create a DID: the anchor
+    does not invent a participant's identity (`D-51`). These tests are the
+    holder's side — they sign SI tokens and presentations — so the row they need
+    is the one `ir-cli participant init` writes locally, not the public-only one
+    the anchor records.
+    """
+    await register_holder(db_session, did)
 
 
 async def _hold_credential(db_session, subject_did: str, credential_type: str) -> None:
@@ -90,8 +93,8 @@ async def _query_as_verifier(client, db_session, resolver, *, scope, granted):
 
 @pytest.fixture
 async def holder_with_two_credentials(client, db_session):
-    await _create_participant(client, HOLDER)
-    await _create_participant(client, VERIFIER)
+    await _create_participant(db_session, HOLDER)
+    await _create_participant(db_session, VERIFIER)
     # `dids` already carries the participant rows; the credential FK points there.
     assert (await db_session.get(Did, HOLDER)) is not None
     await _hold_credential(db_session, HOLDER, "MembershipCredential")

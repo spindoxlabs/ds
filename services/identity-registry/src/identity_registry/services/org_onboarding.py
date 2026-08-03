@@ -30,10 +30,7 @@ from ..db.models import (
 )
 from .crypto import (
     decrypt_private_jwk,
-    encrypt_private_jwk,
     generate_credential_id,
-    generate_key_pair,
-    hash_sts_secret,
 )
 from .status_list import allocate_status_list_index, revoke_status_list_index
 from .vc import build_organization_credential, sign_credential
@@ -308,34 +305,27 @@ async def issue_organization_credential(
         settings.max_credential_ttl_days,
     )
 
-    # Ensure the org DID + key exist (so did:web resolves and the credential is
-    # anchored to a registered key), mirroring the data-subject issuance path.
+    # **The organisation must have enrolled** (`D-51`).
+    #
+    # This used to generate the organisation's keypair here — the anchor
+    # inventing an identity and keeping the private half — which is the whole of
+    # the `§3.1` custody deviation.
+    #
+    # Issuance never needed that key. The credential is signed with the
+    # **anchor's** key and merely *names* `subject_did`; the generation existed
+    # only so `did:web` would resolve, which is now the participant's own job. So
+    # what is required is that the DID is **registered**, which is what enrolment
+    # does — by verifying a signature from a key the organisation generated
+    # itself and the anchor has never seen.
     did_result = await db.execute(select(Did).where(Did.did == owner.did))
     if not did_result.scalar_one_or_none():
-        kp = generate_key_pair(owner.did)
-        key = Key(
-            owner_did=owner.did,
-            kid=kp.kid,
-            private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-            public_jwk=kp.public_jwk,
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} has not enrolled: {owner.did} is not registered "
+            "here, so there is no proven key to bind a credential to. Issue an "
+            f"enrolment code (`ir-cli org enrolment-token --alias {owner.id}`) "
+            "and let the organisation present its own key.",
+            status_code=409,
         )
-        db.add(key)
-        await db.flush()
-        endpoints = (
-            [{"type": "DSPEndpoint", "serviceEndpoint": dsp_address}]
-            if dsp_address
-            else None
-        )
-        db.add(
-            Did(
-                did=owner.did,
-                did_type="participant",
-                display_name=owner.name,
-                key_id=key.id,
-                service_endpoints=endpoints,
-            )
-        )
-        await db.flush()
 
     sl_index = await allocate_status_list_index(db)
     cred_id = generate_credential_id()
@@ -403,12 +393,17 @@ async def promote_owner_to_participant(
     dsp_address: str,
     roles: list[str],
     allowed_scopes: list[str],
-    sts_secret: str = "insecure-dev-secret",
 ) -> Participant:
     """Register the org as a DSP participant.
 
     Gate (§5.6): a valid, unrevoked ``OrganizationCredential`` must exist.
     Idempotent: updates the participant if it already exists.
+
+    **No STS secret** (`D-51`). This used to mint one — defaulting to
+    ``insecure-dev-secret`` — which meant the anchor decided how a participant
+    authenticates *to its own STS*, a service the anchor does not run. The
+    participant sets its own at bootstrap; the anchor's copy of the row carries
+    none, and that is what makes it unable to act as that participant.
     """
     cred = await _active_org_credential(db, owner)
     if cred is None:
@@ -427,7 +422,7 @@ async def promote_owner_to_participant(
             dsp_address=dsp_address,
             roles=roles,
             allowed_scopes=allowed_scopes,
-            sts_client_secret=hash_sts_secret(sts_secret),
+            sts_client_secret=None,
         )
         db.add(participant)
     else:
@@ -502,7 +497,6 @@ async def revoke_owner(db: AsyncSession, owner: Owner) -> None:
 
 DEFAULT_ROLES = ["consumer"]
 DEFAULT_SCOPES = ["dataspaces.query"]
-DEFAULT_STS_SECRET = "insecure-dev-secret"
 
 #: Owner columns an `owners.yaml` entry owns directly. `upsert_owner_from_
 #: application` writes the legal identity; these carry the presentation and
@@ -578,8 +572,6 @@ async def apply_owner_entry(
     db: AsyncSession,
     settings: Settings,
     entry: dict,
-    *,
-    sts_secret: str | None = None,
 ) -> ApplyOutcome:
     """Walk register → verify → agreement → issue-credential → promote for one entry.
 
@@ -603,7 +595,7 @@ async def apply_owner_entry(
         return outcome
 
     try:
-        await _apply_steps(db, settings, entry, block, alias, outcome, sts_secret)
+        await _apply_steps(db, settings, entry, block, alias, outcome)
     except OrgOnboardingError as exc:
         outcome.error = f"{alias}: {exc.message}"
     return outcome
@@ -616,7 +608,6 @@ async def _apply_steps(
     block: dict,
     alias: str,
     outcome: ApplyOutcome,
-    sts_secret: str | None,
 ) -> None:
     legal_name = block.get("legal_name") or entry.get("name") or alias
     did = block.get("did") or entry.get("did")
@@ -782,15 +773,32 @@ async def _apply_steps(
                 ApplyStep("credential", "unchanged", f"{cred.id} valid")
             )
         else:
-            cred = await issue_organization_credential(
-                db,
-                settings,
-                owner,
-                roles=roles,
-                allowed_scopes=scopes,
-                dsp_address=dsp_address,
-                ttl_days=block.get("credential_ttl_days"),
-            )
+            try:
+                cred = await issue_organization_credential(
+                    db,
+                    settings,
+                    owner,
+                    roles=roles,
+                    allowed_scopes=scopes,
+                    dsp_address=dsp_address,
+                    ttl_days=block.get("credential_ttl_days"),
+                )
+            except OrgOnboardingError as exc:
+                # Not enrolled yet is the **normal** state for a seeded
+                # organisation, not a failure: the operator has done everything
+                # they can do alone, and the rest is the organisation's. Report
+                # it as a skip with the reason and carry on, or a seed of ten
+                # organisations would exit non-zero because none of them has
+                # stood up a registry yet.
+                if exc.status_code != 409:
+                    raise
+                outcome.steps.append(
+                    ApplyStep("credential", "skipped", "awaiting enrolment")
+                )
+                outcome.steps.append(
+                    ApplyStep("participant", "skipped", "awaiting enrolment")
+                )
+                return
             outcome.steps.append(ApplyStep("credential", "issued", cred.id))
 
     # ── 5. participant promotion ──────────────────────────────────
@@ -811,7 +819,6 @@ async def _apply_steps(
         dsp_address=dsp_address,
         roles=roles,
         allowed_scopes=scopes,
-        sts_secret=sts_secret or block.get("sts_secret") or DEFAULT_STS_SECRET,
     )
     outcome.steps.append(
         ApplyStep(

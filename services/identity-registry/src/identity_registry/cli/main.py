@@ -28,7 +28,6 @@ from ..services.crypto import (
     encrypt_private_jwk,
     generate_credential_id,
     generate_key_pair,
-    hash_sts_secret,
 )
 from ..services.status_list import (
     allocate_status_list_index,
@@ -124,133 +123,40 @@ def bootstrap(
 
 
 @participant_app.command("add")
-def participant_add(
-    did: str = typer.Option(..., help="Participant DID"),
-    roles: str = typer.Option("consumer", help="Comma-separated roles: provider,consumer"),
-    dsp_address: str = typer.Option(None, help="DSP protocol endpoint URL"),
-    scope: list[str] = typer.Option(
-        [], help="Allowed scopes (repeatable)"
-    ),
-    sts_secret: str = typer.Option(
-        "insecure-dev-secret", help="STS client secret for this participant"
-    ),
-    credential_service_url: str = typer.Option(
-        None, help="CredentialService endpoint URL for DID document"
-    ),
-):
-    """Register a participant (idempotent)."""
+def participant_add():
+    """**Removed** (`D-51`). A participant is enrolled, not added.
 
-    async def _add():
-        settings = get_settings()
-        factory = await _ensure_db()
+    This minted a participant's DID keypair *and* its STS client secret in the
+    anchor's database, so the anchor could sign as any participant and decided
+    how each one authenticated to a service the anchor does not run. That is the
+    whole of the `§3.1` custody deviation, and it is the last operator path that
+    still did it.
 
-        from sqlalchemy import select
+    The replacement is a two-party handshake:
 
-        async with factory() as session:
-            result = await session.execute(
-                select(Participant).where(Participant.did == did)
-            )
-            if result.scalar_one_or_none():
-                typer.echo(f"Participant already exists: {did}")
-                return
+        # trust anchor, once the organisation is verified
+        ir-cli org enrolment-token --alias <owner> --roles provider
 
-            did_result = await session.execute(
-                select(Did).where(Did.did == did)
-            )
-            did_record = did_result.scalar_one_or_none()
+        # the organisation's **own** instance
+        ir-cli participant init --code <code>
 
-            if not did_record:
-                kp = generate_key_pair(did)
-                key = Key(
-                    owner_did=did,
-                    kid=kp.kid,
-                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                    public_jwk=kp.public_jwk,
-                )
-                session.add(key)
-                await session.flush()
-
-                service_endpoints = []
-                if dsp_address:
-                    service_endpoints.append(
-                        {"type": "DSPEndpoint", "serviceEndpoint": dsp_address}
-                    )
-                if credential_service_url:
-                    service_endpoints.append(
-                        {
-                            "type": "CredentialService",
-                            "serviceEndpoint": credential_service_url,
-                        }
-                    )
-
-                did_record = Did(
-                    did=did,
-                    did_type="participant",
-                    key_id=key.id,
-                    service_endpoints=service_endpoints or None,
-                )
-                session.add(did_record)
-                await session.flush()
-
-                typer.echo(f"  Created DID: {did}")
-                typer.echo(f"  Key ID: {kp.kid}")
-
-            roles_list = [r.strip() for r in roles.split(",")]
-            participant = Participant(
-                did=did,
-                dsp_address=dsp_address,
-                roles=roles_list,
-                allowed_scopes=list(scope),
-                sts_client_secret=hash_sts_secret(sts_secret),
-            )
-            session.add(participant)
-
-            trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-            ta_key_result = await session.execute(
-                select(Key).where(
-                    Key.owner_did == trust_anchor_did,
-                    Key.active.is_(True),
-                )
-            )
-            ta_key = ta_key_result.scalar_one_or_none()
-
-            if ta_key:
-                status_list_url = settings.status_list_url()
-                ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
-
-                for r in roles_list:
-                    sl_index = await allocate_status_list_index(session)
-                    cred_id = generate_credential_id()
-
-                    vc = build_membership_credential(
-                        issuer_did=trust_anchor_did,
-                        subject_did=did,
-                        role=r,
-                        allowed_scopes=list(scope),
-                        credentials_context_url=settings.credentials_context_url,
-                        dataspace_uri=settings.dataspace_uri,
-                        status_list_credential_url=status_list_url,
-                        status_list_index=sl_index,
-                        credential_id=cred_id,
-                    )
-                    signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
-
-                    cred = Credential(
-                        id=cred_id,
-                        credential_type="MembershipCredential",
-                        issuer_did=trust_anchor_did,
-                        subject_did=did,
-                        credential_json=signed_vc,
-                        status_list_index=sl_index,
-                        expires_at=datetime.now(UTC) + timedelta(days=365),
-                    )
-                    session.add(cred)
-                    typer.echo(f"  Issued MembershipCredential ({r.capitalize()}): {cred_id}")
-
-            await session.commit()
-            typer.echo(f"Participant registered: {did} (roles={roles_list})")
-
-    _run(_add())
+    The command is kept as a refusal rather than deleted, because a runbook, a
+    chart hook or a script that still calls it should be told what replaced it —
+    a bare "no such command" would read as a broken image.
+    """
+    typer.echo(
+        "`ir-cli participant add` is removed: the trust anchor no longer mints "
+        "participant keys or STS secrets (D-51).\n"
+        "\n"
+        "  On the anchor:       ir-cli org enrolment-token --alias <owner> "
+        "--roles provider\n"
+        "  On the participant:  ir-cli participant init --code <code>\n"
+        "\n"
+        "The participant generates its own key, publishes its own DID document, "
+        "and proves control of it. The anchor records the public half.",
+        err=True,
+    )
+    raise typer.Exit(2)
 
 
 @participant_app.command("init")
@@ -638,6 +544,46 @@ def key_rotate(
             typer.echo(f"  Old: {old_key.kid}")
 
     _run(_rotate())
+
+
+@key_app.command("custody-check")
+def key_custody_check():
+    """Report every private key this instance holds, and exit non-zero on a foreign one.
+
+    The operator-facing half of the startup sweep, so the invariant can be
+    checked without restarting a registry — and so it can gate a deployment, the
+    same way `ir-cli status check-indices` does.
+
+    A **foreign** key is a private key for a DID this instance does not publish:
+    it means this instance can sign and present as that participant, which is
+    the deviation `D-47` and `D-51` exist to end.
+    """
+    from ..services.custody import REMEDIATION, audit_custody, describe
+
+    async def _check():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            report = await audit_custody(session, settings)
+
+        for key in report.own:
+            typer.echo(f"own       {key.did}")
+        for key in report.subjects:
+            typer.echo(f"subject   {key.did}   (declared D-49 deviation)")
+        for key in report.foreign:
+            typer.echo(f"FOREIGN   {key.did}   ({key.did_type}, kid={key.kid})")
+
+        if report.ok:
+            typer.echo(f"\nOK — {report.summary()}. This instance signs only as itself.")
+            return
+
+        typer.echo("", err=True)
+        for line in describe(report, settings):
+            typer.echo(line, err=True)
+        typer.echo(f"\n{REMEDIATION}", err=True)
+        raise typer.Exit(1)
+
+    _run(_check())
 
 
 @status_app.command("export")
@@ -1548,7 +1494,6 @@ def org_promote(
         None, help="DSP endpoint (default: from application)"
     ),
     scope: list[str] = typer.Option(["dataspaces.query"], help="Allowed scopes"),
-    sts_secret: str = typer.Option("insecure-dev-secret", help="STS client secret"),
 ):
     """Register the org as a DSP participant (gate: valid OrganizationCredential)."""
     from ..services import org_onboarding as ops
@@ -1577,7 +1522,6 @@ def org_promote(
                     dsp_address=dsp,
                     roles=roles,
                     allowed_scopes=list(scope),
-                    sts_secret=sts_secret,
                 )
             except ops.OrgOnboardingError as exc:
                 typer.echo(exc.message, err=True)
@@ -1771,11 +1715,6 @@ def org_enrolment_token(
 @org_app.command("apply")
 def org_apply(
     file: Path = typer.Option(..., help="owners.yaml seed file"),
-    sts_secret: str = typer.Option(
-        None,
-        help="STS client secret for every promoted org "
-        "(overrides dataspace.sts_secret; dev default otherwise)",
-    ),
     dry_run: bool = typer.Option(
         False, help="Report what would change; roll back instead of committing"
     ),
@@ -1808,7 +1747,7 @@ def org_apply(
         async with factory() as session:
             for entry in entries:
                 outcome = await ops.apply_owner_entry(
-                    session, settings, entry, sts_secret=sts_secret
+                    session, settings, entry
                 )
                 outcomes.append(outcome)
                 if not outcome.ok:

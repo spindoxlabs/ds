@@ -101,20 +101,26 @@ async def create_participant(
     did_record = did_result.scalar_one_or_none()
 
     if not did_record:
-        kp = generate_key_pair(data.did)
-        key = Key(
-            owner_did=data.did,
-            kid=kp.kid,
-            private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-            public_jwk=kp.public_jwk,
-        )
-        db.add(key)
-        await db.flush()
-
+        # **Recorded, never minted** (`D-51`). This used to generate the
+        # participant's keypair and keep the private half — the same act
+        # `ir-cli participant add` performed, and the reason that command is now
+        # a refusal.
+        #
+        # It does not *refuse* instead, because a participant registry must be
+        # able to list a party it has never issued to: a counterparty from
+        # another dataspace, or a policy fixture whose capacity the consent
+        # circle needs. What it records is a DID with **no key at all**, which
+        # is the honest state — the anchor is not claiming to hold one and not
+        # vouching for one it was never shown.
+        #
+        # `P-6` survives unchanged: `GET /dids/{did}/did.json` serves a document
+        # only for a DID this registry holds a key for, so a keyless entry
+        # resolves nowhere. The party publishes its own document; when it
+        # enrols, its public key lands here with proof of control behind it.
         did_record = Did(
             did=data.did,
             did_type="participant",
-            key_id=key.id,
+            key_id=None,
             service_endpoints=(
                 [{"type": "DSPEndpoint", "serviceEndpoint": data.dsp_address}]
                 if data.dsp_address
@@ -308,6 +314,27 @@ async def create_did(
     existing = await db.execute(select(Did).where(Did.did == data.did))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="DID already exists")
+
+    # Closing the same door as `POST /admin/participants` above. Without this the
+    # guard there is theatre: mint a participant DID here, then register it.
+    #
+    # **The line is "somebody else's identity", not "a participant DID"** — this
+    # instance's own is a participant DID too, and it has to be creatable or the
+    # anchor cannot bootstrap itself.
+    #
+    # `did_type == "user"` still mints, and that is a **known deviation**, not an
+    # oversight: a natural person has no infrastructure to generate a key on, and
+    # their custody is `D-49`/`DID-11`'s subject.
+    if data.did_type == "participant" and not settings.is_own_did(data.did):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{data.did} is another party's identity, and this registry does "
+                "not create one (`D-51`): the organisation generates its own key "
+                "and proves control of it at enrolment. Issue an enrolment code "
+                "for its owner instead."
+            ),
+        )
 
     kp = generate_key_pair(data.did)
     key = Key(

@@ -9,7 +9,7 @@ suspend (credential revoked + participant deactivated).
 from __future__ import annotations
 
 import pytest
-from conftest import make_headers
+from conftest import make_headers, register_enrolled
 
 from identity_registry.services.crypto import generate_key_pair
 from identity_registry.services.vc import (
@@ -298,6 +298,9 @@ async def test_full_lifecycle_and_suspend(client, db_session):
         json={"agreement_id": "dataspace-participation", "version": "1.0"},
         headers=HEADERS,
     )
+
+    # Enrolment sits between the agreement and issuance (`D-51`).
+    await register_enrolled(db_session, ORG_DID, roles=["consumer"])
 
     cred = await client.post(
         "/admin/credentials/organization",

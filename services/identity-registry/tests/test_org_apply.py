@@ -14,7 +14,7 @@ the same function.
 from __future__ import annotations
 
 import pytest
-from conftest import make_headers
+from conftest import make_headers, register_enrolled
 from sqlalchemy import func, select
 
 from identity_registry.config import Settings
@@ -107,7 +107,22 @@ async def _seed(db_session, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_apply_walks_the_chain_to_a_promoted_participant(db_session, tmp_path):
+async def test_apply_walks_the_operators_half_and_stops_at_enrolment(
+    db_session, tmp_path
+):
+    """The chain an operator can complete **alone**, and where it now ends.
+
+    It used to run all the way to a promoted participant, and the last two steps
+    did that by minting the organisation's keypair and its STS secret here
+    (`D-51`). An operator cannot do those on the organisation's behalf any more,
+    so the seed does everything that is genuinely a governance judgement —
+    application, verification, agreement — and reports the rest as *awaiting
+    enrolment* rather than failing.
+
+    Reported rather than failed on purpose: a seed of ten organisations, none of
+    which has stood up a registry yet, is the **normal** state of a fresh
+    deployment, not ten errors.
+    """
     settings = await _seed(db_session, tmp_path)
 
     outcome = await ops.apply_owner_entry(db_session, settings, _entry())
@@ -120,9 +135,14 @@ async def test_apply_walks_the_chain_to_a_promoted_participant(db_session, tmp_p
         "application": "created",
         "verification": "created",
         "agreement": "accepted",
-        "credential": "issued",
-        "participant": "promoted",
+        "credential": "skipped",
+        "participant": "skipped",
     }
+    assert all(
+        s.detail == "awaiting enrolment"
+        for s in outcome.steps
+        if s.action == "skipped"
+    )
 
     owner = (
         await db_session.execute(select(Owner).where(Owner.id == ALIAS))
@@ -137,11 +157,52 @@ async def test_apply_walks_the_chain_to_a_promoted_participant(db_session, tmp_p
     assert owner.aliases == ["example-c"]
     assert owner.organization_config == {"create": True, "role": "rec"}
 
+    # No participant, and no credential: both wait on a key the organisation
+    # has not yet proved control of.
+    assert (
+        await db_session.execute(select(Participant).where(Participant.did == ORG_DID))
+    ).scalar_one_or_none() is None
+    assert (
+        await db_session.execute(select(Credential))
+    ).scalars().first() is None
+
+
+@pytest.mark.asyncio
+async def test_apply_completes_once_the_organisation_has_enrolled(
+    db_session, tmp_path
+):
+    """The other half of the handshake, and the chain closes.
+
+    Enrolment registers the DID with the **public** key the organisation
+    generated. Issuance needs nothing more — the credential is signed with the
+    anchor's key and merely names the subject — so `org apply` run again now
+    issues and promotes.
+    """
+    settings = await _seed(db_session, tmp_path)
+    await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+
+    await register_enrolled(db_session, ORG_DID, roles=["consumer"])
+
+    outcome = await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+
+    actions = {s.step: s.action for s in outcome.steps}
+    assert actions["credential"] == "issued"
+    # `unchanged`, not `promoted`: **enrolment already registered the
+    # participant**. Promotion is now the gate (an active OrganizationCredential
+    # must exist) plus a refresh of roles and scopes, not the act that brings a
+    # participant into being.
+    assert actions["participant"] == "unchanged"
+
     participant = (
         await db_session.execute(select(Participant).where(Participant.did == ORG_DID))
     ).scalar_one()
     assert participant.active is True
     assert participant.roles == ["consumer"]
+    # **No STS secret.** How a participant authenticates to its own STS is not
+    # the anchor's to decide (`D-51`).
+    assert participant.sts_client_secret is None
 
 
 @pytest.mark.asyncio
@@ -160,14 +221,21 @@ async def test_apply_is_idempotent(db_session, tmp_path):
 
     assert first.ok and second.ok
     assert second.changed is False
-    assert {s.action for s in second.steps} == {"unchanged"}
+    # `skipped` is not a change: the two steps waiting on enrolment stay waiting.
+    assert {s.action for s in second.steps} <= {"unchanged", "skipped"}
 
-    # Nothing duplicated: one credential, one acceptance, one participant.
-    for model in (Credential, AgreementAcceptance, Participant):
+    # Nothing duplicated. Only the acceptance exists: the credential and the
+    # participant wait on enrolment, so "one of each" is no longer the shape a
+    # second run must not double — "none of the two, one of the third" is.
+    for model, expected in (
+        (Credential, 0),
+        (AgreementAcceptance, 1),
+        (Participant, 0),
+    ):
         count = (
             await db_session.execute(select(func.count()).select_from(model))
         ).scalar_one()
-        assert count == 1, model.__name__
+        assert count == expected, model.__name__
 
     # And nothing re-stamped: `verified_at` records when the check happened, not
     # when the seed last ran. A helm bootstrap re-runs on every pod start.
@@ -245,9 +313,20 @@ async def test_entry_without_dsp_address_stops_at_the_credential(
 
     assert outcome.ok, outcome.error
     actions = {s.step: s.action for s in outcome.steps}
+    await register_enrolled(db_session, ORG_DID, roles=["consumer"])
+    outcome = await ops.apply_owner_entry(
+        db_session, settings, _entry(dsp_address=None)
+    )
+    await db_session.commit()
+    actions = {s.step: s.action for s in outcome.steps}
     assert actions["credential"] == "issued"
+    # Still skipped: the entry declares no DSP address, so there is nothing to
+    # promote *against*. The participant row exists because enrolment created
+    # it, which is a different fact from this entry being promotable.
     assert actions["participant"] == "skipped"
-    assert (await db_session.execute(select(Participant))).scalars().first() is None
+    assert "no dataspace.dsp_address" in next(
+        s.detail for s in outcome.steps if s.step == "participant"
+    )
 
 
 # ── Equivalence with the API path ─────────────────────────────────
@@ -263,6 +342,7 @@ async def test_applied_state_matches_the_api_driven_chain(client, db_session, tm
     the claim is checked rather than argued from shared call sites.
     """
     settings = await _seed(db_session, tmp_path)
+    await register_enrolled(db_session, ORG_DID, roles=["consumer"])
     headers = ADMIN_HEADERS
 
     api_alias, api_did = "api-org", "did:web:api-org.dataspaces.localhost"
@@ -295,6 +375,10 @@ async def test_applied_state_matches_the_api_driven_chain(client, db_session, tm
         headers=headers,
     )
     assert r.status_code in (200, 201), r.text
+    # Both paths now cross the same seam: an organisation is issued to only once
+    # it has enrolled. Seeding it here is what keeps this an equivalence test
+    # rather than a test that one path skips a gate the other enforces.
+    await register_enrolled(db_session, api_did, roles=["consumer"])
     r = await client.post(
         "/admin/credentials/organization",
         json={"alias": api_alias, "roles": ["consumer"], "dsp_address": dsp},

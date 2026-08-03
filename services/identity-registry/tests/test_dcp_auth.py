@@ -22,7 +22,7 @@ import json
 import time
 
 import pytest
-from conftest import make_admin_headers
+from conftest import make_admin_headers, register_enrolled, register_holder
 from sqlalchemy import select
 
 from identity_registry.config import get_settings
@@ -49,17 +49,16 @@ STRANGER = "did:web:attacker.dataspaces.localhost"
 MEMBERSHIP_SCOPE = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"
 
 
-async def _create_participant(client, did: str) -> None:
-    r = await client.post(
-        "/admin/participants",
-        json={
-            "did": did,
-            "roles": ["provider"],
-            "allowed_scopes": ["dataspaces.query"],
-        },
-        headers=HEADERS,
-    )
-    assert r.status_code == 201
+async def _create_participant(db_session, did: str) -> None:
+    """A participant **on its own instance** — it holds the private key.
+
+    Was `POST /admin/participants`, which now refuses to create a DID: the anchor
+    does not invent a participant's identity (`D-51`). These tests are the
+    holder's side — they sign SI tokens and presentations — so the row they need
+    is the one `ir-cli participant init` writes locally, not the public-only one
+    the anchor records.
+    """
+    await register_holder(db_session, did)
 
 
 async def _private_key_of(db_session, did: str):
@@ -113,8 +112,8 @@ async def _valid_request(db_session, resolver) -> str:
 
 @pytest.fixture
 async def two_participants(client, db_session):
-    await _create_participant(client, HOLDER)
-    await _create_participant(client, VERIFIER)
+    await _create_participant(db_session, HOLDER)
+    await _create_participant(db_session, VERIFIER)
 
 
 def _query(scope: str = MEMBERSHIP_SCOPE) -> dict:
@@ -201,7 +200,7 @@ async def test_grant_issued_to_another_verifier_cannot_be_replayed(
     client, db_session, resolver, two_participants
 ):
     """A grant names who it was minted for; a third party presenting it is refused."""
-    await _create_participant(client, STRANGER)
+    await _create_participant(db_session, STRANGER)
     grant = await create_access_token(
         db_session, HOLDER, verifier_did=VERIFIER, scope=MEMBERSHIP_SCOPE
     )
@@ -460,9 +459,20 @@ async def test_query_with_neither_is_a_400(
 
 
 @pytest.mark.asyncio
-async def test_sts_rejects_participant_without_stored_secret(client):
-    """Participants created via /admin/participants have no sts_client_secret."""
-    await _create_participant(client, HOLDER)
+async def test_the_anchor_cannot_mint_a_token_for_a_participant_it_enrolled(
+    client, db_session
+):
+    """`D-51`, as the STS sees it.
+
+    Was *"participants created via /admin/participants have no
+    sts_client_secret"* — a route that no longer creates participants at all. The
+    invariant underneath survives and is now sharper: the row the **anchor**
+    holds for an enrolled participant carries a public key and no secret, so the
+    anchor cannot issue a token as that participant even though it knows exactly
+    who they are. Confirmed live on the split stack: 401 from the anchor, 200
+    from the participant's own instance.
+    """
+    await register_enrolled(db_session, HOLDER)
     r = await client.post(
         f"/sts/{HOLDER}/token",
         data={
