@@ -1,4 +1,4 @@
-{{- if .Values.ingress.enabled }}
+{{- if and .Values.ingress.enabled (eq (include "ir.role" .) "trust-anchor") }}
 {{- $ta := include "ir.trustAnchorDomain" . }}
 {{- $fullname := include "ds.fullname" . }}
 {{- $port := .Values.service.port }}
@@ -11,10 +11,12 @@
 # One Ingress object per rewrite behaviour, because nginx's rewrite-target is an
 # annotation on the object, not on the path.
 #
-# The PARTICIPANT DID hosts (<participant>.<baseDomain>/.well-known/did.json)
-# are NOT served here — that host also carries the EDC DSP and data-plane paths
-# from the participant namespace, so its Ingress lives in the ds-edc chart and
-# reaches this service through an ExternalName. One host, one Ingress owner.
+# **This file renders for the trust-anchor role only.** A participant's host
+# (<participant>.<baseDomain>) also carries the EDC DSP and data-plane paths, so
+# its Ingress lives in the ds-edc chart — one host, one Ingress owner. Since
+# `DID-05` that Ingress points at the participant's *own* registry release in
+# the same namespace, which is also why the ExternalName bridge it used to need
+# is gone: a participant's DID document is served by the participant.
 # =============================================================================
 
 # ── Trust anchor DID document ────────────────────────────────────────────────
@@ -65,6 +67,35 @@ spec:
         paths:
           - path: /status
             pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
+---
+# ── The dataspace trust list ─────────────────────────────────────────────────
+# `DSSC-TRF-05`, `-07`, `-17` — who this dataspace accredits, and for what.
+# Public for the same reason the status list is: a counterparty decides whether
+# to accept a credential *before* it has any relationship with this dataspace,
+# and a federation partner reads this before anything else. Reachable only
+# in-cluster it would be published to nobody.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-trust
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $ta)) | nindent 2 }}
+  rules:
+    - host: {{ $ta | quote }}
+      http:
+        paths:
+          - path: /trust
+            pathType: Exact
             backend:
               service:
                 name: {{ $fullname }}

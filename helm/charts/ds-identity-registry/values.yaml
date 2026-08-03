@@ -47,6 +47,43 @@ existingSecret: ""
 networkPolicy:
   egress: []
 
+# ── Role ──────────────────────────────────────────────────────────────────────
+#
+# **One chart, N releases.** A dataspace runs one `trust-anchor` release and one
+# `participant` release per organisation — never a copy of this chart. Adding a
+# participant is adding a release with values; if it ever requires editing a
+# template, the parameterisation is wrong.
+#
+#   trust-anchor  the governance authority's instance: issuance, the
+#                 participant/owner/membership registries, agreements,
+#                 onboarding, the StatusList and the trust list
+#   participant   one organisation's own: its DID documents, its STS, its
+#                 credential store. No registry, issuance or onboarding route
+#                 is mounted, and the service refuses to start without
+#                 `participant.did`
+#
+# Each release needs **its own database and its own encryption key**. Sharing
+# either puts every private key back in one place and makes the split cosmetic.
+role: trust-anchor
+
+participant:
+  # Required when role=participant. `name` is the participant slug used for the
+  # database and the release name; `did` is what this instance holds the key for.
+  name: ""
+  did: ""
+  # Published as a `DSPEndpoint` service entry in this participant's DID
+  # document. The trust anchor reads it **from that document** at enrolment, so
+  # a participant cannot claim an endpoint it does not publish.
+  dspAddress: ""
+  # Where this instance is reachable from outside the cluster — its own host,
+  # which is also its did:web identity. Defaults to <name>.<baseDomain>.
+  host: ""
+
+# Database name. Empty resolves per role: the anchor takes
+# `global.postgres.databases.identityRegistry`, a participant takes
+# `identity_registry_<participant.name>` — so two releases never share one.
+database: ""
+
 # ── Identity-registry specifics ───────────────────────────────────────────────
 
 trustAnchorDomain: "" # defaults to trust-anchor.<global.baseDomain>
@@ -117,6 +154,10 @@ secrets:
   keycloakAdminPassword: ""
   # Optional. STS client secret for organisations seeded by `ir-cli org apply`.
   orgStsSecret: ""
+  # `role: participant` only. The secret this participant's **own** connector
+  # presents to this instance's STS. Its own to choose — the trust anchor mints
+  # none (`D-51`), which is why it is a per-release secret and not derived.
+  participantStsSecret: ""
 
 # ── Global fallbacks ──────────────────────────────────────────────────────────
 # Real values come from helm/values.yaml via helmfile. These exist so the chart

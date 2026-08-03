@@ -19,7 +19,45 @@ a rendered URL string.
       name: {{ include "ds.secretName" . }}
       key: DB_PASSWORD
 - name: IDENTITY_REGISTRY_DATABASE_URL
-  value: {{ include "ds.postgres.url" (dict "ctx" . "database" (((.Values.global).postgres).databases).identityRegistry "driver" "asyncpg") | quote }}
+  value: {{ include "ds.postgres.url" (dict "ctx" . "database" (include "ir.database" .) "driver" "asyncpg") | quote }}
+{{/*
+The role decides which half of the service this release is. An unrecognised
+value is a refusal at startup, not a fallback to `trust-anchor` — a typo
+silently promoted to the issuing role would hand a participant's deployment the
+ability to mint credentials.
+*/}}
+- name: IDENTITY_REGISTRY_ROLE
+  value: {{ include "ir.role" . | quote }}
+{{- if eq (include "ir.role" .) "participant" }}
+{{/*
+A participant instance serves only the DIDs it holds keys for. Without a DID it
+would report healthy and 404 everything, so the service refuses to start — and
+`required` here turns that into a failed *render* instead of a failed rollout.
+*/}}
+- name: IDENTITY_REGISTRY_PARTICIPANT_DID
+  value: {{ required "role=participant needs participant.did — the DID this instance holds the key for" .Values.participant.did | quote }}
+{{- if .Values.participant.dspAddress }}
+- name: IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS
+  value: {{ .Values.participant.dspAddress | quote }}
+{{- end }}
+{{/*
+Where this instance enrols. The anchor's own public URL, reached over TLS —
+enrolment is where a participant's identity is bound, and doing it over plain
+HTTP would let anyone on the path substitute the key being registered.
+*/}}
+- name: IDENTITY_REGISTRY_TRUST_ANCHOR_URL
+  value: {{ printf "https://%s" (include "ir.trustAnchorDomain" .) | quote }}
+{{/*
+**The participant's own** — the trust anchor mints no STS secret (`D-51`),
+because how a party authenticates to itself is not the anchor's decision. Its
+own secret, in its own release's Secret.
+*/}}
+- name: IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "ds.secretName" . }}
+      key: IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET
+{{- end }}
 - name: IDENTITY_REGISTRY_ENCRYPTION_KEY
   valueFrom:
     secretKeyRef:
@@ -56,7 +94,7 @@ service DNS name in a bundle produces a connector that cannot resolve its own
 trust anchor.
 */}}
 - name: IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL
-  value: {{ .Values.publicUrl | default (printf "https://%s" (include "ir.trustAnchorDomain" .)) | quote }}
+  value: {{ include "ir.publicUrl" . | quote }}
 - name: KEYCLOAK_ISSUER_URL
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
 - name: KEYCLOAK_REALM
@@ -71,7 +109,7 @@ its secret. See docs/deployment/keycloak.md.
 */}}
 - name: KEYCLOAK_MUTATE
   value: {{ (.Values.keycloak.mutate | default .Values.keycloak.sync.enabled) | quote }}
-{{- if .Values.keycloak.sync.enabled }}
+{{- if and .Values.keycloak.sync.enabled (eq (include "ir.role" .) "trust-anchor") }}
 {{/*
 Realm admin credentials, used only to create a third party's connector client at
 bundle time. Without them the bundle is still issued — without Keycloak
@@ -91,6 +129,50 @@ registry. Gated on the same flag as org-sync because it is the same access.
 {{- end }}
 {{- include "ds.env.aliases" (dict "ctx" . "prefix" "IDENTITY_REGISTRY_") }}
 {{- include "ds.env.extra" . }}
+{{- end -}}
+
+{{/*
+The role, normalised and validated at render time. A chart that let an unknown
+role through would defer the failure to a CrashLoopBackOff, where the reason is
+one `kubectl logs` away instead of in the diff.
+*/}}
+{{- define "ir.role" -}}
+{{- $role := .Values.role | default "trust-anchor" -}}
+{{- if not (has $role (list "trust-anchor" "participant")) -}}
+{{- fail (printf "ds-identity-registry: role must be trust-anchor or participant, got %q" $role) -}}
+{{- end -}}
+{{- $role -}}
+{{- end -}}
+
+{{/*
+This release's host. The anchor's is the trust-anchor domain; a participant's is
+its own — which is also its did:web identity, so the two cannot diverge.
+*/}}
+{{- define "ir.host" -}}
+{{- if eq (include "ir.role" .) "participant" -}}
+{{- .Values.participant.host | default (printf "%s.%s" (required "role=participant needs participant.name" .Values.participant.name) (.Values.global).baseDomain) -}}
+{{- else -}}
+{{- include "ir.trustAnchorDomain" . -}}
+{{- end -}}
+{{- end -}}
+
+{{- define "ir.publicUrl" -}}
+{{- .Values.publicUrl | default (printf "https://%s" (include "ir.host" .)) -}}
+{{- end -}}
+
+{{/*
+One database per release. A participant sharing the anchor's would put every key
+back in one place — the split would be three processes and one custody boundary,
+which is the thing `D-47` exists to rule out.
+*/}}
+{{- define "ir.database" -}}
+{{- if .Values.database -}}
+{{- .Values.database -}}
+{{- else if eq (include "ir.role" .) "participant" -}}
+{{- printf "identity_registry_%s" (required "role=participant needs participant.name" .Values.participant.name) | replace "-" "_" -}}
+{{- else -}}
+{{- (((.Values.global).postgres).databases).identityRegistry -}}
+{{- end -}}
 {{- end -}}
 
 {{- define "ir.trustAnchorDomain" -}}

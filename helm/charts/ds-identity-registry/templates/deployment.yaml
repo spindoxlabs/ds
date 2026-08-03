@@ -46,7 +46,35 @@ spec:
           resources:
             {{- toYaml (.Values.resources | default ((.Values.global).resources)) | nindent 12 }}
         {{- end }}
-        {{- if .Values.bootstrap.enabled }}
+        {{- if and .Values.bootstrap.enabled (eq (include "ir.role" .) "participant") }}
+        # A participant bootstraps **itself**: it generates its own keypair,
+        # encrypts it with its own key, and publishes its own DID document. The
+        # anchor never sees the private half (`D-47`).
+        #
+        # Enrolment is deliberately *not* run here. It needs a single-use code
+        # an operator issues, and this container runs on every pod start —
+        # baking a credential into a Deployment so it can be replayed at every
+        # restart is the shape this whole change removes. Enrol once, out of
+        # band: `ir-cli participant init --code <code>`.
+        - name: identity
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          workingDir: /app
+          command: ["/bin/sh", "-euc"]
+          args:
+            - |
+              ir-cli participant init
+              echo "participant identity ready (enrol separately with --code)"
+          env:
+            {{- include "ir.env" . | nindent 12 }}
+          {{- with .Values.resources | default (.Values.global).resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+        {{- end }}
+        {{- if and .Values.bootstrap.enabled (eq (include "ir.role" .) "trust-anchor") }}
         # Trust anchor + seed data. Every ir-cli command has upsert semantics,
         # so re-running on each pod start is safe by design.
         - name: bootstrap

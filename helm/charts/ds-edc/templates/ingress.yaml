@@ -1,14 +1,20 @@
 {{- if .Values.ingress.enabled }}
 {{- $host := include "edc.host" . }}
 {{- $fullname := include "ds.fullname" . }}
-{{- $irExternal := printf "%s-identity-registry" $fullname }}
+{{/*
+This participant's **own** identity-registry release, in this namespace. The
+helmfile names it `ds-identity-registry-<participant>`; `ds-edc`'s release is
+`ds-edc-<participant>`, so the two derive from the same participant name.
+*/}}
+{{- $irLocal := printf "ds-identity-registry-%s" (required "participant.name is required" .Values.participant.name) }}
 # =============================================================================
 # The participant public host — <participant>.<baseDomain>.
 #
 # This host IS the participant's did:web identity, so DID resolution and the DSP
 # endpoints share it. It serves exactly three path shapes; everything else 404s.
 #
-#   /.well-known/did.json  → identity-registry (authority ns, via ExternalName)
+#   /.well-known/did.json  → this participant's OWN identity-registry
+#   /credentials/*, /sts/*  → the same — its credential service and its STS
 #   /protocol/2025-1/*      → EDC DSP protocol port
 #   /public/*              → EDC data-plane public port
 #
@@ -16,20 +22,18 @@
 # are NOT routed here — they create and delete assets, policies and transfers.
 # =============================================================================
 
-# ExternalName bridge: an Ingress may only target a Service in its own
-# namespace, so DID resolution reaches the authority-namespace registry through
-# this alias.
-apiVersion: v1
-kind: Service
-metadata:
-  name: {{ $irExternal }}
-  labels:
-    {{- include "ds.labels" . | nindent 4 }}
-spec:
-  type: ExternalName
-  externalName: ds-identity-registry.{{ ((.Values.global).namespaces).authority }}.svc.cluster.local
-  ports:
-    - {name: http, port: 30005, protocol: TCP}
+# **The ExternalName bridge is gone** (`DID-05`/`DID-16`).
+#
+# It existed because this host's DID document was served by the *authority's*
+# registry, one namespace away, and an Ingress may only target a Service in its
+# own namespace. Since the split, a participant's DID document is served by the
+# participant's own registry release — in this namespace — so the alias, the
+# `upstream-vhost` annotation it needed, and the cross-namespace hop all go with
+# it.
+#
+# It was also wrong in a way the bridge hid: the anchor answering for this host
+# meant a participant's identity document came from a party that is not its
+# holder.
 ---
 # ── did:web resolution ───────────────────────────────────────────────────────
 # The one Ingress on this host that requests the certificate (issueCert true).
@@ -42,7 +46,6 @@ metadata:
   annotations:
     {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
     nginx.ingress.kubernetes.io/rewrite-target: /dids/did:web:{{ $host }}/did.json
-    nginx.ingress.kubernetes.io/upstream-vhost: ds-identity-registry.{{ ((.Values.global).namespaces).authority }}.svc.cluster.local
 spec:
   ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
   {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
@@ -54,7 +57,47 @@ spec:
             pathType: Exact
             backend:
               service:
-                name: {{ $irExternal }}
+                name: {{ $irLocal }}
+                port:
+                  number: 30005
+---
+# ── This participant's own DCP surfaces ──────────────────────────────────────
+# Its credential service (where a counterparty sends a presentation query) and
+# its Secure Token Service. Both live on this host because this host *is* its
+# did:web identity — the DID document it publishes names exactly these URLs, so
+# they cannot be anywhere else.
+#
+# Neither is anonymous: `/credentials/{did}/presentations/query` authenticates
+# the caller with a self-issued token proving control of the **verifier's** DID
+# plus an access token this participant's own STS granted it (`P-8`), and `/sts`
+# requires the participant's own client secret.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-dcp
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $host)) | nindent 2 }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          - path: /credentials
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $irLocal }}
+                port:
+                  number: 30005
+          - path: /sts
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $irLocal }}
                 port:
                   number: 30005
 ---

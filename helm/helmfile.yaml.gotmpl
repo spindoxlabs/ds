@@ -106,12 +106,55 @@ releases:
 {{- $ns := printf "%s%s" $root.Values.global.namespaces.participantPrefix $p.name }}
 {{- $psec := index $root.Values.secrets.participants $p.name }}
 
+  # ── The participant's own identity registry ────────────────────────────────
+  #
+  # **The same chart as the authority's, with different values** — never a copy.
+  # Adding a participant to a dataspace is adding a release here; if it ever
+  # requires editing a template, the parameterisation is wrong.
+  #
+  # Its own database (`identity_registry_<name>`) and its own encryption key.
+  # Sharing either would put every private key back in one place and make the
+  # split three processes with one custody boundary, which is exactly what
+  # `D-47` rules out.
+  #
+  # `ds-edc` needs it: this participant's DID document, credential service and
+  # STS are served from here, on the participant's own host.
+  - name: ds-identity-registry-{{ $p.name }}
+    namespace: {{ $ns }}
+    chart: ./charts/ds-identity-registry
+    needs:
+      - default/ds-namespaces
+      - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
+    values:
+      - global:
+          {{- $global | toYaml | nindent 10 }}
+      - role: participant
+        participant:
+          name: {{ $p.name | quote }}
+          did: {{ $p.did | default (printf "did:web:%s.%s" $p.name $root.Values.global.baseDomain) | quote }}
+          dspAddress: {{ printf "https://%s.%s/protocol/2025-1" $p.name $root.Values.global.baseDomain | quote }}
+        # The authority's release owns onboarding, agreements and the realm.
+        bootstrap:
+          enabled: true
+        keycloak:
+          sync:
+            enabled: false
+        secrets:
+          identityRegistryEncryptionKey: {{ $psec.identityRegistryEncryptionKey | quote }}
+          serviceClientSecret: {{ $psec.connectorClientSecret | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "identity_registry_%s" $p.name) | quote }}
+          participantStsSecret: {{ $psec.stsSecret | quote }}
+
   - name: ds-edc-{{ $p.name }}
     namespace: {{ $ns }}
     chart: ./charts/ds-edc
     needs:
       - default/ds-namespaces
       - {{ $root.Values.global.namespaces.authority }}/ds-identity-registry
+      # Its Ingress points `/.well-known/did.json`, `/credentials` and `/sts` at
+      # the release above — in this namespace, which is why the ExternalName
+      # bridge to the authority namespace is gone.
+      - {{ $ns }}/ds-identity-registry-{{ $p.name }}
     values:
       - global:
           {{- $global | toYaml | nindent 10 }}
@@ -141,6 +184,14 @@ releases:
         replicaCount: {{ $p.provenance.replicaCount | default 1 }}
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" $p.name) | quote }}
+          # Provenance verifies `X-User-VC` against the trust anchor's public
+          # key, exactly as the connector does — so it needs the same value, and
+          # its chart `required`s it. **This line was missing**, and because
+          # `helmfile template` could not run without decryptable secrets,
+          # nothing had ever rendered far enough to notice: every production
+          # deploy would have failed at this release. Found 2026-08-03 by
+          # rendering with a throwaway sops key.
+          trustAnchorPublicJwk: {{ $root.Values.secrets.trustAnchorPublicJwk | quote }}
 
   - name: ds-connector-{{ $p.name }}
     namespace: {{ $ns }}
