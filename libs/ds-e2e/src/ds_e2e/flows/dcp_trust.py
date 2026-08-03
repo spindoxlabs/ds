@@ -32,6 +32,38 @@ from ds_e2e.models import FlowResult
 log = logging.getLogger(__name__)
 
 
+def _participant_base(did: str) -> str:
+    """`did:web:provider.example.org` → `http://provider.example.org`.
+
+    Where that participant's **own** DCP surfaces live after `DID-05`: its STS,
+    its credential service, its DID document. Derived from the DID rather than
+    configured, because the DID *is* the address — that is what `did:web` means,
+    and a second setting could disagree with it.
+
+    Plain HTTP because dev serves did:web on `:80` through Caddy
+    (`edc.iam.did.web.use.https=false`); a deployment resolving over TLS reaches
+    the same host.
+    """
+    rest = did.removeprefix("did:web:")
+    host = rest.split(":", 1)[0].replace("%3A", ":")
+    return f"http://{host}"
+
+
+def _did_web_url(did: str) -> str:
+    """The URL the did:web method defines for *did*.
+
+    A portless DID resolves at `/.well-known/did.json` on port 80 and nowhere
+    else — which is why Caddy publishes :80, and why a test that reads the
+    registry's `/dids/{did}/did.json` instead is not testing resolution.
+    """
+    rest = did.removeprefix("did:web:")
+    parts = rest.split(":")
+    host = parts[0].replace("%3A", ":")
+    if len(parts) == 1:
+        return f"http://{host}/.well-known/did.json"
+    return f"http://{host}/{'/'.join(parts[1:])}/did.json"
+
+
 def _decode_segment(segment: str) -> dict[str, Any]:
     padding = "=" * (-len(segment) % 4)
     decoded: dict[str, Any] = json.loads(base64.urlsafe_b64decode(segment + padding))
@@ -57,12 +89,55 @@ class DcpTrustFlow(BaseFlow):
             result.fail_step("health", str(exc))
             return result
 
+        self._name_the_topology(result)
         self._check_did_resolution(result)
         token = self._check_sts_refusals(result)
         self._check_presentation_binding(result, token)
         self._check_status_list(result)
 
         return result
+
+    # ── topology ─────────────────────────────────────────────────────────────
+
+    def _name_the_topology(self, result: FlowResult) -> None:
+        """Say which identity topology this run exercised (`T-1`'s banner rule).
+
+        The same command means different things depending on how the stack is
+        deployed: one registry holding every key, or a trust anchor plus a
+        registry per participant. A green run that cannot say which it was
+        cannot be cited as evidence that the split works — and this suite has
+        been green across both.
+
+        So it asks each instance what role it is, and reports what it found.
+        The anchor answering `trust-anchor` while the participant hosts answer
+        `participant` is the topology; anything else is worth seeing in the
+        output rather than inferring from a passing run.
+        """
+        s = self.settings
+        seen: dict[str, str] = {}
+        for label, base in (
+            ("trust anchor", s.identity_registry_url),
+            ("provider", _participant_base(s.provider_did)),
+            ("consumer", _participant_base(s.consumer_did)),
+        ):
+            status, payload = self.http.raw("GET", f"{base}/health")
+            if status == 200 and isinstance(payload, dict):
+                seen[label] = str(payload.get("role") or "unknown")
+            else:
+                seen[label] = f"unreachable (HTTP {status})"
+
+        split = seen.get("trust anchor") == "trust-anchor" and all(
+            seen.get(k) == "participant" for k in ("provider", "consumer")
+        )
+        result.pass_step(
+            "identity topology",
+            (
+                "split — a trust anchor and one registry per participant"
+                if split
+                else "NOT split — every role answered by the same instance"
+            ),
+            **{k.replace(" ", "_"): v for k, v in seen.items()},
+        )
 
     # ── did:web ──────────────────────────────────────────────────────────────
 
@@ -75,8 +150,15 @@ class DcpTrustFlow(BaseFlow):
         the whole chain below it verifies against nothing.
         """
         s = self.settings
-        encoded = urllib.parse.quote(s.provider_did, safe="")
-        status, doc = self.http.raw("GET", f"{s.identity_registry_url}/dids/{encoded}/did.json")
+        # **Resolved the way a counterparty resolves it** — over did:web, at the
+        # participant's own host — not from the trust anchor's `/dids` path.
+        #
+        # The anchor also answers there, from the public key it recorded at
+        # enrolment, and the two agree today. They are not one claim: after
+        # `DID-05` the participant publishes the authoritative document, and a
+        # test that reads the anchor's copy is a test that works only because
+        # dev is not the deployment (`T-1`'s shape, one level down).
+        status, doc = self.http.raw("GET", _did_web_url(s.provider_did))
         if status != 200 or not isinstance(doc, dict):
             result.fail_step(
                 "did:web resolution",
@@ -121,6 +203,12 @@ class DcpTrustFlow(BaseFlow):
         )
 
     # ── STS ──────────────────────────────────────────────────────────────────
+    #
+    # **The participant's own**, since `DID-05`. Probing the anchor here would
+    # make every negative assertion below pass for the wrong reason: the anchor
+    # holds no key for a participant and refuses *everything*, valid secret
+    # included, so a flow pointed at it would report four clean refusals from a
+    # service that cannot issue at all.
 
     def _check_sts_refusals(self, result: FlowResult) -> str | None:
         """The STS mints the token that *is* the participant's identity.
@@ -131,8 +219,8 @@ class DcpTrustFlow(BaseFlow):
         and an unknown participant must each be refused.
         """
         s = self.settings
-        ir = s.identity_registry_url
         did = s.provider_did
+        ir = _participant_base(did)
         encoded = urllib.parse.quote(did, safe="")
         url = f"{ir}/sts/{encoded}/token"
 
@@ -196,16 +284,18 @@ class DcpTrustFlow(BaseFlow):
             probes=len(refusals),
         )
 
-        # The positive path needs the participant's real STS secret, which is
-        # deployment state rather than test configuration. When it is available
-        # the issued token is checked for shape; when it is not, the negative
-        # assertions above still stand on their own.
+        # **The positive path is no longer optional.** It used to skip when no
+        # secret was configured, and nothing configured one — so the only
+        # positive assertion in a security flow was skipped by default, and an
+        # STS that could issue nothing at all would still have shown green. The
+        # dev default is the participant's own secret; a deployment overrides it.
         secret = s.provider_sts_client_secret
         if not secret:
-            result.pass_step(
+            result.fail_step(
                 "STS issuance",
-                "skipped — no provider STS secret configured "
-                "(set E2E_PROVIDER_STS_SECRET to assert the positive path)",
+                "no provider STS secret configured — the positive path cannot be "
+                "asserted, and refusals alone do not show the STS works. Set "
+                "E2E_PROVIDER_STS_SECRET.",
             )
             return None
 
@@ -216,7 +306,13 @@ class DcpTrustFlow(BaseFlow):
                 "grant_type": "client_credentials",
                 "client_id": did,
                 "client_secret": secret,
-                "bearer_access_scope": "org.eclipse.edc.vc.type:MembershipCredential:read",
+                # The alias every DCP implementation agrees on. This read
+                # `org.eclipse.edc.vc.type`, which upstream's
+                # `EdcScopeToCriterionTransformer` rejects — harmless only while
+                # nothing enforced scope, and wrong the moment something did.
+                "bearer_access_scope": (
+                    "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"
+                ),
                 "audience": s.consumer_did,
             },
         )

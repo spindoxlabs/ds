@@ -90,12 +90,17 @@ class E2ESettings(BaseSettings):
         "did:web:consumer.dataspaces.localhost",
         validation_alias="CONNECTOR_CONSUMER_PARTICIPANT_DID",
     )
-    # The provider's STS client secret, if the deployment exposes it to the test
-    # environment. Absent, the dcp-trust flow still asserts every refusal path
-    # and only skips the positive token-issuance assertion — a missing secret
-    # must never turn a security assertion into a silent pass.
+    # The provider's STS client secret. **Its own** — the trust anchor mints no
+    # STS secret for a participant (`D-51`), so this is a value the provider's
+    # deployment chose and matches `IR_PROVIDER_STS_SECRET`.
+    #
+    # It now carries the dev default rather than empty. Empty made the positive
+    # token-issuance assertion *skip*, and a security flow whose only positive
+    # leg is skipped by default proves the refusals and nothing else: the whole
+    # STS could be a function returning 401 and the flow would still be
+    # green.
     provider_sts_client_secret: str = Field(
-        "", validation_alias="E2E_PROVIDER_STS_SECRET"
+        "insecure-dev-secret", validation_alias="E2E_PROVIDER_STS_SECRET"
     )
     # StatusList2021 list id. The identity-registry provisions "1" on first use
     # (services/identity-registry/.../org_onboarding.py).

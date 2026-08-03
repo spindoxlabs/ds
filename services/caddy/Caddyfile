@@ -78,6 +78,16 @@ http://provider.dataspaces.localhost {
 		reverse_proxy 172.17.0.1:30006
 	}
 
+	# The instance's own health, which reports its **role**. Routed here so the
+	# topology is observable from outside the cluster: `dcp-trust` names the
+	# identity topology it exercised (`T-1`'s banner rule), and it can only do
+	# that by asking each host what it is. Without this the probe 404s and a run
+	# against a fully split stack reports "NOT split" — a banner that lies is
+	# worse than no banner.
+	handle /health {
+		reverse_proxy 172.17.0.1:30006
+	}
+
 	respond 404
 }
 
@@ -198,6 +208,16 @@ http://consumer.dataspaces.localhost {
 	}
 
 	handle /sts/* {
+		reverse_proxy 172.17.0.1:30007
+	}
+
+	# The instance's own health, which reports its **role**. Routed here so the
+	# topology is observable from outside the cluster: `dcp-trust` names the
+	# identity topology it exercised (`T-1`'s banner rule), and it can only do
+	# that by asking each host what it is. Without this the probe 404s and a run
+	# against a fully split stack reports "NOT split" — a banner that lies is
+	# worse than no banner.
+	handle /health {
 		reverse_proxy 172.17.0.1:30007
 	}
 
