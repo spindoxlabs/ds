@@ -11,6 +11,8 @@ client, and this one runs the real thing.
 """
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -21,16 +23,34 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from identity_registry.config import Settings, get_settings
 from identity_registry.db.engine import Base
-from identity_registry.db.models import Did, Key, Owner, Participant
-from identity_registry.dependencies import get_db, get_settings_dep
+from identity_registry.db.models import Credential, Did, Key, Owner, Participant
+from identity_registry.dependencies import get_db, get_did_resolver, get_settings_dep
 from identity_registry.main import create_app
 from identity_registry.services import participant_bootstrap as boot
+from identity_registry.services.crypto import (
+    create_jws,
+    encrypt_private_jwk,
+    generate_key_pair,
+    load_private_key,
+)
+from identity_registry.services.did import build_did_document
 
 HEADERS = make_admin_headers()
 
+ANCHOR_DID = "did:web:trust-anchor.dataspaces.localhost"
 REC_DID = "did:web:rec.dataspaces.localhost"
 REC_URL = "http://rec.dataspaces.localhost"
 DSP = "http://172.17.0.1:19194/protocol/2025-1"
+
+#: This instance's own encryption key. `presentation.py` reads the process-wide
+#: `get_settings()` rather than an injected one — correct in production, where a
+#: process *is* one instance, and the reason the fixture must set it in the
+#: environment too rather than only in a `Settings` object.
+PARTICIPANT_ENCRYPTION_KEY = "participant-instance-key-not-the-anchors"
+
+#: What the anchor app under test encrypts with — `conftest`'s `Settings()`
+#: default, since it sets no override.
+ANCHOR_ENCRYPTION_KEY = Settings(_env_file=None).encryption_key
 
 
 def participant_settings(**overrides) -> Settings:
@@ -43,7 +63,7 @@ def participant_settings(**overrides) -> Settings:
         "participant_dsp_address": DSP,
         # A participant's own key, distinct from the anchor's. Sharing one is
         # what `D-47` forbids, so the fixture must not model it.
-        "encryption_key": "participant-instance-key-not-the-anchors",
+        "encryption_key": PARTICIPANT_ENCRYPTION_KEY,
     }
     base.update(overrides)
     return Settings(_env_file=None, **base)
@@ -66,6 +86,7 @@ async def participant_app(participant_db, monkeypatch):
     """A running `participant`-role instance, serving its own DID document."""
     monkeypatch.setenv("IDENTITY_REGISTRY_ROLE", "participant")
     monkeypatch.setenv("IDENTITY_REGISTRY_PARTICIPANT_DID", REC_DID)
+    monkeypatch.setenv("IDENTITY_REGISTRY_ENCRYPTION_KEY", PARTICIPANT_ENCRYPTION_KEY)
     get_settings.cache_clear()
 
     settings = participant_settings()
@@ -73,11 +94,21 @@ async def participant_app(participant_db, monkeypatch):
     app.dependency_overrides[get_db] = lambda: participant_db
     app.dependency_overrides[get_settings_dep] = lambda: settings
 
+    stub = StubResolver()
+    app.dependency_overrides[get_did_resolver] = lambda: stub
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url=REC_URL
     ) as ac:
+        ac.resolver = stub
         yield ac
     get_settings.cache_clear()
+
+
+@pytest.fixture
+def participant_resolver(participant_app):
+    """The participant instance's own DID resolver — it resolves its *issuer*."""
+    return participant_app.resolver
 
 
 # ── Holding an identity ───────────────────────────────────────────
@@ -221,6 +252,28 @@ async def test_a_participant_enrols_with_an_anchor_that_never_sees_its_key(
     the public half in *its* database. Two databases, one signature, and the
     private key never crosses.
     """
+    # 0. The anchor can issue: it has a key of its own. (Enrolment now issues
+    #    and delivers in the same call, so a registry that was never
+    #    bootstrapped cannot complete the exchange — and says so.)
+    anchor_kp = generate_key_pair(ANCHOR_DID)
+    anchor_key = Key(
+        owner_did=ANCHOR_DID,
+        kid=anchor_kp.kid,
+        # The **anchor's** encryption key, not this process's: the participant
+        # fixture has put its own in the environment, and a key encrypted with
+        # the wrong one fails as an opaque Fernet `InvalidToken` three layers
+        # away. Two instances, two keys, and the test has to model both.
+        private_jwk=encrypt_private_jwk(
+            anchor_kp.private_jwk, ANCHOR_ENCRYPTION_KEY
+        ),
+        public_jwk=anchor_kp.public_jwk,
+    )
+    db_session.add(anchor_key)
+    await db_session.flush()
+    db_session.add(
+        Did(did=ANCHOR_DID, did_type="participant", key_id=anchor_key.id)
+    )
+
     # 1. The organisation exists and has been admitted.
     db_session.add(
         Owner(
@@ -248,19 +301,32 @@ async def test_a_participant_enrols_with_an_anchor_that_never_sees_its_key(
 
     # 3. Route the participant's outbound HTTP into the anchor's ASGI app —
     #    real httpx, real request, no network.
-    anchor_app = client._transport.app
+    #    `boot.httpx` and `issuance.httpx` are the *same module object*, so the
+    #    two directions cannot be patched separately — one dispatcher routes by
+    #    path, which is also how a real deployment tells them apart.
+    to_anchor = ASGITransport(app=client._transport.app)
+    to_participant = ASGITransport(app=participant_app._transport.app)
     real_client = httpx.AsyncClient
 
-    def _to_anchor(**kwargs):
-        kwargs.pop("transport", None)
-        return real_client(transport=ASGITransport(app=anchor_app), **kwargs)
+    class Routed(httpx.AsyncBaseTransport):
+        async def handle_async_request(self, request):
+            to_issuer = request.url.path.startswith("/issuer/")
+            target = to_anchor if to_issuer else to_participant
+            return await target.handle_async_request(request)
 
-    monkeypatch.setattr(boot.httpx, "AsyncClient", _to_anchor)
+    def _routed(**kwargs):
+        kwargs.pop("transport", None)
+        return real_client(transport=Routed(), **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", _routed)
+    # The participant resolves the anchor's DID to verify the delivery it receives.
+    participant_app.resolver.publish(ANCHOR_DID, anchor_kp.public_jwk)
 
     result = await boot.enrol(participant_db, settings, code=code)
     await participant_db.commit()
 
-    assert result.status == "RECEIVED"
+    # `ISSUED`, not `RECEIVED`: the anchor signed and delivered in the same call.
+    assert result.status == "ISSUED"
     assert result.issuer_pid
     assert result.location == f"/issuer/requests/{result.issuer_pid}"
 
@@ -277,7 +343,17 @@ async def test_a_participant_enrols_with_an_anchor_that_never_sees_its_key(
     assert participant_row.dsp_address == DSP
     assert participant_row.sts_client_secret is None
 
-    # 5. And the participant still holds the private half nobody else has.
+    # 5. The credential the anchor issued is in the *participant's* store, which
+    #    is the only place a presentation query can read it from.
+    held = (
+        await participant_db.execute(
+            select(Credential).where(Credential.subject_did == REC_DID)
+        )
+    ).scalars().all()
+    assert [c.credential_type for c in held] == ["MembershipCredential"]
+    assert held[0].issuer_did == ANCHOR_DID
+
+    # 6. And the participant still holds the private half nobody else has.
     own_key = (
         await participant_db.execute(select(Key).where(Key.owner_did == REC_DID))
     ).scalar_one()
@@ -376,3 +452,214 @@ def test_the_stub_resolver_is_not_what_the_anchor_uses_in_production():
 
     assert "StubResolver" not in inspect.getsource(did_resolver)
     assert issubclass(StubResolver, object)
+
+
+# ── The Storage API — a holder accepts what its issuer wrote ──────
+
+
+def credential_message(
+    *,
+    credential_id: str = "urn:uuid:cred-1",
+    ctype: str = "MembershipCredential",
+) -> dict:
+    return {
+        "@context": ["https://w3id.org/dspace-dcp/v1.0/dcp.jsonld"],
+        "type": "CredentialMessage",
+        "issuerPid": ANCHOR_DID,
+        "holderPid": REC_DID,
+        "status": "ISSUED",
+        "credentials": [
+            {
+                "credentialType": ctype,
+                "format": "json-ld",
+                "payload": {
+                    "id": credential_id,
+                    "type": ["VerifiableCredential", ctype],
+                    "issuer": ANCHOR_DID,
+                    "credentialSubject": {"id": REC_DID, "role": "Provider"},
+                    "expirationDate": "2027-01-01T00:00:00Z",
+                    "proof": {"type": "JsonWebSignature2020", "jws": "eyJ.a.b"},
+                },
+            }
+        ],
+    }
+
+
+class Anchor:
+    """The issuer, from the holder's point of view: a DID and a key."""
+
+    def __init__(self, did: str = ANCHOR_DID):
+        self.did = did
+        self.kp = generate_key_pair(did)
+        self.private_key = load_private_key(self.kp.private_jwk)
+
+    def document(self) -> dict:
+        return build_did_document(self.did, self.kp.public_jwk)
+
+    def token(self, *, audience: str = REC_DID, iss: str | None = None) -> str:
+        now = int(time.time())
+        return create_jws(
+            {"alg": "ES256", "kid": self.kp.kid},
+            {
+                "iss": iss or self.did,
+                "sub": iss or self.did,
+                "aud": [audience],
+                "iat": now,
+                "exp": now + 300,
+            },
+            self.private_key,
+        )
+
+
+@pytest_asyncio.fixture
+async def holder(participant_db, participant_app):
+    """A participant instance holding its own identity, ready to be issued to."""
+    await boot.ensure_identity(participant_db, participant_settings())
+    await participant_db.commit()
+    return participant_app
+
+
+@pytest.mark.asyncio
+async def test_the_holder_stores_what_its_trusted_issuer_delivers(
+    holder, participant_db, participant_resolver
+):
+    anchor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+
+    r = await holder.post(
+        f"/credentials/{REC_DID}/credentials",
+        json=credential_message(),
+        headers={"Authorization": f"Bearer {anchor.token()}"},
+    )
+    assert r.status_code == 201, r.text
+    assert r.json()["stored"] == ["urn:uuid:cred-1"]
+
+    row = (await participant_db.execute(select(Credential))).scalar_one()
+    assert row.subject_did == REC_DID
+    assert row.issuer_did == anchor.did
+    assert row.credential_type == "MembershipCredential"
+    # The register belongs to the issuer. A holder recording an index would
+    # imply it can revoke, which it cannot.
+    assert row.status_list_index is None
+
+
+@pytest.mark.asyncio
+async def test_a_stored_credential_is_presentable(
+    holder, participant_db, participant_resolver
+):
+    """The whole reason delivery exists: `presentation.py` reads the local store."""
+    anchor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+    await holder.post(
+        f"/credentials/{REC_DID}/credentials",
+        json=credential_message(),
+        headers={"Authorization": f"Bearer {anchor.token()}"},
+    )
+
+    from identity_registry.services.presentation import build_presentation_response
+
+    response = await build_presentation_response(
+        participant_db,
+        REC_DID,
+        granted_types={"MembershipCredential"},
+        audience="did:web:verifier.example",
+    )
+    assert response["dcp:presentation"]["@value"]
+
+
+@pytest.mark.asyncio
+async def test_an_untrusted_issuer_is_refused(
+    holder, participant_db, participant_resolver
+):
+    """A credential from a stranger is somebody else's assertion about us."""
+    stranger = Anchor("did:web:stranger.dataspaces.localhost")
+    participant_resolver.documents[stranger.did] = stranger.document()
+
+    r = await holder.post(
+        f"/credentials/{REC_DID}/credentials",
+        json=credential_message(),
+        headers={"Authorization": f"Bearer {stranger.token()}"},
+    )
+    assert r.status_code == 403
+    stored = await participant_db.execute(select(Credential))
+    assert stored.scalar_one_or_none() is None
+
+
+@pytest.mark.asyncio
+async def test_an_unsigned_delivery_is_refused(holder, participant_db):
+    r = await holder.post(
+        f"/credentials/{REC_DID}/credentials", json=credential_message()
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_a_forged_issuer_signature_is_refused(
+    holder, participant_db, participant_resolver
+):
+    """Claiming to be the anchor is not being the anchor."""
+    anchor = Anchor()
+    impostor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+
+    r = await holder.post(
+        f"/credentials/{REC_DID}/credentials",
+        json=credential_message(),
+        headers={"Authorization": f"Bearer {impostor.token(iss=anchor.did)}"},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_delivery_to_a_did_this_instance_does_not_hold_is_a_404(
+    holder, participant_resolver
+):
+    anchor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+    other = "did:web:someone-else.dataspaces.localhost"
+
+    r = await holder.post(
+        f"/credentials/{other}/credentials",
+        json=credential_message(),
+        headers={"Authorization": f"Bearer {anchor.token(audience=other)}"},
+    )
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_redelivery_is_idempotent(holder, participant_db, participant_resolver):
+    """A retry after a timeout is the normal case, and must not double the store."""
+    anchor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+    for _ in range(2):
+        r = await holder.post(
+            f"/credentials/{REC_DID}/credentials",
+            json=credential_message(),
+            headers={"Authorization": f"Bearer {anchor.token()}"},
+        )
+        assert r.status_code == 201
+
+    rows = (await participant_db.execute(select(Credential))).scalars().all()
+    assert len(rows) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_payload_that_is_not_an_object_is_refused(
+    holder, participant_resolver
+):
+    """Only json-ld. A holder that re-envelopes a JWT can disagree with its issuer."""
+    anchor = Anchor()
+    participant_resolver.documents[anchor.did] = anchor.document()
+    message = credential_message()
+    message["credentials"][0] = {
+        "credentialType": "MembershipCredential",
+        "format": "jwt",
+        "payload": "eyJhbGciOiJFUzI1NiJ9.e30.sig",
+    }
+
+    r = await holder.post(
+        f"/credentials/{REC_DID}/credentials",
+        json=message,
+        headers={"Authorization": f"Bearer {anchor.token()}"},
+    )
+    assert r.status_code == 422

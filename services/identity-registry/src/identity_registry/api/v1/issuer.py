@@ -38,6 +38,7 @@ from ...config import Settings
 from ...db.models import CredentialRequest, Owner
 from ...dependencies import get_db, get_did_resolver, get_settings_dep
 from ...services import enrolment as enrol_service
+from ...services import issuance
 from ...services.did_resolver import DidResolver
 from ...services.token import SiTokenInvalid, verify_client_identity
 
@@ -211,7 +212,30 @@ async def request_credentials(
             owner_alias=owner.id,
             requested=requested,
         )
+
+        # Issue and deliver in the same call. CIP allows the two to be separated
+        # — acknowledge now, deliver when a human approves — and that is the
+        # right shape for a dataspace where admission is a judgement. Here the
+        # judgement has already been made: the enrolment code *is* the approval,
+        # issued by an operator against a verified owner. Deferring delivery
+        # behind a second manual step would add a queue with nothing in it.
+        issuance_outcome = await issuance.issue_for_participant(
+            db,
+            settings,
+            owner=owner,
+            did=client.did,
+            requested=requested,
+            document=client.document,
+        )
+        request.status = issuance_outcome.status
+        request.detail = issuance_outcome.detail
         await db.commit()
+    except issuance.IssuanceError as exc:
+        await db.rollback()
+        log.warning("Issuance failed for %s: %s", client.did, exc.message)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Issuance failed"
+        ) from exc
     except enrol_service.EnrolmentError as exc:
         await db.rollback()
         log.warning("Enrolment refused for %s: %s", client.did, exc.message)
@@ -228,7 +252,7 @@ async def request_credentials(
     # `NegotiationConsentValidator` and the STS both already carry.
     log.info(
         "Enrolled %s as %r (did=%s new, participant=%s new, dsp=%s, cs=%s) "
-        "— requested %s",
+        "— requested %s, issued %s%s, delivered to %s",
         outcome.did,
         outcome.owner_alias,
         outcome.created_did,
@@ -236,6 +260,9 @@ async def request_credentials(
         outcome.dsp_address,
         outcome.credential_service_url,
         ", ".join(requested) or "nothing",
+        ", ".join(issuance_outcome.issued) or "nothing",
+        f" (withheld: {issuance_outcome.detail})" if issuance_outcome.detail else "",
+        issuance_outcome.delivered_to or "nowhere",
     )
 
     response.headers["Location"] = f"/issuer/requests/{request.issuer_pid}"

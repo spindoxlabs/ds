@@ -14,16 +14,27 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...db.models import Credential
-from ...dependencies import get_db, get_did_resolver, require_credential_read
+from ...config import Settings
+from ...db.models import Credential, Did
+from ...dependencies import (
+    get_db,
+    get_did_resolver,
+    get_settings_dep,
+    require_credential_read,
+)
 from ...schemas.responses import CredentialCheckResponse
+from ...services import issuance
 from ...services.did_resolver import DidResolver, normalize_did_web
 from ...services.presentation import (
     build_presentation_response,
     credential_types_for,
     types_from_presentation_definition,
 )
-from ...services.token import SiTokenInvalid, verify_presentation_authorization
+from ...services.token import (
+    SiTokenInvalid,
+    verify_client_identity,
+    verify_presentation_authorization,
+)
 
 log = logging.getLogger(__name__)
 
@@ -175,3 +186,100 @@ async def query_presentations(
         " ".join(sorted(requested_types)) or "-",
     )
     return JSONResponse(content=response, media_type="application/ld+json")
+
+
+@router.post("/{did:path}/credentials", status_code=201)
+async def store_credentials(
+    did: str,
+    body: dict[str, Any],
+    authorization: str | None = Header(default=None),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    resolver: DidResolver = Depends(get_did_resolver),
+):
+    """DCP Storage API — an issuer writes credentials into this holder's store.
+
+    `credential.issuance.protocol.md` §Storage API. The mirror image of the
+    presentation query: there, a **verifier** proves control of its DID and
+    presents a grant this participant's STS minted; here, an **issuer** proves
+    control of its DID and this participant checks that it is an issuer it trusts.
+    Same `verify_client_identity`, same did:web resolution, opposite direction.
+
+    **Trust is by issuer DID, not by network position.** Anything can reach this
+    route; only a signature from a configured trusted issuer is written. Today
+    that is the trust anchor, which is also the only party in the dataspace
+    entitled to attest membership.
+    """
+    did = normalize_did_web(did)
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Missing issuer self-issued token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if body.get("type") != "CredentialMessage":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, detail="Expected a CredentialMessage"
+        )
+
+    try:
+        issuer = await verify_client_identity(
+            authorization[7:].strip(), audience=did, resolver=resolver
+        )
+    except SiTokenInvalid as exc:
+        log.warning("Rejected credential delivery to %s: %s", did, exc)
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid issuer token",
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from exc
+
+    if issuer.did != settings.trust_anchor_did:
+        # A credential from an unknown issuer is not a lesser credential, it is
+        # somebody else's assertion about us. Refusing here is what stops this
+        # store filling with claims no verifier in this dataspace would accept.
+        log.warning(
+            "Refused credential delivery to %s from untrusted issuer %s",
+            did,
+            issuer.did,
+        )
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="Not a trusted issuer"
+        )
+
+    local = (
+        await db.execute(select(Did).where(Did.did == did, Did.active.is_(True)))
+    ).scalar_one_or_none()
+    if local is None or local.key is None or local.key.private_jwk is None:
+        # Storing credentials for a DID this instance cannot present as would
+        # produce a store nothing can ever answer a query from.
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail="This instance does not hold that DID",
+        )
+
+    try:
+        stored = await issuance.store_delivered(
+            db,
+            holder_did=did,
+            issuer_did=issuer.did,
+            credentials=body.get("credentials") or [],
+        )
+    except issuance.IssuanceError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, detail=exc.message
+        ) from exc
+    await db.commit()
+
+    # The allow path logs. A credential store that is silent when it accepts
+    # cannot be told apart from one that never ran — the same reason the STS and
+    # the negotiation validator log on success.
+    log.info(
+        "Stored %d credential(s) for %s from %s: %s",
+        len(stored),
+        did,
+        issuer.did,
+        ", ".join(stored),
+    )
+    return {"stored": stored}

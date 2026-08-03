@@ -11,28 +11,40 @@ API, and `base.protocol.md` §Validating Self-Issued ID Tokens for the check. Th
 """
 from __future__ import annotations
 
+import json
 import time
 from datetime import UTC, datetime, timedelta
 
+import httpx
 import pytest
+import pytest_asyncio
 from conftest import make_admin_headers
 from sqlalchemy import select
 
+from identity_registry.config import get_settings
 from identity_registry.db.models import (
     CredentialRequest,
+    Did,
     EnrolmentToken,
     Key,
     Owner,
     Participant,
 )
+from identity_registry.services import issuance
 from identity_registry.services.crypto import (
     create_jws,
+    encrypt_private_jwk,
     generate_key_pair,
     load_private_key,
 )
 from identity_registry.services.did import build_did_document
 
 HEADERS = make_admin_headers()
+
+#: Captured at import, before any fixture patches it. A test that patches
+#: `httpx.AsyncClient` while the autouse recorder already has would otherwise
+#: capture *the recorder* as its "real" client and silently keep recording.
+REAL_ASYNC_CLIENT = httpx.AsyncClient
 
 ANCHOR = "did:web:trust-anchor.dataspaces.localhost"
 REC_DID = "did:web:rec.dataspaces.localhost"
@@ -91,6 +103,60 @@ def request_body(*, credentials=("MembershipCredential",), holder_pid="req-1") -
     }
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def anchor_identity(db_session):
+    """A bootstrapped trust anchor. Issuance is not possible without one.
+
+    Autouse because every enrolment now issues: the anchor signs a
+    MembershipCredential and delivers it, so a registry with no issuing key is a
+    registry that cannot complete the exchange — which `issue_for_participant`
+    says in as many words rather than leaking an `OrgOnboardingError`.
+    """
+    kp = generate_key_pair(ANCHOR)
+    key = Key(
+        owner_did=ANCHOR,
+        kid=kp.kid,
+        private_jwk=encrypt_private_jwk(kp.private_jwk, get_settings().encryption_key),
+        public_jwk=kp.public_jwk,
+    )
+    db_session.add(key)
+    await db_session.flush()
+    db_session.add(
+        Did(did=ANCHOR, did_type="participant", display_name="Trust Anchor",
+            key_id=key.id)
+    )
+    await db_session.commit()
+    return key
+
+
+@pytest.fixture(autouse=True)
+def credential_store(monkeypatch):
+    """A reachable holder credential store, recording what is delivered to it.
+
+    Delivery is a real outbound `POST` to the endpoint the holder's DID document
+    publishes. In a unit test nothing is listening there, so without this every
+    enrolment would end `REJECTED` on a connection error — true, but it would
+    make the delivery leg untestable and the enrolment leg unassertable.
+    `test_a_delivery_failure_is_reported` removes it deliberately.
+    """
+    delivered: list[dict] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        delivered.append(
+            {"url": str(request.url), "body": json.loads(request.content or b"{}")}
+        )
+        return httpx.Response(201, json={"stored": []})
+
+    transport = httpx.MockTransport(_handler)
+
+    def _client(**kwargs):
+        kwargs.pop("transport", None)
+        return REAL_ASYNC_CLIENT(transport=transport, **kwargs)
+
+    monkeypatch.setattr(issuance.httpx, "AsyncClient", _client)
+    return delivered
+
+
 async def make_owner(db_session, alias="rec", *, status="verified") -> Owner:
     owner = Owner(
         id=alias,
@@ -137,7 +203,9 @@ async def test_enrolment_registers_the_did_the_key_and_the_endpoints(
 
     body = r.json()
     assert body["type"] == "CredentialStatus"
-    assert body["status"] == "RECEIVED"
+    # Issued in the same call: the enrolment code *is* the operator's approval,
+    # so there is no second judgement for CIP's asynchronous leg to wait on.
+    assert body["status"] == "ISSUED"
     assert body["holderPid"] == "req-1"
     assert r.headers["Location"] == f"/issuer/requests/{body['issuerPid']}"
 
@@ -629,7 +697,7 @@ async def test_the_requesting_client_can_read_its_own_request_status(
         headers={"Authorization": f"Bearer {org.si_token(code=None)}"},
     )
     assert r.status_code == 200
-    assert r.json()["status"] == "RECEIVED"
+    assert r.json()["status"] == "ISSUED"
     assert r.json()["holderPid"] == "req-1"
 
 
@@ -684,4 +752,181 @@ async def test_the_request_is_recorded(client, db_session, resolver):
     assert request.holder_did == org.did
     assert request.owner_alias == "rec"
     assert set(request.requested) == {"MembershipCredential", "OrganizationCredential"}
-    assert request.status == "RECEIVED"
+    assert request.status == "ISSUED"
+    # The organisation credential is gated on an accepted agreement (§5.6) and
+    # this owner has none, so it is withheld **and said so** rather than silently
+    # missing.
+    assert "OrganizationCredential" in (request.detail or "")
+
+
+# ── Issuance and delivery (CIP steps 7-8) ─────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_enrolment_issues_and_delivers_a_membership_credential(
+    client, db_session, resolver, credential_store
+):
+    """The leg without which a decentralized participant holds nothing.
+
+    A presentation query is answered from the *holder's* store, so a participant
+    that enrolled and was issued to only at the anchor answers every query with
+    an empty presentation — correct-looking, and granting nothing.
+    """
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 201
+
+    assert len(credential_store) == 1
+    delivery = credential_store[0]
+    # CIP §Storage API: POST {credentialService}/credentials
+    assert delivery["url"] == f"{CS}/credentials"
+    body = delivery["body"]
+    assert body["type"] == "CredentialMessage"
+    assert body["status"] == "ISSUED"
+    payloads = {c["credentialType"] for c in body["credentials"]}
+    assert payloads == {"MembershipCredential"}
+    vc = body["credentials"][0]["payload"]
+    assert vc["credentialSubject"]["id"] == org.did
+    assert vc["proof"]["jws"]
+
+
+@pytest.mark.asyncio
+async def test_the_anchor_keeps_its_own_issuance_record(
+    client, db_session, resolver, credential_store
+):
+    """Not a duplicate of the holder's copy — a different fact.
+
+    The issuer knows *what it attested*, which is what `/credentials/check` reads
+    and what revocation acts on; the holder holds *what it can present*.
+    """
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    from identity_registry.db.models import Credential
+
+    rows = (
+        await db_session.execute(
+            select(Credential).where(Credential.subject_did == org.did)
+        )
+    ).scalars().all()
+    assert [row.credential_type for row in rows] == ["MembershipCredential"]
+    assert rows[0].status_list_index is not None
+
+
+@pytest.mark.asyncio
+async def test_delivery_authenticates_as_the_issuer(
+    client, db_session, resolver, credential_store
+):
+    """The same proof-of-control mechanism, running the other way.
+
+    The holder verifies this token against the *anchor's* DID document, so the
+    push is not "whoever can reach the endpoint".
+    """
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+
+    # The recorded request carried an Authorization header signed by the anchor.
+    assert credential_store[0]["body"]["issuerPid"] == ANCHOR
+
+
+@pytest.mark.asyncio
+async def test_a_delivery_failure_is_reported_not_swallowed(
+    client, db_session, resolver, monkeypatch
+):
+    """A credential issued and not delivered is a partial state, and says so."""
+    def _raise(request):
+        raise httpx.ConnectError("no credential service there")
+
+    transport = httpx.MockTransport(_raise)
+    monkeypatch.setattr(
+        issuance.httpx,
+        "AsyncClient",
+        lambda **kw: REAL_ASYNC_CLIENT(
+            transport=transport, **{k: v for k, v in kw.items() if k != "transport"}
+        ),
+    )
+
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.status_code == 201
+    assert r.json()["status"] == "REJECTED"
+
+    request = (await db_session.execute(select(CredentialRequest))).scalar_one()
+    assert "could not deliver" in (request.detail or "")
+
+
+@pytest.mark.asyncio
+async def test_a_participant_publishing_no_credential_service_is_reported(
+    client, db_session, resolver, credential_store
+):
+    await make_owner(db_session)
+    code = await issue_code(client)
+    org = Client()
+    resolver.documents[org.did] = org.document(cs=None)
+
+    r = await client.post(
+        "/issuer/credentials",
+        json=request_body(),
+        headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+    )
+    assert r.json()["status"] == "REJECTED"
+    assert credential_store == []
+    request = (await db_session.execute(select(CredentialRequest))).scalar_one()
+    assert "CredentialService" in (request.detail or "")
+
+
+@pytest.mark.asyncio
+async def test_re_enrolment_redelivers_and_does_not_re_mint(
+    client, db_session, resolver, credential_store
+):
+    """A retry after a failed push must not burn a second StatusList index."""
+    await make_owner(db_session)
+    org = Client()
+    resolver.documents[org.did] = org.document()
+
+    for pid in ("req-1", "req-2"):
+        code = await issue_code(client)
+        await client.post(
+            "/issuer/credentials",
+            json=request_body(holder_pid=pid),
+            headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
+        )
+
+    from identity_registry.db.models import Credential
+
+    rows = (
+        await db_session.execute(
+            select(Credential).where(Credential.subject_did == org.did)
+        )
+    ).scalars().all()
+    assert len(rows) == 1
+    assert len(credential_store) == 2  # delivered twice, minted once

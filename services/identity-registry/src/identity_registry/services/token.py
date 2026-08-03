@@ -228,6 +228,50 @@ async def create_access_token(
     return create_jws({"alg": "ES256", "kid": key.kid}, claims, private_key)
 
 
+async def create_self_signed_token(
+    db: AsyncSession,
+    settings,
+    did: str,
+    *,
+    audience: str,
+    extra_claims: dict[str, Any] | None = None,
+    token_ttl: int = 300,
+) -> str:
+    """A Self-Issued ID token signed with a key **this instance holds locally**.
+
+    Not `create_si_token`: that one goes through `get_participant_key`, which
+    requires a `Participant` row. Two callers legitimately have no such row —
+    a participant instance enrolling (the anchor has not registered it yet) and
+    the trust anchor itself (it is an issuer, not a participant) — and both need
+    to prove control of their own DID. Splitting this out is what stops either
+    growing a fake `Participant` row to satisfy a lookup.
+
+    `extra_claims` carries whatever the exchange adds: `pre-authorized_code` on
+    an enrolment request, nothing on a credential push.
+    """
+    key = (
+        await db.execute(select(Key).where(Key.owner_did == did, Key.active.is_(True)))
+    ).scalar_one_or_none()
+    if key is None or key.private_jwk is None:
+        raise LookupError(
+            f"This instance holds no private key for {did} — it cannot sign as it."
+        )
+    private_key = load_private_key(
+        decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+    )
+    now = int(time.time())
+    claims: dict[str, Any] = {
+        "iss": did,
+        "sub": did,
+        "aud": [audience],
+        "iat": now,
+        "exp": now + token_ttl,
+        "jti": str(uuid.uuid4()),
+    }
+    claims.update(extra_claims or {})
+    return create_jws({"alg": "ES256", "kid": key.kid}, claims, private_key)
+
+
 async def create_si_token(
     db: AsyncSession,
     participant_did: str,

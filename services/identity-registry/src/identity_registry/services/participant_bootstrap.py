@@ -34,10 +34,8 @@ that could not be fetched.
 from __future__ import annotations
 
 import logging
-import time
 import uuid
 from dataclasses import dataclass
-from typing import Any
 
 import httpx
 from sqlalchemy import select
@@ -45,14 +43,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
 from ..db.models import Did, Key
-from .crypto import (
-    create_jws,
-    decrypt_private_jwk,
-    encrypt_private_jwk,
-    generate_key_pair,
-    load_private_key,
-)
+from .crypto import encrypt_private_jwk, generate_key_pair
 from .enrolment import CREDENTIAL_SERVICE_TYPE, DSP_ENDPOINT_TYPE
+from .token import create_self_signed_token
 
 log = logging.getLogger(__name__)
 
@@ -178,38 +171,25 @@ async def _si_token(
     code: str | None,
     ttl: int = 300,
 ) -> str:
-    """Sign a Self-Issued ID token with this instance's own key.
+    """This instance's own SI token, carrying the enrolment code.
 
-    Not `token.create_si_token`: that one goes through `get_participant_key`,
-    which requires a `Participant` row — and the whole point of enrolling is that
-    the anchor has not registered us yet, so on a participant instance there is
-    nothing to look up. The claims are the same shape, minus the access-token
-    machinery an enrolment does not use.
+    The claim name is DCP's, not ours: `credential.issuance.protocol.md`
+    §Credential Request API names `pre-authorized_code` as how a client presents
+    a pre-authorization code to an issuer.
     """
-    key = (
-        await db.execute(select(Key).where(Key.owner_did == did, Key.active.is_(True)))
-    ).scalar_one_or_none()
-    if key is None or key.private_jwk is None:
+    try:
+        return await create_self_signed_token(
+            db,
+            settings,
+            did,
+            audience=audience,
+            extra_claims={"pre-authorized_code": code} if code else None,
+            token_ttl=ttl,
+        )
+    except LookupError as exc:
         raise ParticipantBootstrapError(
             f"No private key for {did} — run the identity step before enrolling."
-        )
-    private_key = load_private_key(
-        decrypt_private_jwk(key.private_jwk, settings.encryption_key)
-    )
-    now = int(time.time())
-    claims: dict[str, Any] = {
-        "iss": did,
-        "sub": did,
-        "aud": [audience],
-        "iat": now,
-        "exp": now + ttl,
-        "jti": str(uuid.uuid4()),
-    }
-    if code:
-        # The claim name is DCP's, not ours: `credential.issuance.protocol.md`
-        # §Credential Request API.
-        claims["pre-authorized_code"] = code
-    return create_jws({"alg": "ES256", "kid": key.kid}, claims, private_key)
+        ) from exc
 
 
 @dataclass(slots=True)
