@@ -363,8 +363,15 @@ class DcpTrustFlow(BaseFlow):
         and carries an encoded bitstring.
         """
         s = self.settings
-        status, payload = self.http.raw(
-            "GET", f"{s.identity_registry_url}/status/{s.status_list_id}"
+        # `Accept: */*` is what a verifier sends, and it is what decides the
+        # format: the list comes back as a **signed** VC-JWT. Served as bare
+        # JSON-LD it was a revocation list anyone on the path could rewrite —
+        # clear a bit and a revoked credential is valid again — and this step
+        # asserted only that it was *readable*, which it was.
+        status, body = self.http.raw(
+            "GET",
+            f"{s.identity_registry_url}/status/{s.status_list_id}",
+            headers={"Accept": "*/*"},
         )
         if status == 404:
             result.pass_step(
@@ -372,7 +379,7 @@ class DcpTrustFlow(BaseFlow):
                 f"skipped — no status list '{s.status_list_id}' published in this environment",
             )
             return
-        if status != 200 or not isinstance(payload, dict):
+        if status != 200 or not body:
             result.fail_step(
                 "status list",
                 "the status list is not publicly readable",
@@ -381,7 +388,36 @@ class DcpTrustFlow(BaseFlow):
             )
             return
 
-        subject = payload.get("credentialSubject") or {}
+        if not isinstance(body, str):
+            result.fail_step(
+                "status list",
+                "the status list is not served as a signed credential — a verifier "
+                "reads this body as a JWT and cannot check an unsigned list",
+                body_type=type(body).__name__,
+            )
+            return
+
+        parts = body.strip().split(".")
+        if len(parts) != 3:
+            result.fail_step(
+                "status list",
+                "the status list is not served as a signed credential — a verifier "
+                "reads this body as a JWT and cannot check an unsigned list",
+                body_prefix=body[:60],
+            )
+            return
+        try:
+            claims = json.loads(
+                base64.urlsafe_b64decode(parts[1] + "===").decode()
+            )
+        except Exception as exc:  # noqa: BLE001 — any decode failure is the same verdict
+            result.fail_step(
+                "status list", f"the signed status list could not be decoded: {exc}"
+            )
+            return
+
+        credential = claims.get("vc") or {}
+        subject = credential.get("credentialSubject") or {}
         if isinstance(subject, list):
             subject = subject[0] if subject else {}
         encoded_list = subject.get("encodedList") if isinstance(subject, dict) else None
@@ -389,7 +425,20 @@ class DcpTrustFlow(BaseFlow):
             result.fail_step(
                 "status list",
                 "the published list carries no encoded bitstring",
-                payload=payload,
+                payload=credential,
+            )
+            return
+
+        # GZIP, per StatusList2021 — a zlib stream has the same DEFLATE payload
+        # and a different header, so it decompresses for nobody and every
+        # revocation check fails closed without saying so.
+        raw = base64.b64decode(encoded_list)
+        if raw[:2] != b"\x1f\x8b":
+            result.fail_step(
+                "status list",
+                "the encoded bitstring is not GZIP — no conformant verifier can "
+                "read it, so every revocation check fails closed",
+                magic=raw[:2].hex(),
             )
             return
 
@@ -405,7 +454,9 @@ class DcpTrustFlow(BaseFlow):
             return
         result.pass_step(
             "status list",
-            "the revocation list is served unauthenticated as an encoded bitstring",
+            "the revocation list is served unauthenticated, signed by the trust "
+            "anchor, and GZIP-encoded as StatusList2021 requires",
             list_id=s.status_list_id,
+            issuer=claims.get("iss"),
             status_purpose=subject.get("statusPurpose"),
         )

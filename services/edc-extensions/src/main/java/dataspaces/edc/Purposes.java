@@ -143,6 +143,33 @@ public final class Purposes {
     }
 
     /**
+     * A single right-operand value, unwrapped — or {@code null} if it does not
+     * reduce to exactly one scalar.
+     *
+     * <p>The same JSON-LD/Jackson shapes this class already flattens for
+     * purposes, exposed for the functions that take a *scalar* operand. Those
+     * used a bare {@code rightValue.toString()}, which on a policy that reached
+     * the store through EDC's expansion yields {@code "\"granted\""} — quotes
+     * included — so the comparison fails on exactly the policies that took the
+     * expanded path, and fails by denying with no explanation.
+     *
+     * <p>Returns {@code null} for an absent value, for a collection that did not
+     * reduce to one element, and for anything that survived unwrapping as an
+     * object dump. Every caller treats {@code null} as "cannot read this
+     * operand" and denies.
+     */
+    public static String unwrapScalar(Object value) {
+        List<String> flattened = new java.util.ArrayList<>();
+        unwrap(value, flattened, 0);
+        return flattened.size() == 1 ? flattened.get(0) : null;
+    }
+
+    /** A right operand rendered for a log line, without pretending it parsed. */
+    public static String describeValue(Object value) {
+        return value == null ? "<null>" : "%s(%s)".formatted(value.getClass().getSimpleName(), value);
+    }
+
+    /**
      * Flatten whatever the policy store handed back into purpose strings.
      *
      * <p>{@code depth} bounds the recursion: the shapes below are all shallow,

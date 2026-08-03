@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import gzip
 import zlib
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -44,13 +45,33 @@ def get_bit(bitstring: bytes, index: int) -> bool:
 
 
 def encode_bitstring(bitstring: bytes) -> str:
-    compressed = zlib.compress(bitstring)
-    return base64.b64encode(compressed).decode()
+    """GZIP, per StatusList2021 — **not** zlib.
+
+    The specification says the encoded list is a GZIP-compressed bitstring, and
+    every verifier reads it that way (EDC's `BitString` uses `GZIPInputStream`).
+    This emitted a raw zlib stream: same DEFLATE payload, different two-byte
+    header, so no conformant verifier could decompress it and every revocation
+    check failed — closed, and silently, because a status list that cannot be
+    read is indistinguishable from a credential that is revoked.
+
+    Nothing caught it because both halves of this module agreed with each other:
+    `decode_bitstring` used `zlib` too, so every test round-tripped perfectly.
+    """
+    return base64.b64encode(gzip.compress(bitstring, mtime=0)).decode()
 
 
 def decode_bitstring(encoded: str) -> bytes:
+    """Read GZIP, and still accept zlib.
+
+    The fallback is for lists published before the fix — they are already
+    referenced by issued credentials, and refusing them would revoke everything
+    at once. New lists are always GZIP.
+    """
     compressed = base64.b64decode(encoded)
-    return zlib.decompress(compressed)
+    try:
+        return gzip.decompress(compressed)
+    except (OSError, EOFError):
+        return zlib.decompress(compressed)
 
 
 # ── Allocation ────────────────────────────────────────────────────

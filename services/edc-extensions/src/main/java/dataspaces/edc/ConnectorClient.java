@@ -60,7 +60,18 @@ public class ConnectorClient {
         for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
             try {
                 Request.Builder builder = new Request.Builder().url(url).get();
-                auth.authorize(builder);
+                if (!auth.authorize(builder)) {
+                    // No credential, so the request is not sent at all. Treated
+                    // as a transient like any transport failure: Keycloak being
+                    // briefly unavailable is exactly what the backoff is for,
+                    // and sending it bare would earn a 401 that no caller can
+                    // tell apart from a permission decision.
+                    monitor.warning("ConnectorClient: no credential for %s — not sending".formatted(path));
+                    if (!backoff(attempt)) {
+                        return null;
+                    }
+                    continue;
+                }
                 try (Response response = http.newCall(builder.build()).execute()) {
                     if (!response.isSuccessful() || response.body() == null) {
                         monitor.warning("ConnectorClient: HTTP %d for %s".formatted(response.code(), path));
@@ -112,7 +123,13 @@ public class ConnectorClient {
         for (int attempt = 0; attempt <= BACKOFF_MS.length; attempt++) {
             try {
                 Request.Builder builder = new Request.Builder().url(baseUrl + path).post(requestBody);
-                auth.authorize(builder);
+                if (!auth.authorize(builder)) {
+                    monitor.warning("ConnectorClient: no credential for %s — not sending".formatted(path));
+                    if (!backoff(attempt)) {
+                        return null;
+                    }
+                    continue;
+                }
                 try (Response response = http.newCall(builder.build()).execute()) {
                     if (!response.isSuccessful()) {
                         monitor.warning("ConnectorClient: HTTP %d posting to %s".formatted(response.code(), path));
@@ -152,5 +169,24 @@ public class ConnectorClient {
 
     private static String encode(String value) {
         return java.net.URLEncoder.encode(value, java.nio.charset.StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Sleep before the next attempt.
+     *
+     * @return {@code false} when there are no attempts left, or the thread was
+     *         interrupted — either way the caller should give up.
+     */
+    private boolean backoff(int attempt) {
+        if (attempt >= BACKOFF_MS.length) {
+            return false;
+        }
+        try {
+            Thread.sleep(BACKOFF_MS[attempt]);
+            return true;
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 }

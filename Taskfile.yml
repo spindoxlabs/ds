@@ -490,6 +490,16 @@ tasks:
     cmds:
       - docker image inspect ds-edc-base:0.16.0 >/dev/null 2>&1 || task edc:base
 
+  edc:test:
+    desc: Run the edc-extensions Java unit tests
+    # The Java was invoked by no task and no workflow, so the constraint
+    # functions that decide every access were untested *and* unrunnable without
+    # knowing the Docker incantation. `task -d services/edc-extensions test` is
+    # the same command.
+    cmds:
+      - task -d services/edc-extensions test -- {{.CLI_ARGS}}
+      - task -d services/edc-extensions test:report
+
   edc:build:
     desc: Build EDC connector fat JAR via Docker (caches in data/gradle)
     cmds:
@@ -543,7 +553,6 @@ tasks:
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
-          -Dds.demo.identity.enabled=true \
           -jar "$jar"
 
   edc-consumer:run:
@@ -559,7 +568,6 @@ tasks:
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
           -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
-          -Dds.demo.identity.enabled=true \
           -jar "$jar"
 
   edc:watch-build:
@@ -643,7 +651,6 @@ tasks:
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
-            -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
 
@@ -746,7 +753,6 @@ tasks:
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
             -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
-            -Dds.demo.identity.enabled=true \
             -jar "$jar" &
           PID=$!
 
@@ -1202,8 +1208,12 @@ tasks:
         if printf '%s\n' "$values" | grep -nE '^(KEYCLOAK_ADMIN_PASSWORD|POSTGRES_PASSWORD)=(admin|postgres)$'; then
           echo "✗ weak credential above"; rc=1
         fi
+        # The extension this refers to was deleted (`DID-03`): real DCP works and
+        # the whole suite runs on it. The check stays as a never-reintroduce
+        # guard — the variable is cheap to re-add and a signature bypass is not
+        # something to rediscover twice.
         if printf '%s\n' "$values" | grep -nE '^DS_DEMO_IDENTITY_ENABLED=true$'; then
-          echo "✗ EDC demo identity fallback enabled — this bypasses DSP authentication"; rc=1
+          echo "✗ DS_DEMO_IDENTITY_ENABLED is set — the demo identity bypass was removed; a deployment that re-adds it bypasses DSP authentication"; rc=1
         fi
         if ! grep -qE '^DS_ENV=production$' "$FILE"; then
           echo "✗ DS_ENV=production is not set — services will only warn, not fail"; rc=1

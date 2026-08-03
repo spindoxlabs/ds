@@ -106,11 +106,23 @@ services:
     environment:
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      # A presentation query is authorized by the *verifier's* self-issued token,
+      # whose signature is checked against the key in the verifier's DID
+      # document — so this service resolves did:web, and dev serves it over
+      # plain HTTP through Caddy on :80. The same choice the EDCs state as
+      # `edc.iam.did.web.use.https=false`; the two must agree or one side
+      # cannot fetch what the other publishes. Production keeps the default
+      # (true) and the ProductionGuard refuses to start otherwise.
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
       # Provisioning bundles: the externally reachable registry URL a third party
       # configures against, and the realm admin credentials used to create its
       # connector's Keycloak client. Unset, the bundle is still issued — without
       # Keycloak credentials in it.
-      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://172.17.0.1:30005
+      # Also the base of every StatusList URL written into an issued credential,
+      # so it must be reachable by a *verifier* — which is an EDC in a container,
+      # a host process, or a counterparty. The Caddy host is the one address that
+      # is all three, and it is the same shape production uses.
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
       # Told when the participant registry changes, so an operator does not
       # watch a stale list for a minute after a promote. Best-effort: a
       # connector that cannot be reached just keeps its 60s TTL.
@@ -144,6 +156,11 @@ services:
     environment:
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      # This container is what *issues* the credentials, so the StatusList URL
+      # baked into each one comes from here — not from the service above. Missing
+      # it, every dev credential carried `https://trust-anchor…/status/1`, a URL
+      # dev serves on no port, and each one was unverifiable from birth.
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
     volumes:
       - ./services/identity-registry/seed:/seed:ro
     entrypoint: ["/bin/sh", "-euc"]
@@ -156,7 +173,7 @@ services:
           --dsp-address http://172.17.0.1:19194/protocol/2025-1 \
           --scope dataspaces.query --scope dataspaces.admin \
           --sts-secret insecure-dev-secret \
-          --credential-service-url http://identity-registry:30005/credentials/did:web:provider.dataspaces.localhost
+          --credential-service-url http://provider.dataspaces.localhost/credentials/did:web:provider.dataspaces.localhost
         ir-cli participant add \
           --did did:web:consumer.dataspaces.localhost \
           --roles consumer \
@@ -164,7 +181,7 @@ services:
           --scope dataspaces.query \
           --scope owner:example-org:member \
           --sts-secret insecure-dev-secret \
-          --credential-service-url http://identity-registry:30005/credentials/did:web:consumer.dataspaces.localhost
+          --credential-service-url http://consumer.dataspaces.localhost/credentials/did:web:consumer.dataspaces.localhost
         ir-cli credential issue-data-subject \
           --subject-id consumer-user --role ConsumerUser \
           --linked-participant-did did:web:consumer.dataspaces.localhost

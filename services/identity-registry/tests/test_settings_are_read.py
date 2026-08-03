@@ -25,7 +25,14 @@ SRC = Path(__file__).resolve().parents[1] / "src" / "identity_registry"
 #: Fields whose reader is not a ``settings.<name>`` expression. Each needs a
 #: reason — an entry here is an exemption from the rule above, not a parking
 #: space for the next dead setting.
-READ_ELSEWHERE: dict[str, str] = {}
+READ_ELSEWHERE: dict[str, str] = {
+    "identity_registry_public_url": (
+        "read by `Settings.public_base_url` in config.py, which is what the rest "
+        "of the service uses. Deriving the URL in one place is the point: six "
+        "call sites used to build the StatusList URL by hand, and every one of "
+        "them ignored this setting"
+    ),
+}
 
 #: ``settings.name``, or the name quoted — a `getattr` is a read like any
 #: other, and the production guard names its variables as strings.

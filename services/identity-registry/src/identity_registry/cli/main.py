@@ -215,9 +215,7 @@ def participant_add(
             ta_key = ta_key_result.scalar_one_or_none()
 
             if ta_key:
-                status_list_url = (
-                    f"https://{settings.trust_anchor_domain}/status/1"
-                )
+                status_list_url = settings.status_list_url()
                 ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
 
                 for r in roles_list:
@@ -335,7 +333,7 @@ def credential_issue_membership(
 
             sl_index = await allocate_status_list_index(session)
             cred_id = generate_credential_id()
-            status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
+            status_list_url = settings.status_list_url()
 
             vc = build_membership_credential(
                 issuer_did=ta_did,
@@ -448,7 +446,7 @@ def credential_issue_data_subject(
                 linked_participant_did=linked_participant_did,
                 credentials_context_url=settings.credentials_context_url,
                 dataspace_uri=settings.dataspace_uri,
-                status_list_credential_url=f"https://{settings.trust_anchor_domain}/status/1",
+                status_list_credential_url=settings.status_list_url(),
                 status_list_index=sl_index,
                 credential_id=cred_id,
                 ttl_days=ttl_days,

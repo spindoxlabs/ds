@@ -254,18 +254,31 @@ Service accounts are in `services/keycloak/clients.yaml`; the dev secret equals 
 
 ## Testing
 
-Four layers. Each proves something the others cannot.
+Five layers. Each proves something the others cannot. See
+[docs/development/testing.md](docs/development/testing.md) for what belongs in each and why.
 
 | Layer | Command | Proves |
 |---|---|---|
 | **Unit** | `task -d <unit> test` | logic, in isolation. Mandatory for every change |
+| **Integration** | `task -d <unit> test:integration` | the unit against its real dependencies — database, Keycloak, a real `/internal/*` — without the whole dataspace |
 | **Local stack** | `task dev:restart` | the code works against real dependencies, with hot reload |
 | **Docker e2e** | `task docker:restart` then `task e2e:all` | the images, compose env and startup order work — **this must pass before e2e means anything** |
 | **Portal UI** | `task -d services/portal test:ui` | Playwright journeys against the running stack |
 
-The host-binding rule above is what makes layers 2 and 3 interchangeable: `ds-e2e` and
+The host-binding rule above is what makes layers 3 and 4 interchangeable: `ds-e2e` and
 Playwright address `172.17.0.1` and the Caddy domains, so they neither know nor care whether
 a given service is a container or a host process.
+
+**A green run is only evidence about the thing that actually ran.** The three worst defects
+found so far were not wrong answers — they were checks that never executed, and every suite
+passed throughout. When a layer reports success, ask what it exercised; if that is not visible
+from the output, make it visible **in the product**, not in the test.
+
+**The data plane has two implementations and e2e covers one.** `fixtures/seed.sh` puts the real
+celine `dataset-api` on `:30002` and moves the mock to `:30022`, and `ds-e2e` targets `:30002`
+— so an ordinary run exercises the real one and never the mock, while *nothing in the output
+says which answered*. Both must be run, and each run must name its backend. Until that is
+wired, **a change to either data plane needs its own check.**
 
 **Read the database directly when a result is ambiguous.** One Postgres on 35432, one
 database per service, `postgres`/`postgres` in dev:

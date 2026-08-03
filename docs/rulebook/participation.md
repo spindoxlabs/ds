@@ -71,10 +71,12 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 |---|---|---|
 | P-6 | A DID document is served only for a DID the registry holds a key for | **Enforced** |
 | P-7 | A DID's private key never leaves the identity-registry, and is encrypted at rest | **Enforced** (Fernet, `IDENTITY_REGISTRY_ENCRYPTION_KEY`) |
-| P-8 | A presentation query is answered only for a self-issued token signed by the requested DID's registered key (`DSSC-IAM-13`, proof of control) | **Enforced** |
-| P-9 | Every issued credential is allocated a distinct StatusList index | **Not enforced** — consecutive issuances share index 0, so revoking one credential revokes others. Defect **P0-3**; blocks `DSSC-IAM-05` and `DSSC-TRF-05` |
-| P-10 | A credential's status bit is set **only** on revocation, never at issuance | **Not enforced** — two issuance paths set it at creation, publishing the credential as revoked from birth. Defect **P0-3** |
-| P-11 | Signature verification is never skipped in production | **Enforced** for Python services via `ProductionGuard`; **not enforced** for the EDC, where `DS_DEMO_IDENTITY_ENABLED` defaults to `true` in both compose files and accepts unsigned self-issued tokens. Defect **P0-2** |
+| P-8 | A presentation query is answered only to a **verifier** that proves control of its own DID *and* presents an access token this participant's STS granted it. The grant's scope bounds what the presentation may contain (`DSSC-IAM-13`, proof of control) | **Enforced** |
+| P-8a | The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold | **Enforced** |
+| P-8b | The revocation list is served signed, by the trust anchor, GZIP-encoded as StatusList2021 requires | **Enforced** |
+| P-9 | Every issued credential is allocated a distinct StatusList index | **Enforced** — a database allocator, not a scan of the register (migration `0011`, `tests/test_status_list_allocation.py`). Measured on the dev registry: 16 credentials, 16 distinct indices |
+| P-10 | A credential's status bit is set **only** on revocation, never at issuance | **Enforced** — measured on the dev registry: the only set bits are the indices of the credentials whose status is `revoked` |
+| P-11 | Signature verification is never skipped, in any environment | **Enforced.** The EDC's demo identity fallback — which accepted a self-issued token without checking its signature and minted a `MembershipCredential` for the signer — **is deleted**, so there is no longer a switch to get wrong. `task secrets:check` fails on `DS_DEMO_IDENTITY_ENABLED` to stop it returning. Python services keep their `ProductionGuard` checks |
 
 ## 4. The trust anchor
 

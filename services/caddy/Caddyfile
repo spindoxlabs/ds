@@ -15,14 +15,31 @@
 http://*.dataspaces.localhost {
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
-		# Docker service name, on purpose: in the pure-Docker topology the EDCs
-		# resolve did:web:*.dataspaces.localhost via Caddy's network aliases to
-		# here. When the identity-registry runs on the host (task dev), this name
-		# does not resolve and the host-run EDC falls back to
-		# DemoIdentityFallbackExtension — the documented dev tradeoff, guarded
-		# out of production by task secrets:check.
-		reverse_proxy identity-registry:30005
+		# The host gateway, not the Docker service name. `identity-registry:30005`
+		# resolves only inside the compose network, so with the registry running on
+		# the host (`task dev:*`) DID resolution 502'd and the EDC fell back to
+		# DemoIdentityFallbackExtension — one of the two reasons that fallback
+		# existed. 172.17.0.1 resolves identically from a container and from the
+		# host, which is the rule the root guide states for every backend call.
+		reverse_proxy 172.17.0.1:30005
 	}
+
+	# The participant-facing halves of DCP, on the host the DID names.
+	#
+	# A DID document publishes its own CredentialService endpoint, and every
+	# counterparty and every EDC calls exactly that URL. It used to be
+	# `http://identity-registry:30005/…` — a Docker service name, so the endpoint
+	# a *published, signed* document advertised was unreachable from the host, from
+	# a `dev:*` EDC, and from anything outside this compose network. Same host as
+	# the DID, same port 80, resolvable both ways.
+	handle /credentials/* {
+		reverse_proxy 172.17.0.1:30005
+	}
+
+	handle /sts/* {
+		reverse_proxy 172.17.0.1:30005
+	}
+
 	respond 404
 }
 
@@ -93,6 +110,33 @@ http://sso.dataspaces.localhost {
 	}
 }
 
+# ── Trust anchor ─────────────────────────────────────────────────────────────
+#
+# A specific host block, so it does NOT fall through to the wildcard above —
+# which means the DID handler is repeated here, exactly as it is for the consumer.
+#
+# `/status/*` is what makes revocation checkable. A StatusList2021 URL is written
+# *inside* the signed credential and fetched by every verifier, so it has to be
+# reachable on the same host the DID names and over the same scheme the dataspace
+# resolves with. It was `https://trust-anchor.dataspaces.localhost/status/1`,
+# which dev serves on no port: the EDC's revocation check failed to connect,
+# failed closed, and every negotiation died at the identity step — visible only
+# once the demo identity fallback stopped hiding it.
+#
+# Public and unauthenticated by rulebook `P-13`.
+http://trust-anchor.dataspaces.localhost {
+	handle /.well-known/did.json {
+		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy 172.17.0.1:30005
+	}
+
+	handle /status/* {
+		reverse_proxy 172.17.0.1:30005
+	}
+
+	respond 404
+}
+
 # ── Consumer gateway ─────────────────────────────────────────────────────────
 #
 # `consumer.dataspaces.localhost` is both a gateway host and a participant DID
@@ -104,7 +148,17 @@ http://sso.dataspaces.localhost {
 http://consumer.dataspaces.localhost {
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
-		reverse_proxy identity-registry:30005
+		reverse_proxy 172.17.0.1:30005
+	}
+
+	# Repeated from the wildcard, for the same reason as the DID handler above:
+	# this host has its own block, so it never falls through.
+	handle /credentials/* {
+		reverse_proxy 172.17.0.1:30005
+	}
+
+	handle /sts/* {
+		reverse_proxy 172.17.0.1:30005
 	}
 
 	handle_path /api/connector/* {

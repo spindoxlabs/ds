@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .db.engine import get_session_factory
+from .services.did_resolver import DidResolver
 
 log = logging.getLogger(__name__)
 
@@ -19,6 +20,20 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 def get_settings_dep() -> Settings:
     return get_settings()
+
+
+def get_did_resolver() -> DidResolver:
+    """Resolver for counterparty DID documents.
+
+    A dependency rather than a module global so a test can substitute a document
+    without an HTTP server, and so a deployment's scheme choice
+    (``did_web_use_https``) is read once, where it is configured.
+    """
+    settings = get_settings()
+    return DidResolver(
+        use_https=settings.did_web_use_https,
+        timeout_seconds=settings.did_resolution_timeout_seconds,
+    )
 
 
 # ── Authorization guards ────────────────────────────────────────────────────

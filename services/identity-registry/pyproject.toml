@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11"]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11", "psycopg[binary]>=3.2"]
 
 [tool.uv.sources]
 ds-auth = { path = "../../libs/ds-auth", editable = true }
@@ -41,6 +41,11 @@ packages = ["src/identity_registry"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# `tests/integration` needs a real Postgres and starts real processes, so it is
+# never collected by `task test`. `task test:integration` names it explicitly.
+testpaths = ["tests"]
+norecursedirs = ["tests/integration"]
+markers = ["integration: needs a real Postgres and starts real registry processes"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

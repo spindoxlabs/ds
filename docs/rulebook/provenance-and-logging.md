@@ -72,6 +72,26 @@ evidence.
 | L-4 | An event is recorded once. Re-posting the same event is a no-op, not a duplicate | **Enforced.** An event without an `event_id` now gets a key derived from its own canonical payload (`sha256:<hex>`, `occurred_at` included), so the idempotency check matches on a retry. Emission is non-fatal and therefore retried, which made a duplicate the ordinary outcome of a timeout rather than an edge case. `services/provenance/tests/test_event_idempotency.py` |
 | L-5 | Every principal named in an event becomes an agent in the graph | **Enforced.** `AccessRevoked.subject_id` becomes an agent linked with `prov:role: dataSubject` — distinguishing "it was about them" from the two parties that performed it — and `acted_by` on `CataloguePublished` / `DataIngested` becomes a pseudonymous `urn:ds:principal:<issuer>:<sub>` agent, with `actedOnBehalfOf` to the owner it claimed to act for. `services/provenance/tests/test_event_agents.py` |
 
+### When recording fails: two correct answers, chosen by position
+
+`L-1` says recording is not optional; `L-4` says emission is non-fatal and therefore retried.
+Read together those look contradictory, and a reader who "aligns" one code path with the other
+will break it. The rule that reconciles them is **where the emitter sits relative to the thing
+being recorded**:
+
+| The event describes | Correct failure policy | Where |
+|---|---|---|
+| Something that **has already happened** — a negotiation concluded, a transfer started | **Non-fatal, retried.** It cannot be un-happened, so refusing records nothing and loses the fact as well | `services/connector`'s `ProvBridge` |
+| Something **about to happen**, which this component still controls | **Fatal.** Refuse, and there is nothing to record | a data-plane PEP's `QueryExecuted` |
+
+A `QueryExecuted` from a PEP is the second kind: the rows are read and narrowed but not yet
+returned, so a request that fails at the audit step discloses nothing. Serving them anyway
+would leave a disclosure with no record, which is precisely what `L-1` forbids.
+
+`services/dataset-api-mock` — the reference PEP — refuses, uniformly, for every shape of audit
+failure. It previously had three policies for one event: a non-2xx was ignored, a connection
+error was swallowed, and a token-fetch failure raised a 500. Two of the three served the rows.
+
 ## 3. The data model
 
 `DSSC-PTO-10` requires the data space to choose a model; `-11` requires an existing open

@@ -56,6 +56,7 @@ provenance store; the **authority** runs one identity registry for the whole dat
 |---|---|
 | understand a component | [Services](services/connector.md) — one page per service and shared library |
 | run the stack locally | [Development](development/running-the-stack.md) |
+| know which test layer proves what | [Development · Testing](development/testing.md) |
 | deploy to Kubernetes | [Deployment](deployment/index.md) |
 | know what the dataspace has decided | [Rulebook](rulebook/index.md) |
 | know what a dataspace must implement | [Blueprints](blueprints/index.md) |

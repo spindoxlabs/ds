@@ -13,13 +13,27 @@ import java.util.List;
  * Evaluates {@code {namespace}ConsentStatus eq "active"} at <b>negotiation</b>
  * time, by querying ds-connector's consent check.
  *
+ * <p><b>This function is not the negotiation-time enforcement point, and it
+ * cannot be.</b> A consent decision needs the dataset; a constraint function is
+ * handed the {@link Permission}, and {@code Rule} has no target at EDC 0.16.0.
+ * It therefore reads {@code ds.dataset_id} from the participant attributes —
+ * which nothing sets and nothing can, because participant attributes come from
+ * the verified claim token and are identity-scoped, while the dataset being
+ * negotiated is request-scoped. That branch is taken on every negotiation.
+ *
+ * <p>{@link NegotiationConsentValidator} is the enforcement point
+ * ({@code DSSC-AUP-06}): a {@code PolicyValidatorRule} receives the whole
+ * {@link org.eclipse.edc.policy.model.Policy}, which EDC has targeted at the
+ * asset. This function stays registered because the operand must stay
+ * <em>bound</em> — EDC's {@code ScopeFilter} removes an unbound operand, and a
+ * permission stripped of its only constraint becomes unconditional — and a bound
+ * operand with no registered function fails evaluation outright.
+ *
  * <p>The consumer participant ID is taken from the verified
  * {@link ParticipantAgent} — a DCP-verified credential presentation, not a
- * self-asserted header. Subject and dataset IDs are taken from participant
- * attributes ({@code ds.subject_id}, {@code ds.dataset_id}) when present. For a
- * dataset-level negotiation without a subject attribute, the negotiation is
- * accepted when at least one subject has granted consent for the
- * consumer+dataset pair.
+ * self-asserted header. If a deployment ever does supply {@code ds.subject_id}
+ * and {@code ds.dataset_id}, the check below runs and is authoritative for that
+ * negotiation.
  *
  * <p><b>Purpose.</b> The negotiated purposes are read from the
  * {@code odrl:purpose} constraint on the very permission being evaluated — that
@@ -57,7 +71,19 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
         String datasetId = agent.getAttributes().getOrDefault("ds.dataset_id", "");
 
         if (datasetId.isEmpty()) {
-            monitor.info("ConsentStatusFunction: ds.dataset_id not in participant attributes — accepting (membership already validated)");
+            // **Not an accept.** This is the ordinary case — nothing sets
+            // `ds.dataset_id`, and nothing can, so this branch is taken on every
+            // negotiation. The dataset-aware decision is
+            // NegotiationConsentValidator's, registered as a post-validator on
+            // the same scope, which reads the dataset off `Policy.getTarget()`.
+            // Post-validators run only after the constraint functions pass, so
+            // returning true here defers to it; returning false would deny every
+            // negotiation before it could run.
+            //
+            // `DataspacesExtensionRegistrationTest` asserts that validator is
+            // registered, because without it this line *is* the bypass it used
+            // to be.
+            monitor.debug(() -> "ConsentStatusFunction: no ds.dataset_id — deferring to NegotiationConsentValidator");
             return true;
         }
 

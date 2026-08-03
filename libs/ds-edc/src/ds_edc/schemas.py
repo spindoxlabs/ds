@@ -111,6 +111,9 @@ class NegotiationRequest(BaseModel):
     asset_id: str
     assigner: str
     odrl_policy: dict[str, Any] | None = None
+    #: The counterparty's participant id — its DID. Optional only for callers
+    #: that predate it; every ds caller supplies the assigner, which is it.
+    counter_party_id: str | None = None
 
     def to_edc(self) -> dict[str, Any]:
         policy = self.odrl_policy or {
@@ -125,6 +128,14 @@ class NegotiationRequest(BaseModel):
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "ContractRequest",
             "counterPartyAddress": self.counter_party_address,
+            # **The audience of the DCP token this negotiation is authenticated
+            # with.** Omitted, EDC falls back to its own participant id, so the
+            # consumer asked its STS for a token addressed to *itself* and the
+            # provider rejected it: "Token audience claim (aud -> [consumer]) did
+            # not contain expected audience: [provider]". Nothing noticed, because
+            # the demo identity fallback checks `iss == sub` and no audience at
+            # all — this is one of the defects that bypass was hiding.
+            "counterPartyId": self.counter_party_id or self.assigner,
             "protocol": DATASPACE_PROTOCOL,
             "policy": policy,
         }

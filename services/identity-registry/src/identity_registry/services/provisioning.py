@@ -103,7 +103,7 @@ async def build_bundle(
     sts_secret = secrets.token_urlsafe(32)
     participant.sts_client_secret = hash_sts_secret(sts_secret)
 
-    ir = settings.identity_registry_public_url or f"https://{settings.trust_anchor_domain}"
+    ir = settings.public_base_url
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
 
     counterparties = await db.execute(

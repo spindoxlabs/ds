@@ -8,14 +8,20 @@ stub is the reading of that decision: that is the seam the 500 lived on.
 from __future__ import annotations
 
 import pytest
-from ds.governance import ALLOW, DENY, DIRECT_USER_MATCH, DataplaneDecision
+from ds.governance import ALLOW, DENY, DataplaneDecision
 from fastapi.testclient import TestClient
 
 from dataset_api_mock import main
+from dataset_api_mock.main import REC_REGISTRY
 
 GATED = "datasets.silver.meters_15m"
-SUBJECT = "did:web:users.dataspaces.localhost:data-subject"
-OTHER = "did:web:users.dataspaces.localhost:subject-002"
+# ds names a consenting person by the identifier the *receiving* system keys on —
+# a Keycloak username — never by DID. The devices behind them are this plane's to
+# resolve, which is why the principal and the column values differ.
+SUBJECT = "subject@example.test"
+SUBJECT_DEVICE = "ds-e2e-METER-0001"
+OTHER_DEVICE = "ds-e2e-METER-0002"
+UNOWNED_DEVICE = "ds-e2e-METER-9999"
 
 HEADERS = {
     "Authorization": "Bearer irrelevant-the-verifier-is-stubbed",
@@ -66,26 +72,33 @@ def _query(client) -> object:
     )
 
 
+def _rec_allow(principals: list[str]) -> dict:
+    """An allow shaped exactly as `governance.yaml` declares this dataset.
+
+    Not `direct_user_match` on a column the fixture invented for itself: the
+    whole defect this replaces was that the mock's vocabulary and governance's
+    were different, so a test written in the mock's own terms passed while the
+    dataset was unserveable in the stack.
+    """
+    return {
+        "dataset_id": GATED,
+        "decision": ALLOW,
+        "row_filter": {
+            "handler": REC_REGISTRY,
+            "args": {"column": "device_id"},
+            "principals": principals,
+        },
+    }
+
+
 def test_an_allow_with_a_filter_serves_only_the_consenting_rows(client, monkeypatch):
-    _answers(
-        monkeypatch,
-        _decision(
-            {
-                "dataset_id": GATED,
-                "decision": ALLOW,
-                "row_filter": {
-                    "handler": DIRECT_USER_MATCH,
-                    "args": {"column": "sub"},
-                    "principals": [SUBJECT],
-                },
-            }
-        ),
-    )
+    _answers(monkeypatch, _decision(_rec_allow([SUBJECT])))
     response = _query(client)
     assert response.status_code == 200
-    served = {row["sub"] for row in response.json()["items"]}
-    assert served == {SUBJECT}
-    assert OTHER not in served
+    served = {row["device_id"] for row in response.json()["items"]}
+    assert served == {SUBJECT_DEVICE}
+    assert OTHER_DEVICE not in served
+    assert UNOWNED_DEVICE not in served
 
 
 def test_an_allow_with_a_filter_is_not_a_500(client, monkeypatch):
@@ -94,21 +107,20 @@ def test_an_allow_with_a_filter_is_not_a_500(client, monkeypatch):
     `row_filter["column"]` against a filter shaped `{handler, args, principals}`
     raised `KeyError` — a 500 out of the one code path whose job is to narrow.
     """
-    _answers(
-        monkeypatch,
-        _decision(
-            {
-                "dataset_id": GATED,
-                "decision": ALLOW,
-                "row_filter": {
-                    "handler": DIRECT_USER_MATCH,
-                    "args": {"column": "sub"},
-                    "principals": [SUBJECT],
-                },
-            }
-        ),
-    )
+    _answers(monkeypatch, _decision(_rec_allow([SUBJECT])))
     assert _query(client).status_code == 200
+
+
+def test_the_platforms_one_consent_gated_dataset_is_serveable(client, monkeypatch):
+    """It was not, and nothing failed to say so.
+
+    The fixture keyed rows by subject DID in a column `sub`, while
+    `governance.yaml` declares `rec_registry` on `device_id` and ds sends
+    usernames. Every one of those disagreed with the next, so an *allow* narrowed
+    to nothing and looked exactly like a subject who had consented to nothing.
+    """
+    _answers(monkeypatch, _decision(_rec_allow([SUBJECT])))
+    assert _query(client).json()["count"] == 2
 
 
 def test_a_handler_this_plane_cannot_run_serves_nothing(client, monkeypatch):
@@ -119,9 +131,9 @@ def test_a_handler_this_plane_cannot_run_serves_nothing(client, monkeypatch):
                 "dataset_id": GATED,
                 "decision": ALLOW,
                 "row_filter": {
-                    "handler": "rec_registry",
+                    "handler": "postgres_row_security",
                     "args": {"column": "device_id"},
-                    "principals": ["member-1"],
+                    "principals": [SUBJECT],
                 },
             }
         ),

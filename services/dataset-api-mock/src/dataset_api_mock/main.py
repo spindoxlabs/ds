@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Any
 
@@ -15,10 +16,9 @@ from ds.governance import (
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +36,6 @@ class Settings(BaseSettings):
     )
     service_client_id: str = "svc-ds-dataset-api"
     service_client_secret: str = "svc-ds-dataset-api"
-    enforce_consent: bool = True
     external_query_url: str | None = None
     extra_datasets_path: str | None = None
     # Verify the EDR token's signature against ds's JWKS proxy. Off only for a
@@ -88,25 +87,80 @@ def _check_production_config() -> None:
 _check_production_config()
 
 
+# A handler this data plane implements, named here and nowhere else.
+#
+# **Handler names do not belong in `ds.governance`.** ds passes the string
+# through from `governance.yaml` and never interprets it — `DataplaneRowFilter`
+# says so where it declares `args` open, "a handler defines its own arguments and
+# the PDP does not interpret them". Which registry resolves a principal to column
+# values is a property of the data plane holding the data, so a control-plane
+# library enumerating handlers would invite ds to reason about one.
+#
+# The two ends agree through `governance.yaml`, which is the producer's
+# declaration and the actual source of truth: the connector reads the handler
+# from it, and this plane must recognise what it reads.
+# `tests/test_dataset_fixtures.py` checks that against the file rather than
+# against a shared constant.
+#
+# `DIRECT_USER_MATCH` is imported rather than spelled here for the one reason
+# that does not apply to this: it is named by
+# `celine-utils/schema/governance.schema.json` and is what the legacy
+# `user_filter_column` spelling migrates to, so it is part of the shape itself.
+REC_REGISTRY = "rec_registry"
+
+
+# The REC registry, collapsed into a fixture.
+#
+# The real data plane resolves a `rec_registry` filter against two systems: the
+# identity-registry bridges a subject DID to the Keycloak username ds sends as a
+# *principal*, and the REC registry resolves that member to the meters they own.
+# A stand-in has neither behind it, so both hops live here — and the member and
+# sensor ids are `fixtures/ds_e2e_rec.yaml`'s, so a query answers the same
+# whichever backend holds :30002.
+#
+# `ds-e2e-METER-9999` deliberately belongs to nobody: a run that returns it has
+# lost the filter, and that must look like a failure rather than a bigger result.
+REC_MEMBERS: dict[str, dict[str, list[str]]] = {
+    "subject@example.test": {
+        "dids": ["did:web:users.dataspaces.localhost:data-subject"],
+        "devices": ["ds-e2e-METER-0001"],
+    },
+    "dual@example.test": {
+        "dids": ["did:web:users.dataspaces.localhost:dual-user"],
+        "devices": ["ds-e2e-METER-0002"],
+    },
+}
+
+
 DATASETS: dict[str, dict[str, Any]] = {
     "datasets.gold.om_weather_features": {
         "asset_id": "datasets.gold.om_weather_features",
         "requires_consent": False,
         "rows": [
-            {"timestamp": "2026-05-11T08:00:00Z", "location": "EC-001", "temperature_c": 18.7, "wind_ms": 2.8, "ghi": 426},
-            {"timestamp": "2026-05-11T08:15:00Z", "location": "EC-001", "temperature_c": 18.9, "wind_ms": 2.6, "ghi": 441},
-            {"timestamp": "2026-05-11T08:30:00Z", "location": "EC-001", "temperature_c": 19.1, "wind_ms": 2.5, "ghi": 455},
+            {"timestamp": "2026-05-11T08:00:00Z", "location": "EC-001",
+             "temperature_c": 18.7, "wind_ms": 2.8, "ghi": 426},
+            {"timestamp": "2026-05-11T08:15:00Z", "location": "EC-001",
+             "temperature_c": 18.9, "wind_ms": 2.6, "ghi": 441},
+            {"timestamp": "2026-05-11T08:30:00Z", "location": "EC-001",
+             "temperature_c": 19.1, "wind_ms": 2.5, "ghi": 455},
         ],
     },
+    # Declared exactly as `services/connector/governance/governance.yaml`
+    # declares it: a `rec_registry` filter on `device_id`. It used to key rows by
+    # subject DID in a column `sub`, which no decision could ever narrow — ds
+    # sends registry-native principals for a handler this fixture did not
+    # implement, against a column these rows did not have, so the one
+    # consent-gated dataset in the platform was unserveable here.
     "datasets.silver.meters_15m": {
         "asset_id": "datasets.silver.meters_15m",
         "requires_consent": True,
-        "subject_column": "sub",
+        "row_filters": [{"handler": REC_REGISTRY, "args": {"column": "device_id"}}],
         "rows": [
-            {"timestamp": "2026-05-11T08:00:00Z", "sub": "did:web:users.dataspaces.localhost:data-subject", "meter_id": "MTR-001", "kwh": 0.42},
-            {"timestamp": "2026-05-11T08:15:00Z", "sub": "did:web:users.dataspaces.localhost:data-subject", "meter_id": "MTR-001", "kwh": 0.37},
-            {"timestamp": "2026-05-11T08:00:00Z", "sub": "did:web:users.dataspaces.localhost:subject-002", "meter_id": "MTR-002", "kwh": 0.55},
-            {"timestamp": "2026-05-11T08:15:00Z", "sub": "did:web:users.dataspaces.localhost:subject-002", "meter_id": "MTR-002", "kwh": 0.51},
+            {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0001", "kwh": 0.42},
+            {"timestamp": "2026-05-11T08:15:00Z", "device_id": "ds-e2e-METER-0001", "kwh": 0.37},
+            {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.55},
+            {"timestamp": "2026-05-11T08:15:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.51},
+            {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-9999", "kwh": 9.99},
         ],
     },
 }
@@ -122,10 +176,65 @@ def _load_extra_datasets(path: str | None) -> dict[str, dict[str, Any]]:
     datasets = payload.get("datasets", payload)
     if not isinstance(datasets, dict):
         raise RuntimeError("Extra dataset file must contain a dataset object")
+    for name, spec in datasets.items():
+        _validate_dataset(name, spec)
     return datasets
 
 
+def _validate_dataset(name: str, spec: dict[str, Any]) -> None:
+    """Refuse a dataset that does not say enough about itself to be served.
+
+    **`requires_consent` is mandatory and is not defaulted.** Reading an absent
+    one as `False` is the fail-open direction: it would publish a PII dataset as
+    open and serve every row unfiltered, and a missing key is exactly how that
+    arrives. `asset_id` likewise — it is what the agreement names, so a wrong or
+    absent one makes every verdict about some other dataset.
+
+    A local dataset must carry `rows`; an external one names its query instead.
+    Both used to be read with `spec["…"]`, so an extra dataset omitting either
+    became a `KeyError` — a 500 out of `/catalogue`, which is unauthenticated
+    and is the first thing the portal calls.
+    """
+    if not isinstance(spec, dict):
+        raise RuntimeError(f"Dataset {name!r} must be an object")
+    if "requires_consent" not in spec:
+        raise RuntimeError(
+            f"Dataset {name!r} does not declare `requires_consent`. It has no default: "
+            "an absent one would publish a consent-gated dataset as open."
+        )
+    if not spec.get("asset_id"):
+        raise RuntimeError(f"Dataset {name!r} declares no `asset_id`")
+    if spec.get("source") == "external":
+        if not spec.get("external_sql"):
+            raise RuntimeError(f"External dataset {name!r} declares no `external_sql`")
+    elif not isinstance(spec.get("rows"), list):
+        raise RuntimeError(f"Dataset {name!r} declares no `rows`")
+    if spec["requires_consent"] and not _row_filter_spec(spec):
+        raise RuntimeError(
+            f"Dataset {name!r} requires consent but declares no row filter. ds narrows "
+            "these rows by one, so a dataset without one can only be served whole."
+        )
+
+
+def _row_filter_spec(spec: dict[str, Any]) -> dict[str, Any] | None:
+    """The dataset's own row filter, as `governance.yaml` declares one.
+
+    `subject_column` is the older spelling and still works for an extra dataset
+    file: it means `direct_user_match` on that column. Both are read through here
+    so nothing downstream has to know which was used.
+    """
+    for row_filter in spec.get("row_filters") or []:
+        if row_filter.get("handler"):
+            return row_filter
+    column = spec.get("subject_column")
+    if column:
+        return {"handler": DIRECT_USER_MATCH, "args": {"column": column}}
+    return None
+
+
 DATASETS.update(_load_extra_datasets(settings.extra_datasets_path))
+for _name, _spec in DATASETS.items():
+    _validate_dataset(_name, _spec)
 
 
 def _catalogue_entry(name: str, spec: dict[str, Any]) -> dict[str, Any]:
@@ -155,7 +264,9 @@ def _catalogue_entry(name: str, spec: dict[str, Any]) -> dict[str, Any]:
         "dcat:keyword": keywords,
         "access_level": access_level,
         "requires_consent": spec["requires_consent"],
-        "rows": len(spec["rows"]),
+        # An external dataset holds no rows here; its count is the upstream's and
+        # is not worth a call from a catalogue listing.
+        "rows": len(spec.get("rows") or []),
         "odrl:hasPolicy": {
             "@type": "odrl:Offer",
             "odrl:permission": [
@@ -197,7 +308,7 @@ async def datasets() -> dict[str, list[dict[str, Any]]]:
                 "name": name,
                 "asset_id": spec["asset_id"],
                 "requires_consent": spec["requires_consent"],
-                "rows": len(spec["rows"]),
+                "rows": len(spec.get("rows") or []),
             }
             for name, spec in _enabled_datasets().items()
         ]
@@ -213,13 +324,22 @@ async def subject_datasets(subject_id: str) -> dict[str, Any]:
     """
     owned: list[dict[str, Any]] = []
     for name, spec in _enabled_datasets().items():
-        subject_column = spec.get("subject_column")
+        row_filter = _row_filter_spec(spec)
+        if not row_filter:
+            continue
+        subject_column = row_filter["args"].get("column")
         if not subject_column:
             continue
 
+        # The caller names the person as the dataspace does — by DID — while the
+        # rows are keyed by whatever the *handler* resolves from them. Asking the
+        # handler is the whole point: a `rec_registry` dataset keys rows by
+        # device, so comparing the DID to the column directly finds nothing and
+        # reports the subject owns no data.
+        values = _handler_values(row_filter["handler"], [subject_id])
         sample_rows = list(spec.get("rows") or [])
         subject_match = spec.get("subject_id") == subject_id or any(
-            row.get(subject_column) == subject_id for row in sample_rows
+            row.get(subject_column) in values for row in sample_rows
         )
         if not subject_match:
             continue
@@ -230,10 +350,37 @@ async def subject_datasets(subject_id: str) -> dict[str, Any]:
             "title": name.replace("_", " ").replace(".", " / "),
             "requires_consent": spec["requires_consent"],
             "subject_column": subject_column,
-            "sample_rows": sum(1 for row in sample_rows if row.get(subject_column) == subject_id),
+            "sample_rows": sum(1 for row in sample_rows if row.get(subject_column) in values),
             "source": spec.get("source", "local"),
         })
     return {"subject_id": subject_id, "datasets": owned}
+
+
+def _handler_values(handler: str, principals: list[str]) -> set[str]:
+    """The column values `principals` admit, under `handler`.
+
+    This is the one piece of a row filter the PDP cannot compute: it names the
+    people, and the handler knows how a person maps to values in the column.
+
+    An unknown handler yields the empty set, and every caller reads that as
+    *these rows and no others* — never as *no filter*. That direction is not
+    symmetric: withholding rows from someone entitled to them is a bug report,
+    while serving rows for a narrowing this plane could not apply is a breach.
+    """
+    if handler == DIRECT_USER_MATCH:
+        # The column holds the principal itself, so there is nothing to resolve.
+        return set(principals)
+    if handler == REC_REGISTRY:
+        # Keyed by username, because that is what ds sends as a principal. The
+        # DIDs are accepted too so `/subjects/{did}/datasets` can use the same
+        # resolution — that route is the subject's own inventory view and names
+        # them the way the portal holds them.
+        values: set[str] = set()
+        for username, member in REC_MEMBERS.items():
+            if username in principals or set(member["dids"]) & set(principals):
+                values.update(member["devices"])
+        return values
+    return set()
 
 
 @app.get("/catalogue")
@@ -297,6 +444,18 @@ async def query(
     if not dataset_names:
         raise HTTPException(400, "No known dataset referenced in the query")
 
+    if len(dataset_names) > 1:
+        # ds authorises every dataset the statement touches, and this plane used
+        # to serve `dataset_names[0]` regardless — so a join asked about two and
+        # got one, silently, with the audit event naming only the one served.
+        # This mock cannot execute a join; refusing says so, where picking the
+        # first says nothing and looks like an answer.
+        raise HTTPException(
+            400,
+            "This data plane serves one dataset per statement, and this one names "
+            f"{len(dataset_names)}: {', '.join(sorted(dataset_names))}",
+        )
+
     if edc_contract_agreement_id is None:
         return await _plain_query(dataset_names, body)
 
@@ -317,10 +476,39 @@ def _datasets_in_sql(sql: str | None) -> list[str]:
     the FIWARE/QuantumLeap module resolves them its own way. Matching known
     names against the statement is the mock's equivalent — the *contract* is
     "the query says which datasets", and that is what has to be identical.
+
+    **Not `name in sql`.** Plain containment let a comment, a string literal or a
+    longer identifier select a dataset: `-- see datasets.silver.meters_15m` named
+    it, and so did `WHERE note = 'datasets.silver.meters_15m'` and a table called
+    `datasets.silver.meters_15m_v2`. That decides which asset id goes to
+    `authorize`, so it decides which agreement and which consent pool answer —
+    a caller who could steer it chose the dataset the decision was about while
+    the statement read from another.
+
+    Comments and single-quoted literals are removed first, then each known name
+    must appear delimited: no identifier character and no dot on either side.
+    Double-quoted text is left alone — in SQL that is a quoted identifier, so
+    `"datasets.silver.meters_15m"` is a genuine reference to it.
     """
     if not sql:
         return []
-    return [name for name in _enabled_datasets() if name in sql]
+    statement = _strip_sql_noise(sql)
+    return [
+        name
+        for name in _enabled_datasets()
+        if re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.])", statement)
+    ]
+
+
+def _strip_sql_noise(sql: str) -> str:
+    """`sql` with comments and single-quoted literals blanked out.
+
+    Blanked rather than deleted, so nothing on either side of a removed run is
+    joined into a new identifier.
+    """
+    without_block = re.sub(r"/\*.*?\*/", " ", sql, flags=re.DOTALL)
+    without_line = re.sub(r"--[^\n]*", " ", without_block)
+    return re.sub(r"'(?:[^']|'')*'", " ", without_line)
 
 
 async def _rows_for(dataset_names: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
@@ -346,7 +534,27 @@ def _page(rows: list[dict[str, Any]], body: DatasetQueryModel) -> DatasetQueryRe
 
 
 async def _plain_query(dataset_names: list[str], body: DatasetQueryModel) -> DatasetQueryResult:
-    """Non-dataspace mode: no ds involvement at all, by design."""
+    """Non-dataspace mode: no ds involvement at all, by design.
+
+    **A consent-gated dataset is not reachable this way.** Omitting
+    `Edc-Contract-Agreement-Id` used to select a path that returned every row of
+    any enabled dataset — `requires_consent: true` included — with no token, no
+    decision and no audit event. That is not a second mode of access, it is the
+    absence of one: the header is chosen by the caller, so the gate was opt-in
+    for the party it exists to constrain.
+
+    Datasets with no data subject behind them still flow, which is what this path
+    is for. A deployment that wants no dataspace at all runs exactly as before;
+    one that has consent-gated data now has to prove an agreement to read it.
+    """
+    gated = [name for name in dataset_names if DATASETS[name]["requires_consent"]]
+    if gated:
+        raise HTTPException(
+            403,
+            f"{', '.join(sorted(gated))} is consent-gated and cannot be read without a "
+            "contract agreement: send Edc-Contract-Agreement-Id, the EDR token and "
+            "Edc-Purpose so ds can decide whose rows may leave",
+        )
     rows, _ = await _rows_for(dataset_names)
     return _page(rows, body)
 
@@ -412,8 +620,8 @@ def _apply_row_filter(
 
     The filter arrives whole — handler, args and principals — because the
     handler is what knows how a principal maps to values in the column. This
-    service implements one handler; the real dataset-api registers several
-    through `celine.dataset...row_filters`.
+    service implements two (`direct_user_match`, `rec_registry`); the real
+    dataset-api registers several through `celine.dataset...row_filters`.
 
     **An unimplemented handler withholds every row.** It is not a permission to
     serve unfiltered: an *allow* carrying a filter says "these rows", and a PEP
@@ -422,7 +630,7 @@ def _apply_row_filter(
     (`row_filter["column"]`) matched no key the connector sends, so the request
     died as a 500 with the narrowing never applied.
     """
-    if row_filter.handler != DIRECT_USER_MATCH:
+    if row_filter.handler not in _IMPLEMENTED_HANDLERS:
         log.warning(
             "No implementation for row filter handler %r — withholding every row",
             row_filter.handler,
@@ -442,9 +650,14 @@ def _apply_row_filter(
 
     # An empty principal set narrows to nothing. It never widens to everything:
     # ds denies before sending one, and reading it as "no filter" is precisely
-    # how a consent-gated dataset leaks.
-    principals = set(row_filter.principals)
-    return [row for row in rows if row.get(column) in principals]
+    # how a consent-gated dataset leaks. The same holds for a principal the
+    # handler cannot resolve — an unknown member owns no devices, so their rows
+    # are none, not all.
+    values = _handler_values(row_filter.handler, list(row_filter.principals))
+    return [row for row in rows if row.get(column) in values]
+
+
+_IMPLEMENTED_HANDLERS = {DIRECT_USER_MATCH, REC_REGISTRY}
 
 
 _jwks_cache: dict[str, Any] = {}
@@ -492,6 +705,13 @@ async def _verified_consumer(bearer: str | None) -> str:
         # JWK carries its own (`edr-provider-key-1`), so a kid-indexed lookup
         # never matches. The set is one or two keys, so trying them all costs
         # nothing and survives a rotation that changes either name.
+        #
+        # Drop the cached set, as `_verification_keys` says it does: the commonest
+        # cause of no key fitting is that the provider rotated, and a cache that
+        # is never invalidated makes that a restart rather than a retry. It
+        # cannot be used to force fetches — reaching here already means the token
+        # verified against nothing we hold.
+        _jwks_cache.pop("keys", None)
         raise HTTPException(401, "EDR token is not valid")
 
     audience = claims.get("aud")
@@ -533,9 +753,20 @@ async def _verification_keys() -> list[Any]:
         return _jwks_cache["keys"]
 
     url = f"{settings.connector_internal_url.rstrip('/')}/internal/edr-jwks"
-    async with httpx.AsyncClient(timeout=5.0) as client:
-        response = await client.get(url, headers=await _internal_headers())
-    response.raise_for_status()
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            response = await client.get(url, headers=await _internal_headers())
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        # 502, not the 500 an uncaught `raise_for_status` produced. Both refuse
+        # the request, but a 500 says this service is broken when what happened
+        # is that ds would not answer — and it is the shape an operator reads to
+        # decide which component to look at.
+        raise HTTPException(
+            502, f"ds-connector would not publish the EDR keys: {exc.response.status_code}"
+        ) from exc
+    except httpx.RequestError as exc:
+        raise HTTPException(502, "ds-connector unreachable for the EDR key set") from exc
 
     keys = []
     for entry in response.json().get("keys", []):
@@ -608,8 +839,23 @@ async def _internal_headers() -> dict[str, str]:
 
     No fallback: the connector no longer accepts that header, so one could only
     turn a clear configuration error into a 403 at query time.
+
+    **Keycloak not answering is a denial too.** The token fetch used to escape as
+    whatever `httpx` raised — a 500 out of the middle of `/query`, and on the
+    audit call a 500 raised *after* the decision was taken and the rows narrowed.
+    A PEP that cannot prove who it is has not been told it may serve anything.
     """
-    return {"Authorization": f"Bearer {await _token_provider()}"}
+    try:
+        token = await _token_provider()
+    except httpx.HTTPStatusError as exc:
+        log.error("Keycloak refused the service token: %s", exc.response.status_code)
+        raise HTTPException(
+            502, f"Keycloak refused this service's token: {exc.response.status_code}"
+        ) from exc
+    except httpx.RequestError as exc:
+        log.error("Keycloak unreachable for the service token: %s", exc)
+        raise HTTPException(502, "Keycloak unreachable — cannot authenticate to ds") from exc
+    return {"Authorization": f"Bearer {token}"}
 
 
 async def _audit_query(
@@ -621,6 +867,24 @@ async def _audit_query(
     row_count: int,
     authorized_subject_ids: list[str] | None,
 ) -> None:
+    """Record the disclosure, before it becomes one.
+
+    **Every failure here refuses the query.** It used to depend on how the audit
+    call failed: a non-2xx was ignored entirely, a `RequestError` was swallowed,
+    and an `HTTPStatusError` out of the token fetch escaped as a 500 — three
+    outcomes for one event, two of which served the rows anyway.
+
+    Refusing is the coherent one, and it is available *because of where this
+    sits*: the rows have been read and narrowed but not yet returned, so a
+    request that fails here discloses nothing and therefore needs no record.
+    Serving them would leave a disclosure with no `QueryExecuted` event, which
+    rulebook `L-1` does not allow to be optional.
+
+    This deliberately differs from the connector's provenance emission, which is
+    non-fatal and retried (`L-4`). That code records things that have already
+    happened — a negotiation concluded, a transfer started — and cannot un-happen
+    them, so its only choice is to retry. This one still can.
+    """
     url = f"{settings.connector_internal_url.rstrip('/')}/internal/audit/query"
     payload = {
         "dataset_id": dataset_id,
@@ -634,9 +898,16 @@ async def _audit_query(
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.post(url, json=payload, headers=await _internal_headers())
-    except httpx.RequestError:
-        return
+            response = await client.post(url, json=payload, headers=await _internal_headers())
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        log.error("Query audit refused by ds-connector: %s", exc.response.status_code)
+        raise HTTPException(
+            502, f"ds-connector refused the query audit: {exc.response.status_code}"
+        ) from exc
+    except httpx.RequestError as exc:
+        log.error("Query audit could not be recorded: %s", exc)
+        raise HTTPException(502, "ds-connector unreachable — the query cannot be recorded") from exc
 
 
 async def _query_external(spec: dict[str, Any]) -> list[dict[str, Any]]:
@@ -649,11 +920,17 @@ async def _query_external(spec: dict[str, Any]) -> list[dict[str, Any]]:
         "offset": 0,
         "skip_count": True,
     }
+    # Authenticated like every other outbound call this service makes. It went
+    # out bare, which meant either the upstream accepts anonymous queries — so
+    # anyone who can reach it holds the same access this service does — or the
+    # call never worked and the dataset was unserveable. Neither is a state to
+    # leave a data plane in, and the second hides the first.
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 f"{settings.external_query_url.rstrip('/')}/query",
                 json=payload,
+                headers=await _internal_headers(),
             )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:

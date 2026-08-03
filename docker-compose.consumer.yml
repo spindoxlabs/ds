@@ -18,7 +18,7 @@ services:
       [
         "sh",
         "-c",
-        "java $$JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar /connector.jar",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar /connector.jar $$EDC_PROG_ARGS",
       ]
     volumes:
       - ./services/connector/config:/config:ro
@@ -32,10 +32,8 @@ services:
       # that is actually enforced is WEB_HTTP_MANAGEMENT_AUTH_KEY below — and
       # since the extensions moved onto client credentials, that is now this
       # value's only job. One purpose, one boundary.
+      EDC_PROG_ARGS: ${EDC_PROG_ARGS:-}
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
-      # Dev-only: accepts self-issued DCP tokens without signature
-      # verification. Never set this in a production deployment.
-      DS_DEMO_IDENTITY_ENABLED: ${DS_DEMO_IDENTITY_ENABLED:-true}
       # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
       # dot.notation (ConfigurationLoader → ConfigFactory.fromEnvironment). The
       # properties files cannot carry these: FsConfigurationExtension does a

@@ -302,7 +302,7 @@ async def issue_organization_credential(
 
     ta_key = await get_trust_anchor_key(db, settings)
     ta_did = f"did:web:{settings.trust_anchor_domain}"
-    status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
+    status_list_url = settings.status_list_url()
     ttl = min(
         ttl_days or settings.default_credential_ttl_days,
         settings.max_credential_ttl_days,

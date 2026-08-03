@@ -60,11 +60,16 @@ public class Oauth2InternalAuth implements InternalAuth {
     }
 
     @Override
-    public void authorize(Request.Builder builder) {
+    public boolean authorize(Request.Builder builder) {
         String bearer = currentToken();
-        if (bearer != null) {
-            builder.header("Authorization", "Bearer " + bearer);
+        if (bearer == null) {
+            monitor.warning(
+                "Oauth2InternalAuth: no token for %s — refusing to send the request unauthenticated"
+                    .formatted(clientId));
+            return false;
         }
+        builder.header("Authorization", "Bearer " + bearer);
+        return true;
     }
 
     private synchronized String currentToken() {

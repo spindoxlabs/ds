@@ -95,17 +95,29 @@ class ConsumerService:
         self._allow_unknown_participants = allow_unknown_participants
 
     async def request_catalog(self, counter_party_address: str, counter_party_id: str | None = None) -> dict:
+        participant = None
         try:
             result = self._registry.validate(counter_party_address)
-            if inspect.isawaitable(result):
-                await result
+            participant = await result if inspect.isawaitable(result) else result
         except UnknownParticipantError:
             if not self._allow_unknown_participants:
                 raise
             log.warning("Counter-party %s not in registry — proceeding anyway", counter_party_address)
+
+        # **The counterparty id is the audience of the DCP token this request is
+        # authenticated with**, so naming the wrong participant is not a
+        # cosmetic error — the far end refuses the token outright. The registry
+        # already answers "who is at this address", which is exactly the
+        # question; `_provider_id` is a last resort and on a consumer-side
+        # deployment it is the *local* DID, so falling back to it made the
+        # connector ask its own STS for a token addressed to itself.
         req = CatalogRequest(
             counter_party_address=counter_party_address,
-            counter_party_id=counter_party_id or self._provider_id,
+            counter_party_id=(
+                counter_party_id
+                or (participant.id if participant else None)
+                or self._provider_id
+            ),
         )
         return await self._edc.request_catalog(req)
 
@@ -117,7 +129,9 @@ class ConsumerService:
         assigner: str,
         odrl_policy: dict | None = None,
     ) -> str:
-        catalog_policy = await self._catalog_policy(counter_party_address, asset_id)
+        catalog_policy = await self._catalog_policy(
+            counter_party_address, asset_id, counter_party_id=assigner
+        )
         if catalog_policy:
             odrl_policy = catalog_policy
             offer_id = str(catalog_policy.get("@id") or offer_id)
@@ -130,11 +144,19 @@ class ConsumerService:
             asset_id=asset_id,
             assigner=assigner,
             odrl_policy=odrl_policy,
+            counter_party_id=assigner,
         )
         return await self._edc.start_negotiation(req)
 
-    async def _catalog_policy(self, counter_party_address: str, asset_id: str) -> dict | None:
-        catalog = await self.request_catalog(counter_party_address)
+    async def _catalog_policy(
+        self,
+        counter_party_address: str,
+        asset_id: str,
+        counter_party_id: str | None = None,
+    ) -> dict | None:
+        catalog = await self.request_catalog(
+            counter_party_address, counter_party_id=counter_party_id
+        )
         for dataset in catalog.get("dataset", []):
             if dataset.get("@id") != asset_id and dataset.get("id") != asset_id:
                 continue

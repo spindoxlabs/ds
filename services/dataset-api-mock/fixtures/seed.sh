@@ -10,12 +10,19 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PG=dataspaces-postgres-1
-# API/REG container names are derived from compose below, not hardcoded: the
-# committed `.env` sets COMPOSE_PROJECT_NAME=dataspaces, which docker compose
-# reads and which *overrides* this file's `name:` — so the containers are
-# `dataspaces-*`, not `dataspaces-real-dataset-api-*`. Asking compose for the id
-# is immune to whichever project name wins.
+# Every container id here is derived from compose, none is hardcoded: the
+# committed `.env.local` sets COMPOSE_PROJECT_NAME=dataspaces, which docker
+# compose reads and which *overrides* a file's `name:` — so the root stack's
+# containers are `dataspaces-*`. Asking compose for the id is immune to whichever
+# project name wins.
+#
+# (An earlier comment here said `.env`. There is no committed `.env` — it is
+# per-machine and gitignored, and a fresh checkout has none.)
+#
+# Postgres used to be spelled `dataspaces-postgres-1` literally, three lines
+# above the comment explaining why that is the wrong way to do it. It belongs to
+# the *root* compose file rather than the dataset-api one, which is the only
+# reason it was different.
 KEYCLOAK=${KEYCLOAK_URL:-http://localhost:9080}
 
 # `task docker:restart` recreates the ds Postgres, taking these databases with
@@ -32,6 +39,31 @@ API=$(docker compose -f "$ROOT/docker-compose.dataset-api.yml" ps -q dataset-api
 REG=$(docker compose -f "$ROOT/docker-compose.dataset-api.yml" ps -q rec-registry)
 if [ -z "$API" ] || [ -z "$REG" ]; then
   echo "could not resolve dataset-api/rec-registry containers from compose" >&2
+  exit 1
+fi
+
+# Postgres belongs to the *root* stack, which is brought up from three compose
+# files at once — and `docker compose -f docker-compose.yml ps` scopes to the
+# exact file set it is given, so asking with one file returns nothing even while
+# the container is running. Resolve it by the labels compose puts on it instead;
+# they are what identifies a container, and they survive the ordinal suffix and
+# the service naming that a literal `dataspaces-postgres-1` did not.
+#
+# `.env` first, then `.env.local` — the committed one is `.env.local` (`.env` is
+# per-machine and gitignored, and this checkout has none). `|| true` on the grep
+# because it exits 2 on a missing file, and `set -e` makes that fatal inside a
+# command substitution.
+PROJECT=${COMPOSE_PROJECT_NAME:-}
+for envfile in "$ROOT/.env" "$ROOT/.env.local"; do
+  [ -n "$PROJECT" ] && break
+  PROJECT=$(grep -oP '^\s*COMPOSE_PROJECT_NAME=\K.*' "$envfile" 2>/dev/null | tail -1 || true)
+done
+PROJECT=${PROJECT:-dataspaces}
+PG=$(docker ps -q \
+  --filter "label=com.docker.compose.project=$PROJECT" \
+  --filter "label=com.docker.compose.service=postgres")
+if [ -z "$PG" ]; then
+  echo "could not resolve the ds postgres container in project '$PROJECT' — is the stack up?" >&2
   exit 1
 fi
 
@@ -69,8 +101,13 @@ echo "→ rec registry"
 docker cp "$HERE/ds_e2e_rec.yaml" "$REG:/tmp/ds_e2e_rec.yaml" >/dev/null
 # `--force` because a re-run finds the community already there; the import
 # refuses otherwise rather than silently replacing members.
-docker exec "$REG" sh -c \
-  "celine-rec-registry import --file /tmp/ds_e2e_rec.yaml --api http://localhost:8004 --token '$TOKEN' --force" |
+#
+# The token crosses as an environment variable, not interpolated into the shell
+# string. It used to be spliced in between single quotes, so a token containing
+# one ended the quoting and the remainder ran as shell — and a JWT is not a
+# value this script chose, it is whatever Keycloak returned.
+docker exec -e DS_SEED_TOKEN="$TOKEN" "$REG" sh -c \
+  'celine-rec-registry import --file /tmp/ds_e2e_rec.yaml --api http://localhost:8004 --token "$DS_SEED_TOKEN" --force' |
   tail -3
 
 echo "✓ seeded"

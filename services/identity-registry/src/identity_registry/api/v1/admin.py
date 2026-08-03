@@ -425,7 +425,7 @@ async def issue_membership_credential(
 
     trust_anchor_key = await _get_trust_anchor_key(db, settings)
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-    status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
+    status_list_url = settings.status_list_url()
 
     ttl = min(
         data.ttl_days or settings.default_credential_ttl_days,
@@ -491,7 +491,7 @@ async def issue_data_subject_credential(
     did_result = await db.execute(select(Did).where(Did.did == subject_did))
     did_record = did_result.scalar_one_or_none()
 
-    status_list_url = f"https://{settings.trust_anchor_domain}/status/1"
+    status_list_url = settings.status_list_url()
 
     ttl = min(
         data.ttl_days or settings.default_credential_ttl_days,

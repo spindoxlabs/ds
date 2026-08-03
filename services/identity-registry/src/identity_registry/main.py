@@ -11,13 +11,13 @@ from .api.v1.admin import router as admin_router
 from .api.v1.agreements import router as agreements_router
 from .api.v1.credentials import router as credentials_router
 from .api.v1.memberships import router as memberships_router
+from .api.v1.onboarding import admin_router as onboarding_admin_router
+from .api.v1.onboarding import public_router as onboarding_public_router
 from .api.v1.organizations import router as organizations_router
 from .api.v1.owners import router as owners_router
 from .api.v1.public import router as public_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
-from .api.v1.onboarding import admin_router as onboarding_admin_router
-from .api.v1.onboarding import public_router as onboarding_public_router
 from .config import get_settings
 from .db.engine import verify_schema
 
@@ -41,6 +41,19 @@ async def lifespan(app: FastAPI):
         settings.oidc_insecure_dev,
         "Set IDENTITY_REGISTRY_OIDC_INSECURE_DEV=false and configure the issuer URL.",
     )
+    # Resolving a counterparty's DID document over plain HTTP means the key a
+    # signature is checked against arrives unauthenticated — anyone on the path
+    # substitutes it and speaks as that participant. Dev needs it (Caddy serves
+    # did:web on :80), production must never have it, and this is the Python
+    # counterpart of the EDC's own `edc.iam.did.web.use.https`.
+    if not settings.did_web_use_https:
+        guard.add(
+            "IDENTITY_REGISTRY_DID_WEB_USE_HTTPS",
+            "is false — a counterparty's verification key would be fetched over "
+            "plain HTTP",
+            "Set IDENTITY_REGISTRY_DID_WEB_USE_HTTPS=true so DID documents are "
+            "fetched over TLS.",
+        )
     guard.forbid_default(
         "IDENTITY_REGISTRY_ENCRYPTION_KEY",
         settings.encryption_key,

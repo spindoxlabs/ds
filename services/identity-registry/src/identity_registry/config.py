@@ -186,6 +186,24 @@ class Settings(BaseSettings):
         ),
     )
 
+    # ── DCP counterparty verification ────────────────────────────────────────
+    #
+    # A presentation query is authorized by the *verifier's* self-issued token,
+    # whose signature is checked against the key in the verifier's DID document.
+    # That means resolving a counterparty DID over HTTP, so the scheme has to
+    # match the one the deployment publishes on — `https` everywhere but dev,
+    # which serves did:web over plain HTTP through Caddy. It is the same choice
+    # the EDC states as `edc.iam.did.web.use.https`, and the two must agree.
+    did_web_use_https: bool = Field(
+        default=True,
+        description="Resolve did:web over HTTPS. False only in local dev.",
+    )
+
+    did_resolution_timeout_seconds: float = Field(
+        default=5.0,
+        description="Timeout for fetching a counterparty's DID document.",
+    )
+
     credentials_context_url: str = Field(
         default="https://dataspaces.localhost/ns/credentials/v1",
         description="Credentials JSON-LD context URL",
@@ -195,6 +213,22 @@ class Settings(BaseSettings):
         default="https://dataspaces.localhost/dataspace",
         description="Dataspace membership URI",
     )
+
+    @property
+    def public_base_url(self) -> str:
+        """Where this registry is reachable from outside the cluster.
+
+        The one source for URLs that end up **inside issued credentials** and so
+        outlive the process — the StatusList a verifier must fetch, above all.
+        Six call sites used to build `https://{trust_anchor_domain}/status/1` by
+        hand, which is why every credential in dev carries an `https` URL that
+        dev does not serve: a revocation check that cannot fetch the list fails
+        closed, so revocation has never been verifiable here.
+        """
+        return self.identity_registry_public_url or f"https://{self.trust_anchor_domain}"
+
+    def status_list_url(self, list_id: int | str = 1) -> str:
+        return f"{self.public_base_url}/status/{list_id}"
 
 
 @lru_cache(maxsize=1)

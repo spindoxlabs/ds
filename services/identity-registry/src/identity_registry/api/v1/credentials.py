@@ -15,10 +15,15 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Credential
-from ...dependencies import get_db, require_credential_read
+from ...dependencies import get_db, get_did_resolver, require_credential_read
 from ...schemas.responses import CredentialCheckResponse
-from ...services.presentation import build_presentation_response
-from ...services.token import SiTokenInvalid, verify_si_token
+from ...services.did_resolver import DidResolver, normalize_did_web
+from ...services.presentation import (
+    build_presentation_response,
+    credential_types_for,
+    types_from_presentation_definition,
+)
+from ...services.token import SiTokenInvalid, verify_presentation_authorization
 
 log = logging.getLogger(__name__)
 
@@ -78,16 +83,23 @@ async def query_presentations(
     body: dict[str, Any],
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
+    resolver: DidResolver = Depends(get_did_resolver),
 ):
     """Return a Verifiable Presentation containing matching VCs.
 
-    Implements the DCP Credential Service presentations/query endpoint.
+    Implements the DCP Credential Service presentations/query endpoint
+    (`verifiable.presentation.protocol.md` §Resolution API).
 
-    Authorization is the DCP self-issued access token: the caller proves it
-    controls ``did`` by presenting a JWT signed with that DID's registered key.
-    Without this check the endpoint hands any caller a signed VP containing the
-    subject's full credential set — i.e. participant impersonation.
+    **The caller is the verifier, not the holder.** It presents its own
+    Self-Issued ID token — proving control of its DID, checked against that DID's
+    document — carrying in the ``token`` claim the grant *this* participant's STS
+    minted for it. Both are verified; the grant's scope bounds what comes back.
+
+    This endpoint previously required the caller to *be* ``did``, which no DCP
+    verifier ever is: it rejected every conformant request and served none, and
+    the EDC's demo identity fallback hid that for as long as it existed.
     """
+    did = normalize_did_web(did)
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
@@ -96,7 +108,9 @@ async def query_presentations(
         )
 
     try:
-        await verify_si_token(db, authorization[7:].strip(), expected_issuer=did)
+        grant = await verify_presentation_authorization(
+            db, authorization[7:].strip(), participant_did=did, resolver=resolver
+        )
     except SiTokenInvalid as exc:
         log.warning("Rejected presentation query for %s: %s", did, exc)
         raise HTTPException(
@@ -105,13 +119,49 @@ async def query_presentations(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
-    presentation_definition = body.get("presentationDefinition", {})
+    scopes = body.get("scope") or []
+    if isinstance(scopes, str):
+        scopes = [scopes]
+    presentation_definition = body.get("presentationDefinition") or {}
+
+    # The spec makes this an error rather than a precedence question: a request
+    # carrying both says two different things about what it wants.
+    if scopes and presentation_definition:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="A query carries either scope or presentationDefinition, not both",
+        )
+    if not scopes and not presentation_definition:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail="A query must carry either scope or presentationDefinition",
+        )
+
+    requested_types = (
+        credential_types_for(scopes)
+        if scopes
+        else types_from_presentation_definition(presentation_definition)
+    )
 
     try:
         response = await build_presentation_response(
-            db, did, presentation_definition
+            db,
+            did,
+            granted_types=credential_types_for(grant.scopes),
+            requested_types=requested_types,
+            audience=grant.verifier_did,
         )
     except LookupError as exc:
         raise HTTPException(404, detail=str(exc)) from exc
 
+    # An enforcement point that is silent when it permits cannot be told apart
+    # from one that never ran — the `NegotiationConsentValidator` lesson, and the
+    # reason a green e2e is evidence that real DCP verification happened.
+    log.info(
+        "Presentation served for %s to verifier %s (granted=%s, requested=%s)",
+        did,
+        grant.verifier_did,
+        " ".join(grant.scopes),
+        " ".join(sorted(requested_types)) or "-",
+    )
     return JSONResponse(content=response, media_type="application/ld+json")

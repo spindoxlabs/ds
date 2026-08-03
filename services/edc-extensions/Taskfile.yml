@@ -1,0 +1,51 @@
+version: "3"
+
+# Java, so `test` and `lint` do not mean what they mean in the Python units.
+# Everything runs through a Gradle container: there is no committed Gradle
+# wrapper and the host carries a JRE only.
+#
+# This file exists because `:edc-extensions:test` was invoked by **no task and no
+# workflow** — the tests existed and nothing ran them, which is the same failure
+# as having none. `task -d services/edc-extensions test` now works like every
+# other unit's, and `task edc:test` at the root is the same command.
+
+vars:
+  GRADLE_IMAGE: gradle:8.12-jdk21
+  ROOT:
+    sh: git rev-parse --show-toplevel
+
+tasks:
+  test:
+    desc: Run the edc-extensions unit tests
+    cmds:
+      - mkdir -p {{.ROOT}}/data/gradle
+      - >-
+        docker run --rm
+        -v "{{.ROOT}}:/project"
+        -v "{{.ROOT}}/data/gradle:/home/gradle/.gradle"
+        -w /project
+        {{.GRADLE_IMAGE}}
+        gradle :edc-extensions:test --no-daemon {{.CLI_ARGS}}
+
+  test:report:
+    desc: Print the pass/fail count from the last test run
+    cmds:
+      - |
+        cd {{.ROOT}}/services/edc-extensions/build/test-results/test 2>/dev/null || {
+          echo "no test results — run 'task -d services/edc-extensions test' first" >&2
+          exit 1
+        }
+        awk -F'"' '/<testsuite /{n+=$4; s+=$6; f+=$8; e+=$10}
+          END {printf "%d tests, %d skipped, %d failures, %d errors\n", n, s, f, e}' ./*.xml
+
+  build:
+    desc: Compile the extension (no fat JAR — that is `task edc:build`)
+    cmds:
+      - mkdir -p {{.ROOT}}/data/gradle
+      - >-
+        docker run --rm
+        -v "{{.ROOT}}:/project"
+        -v "{{.ROOT}}/data/gradle:/home/gradle/.gradle"
+        -w /project
+        {{.GRADLE_IMAGE}}
+        gradle :edc-extensions:build -x test --no-daemon

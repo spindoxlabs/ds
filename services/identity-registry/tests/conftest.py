@@ -1,15 +1,16 @@
-import tempfile
 
 import jwt as pyjwt
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from identity_registry.config import Settings
 from identity_registry.db.engine import Base
-from identity_registry.dependencies import get_db, get_settings_dep
+from identity_registry.dependencies import get_db, get_did_resolver, get_settings_dep
 from identity_registry.main import create_app
+from identity_registry.services.did import build_did_document
+from identity_registry.services.did_resolver import DidResolutionError
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
@@ -46,6 +47,35 @@ async def db_session(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         yield session
+
+
+class StubResolver:
+    """Serves DID documents from a dict instead of over HTTP.
+
+    The production resolver always goes through did:web — deliberately, so dev
+    and production run the same code — which means a unit test has to supply the
+    documents. Registering one here is the test's way of saying "this DID is
+    published, with this key".
+    """
+
+    def __init__(self, documents: dict[str, dict] | None = None):
+        self.documents = documents or {}
+
+    def publish(self, did: str, public_jwk: dict) -> None:
+        self.documents[did] = build_did_document(did, public_jwk)
+
+    async def resolve(self, did: str) -> dict:
+        if did not in self.documents:
+            raise DidResolutionError(f"{did} is not published")
+        return self.documents[did]
+
+
+@pytest.fixture
+def resolver(client):
+    """Install a stub DID resolver into the app under test, and hand it back."""
+    stub = StubResolver()
+    client._transport.app.dependency_overrides[get_did_resolver] = lambda: stub
+    return stub
 
 
 @pytest_asyncio.fixture(scope="function")

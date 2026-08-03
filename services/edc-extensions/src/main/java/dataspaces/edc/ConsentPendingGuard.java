@@ -4,9 +4,6 @@ import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.ContractN
 import org.eclipse.edc.connector.controlplane.contract.spi.types.negotiation.ContractNegotiation;
 import org.eclipse.edc.connector.controlplane.contract.spi.types.negotiation.ContractNegotiationStates;
 import org.eclipse.edc.connector.controlplane.contract.spi.types.offer.ContractOffer;
-import org.eclipse.edc.policy.model.AtomicConstraint;
-import org.eclipse.edc.policy.model.Constraint;
-import org.eclipse.edc.policy.model.LiteralExpression;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
 
@@ -52,10 +49,18 @@ import java.util.concurrent.ConcurrentHashMap;
  * outstanding ask, is there anybody to ask — is answered by ds-connector. The
  * guard's whole contribution is the boolean EDC needs.
  *
- * <p>Returning {@code false} is <b>not</b> an allow. The {@code ds:consentStatus}
- * ODRL constraint still evaluates and still denies. {@code false} only means
+ * <p>Returning {@code false} is <b>not</b> an allow. {@code false} only means
  * <em>parking would not help</em>, because no human decision is pending that
- * could unblock it.
+ * could unblock it; the denial is {@link NegotiationConsentValidator}'s.
+ *
+ * <p><b>That was not true until this was written.</b> This javadoc used to say
+ * the {@code ds:consentStatus} ODRL constraint "still evaluates and still
+ * denies" — and it did not: {@link ConsentStatusFunction} returned {@code true}
+ * on every negotiation, because the dataset id it looks for is set by nothing.
+ * So this guard deferred denial to a function that never denied. Both halves
+ * read as safe in isolation, which is why it survived. The validator is now the
+ * half that decides, and it uses {@link ConsentConstraints} — the same matcher
+ * this guard uses, so the two cannot disagree about which policies are gated.
  *
  * <h2>Cost</h2>
  *
@@ -68,9 +73,6 @@ import java.util.concurrent.ConcurrentHashMap;
  * consumers negotiating the same dataset and purpose at once.
  */
 public class ConsentPendingGuard implements ContractNegotiationPendingGuard {
-
-    /** Both the compact form and the form ODRL's context expands it to. */
-    private static final List<String> CONSENT_OPERAND_SUFFIXES = List.of("consentStatus", "ConsentStatus");
 
     private record CacheEntry(boolean park, Instant expiresAt) {
         boolean isExpired() {
@@ -107,7 +109,7 @@ public class ConsentPendingGuard implements ContractNegotiationPendingGuard {
         if (offer == null) {
             return false;
         }
-        Permission permission = consentGatedPermission(offer);
+        Permission permission = ConsentConstraints.gatedPermission(offer);
         if (permission == null) {
             return false;
         }
@@ -173,43 +175,4 @@ public class ConsentPendingGuard implements ContractNegotiationPendingGuard {
         return true;
     }
 
-    /**
-     * The permission carrying a {@code ds:consentStatus} constraint, or
-     * {@code null} when this offer is not consent-gated.
-     *
-     * <p>Matched on the local name so the profile namespace stays configurable:
-     * the operand is {@code {namespace}ConsentStatus}, and the compact
-     * {@code ds:consentStatus} appears when the ODRL context was not applied.
-     */
-    static Permission consentGatedPermission(ContractOffer offer) {
-        if (offer.getPolicy() == null || offer.getPolicy().getPermissions() == null) {
-            return null;
-        }
-        for (Permission permission : offer.getPolicy().getPermissions()) {
-            if (permission.getConstraints() == null) {
-                continue;
-            }
-            for (Constraint constraint : permission.getConstraints()) {
-                if (!(constraint instanceof AtomicConstraint atomic)) {
-                    continue;
-                }
-                if (isConsentOperand(atomic)) {
-                    return permission;
-                }
-            }
-        }
-        return null;
-    }
-
-    private static boolean isConsentOperand(AtomicConstraint constraint) {
-        if (!(constraint.getLeftExpression() instanceof LiteralExpression literal)) {
-            return false;
-        }
-        Object value = literal.getValue();
-        if (value == null) {
-            return false;
-        }
-        String operand = value.toString();
-        return CONSENT_OPERAND_SUFFIXES.stream().anyMatch(operand::endsWith);
-    }
 }

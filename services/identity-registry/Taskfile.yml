@@ -34,8 +34,19 @@ tasks:
       - uv run alembic revision --autogenerate -m "{{.MESSAGE | default "migration"}}"
 
   test:
+    desc: Unit tests — no external dependencies
     cmds:
       - uv run pytest tests/ -v
+
+  test:integration:
+    desc: |
+      DCP round trip between two registries — needs Postgres on 172.17.0.1:35432.
+      Starts two real processes on their own databases and lets them resolve each
+      other's DID documents over HTTP. Nothing else proves that what this service
+      publishes is what it can verify.
+    deps: [setup]
+    cmds:
+      - uv run pytest tests/integration -v -p no:randomly
 
   lint:
     cmds:

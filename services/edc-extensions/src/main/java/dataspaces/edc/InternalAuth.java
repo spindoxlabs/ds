@@ -19,6 +19,16 @@ import okhttp3.Request;
 @FunctionalInterface
 public interface InternalAuth {
 
-    /** Add this connector's credential to an outgoing request. */
-    void authorize(Request.Builder builder);
+    /**
+     * Add this connector's credential to an outgoing request.
+     *
+     * @return {@code false} when no credential could be obtained, in which case
+     *         the caller must <b>not</b> send the request. It used to be
+     *         {@code void}, and the implementation returned normally having
+     *         added no header — so a Keycloak outage sent an anonymous request
+     *         and the connector answered 401, which is indistinguishable from a
+     *         permission problem and which
+     *         {@link AgreementConsentFunction} read as "cannot answer".
+     */
+    boolean authorize(Request.Builder builder);
 }

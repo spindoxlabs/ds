@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...config import Settings
 from ...db.models import Did, StatusList
-from ...dependencies import get_db
+from ...dependencies import get_db, get_settings_dep
+from ...services.crypto import decrypt_private_jwk
 from ...services.did import build_did_document
+from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import build_status_list_credential, encode_bitstring
+from ...services.vc import sign_credential
 
 router = APIRouter(tags=["public"])
 
 
-@router.get("/dids/{did:path}/did.json")
-async def resolve_did(did: str, db: AsyncSession = Depends(get_db)):
+async def _did_document(did: str, db: AsyncSession) -> dict:
     result = await db.execute(select(Did).where(Did.did == did, Did.active.is_(True)))
     did_record = result.scalar_one_or_none()
     if not did_record:
@@ -22,39 +25,121 @@ async def resolve_did(did: str, db: AsyncSession = Depends(get_db)):
     if not did_record.key:
         raise HTTPException(status_code=404, detail="DID has no key")
 
-    doc = build_did_document(
+    return build_did_document(
         did=did_record.did,
         public_jwk=did_record.key.public_jwk,
         did_type=did_record.did_type,
         service_endpoints=did_record.service_endpoints,
     )
+
+
+@router.get("/dids/{did:path}/did.json")
+async def resolve_did(did: str, db: AsyncSession = Depends(get_db)):
     return JSONResponse(
-        content=doc,
+        content=await _did_document(did, db),
+        media_type="application/did+ld+json",
+    )
+
+
+@router.get("/.well-known/did.json")
+async def resolve_host_did(request: Request, db: AsyncSession = Depends(get_db)):
+    """Serve the document for the DID this host *is* — the did:web mapping itself.
+
+    ``did:web:provider.example.org`` resolves to
+    ``https://provider.example.org/.well-known/did.json``, so a registry reached
+    on that host can answer for that DID with no help from anything in front of
+    it. Caddy and the Ingress each carry a rewrite to `/dids/{did}/did.json`
+    instead, which means DID resolution — the root of every trust decision — has
+    been a property of the proxy configuration rather than of the service, and a
+    deployment that fronts this differently silently has no resolvable DIDs.
+
+    The port is percent-encoded exactly as the did:web method requires, which is
+    what lets a test — or a deployment on a non-standard port — resolve at all.
+    """
+    host = (request.headers.get("host") or "").split(",")[0].strip()
+    if not host:
+        raise HTTPException(status_code=404, detail="DID not found")
+    did = "did:web:" + host.replace(":", "%3A")
+    return JSONResponse(
+        content=await _did_document(did, db),
+        media_type="application/did+ld+json",
+    )
+
+
+@router.get("/{did_path:path}/did.json")
+async def resolve_path_did(
+    did_path: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """The did:web *path* form: ``did:web:host:a:b`` → ``/a/b/did.json``.
+
+    The sibling of the route above, and what makes a user DID
+    (``did:web:users.<domain>:<id>``) resolvable by this service rather than only
+    by a proxy rewrite the chart turns on with `exposeUserDids`.
+
+    **Registered last on purpose.** It is a catch-all, and a catch-all declared
+    before its siblings is how `/dids/{did}/did.json` would start 404ing as an
+    unknown DID — the same shape as `POST /catalog/search` in the connector.
+    """
+    host = (request.headers.get("host") or "").split(",")[0].strip()
+    if not host or not did_path:
+        raise HTTPException(status_code=404, detail="DID not found")
+    segments = "/".join(part for part in did_path.split("/") if part)
+    did = "did:web:" + host.replace(":", "%3A") + ":" + segments.replace("/", ":")
+    return JSONResponse(
+        content=await _did_document(did, db),
         media_type="application/did+ld+json",
     )
 
 
 @router.get("/status/{list_id}")
-async def get_status_list(list_id: str, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(StatusList).where(StatusList.id == list_id)
-    )
+async def get_status_list(
+    list_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """The revocation list, **signed**, as a VC-JWT.
+
+    A verifier fetches this to decide whether a credential it was shown is still
+    valid, so an unsigned list is a list anyone on the path can rewrite: clear a
+    bit and a revoked credential is accepted again. It was served as plain
+    JSON-LD with no proof of any kind.
+
+    EDC — and any implementation following it — sends `Accept: */*` and treats
+    the body as a JWT (`BaseRevocationListService.parseStatusListCredentialResponse`
+    takes the JSON branch **only** when the accept header is exactly
+    `application/json`). So the JWT is the default and JSON is opt-in, which is
+    also the safer way round: a caller that asks for no particular format gets
+    the verifiable one.
+    """
+    result = await db.execute(select(StatusList).where(StatusList.id == list_id))
     sl = result.scalar_one_or_none()
     if not sl:
         raise HTTPException(status_code=404, detail="Status list not found")
 
-    from ...config import get_settings
-
-    settings = get_settings()
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-
     credential = build_status_list_credential(
         list_id=list_id,
         issuer_did=trust_anchor_did,
         encoded_list=encode_bitstring(sl.bitstring),
         purpose=sl.purpose,
     )
-    return JSONResponse(
-        content=credential,
-        media_type="application/ld+json",
+
+    accept = (request.headers.get("accept") or "").lower()
+    if "application/json" in accept and "*/*" not in accept:
+        return JSONResponse(content=credential, media_type="application/ld+json")
+
+    try:
+        key = await get_trust_anchor_key(db, settings)
+    except OrgOnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    signed = sign_credential(
+        credential,
+        decrypt_private_jwk(key.private_jwk, settings.encryption_key),
+        key.kid,
+    )
+    return PlainTextResponse(
+        content=signed["proof"]["jws"],
+        media_type="application/vc+jwt",
     )

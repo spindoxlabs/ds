@@ -65,8 +65,15 @@ registry, credential issuer, Secure Token Service and Credential Service for **e
 participant. DID private keys never leave it, and are encrypted at rest.
 
 **Why:** it collapses what were three per-participant services into one operable component
-and makes a small deployment tractable. DCP is spoken correctly at the protocol level — a
-counterparty cannot tell the difference.
+and makes a small deployment tractable.
+
+**This deviation used to claim more than it delivered.** It said "DCP is spoken correctly at
+the protocol level — a counterparty cannot tell the difference", and that was false: the
+credential service authorized the credential *holder* where DCP authorizes the **verifier**, so
+no conformant counterparty could complete a presentation query at all. The protocol is now
+spoken correctly and the full end-to-end suite runs on it, with no signature bypass anywhere.
+What remains deviant is **custody**, not protocol: one registry still holds every participant's
+private key.
 
 **What a deployment must accept:** the trust anchor can impersonate any participant. It is a
 single point of compromise, and losing `IDENTITY_REGISTRY_ENCRYPTION_KEY` makes every DID

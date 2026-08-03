@@ -3,6 +3,7 @@ package dataspaces.edc;
 import org.eclipse.edc.connector.controlplane.contract.spi.event.contractnegotiation.ContractNegotiationEvent;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.ContractNegotiationPendingGuard;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.store.ContractNegotiationStore;
+import org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext;
 import org.eclipse.edc.connector.controlplane.transfer.spi.event.TransferProcessEvent;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
 import org.eclipse.edc.iam.oauth2.spi.client.Oauth2Client;
@@ -16,6 +17,7 @@ import org.eclipse.edc.runtime.metamodel.annotation.Provider;
 import org.eclipse.edc.spi.EdcException;
 import org.eclipse.edc.spi.event.EventRouter;
 import org.eclipse.edc.spi.system.ServiceExtension;
+import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.system.ServiceExtensionContext;
 import org.eclipse.edc.spi.types.TypeManager;
 import org.eclipse.edc.transaction.spi.TransactionContext;
@@ -136,9 +138,7 @@ public class DataspacesExtension implements ServiceExtension {
         );
         long cacheTtlSeconds = cacheTtlSeconds(context);
 
-        String membershipOperand = namespace + "Membership";
         String consentOperand = namespace + "ConsentStatus";
-        String queryAction = namespace + "Query";
 
         ConnectorClient connector = connector(context);
         ConsentApi consentApi = new ConsentApi(connector);
@@ -171,6 +171,44 @@ public class DataspacesExtension implements ServiceExtension {
                 negotiationStore, transactionContext, context.getMonitor()
             )
         );
+
+        // Everything that decides an access decision, in one package-visible
+        // method so it can be exercised without booting an EDC runtime.
+        // `PolicyRegistrationTest` walks it: what is bound, in which scope, and
+        // whether every bound operand has a function. That check is why
+        // `ds:accessScope` and the negotiation-scope consent bypass could sit
+        // here unnoticed — nothing could see the registration surface.
+        registerPolicy(
+            policyEngine, ruleBindingRegistry, connector, consentApi,
+            namespace, cacheTtlSeconds, context.getMonitor()
+        );
+
+        context.getMonitor().info(
+            ("Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus "
+                + "(negotiation + policy.monitor), odrl:purpose, namespace=%s")
+                .formatted(namespace, cacheTtlSeconds, namespace, namespace)
+        );
+    }
+
+    /**
+     * Bind every operand and register every function, for both scopes.
+     *
+     * <p>Package-visible and free of {@link ServiceExtensionContext} on purpose:
+     * the bindings *are* the enforcement surface, and until this was separable
+     * nothing could assert what they were.
+     */
+    static void registerPolicy(
+        PolicyEngine policyEngine,
+        RuleBindingRegistry ruleBindingRegistry,
+        ConnectorClient connector,
+        ConsentApi consentApi,
+        String namespace,
+        long cacheTtlSeconds,
+        Monitor monitor
+    ) {
+        String membershipOperand = namespace + "Membership";
+        String consentOperand = namespace + "ConsentStatus";
+        String queryAction = namespace + "Query";
 
         // ── Actions, in both scopes ──────────────────────────────────────────
         for (String scope : new String[]{NEGOTIATION_SCOPE, MONITOR_SCOPE}) {
@@ -205,27 +243,43 @@ public class DataspacesExtension implements ServiceExtension {
             ParticipantAgentPolicyContext.class,
             Permission.class,
             consentOperand,
-            new ConsentStatusFunction(consentApi, context.getMonitor())
+            new ConsentStatusFunction(consentApi, monitor)
+        );
+        // The dataset-aware half of the same check, and the one that actually
+        // enforces it. A constraint function is handed the Permission, and
+        // `Rule` has no target at 0.16.0 — so the dataset can only be read off
+        // the Policy, which is what a PolicyValidatorRule receives. Registered
+        // on ContractNegotiationPolicyContext rather than the broader
+        // ParticipantAgentPolicyContext: the engine matches validators by
+        // `contextType().isAssignableFrom(context.getClass())`, and the catalog
+        // and transfer contexts implement that interface too.
+        //
+        // **This registration is what makes `ds:consentStatus` mean anything at
+        // negotiation.** Removing it re-opens the bypass — see
+        // NegotiationConsentValidator, and the test that asserts it is here.
+        policyEngine.registerPostValidator(
+            ContractNegotiationPolicyContext.class,
+            new NegotiationConsentValidator(consentApi, monitor)
         );
         policyEngine.registerFunction(
             ParticipantAgentPolicyContext.class,
             Permission.class,
             "ds:contractRequired",
-            (op, rv, duty, ctx) -> true
+            new ContractRequiredFunction<>(monitor)
         );
-        registerPurpose(ParticipantAgentPolicyContext.class, new PurposeFunction<>(context.getMonitor()));
+        registerPurpose(policyEngine, ParticipantAgentPolicyContext.class, new PurposeFunction<>(monitor));
 
         // ── Policy-monitor scope: may access continue? ───────────────────────
         AgreementConsentFunction agreementConsent =
-            new AgreementConsentFunction(consentApi, context.getMonitor());
+            new AgreementConsentFunction(consentApi, monitor);
         for (String operand : new String[]{consentOperand, "ds:consentStatus"}) {
             policyEngine.registerFunction(
                 PolicyMonitorContext.class, Permission.class, operand, agreementConsent
             );
         }
-        registerPurpose(PolicyMonitorContext.class, new PurposeFunction<>(context.getMonitor()));
+        registerPurpose(policyEngine, PolicyMonitorContext.class, new PurposeFunction<>(monitor));
 
-        context.getMonitor().info(
+        monitor.info(
             ("Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus "
                 + "(negotiation + policy.monitor), odrl:purpose, namespace=%s")
                 .formatted(namespace, cacheTtlSeconds, namespace, namespace)
@@ -312,8 +366,8 @@ public class DataspacesExtension implements ServiceExtension {
         return value.trim();
     }
 
-    private <C extends org.eclipse.edc.policy.engine.spi.PolicyContext> void registerPurpose(
-        Class<C> contextType, PurposeFunction<C> function
+    private static <C extends org.eclipse.edc.policy.engine.spi.PolicyContext> void registerPurpose(
+        PolicyEngine policyEngine, Class<C> contextType, PurposeFunction<C> function
     ) {
         for (String operand : new String[]{Purposes.COMPACT, Purposes.EXPANDED}) {
             policyEngine.registerFunction(contextType, Permission.class, operand, function);

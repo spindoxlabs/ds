@@ -87,10 +87,6 @@ data:
     # did:web resolution over HTTPS — a DID document carries trust keys.
     edc.iam.did.web.use.https={{ .Values.didWebUseHttps }}
 
-    # DS_DEMO_IDENTITY_ENABLED is deliberately never set — the extension
-    # defaults to false, and an absent key cannot be flipped to a signature
-    # bypass.
-
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}
     edc.datasource.default.pool.maxIdleConnections=3

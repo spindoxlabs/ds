@@ -39,7 +39,23 @@ dev = [
     "debugpy>=1.8.21",
     "pytest>=8.0",
     "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    # `test_dataset_fixtures.py` reads `governance.yaml` and the REC fixture to
+    # check this service's vocabulary against them. Declared rather than relied
+    # on transitively through ds-governance: the check is the point of the test.
+    "pyyaml>=6",
 ]
+
+[tool.ruff]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff.lint.isort]
+# Without this the shared libs sort as third-party and `dataset_api_mock` as
+# unknown, so borrowing another unit's config produces false `I001`s here.
+known-first-party = ["dataset_api_mock"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src"]

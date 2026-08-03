@@ -44,14 +44,21 @@ Two modes, chosen by the presence of `Edc-Contract-Agreement-Id`.
 
 **No-header mode** is the non-dataspace path and contacts ds not at all. **Dataspace mode
 never falls back to it** — a fallback between two authorization regimes is a bypass with
-extra steps.
+extra steps. And it **cannot reach a consent-gated dataset**: the header is the caller's to
+send, so a gate that path could bypass was opt-in for the party it constrains.
 
-Four things that are easy to get wrong:
+Six things that are easy to get wrong:
 
-- **An unreachable ds is a denial, never an allow** — and so is an *unreadable* one. This
-  service assembles nothing; ds decides and this enforces.
+- **An unreachable ds is a denial, never an allow** — and so is an *unreadable* one, an
+  unreachable Keycloak, and a query whose audit event cannot be recorded. This service
+  assembles nothing; ds decides and this enforces.
 - **An allow carrying a row filter says *these rows*, not *all rows*.** A filter this plane
-  cannot apply withholds everything; it is never a permission to serve unfiltered.
+  cannot apply withholds everything; it is never a permission to serve unfiltered. Same for
+  a principal the handler cannot resolve.
+- **A dataset name is a reference, not a substring.** Comments and literals are stripped
+  before matching. That string chooses which asset id goes to `authorize`, so a caller who
+  can steer it chooses which agreement answers.
+- **One statement, one dataset.** A join is refused rather than served as its first dataset.
 - **Send the shared agreement id.** EDC keeps `ContractAgreement.getId()` (runtime-local,
   different on each side) apart from `getAgreementId()` (shared). The local one is refused
   as `agreement_unknown`.
@@ -61,17 +68,24 @@ Four things that are easy to get wrong:
 
 ## Adding a dataset
 
-An entry in `DATASETS`, or a JSON file via `DATASET_API_EXTRA_DATASETS_PATH`.
-**`requires_consent` must agree with `governance.yaml`** — `classification: pii` there with
-`requires_consent: false` here would serve unfiltered. Matched by dataset key;
-`task compliance:validate` checks the governance side.
+An entry in `DATASETS`, or a JSON file via `DATASET_API_EXTRA_DATASETS_PATH`. It must declare
+`requires_consent`, an `asset_id`, and either `rows` or an external query — plus a row filter
+if it is gated. Nothing is defaulted, and `_validate_dataset` refuses the rest at import.
+
+**Its row filter must be the one `governance.yaml` declares**, handler and column both. ds
+builds the filter from that file and sends it verbatim, so a fixture naming anything else
+cannot be narrowed by any decision the platform can produce — it narrows to nothing, which
+looks exactly like a subject who consented to nothing. `test_dataset_fixtures.py` reads both
+files and fails when they drift. `requires_consent` must agree with it too — `classification:
+pii` there with `requires_consent: false` here would serve unfiltered.
+
+**No DID in a payload column.** A DID is derived from an unsalted email hash, so it
+re-identifies the subject to whoever later holds the rows; rulebook `L-3`. ds names people by
+identifiers native to the receiving system, and the handler resolves those to column values.
 
 ## Testing
 
-`task -d services/dataset-api-mock test` — what this PEP does with a decision, the half of
-the `/internal/*` contract the connector's own tests cannot reach. `ds-e2e run -f smoke`
-covers the rest, against a live stack.
-
-The fixture's subject vocabulary does not line up with `governance.yaml`'s or ds's, so
-`datasets.silver.meters_15m` refuses rather than guessing. Tracked in
-`.agents/defect-per-service.md`.
+`task -d services/dataset-api-mock test`, `task -d services/dataset-api-mock lint`.
+`ds-e2e run -f smoke` covers the live half — but note it runs against the **real**
+dataset-api, because `fixtures/seed.sh` swaps that onto 30002. **A change here is not on the
+e2e path**; it needs its own check.
