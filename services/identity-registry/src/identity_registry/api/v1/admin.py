@@ -526,20 +526,22 @@ async def issue_data_subject_credential(
     )
 
     if not did_record:
-        kp = generate_key_pair(subject_did)
-        key = Key(
-            owner_did=subject_did,
-            kid=kp.kid,
-            private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-            public_jwk=kp.public_jwk,
-        )
-        db.add(key)
-        await db.flush()
-
+        # **No keypair** (`D-49`). This generated one for every person onboarded
+        # and kept the private half under the anchor's encryption key — and
+        # nothing ever read it: a subject presents nothing and signs nothing,
+        # their credential is verified against the *anchor's* key
+        # (`ds_auth.user_credentials.verify_user_vc_jwt`), and no caller reaches
+        # `/sts` or a presentation query with a user DID. It was custody with no
+        # purpose, which is an impersonation surface with no upside.
+        #
+        # The DID row still exists, because the DID has to **resolve**: it is
+        # what consent records, provenance events and `credentialSubject.id`
+        # point at. Its document simply asserts no verification method
+        # (`services/did.py`).
         did_record = Did(
             did=subject_did,
             did_type="user",
-            key_id=key.id,
+            key_id=None,
         )
         db.add(did_record)
         await db.flush()
@@ -559,6 +561,10 @@ async def issue_data_subject_credential(
         status_list_index=sl_index,
         credential_id=cred_id,
         ttl_days=ttl,
+        # Who established this person's identity, and how (`D-53`). ds does not
+        # do KYC; whoever runs onboarding does.
+        verified_by=data.verified_by,
+        verification_method=data.verification_method,
     )
 
     ta_raw_jwk = decrypt_private_jwk(trust_anchor_key.private_jwk, settings.encryption_key)

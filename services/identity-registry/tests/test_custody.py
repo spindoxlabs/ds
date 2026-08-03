@@ -227,3 +227,119 @@ async def test_the_holder_fixture_is_clean_on_its_own_instance(db_session):
         db_session, anchor_settings(role=PARTICIPANT, participant_did=OTHER)
     )
     assert report.ok
+
+
+# ── `D-49` step 1: a subject has no key to hold ───────────────────
+
+
+@pytest.mark.asyncio
+async def test_issuing_to_a_data_subject_creates_no_key(client, db_session):
+    """The deviation the sweep used to report, removed at source.
+
+    The anchor generated an EC P-256 keypair for every person onboarded and kept
+    the private half. Nothing read it: a subject presents nothing and signs
+    nothing, and their credential is verified against the **anchor's** key. So
+    it was custody with no purpose — an impersonation surface with no upside.
+    """
+    from conftest import make_admin_headers
+
+    await _hold_private_key(db_session, ANCHOR)
+    r = await client.post(
+        "/admin/credentials/data-subject",
+        json={
+            "subject_id": "alice",
+            "role": "DataSubject",
+            "verified_by": "riverside-rec",
+            "verification_method": "phone-otp",
+        },
+        headers=make_admin_headers(),
+    )
+    assert r.status_code == 201, r.text
+    subject_did = r.json()["subjectDid"]
+
+    held = (
+        await db_session.execute(
+            text("SELECT count(*) FROM keys WHERE owner_did = :d"), {"d": subject_did}
+        )
+    ).scalar_one()
+    assert held == 0
+
+    report = await audit_custody(db_session, anchor_settings())
+    assert report.ok
+    assert report.subjects == [], "no subject key means no deviation to report"
+
+
+@pytest.mark.asyncio
+async def test_a_subject_did_still_resolves(client, db_session):
+    """`personal-data.md` `D-22`. The DID is what consent and provenance point at.
+
+    A document with no verification method is the honest one for somebody who
+    presents nothing — and it must still resolve, or every reference to the
+    subject dangles.
+    """
+    from conftest import make_admin_headers
+
+    await _hold_private_key(db_session, ANCHOR)
+    created = await client.post(
+        "/admin/credentials/data-subject",
+        json={"subject_id": "alice", "role": "DataSubject"},
+        headers=make_admin_headers(),
+    )
+    subject_did = created.json()["subjectDid"]
+
+    r = await client.get(f"/dids/{subject_did}/did.json")
+    assert r.status_code == 200
+    doc = r.json()
+    assert doc["id"] == subject_did
+    assert "verificationMethod" not in doc
+    assert "authentication" not in doc
+
+
+@pytest.mark.asyncio
+async def test_the_credential_records_who_attested_the_person(client, db_session):
+    """`D-53` — assurance is delegated, so it is *recorded* rather than claimed."""
+    from conftest import make_admin_headers
+
+    await _hold_private_key(db_session, ANCHOR)
+    created = await client.post(
+        "/admin/credentials/data-subject",
+        json={
+            "subject_id": "alice",
+            "role": "DataSubject",
+            "verified_by": "riverside-rec",
+            "verification_method": "phone-otp",
+        },
+        headers=make_admin_headers(),
+    )
+    cred_id = created.json()["credentialId"]
+
+    vc = (
+        await client.get(f"/admin/credentials/{cred_id}", headers=make_admin_headers())
+    ).json()
+    subject = vc["credentialSubject"]
+    assert subject["verifiedBy"] == "riverside-rec"
+    assert subject["verificationMethod"] == "phone-otp"
+
+
+@pytest.mark.asyncio
+async def test_a_participant_did_with_no_key_still_does_not_resolve(client, db_session):
+    """The exception is for **users**, and only users.
+
+    A keyless participant DID means this registry recorded that a party exists
+    without being shown a key — so it is not the one that publishes their
+    document, and `P-6` still refuses.
+    """
+    from conftest import make_headers
+
+    # `POST /admin/participants` records a party it has never been shown a key
+    # for: a DID row with **no key at all** (`D-51`). That is the case here —
+    # `register_did` would give it a public key, which the anchor *may* serve.
+    registered = await client.post(
+        "/admin/participants",
+        json={"did": OTHER, "roles": ["consumer"]},
+        headers=make_headers(),
+    )
+    assert registered.status_code == 201
+
+    r = await client.get(f"/dids/{OTHER}/did.json", headers=make_headers())
+    assert r.status_code == 404

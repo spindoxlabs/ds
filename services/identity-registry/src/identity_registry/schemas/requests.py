@@ -67,6 +67,13 @@ class IssueDataSubjectRequest(BaseModel):
     linked_participant_did: str | None = None
     allowed_actions: list[str] | None = None
     ttl_days: int | None = None
+    #: Who established this person's identity, and how (`D-53`). The dataspace
+    #: layer does not do KYC — whoever runs onboarding does. Optional because
+    #: callers written before it existed do not send it, and a credential that
+    #: says nothing is better than one that implies an assurance level nobody
+    #: established.
+    verified_by: str | None = None
+    verification_method: str | None = None
 
 
 class KeycloakSyncRequest(BaseModel):

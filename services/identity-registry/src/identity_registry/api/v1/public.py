@@ -25,16 +25,29 @@ status_router = APIRouter(tags=["public"])
 
 
 async def _did_document(did: str, db: AsyncSession) -> dict:
+    """Serve the document for a DID this instance publishes.
+
+    `P-6` — *a DID document is served only for a DID the registry holds a key
+    for* — is enforced here, and it now has one deliberate exception: a **user**
+    DID has no key at all (`D-49`). A subject presents nothing and signs nothing,
+    so a key would be read by nobody; but the DID must still resolve, because it
+    is the identifier consent records and provenance events point at. That is
+    `personal-data.md` `D-22`.
+
+    A **participant** DID with no key is still a 404, and that is the rule doing
+    its job: it means this registry recorded that a party exists without being
+    shown a key, so it is not the one that publishes their document.
+    """
     result = await db.execute(select(Did).where(Did.did == did, Did.active.is_(True)))
     did_record = result.scalar_one_or_none()
     if not did_record:
         raise HTTPException(status_code=404, detail="DID not found")
-    if not did_record.key:
+    if not did_record.key and did_record.did_type != "user":
         raise HTTPException(status_code=404, detail="DID has no key")
 
     return build_did_document(
         did=did_record.did,
-        public_jwk=did_record.key.public_jwk,
+        public_jwk=did_record.key.public_jwk if did_record.key else None,
         did_type=did_record.did_type,
         service_endpoints=did_record.service_endpoints,
     )

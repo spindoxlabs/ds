@@ -64,7 +64,22 @@ def build_data_subject_credential(
     status_list_index: int,
     credential_id: str | None = None,
     ttl_days: int = 365,
+    verified_by: str | None = None,
+    verification_method: str | None = None,
 ) -> dict[str, Any]:
+    """A credential for a natural person.
+
+    `verified_by` / `verification_method` record **who established this person's
+    identity and how** (`D-53`). The dataspace layer does not do KYC — whoever
+    runs onboarding does, and for CEEDS BUC#1 that is the energy community. So
+    the credential carries the attestation rather than implying an assurance
+    level nobody here established, which is the same invariant `verified_by` +
+    `evidence_ref` already carry for an organisation.
+
+    `DSSC-IAM-14` asks for assurance aligned with KYC practice. Ours is
+    *whatever the onboarding wizard checked* — worth stating, and useless unless
+    it travels with the credential.
+    """
     cred_id = credential_id or generate_credential_id()
     now = datetime.now(UTC)
 
@@ -78,6 +93,10 @@ def build_data_subject_credential(
         subject["linkedParticipant"] = linked_participant_did
     if allowed_actions:
         subject["allowedActions"] = allowed_actions
+    if verified_by:
+        subject["verifiedBy"] = verified_by
+    if verification_method:
+        subject["verificationMethod"] = verification_method
 
     return {
         "@context": [W3C_CREDENTIALS_V1, JWS_2020_V1, credentials_context_url],

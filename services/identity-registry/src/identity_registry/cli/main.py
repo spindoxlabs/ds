@@ -391,15 +391,10 @@ def credential_issue_data_subject(
                 select(Did).where(Did.did == subject_did)
             )
             if not did_result.scalar_one_or_none():
-                kp = generate_key_pair(subject_did)
-                key = Key(
-                    owner_did=subject_did, kid=kp.kid,
-                    private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                    public_jwk=kp.public_jwk,
-                )
-                session.add(key)
-                await session.flush()
-                did_record = Did(did=subject_did, did_type="user", key_id=key.id)
+                # No keypair (`D-49`) — see `api/v1/admin.py`. The DID row still
+                # exists because the DID must resolve; its document asserts no
+                # verification method.
+                did_record = Did(did=subject_did, did_type="user", key_id=None)
                 session.add(did_record)
                 await session.flush()
 
