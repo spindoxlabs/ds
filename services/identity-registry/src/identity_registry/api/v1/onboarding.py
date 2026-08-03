@@ -123,6 +123,8 @@ async def create_enrolment_token(
             ttl_days=data.ttl_days,
             label=data.label,
             created_by=getattr(principal, "subject", None),
+            roles=data.roles,
+            allowed_scopes=data.allowed_scopes,
         )
     except enrolment.EnrolmentError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.public) from exc

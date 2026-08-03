@@ -12,6 +12,17 @@ networks:
 
 volumes:
   postgres_data:
+  # Enrolment codes, from the trust anchor's bootstrap to each participant's.
+  #
+  # A **named volume** rather than `./data/enrolment`, which is the one place the
+  # root guide's "everything generated goes under data/" rule is deliberately not
+  # followed. Two reasons, and the first is decisive: the containers run as uid
+  # 10001 and a bind-mounted host directory belongs to the developer, so the
+  # anchor could not write it (observed — `Permission denied`, and the bootstrap
+  # reported success anyway). The second is that these are short-lived,
+  # single-use credentials; a docker-managed volume keeps them off the host
+  # filesystem entirely, which is where a credential belongs least.
+  enrolment:
 
 services:
   # ── Reverse proxy — the single :80 gateway, routed by Host header ────────────
@@ -163,25 +174,33 @@ services:
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
     volumes:
       - ./services/identity-registry/seed:/seed:ro
+      # Where the enrolment codes are written for the participant instances to
+      # read. See the `enrolment` volume definition for why this is not a bind
+      # mount under `data/`.
+      - enrolment:/enrolment
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |
         ir-cli bootstrap
-        ir-cli participant add \
-          --did did:web:provider.dataspaces.localhost \
+        # Owners first: a participant enrols **as** a verified organisation, so
+        # the organisation has to exist before the code that admits it.
+        ir-cli owner import --file /seed/owners.dev.yaml
+        # `participant add` used to live here, and it minted each participant's
+        # keypair and STS secret in *this* database (`DID-09`). It no longer
+        # does: the anchor issues an enrolment code, and each participant
+        # generates its own key and presents it. The code is written where the
+        # participant's own bootstrap can read it — `data/` is the one place for
+        # anything a process produces, and the CLI prints the code to stdout
+        # alone so this redirect captures it cleanly.
+        mkdir -p /enrolment
+        ir-cli org enrolment-token --alias example-org \
           --roles provider \
-          --dsp-address http://172.17.0.1:19194/protocol/2025-1 \
           --scope dataspaces.query --scope dataspaces.admin \
-          --sts-secret insecure-dev-secret \
-          --credential-service-url http://provider.dataspaces.localhost/credentials/did:web:provider.dataspaces.localhost
-        ir-cli participant add \
-          --did did:web:consumer.dataspaces.localhost \
+          --label "dev provider bootstrap" > /enrolment/example-org.code
+        ir-cli org enrolment-token --alias consumer-org \
           --roles consumer \
-          --dsp-address http://172.17.0.1:29194/protocol/2025-1 \
-          --scope dataspaces.query \
-          --scope owner:example-org:member \
-          --sts-secret insecure-dev-secret \
-          --credential-service-url http://consumer.dataspaces.localhost/credentials/did:web:consumer.dataspaces.localhost
+          --scope dataspaces.query --scope owner:example-org:member \
+          --label "dev consumer bootstrap" > /enrolment/consumer-org.code
         ir-cli credential issue-data-subject \
           --subject-id consumer-user --role ConsumerUser \
           --linked-participant-did did:web:consumer.dataspaces.localhost
@@ -214,7 +233,6 @@ services:
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000005 \
           --email dual@example.test
-        ir-cli owner import --file /seed/owners.dev.yaml
         ir-cli agreement import --file /seed/agreements.dev.yaml
         ir-cli membership add \
           --user-did did:web:users.dataspaces.localhost:data-subject \

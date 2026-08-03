@@ -128,3 +128,31 @@ def test_the_unit_has_no_local_data_directory():
         "services/identity-registry/data/ is back; generated material belongs "
         "in ./data/<concern>/ at the repo root"
     )
+
+
+# ── JSON columns store SQL NULL, not JSON 'null' ──────────────────
+
+
+def test_json_columns_store_none_as_sql_null():
+    """`none_as_null=True`, and the reason is a defect this repository shipped.
+
+    Without it SQLAlchemy writes Python `None` into a JSON column as the JSON
+    value `'null'`, so `IS NULL` is **False** for a column that reads as unset
+    through the ORM. `keys.private_jwk IS NULL` is the test for "this instance
+    holds only the public half" — what `get_participant_key` fails closed on and
+    what `DID-12` asserts — and it was False for every enrolled participant.
+
+    **SQLite deserialises `'null'` back to `None`**, so the whole unit suite
+    agreed with the code while Postgres disagreed. This test therefore asserts
+    the *type declaration* rather than a round trip: a round trip on SQLite
+    cannot see the difference, which is exactly how this got in.
+    """
+    from identity_registry.db.models import JsonType
+
+    assert JsonType.none_as_null is True, (
+        "JsonType must set none_as_null=True — see migration 0014"
+    )
+    # And every dialect variant, or the two databases disagree again — in the
+    # direction where the test suite is the one that is wrong.
+    for dialect, variant in JsonType._variant_mapping.items():
+        assert variant.none_as_null is True, f"{dialect} variant must too"

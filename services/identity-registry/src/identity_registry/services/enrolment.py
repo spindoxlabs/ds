@@ -108,6 +108,8 @@ async def create_enrolment_token(
     ttl_days: int | None = 14,
     label: str | None = None,
     created_by: str | None = None,
+    roles: list[str] | None = None,
+    allowed_scopes: list[str] | None = None,
 ) -> IssuedEnrolmentToken:
     """Issue the code an admitted organisation enrols with.
 
@@ -143,6 +145,8 @@ async def create_enrolment_token(
         owner_alias=owner_alias,
         label=label,
         created_by=created_by,
+        roles=list(roles) if roles else None,
+        allowed_scopes=list(allowed_scopes) if allowed_scopes else None,
         expires_at=(
             datetime.now(UTC) + timedelta(days=ttl_days) if ttl_days else None
         ),
@@ -247,6 +251,10 @@ async def enrol(
     decision the governance plane makes by issuing another token, not something
     a keyholder does by asking twice.
     """
+    # What the token admits, not what the request asks for.
+    roles = list(token.roles or roles or [])
+    allowed_scopes = list(token.allowed_scopes or allowed_scopes or [])
+
     if owner.did and owner.did != did:
         raise EnrolmentError(
             f"Owner {owner.id!r} is already enrolled as {owner.did}; enrolling "

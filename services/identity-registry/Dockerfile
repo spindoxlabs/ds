@@ -33,6 +33,14 @@ COPY services/identity-registry/src/ src/
 COPY services/identity-registry/alembic.ini alembic.ini
 COPY services/identity-registry/alembic/ alembic/
 
+# Where enrolment codes are handed from the trust anchor's bootstrap to each
+# participant's. Created here and owned by `app` so that a **fresh named volume**
+# mounted at this path inherits that ownership — Docker copies the image's
+# directory ownership into an empty volume, which is what makes this work without
+# any host-side chown. A bind mount from `./data/` would not: the host directory
+# belongs to the developer's uid and the container runs as 10001.
+RUN mkdir -p /enrolment && chown app:app /enrolment
+
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \

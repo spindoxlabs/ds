@@ -298,6 +298,18 @@ class CreateEnrolmentTokenRequest(BaseModel):
     owner_alias: str
     label: str | None = None
     ttl_days: int | None = Field(default=14, ge=1, le=365)
+    #: What this token admits the organisation as. The authority's decision, made
+    #: when the code is issued — not a field the enrolling party fills in.
+    roles: list[str] = Field(default_factory=lambda: ["consumer"], min_length=1)
+    allowed_scopes: list[str] = []
+
+    @field_validator("roles")
+    @classmethod
+    def _roles(cls, v: list[str]) -> list[str]:
+        invalid = set(v) - VALID_ROLES
+        if invalid:
+            raise ValueError(f"Invalid roles: {invalid}. Must be one of {VALID_ROLES}")
+        return sorted(set(v))
 
 
 class CreateInviteRequest(BaseModel):

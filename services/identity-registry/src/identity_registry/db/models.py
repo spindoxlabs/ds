@@ -22,7 +22,20 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .engine import Base
 
-JsonType = JSONB().with_variant(JSON(), "sqlite")
+# `none_as_null=True` is **not optional**, and it was found the only way it could
+# be: on Postgres, live.
+#
+# Without it SQLAlchemy stores Python `None` in a JSON column as the JSON value
+# `'null'`, not as SQL `NULL`. So `keys.private_jwk IS NULL` — the test for "this
+# instance holds only the public half", which `get_participant_key` fails closed
+# on and `DID-12` asserts — was **False for every public-only key**. The guard
+# never fired, and what reached `decrypt_private_jwk` was a JSON null.
+#
+# SQLite deserialises `'null'` back to Python `None`, so the unit suite agreed
+# with the code and Postgres did not: 445 tests passed against a claim that was
+# false in the only database that runs. That is why the sweep in `DID-12` reads
+# the column in SQL rather than through the ORM.
+JsonType = JSONB(none_as_null=True).with_variant(JSON(none_as_null=True), "sqlite")
 
 
 class Key(Base):
@@ -470,6 +483,12 @@ class EnrolmentToken(Base):
     #: The DID that redeemed it. The audit trail from an organisation's
     #: verification to the key that now speaks for it.
     redeemed_did: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: What this token admits the organisation **as**. On the token rather than
+    #: on the request, because a party that names its own roles can enrol as
+    #: whatever it likes: the candidate states an intended role
+    #: (`DSSC-BIZ-136`), the authority decides whether to grant it.
+    roles: Mapped[list | None] = mapped_column(JsonType, nullable=True)
+    allowed_scopes: Mapped[list | None] = mapped_column(JsonType, nullable=True)
 
 
 class CredentialRequest(Base):

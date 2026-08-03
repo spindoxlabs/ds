@@ -8,6 +8,12 @@ networks:
     name: dataspaces
     external: true
 
+volumes:
+  # Written by the trust anchor's bootstrap in `docker-compose.yml`. Declared
+  # here too because `provider:start` composes this file alone; both declarations
+  # name the same project-scoped volume.
+  enrolment:
+
 services:
   # ── EDC provider connector (Java, DCP-enabled) ──────────────────────────────
   edc-provider:
@@ -313,4 +319,126 @@ services:
       retries: 10
     extra_hosts:
       - "keycloak.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # ── The provider's own identity registry (`DID-05`) ─────────────────────────
+  #
+  # One organisation, one instance, one key. This is what makes the split real
+  # rather than cosmetic: the provider generates its own DID key here, in its own
+  # database, encrypted with its own key, and the trust anchor never sees it.
+  #
+  # It serves only the holder surface — its own `did.json`, its own STS, its own
+  # credential service. Every registry question (who is a participant, what was
+  # issued, what was agreed) still goes to the anchor, which is why
+  # `CONNECTOR_IDENTITY_REGISTRY_URL` above is unchanged and must stay that way.
+  ir-provider-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_provider'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_provider"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  ir-provider-db-init:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      ir-provider-db-create:
+        condition: service_completed_successfully
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_provider
+    networks: [dataspaces]
+
+  ir-provider:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "30006:30005"
+    environment:
+      IDENTITY_REGISTRY_ROLE: participant
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_provider
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
+      IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
+      # Its own host. This is the value that goes into its DID document as the
+      # `CredentialService` endpoint, so it has to be reachable by a counterparty
+      # — an EDC in a container, a host process, or a stranger.
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://provider.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
+      # **Its own**, and different from the anchor's. Sharing one would put every
+      # key back in one place and make the split cosmetic (`D-47`).
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_PROVIDER_ENCRYPTION_KEY:-dev-provider-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_PROVIDER_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
+    depends_on:
+      ir-provider-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30005/health', timeout=2)\""]
+      interval: 10s
+      start_period: 15s
+      retries: 10
+    networks: [dataspaces]
+
+  # Generates the key, publishes the document, then enrols with the anchor.
+  #
+  # **Two prerequisites this file cannot express**, because both live in
+  # `docker-compose.yml` and `provider:start` composes this file alone:
+  #
+  #   1. Caddy must already route `provider.dataspaces.localhost` here — the
+  #      anchor *fetches this participant's DID document* to verify the enrolment
+  #      signature, so an instance that is up but not yet routed fails with a
+  #      resolution error that says nothing about Caddy.
+  #   2. `identity-registry-bootstrap` must have written the enrolment code.
+  #
+  # `task start` orders them (`infra:start` → `identity:bootstrap` →
+  # `provider:start`), and that ordering is now load-bearing rather than
+  # cosmetic. Starting this stack against a cold anchor fails on the missing
+  # code file, loudly, which is the right way round.
+  ir-provider-bootstrap:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: "no"
+    depends_on:
+      ir-provider:
+        condition: service_healthy
+    environment:
+      IDENTITY_REGISTRY_ROLE: participant
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_provider
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:provider.dataspaces.localhost
+      IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://provider.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_PROVIDER_ENCRYPTION_KEY:-dev-provider-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_PROVIDER_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
+    volumes:
+      - enrolment:/enrolment:ro
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        # Read the code into a variable and **check it**. `--code "$$(cat …)"`
+        # looked right and failed open: a missing file made `cat` fail, `set -e`
+        # did not trip on a substitution inside an argument, and `--code ""` took
+        # the "no code given" branch — so the bootstrap printed *ready* having
+        # enrolled nothing. Observed on the first live run of `DID-05`.
+        CODE="$$(cat /enrolment/example-org.code 2>/dev/null || true)"
+        if [ -z "$$CODE" ]; then
+          echo "No enrolment code at /enrolment/example-org.code." >&2
+          echo "The trust anchor writes it — run 'task identity:bootstrap' first." >&2
+          exit 1
+        fi
+        ir-cli participant init --code "$$CODE"
+        echo "Provider identity ready and enrolled"
     networks: [dataspaces]

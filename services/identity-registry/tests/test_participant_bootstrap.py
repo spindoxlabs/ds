@@ -48,6 +48,9 @@ DSP = "http://172.17.0.1:19194/protocol/2025-1"
 #: environment too rather than only in a `Settings` object.
 PARTICIPANT_ENCRYPTION_KEY = "participant-instance-key-not-the-anchors"
 
+#: What this participant's own connector authenticates to its own STS with.
+PARTICIPANT_STS_SECRET = "this-participants-own-sts-secret"
+
 #: What the anchor app under test encrypts with — `conftest`'s `Settings()`
 #: default, since it sets no override.
 ANCHOR_ENCRYPTION_KEY = Settings(_env_file=None).encryption_key
@@ -64,6 +67,7 @@ def participant_settings(**overrides) -> Settings:
         # A participant's own key, distinct from the anchor's. Sharing one is
         # what `D-47` forbids, so the fixture must not model it.
         "encryption_key": PARTICIPANT_ENCRYPTION_KEY,
+        "participant_sts_secret": PARTICIPANT_STS_SECRET,
     }
     base.update(overrides)
     return Settings(_env_file=None, **base)
@@ -203,6 +207,80 @@ async def test_a_public_only_key_under_our_own_did_is_a_refusal(participant_db):
     with pytest.raises(boot.ParticipantBootstrapError) as excinfo:
         await boot.ensure_identity(participant_db, participant_settings())
     assert "sharing a database" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_the_instance_becomes_its_own_sts(participant_db, participant_app):
+    """The gap that would have broken the whole split, caught before it shipped.
+
+    `POST /sts/{did}/token` reads a **local** `Participant` row with a stored
+    secret. `ensure_identity` used to create only `Did` + `Key`, so a participant
+    instance 401'd its own connector: the DID resolved, the credential service
+    answered, and the very first token request failed — a break that reads as a
+    credential problem three services away.
+    """
+    settings = participant_settings()
+    identity = await boot.ensure_identity(participant_db, settings)
+    await participant_db.commit()
+    assert identity.created_participant
+
+    row = (
+        await participant_db.execute(
+            select(Participant).where(Participant.did == REC_DID)
+        )
+    ).scalar_one()
+    assert row.sts_client_secret  # hashed, never the plaintext
+    assert row.sts_client_secret != PARTICIPANT_STS_SECRET
+
+    response = await participant_app.post(
+        f"/sts/{REC_DID}/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": REC_DID,
+            "client_secret": PARTICIPANT_STS_SECRET,
+            "audience": "did:web:counterparty.dataspaces.localhost",
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_the_sts_refuses_the_wrong_secret(participant_db, participant_app):
+    await boot.ensure_identity(participant_db, participant_settings())
+    await participant_db.commit()
+
+    response = await participant_app.post(
+        f"/sts/{REC_DID}/token",
+        data={
+            "grant_type": "client_credentials",
+            "client_id": REC_DID,
+            "client_secret": "not-the-secret",
+        },
+    )
+    assert response.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_the_secret_is_the_participants_own_not_the_anchors(participant_db):
+    """`D-51`: the anchor never mints an STS secret.
+
+    The anchor's copy of the `Participant` row carries **none** — enrolment sets
+    it to `None` deliberately — so the anchor cannot act as this participant's
+    STS even though it knows the participant exists.
+    """
+    chosen = participant_settings(participant_sts_secret="chosen-by-the-participant")
+    await boot.ensure_identity(participant_db, chosen)
+    await participant_db.commit()
+
+    row = (
+        await participant_db.execute(
+            select(Participant).where(Participant.did == REC_DID)
+        )
+    ).scalar_one()
+    from identity_registry.services.crypto import verify_sts_secret
+
+    assert verify_sts_secret("chosen-by-the-participant", row.sts_client_secret)
 
 
 @pytest.mark.asyncio

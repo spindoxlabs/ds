@@ -18,6 +18,24 @@ owners:
       create: true
       role: community
 
+  # The consuming organisation. **Added with `DID-05`**, and it closes a gap
+  # rather than adding a fixture: `did:web:consumer.dataspaces.localhost` has
+  # always been a participant with no organisation behind it — no verification,
+  # no agreement, and therefore no declared capacity. That is exactly the state
+  # `POST /admin/owners` refuses to create, and the connector's circle check
+  # resolves it "outside the circle": the safe direction, for the wrong reason.
+  #
+  # Enrolment made it load-bearing: a participant enrols *as* a verified owner,
+  # so without this entry the consumer has nothing to enrol against.
+  - id: consumer-org
+    type: schema:Organization
+    name: Consumer Organization
+    did: did:web:consumer.dataspaces.localhost
+    aliases: [consumer]
+    status: verified
+    verified_by: dev-seed
+    evidence_ref: "owners.dev.yaml"
+
   # A service provider appointed by the community. Its capacity — processor or
   # independent controller — is what decides whether it is inside the consent
   # circle, and capacity comes from the agreement it signed, never from being

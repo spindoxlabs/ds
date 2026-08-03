@@ -1720,6 +1720,10 @@ def org_enrolment_token(
     alias: str = typer.Option(..., help="Owner alias to enrol"),
     ttl_days: int = typer.Option(14, help="Lifetime in days"),
     label: str = typer.Option(None, help="Note for the operator: who this went to"),
+    roles: str = typer.Option(
+        "consumer", help="Roles this token admits: provider,consumer"
+    ),
+    scope: list[str] = typer.Option([], help="Allowed scopes (repeatable)"),
 ):
     """Issue the code a verified organisation enrols its own key with.
 
@@ -1738,7 +1742,13 @@ def org_enrolment_token(
         async with factory() as session:
             try:
                 issued = await enrol_service.create_enrolment_token(
-                    session, alias, ttl_days=ttl_days, label=label, created_by="ir-cli"
+                    session,
+                    alias,
+                    ttl_days=ttl_days,
+                    label=label,
+                    created_by="ir-cli",
+                    roles=[r.strip() for r in roles.split(",") if r.strip()],
+                    allowed_scopes=list(scope),
                 )
             except enrol_service.EnrolmentError as exc:
                 typer.echo(exc.message, err=True)

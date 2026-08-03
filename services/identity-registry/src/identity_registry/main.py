@@ -84,6 +84,19 @@ async def lifespan(app: FastAPI):
             "password, or KEYCLOAK_MUTATE=false where ds does not own the realm "
             "(see helm/values.yaml: 'KC is not ours to mutate').",
         )
+    # A participant instance's connector authenticates to its own STS with this.
+    # Guarded only in the participant role: on a trust anchor the setting is
+    # inert, and flagging a value nothing reads is how a deployment gets refused
+    # over a credential that authenticates nothing (`KEYCLOAK_CLIENT_SECRET`,
+    # which this service has already been through once).
+    if settings.role == PARTICIPANT:
+        guard.forbid_default(
+            "IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET",
+            settings.participant_sts_secret,
+            {"insecure-dev-secret"},
+            "Set the secret this participant's own connector presents to its "
+            "own STS. It is yours to choose — the trust anchor never mints one.",
+        )
     guard.enforce()
 
     await _warn_on_duplicate_status_list_indices()

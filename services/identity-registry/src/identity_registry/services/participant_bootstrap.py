@@ -42,8 +42,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
-from ..db.models import Did, Key
-from .crypto import encrypt_private_jwk, generate_key_pair
+from ..db.models import Did, Key, Participant
+from .crypto import encrypt_private_jwk, generate_key_pair, hash_sts_secret
 from .enrolment import CREDENTIAL_SERVICE_TYPE, DSP_ENDPOINT_TYPE
 from .token import create_self_signed_token
 
@@ -64,6 +64,9 @@ class LocalIdentity:
     kid: str
     created: bool
     service_endpoints: list[dict[str, str]]
+    #: True when this run created the local `Participant` row — the record that
+    #: makes this instance its own STS.
+    created_participant: bool = False
 
 
 def _endpoints(settings: Settings, did: str) -> list[dict[str, str]]:
@@ -150,15 +153,50 @@ async def ensure_identity(
         did_row.deactivated_at = None
     await db.flush()
 
+    # **This instance is its own STS**, and `POST /sts/{did}/token` reads a local
+    # `Participant` row with a stored secret to decide that (`sts.py`). Without
+    # one, a participant instance 401s its own connector: the DID resolves, the
+    # credential service answers, and the very first token request fails — the
+    # kind of break that looks like a credential problem three services away.
+    #
+    # The secret is **this participant's own** (`D-51`). The anchor's copy of the
+    # `Participant` row deliberately carries none, because the anchor is not this
+    # participant's STS and must not be able to act as it.
+    participant = (
+        await db.execute(select(Participant).where(Participant.did == did))
+    ).scalar_one_or_none()
+    created_participant = participant is None
+    if participant is None:
+        participant = Participant(
+            did=did,
+            dsp_address=settings.participant_dsp_address,
+            roles=[],
+            allowed_scopes=[],
+            sts_client_secret=hash_sts_secret(settings.participant_sts_secret),
+        )
+        db.add(participant)
+    else:
+        participant.sts_client_secret = hash_sts_secret(settings.participant_sts_secret)
+        if settings.participant_dsp_address:
+            participant.dsp_address = settings.participant_dsp_address
+        participant.active = True
+        participant.deactivated_at = None
+    await db.flush()
+
     log.info(
-        "Local identity %s: %s (kid=%s), publishing %s",
+        "Local identity %s: %s (kid=%s), publishing %s; STS %s",
         "generated" if created else "already held",
         did,
         key.kid,
         ", ".join(e["type"] for e in endpoints),
+        "registered" if created_participant else "secret refreshed",
     )
     return LocalIdentity(
-        did=did, kid=key.kid, created=created, service_endpoints=endpoints
+        did=did,
+        kid=key.kid,
+        created=created,
+        service_endpoints=endpoints,
+        created_participant=created_participant,
     )
 
 

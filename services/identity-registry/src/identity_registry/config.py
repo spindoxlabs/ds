@@ -261,6 +261,16 @@ class Settings(BaseSettings):
         ),
     )
 
+    participant_sts_secret: str = Field(
+        default="insecure-dev-secret",
+        description=(
+            "The secret this participant's **own** connector presents to this "
+            "instance's STS. It is the participant's to choose — `D-51`: the "
+            "trust anchor never mints an STS secret, because how a party "
+            "authenticates to itself is not the anchor's decision."
+        ),
+    )
+
     @property
     def trust_anchor_did(self) -> str:
         return f"did:web:{self.trust_anchor_domain}"

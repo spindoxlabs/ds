@@ -32,12 +32,50 @@ http://*.dataspaces.localhost {
 	# a *published, signed* document advertised was unreachable from the host, from
 	# a `dev:*` EDC, and from anything outside this compose network. Same host as
 	# the DID, same port 80, resolvable both ways.
+	#
+	# **On the wildcard these still reach the anchor**, and that is correct for
+	# the hosts that fall through to here: the trust anchor's own DID, and
+	# `users.dataspaces.localhost`, whose subject DIDs the anchor still holds.
+	# A host that belongs to a *participant* has its own block below, pointing at
+	# that participant's own instance — which is the whole of `DID-05` expressed
+	# in routing.
 	handle /credentials/* {
 		reverse_proxy 172.17.0.1:30005
 	}
 
 	handle /sts/* {
 		reverse_proxy 172.17.0.1:30005
+	}
+
+	respond 404
+}
+
+# ── Provider participant instance (`DID-05`) ─────────────────────────────────
+#
+# `provider.dataspaces.localhost` is a participant DID host, and after the split
+# every DCP surface on it belongs to the provider's **own** registry, not to the
+# anchor:
+#
+#   /.well-known/did.json   the document publishing the key the provider holds
+#   /credentials/*          its credential store and presentation endpoint
+#   /sts/*                  its own Secure Token Service
+#
+# Getting this wrong is quiet in exactly the wrong way. Point it back at the
+# anchor and DID resolution still answers — with the anchor's *record* of the
+# provider — while presentation queries return an empty VP, because the anchor
+# holds no credentials for a participant it delivered them to.
+http://provider.dataspaces.localhost {
+	handle /.well-known/did.json {
+		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy 172.17.0.1:30006
+	}
+
+	handle /credentials/* {
+		reverse_proxy 172.17.0.1:30006
+	}
+
+	handle /sts/* {
+		reverse_proxy 172.17.0.1:30006
 	}
 
 	respond 404
@@ -146,19 +184,21 @@ http://trust-anchor.dataspaces.localhost {
 # and every negotiation against it fails at the identity check.
 
 http://consumer.dataspaces.localhost {
+	# **The consumer's own registry (:30007), not the anchor.** Same reasoning as
+	# the provider block above; see `DID-05`.
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
-		reverse_proxy 172.17.0.1:30005
+		reverse_proxy 172.17.0.1:30007
 	}
 
 	# Repeated from the wildcard, for the same reason as the DID handler above:
 	# this host has its own block, so it never falls through.
 	handle /credentials/* {
-		reverse_proxy 172.17.0.1:30005
+		reverse_proxy 172.17.0.1:30007
 	}
 
 	handle /sts/* {
-		reverse_proxy 172.17.0.1:30005
+		reverse_proxy 172.17.0.1:30007
 	}
 
 	handle_path /api/connector/* {
