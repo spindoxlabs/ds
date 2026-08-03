@@ -44,7 +44,7 @@ deliberately outside the authentication wall — an applicant has no account by 
 | P-2 | Promotion issues an `OrganizationCredential` signed by the trust anchor | **Enforced** |
 | P-3 | Every participant holds at minimum a data space membership credential (`DSSC-IAM-08`) | **Enforced** |
 | P-4 | Onboarding is idempotent — re-running it must not duplicate a participant, an owner, a credential or an agreement acceptance | **Enforced, untested** at the task level; the `identity:bootstrap` task does not fail on a partially applied seed (defect P2-1) |
-| P-5 | Assurance levels for verification are the deployment's responsibility and must be recorded in its own agreement text (`DSSC-IAM-14`, KYC/KYB) | **Declared** — the platform records *that* verification happened, never *how*. A deployment claiming an assurance level must be able to evidence it outside this system |
+| P-5 | Assurance levels for verification are the deployment's responsibility (`DSSC-IAM-14`, KYC/KYB). For an **organisation** the platform records *that* verification happened (`verified_by`, `evidence_ref`); for a **natural person** the credential additionally records *who attested and by what method* (`verifiedBy`, `verificationMethod`) | **Declared, and now carried by the credential.** ds does not perform KYC — whoever runs onboarding does — so the attestation travels with the credential rather than being implied by its existence |
 
 ## 3. Identity and attestation
 
@@ -69,8 +69,8 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 
 | # | Rule | Status |
 |---|---|---|
-| P-6 | A DID document is served only for a DID the registry holds a key for | **Enforced** |
-| P-7 | A DID's private key never leaves the identity-registry, and is encrypted at rest | **Enforced** (Fernet, `IDENTITY_REGISTRY_ENCRYPTION_KEY`) |
+| P-6 | A DID document is served only by the instance that holds that DID's key. A **subject** DID has no key and its document carries no verification method — it resolves so that consent records and provenance can point at it, and asserts nothing it cannot back | **Enforced** — a keyless *participant* DID is a 404, which is how a registry says "I recorded that this party exists; I am not the one who publishes their document" |
+| P-7 | A DID's private key never leaves the instance that generated it, and is encrypted at rest. **The trust anchor holds no private key but its own, and a natural person has none** | **Enforced** — Fernet, one `IDENTITY_REGISTRY_ENCRYPTION_KEY` per instance; checked at every startup and by `ir-cli key custody-check`, which exits non-zero on a private key for a DID this instance does not publish |
 | P-8 | A presentation query is answered only to a **verifier** that proves control of its own DID *and* presents an access token this participant's STS granted it. The grant's scope bounds what the presentation may contain (`DSSC-IAM-13`, proof of control) | **Enforced** |
 | P-8a | The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold | **Enforced** |
 | P-8b | The revocation list is served signed, by the trust anchor, GZIP-encoded as StatusList2021 requires | **Enforced** |
@@ -80,22 +80,35 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 
 ## 4. The trust anchor
 
-**Decision: this platform runs a single centralised trust anchor — the identity-registry —
-which is simultaneously the participant registry, the credential issuer, the Secure Token
-Service and the Credential Service for every participant.**
+**Decision: one trust anchor per dataspace — issuer, participant registry and StatusList — and
+one identity-registry instance per participant, holding that participant's own key.**
 
-This is a deliberate deviation from `DSSC-IAM-06` / `DSSC-SVD-30`, which describe a
-*participant-controlled* credential store as part of each participant agent. See
-[Scope and deviations](scope-and-deviations.md) §3. The consequence a deployment must
-accept: **the trust anchor can impersonate any participant.** It is a single point of
-compromise, and its encryption key is a single point of unrecoverable loss.
+The same image in two roles (`IDENTITY_REGISTRY_ROLE`). A `participant` instance serves only
+what a holder serves: its own DID documents, its own Secure Token Service, its own Credential
+Service. Registry questions — who is a participant, what was issued, what was agreed — stay
+with the anchor, which is why a participant's connector still points at it for those.
+
+**This used to be one instance holding every participant's private key**, and the consequence a
+deployment had to accept was that *the trust anchor can impersonate any participant*. That is no
+longer true, and it is **checked rather than asserted**: an organisation generates its own
+keypair, proves control of it at enrolment (`P-20`), the anchor records the public half only,
+and every instance audits its own custody at startup (`P-7`).
+
+Satisfies `DSSC-IAM-06`, `-07`, `-29` and `DSSC-TRF-41`. See
+[Scope and deviations](scope-and-deviations.md) §3.1 for what remains — issuance *message
+shapes* (§3.1.1) and the custody of natural persons' credentials (§3.1.2), not participants'.
+
+What a deployment must still accept: each instance's encryption key is a single point of
+unrecoverable loss **for that instance**. The blast radius is one participant, not the dataspace.
 
 | # | Rule | Status |
 |---|---|---|
 | P-12 | The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`) | **Enforced** — `GET /admin/participants`; note the federated catalogue does not filter on `active` (defect P1-3) |
 | P-13 | The revocation list is public and unauthenticated | **Enforced** — `GET /status/{list_id}` |
 | P-14 | Trust services validate attestations submitted by participants against the criteria (`DSSC-TRF-38`) | **Enforced** for DCP presentation queries; **not enforced** as a rulebook-conformity check — see the gap below |
-| P-15 | The trust anchor's encryption key must be backed up outside the cluster; losing it makes every DID key unrecoverable | **Declared** |
+| P-15 | Every instance's encryption key must be backed up outside the cluster; losing one makes that instance's DID keys unrecoverable | **Declared** — the blast radius is now one participant, not the whole dataspace |
+| P-20 | A participant's identity is **proved, never issued**: the organisation generates its own keypair, publishes its own DID document, and presents a self-issued token signed by that key to enrol (`DSSC-IAM-13`, proof of control). The anchor mints no participant key and no STS secret | **Enforced** — `POST /issuer/credentials`, DCP's Credential Request API. The operator's chain ends at an enrolment code; `ir-cli participant add` is a refusal |
+| P-21 | A credential is issued only to a DID whose control has been proved, and is **delivered to the holder's own credential store** — the issuer keeps the issuance record, the holder keeps what it can present | **Enforced** — DCP Storage API, `POST /credentials/{did}/credentials`, authenticated by the issuer's own self-issued token and refused from any issuer this participant does not trust |
 
 ## 5. Compliance verification — the open gap
 

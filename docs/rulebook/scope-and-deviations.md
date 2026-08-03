@@ -54,31 +54,83 @@ design against first.
 
 Cases where this platform does something the blueprint describes differently, deliberately.
 
-### 3.1 Centralised trust anchor and credential store
+### 3.1 Credential stores — **closed for participants**
 
 **Blueprint:** `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41` and `DSSC-SVD-30` describe
 *participant-controlled* credential stores as part of each participant agent, used for
 issuing, storing, managing and presenting credentials.
 
-**This platform:** one centralised identity-registry acts as trust anchor, participant
-registry, credential issuer, Secure Token Service and Credential Service for **every**
-participant. DID private keys never leave it, and are encrypted at rest.
+**This platform, now:** one trust anchor per dataspace (issuer, participant registry,
+StatusList) and **one identity-registry instance per participant**, holding that participant's
+own key. An organisation generates its own keypair, publishes its own DID document, and proves
+control of it at enrolment; the anchor records the **public** half. Its STS and its credential
+service are its own.
 
-**Why:** it collapses what were three per-participant services into one operable component
-and makes a small deployment tractable.
+`DSSC-IAM-06`, `-07`, `-29` and `TRF-41` are satisfied. This section is kept rather than deleted
+because two narrower deviations remain, and because the history is the point — see below.
 
-**This deviation used to claim more than it delivered.** It said "DCP is spoken correctly at
-the protocol level — a counterparty cannot tell the difference", and that was false: the
-credential service authorized the credential *holder* where DCP authorizes the **verifier**, so
-no conformant counterparty could complete a presentation query at all. The protocol is now
-spoken correctly and the full end-to-end suite runs on it, with no signature bypass anywhere.
-What remains deviant is **custody**, not protocol: one registry still holds every participant's
-private key.
+**What this deviation used to be, and why it is worth remembering.** It claimed twice as much as
+it delivered, twice:
 
-**What a deployment must accept:** the trust anchor can impersonate any participant. It is a
-single point of compromise, and losing `IDENTITY_REGISTRY_ENCRYPTION_KEY` makes every DID
-key unrecoverable. Any deployment where participants are mutually distrustful should treat
-this as disqualifying and externalise the credential stores.
+1. It said *"DCP is spoken correctly at the protocol level — a counterparty cannot tell the
+   difference"*. False: the credential service authorized the credential *holder* where DCP
+   authorizes the **verifier**, so no conformant counterparty could complete a presentation
+   query at all. Five defects sat in series behind that one, each hidden by the one in front.
+2. Corrected to *"what remains deviant is custody, not protocol: one registry still holds every
+   participant's private key"* — true, and the thing a deployment had to accept was that **the
+   trust anchor can impersonate any participant**.
+
+Both are now closed, and closure is **checked rather than asserted**: every instance audits its
+own key custody at startup and refuses to start in production holding a private key for a DID it
+does not publish (`P-7`). Measured on the dev stack: the anchor holds one private key, its own,
+and serves zero presentations and zero STS tokens.
+
+**What a deployment must still accept:** each instance's encryption key is a single point of
+unrecoverable loss **for that instance**. The blast radius is one participant, not the dataspace.
+
+### 3.1.1 Credential issuance uses DCP's flow with non-standard message shapes
+
+**Blueprint:** `DSSC-IAM-25`, `-30`, `-33` — a common credential-exchange protocol.
+
+**This platform:** enrolment and delivery follow the Credential Issuance Protocol's own two legs
+— a holder-initiated request authenticated by a self-issued token and validated by resolving the
+requester's DID, then an asynchronous issuer push to the holder's Credential Service — but the
+message bodies are not yet CIP's `CredentialRequestMessage` / `CredentialMessage` /
+`CredentialObject` verbatim in every field.
+
+**Why:** the flow was built in CIP's shape deliberately, so the remaining work is conformance on
+names rather than a second implementation. Credentials themselves are W3C VC and interoperate
+regardless (`DSSC-IAM-33`).
+
+**What a deployment must accept:** a counterparty implementing CIP strictly may need adjustment
+at the issuance step. Presentation and verification — the parts a counterparty exercises during
+a data transaction — are conformant.
+
+### 3.1.2 A natural person's credentials are held by the organisation that onboarded them
+
+**Blueprint:** `DSSC-IAM-29` requires a credential store per **participant agent**;
+`DSSC-IAM-16` and eIDAS 2 point at wallets for natural persons.
+
+**This platform:** a natural person is a **data rights holder, not a participant** — they run no
+agent, present nothing and sign nothing, and they hold **no key**. Their `DataSubjectCredential`
+is signed by the trust anchor and verified against the anchor's key; the organisation that
+onboarded them holds it on their behalf.
+
+**Why:** this is the blueprint's own **four-corner model** — a participant agent service
+provider operating credential stores for parties who do not run their own (`DSSC-SVD-25`, and
+the *ParticipantConnect GmbH* example in the business building block). For CEEDS BUC#1 the
+parties are households in an energy community; expecting each to run a credential store is not a
+design.
+
+Generating a key for them anyway would not have made it more decentralized — it would have
+created custody nobody exercises, which is an impersonation surface with no upside. It was
+there, it was read by nothing, and it is gone.
+
+**What a deployment must accept:** identity assurance for a person is **whatever the onboarding
+process established** (`DSSC-IAM-14`). ds does not perform KYC. The credential records *who
+attested and by what method* rather than implying a level — see `P-5`. When wallets arrive the
+person supplies their own public key and the hosted store becomes a fallback; nothing here has
+to be undone.
 
 ### 3.2 Catalogue visibility is enforced at negotiation, not at discovery
 

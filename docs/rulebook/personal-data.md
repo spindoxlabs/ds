@@ -129,7 +129,7 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 |---|---|---|
 | D-20 | Subject-facing surfaces authenticate the subject's credential, never a service's scope. A service token must not be able to read one person's consents | **Enforced** — `/consent/my/*`, `/consent/status`, `/consumer/*` use the VC-JWT path |
 | D-21 | Membership in an owner organisation is checked against the registry at consent-write time, not read from a JWT claim. The portal reads claims for UX; **data access decisions always go through the registry API** | **Enforced** |
-| D-22 | A path-bearing subject DID must resolve | **Not enforced** — the edge proxy's exact-match rule misses path-bearing DIDs, so user DID resolution 404s. Defect **P1-6** |
+| D-22 | A path-bearing subject DID must resolve, and its document asserts **no verification method** — the person holds no key | **Enforced.** The service itself serves the did:web path form (`/{path}/did.json`), so resolution no longer depends on an edge-proxy rewrite. The document carries `id` and nothing it cannot back: a subject presents nothing and signs nothing, so a key would be read by nobody. The DID must still resolve because it is what consent records, provenance events and `credentialSubject.id` point at |
 
 ## 7. The intermediary question
 
@@ -173,8 +173,9 @@ on a consumer's premises.
 **Closed by this page:** `DSSC-XCT-02`, `-04`, `-05`, `-06`, `-07`, `-08`, `-09`, `-17`,
 `-26`.
 
-**Open:** `DSSC-XCT-27` (anonymisation capability — out of scope, §7). D-17 and D-22 are
-stated and blocked by defects **P1-1** and **P1-6**.
+**Open:** `DSSC-XCT-27` (anonymisation capability — out of scope, §7). D-17 is stated and
+blocked by defect **P1-1**. **D-22 is now enforced** — `P1-6` is closed: the service serves the
+did:web path form itself rather than depending on an edge-proxy rewrite.
 
 **Beyond the blueprint:** the controller-role dimension of the consent key (D-11), the
 scoped wildcard with opt-out precedence (D-14, D-15), the disclosed-processor rule (D-5),

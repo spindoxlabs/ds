@@ -3,12 +3,14 @@
 The dataspace's **trust anchor**. Everything the platform believes about who someone is
 comes from here.
 
-It generates and stores participant key pairs, serves their `did:web` documents, issues and
-revokes Verifiable Credentials signed by a bootstrapped trust-anchor key, publishes the
-revocation list those credentials are checked against, holds the registries of participants,
-owners and memberships that the connectors read, runs the organisation onboarding lifecycle
-end to end, and acts as the DCP **Secure Token Service** and **Credential Service** for every
-participant whose key it holds.
+It issues and revokes Verifiable Credentials signed by a bootstrapped trust-anchor key,
+publishes the revocation list those credentials are checked against, holds the registries of
+participants, owners and memberships that the connectors read, runs the organisation onboarding
+lifecycle, and acts as the DCP **Secure Token Service** and **Credential Service** for the DIDs
+whose keys it holds — which, in the split topology below, is only its own.
+
+**It does not generate a participant's key.** An organisation generates its own, publishes its
+own DID document, and proves control of it at enrolment; this registry records the public half.
 
 ## Two roles, one image
 
@@ -33,11 +35,15 @@ An unrecognised role is a refusal, never a fallback to `trust-anchor`. Each `par
 instance needs its own database and its own `IDENTITY_REGISTRY_ENCRYPTION_KEY`; sharing either
 puts every key back in one place and makes the split cosmetic.
 
-!!! note "The anchor is still a superset today"
-    Until the deployment split lands, one `trust-anchor` instance is also the STS and
-    Credential Service for every participant, so it mounts the holder routes too. What
-    narrows it is not routing but **custody** — once each participant holds its own key, the
-    anchor can answer for nothing but itself.
+!!! note "The anchor still *mounts* the holder routes, and answers nothing on them"
+    A `trust-anchor` instance keeps `/sts` and `/credentials/{did}/presentations/query`
+    mounted, because a single-instance deployment is still a valid topology. What narrows it
+    is not routing but **custody**: it holds no private key but its own, so those routes
+    answer for nothing else. Measured on the dev stack — the anchor serves **0** presentations
+    and **0** STS tokens; the participant instances serve all of them.
+
+    `ir-cli key custody-check` reports what an instance can actually sign as, and exits
+    non-zero on a private key for a DID it does not publish.
 
 ## Role in the blueprint
 
