@@ -4,9 +4,6 @@
 - name: edc-api-key
   mountPath: /run/secrets/edc
   readOnly: true
-- name: trust-anchor
-  mountPath: {{ dir .Values.trustAnchor.keyMountPath }}
-  readOnly: true
 {{- if .Values.governance.configMap }}
 - name: governance
   mountPath: {{ .Values.governance.mountPath }}

@@ -36,9 +36,10 @@ def verified_subject_id(
     credential = verify_user_vc_jwt(
         x_user_vc,
         x_subject_id,
-        settings.trust_anchor_key_path,
+        settings.trust_anchor_did,
         {"DataSubject", "ConsumerUser"},
-        expected_issuer=settings.trust_anchor_did,
+        trust_list_url=settings.trust_list_url,
+        did_web_use_https=settings.did_web_use_https,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
         insecure_dev=settings.vc_insecure_dev,

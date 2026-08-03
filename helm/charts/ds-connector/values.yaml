@@ -51,11 +51,18 @@ edc:
 
 # ── Trust anchor ──────────────────────────────────────────────────────────────
 # did:web of the trust anchor; "" → did:web:<trustAnchor host>.<baseDomain>.
-# The public JWK is mounted from the Secret and verifies user VCs on the consent
-# and consumer APIs.
+#
+# **Named, not mounted** (`DID-17`). Its signing key is resolved from that DID's
+# document at request time and cached, so rotating the anchor's key no longer
+# means redeploying every service that held a copy of it.
+#
+# `trustListUrl` is the dataspace's list of accredited issuers (`DSSC-TRF-05`);
+# "" → https://<trustAnchor host>.<baseDomain>/trust. Resolution proves who
+# signed a credential, the list proves the dataspace still stands behind them —
+# a withdrawn accreditation is invisible without it.
 trustAnchor:
   did: ""
-  keyMountPath: /etc/ds/trust-anchor-public.json
+  trustListUrl: ""
 
 # ── Governance ────────────────────────────────────────────────────────────────
 governance:
@@ -103,7 +110,6 @@ secrets:
   dbPassword: ""
   edcApiKey: "" # shared with this participant's ds-edc
   serviceClientSecret: "" # svc-ds-connector Keycloak secret
-  trustAnchorPublicJwk: "" # public JWK contents (mounted as a file)
 
 global:
   baseDomain: ds.example.org

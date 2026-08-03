@@ -89,16 +89,34 @@ async def lifespan(app: FastAPI):
         settings.oidc_insecure_dev,
         "Set CONNECTOR_OIDC_INSECURE_DEV=false and configure the issuer URL.",
     )
+    # `DID-17`: the key is resolved from the issuer's DID document, so what
+    # production requires is a *named* issuer and a trust list to check it
+    # against — not a mounted file. A trust list that is set but unreachable
+    # fails the request closed; one that is unset is never consulted, which is
+    # why it is required here rather than left optional.
     guard.require_set(
-        "CONNECTOR_TRUST_ANCHOR_KEY_PATH",
-        settings.trust_anchor_key_path,
-        "Mount the trust-anchor public key so user Verifiable Credentials "
-        "are signature-verified.",
+        "CONNECTOR_TRUST_ANCHOR_DID",
+        settings.trust_anchor_did,
+        "Name the dataspace's trust anchor; its signing key is resolved from "
+        "that DID's document.",
+    )
+    guard.require_set(
+        "CONNECTOR_TRUST_LIST_URL",
+        settings.trust_list_url,
+        "Point at the dataspace trust list so a withdrawn accreditation is "
+        "seen (DSSC-TRF-05). Resolution proves who signed; the list proves "
+        "the dataspace still stands behind them.",
+    )
+    guard.forbid_true(
+        "CONNECTOR_DID_WEB_USE_HTTPS is false",
+        not settings.did_web_use_https,
+        "Set CONNECTOR_DID_WEB_USE_HTTPS=true. A DID document fetched over "
+        "plain HTTP carries the keys every trust decision rests on.",
     )
     guard.forbid_true(
         "CONNECTOR_VC_INSECURE_DEV",
         settings.vc_insecure_dev,
-        "Set CONNECTOR_VC_INSECURE_DEV=false once the trust-anchor key is mounted.",
+        "Set CONNECTOR_VC_INSECURE_DEV=false so signatures are verified.",
     )
     guard.forbid_default(
         "EDC_API_KEY",

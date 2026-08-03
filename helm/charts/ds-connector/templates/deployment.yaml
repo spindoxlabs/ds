@@ -66,13 +66,6 @@ spec:
             items:
               - key: EDC_API_KEY
                 path: api-key
-        # Trust-anchor public JWK verifying user VCs on consent/consumer APIs.
-        - name: trust-anchor
-          secret:
-            secretName: {{ include "ds.secretName" . }}
-            items:
-              - key: TRUST_ANCHOR_PUBLIC_JWK
-                path: trust-anchor-public.json
         {{- if .Values.governance.configMap }}
         - name: governance
           configMap:

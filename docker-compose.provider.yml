@@ -162,6 +162,15 @@ services:
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+      # **Dev verifies user credentials for real** (`DID-17`). The key comes from
+      # the anchor's DID document over did:web — plain HTTP here, because that is
+      # what Caddy serves on :80 — and the trust list says whether that issuer is
+      # still accredited. Dev used to skip the signature entirely, which made the
+      # production path the only untested one (`T-1`).
+      CONNECTOR_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
+      CONNECTOR_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      CONNECTOR_DID_WEB_USE_HTTPS: "false"
+      CONNECTOR_VC_INSECURE_DEV: "false"
     depends_on:
       edc-provider:
         condition: service_healthy
@@ -185,6 +194,12 @@ services:
       interval: 10s
       start_period: 20s
       retries: 10
+    extra_hosts:
+      # did:web resolution goes to the host the DID names, not to a configured
+      # URL — `did:web:trust-anchor.dataspaces.localhost` resolves at
+      # http://trust-anchor.dataspaces.localhost/.well-known/did.json, which
+      # Caddy serves on the host's :80.
+      - "trust-anchor.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
   # ── Provider provenance ──────────────────────────────────────────────────────
@@ -202,8 +217,17 @@ services:
       # ones that read a data subject's record. Same host + extra_hosts pattern the
       # portal and the celine dataset-api already use.
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
+      # The same settings as the connector's, for the same reason (`DID-17`):
+      # the same credential is presented to both services and must verify
+      # identically, so these must not drift.
+      PROVENANCE_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
+      PROVENANCE_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      PROVENANCE_DID_WEB_USE_HTTPS: "false"
+      PROVENANCE_VC_INSECURE_DEV: "false"
     extra_hosts:
       - "keycloak.dataspaces.localhost:host-gateway"
+      # did:web resolution goes to the host the DID names, through Caddy on :80.
+      - "trust-anchor.dataspaces.localhost:host-gateway"
     depends_on:
       provenance-db-init-provider:
         condition: service_completed_successfully

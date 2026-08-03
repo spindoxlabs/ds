@@ -55,23 +55,26 @@ async def test_production_refuses_to_start_on_the_dev_defaults(monkeypatch):
     for setting in (
         "PROVENANCE_OIDC_ISSUER_URL",
         "PROVENANCE_OIDC_INSECURE_DEV",
-        "PROVENANCE_TRUST_ANCHOR_KEY_PATH",
+        # `DID-17`: the trust anchor is **named**, not mounted. What production
+        # requires is an issuer to resolve and a list to check it against; the
+        # mounted `PROVENANCE_TRUST_ANCHOR_KEY_PATH` is gone, and so is the
+        # deployment that satisfied the guard by mounting a file it never read.
+        "PROVENANCE_TRUST_LIST_URL",
         "PROVENANCE_VC_INSECURE_DEV",
     ):
         assert setting in message
 
 
 @pytest.mark.asyncio
-async def test_production_starts_once_all_four_are_supplied(monkeypatch, tmp_path):
+async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
     """A guard with no supply path is a denial of service on your own deployment
-    (`IR-10`). These four are the exact set the chart has to render."""
-    key = tmp_path / "trust-anchor.json"
-    key.write_text("{}")
-
+    (`IR-10`). This is the exact set the chart has to render."""
     monkeypatch.setenv("DS_ENV", "production")
     monkeypatch.setenv("PROVENANCE_OIDC_ISSUER_URL", "https://kc.example/realms/dataspaces")
     monkeypatch.setenv("PROVENANCE_OIDC_INSECURE_DEV", "false")
-    monkeypatch.setenv("PROVENANCE_TRUST_ANCHOR_KEY_PATH", str(key))
+    monkeypatch.setenv("PROVENANCE_TRUST_ANCHOR_DID", "did:web:ta.example.org")
+    monkeypatch.setenv("PROVENANCE_TRUST_LIST_URL", "https://ta.example.org/trust")
+    monkeypatch.setenv("PROVENANCE_DID_WEB_USE_HTTPS", "true")
     monkeypatch.setenv("PROVENANCE_VC_INSECURE_DEV", "false")
 
     await _run_lifespan(monkeypatch)

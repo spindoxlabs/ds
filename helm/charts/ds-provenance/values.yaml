@@ -32,13 +32,14 @@ existingSecret: ""
 networkPolicy: {egress: []}
 
 # GET /prov/my/events lets a data subject read their own history, authenticated
-# by a verifiable credential rather than a scope. The public JWK is mounted from
-# the Secret and is what makes that credential trustworthy — without it the
+# by a verifiable credential rather than a scope. What makes that credential
+# trustworthy is the key the anchor's **DID document** publishes (`DID-17`) plus
+# the trust list saying it is still accredited — without either the
 # ProductionGuard refuses to start, which is deliberate: serving a person's
 # record on an unverified claim is worse than not serving it.
 trustAnchor:
   did: ""
-  keyMountPath: /etc/ds/trust-anchor-public.json
+  trustListUrl: ""
 
 maxLineageDepth: 20
 
@@ -53,7 +54,6 @@ migration:
 secrets:
   dbUser: "" # defaults to the database name (owner role)
   dbPassword: ""
-  trustAnchorPublicJwk: "" # public JWK contents (mounted as a file)
 
 global:
   baseDomain: ds.example.org

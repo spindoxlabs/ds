@@ -26,12 +26,16 @@
 - name: PROVENANCE_OIDC_INSECURE_DEV
   value: "false"
 # A data subject reads their own history from a verifiable credential, not a
-# scope. Without the trust-anchor key that credential cannot be verified, so the
-# ProductionGuard refuses to start rather than serve on an unverified claim.
+# scope. The key that verifies it is resolved from the anchor's DID document
+# (`DID-17`), and the trust list says whether that issuer is still accredited.
+# Without either the ProductionGuard refuses to start rather than serve a
+# person's record on an unverified claim.
 - name: PROVENANCE_TRUST_ANCHOR_DID
   value: {{ .Values.trustAnchor.did | default (printf "did:web:%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
-- name: PROVENANCE_TRUST_ANCHOR_KEY_PATH
-  value: {{ .Values.trustAnchor.keyMountPath | quote }}
+- name: PROVENANCE_TRUST_LIST_URL
+  value: {{ .Values.trustAnchor.trustListUrl | default (printf "https://%s.%s/trust" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
+- name: PROVENANCE_DID_WEB_USE_HTTPS
+  value: "true"
 - name: PROVENANCE_VC_INSECURE_DEV
   value: "false"
 {{- include "ds.env.aliases" (dict "ctx" . "prefix" "PROVENANCE_") }}

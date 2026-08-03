@@ -42,15 +42,26 @@ async def lifespan(app: FastAPI):
     # credential. Unverified, anyone could read anyone's history — so the same
     # two settings the connector guards apply here for the same reason.
     guard.require_set(
-        "PROVENANCE_TRUST_ANCHOR_KEY_PATH",
-        settings.trust_anchor_key_path,
-        "Mount the trust-anchor public key so a data subject's Verifiable "
-        "Credential is signature-verified before their history is served.",
+        "PROVENANCE_TRUST_ANCHOR_DID",
+        settings.trust_anchor_did,
+        "Name the dataspace's trust anchor; a data subject's credential is "
+        "verified against the key that DID's document publishes (`DID-17`).",
+    )
+    guard.require_set(
+        "PROVENANCE_TRUST_LIST_URL",
+        settings.trust_list_url,
+        "Point at the dataspace trust list so a withdrawn accreditation is "
+        "seen before a subject's history is served (DSSC-TRF-05).",
+    )
+    guard.forbid_true(
+        "PROVENANCE_DID_WEB_USE_HTTPS is false",
+        not settings.did_web_use_https,
+        "Set PROVENANCE_DID_WEB_USE_HTTPS=true.",
     )
     guard.forbid_true(
         "PROVENANCE_VC_INSECURE_DEV",
         settings.vc_insecure_dev,
-        "Set PROVENANCE_VC_INSECURE_DEV=false once the trust-anchor key is mounted.",
+        "Set PROVENANCE_VC_INSECURE_DEV=false so signatures are verified.",
     )
     guard.enforce()
 

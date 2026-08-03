@@ -189,9 +189,10 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_OIDC_INSECURE_DEV` | `true` | with no issuer, accept unverified JWTs. **Refused in production** |
 | `CONNECTOR_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-connector` | own client credentials; the id is also the expected JWT audience |
 | `CONNECTOR_KEYCLOAK_TOKEN_URL` | Keycloak on `172.17.0.1:9080` | token endpoint for outbound calls |
-| `CONNECTOR_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | issuer of user VCs |
-| `CONNECTOR_TRUST_ANCHOR_KEY_PATH` | — | public key that verifies user VCs |
-| `CONNECTOR_VC_INSECURE_DEV` | `true` | with no key, accept unsigned VCs. **Refused in production** |
+| `CONNECTOR_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | issuer of user VCs; **its key is resolved from this DID's document**, not mounted |
+| `CONNECTOR_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
+| `CONNECTOR_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS. False only in dev, where Caddy serves :80 |
+| `CONNECTOR_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
 | `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 source for revocation checks |
 | `CONNECTOR_OWNER_SCOPING_STRICT` | `false` | refuse a provider write from a caller with no org claims |
 | `CONNECTOR_ALLOW_UNKNOWN_PARTICIPANTS` | `false` | accept a DSP peer absent from the registry |

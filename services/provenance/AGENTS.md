@@ -38,9 +38,10 @@ row out, in one transaction. Two instances (provider 30000, consumer 31000), two
   what "the same event" means, which is why every emitter should supply its own.
 - **`AccessRequested` carries `purpose` (what the offer permits) and `declared_purpose`
   (what the consumer stated).** Two different facts; do not collapse them.
-- Both settings the subject route needs (`PROVENANCE_TRUST_ANCHOR_KEY_PATH`,
-  `PROVENANCE_VC_INSECURE_DEV`) are registered with `ProductionGuard` — unverified, anyone
-  could claim any subject id.
+- The settings the subject route needs (`PROVENANCE_TRUST_ANCHOR_DID`,
+  `PROVENANCE_TRUST_LIST_URL`, `PROVENANCE_DID_WEB_USE_HTTPS`, `PROVENANCE_VC_INSECURE_DEV`)
+  are registered with `ProductionGuard` — unverified, anyone could claim any subject id. The
+  key is **resolved from the anchor's DID document** (`DID-17`), never mounted here.
 
 - **A lineage edge publishes direction and type separately, and both have consumers.**
   `ds:source`/`ds:target` carry direction — `services/portal`'s `classifyLineageGraph` splits

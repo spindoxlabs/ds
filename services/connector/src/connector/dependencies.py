@@ -385,9 +385,10 @@ async def require_consumer_catalog_caller(
         credential = verify_user_vc_jwt(
             x_user_vc,
             x_subject_id,
-            settings.trust_anchor_key_path,
+            settings.trust_anchor_did,
             {"ConsumerUser"},
-            expected_issuer=settings.trust_anchor_did,
+            trust_list_url=settings.trust_list_url,
+            did_web_use_https=settings.did_web_use_https,
             expected_linked_participant=settings.consumer_participant_did,
             credential_status_path=settings.credential_status_path,
             credential_status_url=settings.credential_status_url,

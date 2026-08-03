@@ -1169,7 +1169,8 @@ tasks:
         echo
         echo "✓ key material in secrets/ (gitignored, mode 600)"
         echo "  private keys → EDC vault / identity-registry"
-        echo "  *.public.jwk.json → CONNECTOR_TRUST_ANCHOR_KEY_PATH"
+        echo "  *.public.jwk.json → nothing to distribute since DID-17:"
+        echo "     verifiers resolve the anchor's DID document for its key"
 
   secrets:bootstrap:
     desc: Full production secret bootstrap (env + keys), idempotent

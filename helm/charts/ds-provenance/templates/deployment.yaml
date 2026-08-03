@@ -56,20 +56,9 @@ spec:
             {{- include "ds.containerSecurityContext" . | nindent 12 }}
           volumeMounts:
             {{- include "ds.tmpVolumeMount" . | nindent 12 }}
-            - name: trust-anchor
-              mountPath: {{ .Values.trustAnchor.keyMountPath }}
-              subPath: trust-anchor-public.json
-              readOnly: true
           {{- include "ds.resources" . | nindent 10 }}
       volumes:
         {{- include "ds.tmpVolume" . | nindent 8 }}
-        # Trust-anchor public JWK verifying a data subject's VC on /prov/my/events.
-        - name: trust-anchor
-          secret:
-            secretName: {{ include "ds.secretName" . }}
-            items:
-              - key: TRUST_ANCHOR_PUBLIC_JWK
-                path: trust-anchor-public.json
       {{- with .Values.nodeSelector }}
       nodeSelector:
         {{- toYaml . | nindent 8 }}

@@ -184,14 +184,15 @@ releases:
         replicaCount: {{ $p.provenance.replicaCount | default 1 }}
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" $p.name) | quote }}
-          # Provenance verifies `X-User-VC` against the trust anchor's public
-          # key, exactly as the connector does — so it needs the same value, and
-          # its chart `required`s it. **This line was missing**, and because
-          # `helmfile template` could not run without decryptable secrets,
-          # nothing had ever rendered far enough to notice: every production
-          # deploy would have failed at this release. Found 2026-08-03 by
-          # rendering with a throwaway sops key.
-          trustAnchorPublicJwk: {{ $root.Values.secrets.trustAnchorPublicJwk | quote }}
+          # No `trustAnchorPublicJwk` here since `DID-17`: provenance verifies
+          # `X-User-VC` against the key the anchor's DID document publishes.
+          #
+          # Worth remembering what this line used to be. It was **missing**, its
+          # chart `required`d it, and because `helmfile template` could not run
+          # without decryptable secrets nothing had ever rendered far enough to
+          # notice — every production deploy would have failed at this release.
+          # The value it distributed is a *public* key; the defect was that it
+          # had to be distributed at all.
 
   - name: ds-connector-{{ $p.name }}
     namespace: {{ $ns }}
@@ -218,7 +219,6 @@ releases:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" $p.name) | quote }}
           edcApiKey: {{ $psec.edcApiKey | quote }}
           serviceClientSecret: {{ $root.Values.secrets.svcDsConnectorSecret | quote }}
-          trustAnchorPublicJwk: {{ $root.Values.secrets.trustAnchorPublicJwk | quote }}
 
 {{- if dig "federatedCatalog" "enabled" false $p }}
   - name: ds-federated-catalog-{{ $p.name }}

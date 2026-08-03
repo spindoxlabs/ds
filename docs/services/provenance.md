@@ -122,14 +122,16 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_OIDC_INSECURE_DEV` | `true` | accept unverified JWTs when no issuer. **Refused in production** |
 | `PROVENANCE_SERVICE_CLIENT_ID` | `svc-ds-provenance` | the expected JWT audience |
 | `PROVENANCE_OIDC_GROUP_ALIASES` | `""` | JSON map: foreign group → ds role bundle |
-| `PROVENANCE_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | expected issuer of subject credentials |
-| `PROVENANCE_TRUST_ANCHOR_KEY_PATH` | — | public key that verifies them |
-| `PROVENANCE_VC_INSECURE_DEV` | `true` | with no key, accept unsigned subject VCs. **Refused in production** |
+| `PROVENANCE_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | expected issuer; **its key is resolved from this DID's document**, not mounted |
+| `PROVENANCE_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
+| `PROVENANCE_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS |
+| `PROVENANCE_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
 | `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 source for revocation checks |
 
-Under `DS_ENV=production` the service refuses to start if the issuer or the trust-anchor key
-is unset, or either `*_INSECURE_DEV` flag is true — the second pair is what keeps
-`GET /prov/my/events` from trusting an unsigned credential.
+Under `DS_ENV=production` the service refuses to start if the Keycloak issuer, the trust-anchor
+DID or the trust list is unset, or either `*_INSECURE_DEV` flag is true — what keeps
+`GET /prov/my/events` from trusting an unsigned credential, or one from an issuer this
+dataspace no longer accredits.
 
 ## Persistence
 

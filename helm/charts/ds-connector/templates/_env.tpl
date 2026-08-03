@@ -87,8 +87,10 @@ otherwise the connector's default path finds nothing, which is the intended
 {{- end }}
 - name: CONNECTOR_TRUST_ANCHOR_DID
   value: {{ .Values.trustAnchor.did | default (printf "did:web:%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
-- name: CONNECTOR_TRUST_ANCHOR_KEY_PATH
-  value: {{ .Values.trustAnchor.keyMountPath | quote }}
+- name: CONNECTOR_TRUST_LIST_URL
+  value: {{ .Values.trustAnchor.trustListUrl | default (printf "https://%s.%s/trust" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
+- name: CONNECTOR_DID_WEB_USE_HTTPS
+  value: "true"
 - name: CONNECTOR_VC_INSECURE_DEV
   value: "false"
 - name: CONNECTOR_OIDC_ISSUER_URL

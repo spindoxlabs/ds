@@ -45,14 +45,18 @@ class Settings(BaseSettings):
     # A subject reads their own history with a VC-JWT, not a scope, so these
     # mirror the connector's settings of the same name — the same credential is
     # presented to both services and must verify identically.
+    # **The issuer is named, not mounted** (`DID-17`) — see the connector's
+    # settings of the same name for why. The same credential is presented to
+    # both services and must verify identically, so these must not drift.
     trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
-    trust_anchor_key_path: str | None = None
+    trust_list_url: str | None = None
+    did_web_use_https: bool = True
     vc_insecure_dev: bool = Field(
         default=True,
         description=(
-            "When True AND no trust-anchor key is configured, user Verifiable "
+            "When True AND no trust-anchor DID is configured, user Verifiable "
             "Credentials are accepted WITHOUT signature verification (local dev "
-            "only). Production MUST set PROVENANCE_TRUST_ANCHOR_KEY_PATH."
+            "only). Production MUST leave this false."
         ),
     )
     credential_status_path: str | None = None

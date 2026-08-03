@@ -137,14 +137,34 @@ class Settings(BaseSettings):
     # lives there and nowhere else. The *registry* is committed configuration and
     # stays beside governance.yaml; only the fetched copies are cache.
     vocabulary_cache_dir: str = "data/vocabularies"
+    # **The issuer is named, not mounted** (`DID-17`). Its signing key comes from
+    # its DID document, resolved over did:web at request time and cached; a key
+    # in a file here would be a second copy of a fact that already has one home,
+    # and rotating the anchor's key would mean redeploying every service holding
+    # a copy. `CONNECTOR_TRUST_ANCHOR_KEY_PATH` is gone for that reason.
     trust_anchor_did: str = "did:web:trust-anchor.dataspaces.localhost"
-    trust_anchor_key_path: str | None = None
+    trust_list_url: str | None = Field(
+        default=None,
+        description=(
+            "The dataspace trust list (DSSC-TRF-05). When set, a credential is "
+            "refused unless its issuer is listed **active** — resolution proves "
+            "who signed, this proves the dataspace still stands behind them."
+        ),
+    )
+    did_web_use_https: bool = Field(
+        default=True,
+        description=(
+            "Resolve did:web over HTTPS. False only in dev, where Caddy serves "
+            "DID documents on plain :80 — mirrors the EDC's "
+            "edc.iam.did.web.use.https."
+        ),
+    )
     vc_insecure_dev: bool = Field(
         default=True,
         description=(
-            "When True AND no trust-anchor key is configured, user Verifiable "
+            "When True AND no trust-anchor DID is configured, user Verifiable "
             "Credentials are accepted WITHOUT signature verification (local dev "
-            "only). Production MUST set CONNECTOR_TRUST_ANCHOR_KEY_PATH."
+            "only). Production MUST leave this false."
         ),
     )
     credential_status_path: str | None = None
