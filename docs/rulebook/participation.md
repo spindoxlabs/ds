@@ -104,6 +104,9 @@ unrecoverable loss **for that instance**. The blast radius is one participant, n
 | # | Rule | Status |
 |---|---|---|
 | P-12 | The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`) | **Enforced** — `GET /admin/participants`; note the federated catalogue does not filter on `active` (defect P1-3) |
+| P-12a | The list of **accredited entities** — trust anchors and trust service providers, **including revoked ones** — is published machine-readably and unauthenticated (`DSSC-TRF-05`, `-07`, `-17`, `DSSC-BIZ-143`) | **Enforced** — `GET /trust`. Public for the same reason as `P-13`: a counterparty decides whether to accept a credential before it has any relationship with this dataspace, and a federation partner reads this before anything else |
+| P-12b | Every entry names its **scope of attestation** (`DSSC-TRF-19`), and a trust service provider names the anchor it derives authority from (`DSSC-TRF-21`) | **Enforced** — both are required with no default. An empty scope is not a wildcard: defaulting it would make the most permissive possible entry the easiest one to create |
+| P-12c | Withdrawing accreditation **marks an entry revoked with a reason; it never deletes it** | **Enforced** — a list that forgets what it used to trust cannot answer whether a credential already in circulation was legitimate when it was issued |
 | P-13 | The revocation list is public and unauthenticated | **Enforced** — `GET /status/{list_id}` |
 | P-14 | Trust services validate attestations submitted by participants against the criteria (`DSSC-TRF-38`) | **Enforced** for DCP presentation queries; **not enforced** as a rulebook-conformity check — see the gap below |
 | P-15 | Every instance's encryption key must be backed up outside the cluster; losing one makes that instance's DID keys unrecoverable | **Declared** — the blast radius is now one participant, not the whole dataspace |

@@ -532,3 +532,58 @@ class CredentialRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+class TrustedIssuer(Base):
+    """The dataspace's list of accredited entities — `DSSC-TRF-05`, `-17`.
+
+    A **governance statement**, not an observation. It says which entities this
+    dataspace accepts attestations from, which is different from which entities
+    have in fact issued something: deriving the list from the credentials that
+    exist would let anything that managed to issue one list itself.
+
+    Four requirements shape the columns, and each would be easy to leave out:
+
+    - `TRF-05` — the listing includes **revoked** entries. A trust list that
+      forgets what it used to trust cannot answer *"was this credential
+      legitimate when it was issued"*, which is the question a verifier has
+      about anything already in circulation. So revocation sets a status and a
+      timestamp; nothing is deleted.
+    - `TRF-19` — a trust anchor is accepted *in relation to a specific scope of
+      attestation*. An entry that named no scope would read as "trusted for
+      everything", which is the one thing a trust list must never imply by
+      omission.
+    - `TRF-21` — a trust service provider is a *designated issuer deriving
+      authority from a trust anchor*, so an entry can name where its authority
+      comes from.
+    - `TRF-25`/`-26` — many trust services per anchor and vice versa, which is
+      why authority is a field on the entry rather than a table shape.
+    """
+
+    __tablename__ = "trusted_issuers"
+
+    did: Mapped[str] = mapped_column(Text, primary_key=True)
+    name: Mapped[str] = mapped_column(Text, nullable=False)
+    #: `trust-anchor` | `trust-service-provider` (`TRF-21`).
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    #: The credential types this entity may attest (`TRF-19`). Empty is not
+    #: "anything" — it is an entry nobody should trust for anything, and the
+    #: published list says so rather than leaving it to be read as a wildcard.
+    scope_of_attestation: Mapped[list] = mapped_column(
+        JsonType, nullable=False, default=list
+    )
+    #: For a trust service provider, the anchor it derives authority from.
+    derives_authority_from: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: `active` | `revoked`. Revoked entries stay listed (`TRF-05`).
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    added_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    added_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    #: Why it was revoked. A trust list that drops an entity without saying why
+    #: leaves every verifier guessing whether credentials it already accepted
+    #: are still good.
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

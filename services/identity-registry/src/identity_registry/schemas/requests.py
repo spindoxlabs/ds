@@ -359,3 +359,18 @@ class PublicOrganizationApplicationRequest(BaseModel):
     @classmethod
     def _roles(cls, v: list[str]) -> list[str]:
         return _validate_roles(v)
+
+
+class AddTrustedIssuerRequest(BaseModel):
+    """Accredit an entity to attest, within a named scope (`DSSC-TRF-17`)."""
+
+    did: str
+    name: str
+    role: str = Field(pattern=r"^(trust-anchor|trust-service-provider)$")
+    #: **Required, with no default.** An entry naming no scope is not "trusted
+    #: for everything" — `DSSC-TRF-19` accepts a trust anchor *in relation to a
+    #: specific scope of attestation*, and a default here would let the most
+    #: permissive possible entry be created by omission.
+    scope_of_attestation: list[str] = Field(min_length=1)
+    #: Required for a trust service provider (`DSSC-TRF-21`).
+    derives_authority_from: str | None = None

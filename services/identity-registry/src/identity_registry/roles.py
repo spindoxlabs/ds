@@ -57,7 +57,7 @@ from .api.v1.onboarding import admin_router as onboarding_admin_router
 from .api.v1.onboarding import public_router as onboarding_public_router
 from .api.v1.organizations import router as organizations_router
 from .api.v1.owners import router as owners_router
-from .api.v1.public import did_router, status_router
+from .api.v1.public import did_router, status_router, trust_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
 
@@ -115,6 +115,7 @@ ROUTERS: tuple[RouterSpec, ...] = (
     RouterSpec("onboarding.admin", onboarding_admin_router, ANCHOR_ONLY),
     RouterSpec("onboarding.public", onboarding_public_router, ANCHOR_ONLY),
     RouterSpec("status", status_router, ANCHOR_ONLY),
+    RouterSpec("trust", trust_router, ANCHOR_ONLY),
     RouterSpec("dids", did_router, BOTH),
 )
 
@@ -133,6 +134,7 @@ PATH_ROLES: tuple[tuple[str, frozenset[str]], ...] = (
     ("/memberships", ANCHOR_ONLY),
     ("/owners", ANCHOR_ONLY),
     ("/status", ANCHOR_ONLY),
+    ("/trust", ANCHOR_ONLY),
     ("/credentials/check", ANCHOR_ONLY),
     ("/credentials", HOLDER),
     ("/sts", HOLDER),

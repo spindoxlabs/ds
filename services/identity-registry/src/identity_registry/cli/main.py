@@ -94,6 +94,13 @@ def bootstrap(
                 select(Did).where(Did.did == trust_did)
             )
             if result.scalar_one_or_none():
+                # Idempotent, and it still ensures the trust-list entry: a
+                # registry bootstrapped before the list existed has a key and no
+                # accreditation, which is the state that publishes an empty list.
+                from ..services import trust_list
+
+                await trust_list.ensure_own_anchor(session, settings)
+                await session.commit()
                 typer.echo(f"Trust anchor already exists: {trust_did}")
                 return
 
@@ -116,8 +123,17 @@ def bootstrap(
             session.add(did_record)
             await session.commit()
 
+            # A dataspace whose trust list does not contain its own anchor
+            # publishes a document saying it accredits nobody, and every
+            # credential it has issued reads as coming from an unlisted issuer.
+            from ..services import trust_list
+
+            await trust_list.ensure_own_anchor(session, settings)
+            await session.commit()
+
             typer.echo(f"Trust anchor bootstrapped: {trust_did}")
             typer.echo(f"  Key ID: {kp.kid}")
+            typer.echo("  Listed in the dataspace trust list (DSSC-TRF-05)")
 
     _run(_bootstrap())
 

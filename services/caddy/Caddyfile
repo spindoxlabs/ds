@@ -182,6 +182,17 @@ http://trust-anchor.dataspaces.localhost {
 		reverse_proxy 172.17.0.1:30005
 	}
 
+	# The dataspace's list of accredited entities (`P-12a`, `DSSC-TRF-05`).
+	#
+	# Public and on the anchor's own host, for the same reason `/status/*` is: a
+	# counterparty decides whether to accept a credential **before** it has any
+	# relationship with this dataspace, and a federation partner reads this
+	# before anything else. Reachable only on :30005 it would be readable by
+	# nobody outside the cluster, which is the same as not publishing it.
+	handle /trust {
+		reverse_proxy 172.17.0.1:30005
+	}
+
 	respond 404
 }
 

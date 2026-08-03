@@ -19,6 +19,7 @@ from ...dependencies import (
 )
 from ...schemas.requests import (
     AcceptAgreementRequest,
+    AddTrustedIssuerRequest,
     CreateOrganizationApplicationRequest,
     IssueOrganizationCredentialRequest,
     PatchOwnerRequest,
@@ -33,6 +34,7 @@ from ...schemas.responses import (
     ParticipantResponse,
 )
 from ...services import org_onboarding as ops
+from ...services import trust_list
 from ...services.registry_notify import invalidate_participant_caches
 from ...services import provisioning
 from ...services.keycloak_admin import KeycloakAdminClient
@@ -545,3 +547,57 @@ async def generate_provisioning_bundle(
             "properties": provisioning.render_properties(bundle),
         }
     return bundle
+
+
+# ── Trust list (`DSSC-TRF-05`, `-17`) ─────────────────────────────
+
+
+@router.post("/trust/issuers", status_code=201)
+async def add_trusted_issuer(
+    data: AddTrustedIssuerRequest,
+    db: AsyncSession = Depends(get_db),
+    principal=Depends(require_org_promote),
+):
+    """Accredit an entity to attest, within a named scope.
+
+    Gated on `organizations.promote`, the same grant as admitting a participant:
+    saying "this dataspace stands behind that entity's attestations" is at least
+    as consequential as admitting a counterparty, and more so than editing an
+    application.
+    """
+    try:
+        entry = await trust_list.add_issuer(
+            db,
+            did=data.did,
+            name=data.name,
+            role=data.role,
+            scope_of_attestation=data.scope_of_attestation,
+            derives_authority_from=data.derives_authority_from,
+            added_by=getattr(principal, "subject", None),
+        )
+    except trust_list.TrustListError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    await db.commit()
+    return {"did": entry.did, "status": entry.status}
+
+
+@router.delete("/trust/issuers/{did:path}", status_code=200)
+async def revoke_trusted_issuer(
+    did: str,
+    reason: str = Query(..., min_length=3),
+    db: AsyncSession = Depends(get_db),
+    _principal=Depends(require_org_promote),
+):
+    """Withdraw accreditation. The entry **stays listed**, marked revoked.
+
+    `DSSC-TRF-05` requires revoked entries in the listing, and the reason is
+    required rather than optional: a verifier holding credentials from this
+    issuer needs to know whether what it already accepted is still good, and
+    "removed, no reason given" answers nothing.
+    """
+    try:
+        entry = await trust_list.revoke_issuer(db, did, reason=reason)
+    except trust_list.TrustListError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    await db.commit()
+    return {"did": entry.did, "status": entry.status, "reason": entry.revocation_reason}

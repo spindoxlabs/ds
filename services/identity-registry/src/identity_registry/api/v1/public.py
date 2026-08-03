@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...db.models import Did, StatusList
 from ...dependencies import get_db, get_settings_dep
+from ...services import trust_list
 from ...services.crypto import decrypt_private_jwk
 from ...services.did import build_did_document
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
@@ -22,6 +23,8 @@ from ...services.vc import sign_credential
 # would be a participant asserting its own credentials are unrevoked.
 did_router = APIRouter(tags=["public"])
 status_router = APIRouter(tags=["public"])
+#: The trust list. Anchor-only and public — see the route.
+trust_router = APIRouter(tags=["public"])
 
 
 async def _did_document(did: str, db: AsyncSession) -> dict:
@@ -162,4 +165,32 @@ async def get_status_list(
     return PlainTextResponse(
         content=signed["proof"]["jws"],
         media_type="application/vc+jwt",
+    )
+
+
+@trust_router.get("/trust")
+async def get_trust_list(
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """The dataspace's list of accredited entities (`DSSC-TRF-05`, `-07`, `-17`).
+
+    **Public and unauthenticated**, for the same reason the revocation list is
+    (`P-13`): a counterparty deciding whether to accept a credential must be able
+    to read it *before* it has any relationship with this dataspace. It is also
+    the first document another dataspace initiative reads about us — a federation
+    partner asks "whose attestations does this dataspace stand behind" before it
+    asks anything else.
+
+    It discloses nothing sensitive: every entry is a DID that already resolves
+    publicly, and the fact that this dataspace accredits its own trust anchor is
+    not a secret — it is the point.
+
+    **Revoked entries are included**, which the specification requires in as many
+    words. A list that forgets what it used to trust cannot answer whether a
+    credential already in circulation was legitimate when it was issued.
+    """
+    return JSONResponse(
+        content=trust_list.render(await trust_list.entries(db), settings),
+        media_type="application/json",
     )
