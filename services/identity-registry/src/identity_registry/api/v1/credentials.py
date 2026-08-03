@@ -27,13 +27,23 @@ from ...services.token import SiTokenInvalid, verify_presentation_authorization
 
 log = logging.getLogger(__name__)
 
+# Two routers under one prefix, split by **role** (`DID-04`), not by path shape.
+#
+# `/credentials/check` reads this registry's *issuance records* — it answers "did
+# we issue X a valid credential of type Y", which only the issuer can answer, so
+# it stays with the trust anchor. `/credentials/{did}/presentations/query` is the
+# DCP Credential Service: it answers for a DID this instance **holds the key
+# for**, which after `DID-06` is the participant.
+#
+# `check_router` is included first, and must stay first: the presentation route's
+# `{did:path}` matches anything. Different methods today, so nothing collides —
+# but a path catch-all preceding its siblings is how `POST /catalog/search` came
+# to 404 as a missing dataset.
+check_router = APIRouter(prefix="/credentials", tags=["credentials"])
 router = APIRouter(prefix="/credentials", tags=["credentials"])
 
 
-# Declared before the `{did:path}` route below, which matches anything. Different
-# methods today, so nothing collides — but a path catch-all that precedes its
-# siblings is how `POST /catalog/search` came to 404 as a missing dataset.
-@router.get("/check", response_model=CredentialCheckResponse)
+@check_router.get("/check", response_model=CredentialCheckResponse)
 async def check_credential(
     subject_did: str = Query(...),
     type: str = Query(..., description="Credential type, e.g. OrganizationCredential"),

@@ -17,6 +17,24 @@ not a bug in one feature — it is a participant who cannot be revoked.
 | Rules | [Rulebook · Participation and trust](../../docs/rulebook/participation.md) |
 | Code as committed | [docs/services/identity-registry.md](../../docs/services/identity-registry.md) |
 
+## Two roles — classify a new route before you write it
+
+`IDENTITY_REGISTRY_ROLE=trust-anchor|participant`. Same image; the role decides which routers
+are mounted. `src/identity_registry/roles.py` is the source of truth and explains the design.
+
+**A new route must be classified in `roles.py`, in the same change.** Both halves —
+`ROUTERS` (which router, which roles) and `PATH_ROLES` (which path, which roles) — and the
+service **refuses to start** if they disagree or if a mounted path is unclassified. That is
+deliberate: it is the one check that fails because of something a change did not do.
+
+Ask one question: *is this registry data or holder data?* Registry data (who is in the
+dataspace, what was issued, what was agreed) is the anchor's. Holder data (a DID document, an
+STS token, a presentation) belongs to whoever holds the key.
+
+Router order in `ROUTERS` is mount order and is load-bearing twice: `credentials.check` before
+`credentials.presentations` (`/check` versus `{did:path}`), and `dids` last of all — its
+`/{did_path}/did.json` matches everything.
+
 ## API tiers — pick the right one for a new route
 
 | Tier | Auth | Examples |

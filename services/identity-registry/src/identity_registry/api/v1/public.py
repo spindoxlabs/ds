@@ -14,7 +14,14 @@ from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import build_status_list_credential, encode_bitstring
 from ...services.vc import sign_credential
 
-router = APIRouter(tags=["public"])
+# Two routers, because the two things this file serves belong to different
+# roles once the registry is split (`DID-04`). **DID resolution is the holder's**
+# — a document is served by whichever instance holds that DID's key, which is
+# the corrected reading of rulebook `P-6`. **The StatusList is the issuer's**:
+# one list, published by the trust anchor, and a participant serving its own
+# would be a participant asserting its own credentials are unrevoked.
+did_router = APIRouter(tags=["public"])
+status_router = APIRouter(tags=["public"])
 
 
 async def _did_document(did: str, db: AsyncSession) -> dict:
@@ -33,7 +40,7 @@ async def _did_document(did: str, db: AsyncSession) -> dict:
     )
 
 
-@router.get("/dids/{did:path}/did.json")
+@did_router.get("/dids/{did:path}/did.json")
 async def resolve_did(did: str, db: AsyncSession = Depends(get_db)):
     return JSONResponse(
         content=await _did_document(did, db),
@@ -41,7 +48,7 @@ async def resolve_did(did: str, db: AsyncSession = Depends(get_db)):
     )
 
 
-@router.get("/.well-known/did.json")
+@did_router.get("/.well-known/did.json")
 async def resolve_host_did(request: Request, db: AsyncSession = Depends(get_db)):
     """Serve the document for the DID this host *is* — the did:web mapping itself.
 
@@ -66,7 +73,7 @@ async def resolve_host_did(request: Request, db: AsyncSession = Depends(get_db))
     )
 
 
-@router.get("/{did_path:path}/did.json")
+@did_router.get("/{did_path:path}/did.json")
 async def resolve_path_did(
     did_path: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
@@ -91,7 +98,7 @@ async def resolve_path_did(
     )
 
 
-@router.get("/status/{list_id}")
+@status_router.get("/status/{list_id}")
 async def get_status_list(
     list_id: str,
     request: Request,

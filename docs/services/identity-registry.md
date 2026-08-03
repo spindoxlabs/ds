@@ -10,8 +10,34 @@ owners and memberships that the connectors read, runs the organisation onboardin
 end to end, and acts as the DCP **Secure Token Service** and **Credential Service** for every
 participant whose key it holds.
 
-One instance per dataspace, not one per participant. It is the authority; a participant that
-disagrees with it is wrong.
+## Two roles, one image
+
+`IDENTITY_REGISTRY_ROLE` decides which half of the service an instance is.
+
+| Role | Is | Serves |
+|---|---|---|
+| `trust-anchor` (default) | the governance authority's instance — **one per dataspace** | issuance, the participant/owner/membership registries, agreements, organisation onboarding, the StatusList, `GET /credentials/check`, and DID documents for its own DIDs |
+| `participant` | **one organisation's own instance**, in its own infrastructure | only the holder surface: `/dids`, `/sts`, `/credentials/{did}/presentations/query` and `/users/resolve`, each answering **only for what this instance holds** |
+
+The anchor is the authority on *who is in the dataspace*; a participant that disagrees with it
+about that is wrong. It is not the authority on *who a participant is* — that is the
+participant's own key, held by its own instance.
+
+A `participant` mounts no registry, issuance or onboarding route at all, and this is checked
+at startup rather than asserted in documentation: `src/identity_registry/roles.py` classifies
+every path twice — once by which router mounts it, once by an independent path table — and the
+service refuses to start if the two disagree. Adding a route without classifying it is a
+startup failure, which is the point.
+
+An unrecognised role is a refusal, never a fallback to `trust-anchor`. Each `participant`
+instance needs its own database and its own `IDENTITY_REGISTRY_ENCRYPTION_KEY`; sharing either
+puts every key back in one place and makes the split cosmetic.
+
+!!! note "The anchor is still a superset today"
+    Until the deployment split lands, one `trust-anchor` instance is also the STS and
+    Credential Service for every participant, so it mounts the holder routes too. What
+    narrows it is not routing but **custody** — once each participant holds its own key, the
+    anchor can answer for nothing but itself.
 
 ## Role in the blueprint
 
@@ -153,7 +179,8 @@ prefixed form does not work.
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `IDENTITY_REGISTRY_DATABASE_URL` | Postgres on `172.17.0.1:35432/identity_registry` | **secret** |
+| `IDENTITY_REGISTRY_ROLE` | `trust-anchor` | `trust-anchor` or `participant` — which routes this instance mounts. An unknown value refuses startup |
+| `IDENTITY_REGISTRY_DATABASE_URL` | Postgres on `172.17.0.1:35432/identity_registry` | **secret** — one per instance, never shared between roles |
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-change-in-production` | **secret** — encrypts every DID private key at rest, and derives subject ids. Losing it makes stored keys unrecoverable |
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN` | `trust-anchor.dataspaces.localhost` | the trust anchor's DID domain and status-list host |
 | `IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL` | *(derived from the domain)* | externally reachable URL written into provisioning bundles. The doubled prefix is correct — the field is `identity_registry_public_url` |

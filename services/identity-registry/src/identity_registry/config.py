@@ -120,6 +120,21 @@ class Settings(BaseSettings):
         description="Domain for the trust-anchor DID",
     )
 
+    # Which half of this service this instance is. See `roles.py`.
+    #
+    # Defaults to `trust-anchor` so a single-instance deployment — which is every
+    # deployment today — keeps serving exactly what it served before. A
+    # `participant` instance mounts only the holder surface: its own DID
+    # documents, its own STS, its own credential service.
+    role: str = Field(
+        default="trust-anchor",
+        description=(
+            "trust-anchor | participant. A participant instance serves only the "
+            "DIDs it holds keys for and mounts no registry, issuance or "
+            "onboarding route."
+        ),
+    )
+
     # ── Provisioning bundle ──────────────────────────────────────────────────
     #
     # A third party configures its own deployment from these, so they must be

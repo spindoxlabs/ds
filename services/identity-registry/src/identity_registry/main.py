@@ -7,19 +7,9 @@ from ds_auth.production import ProductionGuard
 from ds_obs import configure_logging
 from fastapi import FastAPI
 
-from .api.v1.admin import router as admin_router
-from .api.v1.agreements import router as agreements_router
-from .api.v1.credentials import router as credentials_router
-from .api.v1.memberships import router as memberships_router
-from .api.v1.onboarding import admin_router as onboarding_admin_router
-from .api.v1.onboarding import public_router as onboarding_public_router
-from .api.v1.organizations import router as organizations_router
-from .api.v1.owners import router as owners_router
-from .api.v1.public import router as public_router
-from .api.v1.sts import router as sts_router
-from .api.v1.users import router as users_router
 from .config import get_settings
 from .db.engine import verify_schema
+from .roles import RoleConfigurationError, audit, normalize_role, specs_for_role
 
 log = logging.getLogger(__name__)
 
@@ -145,6 +135,11 @@ def create_app() -> FastAPI:
     # and only failures were visible.
     configure_logging("ds-identity-registry")
 
+    # Before the app exists: an unknown role is a refusal, not a fallback to
+    # trust-anchor. Silently promoting a typo'd `participant` to the issuing role
+    # is precisely the failure this split exists to make impossible.
+    role = normalize_role(settings.role)
+
     app = FastAPI(
         title="ds-identity-registry",
         description="DID lifecycle, VC issuance, participant registry, StatusList2021",
@@ -164,22 +159,36 @@ def create_app() -> FastAPI:
 
     @app.get("/health")
     async def health():
-        return {"status": "ok", "version": "0.1.0"}
+        return {"status": "ok", "role": role, "version": "0.1.0"}
 
-    app.include_router(public_router)
-    app.include_router(sts_router)
-    app.include_router(credentials_router)
-    app.include_router(admin_router)
-    app.include_router(memberships_router)
-    app.include_router(organizations_router)
-    app.include_router(agreements_router)
-    app.include_router(owners_router)
-    app.include_router(users_router)
-    app.include_router(onboarding_admin_router)
-    # Applicant-facing intake: no scope guard by design — an organisation
-    # applying to join has no identity yet. The invite code in the body is the
-    # gate. See api/v1/onboarding.py.
-    app.include_router(onboarding_public_router)
+    # Mount by role, then check the result against an independent classification
+    # of every path. `roles.py` explains why both halves exist; the short version
+    # is that this is the one kind of check that fails because of something a
+    # change *did not* do — mounting a router nobody classified, or classifying a
+    # path nobody mounted.
+    #
+    # Applicant-facing intake (`/onboarding/applications`) carries no scope guard
+    # by design — an organisation applying to join has no identity yet, and the
+    # invite code in the body is the gate. It is anchor-only, which is now
+    # enforced rather than implied. See api/v1/onboarding.py.
+    mounted: list[str] = ["/health"]
+    for spec in specs_for_role(role):
+        app.include_router(spec.router)
+        mounted.extend(spec.paths())
+
+    problems = audit(role, mounted)
+    if problems:
+        raise RoleConfigurationError(
+            f"identity-registry role {role!r} is misconfigured:\n  - "
+            + "\n  - ".join(problems)
+        )
+
+    log.info(
+        "identity-registry starting as %r — %d routers, %d paths",
+        role,
+        len(specs_for_role(role)),
+        len(set(mounted)),
+    )
 
     return app
 
