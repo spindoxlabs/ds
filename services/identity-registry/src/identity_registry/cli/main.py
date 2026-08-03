@@ -85,55 +85,26 @@ def bootstrap(
     async def _bootstrap():
         settings = get_settings()
         factory = await _ensure_db()
-        trust_did = did or f"did:web:{settings.trust_anchor_domain}"
 
-        from sqlalchemy import select
+        from ..services import anchor_bootstrap, trust_list
 
         async with factory() as session:
-            result = await session.execute(
-                select(Did).where(Did.did == trust_did)
+            # The key, the published document and the trust-list entry in one
+            # transaction: an anchor with a key and no accreditation publishes a
+            # list saying it accredits nobody, and every credential it goes on to
+            # issue reads as coming from an unlisted issuer.
+            identity = await anchor_bootstrap.ensure_identity(
+                session, settings, did=did
             )
-            if result.scalar_one_or_none():
-                # Idempotent, and it still ensures the trust-list entry: a
-                # registry bootstrapped before the list existed has a key and no
-                # accreditation, which is the state that publishes an empty list.
-                from ..services import trust_list
-
-                await trust_list.ensure_own_anchor(session, settings)
-                await session.commit()
-                typer.echo(f"Trust anchor already exists: {trust_did}")
-                return
-
-            kp = generate_key_pair(trust_did)
-            key = Key(
-                owner_did=trust_did,
-                kid=kp.kid,
-                private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
-                public_jwk=kp.public_jwk,
-            )
-            session.add(key)
-            await session.flush()
-
-            did_record = Did(
-                did=trust_did,
-                did_type="participant",
-                display_name="Trust Anchor",
-                key_id=key.id,
-            )
-            session.add(did_record)
-            await session.commit()
-
-            # A dataspace whose trust list does not contain its own anchor
-            # publishes a document saying it accredits nobody, and every
-            # credential it has issued reads as coming from an unlisted issuer.
-            from ..services import trust_list
-
             await trust_list.ensure_own_anchor(session, settings)
             await session.commit()
 
-            typer.echo(f"Trust anchor bootstrapped: {trust_did}")
-            typer.echo(f"  Key ID: {kp.kid}")
-            typer.echo("  Listed in the dataspace trust list (DSSC-TRF-05)")
+        verb = "bootstrapped" if identity.created else "already exists —"
+        typer.echo(f"Trust anchor {verb} {identity.did}")
+        typer.echo(f"  Key ID: {identity.kid}")
+        for entry in identity.service_endpoints:
+            typer.echo(f"  {entry['type']}: {entry['serviceEndpoint']}")
+        typer.echo("  Listed in the dataspace trust list (DSSC-TRF-05)")
 
     _run(_bootstrap())
 

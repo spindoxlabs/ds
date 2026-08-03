@@ -95,8 +95,9 @@ keypair, proves control of it at enrolment (`P-20`), the anchor records the publ
 and every instance audits its own custody at startup (`P-7`).
 
 Satisfies `DSSC-IAM-06`, `-07`, `-29` and `DSSC-TRF-41`. See
-[Scope and deviations](scope-and-deviations.md) §3.1 for what remains — issuance *message
-shapes* (§3.1.1) and the custody of natural persons' credentials (§3.1.2), not participants'.
+[Scope and deviations](scope-and-deviations.md) §3.1 for what remains — the custody of natural
+persons' credentials (§3.1.2), not participants'. Issuance message shapes (§3.1.1) are closed:
+they are checked against DCP's own JSON schemas.
 
 What a deployment must still accept: each instance's encryption key is a single point of
 unrecoverable loss **for that instance**. The blast radius is one participant, not the dataspace.
@@ -111,6 +112,7 @@ unrecoverable loss **for that instance**. The blast radius is one participant, n
 | P-14 | Trust services validate attestations submitted by participants against the criteria (`DSSC-TRF-38`) | **Enforced** for DCP presentation queries; **not enforced** as a rulebook-conformity check — see the gap below |
 | P-15 | Every instance's encryption key must be backed up outside the cluster; losing one makes that instance's DID keys unrecoverable | **Declared** — the blast radius is now one participant, not the whole dataspace |
 | P-20 | A participant's identity is **proved, never issued**: the organisation generates its own keypair, publishes its own DID document, and presents a self-issued token signed by that key to enrol (`DSSC-IAM-13`, proof of control). The anchor mints no participant key and no STS secret | **Enforced** — `POST /issuer/credentials`, DCP's Credential Request API. The operator's chain ends at an enrolment code; `ir-cli participant add` is a refusal |
+| P-22 | **Where to enrol is discoverable from the anchor's DID alone**: its DID document publishes an `IssuerService` entry, and that URL is routed and serves issuer metadata | **Enforced** — the entry is written by `ir-cli bootstrap` and the e2e `dcp-trust` flow *follows* it rather than reading it. It was published pointing at a URL neither the dev proxy nor the production Ingress routed: a document advertising an endpoint that 404s is the failure that looks most like success |
 | P-21 | A credential is issued only to a DID whose control has been proved, and is **delivered to the holder's own credential store** — the issuer keeps the issuance record, the holder keeps what it can present | **Enforced** — DCP Storage API, `POST /credentials/{did}/credentials`, authenticated by the issuer's own self-issued token and refused from any issuer this participant does not trust |
 
 ## 5. Compliance verification — the open gap

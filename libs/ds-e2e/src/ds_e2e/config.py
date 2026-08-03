@@ -90,6 +90,13 @@ class E2ESettings(BaseSettings):
         "did:web:consumer.dataspaces.localhost",
         validation_alias="CONNECTOR_CONSUMER_PARTICIPANT_DID",
     )
+    # The issuer every participant enrols with. Named as a DID rather than a URL
+    # because that is the only thing a joining organisation is given: it resolves
+    # the document and reads the `IssuerService` entry out of it (`DID-14`).
+    trust_anchor_did: str = Field(
+        "did:web:trust-anchor.dataspaces.localhost",
+        validation_alias="CONNECTOR_TRUST_ANCHOR_DID",
+    )
     # The provider's STS client secret. **Its own** — the trust anchor mints no
     # STS secret for a participant (`D-51`), so this is a value the provider's
     # deployment chose and matches `IR_PROVIDER_STS_SECRET`.

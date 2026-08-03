@@ -182,6 +182,24 @@ http://trust-anchor.dataspaces.localhost {
 		reverse_proxy 172.17.0.1:30005
 	}
 
+	# **The Issuer Service** — CIP's Credential Request API and the metadata that
+	# describes it. The anchor's DID document publishes this URL as an
+	# `IssuerService` service entry, which is how an organisation finds where to
+	# enrol from the anchor's identifier alone (`DID-14`).
+	#
+	# It has to be routed *here*, on the host the DID names. Reachable only on
+	# :30005, the published entry points at something nothing outside the cluster
+	# can fetch — a discovery mechanism that resolves to a 404 is worse than none,
+	# because it looks like it works.
+	#
+	# `/issuer/metadata` is public by design (it is what a stranger reads first);
+	# `/issuer/credentials` authenticates the caller by a Self-Issued ID token it
+	# verifies against the caller's own DID document, so there is nothing here for
+	# Caddy to guard.
+	handle /issuer/* {
+		reverse_proxy 172.17.0.1:30005
+	}
+
 	# The dataspace's list of accredited entities (`P-12a`, `DSSC-TRF-05`).
 	#
 	# Public and on the anchor's own host, for the same reason `/status/*` is: a

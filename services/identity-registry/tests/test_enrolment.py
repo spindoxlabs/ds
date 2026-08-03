@@ -11,20 +11,17 @@ API, and `base.protocol.md` §Validating Self-Issued ID Tokens for the check. Th
 """
 from __future__ import annotations
 
-import json
 import time
 from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
 import pytest_asyncio
-from conftest import make_admin_headers
+from conftest import ANCHOR_DID, REAL_ASYNC_CLIENT, make_admin_headers
 from sqlalchemy import select
 
-from identity_registry.config import get_settings
 from identity_registry.db.models import (
     CredentialRequest,
-    Did,
     EnrolmentToken,
     Key,
     Owner,
@@ -33,7 +30,6 @@ from identity_registry.db.models import (
 from identity_registry.services import issuance
 from identity_registry.services.crypto import (
     create_jws,
-    encrypt_private_jwk,
     generate_key_pair,
     load_private_key,
 )
@@ -41,12 +37,7 @@ from identity_registry.services.did import build_did_document
 
 HEADERS = make_admin_headers()
 
-#: Captured at import, before any fixture patches it. A test that patches
-#: `httpx.AsyncClient` while the autouse recorder already has would otherwise
-#: capture *the recorder* as its "real" client and silently keep recording.
-REAL_ASYNC_CLIENT = httpx.AsyncClient
-
-ANCHOR = "did:web:trust-anchor.dataspaces.localhost"
+ANCHOR = ANCHOR_DID
 REC_DID = "did:web:rec.dataspaces.localhost"
 DSP = "http://172.17.0.1:19194/protocol/2025-1"
 CS = f"http://rec.dataspaces.localhost/credentials/{REC_DID}"
@@ -104,57 +95,15 @@ def request_body(*, credentials=("MembershipCredential",), holder_pid="req-1") -
 
 
 @pytest_asyncio.fixture(autouse=True)
-async def anchor_identity(db_session):
-    """A bootstrapped trust anchor. Issuance is not possible without one.
+async def _issuance_environment(anchor_identity, credential_store):
+    """Both `conftest` fixtures, on for every test in this module.
 
-    Autouse because every enrolment now issues: the anchor signs a
-    MembershipCredential and delivers it, so a registry with no issuing key is a
-    registry that cannot complete the exchange — which `issue_for_participant`
-    says in as many words rather than leaking an `OrgOnboardingError`.
+    Every enrolment here issues and delivers, so a signing anchor and a
+    reachable holder store are the baseline rather than something each test
+    opts into. Tests that need to *break* one of them override it locally —
+    `test_a_delivery_failure_is_reported` does exactly that.
     """
-    kp = generate_key_pair(ANCHOR)
-    key = Key(
-        owner_did=ANCHOR,
-        kid=kp.kid,
-        private_jwk=encrypt_private_jwk(kp.private_jwk, get_settings().encryption_key),
-        public_jwk=kp.public_jwk,
-    )
-    db_session.add(key)
-    await db_session.flush()
-    db_session.add(
-        Did(did=ANCHOR, did_type="participant", display_name="Trust Anchor",
-            key_id=key.id)
-    )
-    await db_session.commit()
-    return key
-
-
-@pytest.fixture(autouse=True)
-def credential_store(monkeypatch):
-    """A reachable holder credential store, recording what is delivered to it.
-
-    Delivery is a real outbound `POST` to the endpoint the holder's DID document
-    publishes. In a unit test nothing is listening there, so without this every
-    enrolment would end `REJECTED` on a connection error — true, but it would
-    make the delivery leg untestable and the enrolment leg unassertable.
-    `test_a_delivery_failure_is_reported` removes it deliberately.
-    """
-    delivered: list[dict] = []
-
-    def _handler(request: httpx.Request) -> httpx.Response:
-        delivered.append(
-            {"url": str(request.url), "body": json.loads(request.content or b"{}")}
-        )
-        return httpx.Response(201, json={"stored": []})
-
-    transport = httpx.MockTransport(_handler)
-
-    def _client(**kwargs):
-        kwargs.pop("transport", None)
-        return REAL_ASYNC_CLIENT(transport=transport, **kwargs)
-
-    monkeypatch.setattr(issuance.httpx, "AsyncClient", _client)
-    return delivered
+    return anchor_identity
 
 
 async def make_owner(db_session, alias="rec", *, status="verified") -> Owner:
@@ -663,10 +612,14 @@ async def test_credentials_supported_carries_every_optional_property(client):
     """CIP: *"Every CredentialObject in credentialsSupported MUST contain all
     OPTIONAL properties defined in CredentialObject"*."""
     body = (await client.get("/issuer/metadata")).json()
+    # **Every** optional property, which is what the spec requires of entries in
+    # `credentialsSupported` — `credentialSchema` was the one missing, and a set
+    # that omitted it asserted conformance without checking it.
     required = {
         "id",
         "type",
         "credentialType",
+        "credentialSchema",
         "bindingMethods",
         "profile",
         "issuancePolicy",
@@ -829,7 +782,7 @@ async def test_the_anchor_keeps_its_own_issuance_record(
 
 
 @pytest.mark.asyncio
-async def test_delivery_authenticates_as_the_issuer(
+async def test_delivery_correlates_with_the_request(
     client, db_session, resolver, credential_store
 ):
     """The same proof-of-control mechanism, running the other way.
@@ -847,8 +800,15 @@ async def test_delivery_authenticates_as_the_issuer(
         headers={"Authorization": f"Bearer {org.si_token(code=code)}"},
     )
 
-    # The recorded request carried an Authorization header signed by the anchor.
-    assert credential_store[0]["body"]["issuerPid"] == ANCHOR
+    # The delivery correlates with the request that asked for it: `issuerPid`
+    # and `holderPid` are **request ids**, not DIDs. `holderPid` is echoed from
+    # the client's own request, which is how a holder with two requests in
+    # flight tells which one was just answered.
+    body = credential_store[0]["body"]
+    request = (await db_session.execute(select(CredentialRequest))).scalar_one()
+    assert body["issuerPid"] == request.issuer_pid
+    assert body["holderPid"] == request.holder_pid == "req-1"
+    assert body["issuerPid"] != ANCHOR, "a DID here would make correlation impossible"
 
 
 @pytest.mark.asyncio

@@ -88,23 +88,34 @@ and serves zero presentations and zero STS tokens.
 **What a deployment must still accept:** each instance's encryption key is a single point of
 unrecoverable loss **for that instance**. The blast radius is one participant, not the dataspace.
 
-### 3.1.1 Credential issuance uses DCP's flow with non-standard message shapes
+### 3.1.1 Credential issuance — **closed**
 
 **Blueprint:** `DSSC-IAM-25`, `-30`, `-33` — a common credential-exchange protocol.
 
-**This platform:** enrolment and delivery follow the Credential Issuance Protocol's own two legs
-— a holder-initiated request authenticated by a self-issued token and validated by resolving the
-requester's DID, then an asynchronous issuer push to the holder's Credential Service — but the
-message bodies are not yet CIP's `CredentialRequestMessage` / `CredentialMessage` /
-`CredentialObject` verbatim in every field.
+**This platform:** enrolment and delivery are the Credential Issuance Protocol's own two legs —
+a holder-initiated `CredentialRequestMessage` authenticated by a self-issued token and validated
+by resolving the requester's DID, then an asynchronous `CredentialMessage` pushed to the holder's
+Credential Service — and the message bodies are now checked against **the DCP repository's own
+JSON schemas** rather than against a reading of its prose (`tests/test_cip_conformance.py`). The
+anchor's DID document publishes its Issuer Service, so an organisation holding nothing but the
+anchor's DID can find where to enrol.
 
-**Why:** the flow was built in CIP's shape deliberately, so the remaining work is conformance on
-names rather than a second implementation. Credentials themselves are W3C VC and interoperate
-regardless (`DSSC-IAM-33`).
+This deviation is kept rather than deleted because what closing it turned up is worth stating.
+Three things were wrong, and **each of them read correctly**:
 
-**What a deployment must accept:** a counterparty implementing CIP strictly may need adjustment
-at the issuance step. Presentation and verification — the parts a counterparty exercises during
-a data transaction — are conformant.
+- `issuerPid` and `holderPid` carried **DIDs**. The schema defines them as the *request ids* on
+  each side. Nothing failed — the fields were strings, the messages validated, and correlation
+  simply never worked: a holder with two requests in flight could not tell which one a delivery
+  answered.
+- `credentialsSupported` omitted `credentialSchema`, which every `CredentialObject` in that array
+  must carry.
+- The `IssuerService` entry pointed at a URL that **neither the dev proxy nor the production
+  Ingress routed**. The document advertised the right thing and the endpoint behind it answered
+  404, in both environments — the shape of failure that looks most like success.
+
+**What a deployment must accept:** nothing at the issuance step. Where the schemas leave a
+property optional this platform sends it (the `credentialsSupported` rule above), which is
+additive for a strict counterparty.
 
 ### 3.1.2 A natural person's credentials are held by the organisation that onboarded them
 

@@ -141,7 +141,16 @@ This is DCP's [Credential Issuance Protocol](https://eclipse-dataspace-dcp.githu
 not a local invention: `POST /issuer/credentials` is its Credential Request API,
 `GET /issuer/metadata` its Issuer Metadata API, `GET /issuer/requests/{id}` its Credential
 Request Status API, and `pre-authorized_code` is the claim the specification names for exactly
-this purpose.
+this purpose. The message bodies are checked against the protocol's own JSON schemas
+(`tests/test_cip_conformance.py`), not against a reading of its prose.
+
+**How an organisation finds this endpoint.** It is given the anchor's DID and nothing else. The
+anchor's DID document publishes an `IssuerService` entry whose `serviceEndpoint` is the base
+above — written by `ir-cli bootstrap`, which refreshes what it publishes on every run and never
+rotates the key. That URL has to be *routed*: the anchor's Caddy site block in dev, the
+`-issuer` Ingress in the chart in production. A published endpoint nothing serves is a discovery
+mechanism that fails exactly like one that works, which is why the `dcp-trust` e2e flow follows
+the entry to its metadata rather than asserting the entry is present.
 
 **Identity mapping.** `GET /users/resolve` turns a Keycloak identity into a dataspace DID and
 its credentials; `POST /users/identities` turns DIDs back into the usernames the data plane

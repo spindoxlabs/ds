@@ -1,4 +1,5 @@
 
+import httpx
 import jwt as pyjwt
 import pytest
 import pytest_asyncio
@@ -200,3 +201,91 @@ async def register_enrolled(db, did: str, *, roles=None, scopes=None):
     )
     await db.commit()
     return key
+
+
+# ── Issuance: an anchor to sign with, a holder store to deliver to ─
+#
+# Both live here rather than in `test_enrolment.py` because two modules exercise
+# the issuance path and a fixture imported across test modules is a fixture
+# defined in the wrong place. Neither is `autouse` at this level: an anchor DID
+# row in *every* test would change what the registry-listing tests see, and
+# patching `httpx` globally would hide a real outbound call. The modules that
+# want them always-on declare a one-line autouse shim.
+
+#: Captured at import, before any fixture patches it. A test that patches
+#: `httpx.AsyncClient` while the recorder already has would otherwise capture
+#: *the recorder* as its "real" client and silently keep recording.
+REAL_ASYNC_CLIENT = httpx.AsyncClient
+
+ANCHOR_DID = "did:web:trust-anchor.dataspaces.localhost"
+
+
+@pytest_asyncio.fixture
+async def anchor_identity(db_session):
+    """A bootstrapped trust anchor. Issuance is not possible without one.
+
+    Every enrolment issues — the anchor signs a MembershipCredential and
+    delivers it — so a registry with no signing key cannot complete the
+    exchange, which `issue_for_participant` says in as many words rather than
+    leaking an `OrgOnboardingError`.
+
+    Deliberately *not* `anchor_bootstrap.ensure_identity`: this is the shape a
+    registry bootstrapped before the `IssuerService` entry existed has — a key
+    and a document publishing nothing — and `test_cip_conformance` asserts that
+    re-running bootstrap repairs it.
+    """
+    from identity_registry.config import get_settings
+    from identity_registry.db.models import Did, Key
+    from identity_registry.services.crypto import encrypt_private_jwk, generate_key_pair
+
+    kp = generate_key_pair(ANCHOR_DID)
+    key = Key(
+        owner_did=ANCHOR_DID,
+        kid=kp.kid,
+        private_jwk=encrypt_private_jwk(kp.private_jwk, get_settings().encryption_key),
+        public_jwk=kp.public_jwk,
+    )
+    db_session.add(key)
+    await db_session.flush()
+    db_session.add(
+        Did(
+            did=ANCHOR_DID,
+            did_type="participant",
+            display_name="Trust Anchor",
+            key_id=key.id,
+        )
+    )
+    await db_session.commit()
+    return key
+
+
+@pytest.fixture
+def credential_store(monkeypatch):
+    """A reachable holder credential store, recording what is delivered to it.
+
+    Delivery is a real outbound `POST` to the endpoint the holder's DID document
+    publishes. In a unit test nothing is listening there, so without this every
+    enrolment would end `REJECTED` on a connection error — true, but it would
+    make the delivery leg untestable and the enrolment leg unassertable.
+    `test_a_delivery_failure_is_reported` removes it deliberately.
+    """
+    import json as _json
+
+    from identity_registry.services import issuance
+
+    delivered: list[dict] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        delivered.append(
+            {"url": str(request.url), "body": _json.loads(request.content or b"{}")}
+        )
+        return httpx.Response(201, json={"stored": []})
+
+    transport = httpx.MockTransport(_handler)
+
+    def _client(**kwargs):
+        kwargs.pop("transport", None)
+        return REAL_ASYNC_CLIENT(transport=transport, **kwargs)
+
+    monkeypatch.setattr(issuance.httpx, "AsyncClient", _client)
+    return delivered

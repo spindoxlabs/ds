@@ -101,6 +101,42 @@ spec:
                 name: {{ $fullname }}
                 port:
                   number: {{ $port }}
+---
+# ── The Issuer Service ───────────────────────────────────────────────────────
+# CIP's Credential Request API, and the metadata describing it. The anchor's DID
+# document publishes this URL as an `IssuerService` service entry, which is how
+# an organisation finds where to enrol from the anchor's identifier alone.
+#
+# **Not optional and not gated by a flag.** Enrolment is how a participant joins,
+# and in production the participant is in somebody else's cluster: unexposed,
+# there is no path by which anyone can ever join, and the DID document would
+# advertise one that does not resolve.
+#
+# Public in the sense that it is reachable; `POST /issuer/credentials`
+# authenticates the caller by a Self-Issued ID token verified against the
+# caller's own DID document, so the Ingress has nothing to guard.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ $fullname }}-issuer
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $ta)) | nindent 2 }}
+  rules:
+    - host: {{ $ta | quote }}
+      http:
+        paths:
+          - path: /issuer
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $fullname }}
+                port:
+                  number: {{ $port }}
 {{- if .Values.exposeUserDids }}
 ---
 # ── User DID resolution ──────────────────────────────────────────────────────

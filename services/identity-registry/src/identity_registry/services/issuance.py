@@ -90,6 +90,8 @@ async def issue_for_participant(
     did: str,
     requested: list[str],
     document: dict,
+    issuer_pid: str,
+    holder_pid: str,
 ) -> IssuanceOutcome:
     """Sign what *did* asked for and can have, then deliver it to its store.
 
@@ -190,7 +192,15 @@ async def issue_for_participant(
         return outcome
 
     try:
-        await deliver(db, settings, did=did, endpoint=endpoint, credentials=signed)
+        await deliver(
+            db,
+            settings,
+            did=did,
+            endpoint=endpoint,
+            credentials=signed,
+            issuer_pid=issuer_pid,
+            holder_pid=holder_pid,
+        )
         outcome.delivered_to = endpoint
     except IssuanceError as exc:
         outcome.error = exc.message
@@ -256,6 +266,8 @@ async def deliver(
     did: str,
     endpoint: str,
     credentials: list[tuple[str, dict]],
+    issuer_pid: str,
+    holder_pid: str,
     timeout: float = 10.0,
 ) -> None:
     """Write issued credentials to the holder's Storage API.
@@ -277,8 +289,15 @@ async def deliver(
     message = {
         "@context": [DCP_CONTEXT],
         "type": "CredentialMessage",
-        "issuerPid": settings.trust_anchor_did,
-        "holderPid": did,
+        # **Request ids, not DIDs.** `credential-message-schema.json` and
+        # `CredentialStatus` both define these as *"a string corresponding to
+        # the issuance id"* on each side — they are what correlates this
+        # delivery with the request that asked for it, which is the whole point
+        # of an asynchronous protocol. Putting DIDs here read plausibly and
+        # made the correlation impossible: a holder with two requests in flight
+        # could not tell which one had just been answered.
+        "issuerPid": issuer_pid,
+        "holderPid": holder_pid,
         "status": "ISSUED",
         "credentials": [
             {"credentialType": name, "payload": payload, "format": "json-ld"}

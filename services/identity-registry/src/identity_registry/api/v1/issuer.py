@@ -48,6 +48,13 @@ router = APIRouter(prefix="/issuer", tags=["issuer"])
 
 DCP_CONTEXT = "https://w3id.org/dspace-dcp/v1.0/dcp.jsonld"
 
+#: Where a `CredentialObject`'s schema is published. CIP requires **every**
+#: optional property on entries in `credentialsSupported` — including
+#: `credentialSchema` — so omitting it is a conformance gap, not a stylistic
+#: one. It sits beside the credentials JSON-LD context this deployment already
+#: publishes.
+CREDENTIAL_SCHEMA_BASE = "https://w3id.org/dspace-dcp/v1.0/schemas"
+
 #: What this issuer issues, as CIP `CredentialObject`s. The `id` values are what
 #: a `CredentialRequestMessage` names, and the spec requires every optional
 #: property to be present on each entry in `credentialsSupported`.
@@ -60,6 +67,7 @@ CREDENTIALS_SUPPORTED: tuple[dict[str, Any], ...] = (
         "id": "MembershipCredential",
         "type": "CredentialObject",
         "credentialType": "MembershipCredential",
+        "credentialSchema": f"{CREDENTIAL_SCHEMA_BASE}/MembershipCredential.json",
         "offerReason": "enrolment",
         "bindingMethods": ["did:web"],
         "profile": "vc10-sl2021/jwt",
@@ -69,6 +77,7 @@ CREDENTIALS_SUPPORTED: tuple[dict[str, Any], ...] = (
         "id": "OrganizationCredential",
         "type": "CredentialObject",
         "credentialType": "OrganizationCredential",
+        "credentialSchema": f"{CREDENTIAL_SCHEMA_BASE}/OrganizationCredential.json",
         "offerReason": "enrolment",
         "bindingMethods": ["did:web"],
         "profile": "vc10-sl2021/jwt",
@@ -226,6 +235,8 @@ async def request_credentials(
             did=client.did,
             requested=requested,
             document=client.document,
+            issuer_pid=request.issuer_pid,
+            holder_pid=request.holder_pid,
         )
         request.status = issuance_outcome.status
         request.detail = issuance_outcome.detail

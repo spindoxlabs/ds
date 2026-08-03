@@ -90,6 +90,7 @@ class DcpTrustFlow(BaseFlow):
             return result
 
         self._name_the_topology(result)
+        self._check_issuer_discovery(result)
         self._check_did_resolution(result)
         token = self._check_sts_refusals(result)
         self._check_presentation_binding(result, token)
@@ -137,6 +138,76 @@ class DcpTrustFlow(BaseFlow):
                 else "NOT split — every role answered by the same instance"
             ),
             **{k.replace(" ", "_"): v for k, v in seen.items()},
+        )
+
+    # ── discovery ────────────────────────────────────────────────────────────
+
+    def _check_issuer_discovery(self, result: FlowResult) -> None:
+        """An organisation with only the anchor's DID must be able to find where
+        to enrol — CIP's Issuer Service discovery (`DID-14`).
+
+        **Followed, not merely read.** The anchor published an `IssuerService`
+        entry whose URL was routed by neither Caddy nor the production Ingress:
+        the document said the right thing and the endpoint behind it 404'd, in
+        both environments. A check that stopped at "the entry is present" would
+        have passed throughout. So this resolves the document the way a stranger
+        does, takes the URL out of it, and fetches the metadata that URL claims
+        to serve.
+        """
+        s = self.settings
+        status, doc = self.http.raw("GET", _did_web_url(s.trust_anchor_did))
+        if status != 200 or not isinstance(doc, dict):
+            result.fail_step(
+                "issuer discovery",
+                "the trust anchor's DID document did not resolve",
+                status_code=status,
+                did=s.trust_anchor_did,
+            )
+            return
+
+        services = [e for e in (doc.get("service") or []) if isinstance(e, dict)]
+        entry = next((e for e in services if e.get("type") == "IssuerService"), None)
+        if entry is None:
+            result.fail_step(
+                "issuer discovery",
+                "the anchor publishes no IssuerService entry — a joining "
+                "organisation has to be told where to enrol out of band",
+                service_types=[e.get("type") for e in services],
+            )
+            return
+
+        base = str(entry.get("serviceEndpoint") or "").rstrip("/")
+        meta_status, metadata = self.http.raw("GET", f"{base}/metadata")
+        if meta_status != 200 or not isinstance(metadata, dict):
+            result.fail_step(
+                "issuer discovery",
+                "the published IssuerService endpoint is not reachable — the "
+                "document advertises a URL nothing serves",
+                endpoint=base,
+                status_code=meta_status,
+            )
+            return
+        if metadata.get("issuer") != s.trust_anchor_did:
+            result.fail_step(
+                "issuer discovery",
+                "the endpoint answers for a different issuer than the document "
+                "that pointed at it",
+                expected=s.trust_anchor_did,
+                returned=metadata.get("issuer"),
+            )
+            return
+
+        offered = [
+            c.get("credentialType")
+            for c in (metadata.get("credentialsSupported") or [])
+            if isinstance(c, dict)
+        ]
+        result.pass_step(
+            "issuer discovery",
+            "the anchor's DID document names its Issuer Service, and that URL "
+            "serves conformant issuer metadata",
+            endpoint=base,
+            credentials_offered=offered,
         )
 
     # ── did:web ──────────────────────────────────────────────────────────────
