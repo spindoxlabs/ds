@@ -134,7 +134,10 @@ keycloak:
   # Optional realm/organization provisioning against an external Keycloak.
   sync:
     enabled: false
-    clientsConfigMap: ""
+    # No `clientsConfigMap`. It was read by no template — this chart never runs
+    # `celine-policies keycloak sync`, so there was nothing to mount the clients
+    # file into, and the key only implied a capability the chart does not have.
+    # `organizationsConfigMap` below is different: `deployment.yaml` mounts it.
     organizationsConfigMap: ""
   # Runtime writes into the realm (promotion creating a participant's connector
   # client). Empty → falls back to `sync.enabled`, i.e. guest by default. See the
@@ -143,6 +146,14 @@ keycloak:
 
 # The trust-anchor public JWK is served from the registry's own database; no
 # mount is required here. CONNECTOR_TRUST_ANCHOR_KEY_PATH is a connector concern.
+
+# This service's own Keycloak client — the `aud` it expects on inbound tokens,
+# and the identity it presents when telling connectors their participant cache
+# is stale. Named here for the same reason `ds-portal` and `ds-federated-catalog`
+# do: a deployment that renames the client changes one value instead of relying
+# on a default compiled into the service.
+auth:
+  serviceClientId: svc-ds-identity-registry
 
 # ── Secret material ───────────────────────────────────────────────────────────
 # Supplied by helmfile from secrets.sops.yaml. Deliberately empty here: the

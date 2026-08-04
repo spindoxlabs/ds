@@ -243,7 +243,9 @@ releases:
           did: {{ $p.did | default "" | quote }}
         replicaCount: {{ $p.connector.replicaCount | default 1 }}
         notify:
-          backends: {{ dig "connector" "notifyBackends" "null" $p | quote }}
+          # "" is none. The default here was the string "null", which
+          # `build_notifier` does not recognise — see the chart's values.yaml.
+          backends: {{ dig "connector" "notifyBackends" "" $p | quote }}
           webhookAllowedHosts: {{ dig "connector" "webhookAllowedHosts" list $p | toJson }}
         governance:
           overlayName: {{ dig "connector" "governanceOverlayName" "" $p | quote }}
@@ -254,11 +256,44 @@ releases:
           serviceClientSecret: {{ $root.Values.secrets.svcDsConnectorSecret | quote }}
 
 {{- if dig "federatedCatalog" "enabled" false $p }}
+  {{- /*
+      Which connector the crawl drives is NOT this participant's own.
+
+      Catalogue discovery is a consumer-side operation: the crawl calls
+      `POST /consumer/catalog`, and `services/connector/main.py` builds the
+      consumer EDC client and mounts that router only when
+      `CONNECTOR_ROLE=consumer`. The chart's `connectorServiceName` defaults to
+      empty, which its own `_env.tpl` resolves to `ds-connector-<this
+      participant>` — the PROVIDER-role one whenever a provider hosts the
+      catalogue, which is the shipped arrangement. The symptom is a crawl that
+      404s every cycle and a union catalogue that stays empty, with nothing in
+      the chart to say why.
+
+      Resolved from the roles already declared in values.yaml rather than left
+      to an operator to notice. Compose has had this right since `P1-3`
+      (`CATALOG_CONNECTOR_URL: http://172.17.0.1:31001`, the consumer stack);
+      Helm disagreed with it, and Helm was wrong.
+  */}}
+  {{- $consumerName := "" }}
+  {{- $consumerNs := "" }}
+  {{- range $root.Values.participants }}
+    {{- if and .enabled (eq (.role | default "") "consumer") (not $consumerName) }}
+      {{- $consumerName = printf "ds-connector-%s" .name }}
+      {{- $consumerNs = printf "%s%s" $root.Values.global.namespaces.participantPrefix .name }}
+    {{- end }}
+  {{- end }}
+  {{- if not $consumerName }}
+    {{- fail (printf "participant %q enables federatedCatalog, but no enabled participant declares `role: consumer`. The crawl calls POST /consumer/catalog, which only a consumer-role connector mounts — deploying this would produce a catalogue that is permanently empty. Give one participant `role: consumer`, or set participants[].federatedCatalog.connectorServiceName explicitly." $p.name) }}
+  {{- end }}
   - name: ds-federated-catalog-{{ $p.name }}
     namespace: {{ $ns }}
     chart: ./charts/ds-federated-catalog
     needs:
       - {{ $ns }}/ds-connector-{{ $p.name }}
+      # The connector it actually crawls through, which is normally another
+      # participant's. Named here so the catalogue is not started against a
+      # connector that does not exist yet.
+      - {{ $consumerNs }}/{{ $consumerName }}
     values:
       - global:
           {{- $global | toYaml | nindent 10 }}
@@ -267,6 +302,12 @@ releases:
           role: {{ $p.role | quote }}
         replicaCount: {{ dig "federatedCatalog" "replicaCount" 1 $p }}
         crawlInterval: {{ dig "federatedCatalog" "crawlInterval" 300 $p }}
+        # The four the chart exposes and the helmfile used to pass none of, so
+        # no deployment could override them at all.
+        startupDelay: {{ dig "federatedCatalog" "startupDelay" 10 $p }}
+        maxDatasetsPerProvider: {{ dig "federatedCatalog" "maxDatasetsPerProvider" 500 $p }}
+        connectorServiceName: {{ dig "federatedCatalog" "connectorServiceName" (printf "%s.%s.svc.cluster.local" $consumerName $consumerNs) $p | quote }}
+        connectorPort: {{ dig "federatedCatalog" "connectorPort" 30001 $p }}
         secrets:
           serviceClientSecret: {{ $root.Values.secrets.svcDsFederatedCatalogSecret | quote }}
 {{- end }}

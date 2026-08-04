@@ -71,6 +71,19 @@ own secret, in its own release's Secret.
 # just keeps its own TTL. Rendered by helmfile from the participant list.
 - name: IDENTITY_REGISTRY_CONNECTOR_URLS
   value: {{ .Values.connectorUrls | quote }}
+# The notification is an authenticated call, so the URL list alone does not make
+# it work. `registry_notify.py` returns early when `keycloak_token_url` is unset
+# — so the chart used to configure *where* to notify and leave the service
+# unable to mint the token to do it. The whole path was inert in-cluster, and
+# silently: a best-effort notifier that never fires looks exactly like one whose
+# every target was unreachable.
+- name: IDENTITY_REGISTRY_KEYCLOAK_TOKEN_URL
+  value: {{ ((.Values.global).keycloak).tokenUrl | quote }}
+# Also the `aud` this service expects on its own inbound tokens (`main.py:230`).
+# It defaults correctly in code; set explicitly so a deployment that renames the
+# client changes one value here rather than depending on a code default.
+- name: IDENTITY_REGISTRY_SERVICE_CLIENT_ID
+  value: {{ .Values.auth.serviceClientId | default "svc-ds-identity-registry" | quote }}
 {{- end }}
 - name: IDENTITY_REGISTRY_CREDENTIALS_CONTEXT_URL
   value: {{ .Values.credentialsContextUrl | default (printf "https://%s/ns/credentials/v1" (.Values.global).baseDomain) | quote }}

@@ -95,11 +95,13 @@ global:
       # Opt-in provisioning of service clients / organizations into the external
       # Keycloak. Off by default: KC is not ours to mutate.
       enabled: false
-      # The **effective** declaration — `task keycloak:merge` output, not the raw
-      # `clients.yaml`. The syncer takes one file and recomputes every client's
-      # grants from it, so handing it the core alone strips whatever a domain
-      # overlay granted, silently and with no flag involved.
-      clientsConfigMap: "" # ConfigMap holding clients.effective.yaml
+      # No `clientsConfigMap` here. It was read by no template: **no chart runs
+      # `celine-policies keycloak sync`**, so there was never anything to mount
+      # the clients file into. It read as a supported way to provision the realm
+      # from Helm, and there is none — the realm is provisioned out-of-band from
+      # `clients.effective.yaml` (`task keycloak:merge` output, never the raw
+      # `clients.yaml`: the syncer recomputes every client's grants from the one
+      # file it is handed, so the core alone strips whatever an overlay granted).
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
 
     # ── Layer B — the foreign realm's vocabulary, translated ──────────────────
@@ -209,7 +211,12 @@ participants:
     connector:
       replicaCount: 1
       # Webhook notifications are rejected unless the host is allowlisted.
-      notifyBackends: "null" # null | smtp | webhook (comma-separated)
+      # **"" is none.** This was the string "null", which the connector does
+      # not recognise: `build_notifier` splits on commas and matches each part
+      # against "smtp"/"webhook", so every deployment logged
+      # `Unknown notification backend 'null' — skipped` before falling through
+      # to the no-op notifier it wanted anyway.
+      notifyBackends: "" # "" | smtp | webhook (comma-separated)
       webhookAllowedHosts: [] # required if notifyBackends includes webhook
       governanceOverlayName: "" # merges governance.<name>.yaml
       governanceConfigMap: "" # empty → image's baked-in governance.yaml
@@ -242,7 +249,7 @@ participants:
     did: ""
     connector:
       replicaCount: 1
-      notifyBackends: "null"
+      notifyBackends: ""
       webhookAllowedHosts: []
       # Its own governance. The consent offers of the participant that *has*
       # members are not this one's to publish.
@@ -262,7 +269,7 @@ participants:
     did: ""
     connector:
       replicaCount: 1
-      notifyBackends: "null"
+      notifyBackends: ""
       webhookAllowedHosts: []
     provenance:
       replicaCount: 1

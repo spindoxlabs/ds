@@ -101,7 +101,12 @@ vocabularies:
 # ── Consent notifications ─────────────────────────────────────────────────────
 # Webhook URLs are rejected unless their host is allowlisted (SSRF guard).
 notify:
-  backends: "null" # null | smtp | webhook (comma-separated)
+  # Empty means none. **Not the string "null"** — that is what this was, and
+  # `build_notifier` splits this value on commas and matches each part against
+  # "smtp" and "webhook", so "null" fell to the unknown-backend branch and every
+  # deployment logged `Unknown notification backend 'null' — skipped` at startup
+  # before falling through to the NullNotifier it wanted anyway.
+  backends: "" # "" | smtp | webhook (comma-separated)
   webhookAllowedHosts: [] # required if backends includes webhook
   portalBaseUrl: "" # "" → https://<portal host>.<baseDomain>
 
