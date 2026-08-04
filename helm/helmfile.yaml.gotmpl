@@ -22,6 +22,32 @@ environments:
       - values.yaml
     secrets:
       - secrets.sops.yaml
+
+  # ── The environment that makes this file checkable ──────────────────────────
+  #
+  #   helmfile -e example template
+  #
+  # Identical to `production` except that the secrets come from the **committed
+  # example** as plain values instead of from a SOPS file nobody but the
+  # operator has. It deploys nothing — every value in it is `CHANGE_ME` — and
+  # exists so the release composition can be rendered by anyone, in CI, with no
+  # key.
+  #
+  # **This is not a convenience.** `production` reads `secrets.sops.yaml`, which
+  # is gitignored, so before this existed `helmfile template` could not run in a
+  # clean checkout at all — and the chart set went unrendered long enough to
+  # accumulate a page of defects that a single render names. The one that proves
+  # the point: `ds-provenance` `required`d a `trustAnchorPublicJwk` the helmfile
+  # passed only to `ds-connector`, so **every production deploy would have failed
+  # at that release**, and nothing said so until someone rendered it by hand.
+  #
+  # A `required` that is never exercised is not a guard, it is a comment. Keep
+  # this environment rendering.
+  example:
+    values:
+      - values.yaml
+      - secrets.example.yaml
+
   # staging:
   #   values: [values.yaml, environments/staging.yaml]
   #   secrets: [secrets.sops.yaml]

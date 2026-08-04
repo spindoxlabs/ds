@@ -133,12 +133,25 @@ A missing component is a decision. Adding one reopens it, it does not fill a gap
 ```bash
 helm dependency update ./charts/ds-identity-registry
 helm lint ./charts/ds-identity-registry --set secrets.dbPassword=z …
-helmfile -e production template          # needs SOPS_AGE_KEY_FILE
+helmfile -e example template             # the whole set, no key needed — run this
+helmfile -e production template          # the real thing; needs SOPS_AGE_KEY_FILE
 ```
 
 Secret templates use `required`, so a render that succeeds proves every mandatory secret is
-wired, and a render that fails names the missing key. **`helmfile template` does not currently
-succeed** — see `.agents/defect-per-service.md`.
+wired, and a render that fails names the missing key.
+
+**Render with `-e example` before committing.** `production` reads `secrets.sops.yaml`, which is
+gitignored — so in a clean checkout that command cannot run at all, and for a long time nothing
+rendered these charts. The `example` environment substitutes the committed
+`secrets.example.yaml` as plain values; it deploys nothing (every value is `CHANGE_ME`) and
+exists so the composition stays checkable. Its first run found two supply paths wired for one
+participant out of three.
+
+**A new participant-scoped value must be added to `secrets.example.yaml` in the same change.**
+The helmfile reads `$psec.<key>` for *every* participant, and per-participant `postgres` roles
+are keyed `<service>_<name>` with `-` replaced by `_`. `grid-operator` ships `enabled: false`,
+so a gap there renders nothing and stays invisible — flip it on and render if you touch that
+tier.
 
 ## Adding a service chart
 
