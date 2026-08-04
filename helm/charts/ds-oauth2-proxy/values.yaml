@@ -33,7 +33,10 @@ podAnnotations: {}
 nodeSelector: {}
 tolerations: []
 affinity: {}
-env: {}
+# No `env:` passthrough. It was `{}` and read by no template, so setting it
+# did nothing — and an inert extra-env knob on the one component that holds
+# the browser session is worse than none: it reads as a supported way to
+# configure the proxy.
 existingSecret: ""
 networkPolicy: {egress: []}
 

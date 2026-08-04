@@ -47,8 +47,12 @@ chart. EDC_*_PROTOCOL_URL was set here and read by nothing.
 - name: EDC_CONSUMER_MANAGEMENT_URL
   value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
 {{- end }}
-# The EDC API key doubles as the /internal X-Api-Key. Read from a mounted file
-# (the connector's preferred form) so it never appears in the process env.
+# EDC's Management API key, and **nothing else**. It no longer doubles as an
+# `/internal` credential: those routes take a Keycloak bearer carrying
+# `connector.internal` (`require_internal_scope`), and the `X-Api-Key` branch is
+# deleted. This value is what the connector *presents outbound* to the EDC.
+# Read from a mounted file (the connector's preferred form) so it never appears
+# in the process env.
 - name: EDC_API_KEY_FILE
   value: /run/secrets/edc/api-key
 - name: DB_USER

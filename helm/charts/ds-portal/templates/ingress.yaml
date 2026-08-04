@@ -26,6 +26,16 @@
 # whatever the client sent. A header the portal reads but that is not listed
 # here is passed through from the client verbatim — so this list must stay in
 # step with `bearerFrom`/`buildSession` in `hooks.server.ts`.
+#
+# **Do not prune this list to "the ones the portal reads today."** That is the
+# wrong direction and it has been proposed once: removing a name does not remove
+# a header, it removes the *overwrite*, so the header becomes client-forgeable.
+# The portal reads two of the six today (`Access-Token`, `Email`); the other four
+# cost nothing and mean that the day someone reads `X-Auth-Request-Groups`, it is
+# already authoritative rather than silently attacker-controlled. `Authorization`
+# is listed for the same reason and matters most.
+#
+# The list should GROW to cover every header the proxy can emit, never shrink.
 # =============================================================================
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -36,7 +46,7 @@ metadata:
   annotations:
     {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
     {{- if .Values.auth.proxy.enabled }}
-    nginx.ingress.kubernetes.io/auth-url: {{ .Values.auth.proxy.authUrl | default (printf "http://ds-oauth2-proxy-%s.%s.svc.cluster.local:4180/oauth2/auth" .Values.participant.name .Release.Namespace) | quote }}
+    nginx.ingress.kubernetes.io/auth-url: {{ .Values.auth.proxy.authUrl | default (printf "http://ds-oauth2-proxy-%s.%s.svc.cluster.local:%v/oauth2/auth" .Values.participant.name .Release.Namespace (.Values.auth.proxy.port | default 4180)) | quote }}
     nginx.ingress.kubernetes.io/auth-signin: {{ .Values.auth.proxy.signinUrl | default (printf "%s/oauth2/start?rd=$escaped_request_uri" (include "portal.origin" .)) | quote }}
     # Each name here becomes a proxy_set_header from the auth response, which
     # overwrites the client's. Omitting one does not drop it — it forwards it.

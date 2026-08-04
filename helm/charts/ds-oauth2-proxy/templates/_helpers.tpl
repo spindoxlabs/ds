@@ -8,13 +8,11 @@ sign-in round trip never leaves the origin the user is already on.
 {{- end -}}
 
 {{/*
-The in-cluster URL nginx calls as an auth subrequest, and the public URL it
-redirects an unauthenticated browser to.
-*/}}
-{{- define "oauth2proxy.authUrl" -}}
-{{- printf "http://%s.%s.svc.cluster.local:%v/oauth2/auth" (include "ds.fullname" .) .Release.Namespace .Values.service.port -}}
-{{- end -}}
+No `oauth2proxy.authUrl` / `oauth2proxy.signinUrl` helpers.
 
-{{- define "oauth2proxy.signinUrl" -}}
-{{- printf "https://%s/oauth2/start?rd=$escaped_request_uri" (include "oauth2proxy.host" .) -}}
-{{- end -}}
+They were defined here and called by nothing. The two annotations they look like
+they serve live on the **portal's** Ingress, in a different release — a helper in
+this chart is not in scope there, so `ds-portal` builds both URLs itself from
+`auth.proxy.authUrl` / `.signinUrl` (empty → derived). Two definitions of one URL,
+one of them unreachable, is how the two drift.
+*/}}

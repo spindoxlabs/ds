@@ -49,6 +49,14 @@ auth:
     # Derived from the release name and namespace when empty.
     authUrl: ""
     signinUrl: ""
+    # The port `ds-oauth2-proxy` listens on, used to build `authUrl` above.
+    #
+    # It is a **cross-chart constant**: the listener belongs to a different
+    # release, so this chart cannot read that chart's `service.port`, and the
+    # value was a bare `4180` inside a `printf`. Named here so the two are
+    # changed together — an `auth-url` whose backend does not resolve fails
+    # **closed**, and every request to the portal 500s.
+    port: 4180
 
 # The dataset-api is external in production (no chart ships it), so it cannot be
 # derived. Leave empty and the catalogue detail view, /my-data's "data held about

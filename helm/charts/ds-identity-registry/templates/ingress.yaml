@@ -5,8 +5,23 @@
 # =============================================================================
 # Public surface of the identity-registry — path-scoped, nothing else exposed.
 #
-# /admin/*, /sts/*, /memberships/*, /owners/* stay ClusterIP-only: they mutate
-# the trust anchor and read consent-relevant data.
+# Exposed here, and only here: /.well-known/did.json, /status/*, /trust,
+# /issuer — plus /credentials when `credentialService.expose` is on, which it is
+# not by default.
+#
+# Everything else the service mounts stays ClusterIP-only, because it either
+# mutates the trust anchor or reads consent-relevant data:
+#
+#   /admin/*             participants, owners, agreements, credentials, memberships
+#   /admin/onboarding/*  invites — a leaked invite is an unapproved organisation
+#   /onboarding/*        the applicant-facing funnel; the domain platform fronts it
+#   /sts/*               token minting for this instance's own DID
+#   /users/*             a person's DID and credential custody (`DID-11` step 2)
+#   /metrics             never exposed, on any chart
+#
+# Listing these by name rather than by exception: this comment used to name four
+# groups and the service mounts more than four, so "not in the list" could not be
+# read as "exposed on purpose".
 #
 # One Ingress object per rewrite behaviour, because nginx's rewrite-target is an
 # annotation on the object, not on the path.

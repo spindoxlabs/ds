@@ -37,8 +37,14 @@ migration:
 # The dataset API is participant-operated and NOT deployed by these charts. It
 # is deliberately absent from this chart's values: the connector never calls it.
 # The traffic goes the other way — the dataset API authenticates to
-# /internal/dataplane/authorize with the EDC API key — and the address a consumer
-# is handed comes from governance.yaml's data_address.base_url.
+# /internal/dataplane/authorize with a **Keycloak bearer** carrying
+# `connector.internal` (`svc-ds-dataset-api`), and the address a consumer is
+# handed comes from governance.yaml's data_address.base_url.
+#
+# It is no longer the EDC API key. That branch is deleted: `/internal/*` used to
+# also accept `X-Api-Key` equal to `EDC_API_KEY`, which meant one leaked value
+# yielded contract administration, the data-plane signing keys and the subject
+# pools at once, with every caller authenticating as the same anonymous bearer.
 
 # ── EDC wiring ────────────────────────────────────────────────────────────────
 # In-cluster address of this participant's ds-edc release.
@@ -67,7 +73,13 @@ trustAnchor:
 # ── Governance ────────────────────────────────────────────────────────────────
 governance:
   overlayName: "" # merges governance.<name>.yaml
-  configMap: "" # "" → the image's baked-in governance.yaml
+  # "" → **no governance is mounted at all**, and the catalogue is empty.
+  # There is no "image's baked-in governance.yaml": the Dockerfile copies
+  # `libs/governance/` (the Python package) and the service source, never a
+  # governance *file*. `GovernanceResolver` tolerates a missing path and
+  # returns nothing, so a provider deployed without this publishes no assets
+  # and nothing reports it. A provider-role participant needs this set.
+  configMap: ""
   mountPath: /governance
 
 # ── Semantic vocabularies (GET /ns/{slug}) ────────────────────────────────────

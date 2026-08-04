@@ -219,7 +219,9 @@ participants:
       notifyBackends: "" # "" | smtp | webhook (comma-separated)
       webhookAllowedHosts: [] # required if notifyBackends includes webhook
       governanceOverlayName: "" # merges governance.<name>.yaml
-      governanceConfigMap: "" # empty → image's baked-in governance.yaml
+      # "" mounts nothing and the catalogue stays empty — there is no
+      # baked-in governance.yaml in the image. A provider needs this set.
+      governanceConfigMap: ""
 
     provenance:
       replicaCount: 1
