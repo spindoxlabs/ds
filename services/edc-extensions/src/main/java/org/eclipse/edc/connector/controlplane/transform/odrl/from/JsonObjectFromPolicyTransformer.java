@@ -19,7 +19,10 @@
  * This is `JsonObjectFromPolicyTransformer` from EDC **v0.16.0**, verbatim except
  * for the `rightOperand` / `literalNode` helpers and the one call site that uses
  * them. It sits under the upstream package so it wins on the shadow JAR
- * classpath (see `duplicatesStrategy` in edc-extensions/build.gradle.kts).
+ * classpath — which is assembled in **edc-connector**, not here: see
+ * `duplicatesStrategy` and the `runtimeOnly(project(":edc-extensions"))`
+ * ordering in `services/edc-connector/build.gradle.kts`, plus the
+ * `verifyForkedTransformer` task beside them.
  *
  * WHY A FORK AND NOT AN EXTENSION POINT
  *   EDC registers its own transformer into the scoped DSP and management
@@ -41,7 +44,8 @@
  * DELETING THIS
  *   The same fix is on `fix/odrl-multivalued-right-operand-serialisation` in the
  *   EDC clone, for upstream. When it lands, delete this file, the
- *   `duplicatesStrategy` block and `JsonObjectFromPolicyTransformerForkTest`.
+ *   `duplicatesStrategy` block in `services/edc-connector/build.gradle.kts` and
+ *   `JsonObjectFromPolicyTransformerForkTest`.
  *   `JsonObjectFromPolicyTransformerForkTest` fails if the EDC version is bumped,
  *   so an upgrade cannot silently revert us to the broken class.
  * ─────────────────────────────────────────────────────────────────────────────

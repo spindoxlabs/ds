@@ -48,6 +48,13 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("jakarta.json:jakarta.json-api:2.1.3")
+    // The forked JsonObjectFromPolicyTransformer is the highest-risk file here —
+    // a silent revert republishes unreadable policies while everything looks
+    // healthy — so its test drives the class rather than reading its source.
+    // These are compileOnly for main (the EDC runtime provides them) and have to
+    // be on the test classpath explicitly.
+    testImplementation("org.eclipse.edc:json-ld-spi:$edcVersion")
+    testImplementation("org.eclipse.edc:transform-spi:$edcVersion")
     testRuntimeOnly("org.eclipse.parsson:parsson:1.1.5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

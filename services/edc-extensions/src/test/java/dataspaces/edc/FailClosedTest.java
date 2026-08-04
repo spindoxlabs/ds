@@ -3,8 +3,10 @@ package dataspaces.edc;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import okhttp3.Request;
+import org.eclipse.edc.connector.controlplane.contract.spi.policy.TransferProcessPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.types.agreement.ContractAgreement;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
+import org.eclipse.edc.participant.spi.ParticipantAgent;
 import org.eclipse.edc.policy.model.Action;
 import org.eclipse.edc.policy.model.AtomicConstraint;
 import org.eclipse.edc.policy.model.LiteralExpression;
@@ -15,6 +17,7 @@ import org.eclipse.edc.spi.monitor.Monitor;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -73,15 +76,18 @@ class FailClosedTest {
         }
     }
 
-    private static PolicyMonitorContext monitorContext() {
-        ContractAgreement agreement = ContractAgreement.Builder.newInstance()
+    private static ContractAgreement agreement(String assetId) {
+        return ContractAgreement.Builder.newInstance()
             .id(AGREEMENT)
             .providerId("did:web:rec.dataspaces.localhost")
             .consumerId("did:web:third-party.dataspaces.localhost")
-            .assetId(DATASET)
+            .assetId(assetId)
             .policy(Policy.Builder.newInstance().build())
             .build();
-        return new PolicyMonitorContext(Instant.now(), agreement);
+    }
+
+    private static PolicyMonitorContext monitorContext() {
+        return new PolicyMonitorContext(Instant.now(), agreement(DATASET));
     }
 
     private static Permission gatedPermission() {
@@ -95,20 +101,30 @@ class FailClosedTest {
             .build();
     }
 
-    private static boolean evaluate(AgreementConsentFunction function) {
+    private static TransferProcessPolicyContext transferContext() {
+        return new TransferProcessPolicyContext(
+            new ParticipantAgent("did:web:third-party.dataspaces.localhost", Map.of(), Map.of()),
+            agreement(DATASET),
+            Instant.now());
+    }
+
+    private static AgreementConsentFunction<PolicyMonitorContext> inFlight(String... answers) {
+        return AgreementConsentFunction.inFlight(
+            new ConsentApi(new ScriptedConnector(answers)), new NoopMonitor());
+    }
+
+    private static boolean evaluate(AgreementConsentFunction<PolicyMonitorContext> function) {
         return function.evaluate(Operator.EQ, "granted", gatedPermission(), monitorContext());
     }
 
-    // ── EDC-01: bounded tolerance, then deny ─────────────────────────────────
+    // ── EDC-01: bounded tolerance, then deny (policy.monitor) ────────────────
 
     @Test
     void aSingleUnanswerablePassDoesNotTerminate() {
         // Failing closed on one blip would let a momentary outage destroy live
         // agreements, and buys nothing while it lasts — the dataset-api PEP asks
         // the same question per query and fails closed itself.
-        var function = new AgreementConsentFunction(
-            new ConsentApi(new ScriptedConnector((String) null)), new NoopMonitor(), 3);
-        assertTrue(evaluate(function));
+        assertTrue(evaluate(inFlight((String) null)));
     }
 
     @Test
@@ -116,8 +132,7 @@ class FailClosedTest {
         // The half that was missing. "The other enforcement point will catch it"
         // stops being a reason once the outage is the steady state: a consent
         // revoked during it would never be seen here at all.
-        var function = new AgreementConsentFunction(
-            new ConsentApi(new ScriptedConnector((String) null)), new NoopMonitor(), 3);
+        var function = inFlight((String) null);
         assertTrue(evaluate(function));
         assertTrue(evaluate(function));
         assertFalse(evaluate(function), "third consecutive unanswerable pass must terminate");
@@ -128,12 +143,11 @@ class FailClosedTest {
         // Otherwise a connector that flaps would accumulate failures across
         // unrelated healthy passes and terminate a transfer that was never in
         // doubt.
-        var connector = new ScriptedConnector(
+        var function = inFlight(
             null,
             "{\"consent_active\": false, \"subject_ids\": [\"s\"]}",
             null,
             null);
-        var function = new AgreementConsentFunction(new ConsentApi(connector), new NoopMonitor(), 3);
 
         assertTrue(evaluate(function));   // 1 failure
         assertTrue(evaluate(function));   // answered — streak reset
@@ -145,22 +159,71 @@ class FailClosedTest {
     void aDefiniteNoStillTerminatesImmediately() {
         // The tolerance is for *silence*, never for a denial. A revoked consent
         // must stop the transfer on the very next pass.
-        var function = new AgreementConsentFunction(
-            new ConsentApi(new ScriptedConnector("{\"consent_active\": false, \"subject_ids\": []}")),
-            new NoopMonitor(), 3);
-        assertFalse(evaluate(function));
+        assertFalse(evaluate(inFlight("{\"consent_active\": false, \"subject_ids\": []}")));
     }
 
     @Test
     void anAgreementWithNoAssetTerminates() {
-        var function = new AgreementConsentFunction(
-            new ConsentApi(new ScriptedConnector("{\"consent_active\": true, \"subject_ids\": [\"s\"]}")),
-            new NoopMonitor(), 3);
+        var function = inFlight("{\"consent_active\": true, \"subject_ids\": [\"s\"]}");
         ContractAgreement noAsset = ContractAgreement.Builder.newInstance()
             .id(AGREEMENT).providerId("p").consumerId("c").assetId("")
             .policy(Policy.Builder.newInstance().build()).build();
         assertFalse(function.evaluate(
             Operator.EQ, "granted", gatedPermission(), new PolicyMonitorContext(Instant.now(), noAsset)));
+    }
+
+    // ── EDC-16: the pre-start gate (transfer.process) ────────────────────────
+
+    @Test
+    void thePreStartGateDeniesOnTheFirstUnanswerableCheck() {
+        // No tolerance here, and the asymmetry is the point: refusing to start a
+        // transfer costs the consumer a retry, while terminating a running one
+        // destroys an agreement. Nothing is running yet.
+        var function = AgreementConsentFunction.<TransferProcessPolicyContext>preStart(
+            new ConsentApi(new ScriptedConnector((String) null)), new NoopMonitor());
+        assertFalse(function.evaluate(Operator.EQ, "granted", gatedPermission(), transferContext()));
+    }
+
+    @Test
+    void thePreStartGateAllowsWhenAnybodyConsents() {
+        var function = AgreementConsentFunction.<TransferProcessPolicyContext>preStart(
+            new ConsentApi(new ScriptedConnector("{\"consent_active\": true, \"subject_ids\": [\"s\"]}")),
+            new NoopMonitor());
+        assertTrue(function.evaluate(Operator.EQ, "granted", gatedPermission(), transferContext()));
+    }
+
+    @Test
+    void thePreStartGateDeniesWhenConsentWasWithdrawnAfterSigning() {
+        // The window EDC-16 is about: the agreement is signed and valid, and the
+        // subject has since withdrawn. Nothing looked here before, so the EDR was
+        // issued and the transfer started; only the first policy-monitor pass —
+        // which runs *after* the transfer starts — would have noticed.
+        var function = AgreementConsentFunction.<TransferProcessPolicyContext>preStart(
+            new ConsentApi(new ScriptedConnector("{\"consent_active\": false, \"subject_ids\": []}")),
+            new NoopMonitor());
+        assertFalse(function.evaluate(Operator.EQ, "granted", gatedPermission(), transferContext()));
+    }
+
+    // ── EDC-08: the operand has to be read before it can be compared ─────────
+
+    @Test
+    void anExpandedOperandIsUnwrappedRatherThanStringified() {
+        // A policy that reached the store through EDC's JSON-LD expansion carries
+        // "granted" as {"@value": "granted"}; toString() yielded "\"granted\"",
+        // quotes included, so the status comparison failed and the function
+        // denied — on precisely the policies that took the expanded path, and
+        // with nothing in the log to say why.
+        var function = inFlight("{\"consent_active\": true, \"subject_ids\": [\"s\"]}");
+        assertTrue(function.evaluate(
+            Operator.EQ, Map.of("@value", "granted"), gatedPermission(), monitorContext()));
+    }
+
+    @Test
+    void anUnreadableOperandDenies() {
+        var function = inFlight("{\"consent_active\": true, \"subject_ids\": [\"s\"]}");
+        assertFalse(function.evaluate(
+            Operator.EQ, List.of("granted", "active"), gatedPermission(), monitorContext()),
+            "an operand that does not reduce to one scalar cannot be compared — deny");
     }
 
     // ── EDC-04: never send unauthenticated ───────────────────────────────────

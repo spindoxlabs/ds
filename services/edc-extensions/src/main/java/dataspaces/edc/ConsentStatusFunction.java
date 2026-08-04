@@ -42,12 +42,21 @@ import java.util.List;
  * negotiation for a purpose nobody agreed to finds an empty subject pool and is
  * denied.
  *
- * <p>The counterpart for an <em>ongoing</em> transfer is
- * {@link AgreementConsentFunction}, bound to the {@code policy.monitor} scope:
- * this function decides whether access may start, that one decides whether it
- * may continue.
+ * <p>The counterpart for a transfer is {@link AgreementConsentFunction}, which
+ * reads the signed agreement and is registered in both the {@code
+ * transfer.process} scope (may access start?) and {@code policy.monitor} (may it
+ * continue?).
+ *
+ * <p>Generic in the context type: registered on
+ * {@code ContractNegotiationPolicyContext} only, because the engine matches a
+ * function with {@code contextType().isAssignableFrom(context.getClass())} and
+ * the catalogue and transfer contexts also implement
+ * {@link ParticipantAgentPolicyContext}. Registering on the interface put this
+ * function in the transfer scope too, where it would have shadowed the
+ * agreement-backed check by key collision.
  */
-public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permission, ParticipantAgentPolicyContext> {
+public class ConsentStatusFunction<C extends ParticipantAgentPolicyContext>
+    implements AtomicConstraintRuleFunction<Permission, C> {
 
     private final ConsentApi consent;
     private final Monitor monitor;
@@ -58,9 +67,18 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
     }
 
     @Override
-    public boolean evaluate(Operator operator, Object rightValue, Permission rule, ParticipantAgentPolicyContext context) {
+    public boolean evaluate(Operator operator, Object rightValue, Permission rule, C context) {
         if (operator != Operator.EQ) return false;
-        String expectedStatus = rightValue.toString();
+        // Not `rightValue.toString()`: an expanded policy yields "\"granted\"",
+        // quotes included, so the comparison below failed on precisely the
+        // policies that took the expanded path — and failed by denying, with
+        // nothing said.
+        String expectedStatus = Purposes.unwrapScalar(rightValue);
+        if (expectedStatus == null) {
+            monitor.warning("ConsentStatusFunction: unreadable consent operand %s — denying"
+                .formatted(Purposes.describeValue(rightValue)));
+            return false;
+        }
         if (!"active".equals(expectedStatus) && !"granted".equals(expectedStatus)) return false;
 
         ParticipantAgent agent = context.participantAgent();
@@ -80,9 +98,8 @@ public class ConsentStatusFunction implements AtomicConstraintRuleFunction<Permi
             // returning true here defers to it; returning false would deny every
             // negotiation before it could run.
             //
-            // `DataspacesExtensionRegistrationTest` asserts that validator is
-            // registered, because without it this line *is* the bypass it used
-            // to be.
+            // `PolicyRegistrationTest` asserts that validator is registered,
+            // because without it this line *is* the bypass it used to be.
             monitor.debug(() -> "ConsentStatusFunction: no ds.dataset_id — deferring to NegotiationConsentValidator");
             return true;
         }

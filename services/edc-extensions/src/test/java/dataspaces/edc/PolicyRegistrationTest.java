@@ -1,6 +1,7 @@
 package dataspaces.edc;
 
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext;
+import org.eclipse.edc.connector.controlplane.contract.spi.policy.TransferProcessPolicyContext;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
 import org.eclipse.edc.participant.spi.ParticipantAgentPolicyContext;
 import org.eclipse.edc.policy.engine.spi.AtomicConstraintRuleFunction;
@@ -42,8 +43,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PolicyRegistrationTest {
 
     private static final String NAMESPACE = "https://w3id.org/dsp/policy/";
-    private static final String NEGOTIATION = "contract.negotiation";
+    private static final String NEGOTIATION = ContractNegotiationPolicyContext.NEGOTIATION_SCOPE;
+    private static final String TRANSFER = TransferProcessPolicyContext.TRANSFER_SCOPE;
     private static final String MONITOR = PolicyMonitorContext.POLICY_MONITOR_SCOPE;
+    private static final List<String> ALL_SCOPES = List.of(NEGOTIATION, TRANSFER, MONITOR);
 
     private RecordingEngine engine;
     private RecordingBindings bindings;
@@ -202,11 +205,11 @@ class PolicyRegistrationTest {
     // ── binding invariants ───────────────────────────────────────────────────
 
     @Test
-    void consentStaysBoundInBothScopes() {
+    void consentStaysBoundInEveryScope() {
         // An unbound operand is *removed* by ScopeFilter, and a permission whose
         // only constraint was removed becomes unconditional. So unbinding the
         // operand is strictly worse than a function that returns true.
-        for (String scope : List.of(NEGOTIATION, MONITOR)) {
+        for (String scope : ALL_SCOPES) {
             Set<String> operands = bindings.operandsIn(scope);
             assertTrue(operands.contains("ds:consentStatus"), "ds:consentStatus unbound in " + scope);
             assertTrue(operands.contains(NAMESPACE + "ConsentStatus"),
@@ -215,30 +218,71 @@ class PolicyRegistrationTest {
     }
 
     @Test
-    void consentHasAFunctionInBothScopes() {
+    void consentHasAFunctionForBothOperandFormsInEveryScope() {
         // A bound operand with no registered function fails evaluation outright,
-        // which denies every negotiation rather than the intended ones.
-        assertTrue(engine.keysFor(ParticipantAgentPolicyContext.class).contains(NAMESPACE + "ConsentStatus"));
-        assertTrue(engine.keysFor(PolicyMonitorContext.class).contains(NAMESPACE + "ConsentStatus"));
-        assertTrue(engine.keysFor(PolicyMonitorContext.class).contains("ds:consentStatus"));
+        // which denies every negotiation rather than the intended ones. That was
+        // exactly `ds:consentStatus` at negotiation: bound in both scopes,
+        // registered only in policy.monitor (EDC-07).
+        for (Class<?> context : List.of(
+            ContractNegotiationPolicyContext.class,
+            TransferProcessPolicyContext.class,
+            PolicyMonitorContext.class
+        )) {
+            Set<String> keys = engine.keysFor(context);
+            assertTrue(keys.contains(NAMESPACE + "ConsentStatus"),
+                "expanded consent operand has no function on " + context.getSimpleName());
+            assertTrue(keys.contains("ds:consentStatus"),
+                "compact consent operand has no function on " + context.getSimpleName());
+        }
     }
 
     @Test
-    void negotiationOnlyOperandsAreNotBoundInTheMonitorScope() {
+    void everyBoundOperandHasAFunctionSomewhere() {
+        // The general form of the two rows above, and the one that catches the
+        // next `ds:accessScope` — bound here with no function and no producer,
+        // which would have denied every negotiation had anything ever emitted it.
+        Set<String> registered = new LinkedHashSet<>();
+        for (Registration r : engine.functions) {
+            registered.add(r.key());
+        }
+        for (String scope : ALL_SCOPES) {
+            for (String operand : bindings.operandsIn(scope)) {
+                if (DataspacesExtension.ACTIONS.contains(operand) || operand.equals(NAMESPACE + "Query")) {
+                    continue;   // actions gate the rule; they have no function
+                }
+                assertTrue(registered.contains(operand),
+                    operand + " is bound in " + scope + " but no function is registered for it — "
+                        + "evaluation fails outright with \"No evaluation function found\"");
+            }
+        }
+    }
+
+    @Test
+    void negotiationOnlyOperandsAreNotBoundElsewhere() {
         // Membership and contractRequired are conditions on *entering* an
-        // agreement. Leaving them unbound in policy.monitor is how they are
+        // agreement. Leaving them unbound outside negotiation is how they are
         // excluded — deliberate, and easy to "fix" by mistake.
-        Set<String> monitorOperands = bindings.operandsIn(MONITOR);
-        assertFalse(monitorOperands.contains(NAMESPACE + "Membership"));
-        assertFalse(monitorOperands.contains("ds:contractRequired"));
+        for (String scope : List.of(TRANSFER, MONITOR)) {
+            Set<String> operands = bindings.operandsIn(scope);
+            assertFalse(operands.contains(NAMESPACE + "Membership"), "membership bound in " + scope);
+            assertFalse(operands.contains("ds:contractRequired"), "contractRequired bound in " + scope);
+        }
     }
 
     @Test
-    void purposeIsBoundInBothScopes() {
+    void accessScopeIsNotBound() {
+        // It was bound in the negotiation scope with no function and no producer
+        // (EDC-06). Nothing emits it; if something ever does, the conformance
+        // test in libs/governance fails rather than this silently denying.
+        assertFalse(bindings.operandsIn(NEGOTIATION).contains("ds:accessScope"));
+    }
+
+    @Test
+    void purposeIsBoundInEveryScope() {
         // Not because a purpose can change mid-transfer, but because the consent
         // functions read purposes off the permission they are handed; a filtered
         // purpose constraint leaves them asking an unscoped question.
-        for (String scope : List.of(NEGOTIATION, MONITOR)) {
+        for (String scope : ALL_SCOPES) {
             Set<String> operands = bindings.operandsIn(scope);
             assertTrue(operands.contains(Purposes.COMPACT), "odrl:purpose unbound in " + scope);
             assertTrue(operands.contains(Purposes.EXPANDED), "expanded purpose unbound in " + scope);
@@ -246,14 +290,45 @@ class PolicyRegistrationTest {
     }
 
     @Test
-    void everyBoundActionIsBoundInBothScopes() {
+    void everyActionIsBoundInEveryScope() {
         // An unbound *action* strips the whole permission, consent constraint
         // and all — the quietest way to disable enforcement in this file.
-        Set<String> negotiation = bindings.operandsIn(NEGOTIATION);
-        Set<String> monitor = bindings.operandsIn(MONITOR);
-        for (String action : List.of("ds:query", "odrl:use", "odrl:transfer", "odrl:aggregate")) {
-            assertTrue(negotiation.contains(action), action + " unbound in " + NEGOTIATION);
-            assertTrue(monitor.contains(action), action + " unbound in " + MONITOR);
+        for (String scope : ALL_SCOPES) {
+            Set<String> operands = bindings.operandsIn(scope);
+            for (String action : DataspacesExtension.ACTIONS) {
+                assertTrue(operands.contains(action), action + " unbound in " + scope);
+            }
+            assertTrue(operands.contains(NAMESPACE + "Query"),
+                "the profile query action is unbound in " + scope);
         }
+    }
+
+    // ── EDC-16: the transfer scope, and why it cannot just inherit ───────────
+
+    @Test
+    void theTransferScopeHasTheAgreementBackedConsentCheck() {
+        // `ContractValidationServiceImpl.validateAgreement` evaluates here,
+        // before the transfer process is created and before any EDR is issued.
+        // Nothing occupied this scope, so a consent withdrawn after signing was
+        // enforced by nothing until the first policy-monitor pass — which only
+        // runs for transfers that have already started.
+        assertTrue(bindings.operandsIn(TRANSFER).contains(NAMESPACE + "ConsentStatus"));
+        assertTrue(engine.keysFor(TransferProcessPolicyContext.class).contains(NAMESPACE + "ConsentStatus"));
+    }
+
+    @Test
+    void theNegotiationFunctionsAreNotRegisteredOnTheParticipantAgentInterface() {
+        // The engine matches a function with
+        // `contextType().isAssignableFrom(context.getClass())`, and both the
+        // catalogue and the transfer contexts implement ParticipantAgentPolicyContext.
+        // Registering there put ConsentStatusFunction — which cannot see a
+        // dataset and returns true — into the transfer scope, where it would
+        // collide with the agreement-backed check on the same operand key.
+        // PolicyEvaluator keeps one function per key and the winner is whichever
+        // was registered last, so the outcome would depend on the order of two
+        // lines in DataspacesExtension.
+        assertTrue(engine.keysFor(ParticipantAgentPolicyContext.class).isEmpty(),
+            "a function is registered on the broad participant-agent context: "
+                + engine.keysFor(ParticipantAgentPolicyContext.class));
     }
 }

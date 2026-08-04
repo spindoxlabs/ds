@@ -105,8 +105,18 @@ public class NegotiationResumeController {
         });
     }
 
+    /**
+     * Upstream's own definition, not a local one.
+     *
+     * <p>This compared against {@code TERMINATED} alone, which missed
+     * {@code FINALIZED} — the other final state. Harmless in outcome, because a
+     * finalized negotiation is not pending either and falls through to the
+     * {@code not_pending} no-op, but it reported {@code "not_pending"} for a
+     * negotiation that had in fact completed, and it was a second copy of a
+     * definition EDC already owns and can extend.
+     */
     private static boolean isTerminal(ContractNegotiation negotiation) {
-        return negotiation.getState() == ContractNegotiationStates.TERMINATED.code();
+        return ContractNegotiationStates.isFinal(negotiation.getState());
     }
 
     private static Map<String, Object> response(

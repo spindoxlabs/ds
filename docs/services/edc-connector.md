@@ -111,7 +111,7 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` | secret |
 | `DS_CONNECTOR_INTERNAL_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` | `ds.connector.internal.*` | secret; empty is fatal at boot |
 | `EDC_DATASOURCE_DEFAULT_USER` / `_PASSWORD` | database credentials | secret |
-| `DS_DEMO_IDENTITY_ENABLED` | `ds.demo.identity.enabled` | dev only — see [edc-extensions](edc-extensions.md) |
+| `DATASPACES_ODRL_NAMESPACE` | `dataspaces.odrl.namespace` | must match the connector's ODRL profile — see [edc-extensions](edc-extensions.md) |
 | `JAVA_OPTS` | JVM heap | image default `-Xms256m -Xmx512m` |
 
 ### Schema creation

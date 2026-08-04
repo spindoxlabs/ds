@@ -1,11 +1,25 @@
 package dataspaces.edc;
 
+import jakarta.json.Json;
+import jakarta.json.JsonArray;
+import jakarta.json.JsonObject;
+import jakarta.json.JsonValue;
+import org.eclipse.edc.connector.controlplane.transform.odrl.from.JsonObjectFromPolicyTransformer;
+import org.eclipse.edc.participant.spi.ParticipantIdMapper;
+import org.eclipse.edc.policy.model.Action;
+import org.eclipse.edc.policy.model.AtomicConstraint;
+import org.eclipse.edc.policy.model.LiteralExpression;
+import org.eclipse.edc.policy.model.Operator;
+import org.eclipse.edc.policy.model.Permission;
+import org.eclipse.edc.policy.model.Policy;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -50,8 +64,8 @@ class JsonObjectFromPolicyTransformerForkTest {
     }
 
     @Test
-    @DisplayName("the fork changes only the right-operand rendering")
-    void forkDivergesOnlyWhereIntended() throws IOException {
+    @DisplayName("the pristine upstream copy still carries the defect this fork exists for")
+    void upstreamStillHasTheDefect() throws IOException {
         var upstream = readResource(UPSTREAM_COPY);
 
         // The defect: the right operand routed through a JsonObject-typed visitor,
@@ -60,8 +74,108 @@ class JsonObjectFromPolicyTransformerForkTest {
                 upstream.contains("atomicConstraint.getRightExpression().accept(this)"),
                 "the pristine upstream copy no longer contains the defect — re-check the fork");
         assertFalse(
-                upstream.contains("ds-fork-multivalued-right-operand"),
+                upstream.contains(JsonObjectFromPolicyTransformer.FORK_MARKER),
                 "the pristine copy must be upstream's, not our patched version");
+    }
+
+    // ── what the fork actually does ──────────────────────────────────────────
+    //
+    // The two assertions above are both about a *file*. Neither runs the class,
+    // so a fork that compiled but no longer fixed anything passed them both —
+    // which is the failure this whole arrangement exists to prevent, since a
+    // silent revert republishes unreadable policies while every suite stays
+    // green. These three drive the transformer.
+
+    @Test
+    @DisplayName("a multi-valued right operand publishes as a JSON-LD array, not a toString dump")
+    void multiValuedOperandPublishesAsAnArray() {
+        var rightOperand = rightOperandOf(transform(policyWithPurposes(List.of(
+                Map.of("@id", "https://w3id.org/dsp/policy/purpose/FlexibilityResearch"),
+                Map.of("@id", "https://w3id.org/dsp/policy/purpose/IncentiveCalculation")))));
+
+        assertEquals(JsonValue.ValueType.ARRAY, rightOperand.getValueType(),
+                "a multi-valued operand must stay an array — upstream collapses it with toString()");
+        var values = rightOperand.asJsonArray().stream()
+                .map(v -> v.asJsonObject().getString("@id"))
+                .toList();
+        assertEquals(
+                List.of("https://w3id.org/dsp/policy/purpose/FlexibilityResearch",
+                        "https://w3id.org/dsp/policy/purpose/IncentiveCalculation"),
+                values);
+    }
+
+    @Test
+    @DisplayName("no rendered operand carries a Java object dump")
+    void nothingIsStringified() {
+        // The symptom upstream produces, and the one thing a counterparty sees:
+        // "[{@value={valueType=STRING, chars=https://…}}, …]". Asserting on the
+        // shape above would still pass if the values themselves were dumps.
+        var rendered = transform(policyWithPurposes(List.of(
+                Map.of("@id", "https://w3id.org/dsp/policy/purpose/FlexibilityResearch"),
+                Map.of("@id", "https://w3id.org/dsp/policy/purpose/GridMonitoring")))).toString();
+
+        assertFalse(rendered.contains("valueType="), "a JsonString bean leaked into the output: " + rendered);
+        assertFalse(rendered.contains("chars="), "a JsonString bean leaked into the output: " + rendered);
+    }
+
+    @Test
+    @DisplayName("a single-valued right operand is unaffected")
+    void singleValuedOperandIsUnchanged() {
+        // The fork must be a narrowing, not a rewrite: every existing policy has
+        // scalar operands and they must render exactly as upstream renders them.
+        var rightOperand = rightOperandOf(transform(policyWithPurposes("granted")));
+
+        assertEquals(JsonValue.ValueType.OBJECT, rightOperand.getValueType());
+        assertEquals("granted", rightOperand.asJsonObject().getString("@value"));
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    /** Identity mapping — this test is about operands, not participant IRIs. */
+    private static final ParticipantIdMapper IDENTITY = new ParticipantIdMapper() {
+        @Override
+        public String toIri(String participantId) {
+            return participantId;
+        }
+
+        @Override
+        public String fromIri(String iriParticipantId) {
+            return iriParticipantId;
+        }
+    };
+
+    private static JsonObject transform(Policy policy) {
+        var transformer = new JsonObjectFromPolicyTransformer(
+                Json.createBuilderFactory(Map.of()), IDENTITY);
+        // `transform` delegates straight to the visitor and never touches the
+        // context; passing one would mean implementing eleven methods to observe
+        // nothing.
+        var result = transformer.transform(policy, null);
+        assertNotNull(result, "the transformer returned nothing");
+        return result;
+    }
+
+    private static Policy policyWithPurposes(Object rightOperand) {
+        return Policy.Builder.newInstance()
+                .permission(Permission.Builder.newInstance()
+                        .action(Action.Builder.newInstance().type("odrl:use").build())
+                        .constraint(AtomicConstraint.Builder.newInstance()
+                                .leftExpression(new LiteralExpression("odrl:purpose"))
+                                .operator(Operator.IS_ANY_OF)
+                                .rightExpression(new LiteralExpression(rightOperand))
+                                .build())
+                        .build())
+                .build();
+    }
+
+    /** The single rendered `odrl:rightOperand` of the policy's only constraint. */
+    private static JsonValue rightOperandOf(JsonObject policy) {
+        JsonArray permissions = policy.getJsonArray("http://www.w3.org/ns/odrl/2/permission");
+        assertNotNull(permissions, "no permissions in " + policy);
+        JsonArray constraints = permissions.getJsonObject(0)
+                .getJsonArray("http://www.w3.org/ns/odrl/2/constraint");
+        assertNotNull(constraints, "no constraints in " + permissions);
+        return constraints.getJsonObject(0).get("http://www.w3.org/ns/odrl/2/rightOperand");
     }
 
     private String readResource(String name) throws IOException {

@@ -18,31 +18,54 @@ pending guard, the negotiation-resume controller and the event publisher.
 unreadable operand — all deny. Returning `true` is the defect class this unit has most of,
 and it is a silent one: the negotiation succeeds and nothing is logged.
 
-## Two scopes, two questions
+## Three scopes, three questions
 
 | Scope | Question | Functions |
 |---|---|---|
-| `contract.negotiation` | may access **start**? | `AccessScopeFunction`, `ConsentStatusFunction`, `PurposeFunction`, `ds:contractRequired` |
-| `policy.monitor` | may access **continue**? | `AgreementConsentFunction`, `PurposeFunction` |
+| `contract.negotiation` | may an agreement be **signed**? | `AccessScopeFunction`, `ConsentStatusFunction`, `PurposeFunction`, `ContractRequiredFunction`, + the `NegotiationConsentValidator` post-validator |
+| `transfer.process` | may access **start**? | `AgreementConsentFunction` (pre-start), `PurposeFunction` |
+| `policy.monitor` | may access **continue**? | `AgreementConsentFunction` (in-flight), `PurposeFunction` |
 
-EDC's policy monitor re-evaluates a signed agreement for every started provider transfer and
-terminates it the moment evaluation fails. Consent is revocable (GDPR Art. 7(3)), so it has
-to be answered there too. Membership and `ds:contractRequired` are deliberately *not* bound
-to `policy.monitor` — both are conditions on entering an agreement.
+Consent is revocable (GDPR Art. 7(3)), so one check at negotiation is not enough. The two
+agreement-backed stances differ only in how they answer *silence*: pre-start denies on the
+first unanswerable check, because refusing to start costs a retry; in flight it tolerates
+three consecutive passes before terminating, because failing closed on one blip destroys a
+live agreement. A definite *no* denies immediately in both. Membership and
+`ds:contractRequired` are deliberately bound to `contract.negotiation` only — both are
+conditions on entering an agreement.
+
+**Consent at negotiation is decided by `NegotiationConsentValidator`, not by
+`ConsentStatusFunction`.** A constraint function is handed the `Permission` and `Rule` has no
+target at 0.16.0, so it cannot see the dataset; a `PolicyValidatorRule` receives the whole
+`Policy`, which EDC has targeted at the asset. The function stays registered anyway, because
+the operand must stay bound.
 
 **Binding is what includes an operand in a scope, and EDC's `ScopeFilter` *removes* unbound
 operands rather than failing them — so an unbound operand silently disables its check.**
-Two consequences:
+Three consequences:
 
 - **Bind the rule's action too.** An unbound action strips the whole permission, taking its
   consent constraint with it. `ACTIONS` in `DataspacesExtension` lists every form the mapper
-  can emit.
-- **`odrl:purpose` is bound in `policy.monitor`** even though a purpose cannot change
+  can emit; the profile query action is derived from the configured namespace rather than
+  listed there.
+- **`odrl:purpose` is bound in every scope** even though a purpose cannot change
   mid-transfer: the consent functions read purposes off the permission they are handed, and
   a filtered-out purpose constraint leaves them asking an unscoped question.
+- **A bound operand with *no* function is the opposite failure** — evaluation fails outright
+  and denies everything. So an operand nothing emits should be unbound, not bound-and-ignored.
 
-Register **and bind** every operand you add, in both compact and expanded form. A
-binding-vs-emission conformance test is outstanding — see `.agents/defect-per-service.md`.
+Register **and bind** every operand you add, in both compact and expanded form. Two tests
+enforce the pair, and neither can see what the other does:
+`PolicyRegistrationTest` (here) asserts binding-vs-function;
+`libs/governance/tests/tests/test_odrl_binding_conformance.py` asserts
+binding-vs-emission by driving the real mapper and parsing this unit's bindings.
+
+**Register on the narrowest context, never on `ParticipantAgentPolicyContext`.** The engine
+matches both functions and validators with `contextType().isAssignableFrom(context.getClass())`,
+and the catalogue, negotiation and transfer contexts all implement that interface — so a
+registration there runs during catalogue browsing and collides, by operand key, with the
+transfer scope's own function. `PolicyEvaluator` keeps one function per key and the winner is
+whichever was registered last.
 
 ## Reading a right operand
 
@@ -94,7 +117,13 @@ and the subject pools together, with no audit trail separating this caller from 
 
 ## Build and test
 
-`task edc:build` · `task edc:docker`. Use `Monitor`, not SLF4J. OkHttp for HTTP.
+`task edc:test` · `task -d services/edc-extensions test` · `task edc:build` · `task edc:docker`.
+Use `Monitor`, not SLF4J. OkHttp for HTTP. No mocking framework: the EDC contexts and
+`ContractAgreement` have public constructors and builders, and `ConnectorClient.getJson` is
+overridable, so every function can be driven from canned JSON.
+
+**`task -d <unit> test` does not reach the container path.** A change here needs
+`task edc:build`, and a behaviour change needs `task edc:restart` + `task e2e:all`.
 
 > **`task dev:start` runs a continuous build plus watch loops that restart the EDC JVMs.**
 > They race: a JVM can start while the JAR is still being written and load a partial file.
@@ -103,6 +132,8 @@ and the subject pools together, with no audit trail separating this caller from 
 > The gradle cache is held by the continuous build, so a parallel `task edc:build` fails on a
 > journal-cache lock. Let the watch build do it.
 
-**There is currently no test coverage of any constraint function, the pending guard, the
-resume controller or the auth path, and no task invokes `:edc-extensions:test`.** Any change
-here should start by fixing that.
+**Check EDC signatures against the packaged jars, not the source checkout.**
+`~/git/github.com/eclipse-edc/Connector` is ahead of the 0.16.0 we build against — it carries
+`StateEntityStore.breakLease`, which 0.16.0 does not — so the source answers *why* and the
+jars answer *what*. `javap` inside the Gradle image reads the jars; see
+`.agents/facts/services/edc-extensions.md`.

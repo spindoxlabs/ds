@@ -581,26 +581,31 @@ tasks:
       - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
 
   edc:restart:
-    desc: Rebuild EDC fat JAR + Docker image and force-recreate both EDC containers
+    desc: Rebuild EDC fat JAR + Docker image and force-recreate every EDC container
     deps: [edc:ensure-base]
     cmds:
       - task: edc:build
       - task: edc:docker
+      # All three roles. `grid-operator` was added by the participant rename and
+      # this task was not updated with it, so a rebuilt JAR reached two of the
+      # three EDCs — a stack that is half old code and says nothing about it,
+      # which is the worst state to verify a policy change in.
       - |
-        docker stop dataspaces-edc-rec-1 dataspaces-edc-third-party-1 2>/dev/null || true
-        docker rm -f dataspaces-edc-rec-1 dataspaces-edc-third-party-1 2>/dev/null || true
-        fuser -k 19193/tcp 19194/tcp 19195/tcp 19291/tcp 29193/tcp 29194/tcp 29195/tcp 29291/tcp 2>/dev/null || true
+        docker stop dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1 2>/dev/null || true
+        docker rm -f dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1 2>/dev/null || true
+        fuser -k 19193/tcp 19194/tcp 19195/tcp 19291/tcp 29193/tcp 29194/tcp 29195/tcp 29291/tcp 39193/tcp 39194/tcp 39195/tcp 39291/tcp 2>/dev/null || true
         sleep 1
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build --force-recreate --no-deps edc-rec
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.third-party.yml up -d --build --force-recreate --no-deps edc-third-party
-        echo "Waiting for EDC provider (timeout 90s)..."
-        timeout 90 bash -c 'until docker inspect dataspaces-edc-rec-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
-          && echo "EDC provider ready" || echo "EDC provider failed to start"
-        echo "Waiting for EDC consumer (timeout 90s)..."
-        timeout 90 bash -c 'until docker inspect dataspaces-edc-third-party-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
-          && echo "EDC consumer ready" || echo "EDC consumer failed to start"
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.grid-operator.yml up -d --build --force-recreate --no-deps edc-grid-operator
+        for edc in rec third-party grid-operator; do
+          echo "Waiting for EDC $edc (timeout 90s)..."
+          timeout 90 bash -c "until docker inspect dataspaces-edc-$edc-1 --format '{{.State.Health.Status}}' 2>/dev/null | grep -q healthy; do sleep 3; done" \
+            && echo "EDC $edc ready" || echo "EDC $edc failed to start"
+        done
 
   # ── EDC local dev overrides ─────────────────────────────────────────────
   edc-rec:run:

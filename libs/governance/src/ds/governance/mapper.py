@@ -150,17 +150,25 @@ class GovernanceMapper:
                 "odrl:rightOperand": {"@value": scope, "@type": "xsd:string"},
             })
 
-        # Contract constraint — access_requirements = "contract"
-        if reqs == "contract":
-            constraints.append({
-                "odrl:leftOperand": {"@id": "odrl:industry"},
-                "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": {"@value": "contract-agreed", "@type": "xsd:string"},
-            })
-
-        # Contract gate for restricted datasets. The EDC extension evaluates
-        # this as the explicit policy acknowledgement performed by negotiation.
-        if access_level == "restricted" or policy.obligations.contract_required:
+        # Contract gate — `access_requirements: contract`, `access_level:
+        # restricted`, or an explicit `obligations.contract_required`. The EDC
+        # extension evaluates this as the explicit policy acknowledgement
+        # performed by negotiation.
+        #
+        # `access_requirements: contract` used to emit a *second*, separate
+        # constraint: `odrl:industry eq "contract-agreed"`. It said the same
+        # thing under an operand that means the industry *sector* in ODRL 2.2,
+        # and `services/edc-extensions` bound no such operand — so EDC's
+        # ScopeFilter deleted it before evaluation and every counterparty was
+        # shown a policy term this dataspace never enforced, which is what
+        # DSSC-AUP-06 forbids. The binding-vs-emission conformance test
+        # (`test_odrl_binding_conformance.py`) is what found it and what stops
+        # the next one.
+        if (
+            reqs == "contract"
+            or access_level == "restricted"
+            or policy.obligations.contract_required
+        ):
             constraints.append({
                 "odrl:leftOperand": {"@id": "ds:contractRequired"},
                 "odrl:operator": {"@id": "odrl:eq"},

@@ -307,10 +307,34 @@ def test_access_requirements_contract_adds_membership_and_contract():
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
         membership = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == membership_operand]
-        contract = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == "odrl:industry"]
+        contract = [
+            c for c in constraints
+            if c.get("odrl:leftOperand", {}).get("@id") == "ds:contractRequired"
+        ]
         assert len(membership) == 1
         assert len(contract) == 1
-        assert contract[0]["odrl:rightOperand"]["@value"] == "contract-agreed"
+        assert contract[0]["odrl:rightOperand"] == "true"
+
+
+def test_access_requirements_contract_does_not_emit_odrl_industry():
+    """`odrl:industry eq "contract-agreed"` is not how this is said.
+
+    It duplicated `ds:contractRequired` under an operand that means the industry
+    *sector*, and nothing in `services/edc-extensions` bound it — so it was
+    published to counterparties and then deleted by EDC's ScopeFilter before
+    evaluation. A term that is offered and never enforced is a DSSC-AUP-06
+    violation, not a harmless extra.
+    """
+    mapper = _mapper()
+    rule = _rule(access_level="open", classification="green", access_requirements="contract")
+    offer = mapper.to_odrl_offer("ds", rule)
+
+    operands = {
+        c.get("odrl:leftOperand", {}).get("@id")
+        for perm in offer["odrl:permission"]
+        for c in perm.get("odrl:constraint", [])
+    }
+    assert "odrl:industry" not in operands
 
 
 def test_internal_access_level_adds_membership_even_without_access_requirements():

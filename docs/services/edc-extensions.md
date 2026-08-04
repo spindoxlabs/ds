@@ -55,18 +55,29 @@ public base URL advertised in an EDR.
 
 ## How it works
 
-### Two scopes, two questions
+### Three scopes, three questions
 
-EDC evaluates policy in named scopes. This unit binds to two, and the split is the point.
+EDC evaluates policy in named scopes. This unit binds to three, and the split is the point.
 
-| Scope | Question | Functions |
-|---|---|---|
-| `contract.negotiation` | may access **start**? | `AccessScopeFunction`, `ConsentStatusFunction`, `PurposeFunction`, `ds:contractRequired` |
-| `policy.monitor` | may access **continue**? | `AgreementConsentFunction`, `PurposeFunction` |
+| Scope | Question | Evaluated by | Functions |
+|---|---|---|---|
+| `contract.negotiation` | may an agreement be **signed**? | `ContractValidationServiceImpl.validateInitialOffer` | `AccessScopeFunction`, `ConsentStatusFunction`, `PurposeFunction`, `ContractRequiredFunction`, plus the `NegotiationConsentValidator` post-validator |
+| `transfer.process` | may access **start**? | `ContractValidationServiceImpl.validateAgreement`, from the provider's handling of a `TransferRequestMessage` | `AgreementConsentFunction` (pre-start stance), `PurposeFunction` |
+| `policy.monitor` | may access **continue**? | EDC's policy monitor, per pass, per started provider transfer | `AgreementConsentFunction` (in-flight stance), `PurposeFunction` |
 
-The policy monitor re-evaluates a *signed agreement's* frozen policy for every running
-provider transfer. Consent is revocable under GDPR Art. 7(3), so it must be answered there
-too — a subject who withdraws consent terminates a transfer that is already flowing.
+Consent is revocable under GDPR Art. 7(3), so one check at negotiation is not enough. The
+policy monitor re-evaluates a *signed agreement's* frozen policy for every running provider
+transfer, and a subject who withdraws consent terminates a transfer that is already flowing.
+The transfer scope covers the window in between: an agreement is signed, the consumer asks
+for the transfer, and until this was bound nothing looked at consent again until the first
+monitor pass — which only runs once the transfer has already started.
+
+**The two agreement-backed stances differ only in how they answer silence.** Pre-start, one
+unanswerable check denies: refusing to start costs the consumer a retry. In flight, three
+consecutive unanswerable passes are tolerated before terminating, because failing closed on
+one blip would destroy a live agreement and buys nothing while it lasts — the dataset-api PEP
+asks the same question on every query and fails closed itself. A definite *no* denies
+immediately in both.
 
 Membership and `ds:contractRequired` are bound to the negotiation scope only: whether you
 belong to the dataspace is settled when the contract is made, not re-litigated per row.
@@ -76,14 +87,24 @@ belong to the dataspace is settled when the contract is made, not re-litigated p
 | Left operand | Scope | Answered by |
 |---|---|---|
 | `{ns}Membership` | negotiation | `GET /internal/participants/check` — is this participant admitted with this scope? Cached per `identity\|scope`; an unanswerable check caches as **false** |
-| `{ns}ConsentStatus` | negotiation | `GET /internal/consent/check` |
-| `ds:consentStatus` / `{ns}ConsentStatus` | monitor | `GET /internal/consent/check` against the **agreement's** consumer and asset — an empty subject pool terminates the transfer |
-| `odrl:purpose` | both | accepts `IS_A`, `IS_ANY_OF` and `EQ`; the taxonomy check itself happens in the connector |
-| `ds:contractRequired` | negotiation | a marker constraint |
+| `ds:consentStatus` / `{ns}ConsentStatus` | negotiation | `GET /internal/consent/check` — but see below: the deciding check is the post-validator, not this function |
+| `ds:consentStatus` / `{ns}ConsentStatus` | transfer, monitor | `GET /internal/consent/check` against the **agreement's** consumer and asset — an empty subject pool refuses the start, or terminates the transfer |
+| `odrl:purpose` | all three | accepts `IS_A`, `IS_ANY_OF` and `EQ`; the taxonomy check itself happens in the connector |
+| `ds:contractRequired` | negotiation | requires `EQ`/`NEQ` and a boolean operand; denies anything else |
+
+**At negotiation, consent is decided by a post-validator, not by the constraint function.**
+`ConsentStatusFunction` is handed the `Permission`, and `Rule` carries no target at EDC
+0.16.0, so it cannot learn which dataset is being negotiated. `NegotiationConsentValidator` is
+a `PolicyValidatorRule`, which receives the whole `Policy` — and EDC targets that policy at
+the asset before evaluating it. The function stays registered because the operand must stay
+*bound*, and a bound operand with no function fails evaluation outright.
 
 `{ns}` is the ODRL profile namespace, `https://w3id.org/dsp/policy/` by default. The operands
-are produced by [`libs/governance`](libs/governance.md)'s mapper — the two vocabularies must
-agree or the constraint is silently dropped by EDC's scope filter.
+are produced by [`libs/governance`](libs/governance.md)'s mapper, and **the two vocabularies
+must agree or the constraint is silently dropped by EDC's scope filter** — it removes an
+unbound operand rather than failing it, and a permission stripped of its only constraint
+becomes unconditional. `libs/governance`'s `test_odrl_binding_conformance.py` asserts that
+every operand and action the mapper can emit is bound here, and that nothing bound is dead.
 
 ### Parking a negotiation
 
@@ -131,23 +152,32 @@ literally named `${SVC_EDC_ID}`.
 | `ds.connector.internal.token.url` | `DS_CONNECTOR_INTERNAL_TOKEN_URL` | — | Keycloak token endpoint. **Empty is fatal at boot** |
 | `ds.connector.internal.client.id` | `DS_CONNECTOR_INTERNAL_CLIENT_ID` | — | this EDC's Keycloak client. **Empty is fatal** |
 | `ds.connector.internal.client.secret` | `DS_CONNECTOR_INTERNAL_CLIENT_SECRET` | — | **secret**. Empty is fatal |
-| `ds.access.scope.cache.ttl.seconds` | `DS_ACCESS_SCOPE_CACHE_TTL_SECONDS` | `60` | membership-decision cache lifetime |
+| `ds.access.scope.cache.ttl.seconds` | `DS_ACCESS_SCOPE_CACHE_TTL_SECONDS` | `60` | lifetime of both decision caches — the membership check and the pending guard. A value that is not a positive number of seconds is logged and ignored, not fatal |
 | `dataspaces.odrl.namespace` | `DATASPACES_ODRL_NAMESPACE` | `https://w3id.org/dsp/policy/` | prefix for the `Membership` / `ConsentStatus` / `Query` operands |
 | `ds.edr.endpoint.public.baseurl` | `DS_EDR_ENDPOINT_PUBLIC_BASEURL` | `""` | public base URL advertised in an EDR; empty means "do not rewrite" |
-| `edc.vault.fs.file` | `EDC_VAULT_FS_FILE` | — | properties file the vault seeder loads |
-| `ds.demo.identity.enabled` | `DS_DEMO_IDENTITY_ENABLED` | `false` | **dev only** — see below |
+| `edc.vault.fs.file` | `EDC_VAULT_FS_FILE` | — | properties file the vault seeder loads. EDC 0.16.0 ships no filesystem vault of its own — only `vault-hashicorp` — so this seeder is the only reader of the key and the only thing populating the in-memory vault |
 
-!!! danger "`DS_DEMO_IDENTITY_ENABLED` accepts unverified tokens"
-    When the real DCP verifier rejects a token, this fallback base64-decodes the JWT payload
-    **without checking any signature** and, if `iss` equals `sub`, synthesises a membership
-    credential for that subject. It exists so a host-run EDC can work when `did:web`
-    resolution is unavailable in the dev topology. It is a complete DSP authentication
-    bypass, it defaults to **true** in dev compose, and it appears nowhere in the Helm charts
-    — an absent key cannot be set.
+!!! warning "`dataspaces.odrl.namespace` must match the connector's ODRL profile"
+    The namespace is configured twice and independently: here, and as `namespace` in the ODRL
+    profile `ds-connector` maps with. A mismatch is silent in the worst way — the connector
+    publishes `{new}ConsentStatus`, this extension binds `{old}ConsentStatus`, EDC's scope
+    filter *removes* the unbound operand, and every negotiation succeeds with no policy
+    enforced and nothing logged. `libs/governance`'s
+    `test_odrl_binding_conformance.py::test_the_extension_namespace_matches_the_profile` is
+    what catches the drift.
+
+There is **no** `ds.demo.identity.enabled`. The demo identity fallback — which accepted a
+self-issued JWT without checking its signature and synthesised a `MembershipCredential` for
+the signer — was deleted, not disabled; `task secrets:check` fails if a deployment reintroduces
+`DS_DEMO_IDENTITY_ENABLED`. See [Rulebook · Participation](../rulebook/participation.md) `P-11`.
 
 Hard-coded values that behave like configuration: a 5 s connect and read timeout to the
 connector, four attempts with `{100, 500, 2000}` ms backoff on transport errors only (a
-non-2xx is never retried), and a 30 s token-refresh margin.
+non-2xx is never retried), a 30 s token-refresh margin, a bound of 1024 entries on each
+decision cache, and three tolerated unanswerable consent checks before the policy monitor
+terminates a transfer. Each is a constant rather than a setting on purpose: they exist to
+remove a failure mode, and a knob that lets a deployment turn one back to infinity restores
+it.
 
 ## Build and packaging
 

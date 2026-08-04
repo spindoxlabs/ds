@@ -26,11 +26,18 @@ import java.time.Instant;
  * the scopes the realm grants it, so both problems go away at once.
  *
  * <p>Tokens are cached until 30 s before expiry — the same skew
- * {@code ds_auth.ServiceTokenProvider} uses on the Python side. A failed
- * refresh sends the request unauthenticated rather than throwing: the connector
- * answers 401 and the caller's own fail-closed handling applies, which keeps a
- * transient Keycloak outage from turning into an unhandled exception inside a
- * policy evaluation.
+ * {@code ds_auth.ServiceTokenProvider} uses on the Python side.
+ *
+ * <p><b>A failed refresh returns {@code false} and the request is not sent.</b>
+ * This used to send it with no {@code Authorization} header, on the reasoning
+ * that the connector would answer 401 and "the caller's own fail-closed handling
+ * applies". The caller did not have any: {@code ConnectorClient} turned that 401
+ * into {@code null} and {@code AgreementConsentFunction} read {@code null} as
+ * "cannot answer" and left a running transfer running. An outage of Keycloak —
+ * which holds no consent data at all — left consent unenforced on the control
+ * plane. {@code ConnectorClient} now treats {@code false} as a transient and
+ * retries on its existing backoff, which is what a brief Keycloak outage
+ * warrants, without ever asking a question it cannot sign.
  */
 public class Oauth2InternalAuth implements InternalAuth {
 

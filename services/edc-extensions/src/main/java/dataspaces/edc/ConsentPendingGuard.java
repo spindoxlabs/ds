@@ -8,10 +8,7 @@ import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
 
 import java.time.Duration;
-import java.time.Instant;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Parks a provider-side contract negotiation while a data subject decides.
@@ -74,23 +71,22 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public class ConsentPendingGuard implements ContractNegotiationPendingGuard {
 
-    private record CacheEntry(boolean park, Instant expiresAt) {
-        boolean isExpired() {
-            return Instant.now().isAfter(expiresAt);
-        }
-    }
-
     private final ConsentApi consent;
     private final ConsentAskApi asks;
-    private final Duration cacheTtl;
     private final Monitor monitor;
-    private final Map<String, CacheEntry> cache = new ConcurrentHashMap<>();
+
+    /**
+     * Keyed on dataset, consumer and purposes — all counterparty-supplied, so
+     * the key space is not bounded by anything this connector controls. See
+     * {@link TtlCache}.
+     */
+    private final TtlCache<Boolean> cache;
 
     public ConsentPendingGuard(ConsentApi consent, ConsentAskApi asks, long cacheTtlSeconds, Monitor monitor) {
         this.consent = consent;
         this.asks = asks;
-        this.cacheTtl = Duration.ofSeconds(cacheTtlSeconds);
         this.monitor = monitor;
+        this.cache = new TtlCache<>(Duration.ofSeconds(cacheTtlSeconds));
     }
 
     @Override
@@ -129,13 +125,13 @@ public class ConsentPendingGuard implements ContractNegotiationPendingGuard {
         }
 
         String cacheKey = String.join("|", datasetId, consumerId, String.join(",", purposes));
-        CacheEntry cached = cache.get(cacheKey);
-        if (cached != null && !cached.isExpired()) {
-            return cached.park;
+        Boolean cached = cache.get(cacheKey);
+        if (cached != null) {
+            return cached;
         }
 
         boolean park = decide(negotiation, datasetId, consumerId, purposes);
-        cache.put(cacheKey, new CacheEntry(park, Instant.now().plus(cacheTtl)));
+        cache.put(cacheKey, park);
         return park;
     }
 
