@@ -181,7 +181,11 @@ clients:
       - identity-registry.credentials.write
       # Register and delete the person's organisation membership.
       - identity-registry.memberships.write
-      # Push the `dataspace_did` attribute onto the Keycloak user.
+      # Bind the person's Keycloak user to their dataspace DID. This writes a
+      # mapping row in the registry's own database and nothing else — the
+      # `dataspace_did` attribute push this comment used to name was removed
+      # (see the scope's own description above), and it was the only write the
+      # endpoint made into a realm ds may not own.
       - identity-registry.keycloak.sync
       # Provision a subject's standing sharing decision on the connector after
       # onboarding approval (POST /consent/admin/shares).
@@ -199,29 +203,35 @@ clients:
   # satisfies any {service}.*), so putting it here would silently hand the portal
   # every connector permission that exists, including the machine-identity ones.
   # The portal gets exactly what its pages call.
+  # **The portal's service account does one thing**, and this list says so.
+  #
+  # The portal is SSR and not an OIDC client: every page forwards the *signed-in
+  # user's* access token, so what a person may do is decided by their own seat,
+  # not by this client. The one call that cannot work that way is the
+  # email→DID lookup at login (`hooks.server.ts` → `lib/server/identity-registry.ts`),
+  # which happens before there is a verified user to forward — and both routes it
+  # reaches are guarded by `identity-registry.resolve`. `client_credentials`
+  # appears exactly once in the whole portal source.
+  #
+  # This used to carry ten grants and four audiences. Nine of the ten were
+  # presented by nothing: they described the provider console's *pages*, which
+  # forward the operator's token and always did. The tenth,
+  # `connector.provider.write`, was real but not the portal's — `Taskfile.yml`
+  # borrowed this client to `POST /provider/sync`, which is exactly the borrowing
+  # `svc-ds-e2e` was created to end (see `libs/ds-e2e/src/ds_e2e/config.py`), and
+  # those three call sites now use it.
+  #
+  # So: a grant belongs here only if the portal presents **its own** token for
+  # it. A page acting for a person is not a reason to widen this client.
   - client_id: svc-ds-portal
     name: Dataspace Portal
     secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
     service_account_enabled: true
     scopes_prefix: null
     default_scopes:
-      - dataset.query
-      - dataset.read
       - identity-registry.resolve
-      - identity-registry.read
-      - identity-registry.membership.read
-      # Provider console: asset/policy/contract/transfer listings, and the
-      # governance sync button.
-      - connector.provider.read
-      - connector.provider.write
-      - connector.history.read
-      - provenance.read
-      - catalog.read
     extra_audiences:
       - svc-ds-identity-registry
-      - svc-ds-connector
-      - svc-ds-provenance
-      - svc-ds-federated-catalog
 
   # The e2e harness drives endpoints that belong to several different callers —
   # the provider console, the onboarding service, the dataset-api. It gets its

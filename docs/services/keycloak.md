@@ -197,3 +197,10 @@ All passwords equal the username. Realm `dataspaces`.
 | `subject@example.test` | `ds-member` + a `DataSubject` credential | consent management |
 | `dual@example.test` | both credential roles | that roles are additive, not exclusive |
 | `gridops@example.test` | `ds-participant-admin` **org-scoped only** | that a cross-owner write is refused |
+| `onboarding@example.test` | `ds-onboarding-operator`, realm-scoped | reviewing organisation applications without holding admin |
+| `viewer@example.test` | `ds-participant-viewer` **org-scoped only** | that a read-only seat cannot write |
+
+Every bundle the realm declares as a group is held by one of these, and
+`libs/ds-auth/tests/test_vocabulary.py` fails if that stops being true. A bundle
+with no holder is a seat nobody sits in: it is expanded, unit-tested and never
+exercised against a running realm, and nothing fails to say so.

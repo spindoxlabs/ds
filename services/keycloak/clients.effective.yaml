@@ -118,21 +118,9 @@ clients:
   service_account_enabled: true
   scopes_prefix: null
   default_scopes:
-  - dataset.query
-  - dataset.read
   - identity-registry.resolve
-  - identity-registry.read
-  - identity-registry.membership.read
-  - connector.provider.read
-  - connector.provider.write
-  - connector.history.read
-  - provenance.read
-  - catalog.read
   extra_audiences:
   - svc-ds-identity-registry
-  - svc-ds-connector
-  - svc-ds-provenance
-  - svc-ds-federated-catalog
 - client_id: svc-ds-e2e
   name: Dataspace E2E Harness (dev/CI only)
   secret: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}

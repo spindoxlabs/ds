@@ -99,11 +99,17 @@ tasks:
           docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build
         echo "Waiting for provider connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
+        # `svc-ds-e2e`, not `svc-ds-portal`. Publishing a participant's offers is
+        # a *driver's* act, and this used to borrow the portal's client for it —
+        # which is precisely why `svc-ds-e2e` exists (see
+        # `libs/ds-e2e/src/ds_e2e/config.py`). Borrowing it back meant the portal
+        # had to hold `connector.provider.write` for a call the portal never
+        # makes, and that grant is what kept `KC-06` open. Dev/CI realms only.
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_PORTAL_ID}" \
-          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
+          -d "client_id=${SVC_DS_E2E_ID}" \
+          -d "client_secret=${SVC_DS_E2E_SECRET}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
@@ -178,8 +184,8 @@ tasks:
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_PORTAL_ID}" \
-          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
+          -d "client_id=${SVC_DS_E2E_ID}" \
+          -d "client_secret=${SVC_DS_E2E_SECRET}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         # Same as `rec:start`: publishing the governance-derived assets and
         # policies into this EDC is part of *starting*, not of building. Without
@@ -353,6 +359,7 @@ tasks:
         PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         FEDERATED_CATALOG_URL=http://172.17.0.1:30003 \
         IDENTITY_REGISTRY_URL=$CONNECTOR_IDENTITY_REGISTRY_URL \
+        PORTAL_SERVICE_CLIENT_SECRET="${SVC_DS_PORTAL_SECRET}" \
         npm run dev
 
   # ── Lifecycle: two modes ──────────────────────────────────────────────────
@@ -546,8 +553,8 @@ tasks:
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_PORTAL_ID}" \
-          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
+          -d "client_id=${SVC_DS_E2E_ID}" \
+          -d "client_secret=${SVC_DS_E2E_SECRET}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || true
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
@@ -1202,8 +1209,12 @@ tasks:
           SVC_DS_PROVENANCE_SECRET \
           SVC_DS_E2E_SECRET SVC_REC_REGISTRY_SECRET \
           SVC_EDC_SECRET KEYCLOAK_CLIENT_SECRET \
-          OAUTH2_PROXY_CLIENT_SECRET OAUTH2_PROXY_COOKIE_SECRET \
-          PORTAL_SERVICE_CLIENT_SECRET"
+          OAUTH2_PROXY_CLIENT_SECRET OAUTH2_PROXY_COOKIE_SECRET"
+        # No `PORTAL_SERVICE_CLIENT_SECRET`. It names the same client as
+        # `SVC_DS_PORTAL_SECRET`, so generating both handed the realm one secret
+        # and the portal another — a client that cannot authenticate, produced
+        # by the tool meant to make a deployment safe. Compose and Helm derive
+        # the service-side name from the `SVC_*` one; see `.env.example`.
 
         for var in $SECRET_VARS; do
           if grep -qE "^${var}=CHANGE_ME$" "$OUT"; then
@@ -1346,12 +1357,12 @@ tasks:
         if printf '%s\n' "$values" | grep -qE '^OAUTH2_PROXY_CLIENT_SECRET=oauth2_proxy$'; then
           echo "✗ OAUTH2_PROXY_CLIENT_SECRET is still 'oauth2_proxy' — the dev default for the one client every human logs in through"; rc=1
         fi
-        # The dev realm ships seven users whose password is their username, a
+        # The dev realm ships nine users whose password is their username, a
         # literal client secret and open self-registration. Nothing in `helm/`
         # imports any realm — Keycloak is externally managed — so this is a
         # tripwire for a hand-rolled deployment, not a chart defect.
         if printf '%s\n' "$values" | grep -qF 'realm-dataspaces-dev'; then
-          echo "✗ a production env file references realm-dataspaces-dev.json — it ships 7 users whose password equals their username and registrationAllowed=true"; rc=1
+          echo "✗ a production env file references realm-dataspaces-dev.json — it ships 9 users whose password equals their username and registrationAllowed=true"; rc=1
         fi
         if printf '%s\n' "$values" | grep -nE '^(KEYCLOAK_ADMIN_PASSWORD|POSTGRES_PASSWORD)=(admin|postgres)$'; then
           echo "✗ weak credential above"; rc=1

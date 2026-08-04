@@ -111,6 +111,47 @@ def test_an_overlay_widens_a_core_client_rather_than_replacing_it(keycloak_dir: 
     assert dataset_api["scopes_prefix"] == "dataset"
 
 
+def test_an_overlay_may_widen_a_core_clients_optional_scopes(keycloak_dir: Path):
+    """`optional_scopes` is supported here because the sync downstream supports it.
+
+    No `clients*.yaml` in this repository sets it, which is why an audit read it
+    as dead. `celine-policies`' client model declares the field and its `sync.py`
+    diffs a client's current optional scopes against it, so removing support here
+    would make this merge reject a file the tool it feeds accepts. Exercised
+    rather than deleted — see the module docstring.
+    """
+    (keycloak_dir / "clients.optional.yaml").write_text(
+        textwrap.dedent(
+            """\
+            overlay: optional
+            clients:
+              - client_id: svc-ds-dataset-api
+                optional_scopes:
+                  - dataset.read
+            """
+        ),
+        encoding="utf-8",
+    )
+
+    dataset_api = _client(_merged(keycloak_dir, ["optional"]), "svc-ds-dataset-api")
+
+    assert dataset_api["optional_scopes"] == ["dataset.read"]
+    # Widening the optional list leaves the default list alone — the two are
+    # different questions and the sync assigns them differently.
+    assert dataset_api["default_scopes"] == ["connector.internal"]
+
+
+def test_an_optional_grant_naming_an_undeclared_scope_is_caught(keycloak_dir: Path):
+    """`validate` guards both grant lists, not just `default_scopes`."""
+    document = _merged(keycloak_dir, [])
+    stray = "nobody.declares.this"
+    _client(document, "svc-ds-dataset-api")["optional_scopes"] = [stray]
+
+    assert km.validate(document) == [
+        f"svc-ds-dataset-api: optional_scopes names undeclared scope {stray}"
+    ]
+
+
 def test_merging_no_overlays_yields_the_core_unchanged(keycloak_dir: Path):
     core = yaml.safe_load((keycloak_dir / "clients.yaml").read_text(encoding="utf-8"))
     assert km.merge(core, []) == core

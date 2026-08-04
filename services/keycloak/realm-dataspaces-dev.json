@@ -451,6 +451,42 @@
       "groups": [
         "/legacy-provider-admin"
       ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000008",
+      "username": "onboarding@example.test",
+      "email": "onboarding@example.test",
+      "firstName": "Onboarding",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "onboarding",
+          "temporary": false
+        }
+      ],
+      "groups": [
+        "/ds-onboarding-operator"
+      ]
+    },
+    {
+      "id": "00000000-0000-4000-a000-000000000009",
+      "username": "viewer@example.test",
+      "email": "viewer@example.test",
+      "firstName": "Participant",
+      "lastName": "Viewer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "viewer",
+          "temporary": false
+        }
+      ],
+      "groups": []
     }
   ]
 }

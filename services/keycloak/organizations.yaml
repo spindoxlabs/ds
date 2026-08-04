@@ -27,6 +27,14 @@ organizations:
         groups: [ds-member]
       - email: consumer@example.test
         groups: [ds-member]
+      # The read-only seat, scoped to this owner. It holds no realm group at all
+      # (like `gridops@example.test`), so what it can see is entirely this
+      # membership — which is what makes it a test of the org path rather than a
+      # relabelled realm grant. `ds-participant-viewer` was declared as a realm
+      # group and held by nobody until this existed, so the bundle's read-only
+      # promise was asserted by unit tests and by nothing on a running realm.
+      - email: viewer@example.test
+        groups: [ds-participant-viewer]
 
   # A **second** participant, which exists so per-owner scoping can be proven
   # rather than asserted.

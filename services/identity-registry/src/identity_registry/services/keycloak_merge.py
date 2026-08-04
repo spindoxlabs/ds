@@ -39,6 +39,15 @@ identity (``secret``, ``scopes_prefix``, ``name``) or set a realm-level key. An
 overlay is a domain backend asking for grants; letting it restate ds's own clients
 would make it a second, unreviewable copy of the authority file.
 
+``optional_scopes`` is carried even though **no ``clients*.yaml`` in this
+repository sets it**, which is why an audit read it as dead and proposed removing
+it. It is not decoration: this module's output is consumed by
+``celine-policies keycloak sync``, whose client model declares the field and whose
+``sync.py`` diffs a client's current optional scopes against it. Dropping support
+would make the merge reject a file the tool it feeds accepts, and an overlay — a
+domain backend asking for a grant it does not want assigned by default — is
+exactly where one would first appear. It is exercised by the tests instead.
+
     ir-cli keycloak merge --overlay energy      # write the effective file
     ir-cli keycloak merge --overlay energy --check
     ir-cli keycloak merge --overlay energy --stdout

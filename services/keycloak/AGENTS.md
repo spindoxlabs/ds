@@ -135,7 +135,7 @@ via `organizations.yaml` needs no reset, which is the path to prefer.
 
 ## The two realm files, and which is which
 
-**`realm-dataspaces-dev.json` is not safe to deploy**: seven users whose password is their
+**`realm-dataspaces-dev.json` is not safe to deploy**: nine users whose password is their
 username, `registrationAllowed: true`, `directAccessGrantsEnabled: true` on the login client
 and a literal `oauth2_proxy` secret. It is mounted by `docker-compose.yml` and by nothing else.
 `task secrets:check` fails if a production env file so much as names it.

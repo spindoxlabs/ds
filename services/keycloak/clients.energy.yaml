@@ -31,6 +31,15 @@ scopes:
   # energy producer pipelines uses exactly that handler.
   - name: rec-registry.admin
     description: Full administrative access to the registry
+  # Granted to no client *in this overlay*, and that is not a dead declaration.
+  # The rec-registry enforces both — `policies/celine/rec_registry/access.rego`
+  # gates `/admin/import*` on `rec-registry.import` and `/admin/export` on
+  # `rec-registry.export` — and `rec-registry.admin`, which `svc-rec-registry`
+  # holds, satisfies them through that policy's admin override. They are
+  # declared so a posture-A realm can grant either one **narrowly** rather than
+  # handing a caller the admin superset. Do not remove them because `grep` finds
+  # no `default_scopes` entry here; the holder and the enforcement are both
+  # outside this repository, as for `svc-rec-registry` itself.
   - name: rec-registry.import
     description: Permission to import into the registry
   - name: rec-registry.export

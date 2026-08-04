@@ -55,7 +55,7 @@ login — there is none.
 **Keycloak** — externally managed. **There is no Keycloak chart and no chart imports any
 realm**, so nothing here selects a realm file at all; an earlier version of this line claimed
 the chart selects `realm-production.example.json`, and there is no chart to do it. The dev
-realm (`realm-dataspaces-dev.json`: seven users whose password is their username,
+realm (`realm-dataspaces-dev.json`: nine users whose password is their username,
 `registrationAllowed: true`, a literal `oauth2_proxy` secret) is mounted only by
 `docker-compose.yml`. `task secrets:check` fails if a production env file names it. The realm
 is provisioned from

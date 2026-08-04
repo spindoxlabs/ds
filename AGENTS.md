@@ -249,6 +249,8 @@ All passwords equal the username. Realm `dataspaces`.
 | `subject@example.test` | `ds-member` + `DataSubject` VC | consent management |
 | `dual@example.test` | both VC roles | proves roles are additive, not exclusive |
 | `gridops@example.test` | `ds-participant-admin` **org-scoped only** (`grid-operator`) | proves a cross-owner write is refused |
+| `onboarding@example.test` | `ds-onboarding-operator`, realm-scoped | the operator console: reviews organisation applications without holding admin |
+| `viewer@example.test` | `ds-participant-viewer` **org-scoped only** (`example-org`) | proves a read-only seat cannot write |
 
 Service accounts are in `services/keycloak/clients.yaml`; the dev secret equals the client id.
 

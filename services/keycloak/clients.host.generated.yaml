@@ -96,21 +96,9 @@ clients:
   name: Dataspace Portal
   secret: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
   default_scopes:
-  - dataset.query
-  - dataset.read
   - identity-registry.resolve
-  - identity-registry.read
-  - identity-registry.membership.read
-  - connector.provider.read
-  - connector.provider.write
-  - connector.history.read
-  - provenance.read
-  - catalog.read
   extra_audiences:
   - svc-ds-identity-registry
-  - svc-ds-connector
-  - svc-ds-provenance
-  - svc-ds-federated-catalog
   service_account_enabled: true
 - client_id: svc-ds-connector
   name: Dataspace Connector
