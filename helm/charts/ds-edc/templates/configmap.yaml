@@ -84,7 +84,7 @@ data:
     ds.connector.internal.client.id={{ .Values.connectorClientId }}
 
     # ── Vault (mounted from the Secret, not the committed dev fixture) ─────────
-    edc.vault.fs.file=/config/vault.properties
+    ds.vault.seed.file=/config/vault.properties
 
     # ── DCP / STS / credential service (via identity-registry) ────────────────
     edc.iam.sts.oauth.token.url={{ $ir }}/sts/{{ $did }}/token

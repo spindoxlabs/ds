@@ -155,7 +155,7 @@ literally named `${SVC_EDC_ID}`.
 | `ds.access.scope.cache.ttl.seconds` | `DS_ACCESS_SCOPE_CACHE_TTL_SECONDS` | `60` | lifetime of both decision caches — the membership check and the pending guard. A value that is not a positive number of seconds is logged and ignored, not fatal |
 | `dataspaces.odrl.namespace` | `DATASPACES_ODRL_NAMESPACE` | `https://w3id.org/dsp/policy/` | prefix for the `Membership` / `ConsentStatus` / `Query` operands |
 | `ds.edr.endpoint.public.baseurl` | `DS_EDR_ENDPOINT_PUBLIC_BASEURL` | `""` | public base URL advertised in an EDR; empty means "do not rewrite" |
-| `edc.vault.fs.file` | `EDC_VAULT_FS_FILE` | — | properties file the vault seeder loads. EDC 0.16.0 ships no filesystem vault of its own — only `vault-hashicorp` — so this seeder is the only reader of the key and the only thing populating the in-memory vault |
+| `ds.vault.seed.file` | `DS_VAULT_SEED_FILE` | — | properties file the vault seeder loads. Neither `vault-filesystem` nor `vault-hashicorp` is packaged, so the only `Vault` on the classpath is EDC's in-memory default and **this seeder is the only thing that puts anything in it** — an unseeded vault resolves no alias, including the EDR signing key and the STS client secret. It reads `edc.vault.fs.file` as a deprecated fallback, with a warning: that is the key EDC's own `vault-filesystem` module reads, so the collision is latent rather than absent, and would be decided silently by extension load order |
 
 !!! warning "`dataspaces.odrl.namespace` must match the connector's ODRL profile"
     The namespace is configured twice and independently: here, and as `namespace` in the ODRL

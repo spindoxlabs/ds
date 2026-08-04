@@ -641,7 +641,7 @@ tasks:
         fi
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
-          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
+          -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
           -jar "$jar"
 
   edc-third-party:run:
@@ -656,7 +656,7 @@ tasks:
         fi
         exec java -Xms256m -Xmx512m \
           -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
-          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
+          -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
           -jar "$jar"
 
   edc:watch-build:
@@ -739,7 +739,7 @@ tasks:
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
-            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
+            -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
             -jar "$jar" &
           PID=$!
 
@@ -841,7 +841,7 @@ tasks:
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
-            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
+            -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
             -jar "$jar" &
           PID=$!
 

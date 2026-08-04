@@ -117,7 +117,7 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `edc.iam.trusted-issuer.0.id` | `did:web:trust-anchor.dataspaces.localhost` | whose credentials are believed |
 | `edc.iam.dcp.scopes.membership.*` | `MembershipCredential:read` | which credential is requested in a presentation |
 | `edc.iam.did.web.use.https` | `false` in dev, **`true` in production** | DID documents carry the keys every trust decision rests on |
-| `edc.vault.fs.file` | `/config/<role>-vault.properties` | the filesystem vault seed |
+| `ds.vault.seed.file` | `/config/<role>-vault.properties` | the vault seed. **The only thing that puts anything in the vault** — the sole `Vault` on the classpath is EDC's in-memory default. Was `edc.vault.fs.file`, the key EDC's own `vault-filesystem` module reads; still honoured, with a deprecation warning |
 | `edc.transfer.proxy.token.signer/verifier.publickey.alias` | `participant-private-key` | the EDR signing key |
 | `edc.datasource.default.url` / `.user` / `.password` | `jdbc:postgresql://…/edc_rec` | one database per participant |
 | `edc.sql.schema.autocreate` | `true` | see below |

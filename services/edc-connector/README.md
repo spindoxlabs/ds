@@ -84,7 +84,7 @@ EDC properties files for this connector are at `services/connector/config/rec.pr
 - `edc.iam.sts.oauth.token.url` — STS token endpoint
 - `edc.iam.trustedissuer.0.id` — trust anchor DID
 - `edc.credential.service.url` — VC wallet endpoint
-- `edc.vault.fs.file` — filesystem vault file containing secrets
+- `ds.vault.seed.file` — vault seed file containing secrets (was `edc.vault.fs.file`)
 - `edc.iam.did.web.use.https` — set to `false` for Docker-internal HTTP resolution
 
 ---

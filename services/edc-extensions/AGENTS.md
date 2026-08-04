@@ -115,6 +115,20 @@ There is no `X-Api-Key` fallback. That header was `EDC_API_KEY`, which is also E
 Management API key — one leak yielded contract administration, the data-plane signing keys
 and the subject pools together, with no audit trail separating this caller from the dataset-api.
 
+## The vault seeder is the only thing that fills the vault
+
+Neither `vault-filesystem` nor `vault-hashicorp` is packaged, so the only `Vault` on the
+classpath is EDC's boot-default `InMemoryVault`. `FilesystemVaultSeederExtension` is therefore
+not one backend among several — **an unseeded vault resolves no alias at all**, which takes out
+the EDR signing key and the STS client secret together and reports itself as a missing secret
+rather than a missing file. It warns when no seed file is configured, for that reason.
+
+Its setting is `ds.vault.seed.file`. It was `edc.vault.fs.file` — **the key EDC's own
+`vault-filesystem` module reads** — which collides with nothing today only because that module
+is absent; add it to the BOM and two extensions claim the vault from one key, with load order
+deciding silently which seed survives. The old key is still honoured, with a deprecation
+warning, because dropping it would start an un-updated deployment with an empty vault.
+
 ## Build and test
 
 `task edc:test` · `task -d services/edc-extensions test` · `task edc:build` · `task edc:docker`.
