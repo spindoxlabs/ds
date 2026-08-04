@@ -1,0 +1,71 @@
+# The grid operator's governance — the **second provider** in the dev fixture.
+#
+# `D-54`, `DID-15`. The point of a second provider is that it is *not shaped
+# like the first*: the REC (`services/connector/governance-rec/`) publishes data
+# derived from its members and gates it on their consent; a DSO publishes data
+# about **its own infrastructure** and has no members to ask. Nothing in this
+# file mentions consent, and that is the fixture's whole contribution — a
+# platform tested against one provider quietly assumes every participant has a
+# member store, and this is what makes that assumption fail loudly.
+#
+# It is a **dev fixture, not a baseline**: a producer owns its own governance,
+# and this one exists so the dataspace has two of them.
+
+defaults:
+  # **`open`, not `internal`** — and this is the second thing the fixture is for.
+  # `internal` adds a membership constraint scoped to *this owner's* circle
+  # (`owner:grid-operator:member`), which is right for data a community shares
+  # among its own members and wrong for a DSO publishing to the dataspace: a
+  # third-party consumer is not a member of the grid operator and never will be.
+  #
+  # Found by running it: the negotiation was refused, correctly, by a policy that
+  # said "members of the grid operator only". With one provider, `internal` and
+  # `open` are indistinguishable, because the only consumer in the fixture is
+  # always inside the one circle that exists.
+  access_level: open
+  classification: green
+  tags: []
+  retention_days: 365
+  ownership:
+    - name: grid-operator
+      type: DATA_OWNER
+  dataspace:
+    expose: false
+
+sources:
+  # ── Substation headroom ───────────────────────────────────────────────────
+  #
+  # What a DSO can share without asking anybody: the state of the grid it
+  # operates. No `consent_required`, no `sharing_offers`, no `row_filters` —
+  # there is no data subject in it. A consumer negotiating for this exercises
+  # the whole DSP path with the consent machinery *legitimately* absent, which
+  # is different from it being absent because nothing switched it on.
+  datasets.gold.grid_capacity:
+    title: "Substation Capacity Headroom (Gold)"
+    description: >-
+      Available headroom per substation, hourly. Published by the distribution
+      system operator so that flexibility can be planned against real limits.
+    license: CC-BY-4.0
+    access_level: open
+    classification: green
+    tags: [grid, gold, capacity]
+    source_system: DSO SCADA export
+
+    dataspace:
+      expose: true
+      medallion: gold
+      # `GridMonitoring` is the purpose a DSO's own data serves. It is in the
+      # ODRL profile already — the REC's weather dataset names it too — so this
+      # adds a second *publisher* of that purpose rather than a new term.
+      purpose: [GridMonitoring, EnergyCommunityOperation]
+      asset:
+        id: "datasets.gold.grid_capacity"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        # The same stand-in backend the REC's datasets use. In a deployment this
+        # is the DSO's own system; in dev a second copy of the mock would prove
+        # nothing the first does not, and the asset id is what routes the query.
+        base_url: "http://dataset-api:30002/query"
+        proxy_path: false
+        proxy_query_params: true

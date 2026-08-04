@@ -46,7 +46,7 @@ def _request(**kwargs) -> NegotiateRequest:
         counter_party_address="http://provider/protocol",
         offer_id="offer-1",
         asset_id="datasets.silver.meters",
-        assigner="did:web:provider.dataspaces.localhost",
+        assigner="did:web:rec.dataspaces.localhost",
         **kwargs,
     )
 

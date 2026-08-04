@@ -27,18 +27,24 @@ PROVENANCE_TABLES = [
 ]
 
 DATABASES = {
-    "connector_provider": CONNECTOR_TABLES,
-    "connector_consumer": CONNECTOR_TABLES,
-    "provenance_provider": PROVENANCE_TABLES,
-    "provenance_consumer": PROVENANCE_TABLES,
+    "connector_rec": CONNECTOR_TABLES,
+    "connector_third_party": CONNECTOR_TABLES,
+    # The second provider (`DID-15`). A stack left out of the clean is a stack
+    # whose previous run's agreements survive into the next one, which is the
+    # quietest possible way for a suite to stop meaning what it says.
+    "connector_grid_operator": CONNECTOR_TABLES,
+    "provenance_rec": PROVENANCE_TABLES,
+    "provenance_third_party": PROVENANCE_TABLES,
+    "provenance_grid_operator": PROVENANCE_TABLES,
 }
 
 # EDC stores are dropped and recreated rather than truncated: their schema is
 # owned by the connector runtime, so the table set is not ours to enumerate.
-EDC_DATABASES = ("edc_provider", "edc_consumer")
+EDC_DATABASES = ("edc_rec", "edc_third_party", "edc_grid_operator")
 
 EDC_PROVIDER_MGMT = "http://172.17.0.1:19193/management"
 EDC_CONSUMER_MGMT = "http://172.17.0.1:29193/management"
+EDC_GRID_OPERATOR_MGMT = "http://172.17.0.1:39193/management"
 
 EDC_CONTEXT = {"@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"}, "@type": "QuerySpec"}
 EDC_HEADERS = {"x-api-key": EDC_API_KEY, "Content-Type": "application/json"}
@@ -126,6 +132,7 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
         for mgmt_url, label in [
             (EDC_PROVIDER_MGMT, "provider"),
             (EDC_CONSUMER_MGMT, "consumer"),
+            (EDC_GRID_OPERATOR_MGMT, "grid-operator"),
         ]:
             try:
                 _clear_edc(edc_client, mgmt_url, label)
@@ -134,11 +141,17 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
     finally:
         edc_client.close()
 
-    try:
-        token_headers = http.bearer_headers()
-        http.post(
-            f"{settings.connector_url}/provider/sync", {}, headers=token_headers
-        )
-        log.info("Provider sync completed")
-    except Exception as exc:
-        log.warning("Provider sync after cleanup failed: %s", exc)
+    # **Both providers re-sync.** Dropping an EDC's database empties its
+    # catalogue, so a provider that is not re-synced afterwards is a provider
+    # with nothing to negotiate for — and the failure surfaces as "asset not
+    # found" in whichever flow happens to reach it first (`DID-15`).
+    token_headers = http.bearer_headers()
+    for url, label in [
+        (settings.connector_url, "provider"),
+        (settings.grid_operator_connector_url, "grid-operator"),
+    ]:
+        try:
+            http.post(f"{url}/provider/sync", {}, headers=token_headers)
+            log.info("Provider sync completed (%s)", label)
+        except Exception as exc:
+            log.warning("Provider sync after cleanup failed (%s): %s", label, exc)

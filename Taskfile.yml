@@ -53,10 +53,10 @@ tasks:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose build
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml build
+          docker compose --env-file .env.local -f docker-compose.rec.yml build
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml build
+          docker compose --env-file .env.local -f docker-compose.third-party.yml build
 
   infra:start:
     desc: Start shared infrastructure (postgres, caddy, identity-registry, keycloak)
@@ -70,18 +70,28 @@ tasks:
 
   # ── Identity Registry bootstrap ──────────────────────────────────────────
   identity:bootstrap:
-    desc: Run identity bootstrap init container (trust anchor + participants + dev users)
+    desc: Run identity bootstrap init container (trust anchor, owners, enrolment codes)
     cmds:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-registry-bootstrap
 
-  # ── Provider participant ─────────────────────────────────────────────────
-  provider:start:
-    desc: Start provider participant stack
+  # Deliberately **after** the participants exist. A person's credential is
+  # delivered to the organisation that holds it (`DID-11` step 2), and that
+  # organisation's DID document — with the CredentialService entry the anchor
+  # delivers to — does not exist until it has enrolled. Re-runnable: issuance is
+  # idempotent per role and a failed delivery is repaired by running it again.
+  identity:users:
+    desc: Issue the dev users' credentials to the participants that hold them
+    cmds:
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-users-bootstrap
+
+  # ── The REC: a provider that has members (`D-54`) ────────────────────────
+  rec:start:
+    desc: Start the REC's stack — a provider that has members
     deps: [edc:ensure-base]
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml up -d --build
+          docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build
         echo "Waiting for provider connector..."
         until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
         KC_URL="${KEYCLOAK_TOKEN_URL}"
@@ -92,74 +102,127 @@ tasks:
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
-        echo "Provider started — portal http://portal.dataspaces.localhost — or run it on the host: task provider:portal:run"
+        echo "REC started — portal http://portal.dataspaces.localhost — or run it on the host: task rec:portal:run"
 
-  provider:stop:
-    desc: Stop provider participant stack
+  rec:stop:
+    desc: Stop the REC's stack
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml down
+          docker compose --env-file .env.local -f docker-compose.rec.yml down
 
-  provider:status:
-    desc: Show provider container status
+  rec:status:
+    desc: Show the REC's container status
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml ps
+          docker compose --env-file .env.local -f docker-compose.rec.yml ps
 
-  provider:logs:
-    desc: Follow provider logs
+  rec:logs:
+    desc: Follow the REC's logs
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml logs -f
+          docker compose --env-file .env.local -f docker-compose.rec.yml logs -f
 
-  # ── Consumer participant ─────────────────────────────────────────────────
-  consumer:start:
-    desc: Start consumer participant stack
+  # ── The third party: consumes from both providers ────────────────────────
+  third-party:start:
+    desc: Start the third party's stack — it consumes from both providers
     deps: [edc:ensure-base]
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml up -d --build
-        echo "Consumer started — gateway http://consumer.dataspaces.localhost"
+          docker compose --env-file .env.local -f docker-compose.third-party.yml up -d --build
+        echo "Third party started — gateway http://third-party.dataspaces.localhost"
 
-  consumer:stop:
-    desc: Stop consumer participant stack
+  third-party:stop:
+    desc: Stop the third party's stack
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml down
+          docker compose --env-file .env.local -f docker-compose.third-party.yml down
 
-  consumer:status:
-    desc: Show consumer container status
+  third-party:status:
+    desc: Show the third party's container status
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml ps
+          docker compose --env-file .env.local -f docker-compose.third-party.yml ps
 
-  consumer:logs:
-    desc: Follow consumer logs
+  third-party:logs:
+    desc: Follow the third party's logs
     cmds:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml logs -f
+          docker compose --env-file .env.local -f docker-compose.third-party.yml logs -f
+
+  # ── Grid operator: the second provider (`D-54`, `DID-15`) ────────────────
+  #
+  # A DSO that shares its own grid data and has no members. It exists so that
+  # "which provider?" is a real question and so that nothing downstream can
+  # assume every participant holds credentials for people.
+  grid-operator:start:
+    desc: Start the grid-operator (second provider) stack
+    deps: [edc:ensure-base]
+    cmds:
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.grid-operator.yml up -d --build
+        echo "Waiting for the grid operator's connector..."
+        until curl -fsS http://localhost:32001/health >/dev/null 2>&1; do sleep 2; done
+        KC_URL="${KEYCLOAK_TOKEN_URL}"
+        TOKEN=$(curl -fsS -X POST "$KC_URL" \
+          -d grant_type=client_credentials \
+          -d "client_id=${SVC_DS_PORTAL_ID}" \
+          -d "client_secret=${SVC_DS_PORTAL_SECRET}" \
+          | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+        # Same as `rec:start`: publishing the governance-derived assets and
+        # policies into this EDC is part of *starting*, not of building. Without
+        # it this provider is registered, reachable and has an empty catalogue.
+        curl -fsS -X POST http://localhost:32001/provider/sync \
+          -H "Authorization: Bearer $TOKEN" >/dev/null
+        echo "Grid operator started — gateway http://grid-operator.dataspaces.localhost"
+
+  grid-operator:stop:
+    desc: Stop the grid-operator stack
+    cmds:
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.grid-operator.yml down
+
+  grid-operator:status:
+    desc: Show grid-operator container status
+    cmds:
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.grid-operator.yml ps
+
+  grid-operator:logs:
+    desc: Follow grid-operator logs
+    cmds:
+      - |
+        COMPOSE_IGNORE_ORPHANS=true \
+          docker compose --env-file .env.local -f docker-compose.grid-operator.yml logs -f
 
   # ── Full stack aliases ───────────────────────────────────────────────────
   start:
-    desc: Start everything (infra + identity bootstrap + provider + consumer)
+    desc: Start everything (infra, identity, both providers, consumer, users)
     cmds:
       - task: infra:start
       - task: identity:bootstrap
-      - task: provider:start
-      - task: consumer:start
+      - task: rec:start
+      - task: grid-operator:start
+      - task: third-party:start
+      # Last, and it has to be: the people's credentials go to the participants,
+      # which do not exist until the steps above have enrolled them.
+      - task: identity:users
 
   stop:
     desc: Stop everything
     cmds:
-      - task: consumer:stop
-      - task: provider:stop
+      - task: third-party:stop
+      - task: grid-operator:stop
+      - task: rec:stop
       - task: infra:stop
 
   status:
@@ -189,7 +252,7 @@ tasks:
   provider:connector:run:
     desc: Stop Docker container, run provider connector locally on :30001
     cmds:
-      - docker stop dataspaces-ds-connector-provider-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-rec-1 2>/dev/null || true
       - |
         cd services/connector
         CONNECTOR_ROLE=provider \
@@ -201,7 +264,7 @@ tasks:
   provider:connector:debug:
     desc: Stop Docker container, debug provider connector on :30001 (debugpy :30901)
     cmds:
-      - docker stop dataspaces-ds-connector-provider-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-rec-1 2>/dev/null || true
       - |
         cd services/connector
         CONNECTOR_ROLE=provider \
@@ -214,7 +277,7 @@ tasks:
   provider:provenance:run:
     desc: Stop Docker container, run provider provenance locally on :30000
     cmds:
-      - docker stop dataspaces-ds-provenance-provider-1 2>/dev/null || true
+      - docker stop dataspaces-ds-provenance-rec-1 2>/dev/null || true
       - |
         cd services/provenance
         PROVENANCE_DATABASE_URL=$PROVENANCE_DATABASE_URL_PROVIDER \
@@ -223,7 +286,7 @@ tasks:
   provider:dataset-api:run:
     desc: Stop Docker container, run dataset-api locally on :30002
     cmds:
-      - docker stop dataspaces-dataset-api-provider-1 2>/dev/null || true
+      - docker stop dataspaces-dataset-api-rec-1 2>/dev/null || true
       - |
         cd services/dataset-api-mock
         uv run uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port 30002
@@ -231,7 +294,7 @@ tasks:
   provider:federated-catalog:run:
     desc: Stop Docker container, run federated-catalog locally on :30003
     cmds:
-      - docker stop dataspaces-ds-federated-catalog-provider-1 2>/dev/null || true
+      - docker stop dataspaces-ds-federated-catalog-rec-1 2>/dev/null || true
       - |
         cd services/federated-catalog
         uv run uvicorn federated_catalog.main:app --reload --host 0.0.0.0 --port 30003
@@ -240,13 +303,13 @@ tasks:
   consumer:connector:run:
     desc: Stop Docker container, run consumer connector locally on :31001
     cmds:
-      - docker stop dataspaces-ds-connector-consumer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-third-party-1 2>/dev/null || true
       - |
         cd services/connector
         CONNECTOR_ROLE=consumer \
         CONNECTOR_PARTICIPANT_ID=consumer \
-        CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
         uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 31001
@@ -254,13 +317,13 @@ tasks:
   consumer:connector:debug:
     desc: Stop Docker container, debug consumer connector on :31001 (debugpy :31901)
     cmds:
-      - docker stop dataspaces-ds-connector-consumer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-connector-third-party-1 2>/dev/null || true
       - |
         cd services/connector
         CONNECTOR_ROLE=consumer \
         CONNECTOR_PARTICIPANT_ID=consumer \
-        CONNECTOR_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
-        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:consumer.dataspaces.localhost \
+        CONNECTOR_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
+        CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
         uv run python -m debugpy --listen 0.0.0.0:31901 --wait-for-client \
@@ -269,13 +332,13 @@ tasks:
   consumer:provenance:run:
     desc: Stop Docker container, run consumer provenance locally on :31000
     cmds:
-      - docker stop dataspaces-ds-provenance-consumer-1 2>/dev/null || true
+      - docker stop dataspaces-ds-provenance-third-party-1 2>/dev/null || true
       - |
         cd services/provenance
         PROVENANCE_DATABASE_URL=$PROVENANCE_DATABASE_URL_CONSUMER \
         uv run uvicorn provenance.main:app --reload --host 0.0.0.0 --port 31000
 
-  provider:portal:run:
+  rec:portal:run:
     desc: Stop Docker container, run portal locally on :30004
     cmds:
       - docker stop dataspaces-ds-portal-1 2>/dev/null || true
@@ -317,7 +380,7 @@ tasks:
         #    Killing ports before killing the loops therefore frees a port only
         #    long enough for the loop to grab it again — and the container that
         #    wanted it then fails to bind and exits.
-        for pattern in "edc-provider:watch" "edc-consumer:watch" "edc:watch-build"; do
+        for pattern in "edc-rec:watch" "edc-third-party:watch" "edc:watch-build"; do
           for pid in $(pgrep -f "$pattern" 2>/dev/null); do
             pgid=$(ps -o pgid= -p $pid 2>/dev/null | tr -d ' ')
             [ -n "$pgid" ] && kill -9 -${pgid} 2>/dev/null
@@ -348,8 +411,8 @@ tasks:
         kill_port_holders
 
         # 4. Docker compose down on all stacks
-        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.consumer.yml down -v --remove-orphans 2>/dev/null
-        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.provider.yml down -v --remove-orphans 2>/dev/null
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.third-party.yml down -v --remove-orphans 2>/dev/null
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.rec.yml down -v --remove-orphans 2>/dev/null
         COMPOSE_PROJECT_NAME=dataspaces docker compose down -v --remove-orphans 2>/dev/null
 
         # 5. Final sweep
@@ -404,10 +467,10 @@ tasks:
         tmux new-session -d -s ds -n edc-watch-build
         tmux source-file "$(pwd)/dev.tmux.conf"
         tmux send-keys -t ds:edc-watch-build          'task edc:watch-build' Enter
-        tmux new-window -t ds -n edc-provider
-        tmux send-keys -t ds:edc-provider             'task edc-provider:watch' Enter
-        tmux new-window -t ds -n edc-consumer
-        tmux send-keys -t ds:edc-consumer             'task edc-consumer:watch' Enter
+        tmux new-window -t ds -n edc-rec
+        tmux send-keys -t ds:edc-rec             'task edc-rec:watch' Enter
+        tmux new-window -t ds -n edc-third-party
+        tmux send-keys -t ds:edc-third-party             'task edc-third-party:watch' Enter
         tmux new-window -t ds -n identity-registry
         tmux send-keys -t ds:identity-registry        'task identity-registry:run' Enter
         tmux new-window -t ds -n provider-connector
@@ -419,7 +482,7 @@ tasks:
         tmux new-window -t ds -n provider-fed-catalog
         tmux send-keys -t ds:provider-fed-catalog     'task provider:federated-catalog:run' Enter
         tmux new-window -t ds -n provider-portal
-        tmux send-keys -t ds:provider-portal          'task provider:portal:run' Enter
+        tmux send-keys -t ds:provider-portal          'task rec:portal:run' Enter
         tmux new-window -t ds -n consumer-connector
         tmux send-keys -t ds:consumer-connector       'task consumer:connector:run' Enter
         tmux new-window -t ds -n consumer-provenance
@@ -443,7 +506,7 @@ tasks:
         compose() {
           COMPOSE_PROJECT_NAME=dataspaces COMPOSE_IGNORE_ORPHANS=true docker compose "$@"
         }
-        for db in connector_provider connector_consumer; do
+        for db in connector_rec connector_third_party connector_grid_operator; do
           compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
             TRUNCATE TABLE
               consumer_access_requests,
@@ -453,7 +516,7 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        for db in provenance_provider provenance_consumer; do
+        for db in provenance_rec provenance_third_party provenance_grid_operator; do
           compose exec -T postgres psql -U postgres -d "$db" -v ON_ERROR_STOP=1 -c "
             TRUNCATE TABLE
               domain_events,
@@ -463,7 +526,7 @@ tasks:
             RESTART IDENTITY CASCADE;
           " 2>/dev/null || true
         done
-        for db in edc_provider edc_consumer; do
+        for db in edc_rec edc_third_party; do
           compose exec -T postgres psql -U postgres -v ON_ERROR_STOP=1 -c "
             DROP DATABASE IF EXISTS $db;
             CREATE DATABASE $db;
@@ -524,26 +587,26 @@ tasks:
       - task: edc:build
       - task: edc:docker
       - |
-        docker stop dataspaces-edc-provider-1 dataspaces-edc-consumer-1 2>/dev/null || true
-        docker rm -f dataspaces-edc-provider-1 dataspaces-edc-consumer-1 2>/dev/null || true
+        docker stop dataspaces-edc-rec-1 dataspaces-edc-third-party-1 2>/dev/null || true
+        docker rm -f dataspaces-edc-rec-1 dataspaces-edc-third-party-1 2>/dev/null || true
         fuser -k 19193/tcp 19194/tcp 19195/tcp 19291/tcp 29193/tcp 29194/tcp 29195/tcp 29291/tcp 2>/dev/null || true
         sleep 1
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.provider.yml up -d --build --force-recreate --no-deps edc-provider
+          docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build --force-recreate --no-deps edc-rec
         COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.consumer.yml up -d --build --force-recreate --no-deps edc-consumer
+          docker compose --env-file .env.local -f docker-compose.third-party.yml up -d --build --force-recreate --no-deps edc-third-party
         echo "Waiting for EDC provider (timeout 90s)..."
-        timeout 90 bash -c 'until docker inspect dataspaces-edc-provider-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
+        timeout 90 bash -c 'until docker inspect dataspaces-edc-rec-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
           && echo "EDC provider ready" || echo "EDC provider failed to start"
         echo "Waiting for EDC consumer (timeout 90s)..."
-        timeout 90 bash -c 'until docker inspect dataspaces-edc-consumer-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
+        timeout 90 bash -c 'until docker inspect dataspaces-edc-third-party-1 --format "{{.State.Health.Status}}" 2>/dev/null | grep -q healthy; do sleep 3; done' \
           && echo "EDC consumer ready" || echo "EDC consumer failed to start"
 
   # ── EDC local dev overrides ─────────────────────────────────────────────
-  edc-provider:run:
+  edc-rec:run:
     desc: Stop Docker container, run EDC provider locally from fat JAR
     cmds:
-      - docker stop dataspaces-edc-provider-1 2>/dev/null || true
+      - docker stop dataspaces-edc-rec-1 2>/dev/null || true
       - |
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
         if [ ! -f "$jar" ]; then
@@ -551,14 +614,14 @@ tasks:
           task edc:build
         fi
         exec java -Xms256m -Xmx512m \
-          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
-          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
+          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
+          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
           -jar "$jar"
 
-  edc-consumer:run:
+  edc-third-party:run:
     desc: Stop Docker container, run EDC consumer locally from fat JAR
     cmds:
-      - docker stop dataspaces-edc-consumer-1 2>/dev/null || true
+      - docker stop dataspaces-edc-third-party-1 2>/dev/null || true
       - |
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
         if [ ! -f "$jar" ]; then
@@ -566,8 +629,8 @@ tasks:
           task edc:build
         fi
         exec java -Xms256m -Xmx512m \
-          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
-          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
+          -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
+          -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
           -jar "$jar"
 
   edc:watch-build:
@@ -583,10 +646,10 @@ tasks:
         gradle:8.12-jdk21
         gradle :edc-connector:shadowJar --continuous --no-daemon
 
-  edc-provider:watch:
+  edc-rec:watch:
     desc: Run EDC provider locally, auto-restart on fat JAR rebuild
     cmds:
-      - docker stop dataspaces-edc-provider-1 2>/dev/null || true
+      - docker stop dataspaces-edc-rec-1 2>/dev/null || true
       - |
         set +e
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
@@ -628,7 +691,7 @@ tasks:
         cleanup() { stop_edc; exit 0; }
         trap cleanup INT TERM EXIT
 
-        conf="{{.ROOT_DIR}}/services/connector/config/provider.properties"
+        conf="{{.ROOT_DIR}}/services/connector/config/rec.properties"
 
         # An EDC that outlived its watcher still holds the ports, so every boot
         # after it fails to bind and the loop spins — 200+ restarts with nothing
@@ -649,8 +712,8 @@ tasks:
           STARTED=$(date +%s)
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
-            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/provider.properties \
-            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/provider-vault.properties \
+            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
+            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
             -jar "$jar" &
           PID=$!
 
@@ -685,10 +748,10 @@ tasks:
             sleep 1
           fi
         done
-  edc-consumer:watch:
+  edc-third-party:watch:
     desc: Run EDC consumer locally, auto-restart on fat JAR rebuild
     cmds:
-      - docker stop dataspaces-edc-consumer-1 2>/dev/null || true
+      - docker stop dataspaces-edc-third-party-1 2>/dev/null || true
       - |
         set +e
         jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
@@ -730,7 +793,7 @@ tasks:
         cleanup() { stop_edc; exit 0; }
         trap cleanup INT TERM EXIT
 
-        conf="{{.ROOT_DIR}}/services/connector/config/consumer.properties"
+        conf="{{.ROOT_DIR}}/services/connector/config/third-party.properties"
 
         # An EDC that outlived its watcher still holds the ports, so every boot
         # after it fails to bind and the loop spins — 200+ restarts with nothing
@@ -751,8 +814,8 @@ tasks:
           STARTED=$(date +%s)
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
-            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/consumer.properties \
-            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/consumer-vault.properties \
+            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
+            -Dedc.vault.fs.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
             -jar "$jar" &
           PID=$!
 
@@ -801,19 +864,29 @@ tasks:
       - task: db:migrate:provenance
 
   db:migrate:identity-registry:
-    desc: Migrate the identity-registry database
+    desc: Migrate every identity-registry database (anchor + one per participant)
     cmds:
       - |
         cd services/identity-registry
-        IDENTITY_REGISTRY_DATABASE_URL="{{.IR_DB | default "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"}}" \
-          uv run alembic upgrade head
+        # **Three databases since `DID-05`**, not one: the anchor's and one per
+        # participant instance. Migrating only the anchor leaves the participants
+        # at an older head, and each refuses to start against a revision it did
+        # not expect — a failure that reads as a broken service rather than a
+        # half-applied migration.
+        for url in "{{.IR_DB | default "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"}}" \
+                   "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_rec" \
+                   "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party" \
+                   "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator"; do
+          echo "→ ${url##*/}"
+          IDENTITY_REGISTRY_DATABASE_URL="$url" uv run alembic upgrade head
+        done
 
   db:migrate:connector:
-    desc: Migrate both connector databases (provider + consumer)
+    desc: Migrate every connector database (one per participant)
     cmds:
       - |
         cd services/connector
-        for db in connector_provider connector_consumer; do
+        for db in connector_rec connector_third_party connector_grid_operator; do
           echo "→ $db"
           CONNECTOR_ROLE=provider \
           CONNECTOR_DATABASE_URL="postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/$db" \
@@ -821,11 +894,11 @@ tasks:
         done
 
   db:migrate:provenance:
-    desc: Migrate both provenance databases (provider + consumer)
+    desc: Migrate every provenance database (one per participant)
     cmds:
       - |
         cd services/provenance
-        for db in provenance_provider provenance_consumer; do
+        for db in provenance_rec provenance_third_party provenance_grid_operator; do
           echo "→ $db"
           PROVENANCE_DATABASE_URL="postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/$db" \
             uv run alembic upgrade head
@@ -835,8 +908,9 @@ tasks:
     desc: Report the schema revision of every service database
     cmds:
       - |
-        for db in identity_registry connector_provider connector_consumer \
-                  provenance_provider provenance_consumer; do
+        for db in identity_registry ir_rec ir_third_party ir_grid_operator \
+                  connector_rec connector_third_party connector_grid_operator \
+                  provenance_rec provenance_third_party provenance_grid_operator; do
           rev=$(docker exec dataspaces-postgres-1 psql -U postgres -d "$db" -tAc \
             "select version_num from alembic_version" 2>/dev/null || echo "MISSING")
           printf '  %-24s %s\n' "$db" "${rev:-<no revision>}"
@@ -847,8 +921,10 @@ tasks:
     prompt: This deletes all local dataspace data. Continue?
     cmds:
       - |
-        for db in identity_registry connector_provider connector_consumer \
-                  provenance_provider provenance_consumer edc_provider edc_consumer; do
+        for db in identity_registry ir_rec ir_third_party ir_grid_operator \
+                  connector_rec connector_third_party connector_grid_operator \
+                  provenance_rec provenance_third_party provenance_grid_operator \
+                  edc_rec edc_third_party edc_grid_operator; do
           echo "→ dropping $db"
           docker exec dataspaces-postgres-1 psql -U postgres -d postgres -q \
             -c "DROP DATABASE IF EXISTS $db WITH (FORCE)" \
@@ -858,10 +934,14 @@ tasks:
       - |
         echo
         echo "Databases rebuilt at head. Next:"
-        echo "  1. task identity:bootstrap    (trust anchor, participants, dev users)"
-        echo "  2. restart ds-connector, identity-registry and ds-provenance —"
-        echo "     they verify the schema revision at startup and hold stale connections"
-        echo "  3. task e2e:scenario:apply    (use-case fixtures, if you run the chains)"
+        echo "  1. task identity:bootstrap    (trust anchor, owners, enrolment codes)"
+        echo "  2. restart identity-registry, ir-rec, ir-third-party, ds-connector"
+        echo "     and ds-provenance — each verifies the schema revision at startup"
+        echo "     and holds stale connections"
+        echo "  3. task rec:start / third-party:start   (they re-enrol: the anchor"
+        echo "     no longer holds their keys, so their identities are recreated)"
+        echo "  4. task identity:users       (the people, once their organisations exist)"
+        echo "  5. task e2e:scenario:apply    (use-case fixtures, if you run the chains)"
 
   # ── E2E verification ─────────────────────────────────────────────────────
   e2e:
@@ -928,22 +1008,26 @@ tasks:
   e2e:prepare:
     desc: "E2E: clean state, restart the EDCs, wait for readiness, apply fixtures"
     cmds:
-      # `ds-e2e clean` runs DROP DATABASE / CREATE DATABASE on edc_provider and
-      # edc_consumer. The EDCs hold open connections and only run their schema
+      # `ds-e2e clean` runs DROP DATABASE / CREATE DATABASE on edc_rec and
+      # edc_third_party. The EDCs hold open connections and only run their schema
       # migration at boot, so anything that keeps running afterwards is talking
       # to a control plane whose schema was pulled out from under it. Restarting
       # them is not optional — it is what makes a clean run mean anything.
       - task: e2e:clean
       - |
         set +e
-        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q '^dataspaces-edc-provider-1$'; then
+        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q '^dataspaces-edc-rec-1$'; then
           echo "Restarting EDC containers after the database reset..."
-          docker restart dataspaces-edc-provider-1 dataspaces-edc-consumer-1 >/dev/null 2>&1
+          # All three: the grid operator's control plane holds connections to a
+          # database `ds-e2e clean` has just dropped and recreated, exactly like
+          # the other two (`DID-15`).
+          docker restart dataspaces-edc-rec-1 dataspaces-edc-third-party-1 \
+            dataspaces-edc-grid-operator-1 >/dev/null 2>&1
         else
           # Local dev mode: the EDCs are host JVMs owned by `edc-*:watch` loops,
           # which restart them on exit. Killing them is the restart.
           echo "Restarting local EDC JVMs after the database reset..."
-          for port in 19193 29193; do
+          for port in 19193 29193 39193; do
             for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
               [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
             done
@@ -1243,27 +1327,44 @@ tasks:
 
   # ── Compliance (governance validation + audit evidence) ─────────────────────
   compliance:validate:
-    desc: Validate the governance file before importing it into a connector
+    desc: Validate every governance file before importing it into a connector
     cmds:
+      # **One per producer** (`DID-15`). A producer owns its own governance, so
+      # validating only the first one leaves the second free to name a purpose
+      # outside the profile or an owner that does not resolve — and the failure
+      # would surface as a refused negotiation, three services away.
       - |
-        cd libs/governance && uv run ds-governance validate \
-          --file ../../services/connector/governance/governance.yaml \
-          --owners ../../services/identity-registry/seed/owners.dev.yaml
+        cd libs/governance
+        for dir in governance governance-grid-operator; do
+          echo "→ $dir"
+          uv run ds-governance validate \
+            --file ../../services/connector/$dir/governance.yaml \
+            --owners ../../services/identity-registry/seed/owners.dev.yaml
+        done
 
   compliance:validate:runtime:
     desc: Validate governance against the running identity-registry (owners + participants)
     cmds:
       - |
         cd libs/governance && uv run ds-governance validate \
-          --file ../../services/connector/governance/governance.yaml \
+          --file ../../services/connector/governance-rec/governance.yaml \
           --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://172.17.0.1:30005}"
+
+  compliance:conformity:
+    desc: "Assess every participant against the rulebook (DSSC-TRF-02…-04)"
+    cmds:
+      # **Exits non-zero when anybody is non-conformant**, which is what makes
+      # it runnable as the periodic check the blueprint asks for. Reads only:
+      # suspension is a decision, and this is the evidence for it.
+      - |
+        cd services/identity-registry && uv run ir-cli conformity check
 
   compliance:evidence:
     desc: Write DCAT-AP catalog and ODRL offers to reports/compliance
     cmds:
       - |
         cd libs/governance && uv run ds-governance evidence \
-          --file ../../services/connector/governance/governance.yaml \
+          --file ../../services/connector/governance-rec/governance.yaml \
           --owners ../../services/identity-registry/seed/owners.dev.yaml \
           --name core --out-dir ../../reports/compliance
 
@@ -1301,7 +1402,7 @@ tasks:
       # what a running catalogue's `dct:conformsTo` IRIs resolve to.
       - >-
         cd libs/governance && uv run ds-governance fetch-vocabularies
-        --file ../../services/connector/governance/vocabularies.yaml
+        --file ../../services/connector/governance-rec/vocabularies.yaml
         --cache-dir ../../data/vocabularies
         {{if eq .REFRESH "true"}}--refresh{{end}}
     vars:

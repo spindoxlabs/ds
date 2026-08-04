@@ -65,6 +65,13 @@ own secret, in its own release's Secret.
       key: IDENTITY_REGISTRY_ENCRYPTION_KEY
 - name: IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN
   value: {{ include "ir.trustAnchorDomain" . | quote }}
+{{- if .Values.connectorUrls }}
+# Told when the participant registry changes, so an operator does not watch a
+# stale list for a minute after a promote. Best-effort: an unreachable connector
+# just keeps its own TTL. Rendered by helmfile from the participant list.
+- name: IDENTITY_REGISTRY_CONNECTOR_URLS
+  value: {{ .Values.connectorUrls | quote }}
+{{- end }}
 - name: IDENTITY_REGISTRY_CREDENTIALS_CONTEXT_URL
   value: {{ .Values.credentialsContextUrl | default (printf "https://%s/ns/credentials/v1" (.Values.global).baseDomain) | quote }}
 - name: IDENTITY_REGISTRY_DATASPACE_URI
@@ -181,8 +188,4 @@ which is the thing `D-47` exists to rule out.
 {{- else -}}
 {{- printf "%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain -}}
 {{- end -}}
-{{- end -}}
-
-{{- define "ir.usersHost" -}}
-{{- printf "%s.%s" (((.Values.global).hosts).users | default "users") (.Values.global).baseDomain -}}
 {{- end -}}

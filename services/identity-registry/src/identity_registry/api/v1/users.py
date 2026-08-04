@@ -9,13 +9,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import Credential, KeycloakMapping
-from ...dependencies import get_db, get_settings_dep, require_read_scope, require_resolve_scope
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_read_scope,
+    require_resolve_scope,
+)
 from ...schemas.responses import (
     SubjectIdentityResponse,
     UserCredentialResponse,
     UserResolveResponse,
 )
 from ...services.crypto import derive_email_subject_id
+from ...services.did import subject_id_of
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -205,6 +211,75 @@ async def resolve_user_by_email(
     return UserResolveResponse(
         did=mapping.did,
         subject_id=mapping.subject_id,
+        roles=[c.role for c in credentials if c.role],
+        credentials=credentials,
+        role=newest.role if newest else None,
+        vc_jws=newest.vc_jws if newest else None,
+    )
+
+
+@router.get("/{subject_did:path}/credentials", response_model=UserResolveResponse)
+async def credentials_held_for(
+    subject_did: str,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    _claims: dict = Depends(require_resolve_scope),
+):
+    """What **this instance holds** for a person — `DID-11` step 2.
+
+    The holder-side half of `/users/resolve`, and the split is the point:
+
+    * *who is this person* — a Keycloak identity, a subject id, a DID — is
+      **registry** data and stays at the trust anchor;
+    * *what credentials do they hold* is **custody**, and after `D-49`/`D-50`
+      that lives with the organisation that onboarded them.
+
+    So a REC-side application asks its own instance this, rather than asking the
+    anchor for credentials the anchor happens to have issued. The anchor keeps
+    its issuance record — the issuer knows what it attested — but a participant
+    reading credentials from the issuer is a participant that does not really
+    hold anything, which is the shape `DID-05` removed for participants and this
+    removes for the people they hold credentials for.
+
+    Takes the DID rather than an email because this instance has no Keycloak
+    mappings: those are registry data. Two calls, two questions, two owners.
+    """
+    if subject_id_of(subject_did) is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "not a subject DID — a person's identifier is "
+                "did:web:<participant>:users:<id> (D-50)"
+            ),
+        )
+
+    # **The namespace is deliberately not the test.** It was, briefly, and it was
+    # wrong: a person is *named* by the organisation that onboarded them and can
+    # hold credentials from a relationship with another — the dual-role case this
+    # fixture has. Refusing on namespace would have hidden a credential this
+    # instance legitimately holds.
+    #
+    # What bounds the answer is what is *in this database*: an instance holds
+    # what was delivered to it and answers with that, and for a person it holds
+    # nothing about the answer is empty.
+
+    rows = (
+        await db.execute(
+            select(Credential)
+            .where(Credential.subject_did == subject_did, Credential.status == "active")
+            .order_by(Credential.issued_at.desc())
+        )
+    ).scalars().all()
+
+    now = datetime.now(UTC)
+    credentials = [
+        _to_credential_response(c) for c in rows if not _is_expired(c.expires_at, now)
+    ]
+    presentable = [c for c in credentials if c.vc_jws]
+    newest = presentable[0] if presentable else None
+    return UserResolveResponse(
+        did=subject_did,
+        subject_id=subject_id_of(subject_did),
         roles=[c.role for c in credentials if c.role],
         credentials=credentials,
         role=newest.role if newest else None,

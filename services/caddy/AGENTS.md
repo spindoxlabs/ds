@@ -18,8 +18,8 @@ Five site blocks, **all on `:80`**, separated by Host header alone:
 
 ## Caddy is the DID router
 
-1. EDC resolves `did:web:provider.dataspaces.localhost` by fetching
-   `http://provider.dataspaces.localhost/.well-known/did.json`.
+1. EDC resolves `did:web:rec.dataspaces.localhost` by fetching
+   `http://rec.dataspaces.localhost/.well-known/did.json`.
 2. `*.dataspaces.localhost` resolves to the Caddy container through **Docker network
    aliases** declared on the caddy service; from the host, the `.localhost` TLD resolves to
    loopback and compose publishes `80:80`.
@@ -63,7 +63,7 @@ never be able to assert its own identity, even though every service re-verifies 
   container-to-container traffic — which means they break under `task dev:start`, where that
   container is stopped.
 - **A host with its own site block does not fall through to the `*` wildcard.** Caddy picks
-  the most specific host, full stop. `consumer.dataspaces.localhost` is both a gateway host
+  the most specific host, full stop. `third-party.dataspaces.localhost` is both a gateway host
   and a participant DID, so its block repeats the `/.well-known/did.json` handler. Add a
   block for any other DID-bearing host and it must repeat it too.
 - `handle_path` strips the matched prefix before proxying. Check what the upstream's routes

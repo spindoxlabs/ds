@@ -48,11 +48,11 @@ too — which is what lets oauth2-proxy perform OIDC discovery against the brows
 | `*.dataspaces.localhost` | `/.well-known/did.json` → identity registry. Everything else 404 |
 | `keycloak.dataspaces.localhost` | everything → Keycloak on `172.17.0.1:9080` |
 | `sso.dataspaces.localhost` | `/oauth2/*` → oauth2-proxy; everything else redirects to the portal host |
-| `consumer.dataspaces.localhost` | its own DID document, plus `/api/connector/*` → `:31001` and `/api/provenance/*` → `:31000` |
+| `third-party.dataspaces.localhost` | its own DID document, plus `/api/connector/*` → `:31001` and `/api/provenance/*` → `:31000` |
 | `portal.dataspaces.localhost` | the browser surface — see below |
 
 The wildcard is matched **last**, so a specific host always wins. That is why
-`consumer.dataspaces.localhost` — which is both a gateway host and a participant DID — repeats
+`third-party.dataspaces.localhost` — which is both a gateway host and a participant DID — repeats
 the DID handler inside its own block; without it the consumer's DID document would 404 while
 every other participant resolved.
 

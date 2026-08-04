@@ -275,7 +275,7 @@ class ChainCommunityFlow(_ChainFlow):
         # 4. The pool is a boundary, not a label. A subject outside the community
         #    must not be reachable through it — this is the assertion that makes
         #    delegated consent safe, and the one nothing previously covered.
-        outsider = "did:web:users.dataspaces.localhost:outsider"
+        outsider = "did:web:rec.dataspaces.localhost:users:outsider"
         out_check = self.http.get(
             f"{s.identity_registry_url}/memberships/check?"
             f"user_did={urllib.parse.quote(outsider, safe='')}"
@@ -536,7 +536,7 @@ class ChainUnbundlingFlow(_ChainFlow):
             result.fail_step(
                 "role-scoped offer",
                 f"offer {GRID_OFFER!r} is not published — add it to "
-                "services/connector/governance/sharing-offers.yaml and reload the connector",
+                "services/connector/governance-rec/sharing-offers.yaml and reload the connector",
                 available=[o.get("id") for o in offers],
             )
             return result

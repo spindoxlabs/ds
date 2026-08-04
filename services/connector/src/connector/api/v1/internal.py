@@ -111,9 +111,9 @@ def _edc_management_url(settings) -> str:
     the wrong runtime's agreements.
     """
     url = (
-        settings.edc_provider_management_url
+        settings.edc_rec_management_url
         if settings.role == "provider"
-        else settings.edc_consumer_management_url
+        else settings.edc_third_party_management_url
     )
     return url.rstrip("/")
 
@@ -904,7 +904,7 @@ def _edr_public_jwk_cached(vault_file: str, alias: str) -> dict | None:
         # **`kid` is the vault alias, not whatever the JWK claims.** EDC stamps
         # the alias it signed with into the token header
         # (`participant-private-key`), while the seeded JWK carries its own
-        # (`edr-provider-key-1`). Publishing the JWK's own kid made every
+        # (`edr-rec-key-1`). Publishing the JWK's own kid made every
         # kid-indexed lookup miss, so a verifier had to try every key and hope.
         # Publishing the alias is what makes `kid` mean what JWKS says it means.
         public["kid"] = alias

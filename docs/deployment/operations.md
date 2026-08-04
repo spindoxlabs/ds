@@ -103,7 +103,7 @@ up-to-date database.
 Roll one participant at a time by narrowing the selector:
 
 ```bash
-helmfile -e production -l name=ds-connector-provider apply
+helmfile -e production -l name=ds-connector-rec apply
 ```
 
 ### Chart changes
@@ -117,8 +117,8 @@ diff when you rotate anything.
 `atomic` rolls back a failed release automatically. To undo a successful one:
 
 ```bash
-helm -n ds-provider history ds-connector-provider
-helm -n ds-provider rollback ds-connector-provider <revision>
+helm -n ds-provider history ds-connector-rec
+helm -n ds-provider rollback ds-connector-rec <revision>
 ```
 
 !!! warning "Rolling back does not roll back database migrations"

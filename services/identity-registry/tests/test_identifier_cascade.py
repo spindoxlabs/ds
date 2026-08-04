@@ -27,7 +27,7 @@ ADMIN = make_headers(scope="identity-registry.admin")
 
 REALM = "dataspaces"
 USER_ID = "00000000-0000-4000-a000-000000000003"
-DID = "did:web:users.dataspaces.localhost:person-a"
+DID = "did:web:rec.dataspaces.localhost:users:person-a"
 
 
 async def _seed(db_session, **overrides) -> None:
@@ -136,7 +136,7 @@ async def test_a_keycloak_user_cannot_be_bound_to_a_second_did(client, db_sessio
     exists to prevent, and there is no merge afterwards: provenance is append-only
     and consent rows key on a DID."""
     await _seed(db_session)
-    other = "did:web:users.dataspaces.localhost:person-a-again"
+    other = "did:web:rec.dataspaces.localhost:users:person-a-again"
     db_session.add(Did(did=other, did_type="user"))
     await db_session.commit()
 

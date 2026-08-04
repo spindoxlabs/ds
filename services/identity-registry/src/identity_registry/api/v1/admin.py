@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...config import Settings, get_settings
+from ...config import Settings
 from ...db.models import (
     Credential,
     Did,
@@ -51,7 +51,14 @@ from ...services.crypto import (
     generate_key_pair,
     next_key_index,
 )
-from ...services.did import build_did_document
+from ...services.did import (
+    SubjectNamespaceError,
+    build_did_document,
+    subject_did_for,
+    subject_id_of,
+)
+from ...services import conformity
+from ...services.issuance import IssuanceError, deliver_to_custodian
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import (
     allocate_status_list_index,
@@ -66,6 +73,24 @@ from ...services.vc import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+async def _existing_subject_did(db: AsyncSession, subject_id: str) -> str | None:
+    """The DID this person already has, in whichever namespace it was created.
+
+    Matched on the **subject id inside the DID**, not on a `LIKE` pattern: the
+    id is caller-supplied, and a pattern would let one containing `%` match
+    other people. The `user` rows are a short list — one per person the
+    dataspace knows — so reading them is cheaper than the index a prefix search
+    would need.
+    """
+    rows = (
+        await db.execute(select(Did.did).where(Did.did_type == "user"))
+    ).scalars().all()
+    for did in rows:
+        if subject_id_of(did) == subject_id:
+            return did
+    return None
 
 
 async def _get_trust_anchor_key(db: AsyncSession, settings: Settings) -> Key:
@@ -512,8 +537,30 @@ async def issue_data_subject_credential(
 ):
     trust_anchor_key = await _get_trust_anchor_key(db, settings)
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
-    users_domain = settings.trust_anchor_domain.replace("trust-anchor.", "users.")
-    subject_did = f"did:web:{users_domain}:{data.subject_id}"
+
+    # **The person's identifier lives in their custodian's namespace** (`D-50`,
+    # `DID-11` step 2), not under the anchor's domain.
+    try:
+        subject_did = subject_did_for(data.linked_participant_did, data.subject_id)
+    except SubjectNamespaceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # **One human, one DID, even across organisations.** Roles are additive —
+    # the same person is a data subject about their own consumption and a
+    # consumer user acting for somebody else — and this endpoint is called once
+    # per role. Deriving the DID from *this* call's participant would give that
+    # person two identifiers, splitting their consent records and provenance in
+    # half. So the first call decides where they live and later ones reuse it;
+    # what follows the credential's own participant is **custody**, below.
+    existing = await _existing_subject_did(db, data.subject_id)
+    if existing is not None and existing != subject_did:
+        log.info(
+            "subject %s already exists as %s; issuing under it rather than %s",
+            data.subject_id,
+            existing,
+            subject_did,
+        )
+        subject_did = existing
 
     did_result = await db.execute(select(Did).where(Did.did == subject_did))
     did_record = did_result.scalar_one_or_none()
@@ -581,13 +628,87 @@ async def issue_data_subject_credential(
     )
     db.add(cred)
     await db.commit()
-
     await db.refresh(cred)
+
+    # **Custody follows the credential, not the identifier** (`DID-11` step 2).
+    # The person's DID sits in whichever organisation onboarded them first; this
+    # credential goes to the organisation *this* one is about, which for a
+    # dual-role person is a different party. The anchor keeps its issuance
+    # record either way — the issuer knows what it attested, the custodian holds
+    # what it can serve.
+    custodian = data.linked_participant_did
+    delivered_to: str | None = None
+    delivery_error: str | None = None
+    try:
+        delivered_to = await deliver_to_custodian(
+            db,
+            settings,
+            custodian_did=custodian,
+            credentials=[("DataSubjectCredential", signed_vc)],
+            issuer_pid=cred.id,
+            holder_pid=data.subject_id,
+        )
+        await db.commit()
+    except IssuanceError as exc:
+        # Reported, never swallowed, and the credential row **stays**: it is what
+        # a retry re-delivers. A person whose REC does not hold their credential
+        # is a person the REC cannot answer for, and that has to be visible at
+        # the call that caused it rather than at the first query that fails.
+        delivery_error = exc.message
+        log.error("member credential %s not delivered: %s", cred.id, exc.message)
+
     return DataSubjectCredentialResponse(
         subjectDid=subject_did,
         credentialId=cred.id,
         generatedAt=cred.issued_at,
+        custodianDid=custodian,
+        deliveredTo=delivered_to,
+        deliveryError=delivery_error,
     )
+
+
+# ── Conformity assessment (`DSSC-TRF-02`, `-03`, `-04`) ──────────────────────
+
+
+@router.get("/conformity")
+async def conformity_report(
+    did: str | None = Query(
+        None, description="Assess one participant instead of every one"
+    ),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    _claims: dict = Depends(require_admin_or_read_scope),
+):
+    """Is each participant still what the rulebook requires?
+
+    Onboarding decided whether a party *may* join; this asks whether it still
+    *qualifies*, and the two answers drift apart with nobody acting — a
+    credential expires, an agreement version is superseded, a provider stops
+    publishing a DSP address.
+
+    **Reads only.** Suspension is a decision; one an automated check makes for
+    you is a decision nobody made. What this produces is the evidence for it.
+
+    A criteria file that cannot be read is a **503**, never an empty pass: a
+    conformity report generated without criteria would say every participant
+    conforms to nothing in particular.
+    """
+    try:
+        criteria = conformity.load_criteria(settings.conformity_criteria_path)
+    except conformity.ConformityError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    if did:
+        participant = (
+            await db.execute(select(Participant).where(Participant.did == did))
+        ).scalar_one_or_none()
+        if participant is None:
+            raise HTTPException(status_code=404, detail=f"{did} is not a participant")
+        assessments = [await conformity.assess(db, settings, participant, criteria)]
+    else:
+        assessments = await conformity.assess_all(db, settings, criteria)
+
+    return conformity.render(assessments, settings)
 
 
 @router.get("/credentials/{cred_id}")

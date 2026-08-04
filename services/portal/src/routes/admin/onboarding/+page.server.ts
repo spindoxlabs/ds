@@ -10,6 +10,7 @@ import {
 	listApplications,
 	listInvites,
 	listOwners,
+	listParticipantDids,
 	promoteOwner,
 	recordAgreementAcceptance,
 	updateOwner,
@@ -34,17 +35,19 @@ export const load: PageServerLoad = async (event) => {
 	const status = event.url.searchParams.get('status') ?? 'pending';
 
 	try {
-		const [applications, owners, agreements, invites] = await Promise.all([
+		const [applications, owners, agreements, invites, enrolledDids] = await Promise.all([
 			listApplications(token, status),
 			listOwners(token).catch(() => []),
 			listAgreements(token).catch(() => []),
 			listInvites(token).catch(() => []),
+			listParticipantDids(token),
 		]);
 		return {
 			applications,
 			owners,
 			agreements,
 			invites,
+			enrolledDids,
 			status,
 			may: {
 				write: hasGrant(session, 'identity-registry.organizations.write'),
@@ -58,6 +61,7 @@ export const load: PageServerLoad = async (event) => {
 			owners: [],
 			agreements: [],
 			invites: [],
+			enrolledDids: [],
 			status,
 			may: { write: false, promote: false },
 			error: e instanceof Error ? e.message : 'The identity registry is unavailable',

@@ -6,8 +6,8 @@ CATALOGUE_EVENT = {
     "event_type": "CataloguePublished",
     "event_id": "test-cat-001",
     "occurred_at": "2026-01-01T10:00:00Z",
-    "data_product_id": "https://provider.dataspaces.localhost/datasets/meters_15m",
-    "provider_did": "did:web:provider.dataspaces.localhost",
+    "data_product_id": "https://rec.dataspaces.localhost/datasets/meters_15m",
+    "provider_did": "did:web:rec.dataspaces.localhost",
     "title": "Meter Readings 15m",
 }
 
@@ -16,9 +16,9 @@ CONTRACT_EVENT = {
     "event_id": "test-contract-001",
     "occurred_at": "2026-01-02T10:00:00Z",
     "agreement_id": "urn:uuid:agreement-001",
-    "data_product_id": "https://provider.dataspaces.localhost/datasets/meters_15m",
-    "provider_did": "did:web:provider.dataspaces.localhost",
-    "consumer_did": "did:web:consumer.dataspaces.localhost",
+    "data_product_id": "https://rec.dataspaces.localhost/datasets/meters_15m",
+    "provider_did": "did:web:rec.dataspaces.localhost",
+    "consumer_did": "did:web:third-party.dataspaces.localhost",
 }
 
 TRANSFER_EVENT = {
@@ -27,9 +27,9 @@ TRANSFER_EVENT = {
     "occurred_at": "2026-01-03T10:00:00Z",
     "transfer_id": "urn:uuid:transfer-001",
     "agreement_id": "urn:uuid:agreement-001",
-    "data_product_id": "https://provider.dataspaces.localhost/datasets/meters_15m",
-    "provider_did": "did:web:provider.dataspaces.localhost",
-    "consumer_did": "did:web:consumer.dataspaces.localhost",
+    "data_product_id": "https://rec.dataspaces.localhost/datasets/meters_15m",
+    "provider_did": "did:web:rec.dataspaces.localhost",
+    "consumer_did": "did:web:third-party.dataspaces.localhost",
     "bytes_transferred": 4096,
 }
 
@@ -38,7 +38,7 @@ OBLIGATION_EVENT = {
     "event_id": "test-obligation-001",
     "occurred_at": "2026-01-04T10:00:00Z",
     "agreement_id": "urn:uuid:agreement-001",
-    "consumer_did": "did:web:consumer.dataspaces.localhost",
+    "consumer_did": "did:web:third-party.dataspaces.localhost",
     "obligation_type": "odrl:delete",
 }
 

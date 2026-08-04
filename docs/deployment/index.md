@@ -61,18 +61,18 @@ graph TB
   end
 
   subgraph p1["ds-provider (namespace)"]
-    EDC1["ds-edc-provider<br/>:19194 DSP"]
-    CON1["ds-connector-provider<br/>:30001"]
-    PROV1["ds-provenance-provider<br/>:30000"]
-    FC1["ds-federated-catalog-provider<br/>:30003"]
+    EDC1["ds-edc-rec<br/>:19194 DSP"]
+    CON1["ds-connector-rec<br/>:30001"]
+    PROV1["ds-provenance-rec<br/>:30000"]
+    FC1["ds-federated-catalog-rec<br/>:30003"]
     O2P1["ds-oauth2-proxy-provider<br/>:4180"]
     PORT1["ds-portal-provider<br/>:30004"]
   end
 
   subgraph p2["ds-consumer (namespace)"]
-    EDC2["ds-edc-consumer"]
-    CON2["ds-connector-consumer"]
-    PROV2["ds-provenance-consumer"]
+    EDC2["ds-edc-third-party"]
+    CON2["ds-connector-third-party"]
+    PROV2["ds-provenance-third-party"]
   end
 
   EDC1 <-->|DSP| EDC2

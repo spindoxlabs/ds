@@ -19,8 +19,8 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from identity_registry.db.models import Credential, Did
 
-SUBJECT = "did:web:users.dataspaces.localhost:data-subject"
-OTHER = "did:web:users.dataspaces.localhost:someone-else"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:data-subject"
+OTHER = "did:web:rec.dataspaces.localhost:users:someone-else"
 ISSUER = "did:web:registry.dataspaces.localhost"
 TYPE = "OrganizationCredential"
 

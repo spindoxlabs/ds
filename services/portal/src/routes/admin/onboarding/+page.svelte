@@ -36,6 +36,9 @@
     rejected: 'bg-gray-100 text-gray-600',
   };
 
+  /** DIDs that have enrolled — see `credentialGate`. */
+  const enrolled = $derived(new Set<string>(data.enrolledDids ?? []));
+
   /**
    * The registry enforces these gates; the page states them so an operator can
    * see *why* a step is not available rather than finding a button missing.
@@ -47,6 +50,14 @@
     // An organisation that applied through the public route usually has no DID:
     // it is standing up a deployment, not migrating one. The operator assigns it.
     if (!owner.did) return 'No did:web has been assigned yet.';
+    // **The organisation proves its own key** (`DID-09`, `P-20`). The anchor
+    // mints nothing, so a DID an operator assigned is not yet an identity
+    // anybody can issue to: the credential arrives when they enrol with the
+    // code in their connection bundle. Offering the button here produced a 409
+    // and an operator with no way to know what was missing.
+    if (!enrolled.has(owner.did)) {
+      return `${owner.did} has not enrolled yet — hand over the connection bundle below; the credential is issued when they present its code.`;
+    }
     return null;
   }
 

@@ -15,7 +15,7 @@ export const load: PageServerLoad = async ({ params, locals, fetch }) => {
 	const defaultCounterPartyAddress =
 		env.CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS ?? 'http://172.17.0.1:19194/protocol/2025-1';
 	const defaultAssigner =
-		env.CONSUMER_DEFAULT_ASSIGNER ?? 'did:web:provider.dataspaces.localhost';
+		env.CONSUMER_DEFAULT_ASSIGNER ?? 'did:web:rec.dataspaces.localhost';
 
 	// Two JSON-LD shapes reach this page: the dataset-api serves prefixed terms
 	// (`dcat:distribution`, `odrl:hasPolicy`), the federated catalog serves its

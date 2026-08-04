@@ -122,11 +122,11 @@ REC_REGISTRY = "rec_registry"
 # lost the filter, and that must look like a failure rather than a bigger result.
 REC_MEMBERS: dict[str, dict[str, list[str]]] = {
     "subject@example.test": {
-        "dids": ["did:web:users.dataspaces.localhost:data-subject"],
+        "dids": ["did:web:rec.dataspaces.localhost:users:data-subject"],
         "devices": ["ds-e2e-METER-0001"],
     },
     "dual@example.test": {
-        "dids": ["did:web:users.dataspaces.localhost:dual-user"],
+        "dids": ["did:web:rec.dataspaces.localhost:users:dual-user"],
         "devices": ["ds-e2e-METER-0002"],
     },
 }
@@ -145,7 +145,7 @@ DATASETS: dict[str, dict[str, Any]] = {
              "temperature_c": 19.1, "wind_ms": 2.5, "ghi": 455},
         ],
     },
-    # Declared exactly as `services/connector/governance/governance.yaml`
+    # Declared exactly as `services/connector/governance-rec/governance.yaml`
     # declares it: a `rec_registry` filter on `device_id`. It used to key rows by
     # subject DID in a column `sub`, which no decision could ever narrow — ds
     # sends registry-native principals for a handler this fixture did not
@@ -161,6 +161,27 @@ DATASETS: dict[str, dict[str, Any]] = {
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.55},
             {"timestamp": "2026-05-11T08:15:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.51},
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-9999", "kwh": 9.99},
+        ],
+    },
+    # **The second provider's dataset** (`D-54`, `DID-15`). The grid operator
+    # publishes the state of the grid it operates: no data subject in it, so no
+    # consent, no row filter and no member registry behind it. Its presence here
+    # is what lets a consumer negotiate with *two* counterparties for two
+    # differently-shaped datasets — the first fixture in this repository where
+    # "which provider" is a question rather than a default.
+    #
+    # Served by this same stand-in: in a deployment it is the DSO's own system,
+    # and here the asset id is what routes the query.
+    "datasets.gold.grid_capacity": {
+        "asset_id": "datasets.gold.grid_capacity",
+        "requires_consent": False,
+        "rows": [
+            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-014",
+             "headroom_kw": 320.5, "load_kw": 179.5},
+            {"timestamp": "2026-05-11T09:00:00Z", "substation": "SS-014",
+             "headroom_kw": 288.0, "load_kw": 212.0},
+            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-027",
+             "headroom_kw": 96.2, "load_kw": 403.8},
         ],
     },
 }
@@ -702,7 +723,7 @@ async def _verified_consumer(bearer: str | None) -> str:
     if claims is None:
         # Every key in the set is tried rather than the one matching `kid`: EDC
         # sets `kid` to its **vault alias** (`participant-private-key`) while the
-        # JWK carries its own (`edr-provider-key-1`), so a kid-indexed lookup
+        # JWK carries its own (`edr-rec-key-1`), so a kid-indexed lookup
         # never matches. The set is one or two keys, so trying them all costs
         # nothing and survives a rotation that changes either name.
         #

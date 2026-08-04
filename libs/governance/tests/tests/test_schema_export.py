@@ -56,7 +56,7 @@ def test_the_repos_own_sharing_offers_validate():
     """
     schema = json.loads((SCHEMAS / "sharing-offers.schema.json").read_text(encoding="utf-8"))
     offers = yaml.safe_load(
-        (REPO / "services/connector/governance/sharing-offers.yaml").read_text(encoding="utf-8")
+        (REPO / "services/connector/governance-rec/sharing-offers.yaml").read_text(encoding="utf-8")
     )
     Draft202012Validator(schema).validate(offers)
 

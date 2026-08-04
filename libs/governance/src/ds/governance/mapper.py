@@ -35,7 +35,7 @@ class GovernanceMapper:
     Usage::
 
         mapper = GovernanceMapper(participant_id="provider",
-                                  base_url="https://provider.dataspaces.localhost")
+                                  base_url="https://rec.dataspaces.localhost")
         odrl = mapper.to_odrl_offer("datasets.gold.meters_15m", rule)
         asset = mapper.to_asset_create("datasets.gold.meters_15m", rule)
     """

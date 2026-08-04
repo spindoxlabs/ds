@@ -143,7 +143,7 @@ async def test_the_transfer_poll_uses_the_transfer_interval():
         FlowRequest(
             counter_party_address="http://172.17.0.1:19194/protocol/2025-1",
             asset_id="datasets.gold.test",
-            assigner="did:web:provider.dataspaces.localhost",
+            assigner="did:web:rec.dataspaces.localhost",
         )
     )
 

@@ -56,7 +56,7 @@ def _allowing_decision() -> DataplaneDecision:
 @pytest.fixture
 def client(monkeypatch):
     async def consumer(_bearer):
-        return "did:web:consumer.dataspaces.localhost"
+        return "did:web:third-party.dataspaces.localhost"
 
     async def authorize(**_kwargs):
         return _allowing_decision()

@@ -18,7 +18,7 @@ that echoes an index it was given proves nothing about what was stored.
 from __future__ import annotations
 
 import pytest
-from conftest import make_headers, register_enrolled
+from conftest import CUSTODIAN_DID, make_headers, register_enrolled
 from sqlalchemy import select
 
 from identity_registry.db.models import Credential, StatusList
@@ -97,7 +97,7 @@ async def _issue_membership(client, did: str, db_session=None):
 async def _issue_data_subject(client, subject_id: str):
     r = await client.post(
         "/admin/credentials/data-subject",
-        json={"subject_id": subject_id},
+        json={"subject_id": subject_id, "linked_participant_did": CUSTODIAN_DID},
         headers=HEADERS,
     )
     assert r.status_code == 201, r.text

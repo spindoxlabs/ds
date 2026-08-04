@@ -18,7 +18,7 @@ def _q(iri: str) -> str:
 
 @pytest.mark.asyncio
 async def test_an_agent_can_be_read_by_iri(client):
-    iri = "did:web:provider.dataspaces.localhost"
+    iri = "did:web:rec.dataspaces.localhost"
     await client.post("/prov/agents", json={"iri": iri, "label": "Provider"})
 
     response = await client.get(f"/prov/agents/{_q(iri)}")

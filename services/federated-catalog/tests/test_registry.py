@@ -20,7 +20,7 @@ def test_load_providers(tmp_path):
             dsp_address: http://edc-rec:19194/protocol
           - id: did:web:consumer.example
             role: consumer
-            dsp_address: http://edc-consumer:29194/protocol
+            dsp_address: http://edc-third-party:29194/protocol
     """))
     providers = load_providers(str(yaml_file))
     assert len(providers) == 1

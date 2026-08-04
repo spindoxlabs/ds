@@ -54,12 +54,18 @@ registry sees its own hostname.
 | `trust-anchor.<baseDomain>` | `/.well-known/did.json` | the trust anchor's DID document |
 | `trust-anchor.<baseDomain>` | `/status/*` | passthrough — the revocation list **must** be publicly fetchable, or a verifier cannot determine whether a credential was revoked |
 | `trust-anchor.<baseDomain>` | `/credentials/*` | only when `credentialService.expose` is true |
-| `users.<baseDomain>` | `/<id>/did.json` | user DID resolution; only when `exposeUserDids` is true |
+| `<participant>.<baseDomain>` | `/users/<id>/did.json` | the DID documents of the people that participant onboarded (`DID-11`). Served by its own registry, on the host their DID names |
 
-Both optional hosts are off by default.
+`/users/<id>/did.json` is **not** optional and has no flag: a person's DID is an identifier that
+consent records, provenance events and `credentialSubject.id` all point at, and one that does not
+resolve is a dangling reference. It carries no verification method — a natural person holds no
+key — so what it publishes is the fact that they exist and who is custodian for them.
 
-Enable `exposeUserDids` only when **remote** verifiers resolve your user DIDs; if all credential
-verification is local, the host can be dropped entirely. Enable `credentialService.expose` only
+The trust anchor has no `users.` host. It did until `DID-11` step 2, behind an `exposeUserDids`
+flag that was off by default, which made the production answer to *"where does a person's DID
+resolve"* "nowhere, unless you turned on a flag".
+
+Enable `credentialService.expose` only
 if remote verifiers query the presentation endpoint directly instead of the holder
 self-presenting — the endpoint is not anonymous (callers authenticate with a self-issued token
 signed by the requested DID's registered key), but it is attack surface with no default
@@ -167,12 +173,12 @@ Two extra policies are conditional:
 ```bash
 # the management API must be unreachable from another namespace
 kubectl -n ds-consumer run probe --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -sS --max-time 5 http://ds-edc-provider.ds-provider:19193/api/v3/assets
+  curl -sS --max-time 5 http://ds-edc-rec.ds-provider:19193/api/v3/assets
 # expect: timeout / connection refused
 
 # DSP protocol from a peer namespace must work
 kubectl -n ds-consumer run probe --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -sS --max-time 5 http://ds-edc-provider.ds-provider:19194/api/dsp
+  curl -sS --max-time 5 http://ds-edc-rec.ds-provider:19194/api/dsp
 ```
 
 The probe pod must itself satisfy Pod Security Admission `restricted`; if it is rejected

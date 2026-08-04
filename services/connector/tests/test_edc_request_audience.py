@@ -19,7 +19,7 @@ import pytest
 from connector.registry.participants import Participant, UnknownParticipantError
 from ds_edc.schemas import CatalogRequest, NegotiationRequest
 
-PROVIDER = "did:web:provider.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 ADDRESS = "http://172.17.0.1:19194/protocol/2025-1"
 
 
@@ -103,7 +103,7 @@ async def test_catalog_counterparty_comes_from_the_registry():
     ever saw that happen.
     """
     registry = _Registry(Participant(id=PROVIDER, dsp_address=ADDRESS))
-    svc = _service(registry, provider_id="did:web:consumer.dataspaces.localhost")
+    svc = _service(registry, provider_id="did:web:third-party.dataspaces.localhost")
     await svc.request_catalog(ADDRESS)
     assert svc._edc.last.counter_party_id == PROVIDER
 
@@ -111,7 +111,7 @@ async def test_catalog_counterparty_comes_from_the_registry():
 @pytest.mark.asyncio
 async def test_an_explicit_counterparty_wins():
     registry = _Registry(Participant(id=PROVIDER, dsp_address=ADDRESS))
-    svc = _service(registry, provider_id="did:web:consumer.dataspaces.localhost")
+    svc = _service(registry, provider_id="did:web:third-party.dataspaces.localhost")
     other = "did:web:third-party.dataspaces.localhost"
     await svc.request_catalog(ADDRESS, counter_party_id=other)
     assert svc._edc.last.counter_party_id == other

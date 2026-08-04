@@ -105,7 +105,7 @@ nowhere else.** It is gitignored in full, and nothing in it is tracked — not e
 | `data/keys` | generated key material |
 | `data/vocabularies` | fetched semantic vocabulary copies (`GET /ns/{slug}`) |
 
-**Do not put a cache beside the thing it caches.** `services/connector/governance/vocab-cache`
+**Do not put a cache beside the thing it caches.** `services/connector/governance-rec/vocab-cache`
 was the wrong answer for two reasons: it mixed fetched state into a directory of committed
 configuration, and it added one more place to look for scratch data. The rule exists so that
 list stays short — an ever-growing set of cache directories scattered across units is the

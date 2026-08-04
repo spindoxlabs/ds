@@ -26,6 +26,34 @@ class E2ESettings(BaseSettings):
     provenance_url: str = Field(
         "http://172.17.0.1:30000", validation_alias="CONNECTOR_PROVENANCE_URL_PROVIDER"
     )
+    # The second provider (`D-54`, `DID-15`): a DSO that shares its own grid data
+    # and has no members. Its presence is what makes "which provider" a question.
+    grid_operator_connector_url: str = Field(
+        "http://172.17.0.1:32001", validation_alias="CONNECTOR_URL_GRID_OPERATOR"
+    )
+    grid_operator_provenance_url: str = Field(
+        "http://172.17.0.1:32000",
+        validation_alias="CONNECTOR_PROVENANCE_URL_GRID_OPERATOR",
+    )
+    grid_operator_did: str = Field(
+        "did:web:grid-operator.dataspaces.localhost",
+        validation_alias="CONNECTOR_PARTICIPANT_DID_GRID_OPERATOR",
+    )
+    # Its own registry, reached **directly**. `/users/{did}/credentials` is an
+    # internal-scope route and is deliberately not on the public participant
+    # host — the host publishes DID documents, not credential stores.
+    grid_operator_identity_registry_url: str = Field(
+        "http://172.17.0.1:30008",
+        validation_alias="IDENTITY_REGISTRY_URL_GRID_OPERATOR",
+    )
+    grid_operator_asset_id: str = Field(
+        "datasets.gold.grid_capacity", validation_alias="E2E_GRID_OPERATOR_ASSET_ID"
+    )
+    grid_operator_counter_party_address: str = Field(
+        "http://172.17.0.1:39194/protocol/2025-1",
+        validation_alias="E2E_GRID_OPERATOR_COUNTER_PARTY_ADDRESS",
+    )
+
     consumer_provenance_url: str = Field(
         "http://172.17.0.1:31000", validation_alias="CONNECTOR_PROVENANCE_URL_CONSUMER"
     )
@@ -81,13 +109,20 @@ class E2ESettings(BaseSettings):
         "svc-ds-federated-catalog", validation_alias="SVC_DS_FEDERATED_CATALOG_SECRET"
     )
 
-    # Identity
+    # Identity.
+    #
+    # **These name roles in an exchange, not organisations** (`DID-15`). The
+    # fixtures behind them are `rec` and `third-party`; the fields stay
+    # role-shaped because every flow is written as "the provider side" and "the
+    # consumer side". Where a flow needs to say *which* provider — there are two
+    # — it names one explicitly, as `two_providers` does with
+    # `grid_operator_did`.
     provider_did: str = Field(
-        "did:web:provider.dataspaces.localhost",
+        "did:web:rec.dataspaces.localhost",
         validation_alias="CONNECTOR_PARTICIPANT_DID",
     )
     consumer_did: str = Field(
-        "did:web:consumer.dataspaces.localhost",
+        "did:web:third-party.dataspaces.localhost",
         validation_alias="CONNECTOR_CONSUMER_PARTICIPANT_DID",
     )
     # The issuer every participant enrols with. Named as a DID rather than a URL
@@ -99,7 +134,7 @@ class E2ESettings(BaseSettings):
     )
     # The provider's STS client secret. **Its own** — the trust anchor mints no
     # STS secret for a participant (`D-51`), so this is a value the provider's
-    # deployment chose and matches `IR_PROVIDER_STS_SECRET`.
+    # deployment chose and matches `IR_REC_STS_SECRET`.
     #
     # It now carries the dev default rather than empty. Empty made the positive
     # token-issuance assertion *skip*, and a security flow whose only positive
@@ -149,9 +184,11 @@ class E2ESettings(BaseSettings):
     data_subject_password: str = "subject"
 
     # Test subjects
-    consumer_subject_id: str = "did:web:users.dataspaces.localhost:consumer-user"
+    consumer_subject_id: str = (
+        "did:web:third-party.dataspaces.localhost:users:consumer-user"
+    )
     consumer_email: str = "consumer@example.test"
-    data_subject_id: str = "did:web:users.dataspaces.localhost:data-subject"
+    data_subject_id: str = "did:web:rec.dataspaces.localhost:users:data-subject"
     data_subject_email: str = "subject@example.test"
     asset_id: str = "datasets.silver.meters_15m"
 
@@ -163,7 +200,7 @@ class E2ESettings(BaseSettings):
     org_agreement_id: str = "dataspace-participation"
     org_agreement_version: str = "1.0"
 
-    # Consent vocabulary — must match services/connector/governance/
+    # Consent vocabulary — must match services/connector/governance-rec/
     # sharing-offers.yaml and the ODRL profile taxonomy.
     sharing_offer_id: str = "household-energy-flexibility"
     consented_purpose: str = "FlexibilityResearch"

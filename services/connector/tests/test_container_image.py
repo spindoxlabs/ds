@@ -30,8 +30,8 @@ DOCKERFILE = (UNIT / "Dockerfile").read_text(encoding="utf-8")
 
 #: (compose file, service, expected port)
 ROLES = [
-    ("docker-compose.provider.yml", "ds-connector-provider", "30001"),
-    ("docker-compose.consumer.yml", "ds-connector-consumer", "31001"),
+    ("docker-compose.rec.yml", "ds-connector-rec", "30001"),
+    ("docker-compose.third-party.yml", "ds-connector-third-party", "31001"),
 ]
 
 

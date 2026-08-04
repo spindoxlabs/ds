@@ -86,6 +86,13 @@ database: ""
 
 # ── Identity-registry specifics ───────────────────────────────────────────────
 
+# Connectors told when the participant registry changes (promote, suspend,
+# revoke). Comma-separated; empty disables the notification and leaves every
+# connector on its cache TTL — which is a minute of an operator console showing
+# a registry without the participant they just created. helmfile renders this
+# from the participant list.
+connectorUrls: ""
+
 trustAnchorDomain: "" # defaults to trust-anchor.<global.baseDomain>
 
 # JSON-LD context and dataspace URI. Dev defaults point at *.localhost; these
@@ -96,10 +103,6 @@ dataspaceUri: ""
 credentialTtl:
   defaultDays: 365
   maxDays: 730
-
-# did:web resolution for user DIDs (did:web:users.<baseDomain>:<id>).
-# Only needed if REMOTE verifiers resolve your user DIDs.
-exposeUserDids: false
 
 # DCP credential-service presentation query. Internal by default — the holder
 # self-presents. Enable only if remote verifiers query it directly.

@@ -13,8 +13,8 @@ import urllib.parse
 
 import pytest
 
-DATASET = "https://provider.dataspaces.localhost/datasets/grid_freq"
-DERIVED = "https://consumer.dataspaces.localhost/datasets/grid_freq_copy"
+DATASET = "https://rec.dataspaces.localhost/datasets/grid_freq"
+DERIVED = "https://third-party.dataspaces.localhost/datasets/grid_freq_copy"
 PUBLICATION = f"urn:activity:catalogue-publication:{DATASET}"
 
 CATALOGUE_EVENT = {
@@ -22,7 +22,7 @@ CATALOGUE_EVENT = {
     "event_id": "dir-cat-001",
     "occurred_at": "2026-01-01T10:00:00Z",
     "data_product_id": DATASET,
-    "provider_did": "did:web:provider.dataspaces.localhost",
+    "provider_did": "did:web:rec.dataspaces.localhost",
     "title": "Grid Frequency",
 }
 
@@ -33,8 +33,8 @@ TRANSFER_EVENT = {
     "transfer_id": "urn:uuid:dt-001",
     "agreement_id": "urn:uuid:dagr-001",
     "data_product_id": DATASET,
-    "provider_did": "did:web:provider.dataspaces.localhost",
-    "consumer_did": "did:web:consumer.dataspaces.localhost",
+    "provider_did": "did:web:rec.dataspaces.localhost",
+    "consumer_did": "did:web:third-party.dataspaces.localhost",
     "derived_dataset_iri": DERIVED,
 }
 

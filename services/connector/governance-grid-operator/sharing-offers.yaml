@@ -1,0 +1,12 @@
+# The grid operator asks nobody for consent, so it offers nothing to consent to.
+#
+# **Empty on purpose, and present on purpose.** `sharing_offers_path` defaults to
+# the file beside `governance.yaml`, so without this file the DSO's connector
+# would fall back to whatever the REC declared — a provider publishing another
+# organisation's consent offers, which is exactly the kind of quiet cross-wiring
+# a second provider exists to expose (`DID-15`).
+#
+# A DSO's datasets are about its own infrastructure. There is no data subject in
+# them, so there is nothing to ask and no offer to make.
+
+sharing_offers: []

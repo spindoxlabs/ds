@@ -9,14 +9,14 @@ import urllib.parse
 
 import pytest
 
-DATASET = "https://provider.dataspaces.localhost/datasets/grid_freq"
+DATASET = "https://rec.dataspaces.localhost/datasets/grid_freq"
 
 CATALOGUE_EVENT = {
     "event_type": "CataloguePublished",
     "event_id": "lineage-cat-001",
     "occurred_at": "2026-01-01T10:00:00Z",
     "data_product_id": DATASET,
-    "provider_did": "did:web:provider.dataspaces.localhost",
+    "provider_did": "did:web:rec.dataspaces.localhost",
     "title": "Grid Frequency",
 }
 
@@ -27,9 +27,9 @@ TRANSFER_EVENT = {
     "transfer_id": "urn:uuid:lt-001",
     "agreement_id": "urn:uuid:lagr-001",
     "data_product_id": DATASET,
-    "provider_did": "did:web:provider.dataspaces.localhost",
-    "consumer_did": "did:web:consumer.dataspaces.localhost",
-    "derived_dataset_iri": "https://consumer.dataspaces.localhost/datasets/grid_freq_copy",
+    "provider_did": "did:web:rec.dataspaces.localhost",
+    "consumer_did": "did:web:third-party.dataspaces.localhost",
+    "derived_dataset_iri": "https://third-party.dataspaces.localhost/datasets/grid_freq_copy",
 }
 
 

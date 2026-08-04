@@ -76,8 +76,8 @@ class FailClosedTest {
     private static PolicyMonitorContext monitorContext() {
         ContractAgreement agreement = ContractAgreement.Builder.newInstance()
             .id(AGREEMENT)
-            .providerId("did:web:provider.dataspaces.localhost")
-            .consumerId("did:web:consumer.dataspaces.localhost")
+            .providerId("did:web:rec.dataspaces.localhost")
+            .consumerId("did:web:third-party.dataspaces.localhost")
             .assetId(DATASET)
             .policy(Policy.Builder.newInstance().build())
             .build();

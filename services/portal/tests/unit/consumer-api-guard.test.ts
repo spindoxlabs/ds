@@ -19,7 +19,7 @@ async function status(fn: () => Promise<unknown>): Promise<number> {
 const consumerSession = {
 	user: { email: 'c@example.test' },
 	accessToken: 'tok',
-	userDid: 'did:web:users.dataspaces.localhost:consumer',
+	userDid: 'did:web:third-party.dataspaces.localhost:users:consumer',
 	userVcRoles: ['ConsumerUser'],
 	userVcJwsByRole: { ConsumerUser: 'jws-consumer' },
 	userVcJws: 'jws-consumer',

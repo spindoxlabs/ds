@@ -28,8 +28,8 @@ WEBHOOK = make_headers(scope="connector.webhook")
 AGREEMENT = "agr-transfer-1"
 TRANSFER = "tp-9"
 ASSET = "datasets.silver.meters"
-CONSUMER = "did:web:consumer.dataspaces.localhost"
-PROVIDER = "did:web:provider.dataspaces.localhost"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 
 
 class FakeProv:

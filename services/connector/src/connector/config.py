@@ -25,9 +25,9 @@ class Settings(BaseSettings):
     )
 
     participant_id: str = "provider"
-    participant_base_url: str = "https://provider.dataspaces.localhost"
-    participant_did: str = "did:web:provider.dataspaces.localhost"
-    consumer_participant_did: str = "did:web:consumer.dataspaces.localhost"
+    participant_base_url: str = "https://rec.dataspaces.localhost"
+    participant_did: str = "did:web:rec.dataspaces.localhost"
+    consumer_participant_did: str = "did:web:third-party.dataspaces.localhost"
 
     # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix).
     #
@@ -39,11 +39,11 @@ class Settings(BaseSettings):
     # `EDC_CONSUMER_PROTOCOL_URL` were carried here from compose and Helm and read
     # by nothing; the EDC's own callback address is `edc.dsp.callback.address`,
     # set in the ds-edc chart and in `services/connector/config/*.properties`.
-    edc_provider_management_url: str = Field(
+    edc_rec_management_url: str = Field(
         default="http://localhost:19193/management",
         validation_alias="EDC_PROVIDER_MANAGEMENT_URL",
     )
-    edc_consumer_management_url: str = Field(
+    edc_third_party_management_url: str = Field(
         default="http://localhost:29193/management",
         validation_alias="EDC_CONSUMER_MANAGEMENT_URL",
     )

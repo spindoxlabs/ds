@@ -47,7 +47,7 @@ def _decision(verdict: dict) -> DataplaneDecision:
 @pytest.fixture
 def client(monkeypatch):
     async def consumer(_bearer):
-        return "did:web:consumer.dataspaces.localhost"
+        return "did:web:third-party.dataspaces.localhost"
 
     async def audited(**_kwargs):
         return None

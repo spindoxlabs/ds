@@ -18,11 +18,11 @@ ingress:
 
 config:
   participantId: provider
-  participantBaseUrl: "https://provider.dataspaces.localhost"
-  edcProviderManagementUrl: "http://edc-provider:19193/management"
-  edcProviderProtocolUrl: "http://edc-provider:19194/protocol"
-  edcConsumerManagementUrl: "http://edc-consumer:29193/management"
-  edcConsumerProtocolUrl: "http://edc-consumer:29194/protocol"
+  participantBaseUrl: "https://rec.dataspaces.localhost"
+  edcProviderManagementUrl: "http://edc-rec:19193/management"
+  edcProviderProtocolUrl: "http://edc-rec:19194/protocol"
+  edcConsumerManagementUrl: "http://edc-third-party:29193/management"
+  edcConsumerProtocolUrl: "http://edc-third-party:29194/protocol"
   datasetApiUrl: "http://dataset-api:30002"
   provenanceUrl: "http://ds-provenance:30000"
   negotiationTimeout: "120"

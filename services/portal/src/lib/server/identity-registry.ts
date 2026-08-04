@@ -5,6 +5,22 @@ function identityRegistryUrl(): string {
 	return env.IDENTITY_REGISTRY_URL ?? 'http://172.17.0.1:30005';
 }
 
+/**
+ * This participant's **own** registry — where the credentials of the people it
+ * onboarded are held (`DID-11` step 2).
+ *
+ * Two different questions with two different owners: *who is this person* is
+ * registry data and stays at the trust anchor above; *what credentials do they
+ * hold* is custody, and after `D-49`/`D-50` that is the organisation's own
+ * instance. Falls back to the anchor so a single-instance deployment still
+ * works — and the fallback is why this is a function rather than a constant:
+ * the two URLs are the same value in dev-before-the-split and different
+ * everywhere else.
+ */
+function participantRegistryUrl(): string {
+	return env.PARTICIPANT_IDENTITY_REGISTRY_URL ?? identityRegistryUrl();
+}
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 let warnedDefaultSecret = false;
 
@@ -97,10 +113,19 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedIdentit
 			subject_id: string;
 		};
 
+		// **Credentials come from the custodian, identity from the anchor.**
+		// The anchor answers with what it *issued* — it is the issuer, so it has
+		// a copy — and reading them from there would make the split cosmetic:
+		// this organisation would be presenting credentials it does not hold.
+		// A custodian that has not received them yet is a real state and shows
+		// as no roles, rather than as the issuer's copy standing in.
+		const held = await credentialsHeldFor(data.did, serviceToken);
+		const source = held ?? data;
+
 		// `credentials` is ordered newest-first by the registry. Keep the first
 		// JWS per role so a re-issued credential does not shadow the current one.
 		const jwsByRole: Record<string, string> = {};
-		for (const cred of data.credentials ?? []) {
+		for (const cred of source.credentials ?? []) {
 			if (cred.role && cred.vc_jws && !(cred.role in jwsByRole)) {
 				jwsByRole[cred.role] = cred.vc_jws;
 			}
@@ -108,14 +133,71 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedIdentit
 
 		return {
 			did: data.did,
-			roles: data.roles ?? (data.role ? [data.role] : []),
+			roles: source.roles ?? (source.role ? [source.role] : []),
 			jwsByRole,
-			role: data.role ?? null,
-			vcJws: data.vc_jws ?? null,
+			role: source.role ?? null,
+			vcJws: source.vc_jws ?? null,
+			// The **anchor's**: the subject id is registry data, and the
+			// custodian's copy of the credential does not carry the mapping.
 			subjectId: data.subject_id,
 		};
 	} catch (e) {
 		console.error('identity-registry unreachable:', e);
+		return null;
+	}
+}
+
+interface HeldCredentials {
+	roles?: string[] | null;
+	credentials?: Array<{ role?: string | null; vc_jws?: string | null }> | null;
+	role?: string | null;
+	vc_jws?: string | null;
+}
+
+/** The organisation a person's DID is filed under — `did:web:<custodian>:users:<id>`. */
+function custodianOf(did: string): string | null {
+	const marker = ':users:';
+	const at = did.lastIndexOf(marker);
+	return at === -1 || !did.startsWith('did:web:') ? null : did.slice(0, at);
+}
+
+/**
+ * What this participant holds for a person — `GET /users/{did}/credentials`.
+ *
+ * **Only asked when this participant is that person's custodian**, and that
+ * condition is the whole correctness of it. A person is filed under the
+ * organisation that onboarded them (`DID-11` step 2), and an instance that is
+ * not the custodian answers *"I hold nothing"* — which is true, and is not the
+ * same as *"they hold nothing"*. Reading it as authoritative logged every
+ * consumer out of this portal: their credentials live at their own
+ * organisation's registry, this one legitimately had none, and the empty answer
+ * replaced the anchor's record.
+ *
+ * Returns `null` when this participant is not the custodian or cannot answer,
+ * and the caller then reads the anchor's issuance record.
+ */
+async function credentialsHeldFor(
+	did: string,
+	serviceToken: string,
+): Promise<HeldCredentials | null> {
+	const base = participantRegistryUrl();
+	if (base === identityRegistryUrl()) return null;
+
+	const own = env.PARTICIPANT_DID;
+	if (!own || custodianOf(did) !== own) return null;
+	try {
+		const res = await fetch(`${base}/users/${encodeURIComponent(did)}/credentials`, {
+			headers: { Authorization: `Bearer ${serviceToken}` },
+		});
+		if (!res.ok) {
+			if (res.status !== 404) {
+				console.error(`participant /users/{did}/credentials failed: ${res.status}`);
+			}
+			return null;
+		}
+		return (await res.json()) as HeldCredentials;
+	} catch (e) {
+		console.error('participant identity-registry unreachable:', e);
 		return null;
 	}
 }
@@ -218,6 +300,30 @@ export function decideApplication(
 		method: 'PATCH',
 		body: JSON.stringify(body),
 	});
+}
+
+/**
+ * The DIDs that have **enrolled** — every registered participant.
+ *
+ * An organisation proves its own key since `DID-09`: the anchor mints nothing,
+ * so a `did:web` an operator assigned is not yet an identity anybody can issue
+ * to. This is how the console tells the two apart, and why the page can say
+ * *"awaiting enrolment"* instead of offering a button that 409s.
+ */
+export async function listParticipantDids(token: string): Promise<string[]> {
+	try {
+		const body = await irFetch<unknown>('/admin/participants', token);
+		const rows = Array.isArray(body)
+			? body
+			: ((body as { participants?: unknown[] })?.participants ?? []);
+		return rows
+			.map((r) => (r as { did?: string }).did)
+			.filter((d): d is string => typeof d === 'string');
+	} catch {
+		// Not fatal: the page degrades to offering the action and letting the
+		// registry refuse, which is what it did before this existed.
+		return [];
+	}
 }
 
 /** Gated by IR: the owner must be verified **and** hold a current agreement. */

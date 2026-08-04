@@ -9,7 +9,7 @@ owners:
   - id: example-org
     type: schema:NGO
     name: Example Organization
-    did: did:web:provider.dataspaces.localhost
+    did: did:web:rec.dataspaces.localhost
     aliases: [example]
     status: verified
     verified_by: dev-seed
@@ -19,7 +19,7 @@ owners:
       role: community
 
   # The consuming organisation. **Added with `DID-05`**, and it closes a gap
-  # rather than adding a fixture: `did:web:consumer.dataspaces.localhost` has
+  # rather than adding a fixture: `did:web:third-party.dataspaces.localhost` has
   # always been a participant with no organisation behind it — no verification,
   # no agreement, and therefore no declared capacity. That is exactly the state
   # `POST /admin/owners` refuses to create, and the connector's circle check
@@ -30,7 +30,7 @@ owners:
   - id: consumer-org
     type: schema:Organization
     name: Consumer Organization
-    did: did:web:consumer.dataspaces.localhost
+    did: did:web:third-party.dataspaces.localhost
     aliases: [consumer]
     status: verified
     verified_by: dev-seed

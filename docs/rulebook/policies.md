@@ -11,7 +11,7 @@ language is accepted.**
 
 `DSSC-AUP-01` requires business rules to be convertible into machine-readable policies;
 `DSSC-AUP-09` requires machine-readable formats. The authoring surface is
-`services/connector/governance/governance.yaml` — a declarative YAML that the governance
+`services/connector/governance-rec/governance.yaml` — a declarative YAML that the governance
 mapper turns into an `odrl:Offer` plus the EDC asset, policy definition and contract
 definition. Participants do not author ODRL by hand.
 

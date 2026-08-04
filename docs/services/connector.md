@@ -148,9 +148,9 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 |---|---|---|
 | `CONNECTOR_ROLE` | **required** | `provider` or `consumer`. Selects the EDC client and the mounted routers |
 | `CONNECTOR_PARTICIPANT_ID` | `provider` | short id, used in event attribution |
-| `CONNECTOR_PARTICIPANT_BASE_URL` | `https://provider.dataspaces.localhost` | own base URL; asset ids derive from it |
-| `CONNECTOR_PARTICIPANT_DID` | `did:web:provider.dataspaces.localhost` | own DID |
-| `CONNECTOR_CONSUMER_PARTICIPANT_DID` | `did:web:consumer.dataspaces.localhost` | the counterparty's DID, checked on consumer credentials |
+| `CONNECTOR_PARTICIPANT_BASE_URL` | `https://rec.dataspaces.localhost` | own base URL; asset ids derive from it |
+| `CONNECTOR_PARTICIPANT_DID` | `did:web:rec.dataspaces.localhost` | own DID |
+| `CONNECTOR_CONSUMER_PARTICIPANT_DID` | `did:web:third-party.dataspaces.localhost` | the counterparty's DID, checked on consumer credentials |
 
 ### EDC
 
@@ -225,7 +225,7 @@ secret is still at its dev default.
 
 ## Persistence
 
-Four tables in its own database (`connector_provider` / `connector_consumer`), Alembic-managed;
+Four tables in its own database (`connector_rec` / `connector_third_party`), Alembic-managed;
 the service refuses to boot against a schema that is not at head.
 
 | Table | Holds |

@@ -47,12 +47,12 @@ def test_the_mapper_forwards_participant_did_to_the_assigner():
 
 def test_the_dev_fallback_still_applies_when_no_did_is_configured():
     """Unchanged behaviour, pinned: omitting the DID is not the same as a bug."""
-    mapper = ConnectorGovernanceMapper("provider", "https://provider.dataspaces.localhost")
+    mapper = ConnectorGovernanceMapper("provider", "https://rec.dataspaces.localhost")
 
     policy = mapper.to_policy_create("datasets.gold.test", _rule())
 
     assert policy.policy["odrl:assigner"] == {
-        "@id": "did:web:provider.dataspaces.localhost"
+        "@id": "did:web:rec.dataspaces.localhost"
     }
 
 
@@ -64,7 +64,7 @@ async def test_sync_builds_the_mapper_with_the_configured_did(engine, monkeypatc
     leaves the defect exactly where it was.
 
     The DID here is deliberately *not* the dev default: with
-    ``did:web:provider.dataspaces.localhost`` configured, the fallback produces
+    ``did:web:rec.dataspaces.localhost`` configured, the fallback produces
     the same string and the assertion proves nothing.
     """
     from connector.config import Settings

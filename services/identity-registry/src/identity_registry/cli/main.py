@@ -45,6 +45,7 @@ owner_app = typer.Typer(help="Owner registry management")
 membership_app = typer.Typer(help="Organization membership management")
 org_app = typer.Typer(help="Organisation onboarding (Block D)")
 agreement_app = typer.Typer(help="Service-agreement management")
+conformity_app = typer.Typer(help="Conformity assessment (DSSC-TRF-02…-04)")
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
@@ -55,6 +56,7 @@ app.add_typer(owner_app, name="owner")
 app.add_typer(membership_app, name="membership")
 app.add_typer(org_app, name="org")
 app.add_typer(agreement_app, name="agreement")
+app.add_typer(conformity_app, name="conformity")
 
 
 def _run(coro):
@@ -263,6 +265,69 @@ def participant_remove(
     _run(_remove())
 
 
+@agreement_app.command("accept")
+def agreement_accept(
+    owner: str = typer.Option(..., help="Owner id or alias"),
+    agreement_id: str = typer.Option("dataspace-participation", "--id"),
+    version: str = typer.Option(None, help="Default: the newest imported version"),
+    locale: str = typer.Option("en"),
+    accepted_by: str = typer.Option(None, help="Who accepted, for the record"),
+):
+    """Record an organisation's acceptance of an agreement version (idempotent).
+
+    The API has had this since Block D (`POST /admin/owners/{alias}/agreement`);
+    the CLI did not, so the one step of `P-1`'s chain that a seed cannot reach
+    through `owner import` had no non-HTTP path — and **no dev participant had
+    ever accepted anything**, which is what `ir-cli conformity check` reported
+    the first time it ran.
+
+    Stores the agreement's id, version, locale and text SHA-256 — never the
+    prose. What was accepted has to be provable years later; the text is the
+    agreement's, not this registry's, to keep.
+    """
+    from ..services import org_onboarding as ops
+
+    async def _accept():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            found = await ops.resolve_owner(session, owner)
+            if not found:
+                typer.echo(f"Owner not found: {owner}", err=True)
+                raise typer.Exit(1)
+
+            query = select(Agreement).where(Agreement.id == agreement_id)
+            if version:
+                query = query.where(Agreement.version == version)
+            rows = (
+                await session.execute(query.order_by(Agreement.version.desc()))
+            ).scalars().all()
+            if not rows:
+                typer.echo(
+                    f"Agreement not found: {agreement_id}"
+                    + (f"@{version}" if version else ""),
+                    err=True,
+                )
+                raise typer.Exit(1)
+            agreement = rows[0]
+
+            try:
+                acceptance = await ops.record_agreement_acceptance(
+                    session, found, agreement, locale=locale, accepted_by=accepted_by
+                )
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(
+                f"{found.id} accepted {agreement.id}@{agreement.version} "
+                f"({locale}) — {acceptance.text_sha256[:12]}…"
+            )
+
+    _run(_accept())
+
+
 @credential_app.command("issue-membership")
 def credential_issue_membership(
     subject_did: str = typer.Option(..., help="Subject DID"),
@@ -324,6 +389,32 @@ def credential_issue_membership(
     _run(_issue())
 
 
+async def _deliver_member_credential(
+    session, settings, *, custodian_did, signed_vc, credential_id, subject_id
+) -> None:
+    """Push a person's credential to the organisation that holds it, and say so.
+
+    `DID-11` step 2. Not fatal on failure and deliberately so: a bootstrap that
+    issued and could not deliver has done something worth reporting, not worth
+    aborting on — the credential row is what a re-run re-delivers.
+    """
+    from ..services.issuance import IssuanceError, deliver_to_custodian
+
+    try:
+        endpoint = await deliver_to_custodian(
+            session,
+            settings,
+            custodian_did=custodian_did,
+            credentials=[("DataSubjectCredential", signed_vc)],
+            issuer_pid=credential_id,
+            holder_pid=subject_id,
+        )
+        await session.commit()
+        typer.echo(f"  Delivered to: {endpoint}")
+    except IssuanceError as exc:
+        typer.echo(f"  NOT delivered: {exc.message}", err=True)
+
+
 @credential_app.command("issue-data-subject")
 def credential_issue_data_subject(
     subject_id: str = typer.Option(..., help="Subject identifier"),
@@ -338,11 +429,27 @@ def credential_issue_data_subject(
         factory = await _ensure_db()
         from sqlalchemy import select
 
-        users_domain = settings.trust_anchor_domain.replace("trust-anchor.", "users.")
-        subject_did = f"did:web:{users_domain}:{subject_id}"
+        # The person lives in their custodian's namespace (`D-50`), and the
+        # first organisation to onboard them decides which — the same rule the
+        # API applies, in the same helper, so the two cannot drift.
+        from ..services.did import SubjectNamespaceError, subject_did_for, subject_id_of
+
+        try:
+            subject_did = subject_did_for(linked_participant_did, subject_id)
+        except SubjectNamespaceError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(2) from exc
         ta_did = f"did:web:{settings.trust_anchor_domain}"
 
         async with factory() as session:
+            existing_did = (
+                await session.execute(select(Did.did).where(Did.did_type == "user"))
+            ).scalars().all()
+            for known in existing_did:
+                if subject_id_of(known) == subject_id:
+                    subject_did = known
+                    break
+
             existing_cred = await session.execute(
                 select(Credential).where(
                     Credential.subject_did == subject_did,
@@ -363,6 +470,22 @@ def credential_issue_data_subject(
                     typer.echo(
                         f"Active DataSubjectCredential with role={role or '-'} "
                         f"already exists for {subject_did}"
+                    )
+                    # **Re-deliver, do not re-mint.** Returning here left the one
+                    # state a re-run is supposed to repair unrepairable: a
+                    # credential the anchor issued and the custodian never
+                    # received. Signing is local and delivery is a call to
+                    # somebody else's service, so those fail independently — and
+                    # the holder's Storage API is idempotent on credential id,
+                    # which is what makes re-delivery free rather than a
+                    # duplicate.
+                    await _deliver_member_credential(
+                        session,
+                        settings,
+                        custodian_did=linked_participant_did,
+                        signed_vc=cred.credential_json,
+                        credential_id=cred.id,
+                        subject_id=subject_id,
                     )
                     return
 
@@ -417,7 +540,84 @@ def credential_issue_data_subject(
             typer.echo(f"Issued DataSubjectCredential: {cred_id}")
             typer.echo(f"  Subject DID: {subject_did}")
 
+            await _deliver_member_credential(
+                session,
+                settings,
+                custodian_did=linked_participant_did,
+                signed_vc=signed_vc,
+                credential_id=cred_id,
+                subject_id=subject_id,
+            )
+
     _run(_issue())
+
+
+@conformity_app.command("check")
+def conformity_check(
+    did: str = typer.Option(None, help="Assess one participant instead of all"),
+    criteria: str = typer.Option(
+        None, help="Criteria file (default: IDENTITY_REGISTRY_CONFORMITY_CRITERIA_PATH)"
+    ),
+    json_out: bool = typer.Option(False, "--json", help="Emit the report as JSON"),
+):
+    """Assess every participant against the rulebook — `DSSC-TRF-02`…`-04`.
+
+    **Exits non-zero when anybody is non-conformant**, which is what makes this
+    runnable as the periodic check the blueprint asks for: a cron entry, a CI
+    job, a Kubernetes CronJob. A check that always exits 0 is a check nothing
+    watches.
+
+    It changes nothing. Onboarding decides whether a party may join; this asks
+    whether it still qualifies, and acting on the answer — suspension — is a
+    decision somebody makes with this as the evidence.
+    """
+
+    async def _check():
+        settings = get_settings()
+        factory = await _ensure_db()
+        from ..services import conformity as conf
+
+        path = criteria or settings.conformity_criteria_path
+        try:
+            rules = conf.load_criteria(path)
+        except conf.ConformityError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(2) from exc
+
+        async with factory() as session:
+            if did:
+                from sqlalchemy import select
+
+                participant = (
+                    await session.execute(
+                        select(Participant).where(Participant.did == did)
+                    )
+                ).scalar_one_or_none()
+                if participant is None:
+                    typer.echo(f"{did} is not a participant", err=True)
+                    raise typer.Exit(2)
+                reports = [await conf.assess(session, settings, participant, rules)]
+            else:
+                reports = await conf.assess_all(session, settings, rules)
+
+        if json_out:
+            typer.echo(json.dumps(conf.render(reports, settings), indent=2))
+        else:
+            typer.echo(f"Conformity against {path} ({len(rules)} criteria)")
+            for r in reports:
+                mark = "OK  " if r.status == conf.CONFORMANT else "FAIL"
+                typer.echo(f"  {mark} {r.did}  [{', '.join(r.roles) or 'no role'}]")
+                for f in r.failures:
+                    typer.echo(f"         {f.rule}: {f.detail}")
+            bad = [r for r in reports if r.status == conf.NON_CONFORMANT]
+            typer.echo(
+                f"\n{len(reports) - len(bad)} conformant, {len(bad)} non-conformant"
+            )
+
+        if any(r.status == conf.NON_CONFORMANT for r in reports):
+            raise typer.Exit(1)
+
+    _run(_check())
 
 
 @credential_app.command("revoke")

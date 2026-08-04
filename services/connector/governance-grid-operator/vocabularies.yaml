@@ -1,0 +1,29 @@
+# Semantic vocabularies this deployment publishes a local copy of, served from
+# `GET /ns/{slug}` and matched to a dataset by its `dcat.conforms_to` URI.
+#
+# **Ships empty, deliberately.** The platform is domain-agnostic and mandates no
+# payload data model (rulebook `data-models.md` §2, M-6), and an empty registry
+# is also what keeps `task start` from reaching the network: the connector fetches
+# every registered vocabulary at startup and refuses to boot if it cannot.
+#
+# A deployment adds its own. For an energy data space that means the models CEEDS
+# names — SAREF/SAREF4ENER for behind-the-meter equipment, CIM/IEC 61970 for grid,
+# IEC 62325 ESMP for market, COSEM for metering:
+#
+#   vocabularies:
+#     - slug: saref4ener                            # the /ns/{slug} path segment
+#       title: SAREF extension for energy
+#       version: "1.2.1"
+#       iri: https://saref.etsi.org/saref4ener/     # matched against dcat.conforms_to
+#       source: https://saref.etsi.org/saref4ener/v1.2.1/saref4ener.jsonld
+#       format: jsonld                              # the only accepted value
+#
+# `iri` is the identity and `slug` is only where this deployment serves it. Omit
+# `source` for a vocabulary you supply the cached file for by hand — one behind a
+# login, or published only as a download.
+#
+# JSON-LD only: ds ships no RDF toolchain, so convert a Turtle source once and
+# register the result. `task vocab:fetch` fills the cache; a deployment overlay is
+# `vocabularies.<name>.yaml`, replace-by-slug.
+
+vocabularies: []

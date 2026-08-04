@@ -35,7 +35,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 			?? body.provider_participant_id?.['@id']
 			?? (typeof body.provider_participant_id === 'string' ? body.provider_participant_id : undefined)
 			?? env.CONSUMER_DEFAULT_ASSIGNER
-			?? 'did:web:provider.dataspaces.localhost',
+			?? 'did:web:rec.dataspaces.localhost',
 	};
 
 	const res = await fetch(`${connectorUrl}/consumer/negotiate`, {

@@ -29,8 +29,8 @@ from tests import make_headers, make_user_headers, make_vc_headers
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-CONSUMER_DID = "did:web:consumer.dataspaces.localhost"
-SUBJECT_DID = "did:web:users.dataspaces.localhost:consumer-user"
+CONSUMER_DID = "did:web:third-party.dataspaces.localhost"
+SUBJECT_DID = "did:web:third-party.dataspaces.localhost:users:consumer-user"
 
 
 class _RecordingProv:

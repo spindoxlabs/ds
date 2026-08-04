@@ -36,8 +36,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
-from ..db.models import Credential, Owner, Participant
+from ..db.models import Credential, Did, Owner, Participant
 from .crypto import decrypt_private_jwk, generate_credential_id
+from .did import subject_id_of
 from .enrolment import CREDENTIAL_SERVICE_TYPE, endpoint_of, service_endpoints
 from .org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from .status_list import allocate_status_list_index
@@ -371,12 +372,44 @@ async def store_delivered(
             except ValueError:
                 expires_at = None
 
+        # **The subject is the credential's, not the holder's.** For a
+        # participant's own credentials these are the same DID and the
+        # difference is invisible; for a credential *about a person* the holder
+        # is the organisation and the subject is the member (`DID-11` step 2).
+        # Recording the holder there would make every member credential look
+        # like one the REC holds about itself, and `/users/{did}/credentials`
+        # would return nothing for the person it is actually about.
+        subject = payload.get("credentialSubject") or {}
+        subject_did = subject.get("id") if isinstance(subject, dict) else None
+
+        # **Receiving a person's credential is how an organisation learns of
+        # them.** `credentials.subject_did` is a foreign key, so without this the
+        # insert is a 500 with an FK violation three layers down — which is how
+        # this was found: `dual-user`'s identifier sits in the provider's
+        # namespace and their `ConsumerUser` credential is delivered to the
+        # consumer, and nothing in that path had a row to point at.
+        #
+        # **Any person, not only this instance's own.** Custody and namespace are
+        # different facts: a person is *named* by the organisation that onboarded
+        # them and may hold credentials from a relationship with another. Only
+        # the custodian's host is ever resolved for the document (that is where
+        # `did:web` points), so a row here is a reference, not a second publisher.
+        #
+        # No key either way: a natural person holds none (`D-49`).
+        if subject_did and subject_id_of(subject_did):
+            known = (
+                await db.execute(select(Did).where(Did.did == subject_did))
+            ).scalar_one_or_none()
+            if known is None:
+                db.add(Did(did=subject_did, did_type="user", key_id=None))
+                await db.flush()
+
         db.add(
             Credential(
                 id=credential_id,
                 credential_type=credential_type,
                 issuer_did=issuer_did,
-                subject_did=holder_did,
+                subject_did=subject_did or holder_did,
                 credential_json=payload,
                 # **No StatusList index.** The register is the issuer's; a holder
                 # recording an index would imply it can revoke, which it cannot.
@@ -388,3 +421,52 @@ async def store_delivered(
 
     await db.flush()
     return stored
+
+
+async def deliver_to_custodian(
+    db: AsyncSession,
+    settings: Settings,
+    *,
+    custodian_did: str,
+    credentials: list[tuple[str, dict]],
+    issuer_pid: str,
+    holder_pid: str,
+) -> str:
+    """Push a **natural person's** credential to the organisation that holds it.
+
+    `D-49`, `D-50`, `DID-11` step 2. The same Storage API leg as a participant's
+    own credentials, with the one difference that matters: here the *holder* and
+    the *subject* are different parties. The REC receives and stores it; the
+    person it is about holds nothing, signs nothing and has no store of their
+    own — which is the four-corner model, not a shortcut (`DSSC-SVD-25`).
+
+    The endpoint comes from the custodian's **registered service entries**, the
+    ones it published in its DID document and proved control of at enrolment. A
+    URL from anywhere else would be an issuer deciding where somebody else's
+    credentials get delivered.
+    """
+    row = (
+        await db.execute(select(Did).where(Did.did == custodian_did))
+    ).scalar_one_or_none()
+    if row is None:
+        raise IssuanceError(
+            f"{custodian_did} is not registered here, so there is nowhere to "
+            "deliver this person's credential"
+        )
+    endpoint = endpoint_of(list(row.service_endpoints or []), CREDENTIAL_SERVICE_TYPE)
+    if not endpoint:
+        raise IssuanceError(
+            f"{custodian_did} publishes no {CREDENTIAL_SERVICE_TYPE} entry — it "
+            "cannot hold credentials for anyone until it does"
+        )
+
+    await deliver(
+        db,
+        settings,
+        did=custodian_did,
+        endpoint=endpoint,
+        credentials=credentials,
+        issuer_pid=issuer_pid,
+        holder_pid=holder_pid,
+    )
+    return endpoint

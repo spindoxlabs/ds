@@ -162,7 +162,7 @@ import, not a request.
 | `DATASET_API_EXTRA_DATASETS_PATH` | — | JSON file merged into the built-in fixtures at import |
 
 There is deliberately no `DATASET_API_ENFORCE_CONSENT`. One was declared, defaulted to `true`,
-set in `docker-compose.provider.yml` and listed in `.env.example` — and read by nothing. Three
+set in `docker-compose.rec.yml` and listed in `.env.example` — and read by nothing. Three
 places described this PEP's consent enforcement as a switch that did not exist, which an
 operator could have turned "on" during an incident to no effect and no warning. Consent
 enforcement is not configurable here: the decision is ds's, and this service either applies it

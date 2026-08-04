@@ -40,7 +40,7 @@ export const POST: RequestHandler = async ({ request, locals }) => {
 		?? body.provider_participant_id?.['@id']
 		?? (typeof body.provider_participant_id === 'string' ? body.provider_participant_id : undefined)
 		?? env.CONSUMER_DEFAULT_ASSIGNER
-		?? 'did:web:provider.dataspaces.localhost';
+		?? 'did:web:rec.dataspaces.localhost';
 
 	if (!contractAgreementId || !assetId || !counterPartyAddress || !connectorId) {
 		throw error(400, 'Missing transfer fields: contract_agreement_id, counter_party_address, asset_id, connector_id are required');

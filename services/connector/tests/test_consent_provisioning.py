@@ -22,9 +22,9 @@ from tests import make_headers
 
 PROVISION = make_headers(scope="connector.consent.provision")
 DATASET = "datasets.silver.meters"
-CONSUMER = "did:web:consumer.dataspaces.localhost"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
 OTHER_CONSUMER = "did:web:other.dataspaces.localhost"
-SUBJECT = "did:web:users.dataspaces.localhost:sub-001"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:sub-001"
 
 # The connector requires evidence to grant: a service asserting that someone
 # consented, without proof of what they were shown, is indefensible. Tests that

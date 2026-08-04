@@ -41,9 +41,9 @@ def test_trust_anchor_did_document():
 
 
 def test_user_did_document_no_auth():
-    kp = generate_key_pair("did:web:users.dataspaces.localhost:email-abc123")
+    kp = generate_key_pair("did:web:rec.dataspaces.localhost:users:email-abc123")
     doc = build_did_document(
-        did="did:web:users.dataspaces.localhost:email-abc123",
+        did="did:web:rec.dataspaces.localhost:users:email-abc123",
         public_jwk=kp.public_jwk,
         did_type="user",
     )
@@ -73,13 +73,13 @@ async def _add_participant(db_session, did: str) -> None:
 
 @pytest.mark.asyncio
 async def test_well_known_resolves_the_host_did(client, db_session):
-    await _add_participant(db_session, "did:web:provider.dataspaces.localhost")
+    await _add_participant(db_session, "did:web:rec.dataspaces.localhost")
     r = await client.get(
         "/.well-known/did.json",
-        headers={"Host": "provider.dataspaces.localhost"},
+        headers={"Host": "rec.dataspaces.localhost"},
     )
     assert r.status_code == 200
-    assert r.json()["id"] == "did:web:provider.dataspaces.localhost"
+    assert r.json()["id"] == "did:web:rec.dataspaces.localhost"
 
 
 @pytest.mark.asyncio
@@ -109,7 +109,7 @@ async def test_the_did_path_route_does_not_shadow_dids(client, db_session):
     start answering 404 for a DID it holds — the shape that once made
     `POST /catalog/search` look like a missing dataset in the connector.
     """
-    did = "did:web:provider.dataspaces.localhost"
+    did = "did:web:rec.dataspaces.localhost"
     await _add_participant(db_session, did)
     r = await client.get(f"/dids/{did}/did.json")
     assert r.status_code == 200
@@ -118,31 +118,25 @@ async def test_the_did_path_route_does_not_shadow_dids(client, db_session):
 
 @pytest.mark.asyncio
 async def test_path_form_resolves_a_user_did(client, db_session):
-    """did:web:users.<domain>:<id> → /<id>/did.json, served by this service.
+    """`did:web:<participant>:users:<id>` → `/users/<id>/did.json`, served here.
 
-    Reachable today only through the chart's `exposeUserDids` rewrite and a Caddy
-    rule, so a deployment fronting this differently publishes user DIDs that no
-    counterparty can resolve.
+    The path form is what makes a person's DID resolvable by **the organisation
+    that holds their credentials** rather than by a proxy rewrite the chart turns
+    on. Since `DID-11` step 2 that is the whole mechanism: the person is named in
+    their custodian's namespace, and their custodian's instance answers — no
+    `users.<domain>` host and no rule of its own (`personal-data.md` `D-22a`).
     """
-    from identity_registry.db.models import Did, Key
-    from identity_registry.services.crypto import generate_key_pair
+    from identity_registry.db.models import Did
 
-    did = "did:web:users.dataspaces.localhost:alice"
-    kp = generate_key_pair(did)
-    key = Key(
-        id="key-alice",
-        kid=kp.kid,
-        owner_did=did,
-        public_jwk=kp.public_jwk,
-        private_jwk=kp.private_jwk,
-        active=True,
-    )
-    db_session.add(key)
-    db_session.add(Did(did=did, did_type="user", key_id=key.id, active=True))
+    did = "did:web:rec.dataspaces.localhost:users:alice"
+    # No key, and that is the honest document for somebody who signs nothing.
+    db_session.add(Did(did=did, did_type="user", key_id=None, active=True))
     await db_session.commit()
 
     r = await client.get(
-        "/alice/did.json", headers={"Host": "users.dataspaces.localhost"}
+        "/users/alice/did.json", headers={"Host": "rec.dataspaces.localhost"}
     )
     assert r.status_code == 200
-    assert r.json()["id"] == did
+    body = r.json()
+    assert body["id"] == did
+    assert "verificationMethod" not in body

@@ -16,7 +16,7 @@ from tests import make_headers
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-EDC = get_settings().edc_provider_management_url.rstrip("/")
+EDC = get_settings().edc_rec_management_url.rstrip("/")
 
 
 @pytest_asyncio.fixture(scope="function")

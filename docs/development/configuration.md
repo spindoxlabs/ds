@@ -118,7 +118,7 @@ deployment cannot see it.
 | The production switch | `DS_ENV` | un-prefixed, one value for the whole process |
 | Schema-check bypass | `DB_SKIP_SCHEMA_CHECK` | un-prefixed and shared by all three Alembic services at once |
 | EDC runtime settings | `services/connector/config/{provider,consumer}.properties` plus environment for secrets | see [edc-connector](../services/edc-connector.md) |
-| Governance and offers | `services/connector/governance/*.yaml` | data, not environment |
+| Governance and offers | `services/connector/governance-rec/*.yaml` | data, not environment |
 | The realm contract | `services/keycloak/clients.yaml` and its overlays | data, not environment |
 | Orchestration-only values | compose interpolation and Taskfile shell | no ds source file reads them |
 

@@ -60,7 +60,7 @@ per type of data product, and to record it here. `DSSC-DSO-16`, `-17`, `-18` and
 `DSSC-DEX-02` state the three categories it must cover.
 
 **Decision.** Every offering, of every type, carries the following. The authoring surface is
-`services/connector/governance/governance.yaml`; the field names below are that file's.
+`services/connector/governance-rec/governance.yaml`; the field names below are that file's.
 
 ### Mandatory for every data product
 

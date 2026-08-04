@@ -146,7 +146,7 @@ def test_a_subject_sees_the_dataset_holding_their_rows(client):
     nothing and the page tells the person they own no data. Resolving through the
     handler is the same hop `_apply_row_filter` makes, for the same reason.
     """
-    did = "did:web:users.dataspaces.localhost:data-subject"
+    did = "did:web:rec.dataspaces.localhost:users:data-subject"
     owned = client.get(f"/subjects/{did}/datasets").json()["datasets"]
     assert [d["name"] for d in owned] == [GATED]
     assert owned[0]["subject_column"] == "device_id"
@@ -155,5 +155,5 @@ def test_a_subject_sees_the_dataset_holding_their_rows(client):
 
 def test_a_subject_sees_nothing_of_anyone_elses(client):
     """Including the rows the negative-control device holds."""
-    did = "did:web:users.dataspaces.localhost:outsider"
+    did = "did:web:rec.dataspaces.localhost:users:outsider"
     assert client.get(f"/subjects/{did}/datasets").json()["datasets"] == []

@@ -44,12 +44,27 @@ test.describe('data subject', () => {
 	}) => {
 		await page.goto('/my-data');
 
-		// A consent-based offer the subject has not granted yet.
-		const share = page.getByRole('button', { name: 'Share', exact: true }).first();
-		test.skip(
-			(await share.count()) === 0,
-			'every published offer is already granted — nothing left to decide',
-		);
+		// **The precondition is made true, not skipped over** (`PT-11`). This used
+		// to `test.skip` when every offer was already granted — which is the
+		// state a previous run leaves behind, so on a re-run the one journey that
+		// proves consent works simply did not run, and the suite stayed green
+		// having tested nothing.
+		//
+		// A subject can always withdraw, so the precondition is reachable: stop
+		// sharing one offer, then grant it. That also means this journey no
+		// longer depends on what any earlier run did.
+		let share = page.getByRole('button', { name: 'Share', exact: true }).first();
+		if ((await share.count()) === 0) {
+			const granted = page.getByRole('button', { name: 'Stop sharing' }).first();
+			await expect(
+				granted,
+				'a subject with neither a grantable nor a withdrawable offer has no choice at all',
+			).toBeVisible();
+			await granted.click();
+			await page.waitForLoadState('networkidle');
+			await page.reload();
+			share = page.getByRole('button', { name: 'Share', exact: true }).first();
+		}
 		const article = page.locator('article').filter({ has: share }).first();
 		const purpose = (await article.getByRole('heading').first().textContent())?.trim() ?? '';
 

@@ -1,0 +1,40 @@
+# Conformity criteria — `participation.md`, as data.
+#
+# `DSSC-TRF-02`, `-03`, `-04` require that the rulebook support **automated
+# conformity assessment**. The rules on that page are prose; a check needs them
+# as data, and this is the projection.
+#
+# **A dev fixture, not a baseline.** Which credentials, which agreement, whether
+# a DSP endpoint is required — these are a *deployment's* to state. A dataspace
+# that admits observers on different terms from providers is a normal dataspace,
+# and `applies_to` is how that is written down rather than argued about.
+#
+# Read by `ir-cli conformity check` and `GET /admin/conformity`. Neither changes
+# any state: onboarding decides whether a party may join, conformity asks whether
+# it still qualifies, and acting on the answer is a decision somebody makes.
+
+criteria:
+  # ── Everybody ─────────────────────────────────────────────────────────────
+  #
+  # No `applies_to`, so this covers every participant whatever its role.
+  # `MembershipCredential` is `P-3`: *every participant holds at minimum a data
+  # space membership credential* (`DSSC-IAM-08`). The agreement is `P-1`'s last
+  # step, and naming the **version** is the point — an acceptance of a
+  # superseded version is drift nobody caused and the check exists to find.
+  - name: every participant
+    required_credentials:
+      - MembershipCredential
+    required_agreement: dataspace-participation
+    required_agreement_version: "1.0"
+    require_verified_owner: true
+
+  # ── Providers ─────────────────────────────────────────────────────────────
+  #
+  # A provider that publishes no DSP address is a provider nothing can negotiate
+  # with. Not required of a consumer: it initiates, and has nothing to be
+  # reached at.
+  - name: provider
+    applies_to: [provider]
+    require_dsp_address: true
+    required_credentials:
+      - MembershipCredential

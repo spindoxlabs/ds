@@ -17,7 +17,7 @@ import respx
 from connector.services.circle import _check_constraint
 
 REGISTRY = "http://identity-registry.test"
-SUBJECT = "did:web:users.dataspaces.localhost:consumer-user"
+SUBJECT = "did:web:third-party.dataspaces.localhost:users:consumer-user"
 TYPE = "OrganizationCredential"
 
 

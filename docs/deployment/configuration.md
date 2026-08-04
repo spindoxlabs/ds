@@ -18,7 +18,6 @@ required or meaningful; per-chart defaults live in `helm/charts/<chart>/values.y
 | `global.baseDomain` | `ds.example.org` | **Change this.** Participant DIDs derive from it: `did:web:<participant>.<baseDomain>` |
 | `global.hosts.portal` | `portal` | → `portal.<baseDomain>`, the only human-facing host |
 | `global.hosts.trustAnchor` | `trust-anchor` | → the trust-anchor DID document and the revocation list |
-| `global.hosts.users` | `users` | user DID resolution; used only when `exposeUserDids` is on |
 
 Changing `baseDomain` after participants are onboarded **changes their DIDs**. Treat it as
 immutable once a dataspace is live.
@@ -138,7 +137,6 @@ Treat that as containment, not authentication.
 | `authority.enabled` | `true` | gates the whole release |
 | `authority.identityRegistry.replicaCount` | `1` | migrations run as an init container; see [Replicas and migrations](#replicas-and-migrations) |
 | `authority.identityRegistry.trustAnchorDomain` | `trust-anchor.ds.example.org` | must match `hosts.trustAnchor` + `baseDomain` |
-| `authority.identityRegistry.exposeUserDids` | `false` | publish `users.<baseDomain>`; needed only when **remote** verifiers resolve your user DIDs |
 | `authority.identityRegistry.credentialService.expose` | `false` | publish the DCP presentation-query endpoint; in the EDC flow the holder self-presents, so remote verifiers normally never call it |
 | `authority.identityRegistry.bootstrap.enabled` | `true` | run the bootstrap and seed import as an init container |
 | `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | a ConfigMap with `agreements.yaml` / `owners.yaml`; empty → the image's baked-in defaults |

@@ -95,9 +95,11 @@ async def resolve_path_did(
 ):
     """The did:web *path* form: ``did:web:host:a:b`` → ``/a/b/did.json``.
 
-    The sibling of the route above, and what makes a user DID
-    (``did:web:users.<domain>:<id>``) resolvable by this service rather than only
-    by a proxy rewrite the chart turns on with `exposeUserDids`.
+    The sibling of the route above, and what makes a person's DID
+    (``did:web:<participant>:users:<id>``) resolvable by **this** service — the
+    organisation that holds their credentials — rather than by a proxy rewrite
+    against a flat `users.<domain>` host owned by the trust anchor (`DID-11`
+    step 2).
 
     **Registered last on purpose.** It is a catch-all, and a catch-all declared
     before its siblings is how `/dids/{did}/did.json` would start 404ing as an

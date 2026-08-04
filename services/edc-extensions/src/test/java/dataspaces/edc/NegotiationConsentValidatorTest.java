@@ -31,7 +31,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class NegotiationConsentValidatorTest {
 
     private static final String DATASET = "datasets.silver.meters_15m";
-    private static final String CONSUMER = "did:web:consumer.dataspaces.localhost";
+    private static final String CONSUMER = "did:web:third-party.dataspaces.localhost";
 
     private final ObjectMapper mapper = new ObjectMapper();
 

@@ -21,7 +21,7 @@ EXAMPLE_OWNER = {
     "id": "example-org",
     "type": "schema:NGO",
     "name": "Example Organization",
-    "did": "did:web:provider.dataspaces.localhost",
+    "did": "did:web:rec.dataspaces.localhost",
     "aliases": ["example", "ex-org"],
 }
 
@@ -37,9 +37,9 @@ class TestOwnerCRUD:
         assert data["id"] == "example-org"
         assert data["name"] == "Example Organization"
         assert data["type"] == "schema:NGO"
-        assert data["did"] == "did:web:provider.dataspaces.localhost"
+        assert data["did"] == "did:web:rec.dataspaces.localhost"
         assert data["aliases"] == ["example", "ex-org"]
-        assert data["canonical_uri"] == "did:web:provider.dataspaces.localhost"
+        assert data["canonical_uri"] == "did:web:rec.dataspaces.localhost"
         # An owner with no verification claim is 'pending', not verified — a
         # seeded owner must not read as verified for free.
         assert data["status"] == "pending"
@@ -181,7 +181,7 @@ class TestOwnerResolve:
         )
         assert resp.status_code == 200
         assert resp.json()["id"] == "example-org"
-        assert resp.json()["canonical_uri"] == "did:web:provider.dataspaces.localhost"
+        assert resp.json()["canonical_uri"] == "did:web:rec.dataspaces.localhost"
 
     @pytest.mark.asyncio
     async def test_resolve_by_alias(self, client, admin_headers, read_headers):

@@ -24,9 +24,9 @@ def make_headers(scope: str = "connector.admin") -> dict:
 
 
 def make_vc_headers(
-    subject_did: str = "did:web:users.dataspaces.localhost:sub-001",
+    subject_did: str = "did:web:rec.dataspaces.localhost:users:sub-001",
     role: str = "DataSubject",
-    linked_participant: str = "did:web:provider.dataspaces.localhost",
+    linked_participant: str = "did:web:rec.dataspaces.localhost",
 ) -> dict:
     """VC-JWT headers for the ``/consent/*`` and ``/consumer/*`` surfaces.
 

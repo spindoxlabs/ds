@@ -35,6 +35,7 @@ from ...schemas.responses import (
 )
 from ...services import org_onboarding as ops
 from ...services import trust_list
+from ...services.enrolment import EnrolmentError
 from ...services.registry_notify import invalidate_participant_caches
 from ...services import provisioning
 from ...services.keycloak_admin import KeycloakAdminClient
@@ -530,6 +531,13 @@ async def generate_provisioning_bundle(
             keycloak_client_secret=keycloak_secret,
         )
     except provisioning.ProvisioningError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    except EnrolmentError as exc:
+        # The bundle carries a single-use enrolment code, so building one goes
+        # through the same gate as issuing one: only a **verified** organisation
+        # may be handed a code. That refusal reached the operator as a **500** —
+        # a server error for a decision the server made deliberately, with the
+        # reason sitting in a log nobody was reading.
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     await db.commit()

@@ -262,17 +262,23 @@ Public addressing — every public host is a subdomain of global.baseDomain
 Participant-scoped database names — <prefix>_<participant>, matching the roles
 provisioned in docs/cnpg-cluster.example.yaml. One helper per service so the
 naming lives in exactly one place.
+
+**Hyphens become underscores.** A participant name is a hostname and a
+Kubernetes object name, so `third-party` is legal there; an unquoted Postgres
+identifier is not. Deriving the database name without this produced
+`connector_third-party`, which every service then failed to connect to — with
+the participant name looking correct in every manifest.
 */}}
 {{- define "ds.db.connector" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).connectorPrefix | default "connector") .Values.participant.name -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).connectorPrefix | default "connector") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{- define "ds.db.provenance" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).provenancePrefix | default "provenance") .Values.participant.name -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).provenancePrefix | default "provenance") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{- define "ds.db.edc" -}}
-{{- printf "%s_%s" ((((.Values.global).postgres).databases).edcPrefix | default "edc") .Values.participant.name -}}
+{{- printf "%s_%s" ((((.Values.global).postgres).databases).edcPrefix | default "edc") (replace "-" "_" .Values.participant.name) -}}
 {{- end -}}
 
 {{/*

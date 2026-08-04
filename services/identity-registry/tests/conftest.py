@@ -289,3 +289,46 @@ def credential_store(monkeypatch):
 
     monkeypatch.setattr(issuance.httpx, "AsyncClient", _client)
     return delivered
+
+
+#: The organisation a test's data subject belongs to. A person's DID lives in
+#: their custodian's namespace since `DID-11` step 2, so a test issuing a member
+#: credential has to say who holds it — there is no anchor-namespace fallback.
+CUSTODIAN_DID = "did:web:rec.dataspaces.localhost"
+
+
+async def register_custodian(db, did: str = CUSTODIAN_DID, *, credential_service=True):
+    """A participant the anchor can deliver a person's credential to.
+
+    Its `CredentialService` entry is what `deliver_to_custodian` reads — the one
+    the participant published in its own DID document and proved control of at
+    enrolment. Pass `credential_service=False` for the organisation that
+    publishes none, which must be a refusal rather than a silent no-op.
+    """
+    from identity_registry.db.models import Did as DidRow
+    from identity_registry.db.models import Key
+    from identity_registry.services.crypto import generate_key_pair
+
+    kp = generate_key_pair(did)
+    key = Key(owner_did=did, kid=kp.kid, private_jwk=None, public_jwk=kp.public_jwk)
+    db.add(key)
+    await db.flush()
+    db.add(
+        DidRow(
+            did=did,
+            did_type="participant",
+            key_id=key.id,
+            service_endpoints=(
+                [
+                    {
+                        "type": "CredentialService",
+                        "serviceEndpoint": f"http://rec.dataspaces.localhost/credentials/{did}",
+                    }
+                ]
+                if credential_service
+                else []
+            ),
+        )
+    )
+    await db.commit()
+    return did

@@ -197,8 +197,8 @@ def test_reset_caches_drops_the_registry(configured):
 # way that reads as a vocabulary problem rather than a wiring one.
 
 COMPOSE = [
-    ("docker-compose.provider.yml", "ds-connector-provider"),
-    ("docker-compose.consumer.yml", "ds-connector-consumer"),
+    ("docker-compose.rec.yml", "ds-connector-rec"),
+    ("docker-compose.third-party.yml", "ds-connector-third-party"),
 ]
 
 
@@ -245,7 +245,7 @@ def test_the_cache_is_not_inside_the_read_only_mount(compose_file, service):
 def test_the_cache_lives_under_data(compose_file, service):
     """Root `AGENTS.md`: fetched and generated material lives under `./data/`.
 
-    This shipped as `services/connector/governance/vocab-cache`, which was wrong
+    This shipped as `services/connector/governance-rec/vocab-cache`, which was wrong
     twice over: it put fetched state inside a directory of committed
     configuration, and it added one more place to look for scratch data. The rule
     exists so that second list stays short — scattered cache directories arrive

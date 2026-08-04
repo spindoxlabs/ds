@@ -19,7 +19,7 @@ from conftest import make_headers
 from identity_registry.db.models import Credential, Did, KeycloakMapping
 
 EMAIL = "dual@example.test"
-USER_DID = "did:web:users.dataspaces.localhost:dual-user"
+USER_DID = "did:web:rec.dataspaces.localhost:users:dual-user"
 
 
 def _headers() -> dict:

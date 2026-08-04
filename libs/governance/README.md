@@ -55,7 +55,7 @@ This library provides the EDC side of that shared contract. It is fully backward
 
 Inputs:
 - `profile: OdrlProfile` — defines the ODRL namespace, purpose taxonomy, and tag-to-purpose mapping
-- `participant_id` — used as the `odrl:assigner` DID fragment (e.g. `provider` → `did:web:provider.dataspaces.localhost`)
+- `participant_id` — used as the `odrl:assigner` DID fragment (e.g. `provider` → `did:web:rec.dataspaces.localhost`)
 - `base_url` — base URL for asset IRI generation
 - `owner_did_resolver: Callable[[str], str | None]` (optional) — resolves dataset owners for attribution duties
 

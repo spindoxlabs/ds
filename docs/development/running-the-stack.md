@@ -55,10 +55,22 @@ Both families run the same sequence:
 ```
 infra:start          shared infrastructure: caddy, postgres, keycloak, oauth2-proxy,
                      the identity registry, and the Keycloak syncs
-identity:bootstrap   seed the trust anchor, participants, credentials, owners, memberships
-provider:start       the provider stack, then wait for its connector, then POST /provider/sync
-consumer:start       the consumer stack
+identity:bootstrap   the trust anchor, the owners, the agreements, and one
+                     single-use enrolment code per participant
+rec:start       the REC's stack — its registry generates its own key and
+                     enrols — then wait for its connector, then POST /provider/sync
+grid-operator:start  the DSO's stack, the same way. **A second provider**, and one
+                     with no members: `D-54`, `DID-15`
+third-party:start       the third party's stack, which buys from both
+identity:users       the dev users' credentials, delivered to the participants
+                     that hold them
 ```
+
+**`identity:users` is last and has to be.** A person's credential is delivered to the
+organisation that holds it (`DID-11`), and that organisation's DID document — with the
+`CredentialService` entry the anchor delivers to — does not exist until it has enrolled. Running
+it early is not corrupting: the credentials are issued and the delivery is reported as failed,
+which is the state a re-run repairs.
 
 `POST /provider/sync` is part of *starting*, not of building — it is what pushes the
 governance-derived assets and policies into the provider EDC. Without it the catalogue is
@@ -84,7 +96,7 @@ no port sweeping and no tmux handling.
 | Task | Destroys | Confirms? |
 |---|---|---|
 | `task stop` | nothing | — |
-| `task infra:stop` / `provider:stop` / `consumer:stop` | nothing | — |
+| `task infra:stop` / `rec:stop` / `third-party:stop` | nothing | — |
 | `task docker:stop` · `dev:stop` · `docker:restart` · `dev:restart` | **every service database** | no |
 | `task db:reset` | drops and re-creates the seven service databases, then migrates | **yes** |
 | `task reset-demo-state` | truncates the connector, provenance and EDC state, then re-syncs | no |
@@ -109,7 +121,7 @@ against the same ports — so the rest of the stack keeps working.
 | `task consumer:provenance:run` | 31000 | — |
 | `task provider:dataset-api:run` | 30002 | — |
 | `task provider:federated-catalog:run` | 30003 | — |
-| `task provider:portal:run` | 30004 | — |
+| `task rec:portal:run` | 30004 | — |
 
 The portal needs `task -d services/portal setup` (an `npm ci`) once before its first run.
 
@@ -120,8 +132,8 @@ The portal needs `task -d services/portal setup` (an `npm ci`) once before its f
 | `task edc:build` | build `connector.jar` in a Gradle container |
 | `task edc:docker` | build the EDC image |
 | `task edc:restart` | build, rebuild the image, recreate both EDC containers, wait for health |
-| `task edc-provider:run` / `edc-consumer:run` | run the JAR on the host |
-| `task edc-provider:watch` / `edc-consumer:watch` | the same JVM under a supervision loop that restarts on JAR change |
+| `task edc-rec:run` / `edc-third-party:run` | run the JAR on the host |
+| `task edc-rec:watch` / `edc-third-party:watch` | the same JVM under a supervision loop that restarts on JAR change |
 | `task edc:watch-build` | continuous Gradle build — pairs with the two watch tasks |
 
 `task edc:restart` is the only mode that uses `--force-recreate --no-deps`, so it recreates the
@@ -175,7 +187,7 @@ service:
 
 ```bash
 psql -h 172.17.0.1 -p 35432 -U postgres -l                    # list the service databases
-psql -h 172.17.0.1 -p 35432 -U postgres -d connector_provider -c '…'
+psql -h 172.17.0.1 -p 35432 -U postgres -d connector_rec -c '…'
 ```
 
 An assertion about consent, agreement or provenance state is worth more checked against the row

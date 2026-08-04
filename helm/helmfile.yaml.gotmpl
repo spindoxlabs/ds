@@ -80,7 +80,13 @@ releases:
           {{- $global | toYaml | nindent 10 }}
       - trustAnchorDomain: {{ .Values.authority.identityRegistry.trustAnchorDomain | quote }}
         replicaCount: {{ .Values.authority.identityRegistry.replicaCount }}
-        exposeUserDids: {{ .Values.authority.identityRegistry.exposeUserDids }}
+        # **Every enabled participant's connector.** Promoting changes who is in
+        # the registry, and a connector caches that list for its TTL — so it is
+        # told rather than left to a timer. Rendered from the participant list
+        # because a hand-maintained copy is a list that silently omits the
+        # participant added last (`PT-11`, and the same class as `IR-10`: a
+        # feature with no supply path is a feature that is off in production).
+        connectorUrls: {{ $urls := list }}{{ range .Values.participants }}{{ if .enabled }}{{ $urls = append $urls (printf "http://ds-connector-%s.%s%s.svc.cluster.local:30001" .name $.Values.global.namespaces.participantPrefix .name) }}{{ end }}{{ end }}{{ join "," $urls | quote }}
         credentialService:
           expose: {{ .Values.authority.identityRegistry.credentialService.expose }}
         bootstrap:
@@ -142,7 +148,7 @@ releases:
         secrets:
           identityRegistryEncryptionKey: {{ $psec.identityRegistryEncryptionKey | quote }}
           serviceClientSecret: {{ $psec.connectorClientSecret | quote }}
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "identity_registry_%s" $p.name) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "identity_registry_%s" (replace "-" "_" $p.name)) | quote }}
           participantStsSecret: {{ $psec.stsSecret | quote }}
 
   - name: ds-edc-{{ $p.name }}
@@ -164,7 +170,7 @@ releases:
           did: {{ $p.did | default "" | quote }}
         replicaCount: {{ $p.edc.replicaCount | default 1 }}
         secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" $p.name) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" (replace "-" "_" $p.name)) | quote }}
           edcApiKey: {{ $psec.edcApiKey | quote }}
           connectorClientSecret: {{ $psec.connectorClientSecret | quote }}
           stsClientSecret: {{ $psec.stsSecret | quote }}
@@ -183,7 +189,7 @@ releases:
           role: {{ $p.role | quote }}
         replicaCount: {{ $p.provenance.replicaCount | default 1 }}
         secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" $p.name) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" (replace "-" "_" $p.name)) | quote }}
           # No `trustAnchorPublicJwk` here since `DID-17`: provenance verifies
           # `X-User-VC` against the key the anchor's DID document publishes.
           #
@@ -216,7 +222,7 @@ releases:
           overlayName: {{ dig "connector" "governanceOverlayName" "" $p | quote }}
           configMap: {{ dig "connector" "governanceConfigMap" "" $p | quote }}
         secrets:
-          dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" $p.name) | quote }}
+          dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" (replace "-" "_" $p.name)) | quote }}
           edcApiKey: {{ $psec.edcApiKey | quote }}
           serviceClientSecret: {{ $root.Values.secrets.svcDsConnectorSecret | quote }}
 

@@ -42,8 +42,8 @@ from identity_registry.services.token import (
 
 HEADERS = make_admin_headers()
 
-HOLDER = "did:web:provider.dataspaces.localhost"
-VERIFIER = "did:web:consumer.dataspaces.localhost"
+HOLDER = "did:web:rec.dataspaces.localhost"
+VERIFIER = "did:web:third-party.dataspaces.localhost"
 STRANGER = "did:web:attacker.dataspaces.localhost"
 
 MEMBERSHIP_SCOPE = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"

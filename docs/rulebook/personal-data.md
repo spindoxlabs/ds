@@ -120,7 +120,7 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 
 | Aspect | Decision |
 |---|---|
-| Identifier | A subject DID, `did:web:users.<host>:<name>`, mapped from a Keycloak user |
+| Identifier | A subject DID, `did:web:<participant>:users:<id>` — in the namespace of the organisation that holds their credentials (`D-22a`) — mapped from a Keycloak user |
 | Credential | `DataSubjectCredential`, issued by the trust anchor |
 | Authentication to subject surfaces | VC-JWT headers (`X-Subject-Id` + `X-User-VC`) verified against the trust-anchor key — **not** the scope-based service guard |
 | Role composition | Additive. The same person may hold `DataSubject` and `ConsumerUser` |
@@ -130,6 +130,8 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 | D-20 | Subject-facing surfaces authenticate the subject's credential, never a service's scope. A service token must not be able to read one person's consents | **Enforced** — `/consent/my/*`, `/consent/status`, `/consumer/*` use the VC-JWT path |
 | D-21 | Membership in an owner organisation is checked against the registry at consent-write time, not read from a JWT claim. The portal reads claims for UX; **data access decisions always go through the registry API** | **Enforced** |
 | D-22 | A path-bearing subject DID must resolve, and its document asserts **no verification method** — the person holds no key | **Enforced.** The service itself serves the did:web path form (`/{path}/did.json`), so resolution no longer depends on an edge-proxy rewrite. The document carries `id` and nothing it cannot back: a subject presents nothing and signs nothing, so a key would be read by nobody. The DID must still resolve because it is what consent records, provenance events and `credentialSubject.id` point at |
+| D-22a | A person's DID sits in the namespace of the organisation that holds their credentials — `did:web:<participant>:users:<id>` — and **that** organisation publishes it | **Enforced** (`DID-11` step 2). It was `did:web:users.<anchor-domain>:<id>`, which said every person in the dataspace belonged to the trust anchor; the party that onboarded them, vouches for them and answers for them is their REC. A custodian learns of a person by *receiving their credential*, which is what creates the row it then publishes |
+| D-22b | **One human, one identifier**, however many organisations hold credentials about them | **Enforced.** Roles are additive and issuance is per role, so deriving the DID from each call's organisation would give a dual-role person two identifiers — splitting their consent records, memberships and provenance in half, silently. The first organisation to onboard them decides where they live; custody still follows each credential |
 
 ## 7. The intermediary question
 

@@ -65,7 +65,7 @@ Settings are loaded from `.env.local` (repo root) via pydantic-settings. Key var
 | `CONNECTOR_DATASET_API_URL` | `http://172.17.0.1:30002` | Dataset API |
 | `CONNECTOR_PROVENANCE_URL_PROVIDER` | `http://172.17.0.1:30000` | Provenance |
 | `CONNECTOR_IDENTITY_REGISTRY_URL` | `http://172.17.0.1:30005` | Identity registry |
-| `E2E_COUNTER_PARTY_ADDRESS` | `http://edc-provider:19194/protocol/2025-1` | DSP counter-party (Docker DNS) |
+| `E2E_COUNTER_PARTY_ADDRESS` | `http://edc-rec:19194/protocol/2025-1` | DSP counter-party (Docker DNS) |
 | `KEYCLOAK_TOKEN_URL` | `http://localhost:9080/realms/.../token` | Service token endpoint |
 | `SVC_DS_PORTAL_ID` / `SECRET` | `svc-ds-portal` | Service client credentials |
 | `SMOKE_DATABASE_URL` | `postgresql://postgres:postgres@172.17.0.1:35432` | DB for cleanup |

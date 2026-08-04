@@ -153,13 +153,13 @@ async def lifespan(app: FastAPI):
 
     if settings.role == "provider":
         provider_edc = EdcManagementClient(
-            base_url=settings.edc_provider_management_url,
+            base_url=settings.edc_rec_management_url,
             api_key=settings.edc_api_key,
         )
 
     if settings.role == "consumer":
         consumer_edc = EdcManagementClient(
-            base_url=settings.edc_consumer_management_url,
+            base_url=settings.edc_third_party_management_url,
             api_key=settings.edc_api_key,
         )
 

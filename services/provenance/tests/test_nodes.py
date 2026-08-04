@@ -7,7 +7,7 @@ import pytest
 @pytest.mark.asyncio
 async def test_create_entity(client):
     payload = {
-        "iri": "https://provider.dataspaces.localhost/datasets/meters_15m",
+        "iri": "https://rec.dataspaces.localhost/datasets/meters_15m",
         "label": "Meter Readings 15m",
         "energy_type": "ConsumptionMeasurement",
     }
@@ -25,7 +25,7 @@ async def test_create_entity(client):
 @pytest.mark.asyncio
 async def test_create_entity_duplicate_returns_existing(client):
     payload = {
-        "iri": "https://provider.dataspaces.localhost/datasets/meters_15m_dup",
+        "iri": "https://rec.dataspaces.localhost/datasets/meters_15m_dup",
         "label": "Meter Readings 15m",
     }
     r1 = await client.post("/prov/entities", json=payload)
@@ -52,7 +52,7 @@ async def test_create_activity(client):
 @pytest.mark.asyncio
 async def test_create_agent(client):
     payload = {
-        "iri": "did:web:provider.dataspaces.localhost",
+        "iri": "did:web:rec.dataspaces.localhost",
         "label": "Provider",
     }
     response = await client.post("/prov/agents", json=payload)
@@ -63,7 +63,7 @@ async def test_create_agent(client):
 
 @pytest.mark.asyncio
 async def test_list_entities(client):
-    iri = "https://provider.dataspaces.localhost/datasets/grid_freq"
+    iri = "https://rec.dataspaces.localhost/datasets/grid_freq"
     await client.post("/prov/entities", json={"iri": iri, "label": "Grid Frequency"})
     response = await client.get("/prov/entities")
     assert response.status_code == 200
@@ -75,7 +75,7 @@ async def test_list_entities(client):
 
 @pytest.mark.asyncio
 async def test_soft_delete_entity(client):
-    iri = "https://provider.dataspaces.localhost/datasets/to_delete"
+    iri = "https://rec.dataspaces.localhost/datasets/to_delete"
     await client.post("/prov/entities", json={"iri": iri})
 
     encoded = urllib.parse.quote(iri, safe="")

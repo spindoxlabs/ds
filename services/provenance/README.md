@@ -93,7 +93,7 @@ A chainable Python SDK importable from `ds.provenance.query.builder`:
 results = await (
     FluentQueryBuilder(session)
     .entities()
-    .attributed_to("did:web:provider.dataspaces.localhost")
+    .attributed_to("did:web:rec.dataspaces.localhost")
     .energy_type(EnergyNodeType.GRID_FREQUENCY_DATASET)
     .started_after(datetime(2025, 1, 1))
     .sort(SortField.STARTED_AT, SortOrder.DESC)

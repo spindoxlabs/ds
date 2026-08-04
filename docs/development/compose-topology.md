@@ -1,18 +1,27 @@
 # Compose topology
 
-Four compose files at the repository root. Three of them make one stack; the fourth is separate
+Five compose files at the repository root. Four of them make one stack; the fifth is separate
 and started by hand.
 
 | File | Holds | Driven by |
 |---|---|---|
-| `docker-compose.yml` | shared infrastructure: the edge, the database, Keycloak, the identity registry | `task infra:start` |
-| `docker-compose.provider.yml` | the provider participant | `task provider:start` |
-| `docker-compose.consumer.yml` | the consumer participant | `task consumer:start` |
+| `docker-compose.yml` | shared infrastructure: the edge, the database, Keycloak, the trust anchor | `task infra:start` |
+| `docker-compose.rec.yml` | the **REC** — a provider that has members | `task rec:start` |
+| `docker-compose.grid-operator.yml` | the **DSO** — a provider that has none | `task grid-operator:start` |
+| `docker-compose.third-party.yml` | the third party, consuming from both | `task third-party:start` |
 | `docker-compose.dataset-api.yml` | the **real** dataset API and REC registry, built from sibling checkouts | **no task** — run by hand |
 
-The first three share the compose project `dataspaces`, so their containers are named
-`dataspaces-<service>-1` and a `down` on any of them can reach all three. The fourth declares
-its own project and is untouched by the lifecycle tasks.
+The first four share the compose project `dataspaces`, so their containers are named
+`dataspaces-<service>-1` and a `down` on any of them can reach all four. The fifth declares its
+own project and is untouched by the lifecycle tasks.
+
+**Three organisations, not two roles** (`D-54`, `DID-15`). `provider` and `consumer` name
+*roles*, and a fixture shaped like a role cannot exercise a model whose unit is the
+organisation: with one provider, nothing distinguishes "this participant has members" from
+"every participant has members", and a consumer that only ever negotiates with one counterparty
+never has to answer *which* one. The stack names are still `provider` and `consumer` — renaming
+them to `rec` and `third-party` reaches DIDs, databases, properties files, governance, tests and
+every dev database, and is deliberately not part of this.
 
 ## What runs where
 
@@ -33,18 +42,35 @@ Plus five one-shots: `identity-registry-db-create`, `identity-registry-db-init`,
 
 | Service | Published |
 |---|---|
-| `edc-provider` | `19193` management, `19194` protocol, `19195`, `19291` |
-| `ds-connector-provider` | `30001` |
-| `ds-provenance-provider` | `30000` |
-| `dataset-api-provider` (the mock) | `${DATASET_API_MOCK_PORT:-30002}:30002` |
-| `ds-federated-catalog-provider` | `30003` |
+| `edc-rec` | `19193` management, `19194` protocol, `19195`, `19291` |
+| `ds-connector-rec` | `30001` |
+| `ds-provenance-rec` | `30000` |
+| `dataset-api-rec` (the mock) | `${DATASET_API_MOCK_PORT:-30002}:30002` |
+| `ds-federated-catalog-rec` | `30003` |
 | `ds-portal` | `30004` |
+
+### Grid operator — the second provider
+
+The provider file with a different port block and no dataset API, portal or catalogue:
+`edc-grid-operator` on `39193`/`39194`, `ds-connector-grid-operator` on `32001`,
+`ds-provenance-grid-operator` on `32000`, `ir-grid-operator` on `30008`.
+
+Two things differ beyond ports, and they are the reason it exists:
+
+- **its own governance directory**, `services/connector/governance-grid-operator/`. Not a second
+  file in the same directory: `sharing_offers_path` defaults to the file beside
+  `governance.yaml`, so a shared directory would have this provider publishing the REC's consent
+  offers;
+- **`access_level: open`** on its dataset. `internal` — the default the REC uses — adds a
+  membership constraint scoped to the *owner's own circle*, which is right for a community
+  sharing among its members and wrong for a DSO publishing to the dataspace. With one provider
+  the two are indistinguishable, because the only consumer is always inside the only circle.
 
 ### Consumer
 
 The provider file mirrored, minus the dataset API, the portal and the catalogue, with every
-port shifted by +10000: `edc-consumer` on `29193`/`29194`, `ds-connector-consumer` on `31001`,
-`ds-provenance-consumer` on `31000`.
+port shifted by +10000: `edc-third-party` on `29193`/`29194`, `ds-connector-third-party` on `31001`,
+`ds-provenance-third-party` on `31000`.
 
 The consumer stack overrides each Python service's `command` to move it onto its 31xxx port —
 the images bake the provider-side ports.
@@ -66,16 +92,24 @@ connector-db-create → connector-db-init ────────────�
 provenance-db-create → provenance-db-init                │
      └─ ds-provenance-<role> (healthy) ──────────────────┘
           └─ ds-connector-<role> (healthy)
-               ├─ dataset-api-provider
+               ├─ dataset-api-rec
                ├─ ds-portal
-               └─ ds-federated-catalog-provider
+               └─ ds-federated-catalog-rec
 ```
 
 The Keycloak branch and the identity-registry branch have no ordering edge between them; they
 start concurrently.
 
-The provider and consumer `*-db-create` one-shots **cannot** declare a dependency on `postgres`
-— it lives in another compose file — so they poll `pg_isready` in their own command instead.
+Each participant's `*-db-create` one-shots **cannot** declare a dependency on `postgres` — it
+lives in another compose file — so they poll `pg_isready` in their own command instead.
+
+**Participant hosts are resolved through `extra_hosts`, not the Docker network alias.** A
+`did:web` DID resolves at the host it names, and the registries and EDCs fetch those documents
+themselves. The alias list on the `caddy` service applies only when *this* project's Caddy is the
+one running; on a machine where a shared edge proxy owns `:80` it is somebody else's compose
+file, and a participant added here would resolve for nobody. `host-gateway` works either way —
+which is how the grid operator's first enrolment failed, with the anchor reporting
+`Name or service not known` for a host that answered perfectly from the shell.
 
 ## The addressing convention
 
@@ -105,14 +139,18 @@ service URL.
 declare it `external: true`. So the root file must be up before either of them, and the root
 `down` is what removes it.
 
-Caddy carries seven **network aliases** on that network:
+Caddy carries six **network aliases** on that network:
 
 ```
-provider.dataspaces.localhost      consumer.dataspaces.localhost
-trust-anchor.dataspaces.localhost  users.dataspaces.localhost
-keycloak.dataspaces.localhost      sso.dataspaces.localhost
-portal.dataspaces.localhost
+rec.dataspaces.localhost      third-party.dataspaces.localhost
+trust-anchor.dataspaces.localhost  keycloak.dataspaces.localhost
+sso.dataspaces.localhost           portal.dataspaces.localhost
 ```
+
+`users.dataspaces.localhost` was one of them until `DID-11` step 2. A person's DID now sits in
+their custodian's namespace — `did:web:rec.dataspaces.localhost:users:alice` — so it
+resolves on that participant's own host, at `/users/alice/did.json`, served by that
+participant's own registry.
 
 Those are what make `did:web` resolution work from inside the network, and what let
 oauth2-proxy perform OIDC discovery against the same browser-facing issuer URL a browser uses.
@@ -134,7 +172,7 @@ Every other mount is a read-only bind of a file inside this repository:
 | `services/oauth2-proxy/oauth2-proxy.cfg` | oauth2-proxy |
 | `services/identity-registry/seed/` | the bootstrap one-shot |
 | `services/connector/config/` | each EDC at `/config`, and the **provider** connector at `/edc-config` for the EDR signing key |
-| `services/connector/governance/` | both connectors at `/governance` |
+| `services/connector/governance-rec/` | both connectors at `/governance` |
 
 ## The one-shot containers
 

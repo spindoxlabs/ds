@@ -15,6 +15,7 @@ from ds_e2e.flows.dcp_trust import DcpTrustFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
 from ds_e2e.flows.smoke import SmokeFlow
+from ds_e2e.flows.two_providers import TwoProvidersFlow
 from ds_e2e.flows.uc1 import UC1Flow
 from ds_e2e.flows.uc2 import UC2Flow
 from ds_e2e.flows.uc3 import UC3Flow
@@ -39,6 +40,7 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "chain-unbundling": ChainUnbundlingFlow,
     "catalog-discovery": CatalogDiscoveryFlow,
     "lineage": LineageFlow,
+    "two-providers": TwoProvidersFlow,
     "smoke": SmokeFlow,
 }
 

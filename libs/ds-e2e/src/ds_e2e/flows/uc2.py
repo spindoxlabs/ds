@@ -70,7 +70,7 @@ class UC2Flow(BaseFlow):
     def _check_owner_preconditions(self, result: FlowResult, headers: dict[str, str]) -> bool:
         s = self.settings
         owner_alias = "example-org"
-        member_did = "did:web:users.dataspaces.localhost:data-subject"
+        member_did = "did:web:rec.dataspaces.localhost:users:data-subject"
 
         try:
             owner = self.http.get(

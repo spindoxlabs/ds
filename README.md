@@ -47,8 +47,8 @@ The stack covers the following DSSC Blueprint building blocks:
 ```
 dataspaces/
 ├── docker-compose.yml          shared infra — caddy, postgres, identity-registry, keycloak
-├── docker-compose.provider.yml provider participant stack
-├── docker-compose.consumer.yml consumer participant stack
+├── docker-compose.rec.yml provider participant stack
+├── docker-compose.third-party.yml consumer participant stack
 ├── Taskfile.yml                root orchestration
 ├── build.gradle.kts            Gradle root (EDC subprojects)
 ├── settings.gradle.kts
@@ -130,14 +130,14 @@ Or step by step:
 ```bash
 task infra:start          # shared infra (postgres, caddy, identity-registry, keycloak)
 task identity:bootstrap   # trust anchor + participant DIDs
-task provider:start       # provider participant stack
-task consumer:start       # consumer participant stack
+task rec:start       # provider participant stack
+task third-party:start       # consumer participant stack
 ```
 
 ### Portal (local dev with hot-reload)
 
 ```bash
-task provider:portal:run  # SvelteKit dev server on http://localhost:30004
+task rec:portal:run  # SvelteKit dev server on http://localhost:30004
 ```
 
 ### Stop everything
@@ -153,7 +153,7 @@ After services are up, the following should respond:
 - `http://localhost:30001/health` (provider connector)
 - `http://localhost:31001/health` (consumer connector)
 - `http://localhost:30005/health` (identity-registry)
-- `http://localhost:30005/dids/did:web:provider.dataspaces.localhost/did.json` (DID document)
+- `http://localhost:30005/dids/did:web:rec.dataspaces.localhost/did.json` (DID document)
 
 ---
 
@@ -223,10 +223,10 @@ Three compose files form the full stack:
 | File | Services | Purpose |
 |------|----------|---------|
 | `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync, oauth2-proxy | Shared infrastructure |
-| `docker-compose.provider.yml` | edc-provider, ds-connector-provider, ds-provenance-provider, dataset-api-provider, ds-federated-catalog-provider, ds-portal | Provider participant |
-| `docker-compose.consumer.yml` | edc-consumer, ds-connector-consumer, ds-provenance-consumer | Consumer participant |
+| `docker-compose.rec.yml` | edc-rec, ds-connector-rec, ds-provenance-rec, dataset-api-rec, ds-federated-catalog-rec, ds-portal | Provider participant |
+| `docker-compose.third-party.yml` | edc-third-party, ds-connector-third-party, ds-provenance-third-party | Consumer participant |
 
-The portal runs in the provider compose. For local dev with hot-reload: `task provider:portal:run`.
+The portal runs in the provider compose. For local dev with hot-reload: `task rec:portal:run`.
 
 All containers share the `dataspaces` bridge network.
 
@@ -271,8 +271,8 @@ Available overrides: `task identity-registry:run`, `task provider:connector:run`
 
 Each participant is identified by a `did:web:` URI:
 
-- Provider: `did:web:provider.dataspaces.localhost`
-- Consumer: `did:web:consumer.dataspaces.localhost`
+- Provider: `did:web:rec.dataspaces.localhost`
+- Consumer: `did:web:third-party.dataspaces.localhost`
 - Trust anchor: `did:web:trust-anchor.dataspaces.localhost`
 
 DID documents are served dynamically by identity-registry. Caddy rewrites `/.well-known/did.json` requests to the identity-registry API.
@@ -315,7 +315,7 @@ directions, so a permission no human could ever be granted fails the build.
 
 ## Governance and ODRL policies
 
-Datasets are described in `services/connector/governance/governance.yaml`. The pipeline:
+Datasets are described in `services/connector/governance-rec/governance.yaml`. The pipeline:
 
 ```
 governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
@@ -374,8 +374,8 @@ See [the DSSC Blueprint reference](https://spindoxlabs.github.io/ds/dssc-bluepri
 | `task start` | Start everything |
 | `task stop` | Stop everything |
 | `task status` | Show all running containers |
-| `task provider:logs` | Follow provider logs |
-| `task consumer:logs` | Follow consumer logs |
+| `task rec:logs` | Follow provider logs |
+| `task third-party:logs` | Follow consumer logs |
 | `task reset-demo-state` | Clear runtime data (requests, consents, agreements, transfers, provenance) |
 | `task edc:base` | Build EDC base image (once per version bump) |
 | `task e2e:all` | Every e2e flow — cleans state, restarts the EDCs, applies fixtures, then runs |

@@ -28,9 +28,9 @@ from tests import make_headers
 
 HEADERS = make_headers(scope="connector.internal")
 
-CONSUMER = "did:web:consumer.dataspaces.localhost"
-PROVIDER = "did:web:provider.dataspaces.localhost"
-SUBJECT = "did:web:users.dataspaces.localhost:sub-001"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:sub-001"
 
 # The fixture's consent-gated dataset and one of its three permitted purposes.
 GATED = "datasets.silver.meters"

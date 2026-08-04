@@ -88,7 +88,7 @@ differing by +10000 and a different DID, vault, database and connector URL.
 
 | Setting | Provider value | Meaning |
 |---|---|---|
-| `edc.participant.id` / `edc.iam.issuer.id` | `did:web:provider.dataspaces.localhost` | this participant's DID |
+| `edc.participant.id` / `edc.iam.issuer.id` | `did:web:rec.dataspaces.localhost` | this participant's DID |
 | `edc.dsp.callback.address` | `http://172.17.0.1:19194/protocol` | the address counterparties call back on |
 | `web.http.<context>.port` / `.path` | see the table above | context binding |
 | `web.http.management.auth.type` | `tokenbased` | the only context with an auth filter |
@@ -100,7 +100,7 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `edc.iam.did.web.use.https` | `false` in dev, **`true` in production** | DID documents carry the keys every trust decision rests on |
 | `edc.vault.fs.file` | `/config/<role>-vault.properties` | the filesystem vault seed |
 | `edc.transfer.proxy.token.signer/verifier.publickey.alias` | `participant-private-key` | the EDR signing key |
-| `edc.datasource.default.url` / `.user` / `.password` | `jdbc:postgresql://…/edc_provider` | one database per participant |
+| `edc.datasource.default.url` / `.user` / `.password` | `jdbc:postgresql://…/edc_rec` | one database per participant |
 | `edc.sql.schema.autocreate` | `true` | see below |
 | `ds.connector.internal.url` | `http://172.17.0.1:30001` | the ds-connector this runtime asks |
 
@@ -125,7 +125,7 @@ self-migrating.
 
 ## Persistence
 
-Ten tables in a per-participant database (`edc_provider`, `edc_consumer`), all created by the
+Ten tables in a per-participant database (`edc_rec`, `edc_third_party`), all created by the
 runtime: `edc_asset`, `edc_policydefinitions`, `edc_contract_definitions`,
 `edc_contract_negotiation`, `edc_contract_agreement`, `edc_transfer_process`,
 `edc_data_plane`, `edc_edr_entry`, `edc_policy_monitor`, `edc_lease`.
@@ -163,8 +163,8 @@ forked copy.
 | `task edc:base` / `edc:ensure-base` | build the dependency-cache image, if missing |
 | `task edc:build` | build `connector.jar` on the host |
 | `task edc:restart` | rebuild the JAR and the image, recreate both EDC containers, wait for health |
-| `task edc-provider:run` / `edc-consumer:run` | run the JAR on the host against the dev properties |
-| `task edc-provider:watch` / `edc-consumer:watch` | the same JVM under a supervision loop that restarts on JAR change |
+| `task edc-rec:run` / `edc-third-party:run` | run the JAR on the host against the dev properties |
+| `task edc-rec:watch` / `edc-third-party:watch` | the same JVM under a supervision loop that restarts on JAR change |
 
 Changing the EDC version means editing `edcVersion` in `build.gradle.kts` **and** the four
 other places the tag is written: both Dockerfiles and two Taskfile entries.

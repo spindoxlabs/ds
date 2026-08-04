@@ -181,7 +181,7 @@ class ScenarioRunner:
             if offer is None:
                 report.problem(
                     f"sharing offer {want.get('id')!r} is not published — add it to "
-                    "services/connector/governance/sharing-offers.yaml and reload the connector"
+                    "services/connector/governance-rec/sharing-offers.yaml and reload the connector"
                 )
                 continue
             recipients = offer.get("recipients") or {}

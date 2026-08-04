@@ -16,7 +16,7 @@ from ds.governance.models import (
 )
 
 PARTICIPANT = "provider"
-BASE_URL = "https://provider.dataspaces.localhost"
+BASE_URL = "https://rec.dataspaces.localhost"
 
 # Default profile for assertions
 _P = OdrlProfile()

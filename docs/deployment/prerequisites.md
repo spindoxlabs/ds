@@ -119,7 +119,7 @@ ingress controller:
 | `portal.<baseDomain>` | the only human-facing host — the portal **and** `/oauth2/*` |
 | `<participant>.<baseDomain>` | `did:web` identity + DSP protocol + data plane, one per participant |
 | `trust-anchor.<baseDomain>` | the trust-anchor DID document and the revocation list |
-| `users.<baseDomain>` | user DID resolution — only when `exposeUserDids` is on |
+| — | a person's DID resolves on **their organisation's** host, at `/users/<id>/did.json`; no host of its own (`DID-11`) |
 
 A wildcard `*.<baseDomain>` record and a wildcard certificate cover all of them and keep adding
 a participant a values-only change.

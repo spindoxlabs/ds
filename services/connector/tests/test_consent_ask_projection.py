@@ -25,8 +25,8 @@ INTERNAL = make_headers(scope="connector.internal")
 
 CONSENTED_DATASET = "datasets.silver.meters"
 OPEN_DATASET = "datasets.gold.weather"
-CONSUMER = "did:web:consumer.dataspaces.localhost"
-SUBJECT = "did:web:users.dataspaces.localhost:sub-001"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:sub-001"
 PURPOSE = "FlexibilityResearch"
 
 

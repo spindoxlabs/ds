@@ -6,7 +6,7 @@ something a change *did not* do: a setting added and then never wired shows up
 here rather than in a review.
 
 It is here because of `DATASET_API_ENFORCE_CONSENT`. It was declared, defaulted
-to `true`, set explicitly in `docker-compose.provider.yml` and documented in
+to `true`, set explicitly in `docker-compose.rec.yml` and documented in
 `.env.example` — and read by nothing. Three places said this PEP's consent
 enforcement was a configurable switch; no code anywhere consulted it. The
 dangerous half is not the dead line, it is the belief: an operator turning it
@@ -66,7 +66,7 @@ def test_no_deployment_file_sets_a_variable_this_service_does_not_read():
     known_elsewhere = {"DATASET_API_MOCK_PORT", "DATASET_API_PATH", "DATASET_API_URL"}
 
     stray: list[str] = []
-    for relative in (".env.example", "docker-compose.provider.yml", "docker-compose.yml"):
+    for relative in (".env.example", "docker-compose.rec.yml", "docker-compose.yml"):
         path = REPO / relative
         if not path.exists():
             continue

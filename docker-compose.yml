@@ -2,8 +2,8 @@
 # Start this first, then bring up provider and/or consumer stacks.
 #
 #   docker compose up -d
-#   task provider:start
-#   task consumer:start
+#   task rec:start
+#   task third-party:start
 
 networks:
   dataspaces:
@@ -43,10 +43,19 @@ services:
     networks:
       dataspaces:
         aliases:
-          - provider.dataspaces.localhost
-          - consumer.dataspaces.localhost
+          - rec.dataspaces.localhost
+          - third-party.dataspaces.localhost
           - trust-anchor.dataspaces.localhost
-          - users.dataspaces.localhost
+          # The second provider (`DID-15`). Its host is its `did:web` identity,
+          # so the alias is what lets a counterparty inside the network resolve
+          # it at all.
+          - grid-operator.dataspaces.localhost
+          # `users.dataspaces.localhost` was here until `DID-11` step 2. A
+          # person's DID now lives in their custodian's namespace
+          # (`did:web:<participant>:users:<id>`), so it resolves on that
+          # participant's host and needs no alias of its own — which is also
+          # what makes it resolvable at all: the flat host had no site block and
+          # every subject DID 404'd (`personal-data.md` `D-22`).
           # oauth2-proxy performs OIDC discovery against the *browser-facing*
           # issuer, because that is the `iss` the tokens carry and the URL the
           # user is redirected to. These aliases let it reach that URL from inside
@@ -137,7 +146,7 @@ services:
       # Told when the participant registry changes, so an operator does not
       # watch a stale list for a minute after a promote. Best-effort: a
       # connector that cannot be reached just keeps its 60s TTL.
-      IDENTITY_REGISTRY_CONNECTOR_URLS: http://172.17.0.1:30001,http://172.17.0.1:31001
+      IDENTITY_REGISTRY_CONNECTOR_URLS: http://172.17.0.1:30001,http://172.17.0.1:31001,http://172.17.0.1:32001
       IDENTITY_REGISTRY_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       IDENTITY_REGISTRY_OIDC_GROUP_ALIASES: ${IDENTITY_REGISTRY_OIDC_GROUP_ALIASES:-}
       KEYCLOAK_ADMIN_URL: http://172.17.0.1:9080
@@ -154,6 +163,18 @@ services:
       start_period: 15s
       retries: 10
     networks: [dataspaces]
+    extra_hosts:
+      # **Participant hosts, resolved through the gateway rather than a Docker
+      # network alias.** A `did:web` DID resolves at the host it names, and this
+      # container fetches those documents itself — at enrolment, and on every
+      # presentation query. The alias list on the `caddy` service works only when
+      # *this* project's Caddy is the one running; in a dev machine where a
+      # shared edge proxy owns :80, it is somebody else's compose file. Pointing
+      # at the host gateway works either way.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
 
   # ── Identity Registry bootstrap — trust anchor, participants, dev users ──────
   identity-registry-bootstrap:
@@ -201,19 +222,72 @@ services:
           --roles consumer \
           --scope dataspaces.query --scope owner:example-org:member \
           --label "dev consumer bootstrap" > /enrolment/consumer-org.code
+        # **The second provider** (`D-54`, `DID-15`). A DSO shares its own grid
+        # data and has no members, which is the structural difference the
+        # fixture exists for — a platform tested against one provider quietly
+        # assumes every participant has a member store.
+        ir-cli org enrolment-token --alias grid-operator \
+          --roles provider \
+          --scope dataspaces.query \
+          --label "dev grid-operator bootstrap" > /enrolment/grid-operator.code
+        ir-cli agreement import --file /seed/agreements.dev.yaml
+        # **`P-1`'s last step**, and it had no seed path until `ir-cli conformity
+        # check` reported that no dev participant had ever accepted anything.
+        # `owner import` records who an organisation is; accepting the terms is a
+        # separate act, and one the rulebook requires before promotion.
+        for org in example-org consumer-org grid-operator; do
+          ir-cli agreement accept --owner "$$org" --accepted-by dev-seed
+        done
+        echo "Identity bootstrap complete"
+    networks: [dataspaces]
+
+
+  # ── Dev users, after the participants exist ─────────────────────────────────
+  #
+  # **Split out of `identity-registry-bootstrap` by `DID-11` step 2**, and the
+  # ordering is now load-bearing rather than cosmetic. A person's credential is
+  # delivered to the organisation that holds it, so that organisation has to
+  # have enrolled first — its DID document, and the `CredentialService` entry the
+  # anchor delivers to, do not exist until it does.
+  #
+  # Run by `task identity:users` after `rec:start` and `third-party:start`.
+  # Running it early does not corrupt anything: the credentials are issued and
+  # the delivery is reported as failed, which is the state a re-run repairs.
+  identity-users-bootstrap:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: "no"
+    depends_on:
+      identity-registry:
+        condition: service_healthy
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
+      # Delivery resolves nothing over did:web — it reads the endpoint the
+      # participant published at enrolment — but the endpoint itself is a Caddy
+      # host, so this container has to be able to reach it.
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
+    extra_hosts:
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
         ir-cli credential issue-data-subject \
           --subject-id consumer-user --role ConsumerUser \
-          --linked-participant-did did:web:consumer.dataspaces.localhost
+          --linked-participant-did did:web:third-party.dataspaces.localhost
         ir-cli keycloak map-user \
-          --did did:web:users.dataspaces.localhost:consumer-user \
+          --did did:web:third-party.dataspaces.localhost:users:consumer-user \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000002 \
           --email consumer@example.test
         ir-cli credential issue-data-subject \
           --subject-id data-subject --role DataSubject \
-          --linked-participant-did did:web:provider.dataspaces.localhost
+          --linked-participant-did did:web:rec.dataspaces.localhost
         ir-cli keycloak map-user \
-          --did did:web:users.dataspaces.localhost:data-subject \
+          --did did:web:rec.dataspaces.localhost:users:data-subject \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000004 \
           --email subject@example.test
@@ -224,29 +298,38 @@ services:
         # per person looks correct in dev.
         ir-cli credential issue-data-subject \
           --subject-id dual-user --role DataSubject \
-          --linked-participant-did did:web:provider.dataspaces.localhost
+          --linked-participant-did did:web:rec.dataspaces.localhost
+        # **Both of this person's credentials at the same custodian**, and the
+        # reason is a limitation worth naming: custody follows each credential
+        # (`DID-11` step 2), so a person granted roles by two organisations has
+        # their credentials in two stores — and a participant-side application
+        # reads *its own* store, so it can only ever present the roles that
+        # organisation granted. That is correct, and it means a fixture that
+        # split one person across two custodians produced a state no portal can
+        # serve. The cross-custodian case is exercised where it belongs, in
+        # `test_member_custody.py`, and `consumer-user` remains filed under the
+        # third party.
         ir-cli credential issue-data-subject \
           --subject-id dual-user --role ConsumerUser \
-          --linked-participant-did did:web:consumer.dataspaces.localhost
+          --linked-participant-did did:web:rec.dataspaces.localhost
         ir-cli keycloak map-user \
-          --did did:web:users.dataspaces.localhost:dual-user \
+          --did did:web:rec.dataspaces.localhost:users:dual-user \
           --realm dataspaces \
           --user-id 00000000-0000-4000-a000-000000000005 \
           --email dual@example.test
-        ir-cli agreement import --file /seed/agreements.dev.yaml
         ir-cli membership add \
-          --user-did did:web:users.dataspaces.localhost:data-subject \
+          --user-did did:web:rec.dataspaces.localhost:users:data-subject \
           --organization example-org \
           --role consumer
         ir-cli membership add \
-          --user-did did:web:users.dataspaces.localhost:consumer-user \
+          --user-did did:web:third-party.dataspaces.localhost:users:consumer-user \
           --organization example-org \
           --role consumer
         ir-cli membership add \
-          --user-did did:web:users.dataspaces.localhost:dual-user \
+          --user-did did:web:rec.dataspaces.localhost:users:dual-user \
           --organization example-org \
           --role consumer
-        echo "Identity bootstrap complete"
+        echo "Dev users bootstrapped"
     networks: [dataspaces]
 
   # ── Keycloak OIDC identity provider ──────────────────────────────────────────

@@ -19,7 +19,7 @@ own DID document, and proves control of it at enrolment; this registry records t
 | Role | Is | Serves |
 |---|---|---|
 | `trust-anchor` (default) | the governance authority's instance — **one per dataspace** | issuance, the participant/owner/membership registries, agreements, organisation onboarding, the StatusList, `GET /credentials/check`, and DID documents for its own DIDs |
-| `participant` | **one organisation's own instance**, in its own infrastructure | only the holder surface: `/dids`, `/sts`, `/credentials/{did}/presentations/query` and `/users/resolve`, each answering **only for what this instance holds** |
+| `participant` | **one organisation's own instance**, in its own infrastructure | only the holder surface: `/dids`, `/sts`, `/credentials/{did}/presentations/query` and `/users/{did}/credentials`, each answering **only for what this instance holds** |
 
 The anchor is the authority on *who is in the dataspace*; a participant that disagrees with it
 about that is wrong. It is not the authority on *who a participant is* — that is the
@@ -152,9 +152,17 @@ rotates the key. That URL has to be *routed*: the anchor's Caddy site block in d
 mechanism that fails exactly like one that works, which is why the `dcp-trust` e2e flow follows
 the entry to its metadata rather than asserting the entry is present.
 
-**Identity mapping.** `GET /users/resolve` turns a Keycloak identity into a dataspace DID and
-its credentials; `POST /users/identities` turns DIDs back into the usernames the data plane
+**Identity mapping, in two halves** (`DID-11` step 2). `GET /users/resolve` — at the **anchor** —
+turns a Keycloak identity into a dataspace DID: *who is this person* is registry data.
+`GET /users/{did}/credentials` — at the **participant** — answers *what do they hold*, from what
+was delivered to it. `POST /users/identities` turns DIDs back into the usernames the data plane
 joins on.
+
+A person's DID lives in the namespace of the organisation that onboarded them,
+`did:web:<participant>:users:<id>`, and resolves on that participant's own host. **One human
+keeps one identifier** however many organisations hold credentials about them — issuance is per
+role, so deriving it per call would split a dual-role person's consent records and provenance in
+half. Custody, unlike the identifier, follows each credential.
 
 ## How it works
 
@@ -352,6 +360,7 @@ refuse to run against a schema that is not at head.
 | `task identity-registry:debug` | same under debugpy on `:30905` |
 | `task db:migrate:identity-registry` | `alembic upgrade head` |
 | `task keycloak:merge` / `keycloak:mirror` | regenerate the two client projections |
-| `task identity:bootstrap` | run the dev seed (trust anchor, participants, credentials, owners) |
+| `task identity:bootstrap` | the dev seed's first half: trust anchor, owners, agreements, one enrolment code per participant |
+| `task identity:users` | its second half — the dev users' credentials, **after** the participants have enrolled, because that is who they are delivered to |
 
 Port **30005**, hardcoded — it is not a setting.

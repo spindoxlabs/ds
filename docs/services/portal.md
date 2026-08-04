@@ -102,7 +102,7 @@ prefix; each call site supplies its own fallback.
 | `FEDERATED_CATALOG_URL` | *(none)* | unset ⇒ the federated catalogue is skipped entirely |
 | `CATALOGUE_URL` | `http://172.17.0.1:30002` | the dataset API — catalogue and subject datasets |
 | `CONSUMER_DEFAULT_COUNTER_PARTY_ADDRESS` | provider EDC `…/protocol/2025-1` | DSP address used when negotiating |
-| `CONSUMER_DEFAULT_ASSIGNER` | `did:web:provider.dataspaces.localhost` | assigner DID on an offer |
+| `CONSUMER_DEFAULT_ASSIGNER` | `did:web:rec.dataspaces.localhost` | assigner DID on an offer |
 | `KEYCLOAK_ISSUER_URL` | `http://keycloak:9080/realms/dataspaces` | realm issuer, for the portal's own client-credentials grant |
 | `PORTAL_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-portal` | that service account |
 | `PORT` | `30004` | set in the image |
@@ -123,7 +123,7 @@ Conventions worth keeping:
 
 | Task | Effect |
 |---|---|
-| `task provider:portal:run` | `vite dev` on `:30004` |
+| `task rec:portal:run` | `vite dev` on `:30004` |
 | `task -d services/portal setup` | `npm ci` — required before the first run |
 | `task -d services/portal check` / `lint` | type check and lint |
 | `task -d services/portal test:ui` | Playwright journeys **against an already-running stack** |

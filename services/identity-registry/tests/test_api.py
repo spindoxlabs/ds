@@ -1,5 +1,5 @@
 import pytest
-from conftest import make_headers, register_did
+from conftest import CUSTODIAN_DID, make_headers, register_did
 
 HEADERS = make_headers()
 READ_HEADERS = make_headers(scope="identity-registry.read")
@@ -369,12 +369,19 @@ async def test_issue_data_subject_credential(client):
 
     r = await client.post(
         "/admin/credentials/data-subject",
-        json={"subject_id": "email-abc123"},
+        json={
+            "subject_id": "email-abc123",
+            "linked_participant_did": CUSTODIAN_DID,
+        },
         headers=HEADERS,
     )
     assert r.status_code == 201
     data = r.json()
-    assert "users.dataspaces.localhost" in data["subjectDid"]
+    # **The person lives in their custodian's namespace**, not the anchor's
+    # (`D-50`). The old shape said every person in the dataspace belonged to the
+    # trust anchor, which is not the relationship anybody has with them.
+    assert data["subjectDid"] == f"{CUSTODIAN_DID}:users:email-abc123"
+    assert data["custodianDid"] == CUSTODIAN_DID
     assert data["credentialId"].startswith("urn:uuid:")
 
 
@@ -390,7 +397,7 @@ async def test_data_subject_creates_user_did(client):
     )
     r = await client.post(
         "/admin/credentials/data-subject",
-        json={"subject_id": "email-xyz"},
+        json={"subject_id": "email-xyz", "linked_participant_did": CUSTODIAN_DID},
         headers=HEADERS,
     )
     subject_did = r.json()["subjectDid"]

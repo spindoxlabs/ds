@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from federated_catalog.cache import CatalogCache, CrawlError
 
-PROVIDER = "did:web:provider.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 
 
 def _datasets(*iris: str) -> list[dict]:

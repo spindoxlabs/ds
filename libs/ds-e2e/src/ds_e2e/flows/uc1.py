@@ -41,7 +41,7 @@ class UC1Flow(BaseFlow):
             return result
 
         # Non-member check
-        non_member_did = "did:web:users.dataspaces.localhost:outsider"
+        non_member_did = "did:web:rec.dataspaces.localhost:users:outsider"
         try:
             encoded = urllib.parse.quote(non_member_did, safe="")
             check = self.http.get(
@@ -62,7 +62,7 @@ class UC1Flow(BaseFlow):
     def _check_owner_preconditions(self, result: FlowResult, headers: dict[str, str]) -> bool:
         s = self.settings
         owner_alias = "example-org"
-        member_did = "did:web:users.dataspaces.localhost:data-subject"
+        member_did = "did:web:rec.dataspaces.localhost:users:data-subject"
 
         try:
             owner = self.http.get(

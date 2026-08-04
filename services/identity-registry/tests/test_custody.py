@@ -13,7 +13,7 @@ failure mode this ledger keeps finding.
 from __future__ import annotations
 
 import pytest
-from conftest import register_enrolled, register_holder
+from conftest import CUSTODIAN_DID, register_enrolled, register_holder
 from sqlalchemy import text
 
 from identity_registry.config import Settings, get_settings
@@ -23,8 +23,8 @@ from identity_registry.services.crypto import encrypt_private_jwk, generate_key_
 from identity_registry.services.custody import audit_custody, describe
 
 ANCHOR = "did:web:trust-anchor.dataspaces.localhost"
-OTHER = "did:web:provider.dataspaces.localhost"
-SUBJECT = "did:web:users.dataspaces.localhost:alice"
+OTHER = "did:web:rec.dataspaces.localhost"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:alice"
 
 
 def anchor_settings(**overrides) -> Settings:
@@ -249,6 +249,7 @@ async def test_issuing_to_a_data_subject_creates_no_key(client, db_session):
         json={
             "subject_id": "alice",
             "role": "DataSubject",
+            "linked_participant_did": CUSTODIAN_DID,
             "verified_by": "riverside-rec",
             "verification_method": "phone-otp",
         },
@@ -282,7 +283,11 @@ async def test_a_subject_did_still_resolves(client, db_session):
     await _hold_private_key(db_session, ANCHOR)
     created = await client.post(
         "/admin/credentials/data-subject",
-        json={"subject_id": "alice", "role": "DataSubject"},
+        json={
+            "subject_id": "alice",
+            "role": "DataSubject",
+            "linked_participant_did": CUSTODIAN_DID,
+        },
         headers=make_admin_headers(),
     )
     subject_did = created.json()["subjectDid"]
@@ -306,6 +311,7 @@ async def test_the_credential_records_who_attested_the_person(client, db_session
         json={
             "subject_id": "alice",
             "role": "DataSubject",
+            "linked_participant_did": CUSTODIAN_DID,
             "verified_by": "riverside-rec",
             "verification_method": "phone-otp",
         },

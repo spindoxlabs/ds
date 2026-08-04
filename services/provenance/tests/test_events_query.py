@@ -10,8 +10,8 @@ from __future__ import annotations
 import pytest
 from tests import make_headers
 
-SUBJECT = "did:web:users.dataspaces.localhost:alice"
-OTHER_SUBJECT = "did:web:users.dataspaces.localhost:bob"
+SUBJECT = "did:web:rec.dataspaces.localhost:users:alice"
+OTHER_SUBJECT = "did:web:rec.dataspaces.localhost:users:bob"
 DATASET = "datasets.silver.meters_15m"
 
 

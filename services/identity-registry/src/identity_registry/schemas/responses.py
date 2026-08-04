@@ -46,6 +46,16 @@ class DataSubjectCredentialResponse(BaseModel):
     subjectDid: str
     credentialId: str
     generatedAt: datetime
+    #: The organisation that holds this credential on the person's behalf
+    #: (`DID-11` step 2). A natural person runs no agent and holds nothing; the
+    #: four-corner model puts their credentials with the participant that
+    #: onboarded them (`DSSC-SVD-25`).
+    custodianDid: str | None = None
+    #: Where it was actually written. `None` with a `deliveryError` means the
+    #: anchor issued it and the custodian does not have it — a state a caller
+    #: must be able to see, because a retry is the fix and silence is not.
+    deliveredTo: str | None = None
+    deliveryError: str | None = None
 
 
 class KeyRotationResponse(BaseModel):

@@ -1,0 +1,352 @@
+# The grid operator's stack — the dataspace's **second provider** (`D-54`, `DID-15`).
+#
+# Requires shared infra (`docker compose up -d`) running first.
+#
+#   task grid-operator:start
+#
+# ## Why a third stack exists at all
+#
+# `provider` and `consumer` are **roles**, and a fixture shaped like a role
+# cannot exercise a model whose unit is the organisation. With one provider,
+# nothing distinguishes "this participant has members" from "every participant
+# has members", and a consumer that only ever negotiates with one counterparty
+# never has to answer *which* one.
+#
+# So: the REC (`docker-compose.rec.yml`) has members and gates data on
+# their consent; this one shares its own infrastructure data and has **no
+# members at all**; the consumer buys from both.
+#
+# ## Ports
+#
+# 39xxx for the EDC (`provider` holds 19xxx, `consumer` 29xxx), 32001 for the
+# connector, 32000 for provenance, 30008 for its identity registry.
+#
+# It runs no portal, no federated catalogue and no dataset API: those are the
+# REC's in this fixture, and a second copy would prove nothing. Its datasets are
+# served by the same stand-in backend — the asset id is what routes a query.
+
+networks:
+  dataspaces:
+    name: dataspaces
+    external: true
+
+volumes:
+  # Written by the trust anchor's bootstrap in `docker-compose.yml`. Declared
+  # here too because `grid-operator:start` composes this file alone; both
+  # declarations name the same project-scoped volume.
+  enrolment:
+
+services:
+  # ── EDC (Java, DCP-enabled) ─────────────────────────────────────────────────
+  edc-grid-operator:
+    build:
+      context: .
+      dockerfile: services/edc-connector/Dockerfile
+    command:
+      [
+        "sh",
+        "-c",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/grid-operator.properties -jar /connector.jar $$EDC_PROG_ARGS",
+      ]
+    volumes:
+      - ./services/connector/config:/config:ro
+    ports:
+      - "39193:39193"
+      - "39194:39194"
+      - "39291:39291"
+      - "39195:39195"
+    environment:
+      EDC_PROG_ARGS: ${EDC_PROG_ARGS:-}
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
+      # dot.notation. The properties file cannot carry these: it is loaded with a
+      # plain `Properties.load()` and would store a `${...}` placeholder verbatim.
+      WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
+      DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
+      DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
+    depends_on:
+      edc-db-create-grid-operator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:39191/api/check/health || exit 1"]
+      interval: 10s
+      start_period: 60s
+      retries: 15
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # ── Databases ───────────────────────────────────────────────────────────────
+  edc-db-create-grid-operator:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_grid_operator'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_grid_operator"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  connector-db-create-grid-operator:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_grid_operator'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_grid_operator"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  connector-db-init-grid-operator:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      connector-db-create-grid-operator:
+        condition: service_completed_successfully
+    environment:
+      CONNECTOR_ROLE: provider
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_grid_operator
+    networks: [dataspaces]
+
+  provenance-db-create-grid-operator:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_grid_operator'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_grid_operator"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  provenance-db-init-grid-operator:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      provenance-db-create-grid-operator:
+        condition: service_completed_successfully
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_grid_operator
+    networks: [dataspaces]
+
+  # ── Connector (Python orchestration) ────────────────────────────────────────
+  ds-connector-grid-operator:
+    build:
+      context: .
+      dockerfile: services/connector/Dockerfile
+    ports:
+      - "32001:32001"
+    environment:
+      CONNECTOR_ROLE: provider
+      CONNECTOR_PORT: 32001
+      EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:39193/management
+      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      CONNECTOR_PARTICIPANT_ID: grid-operator
+      CONNECTOR_PARTICIPANT_BASE_URL: https://grid-operator.dataspaces.localhost
+      CONNECTOR_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
+      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
+      CONNECTOR_PROVENANCE_URL: http://172.17.0.1:32000
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_grid_operator
+      # **Its own governance, not the REC's** — a different directory, not a
+      # different file in the same one. `sharing_offers_path` defaults to the
+      # file beside `governance.yaml`, so sharing the directory would have this
+      # provider publishing the REC's consent offers (`DID-15`).
+      CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
+      CONNECTOR_VOCABULARIES_PATH: /governance/vocabularies.yaml
+      CONNECTOR_VOCABULARY_CACHE_DIR: /data/vocabularies
+      CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
+      CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
+      CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+      CONNECTOR_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
+      CONNECTOR_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      CONNECTOR_DID_WEB_USE_HTTPS: "false"
+      CONNECTOR_VC_INSECURE_DEV: "false"
+    depends_on:
+      edc-grid-operator:
+        condition: service_healthy
+      connector-db-init-grid-operator:
+        condition: service_completed_successfully
+      ds-provenance-grid-operator:
+        condition: service_healthy
+    volumes:
+      - ./services/connector/governance-grid-operator:/governance:ro
+      - ./data/vocabularies:/data/vocabularies
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os, urllib.request; urllib.request.urlopen('http://localhost:%s/health' % os.environ['CONNECTOR_PORT'], timeout=2)\""]
+      interval: 10s
+      start_period: 20s
+      retries: 10
+    extra_hosts:
+      # did:web resolution goes to the host the DID names, through Caddy on :80.
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # ── Provenance ──────────────────────────────────────────────────────────────
+  ds-provenance-grid-operator:
+    build:
+      context: .
+      dockerfile: services/provenance/Dockerfile
+    command: ["uvicorn", "provenance.main:app", "--host", "0.0.0.0", "--port", "32000"]
+    ports:
+      - "32000:32000"
+    environment:
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_grid_operator
+      PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
+      PROVENANCE_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
+      PROVENANCE_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      PROVENANCE_DID_WEB_USE_HTTPS: "false"
+      PROVENANCE_VC_INSECURE_DEV: "false"
+    extra_hosts:
+      - "keycloak.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+    depends_on:
+      provenance-db-init-grid-operator:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:32000/health', timeout=2)\""]
+      interval: 10s
+      start_period: 10s
+      retries: 10
+    networks: [dataspaces]
+
+  # ── Its own identity registry (`DID-05`) ────────────────────────────────────
+  #
+  # One organisation, one instance, one key. It holds **only its own** — this is
+  # the participant with no members, so its credential store contains exactly one
+  # subject: itself.
+  ir-grid-operator-db-create:
+    image: postgres:17
+    command: |
+      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_grid_operator'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_grid_operator"'
+    environment:
+      PGPASSWORD: postgres
+    restart: "no"
+    networks: [dataspaces]
+
+  ir-grid-operator-db-init:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    command: ["alembic", "--config", "alembic.ini", "upgrade", "head"]
+    working_dir: /app
+    restart: "no"
+    depends_on:
+      ir-grid-operator-db-create:
+        condition: service_completed_successfully
+    environment:
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+    networks: [dataspaces]
+
+  ir-grid-operator:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: unless-stopped
+    ports:
+      - "30008:30005"
+    environment:
+      IDENTITY_REGISTRY_ROLE: participant
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
+      IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:39194/protocol/2025-1
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://grid-operator.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
+      # **Its own**, and different from every other instance's. Sharing one would
+      # put the keys back in one place and make the split cosmetic (`D-47`).
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_GRID_OPERATOR_ENCRYPTION_KEY:-dev-grid-operator-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_GRID_OPERATOR_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
+    depends_on:
+      ir-grid-operator-db-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30005/health', timeout=2)\""]
+      interval: 10s
+      start_period: 15s
+      retries: 10
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]
+
+  # Generates the key, publishes the document, then enrols with the anchor.
+  #
+  # Two prerequisites this file cannot express, because both live in
+  # `docker-compose.yml`: Caddy must already route
+  # `grid-operator.dataspaces.localhost` here (the anchor *fetches this
+  # participant's DID document* to verify the enrolment signature), and
+  # `identity-registry-bootstrap` must have written the enrolment code.
+  ir-grid-operator-bootstrap:
+    build:
+      context: .
+      dockerfile: services/identity-registry/Dockerfile
+    restart: "no"
+    depends_on:
+      ir-grid-operator:
+        condition: service_healthy
+    environment:
+      IDENTITY_REGISTRY_ROLE: participant
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
+      IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:39194/protocol/2025-1
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://grid-operator.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
+      IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_GRID_OPERATOR_ENCRYPTION_KEY:-dev-grid-operator-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_GRID_OPERATOR_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
+    volumes:
+      - enrolment:/enrolment:ro
+    entrypoint: ["/bin/sh", "-euc"]
+    command:
+      - |
+        # Read the code into a variable and **check it**. `--code "$$(cat …)"`
+        # looked right and failed open: a missing file made `cat` fail, `set -e`
+        # did not trip on a substitution inside an argument, and `--code ""` took
+        # the "no code given" branch — so the bootstrap printed *ready* having
+        # enrolled nothing.
+        CODE="$$(cat /enrolment/grid-operator.code 2>/dev/null || true)"
+        if [ -z "$$CODE" ]; then
+          echo "No enrolment code at /enrolment/grid-operator.code." >&2
+          echo "The trust anchor writes it — run 'task identity:bootstrap' first." >&2
+          exit 1
+        fi
+        ir-cli participant init --code "$$CODE"
+        echo "Grid operator identity ready and enrolled"
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
+    networks: [dataspaces]

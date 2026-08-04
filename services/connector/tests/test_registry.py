@@ -24,11 +24,11 @@ def test_from_file_loads_participants(tmp_path):
     p = _write_yaml(tmp_path, """
         participants:
           - id: provider
-            dsp_address: http://edc-provider:19194/protocol
+            dsp_address: http://edc-rec:19194/protocol
             allowed_scopes: [dataspaces.query, dataspaces.admin]
             roles: [provider]
           - id: consumer
-            dsp_address: http://edc-consumer:29194/protocol
+            dsp_address: http://edc-third-party:29194/protocol
             allowed_scopes: [dataspaces.query]
             roles: [consumer]
     """)
@@ -40,12 +40,12 @@ def test_validate_known_participant(tmp_path):
     p = _write_yaml(tmp_path, """
         participants:
           - id: consumer
-            dsp_address: http://edc-consumer:29194/protocol
+            dsp_address: http://edc-third-party:29194/protocol
             allowed_scopes: [dataspaces.query]
             roles: [consumer]
     """)
     registry = ParticipantRegistry.from_file(p)
-    participant = registry.validate("http://edc-consumer:29194/protocol")
+    participant = registry.validate("http://edc-third-party:29194/protocol")
     assert participant.id == "consumer"
 
 
@@ -59,7 +59,7 @@ def test_get_by_id(tmp_path):
     p = _write_yaml(tmp_path, """
         participants:
           - id: provider
-            dsp_address: http://edc-provider:19194/protocol
+            dsp_address: http://edc-rec:19194/protocol
             roles: [provider]
     """)
     registry = ParticipantRegistry.from_file(p)

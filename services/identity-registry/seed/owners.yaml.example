@@ -9,7 +9,7 @@ owners:
   - id: example-org
     type: schema:NGO
     name: Example Organization
-    did: did:web:provider.dataspaces.localhost
+    did: did:web:rec.dataspaces.localhost
     aliases: [example]
     organization:            # Keycloak organisation (celine-policies)
       create: true

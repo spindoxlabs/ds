@@ -15,7 +15,7 @@ tasks:
     vars:
       # Directories containing pipeline apps. Each app directory may carry a
       # sharing-offers.yaml beside its governance.yaml — this task collects them
-      # into services/connector/governance/sharing-offers.d/<app>.yaml where the
+      # into services/connector/governance-rec/sharing-offers.d/<app>.yaml where the
       # connector's load_sharing_offers() picks them up at startup.
       PIPELINE_DIRS: ../celine-pipelines/apps ../../../demo3/pipelines/apps
       # Per-app deployment overlays. A file named sharing-offers.<app>.yaml in
@@ -46,5 +46,5 @@ tasks:
 
         cd libs/governance
         uv run ds-governance collect-offers "$TMPDIR/**/sharing-offers.yaml" \
-          --out-dir ../../services/connector/governance/sharing-offers.d \
+          --out-dir ../../services/connector/governance-rec/sharing-offers.d \
           --verbose

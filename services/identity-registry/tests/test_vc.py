@@ -35,7 +35,7 @@ def test_membership_credential_structure():
 def test_data_subject_credential_structure():
     vc = build_data_subject_credential(
         issuer_did="did:web:trust-anchor.dataspaces.localhost",
-        subject_did="did:web:users.dataspaces.localhost:email-abc",
+        subject_did="did:web:rec.dataspaces.localhost:users:email-abc",
         role="data-subject",
         linked_participant_did="did:web:rec.dataspaces.localhost",
         allowed_actions=["consent.manage"],

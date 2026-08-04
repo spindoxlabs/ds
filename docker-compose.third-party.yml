@@ -1,7 +1,7 @@
 # Consumer participant stack.
 # Requires shared infra (docker compose up -d) running first.
 #
-#   task consumer:start
+#   task third-party:start
 
 networks:
   dataspaces:
@@ -10,13 +10,13 @@ networks:
 
 volumes:
   # Written by the trust anchor's bootstrap in `docker-compose.yml`. Declared
-  # here too because `consumer:start` composes this file alone; both declarations
+  # here too because `third-party:start` composes this file alone; both declarations
   # name the same project-scoped volume.
   enrolment:
 
 services:
   # ── EDC consumer connector (Java, DCP-enabled) ──────────────────────────────
-  edc-consumer:
+  edc-third-party:
     build:
       context: .
       dockerfile: services/edc-connector/Dockerfile
@@ -24,7 +24,7 @@ services:
       [
         "sh",
         "-c",
-        "java $$JAVA_OPTS -Dedc.fs.config=/config/consumer.properties -jar /connector.jar $$EDC_PROG_ARGS",
+        "java $$JAVA_OPTS -Dedc.fs.config=/config/third-party.properties -jar /connector.jar $$EDC_PROG_ARGS",
       ]
     volumes:
       - ./services/connector/config:/config:ro
@@ -53,40 +53,49 @@ services:
       DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
       DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
     depends_on:
-      edc-db-create-consumer:
+      edc-db-create-third-party:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:29191/api/check/health || exit 1"]
       interval: 10s
       start_period: 60s
       retries: 15
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
   # ── EDC database init (Flyway auto-creates schema on startup) ───────────────
-  edc-db-create-consumer:
+  edc-db-create-third-party:
     image: postgres:17
     command: |
       sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
-      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_consumer'"'"'" |
-      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_consumer"'
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_third_party'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_third_party"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
     networks: [dataspaces]
 
   # ── Database init ────────────────────────────────────────────────────────────
-  connector-db-create-consumer:
+  connector-db-create-third-party:
     image: postgres:17
     command: |
       sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
-      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_consumer'"'"'" |
-      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_consumer"'
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_third_party'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_third_party"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
     networks: [dataspaces]
 
-  connector-db-init-consumer:
+  connector-db-init-third-party:
     build:
       context: .
       dockerfile: services/connector/Dockerfile
@@ -94,25 +103,25 @@ services:
     working_dir: /app
     restart: "no"
     depends_on:
-      connector-db-create-consumer:
+      connector-db-create-third-party:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: consumer
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_third_party
     networks: [dataspaces]
 
-  provenance-db-create-consumer:
+  provenance-db-create-third-party:
     image: postgres:17
     command: |
       sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
-      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_consumer'"'"'" |
-      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_consumer"'
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_third_party'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_third_party"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
     networks: [dataspaces]
 
-  provenance-db-init-consumer:
+  provenance-db-init-third-party:
     build:
       context: .
       dockerfile: services/provenance/Dockerfile
@@ -120,14 +129,14 @@ services:
     working_dir: /app
     restart: "no"
     depends_on:
-      provenance-db-create-consumer:
+      provenance-db-create-third-party:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_third_party
     networks: [dataspaces]
 
   # ── Consumer connector (Python orchestration) ───────────────────────────────
-  ds-connector-consumer:
+  ds-connector-third-party:
     build:
       context: .
       dockerfile: services/connector/Dockerfile
@@ -145,11 +154,11 @@ services:
       EDC_CONSUMER_MANAGEMENT_URL: http://172.17.0.1:29193/management
       EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       CONNECTOR_PARTICIPANT_ID: consumer
-      CONNECTOR_PARTICIPANT_BASE_URL: https://consumer.dataspaces.localhost
-      CONNECTOR_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
-      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      CONNECTOR_PARTICIPANT_BASE_URL: https://third-party.dataspaces.localhost
+      CONNECTOR_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
+      CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       CONNECTOR_PROVENANCE_URL: http://172.17.0.1:31000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_consumer
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_third_party
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       # The registry is committed configuration and rides the read-only
       # `/governance` mount. The fetched copies are cache, so they live under
@@ -173,14 +182,14 @@ services:
       # decision?" Unset it and a long REQUESTED simply stays REQUESTED.
       CONNECTOR_PROVIDER_CONNECTOR_URL: http://172.17.0.1:30001
     depends_on:
-      edc-consumer:
+      edc-third-party:
         condition: service_healthy
-      connector-db-init-consumer:
+      connector-db-init-third-party:
         condition: service_completed_successfully
-      ds-provenance-consumer:
+      ds-provenance-third-party:
         condition: service_healthy
     volumes:
-      - ./services/connector/governance:/governance:ro
+      - ./services/connector/governance-rec:/governance:ro
       # Shared with the host on purpose: `task vocab:fetch` fills it from
       # outside, and anything the container fetches lands there too — so a
       # restart is never the thing that repairs a cache. Narrow by design: `./data`
@@ -203,7 +212,7 @@ services:
     networks: [dataspaces]
 
   # ── Consumer provenance ──────────────────────────────────────────────────────
-  ds-provenance-consumer:
+  ds-provenance-third-party:
     build:
       context: .
       dockerfile: services/provenance/Dockerfile
@@ -211,7 +220,7 @@ services:
     ports:
       - "31000:31000"
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_consumer
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_third_party
       # See the provider stack: an unset issuer means tokens are accepted without
       # signature, audience or issuer verification.
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
@@ -227,7 +236,7 @@ services:
       # did:web resolution goes to the host the DID names, through Caddy on :80.
       - "trust-anchor.dataspaces.localhost:host-gateway"
     depends_on:
-      provenance-db-init-consumer:
+      provenance-db-init-third-party:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:31000/health', timeout=2)\""]
@@ -246,18 +255,18 @@ services:
   # credential service. Every registry question (who is a participant, what was
   # issued, what was agreed) still goes to the anchor, which is why
   # `CONNECTOR_IDENTITY_REGISTRY_URL` above is unchanged and must stay that way.
-  ir-consumer-db-create:
+  ir-third-party-db-create:
     image: postgres:17
     command: |
       sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
-      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_consumer'"'"'" |
-      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_consumer"'
+      psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_third_party'"'"'" |
+      grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_third_party"'
     environment:
       PGPASSWORD: postgres
     restart: "no"
     networks: [dataspaces]
 
-  ir-consumer-db-init:
+  ir-third-party-db-init:
     build:
       context: .
       dockerfile: services/identity-registry/Dockerfile
@@ -265,13 +274,13 @@ services:
     working_dir: /app
     restart: "no"
     depends_on:
-      ir-consumer-db-create:
+      ir-third-party-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_consumer
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
     networks: [dataspaces]
 
-  ir-consumer:
+  ir-third-party:
     build:
       context: .
       dockerfile: services/identity-registry/Dockerfile
@@ -280,63 +289,72 @@ services:
       - "30007:30005"
     environment:
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_consumer
-      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:29194/protocol/2025-1
       # Its own host. This is the value that goes into its DID document as the
       # `CredentialService` endpoint, so it has to be reachable by a counterparty
       # — an EDC in a container, a host process, or a stranger.
-      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://consumer.dataspaces.localhost
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://third-party.dataspaces.localhost
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
       # **Its own**, and different from the anchor's. Sharing one would put every
       # key back in one place and make the split cosmetic (`D-47`).
-      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_CONSUMER_ENCRYPTION_KEY:-dev-consumer-encryption-key}
-      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_CONSUMER_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_THIRD_PARTY_ENCRYPTION_KEY:-dev-third-party-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_THIRD_PARTY_STS_SECRET:-insecure-dev-secret}
       IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
     depends_on:
-      ir-consumer-db-init:
+      ir-third-party-db-init:
         condition: service_completed_successfully
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:30005/health', timeout=2)\""]
       interval: 10s
       start_period: 15s
       retries: 10
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
   # Generates the key, publishes the document, then enrols with the anchor.
   #
   # **Two prerequisites this file cannot express**, because both live in
-  # `docker-compose.yml` and `consumer:start` composes this file alone:
+  # `docker-compose.yml` and `third-party:start` composes this file alone:
   #
-  #   1. Caddy must already route `consumer.dataspaces.localhost` here — the
+  #   1. Caddy must already route `third-party.dataspaces.localhost` here — the
   #      anchor *fetches this participant's DID document* to verify the enrolment
   #      signature, so an instance that is up but not yet routed fails with a
   #      resolution error that says nothing about Caddy.
   #   2. `identity-registry-bootstrap` must have written the enrolment code.
   #
   # `task start` orders them (`infra:start` → `identity:bootstrap` →
-  # `consumer:start`), and that ordering is now load-bearing rather than
+  # `third-party:start`), and that ordering is now load-bearing rather than
   # cosmetic. Starting this stack against a cold anchor fails on the missing
   # code file, loudly, which is the right way round.
-  ir-consumer-bootstrap:
+  ir-third-party-bootstrap:
     build:
       context: .
       dockerfile: services/identity-registry/Dockerfile
     restart: "no"
     depends_on:
-      ir-consumer:
+      ir-third-party:
         condition: service_healthy
     environment:
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_consumer
-      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:consumer.dataspaces.localhost
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
+      IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:29194/protocol/2025-1
-      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://consumer.dataspaces.localhost
+      IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://third-party.dataspaces.localhost
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       IDENTITY_REGISTRY_TRUST_ANCHOR_URL: http://172.17.0.1:30005
-      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_CONSUMER_ENCRYPTION_KEY:-dev-consumer-encryption-key}
-      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_CONSUMER_STS_SECRET:-insecure-dev-secret}
+      IDENTITY_REGISTRY_ENCRYPTION_KEY: ${IR_THIRD_PARTY_ENCRYPTION_KEY:-dev-third-party-encryption-key}
+      IDENTITY_REGISTRY_PARTICIPANT_STS_SECRET: ${IR_THIRD_PARTY_STS_SECRET:-insecure-dev-secret}
       IDENTITY_REGISTRY_DID_WEB_USE_HTTPS: "false"
     volumes:
       - enrolment:/enrolment:ro
@@ -356,4 +374,13 @@ services:
         fi
         ir-cli participant init --code "$$CODE"
         echo "Consumer identity ready and enrolled"
+    extra_hosts:
+      # **Every participant host**, through the gateway rather than a Docker
+      # network alias: a `did:web` DID resolves at the host it names, and this
+      # process fetches those documents itself. The alias list on the `caddy`
+      # service only applies when this project's Caddy is the one running.
+      - "rec.dataspaces.localhost:host-gateway"
+      - "third-party.dataspaces.localhost:host-gateway"
+      - "grid-operator.dataspaces.localhost:host-gateway"
+      - "trust-anchor.dataspaces.localhost:host-gateway"
     networks: [dataspaces]

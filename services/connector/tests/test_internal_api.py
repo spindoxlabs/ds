@@ -14,7 +14,7 @@ from connector.services.consent_service import create_consent_request
 
 HEADERS = make_headers(scope="connector.internal")
 
-EDC = get_settings().edc_provider_management_url.rstrip("/")
+EDC = get_settings().edc_rec_management_url.rstrip("/")
 
 
 @pytest.mark.asyncio

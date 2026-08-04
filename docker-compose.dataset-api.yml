@@ -131,7 +131,7 @@ services:
     ports:
       # Takes the mock's port so nothing downstream has to be repointed: the
       # connector, the EDR endpoint and the portal all address 30002. Stop
-      # `dataspaces-dataset-api-provider` first — one of them can hold it.
+      # `dataspaces-dataset-api-rec` first — one of them can hold it.
       - "30002:8001"
     environment:
       DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets

@@ -1,6 +1,6 @@
 # Governance fixture for the connector test suite.
 #
-# Kept separate from services/connector/governance/governance.yaml so tests
+# Kept separate from services/connector/governance-rec/governance.yaml so tests
 # assert against a stable vocabulary rather than whatever the dev catalogue
 # happens to declare.
 

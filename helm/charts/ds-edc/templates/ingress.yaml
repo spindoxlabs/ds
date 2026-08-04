@@ -100,6 +100,21 @@ spec:
                 name: {{ $irLocal }}
                 port:
                   number: 30005
+          # **The DID documents of the people this participant onboarded**
+          # (`DID-11` step 2). `did:web:<this host>:users:<id>` resolves at
+          # `/users/<id>/did.json`, and the registry serves the did:web path form
+          # directly — so this is a plain proxy, not a rewrite.
+          #
+          # It belongs here for the same reason `/credentials` does: the host is
+          # this participant's identity, and a person named in its namespace is
+          # its to publish. The trust anchor no longer has a `users.` host at all.
+          - path: /users
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ $irLocal }}
+                port:
+                  number: 30005
 ---
 # ── DSP protocol + data-plane public endpoint ───────────────────────────────
 apiVersion: networking.k8s.io/v1

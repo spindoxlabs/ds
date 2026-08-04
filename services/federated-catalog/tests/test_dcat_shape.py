@@ -23,7 +23,7 @@ from federated_catalog.main import create_app
 
 from .test_auth import make_headers
 
-PROVIDER = "did:web:provider.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 DSP = "http://172.17.0.1:19194/protocol/2025-1"
 EXTERNAL = "https://opendata.example.test/catalogue"
 

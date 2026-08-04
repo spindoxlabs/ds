@@ -46,7 +46,7 @@ The `Dockerfile` performs a multi-stage build:
 docker build -f edc-connector/Dockerfile -t ds-edc-connector:local .
 ```
 
-The root `docker-compose.provider.yml` and `docker-compose.consumer.yml` build this image automatically for the `edc-provider` and `edc-consumer` services.
+The root `docker-compose.rec.yml` and `docker-compose.third-party.yml` build this image automatically for the `edc-rec` and `edc-third-party` services.
 
 ---
 
@@ -77,7 +77,7 @@ When connector A (consumer) initiates DSP negotiation with connector B (provider
 
 ## Related configuration
 
-EDC properties files for this connector are at `services/connector/config/provider.properties` and `consumer.properties`. Key DCP properties:
+EDC properties files for this connector are at `services/connector/config/rec.properties` and `third-party.properties`. Key DCP properties:
 
 - `edc.participant.id` — participant DID URI
 - `edc.iam.issuer.id` — same DID URI (used in VP assertions)

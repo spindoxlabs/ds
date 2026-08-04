@@ -29,7 +29,7 @@ def _mapper() -> ConnectorGovernanceMapper:
     # resolves no purpose at all and this gate would reject everything.
     return ConnectorGovernanceMapper(
         "provider",
-        "https://provider.dataspaces.localhost",
+        "https://rec.dataspaces.localhost",
         profile=load_odrl_profile(),
     )
 

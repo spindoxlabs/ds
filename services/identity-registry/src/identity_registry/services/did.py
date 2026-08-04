@@ -62,3 +62,66 @@ def build_did_document(
         ]
 
     return doc
+
+
+#: The segment separating a participant's host from a person it holds
+#: credentials for. `did:web` uses `:` for path segments, so
+#: `did:web:rec.example.org:users:alice` resolves at
+#: `https://rec.example.org/users/alice/did.json` — the participant's own host,
+#: through the same `/dids` route every participant already serves.
+USER_SEGMENT = "users"
+
+
+class SubjectNamespaceError(Exception):
+    """A person's identifier cannot be placed without naming a custodian."""
+
+
+def subject_did_for(linked_participant_did: str | None, subject_id: str) -> str:
+    """Where a natural person's identifier lives — `D-50`, `DID-11` step 2.
+
+    It used to be `did:web:users.<anchor-domain>:<id>`: every person in the
+    dataspace named under the **trust anchor's** domain, which said that the
+    anchor is the party they belong to. It is not. A person is onboarded by an
+    organisation, their credentials are held by that organisation, and the
+    identifier should say which one — this is the four-corner model's
+    *participant agent service provider* relationship, written into the name.
+
+    **Refused without a participant**, rather than falling back to the anchor.
+    A person with no organisation holding their credentials has no custodian,
+    and minting them an identifier under the anchor's domain would recreate the
+    thing this replaces while looking like a default.
+    """
+    if not linked_participant_did:
+        raise SubjectNamespaceError(
+            "a natural person's DID lives in the namespace of the organisation "
+            "that holds their credentials, so linked_participant_did is required "
+            "— there is nowhere to put an identifier for a person no participant "
+            "is custodian for (D-50)"
+        )
+    if not linked_participant_did.startswith("did:web:"):
+        raise SubjectNamespaceError(
+            f"linked_participant_did must be a did:web identifier, got "
+            f"{linked_participant_did!r}"
+        )
+    return f"{linked_participant_did}:{USER_SEGMENT}:{subject_id}"
+
+
+def subject_id_of(did: str) -> str | None:
+    """The person's id inside a subject DID, or None if this is not one."""
+    marker = f":{USER_SEGMENT}:"
+    if not did.startswith("did:web:") or marker not in did:
+        return None
+    return did.rsplit(marker, 1)[1] or None
+
+
+def custodian_of(did: str) -> str | None:
+    """The participant whose namespace a subject DID sits in.
+
+    The inverse of `subject_did_for`, and what tells a registry *whose* person
+    this is — which is the question the old flat `users.<anchor>` namespace made
+    unanswerable.
+    """
+    marker = f":{USER_SEGMENT}:"
+    if not did.startswith("did:web:") or marker not in did:
+        return None
+    return did.rsplit(marker, 1)[0] or None

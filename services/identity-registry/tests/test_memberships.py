@@ -26,8 +26,8 @@ async def _create_did(client, did: str, admin_headers: dict):
     )
 
 
-SUBJECT_DID = "did:web:users.dataspaces.localhost:data-subject"
-CONSUMER_DID = "did:web:users.dataspaces.localhost:consumer-user"
+SUBJECT_DID = "did:web:rec.dataspaces.localhost:users:data-subject"
+CONSUMER_DID = "did:web:third-party.dataspaces.localhost:users:consumer-user"
 ORG_ALIAS = "example-org"
 
 
@@ -61,7 +61,7 @@ class TestMembershipCRUD:
         resp = await client.post(
             "/admin/memberships",
             json={
-                "user_did": "did:web:users.dataspaces.localhost:never-registered",
+                "user_did": "did:web:rec.dataspaces.localhost:users:never-registered",
                 "organization_alias": ORG_ALIAS,
                 "role": "member",
             },

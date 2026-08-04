@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from federated_catalog.cache import CatalogCache, SourceEndpoint
 
-PROVIDER = "did:web:provider.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 
 
 def test_an_entry_with_no_iri_is_absent_from_every_view():

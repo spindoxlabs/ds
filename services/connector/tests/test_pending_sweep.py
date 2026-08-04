@@ -24,7 +24,7 @@ from connector.services.pending_sweep import (
 
 NEGOTIATION = "neg-001"
 DATASET = "datasets.silver.meters"
-CONSUMER = "did:web:consumer.dataspaces.localhost"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
 NOW = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
 
 

@@ -35,9 +35,9 @@ jobs:
         working-directory: libs/governance
         run: |
           uv run ds-governance evidence \
-            --file ../../services/connector/governance/governance.yaml \
+            --file ../../services/connector/governance-rec/governance.yaml \
             --owners ../../services/identity-registry/seed/owners.dev.yaml \
-            --participants ../../services/connector/governance/participants.yaml \
+            --participants ../../services/connector/governance-rec/participants.yaml \
             --name core \
             --out-dir ../../reports/compliance
 

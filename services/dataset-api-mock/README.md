@@ -19,7 +19,7 @@ task setup
 task run          # http://172.17.0.1:30002
 ```
 
-It also runs as `dataset-api-provider` in `docker-compose.provider.yml`.
+It also runs as `dataset-api-rec` in `docker-compose.rec.yml`.
 
 ## Endpoints
 
@@ -39,7 +39,7 @@ Datasets marked `requires_consent` are filtered per subject **and per purpose**:
 ```bash
 curl 'http://172.17.0.1:30002/query\
 ?dataset_name=datasets.silver.meters_15m\
-&consumer_id=did:web:consumer.dataspaces.localhost\
+&consumer_id=did:web:third-party.dataspaces.localhost\
 &purpose=FlexibilityResearch'
 ```
 

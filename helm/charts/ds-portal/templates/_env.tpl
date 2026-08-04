@@ -21,6 +21,15 @@ ds-<service>-<participant>.
   value: {{ printf "http://ds-federated-catalog-%s:30003" $p | quote }}
 - name: IDENTITY_REGISTRY_URL
   value: {{ printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority | quote }}
+# This participant's own registry, in its own namespace: the credentials of the
+# people it onboarded are held here, not at the anchor (`DID-11` step 2).
+- name: PARTICIPANT_IDENTITY_REGISTRY_URL
+  value: {{ printf "http://ds-identity-registry-%s:30005" $p | quote }}
+# Whose people that registry is custodian for. Asking it about a person filed
+# under another organisation returns a truthful "I hold nothing", and treating
+# that as authoritative logs them out (`DID-11` step 2).
+- name: PARTICIPANT_DID
+  value: {{ .Values.participant.did | default (printf "did:web:%s.%s" $p (.Values.global).baseDomain) | quote }}
 {{- if .Values.datasetApi.url }}
 - name: CATALOGUE_URL
   value: {{ .Values.datasetApi.url | quote }}

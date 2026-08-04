@@ -1,6 +1,6 @@
 # ── DID resolution — every *.dataspaces.localhost host ──────────────────────
 #
-# did:web:provider.dataspaces.localhost → GET http://provider.dataspaces.localhost/.well-known/did.json
+# did:web:rec.dataspaces.localhost → GET http://rec.dataspaces.localhost/.well-known/did.json
 # Caddy rewrites to the identity-registry at /dids/did:web:{host}/did.json
 #
 # A portless DID resolves on **port 80** — there is no other port a did:web
@@ -34,11 +34,11 @@ http://*.dataspaces.localhost {
 	# the DID, same port 80, resolvable both ways.
 	#
 	# **On the wildcard these still reach the anchor**, and that is correct for
-	# the hosts that fall through to here: the trust anchor's own DID, and
-	# `users.dataspaces.localhost`, whose subject DIDs the anchor still holds.
-	# A host that belongs to a *participant* has its own block below, pointing at
-	# that participant's own instance — which is the whole of `DID-05` expressed
-	# in routing.
+	# the one host that falls through to here: the trust anchor's own DID. A host
+	# that belongs to a *participant* has its own block below, pointing at that
+	# participant's own instance — which is the whole of `DID-05` expressed in
+	# routing, and since `DID-11` step 2 that includes the people it holds
+	# credentials for.
 	handle /credentials/* {
 		reverse_proxy 172.17.0.1:30005
 	}
@@ -50,10 +50,10 @@ http://*.dataspaces.localhost {
 	respond 404
 }
 
-# ── Provider participant instance (`DID-05`) ─────────────────────────────────
+# ── The REC: a provider that has members (`DID-05`, `D-54`) ──────────────────
 #
-# `provider.dataspaces.localhost` is a participant DID host, and after the split
-# every DCP surface on it belongs to the provider's **own** registry, not to the
+# `rec.dataspaces.localhost` is a participant DID host, and after the split every
+# DCP surface on it belongs to that participant's **own** registry, not to the
 # anchor:
 #
 #   /.well-known/did.json   the document publishing the key the provider holds
@@ -64,9 +64,28 @@ http://*.dataspaces.localhost {
 # anchor and DID resolution still answers — with the anchor's *record* of the
 # provider — while presentation queries return an empty VP, because the anchor
 # holds no credentials for a participant it delivered them to.
-http://provider.dataspaces.localhost {
+http://rec.dataspaces.localhost {
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy 172.17.0.1:30006
+	}
+
+	# **A member's DID document, on the host their DID names** (`DID-11` step 2).
+	#
+	# `did:web:rec.dataspaces.localhost:users:alice` resolves at
+	# `/users/alice/did.json` — path segments, per the did:web method. Subject
+	# DIDs used to live under a flat `users.dataspaces.localhost` and be served
+	# by the anchor, which said that every person in the dataspace belonged to
+	# the trust anchor. They belong to the organisation that onboarded them, and
+	# that organisation's instance is what publishes them — it learns of a person
+	# by *receiving their credential*, which is what makes this row exist there.
+	#
+	# This also closes `personal-data.md` `D-22` without a rule of its own: a
+	# path-bearing subject DID now resolves through the participant's `/dids`
+	# route like any other.
+	@userdid path_regexp userdid ^/users/([^/]+)/did\.json$
+	handle @userdid {
+		rewrite * /dids/did:web:{http.request.host}:users:{re.userdid.1}/did.json
 		reverse_proxy 172.17.0.1:30006
 	}
 
@@ -86,6 +105,46 @@ http://provider.dataspaces.localhost {
 	# worse than no banner.
 	handle /health {
 		reverse_proxy 172.17.0.1:30006
+	}
+
+	respond 404
+}
+
+# ── Grid operator: the second provider (`D-54`, `DID-15`) ────────────────────
+#
+# `grid-operator.dataspaces.localhost` is a participant DID host like the two
+# above, and gets the same surfaces from its own instance (:30008). It exists to
+# make "which provider?" a real question: this one shares its own grid data and
+# has **no members**, so nothing downstream can assume every participant has a
+# member store.
+http://grid-operator.dataspaces.localhost {
+	handle /.well-known/did.json {
+		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy 172.17.0.1:30008
+	}
+
+	# A member's DID document, on the host their DID names (`DID-11` step 2).
+	# **This participant has none** — and the route is here anyway, because the
+	# shape of a participant host must not depend on whether it happens to hold
+	# credentials for anybody. It answers 404 per person, which is the honest
+	# answer and a different thing from the route not existing.
+	@userdid path_regexp userdid ^/users/([^/]+)/did\.json$
+	handle @userdid {
+		rewrite * /dids/did:web:{http.request.host}:users:{re.userdid.1}/did.json
+		reverse_proxy 172.17.0.1:30008
+	}
+
+	handle /credentials/* {
+		reverse_proxy 172.17.0.1:30008
+	}
+
+	handle /sts/* {
+		reverse_proxy 172.17.0.1:30008
+	}
+
+	# Its role, for the topology banner — see the provider block.
+	handle /health {
+		reverse_proxy 172.17.0.1:30008
 	}
 
 	respond 404
@@ -214,19 +273,38 @@ http://trust-anchor.dataspaces.localhost {
 	respond 404
 }
 
-# ── Consumer gateway ─────────────────────────────────────────────────────────
+# ── The third party: a gateway, and the only consumer ────────────────────────
 #
-# `consumer.dataspaces.localhost` is both a gateway host and a participant DID
-# (`did:web:consumer.dataspaces.localhost`). This block is more specific than the
-# `*.dataspaces.localhost` wildcard above, so the wildcard's DID handler never
-# runs for it — the handler is repeated here or the consumer's DID document 404s
-# and every negotiation against it fails at the identity check.
+# `third-party.dataspaces.localhost` is both a gateway host and a participant DID
+# (`did:web:third-party.dataspaces.localhost`). This block is more specific than
+# the `*.dataspaces.localhost` wildcard above, so the wildcard's DID handler
+# never runs for it — the handler is repeated here or this participant's DID
+# document 404s and every negotiation against it fails at the identity check.
 
-http://consumer.dataspaces.localhost {
-	# **The consumer's own registry (:30007), not the anchor.** Same reasoning as
-	# the provider block above; see `DID-05`.
+http://third-party.dataspaces.localhost {
+	# **This participant's own registry (:30007), not the anchor.** Same reasoning
+	# as the REC's block above; see `DID-05`.
 	handle /.well-known/did.json {
 		rewrite * /dids/did:web:{http.request.host}/did.json
+		reverse_proxy 172.17.0.1:30007
+	}
+
+	# **A member's DID document, on the host their DID names** (`DID-11` step 2).
+	#
+	# `did:web:rec.dataspaces.localhost:users:alice` resolves at
+	# `/users/alice/did.json` — path segments, per the did:web method. Subject
+	# DIDs used to live under a flat `users.dataspaces.localhost` and be served
+	# by the anchor, which said that every person in the dataspace belonged to
+	# the trust anchor. They belong to the organisation that onboarded them, and
+	# that organisation's instance is what publishes them — it learns of a person
+	# by *receiving their credential*, which is what makes this row exist there.
+	#
+	# This also closes `personal-data.md` `D-22` without a rule of its own: a
+	# path-bearing subject DID now resolves through the participant's `/dids`
+	# route like any other.
+	@userdid path_regexp userdid ^/users/([^/]+)/did\.json$
+	handle @userdid {
+		rewrite * /dids/did:web:{http.request.host}:users:{re.userdid.1}/did.json
 		reverse_proxy 172.17.0.1:30007
 	}
 

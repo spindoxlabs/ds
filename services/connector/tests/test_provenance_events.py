@@ -25,7 +25,7 @@ from connector.services.consent_service import (
 from tests import make_headers, make_vc_headers
 
 DATASET = "datasets.silver.meters"
-SUBJECT_DID = "did:web:users.dataspaces.localhost:sub-001"
+SUBJECT_DID = "did:web:rec.dataspaces.localhost:users:sub-001"
 SUBJECT = make_vc_headers(subject_did=SUBJECT_DID)
 PROVISION = make_headers(scope="connector.consent.provision")
 INGEST = make_headers(scope="connector.ingestion.record")
@@ -164,7 +164,7 @@ async def test_my_shares_toggle_emits_granted_then_revoked(prov_client):
 async def test_approve_emits_consent_granted(engine, prov_client):
     client, fake = prov_client
     consent_id = await _seed(
-        engine, consumer_id="did:web:consumer.dataspaces.localhost", status="pending",
+        engine, consumer_id="did:web:third-party.dataspaces.localhost", status="pending",
         decided_at=None,
     )
     r = await client.post(f"/consent/my/{consent_id}/approve", headers=SUBJECT)
@@ -178,7 +178,7 @@ async def test_approve_emits_consent_granted(engine, prov_client):
 async def test_revoke_emits_consent_revoked(engine, prov_client):
     client, fake = prov_client
     consent_id = await _seed(
-        engine, consumer_id="did:web:consumer.dataspaces.localhost", status="granted",
+        engine, consumer_id="did:web:third-party.dataspaces.localhost", status="granted",
     )
     r = await client.post(f"/consent/my/{consent_id}/revoke", headers=SUBJECT)
     assert r.status_code == 200, r.text

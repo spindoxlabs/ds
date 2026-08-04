@@ -30,6 +30,12 @@ class Settings(BaseSettings):
         description="Fernet key for encrypting private keys at rest",
     )
 
+    #: Where the conformity criteria live — `participation.md` as data
+    #: (`DSSC-TRF-02`…`-04`). A deployment states its own; the path in the image
+    #: is this repository's dev fixture, and a deployment that mounts nothing
+    #: gets a check that refuses to run rather than one that passes everybody.
+    conformity_criteria_path: str = "seed/conformity.dev.yaml"
+
     oidc_issuer_url: str | None = Field(
         default=None,
         description="OIDC issuer URL for JWT verification on admin endpoints",

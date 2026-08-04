@@ -42,6 +42,7 @@ class FlowName(str, Enum):
     chain_unbundling = "chain-unbundling"
     catalog_discovery = "catalog-discovery"
     lineage = "lineage"
+    two_providers = "two-providers"
     smoke = "smoke"
     # Aggregates
     all = "all"

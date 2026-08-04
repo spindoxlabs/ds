@@ -46,7 +46,7 @@ ParticipantIdOpt = typer.Option(
     "provider", help="Participant id used to derive ODRL assigner and asset ids"
 )
 BaseUrlOpt = typer.Option(
-    "https://provider.dataspaces.localhost",
+    "https://rec.dataspaces.localhost",
     help="Participant base URL used to derive asset and catalog IRIs",
 )
 ParticipantDidOpt = typer.Option(

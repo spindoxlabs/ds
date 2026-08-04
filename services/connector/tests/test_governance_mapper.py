@@ -6,7 +6,7 @@ from ds.governance.models import GovernanceOwner, GovernanceRuleV2, DataspaceSpe
 
 
 def _mapper(**kwargs):
-    return ConnectorGovernanceMapper("provider", "https://provider.dataspaces.localhost", **kwargs)
+    return ConnectorGovernanceMapper("provider", "https://rec.dataspaces.localhost", **kwargs)
 
 
 def _rule(**kwargs) -> GovernanceRuleV2:
@@ -22,7 +22,7 @@ def test_asset_create_basic():
         dataspace=DataspaceSpec(expose=True),
     )
     asset = mapper.to_asset_create("datasets.gold.test", rule)
-    assert asset.id.startswith("https://provider.dataspaces.localhost")
+    assert asset.id.startswith("https://rec.dataspaces.localhost")
     assert asset.properties["name"] == "Test Dataset"
     # Asset properties are namespaced by the **active profile's** prefix, which a
     # deployment may change (`CONNECTOR_ODRL_PROFILE_PATH`). Asserting the literal

@@ -68,9 +68,13 @@ Ingress only if it appears here:
 |---|---|---|
 | `portal.<baseDomain>` | `ds-portal` | `/` — the only human-facing host, behind `auth-url` |
 | `portal.<baseDomain>` | `ds-oauth2-proxy` | `/oauth2/*` — same host on purpose: one cookie domain, one redirect URI. **Must not** carry the portal's auth annotations (a user arrives there precisely because they have no session) and no `cluster-issuer` |
-| `<participant>.<baseDomain>` | `ds-edc` | `/.well-known/did.json`, `/protocol/*`, `/public/*`. Nothing else |
-| `trust-anchor.<baseDomain>` | `ds-identity-registry` | `/.well-known/did.json`, `/status/*` — StatusList must be publicly fetchable or revocation cannot be checked |
-| `users.<baseDomain>` | `ds-identity-registry` | `/<id>/did.json`, only when `exposeUserDids` |
+| `<participant>.<baseDomain>` | `ds-edc` | `/.well-known/did.json`, `/protocol/*`, `/public/*`, `/credentials`, `/sts`, and `/users/<id>/did.json` — the DID documents of the people this participant onboarded (`DID-11` step 2). Nothing else |
+| `trust-anchor.<baseDomain>` | `ds-identity-registry` | `/.well-known/did.json`, `/status/*` — StatusList must be publicly fetchable or revocation cannot be checked — plus `/trust` (the accredited-issuer list) and `/issuer` (CIP's Credential Request API, which is how anyone enrols) |
+
+There is no `users.<baseDomain>` host. It existed until `DID-11` step 2 and put every person in
+the dataspace under the **trust anchor's** domain; a person now lives in the namespace of the
+organisation that onboarded them, so their DID resolves on that organisation's host — one host,
+one Ingress owner, the same rule as `/credentials`.
 
 The participant host **is** the participant's `did:web` identity, which is why DID resolution
 and the DSP endpoints share it.

@@ -80,7 +80,7 @@ participants:
     dsp_address: http://grid-operator.dataspaces.localhost/protocol
 
 # The offers the chain flows consent against. Declared here as expectations, not
-# as writes: offers live in `services/connector/governance/sharing-offers.yaml`
+# as writes: offers live in `services/connector/governance-rec/sharing-offers.yaml`
 # and are served by the connector, so the scenario asserts they are published
 # rather than trying to create them.
 requires_offers:

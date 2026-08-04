@@ -57,30 +57,30 @@ spec:
         login: true
         passwordSecret:
           name: pg-identity-registry
-      - name: connector_provider
+      - name: connector_rec
         login: true
         passwordSecret:
           name: pg-connector-provider
-      - name: provenance_provider
+      - name: provenance_rec
         login: true
         passwordSecret:
           name: pg-provenance-provider
-      - name: edc_provider
+      - name: edc_rec
         login: true
         passwordSecret:
-          name: pg-edc-provider
-      - name: connector_consumer
+          name: pg-edc-rec
+      - name: connector_third_party
         login: true
         passwordSecret:
           name: pg-connector-consumer
-      - name: provenance_consumer
+      - name: provenance_third_party
         login: true
         passwordSecret:
           name: pg-provenance-consumer
-      - name: edc_consumer
+      - name: edc_third_party
         login: true
         passwordSecret:
-          name: pg-edc-consumer
+          name: pg-edc-third-party
 
   bootstrap:
     initdb:
@@ -89,16 +89,16 @@ spec:
       # One database per service, each owned by its own role. PUBLIC is revoked
       # so a compromised service role cannot read another service's data.
       postInitApplicationSQL:
-        - CREATE DATABASE connector_provider OWNER connector_provider;
-        - CREATE DATABASE provenance_provider OWNER provenance_provider;
-        - CREATE DATABASE edc_provider OWNER edc_provider;
-        - CREATE DATABASE connector_consumer OWNER connector_consumer;
-        - CREATE DATABASE provenance_consumer OWNER provenance_consumer;
-        - CREATE DATABASE edc_consumer OWNER edc_consumer;
-        - REVOKE ALL ON DATABASE connector_provider FROM PUBLIC;
-        - REVOKE ALL ON DATABASE provenance_provider FROM PUBLIC;
-        - REVOKE ALL ON DATABASE edc_provider FROM PUBLIC;
-        - REVOKE ALL ON DATABASE connector_consumer FROM PUBLIC;
-        - REVOKE ALL ON DATABASE provenance_consumer FROM PUBLIC;
-        - REVOKE ALL ON DATABASE edc_consumer FROM PUBLIC;
+        - CREATE DATABASE connector_rec OWNER connector_rec;
+        - CREATE DATABASE provenance_rec OWNER provenance_rec;
+        - CREATE DATABASE edc_rec OWNER edc_rec;
+        - CREATE DATABASE connector_third_party OWNER connector_third_party;
+        - CREATE DATABASE provenance_third_party OWNER provenance_third_party;
+        - CREATE DATABASE edc_third_party OWNER edc_third_party;
+        - REVOKE ALL ON DATABASE connector_rec FROM PUBLIC;
+        - REVOKE ALL ON DATABASE provenance_rec FROM PUBLIC;
+        - REVOKE ALL ON DATABASE edc_rec FROM PUBLIC;
+        - REVOKE ALL ON DATABASE connector_third_party FROM PUBLIC;
+        - REVOKE ALL ON DATABASE provenance_third_party FROM PUBLIC;
+        - REVOKE ALL ON DATABASE edc_third_party FROM PUBLIC;
         - REVOKE ALL ON DATABASE identity_registry FROM PUBLIC;

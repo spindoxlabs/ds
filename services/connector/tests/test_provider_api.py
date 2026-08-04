@@ -21,9 +21,9 @@ from connector.db.models import ContractAgreementORM
 from tests import make_headers
 
 PROVIDER_READ = make_headers(scope="connector.provider.read")
-PROVIDER = "did:web:provider.dataspaces.localhost"
+PROVIDER = "did:web:rec.dataspaces.localhost"
 OTHER_PROVIDER = "did:web:other.dataspaces.localhost"
-CONSUMER = "did:web:consumer.dataspaces.localhost"
+CONSUMER = "did:web:third-party.dataspaces.localhost"
 
 
 @pytest_asyncio.fixture

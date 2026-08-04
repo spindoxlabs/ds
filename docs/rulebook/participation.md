@@ -69,7 +69,7 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 
 | # | Rule | Status |
 |---|---|---|
-| P-6 | A DID document is served only by the instance that holds that DID's key. A **subject** DID has no key and its document carries no verification method — it resolves so that consent records and provenance can point at it, and asserts nothing it cannot back | **Enforced** — a keyless *participant* DID is a 404, which is how a registry says "I recorded that this party exists; I am not the one who publishes their document" |
+| P-6 | A DID document is served only by the instance that holds that DID's key. A **subject** DID has no key and its document carries no verification method — it resolves so that consent records and provenance can point at it, and asserts nothing it cannot back | **Enforced** — a keyless *participant* DID is a 404, which is how a registry says "I recorded that this party exists; I am not the one who publishes their document". A subject DID is the exception the sentence above names, and since `DID-11` step 2 it is **the organisation that onboarded the person** which publishes it, at `did:web:<participant>:users:<id>` (`personal-data.md` `D-22a`) |
 | P-7 | A DID's private key never leaves the instance that generated it, and is encrypted at rest. **The trust anchor holds no private key but its own, and a natural person has none** | **Enforced** — Fernet, one `IDENTITY_REGISTRY_ENCRYPTION_KEY` per instance; checked at every startup and by `ir-cli key custody-check`, which exits non-zero on a private key for a DID this instance does not publish |
 | P-8 | A presentation query is answered only to a **verifier** that proves control of its own DID *and* presents an access token this participant's STS granted it. The grant's scope bounds what the presentation may contain (`DSSC-IAM-13`, proof of control) | **Enforced** |
 | P-8a | The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold | **Enforced** |
@@ -116,26 +116,35 @@ unrecoverable loss **for that instance**. The blast radius is one participant, n
 | P-22 | **Where to enrol is discoverable from the anchor's DID alone**: its DID document publishes an `IssuerService` entry, and that URL is routed and serves issuer metadata | **Enforced** — the entry is written by `ir-cli bootstrap` and the e2e `dcp-trust` flow *follows* it rather than reading it. It was published pointing at a URL neither the dev proxy nor the production Ingress routed: a document advertising an endpoint that 404s is the failure that looks most like success |
 | P-21 | A credential is issued only to a DID whose control has been proved, and is **delivered to the holder's own credential store** — the issuer keeps the issuance record, the holder keeps what it can present | **Enforced** — DCP Storage API, `POST /credentials/{did}/credentials`, authenticated by the issuer's own self-issued token and refused from any issuer this participant does not trust |
 
-## 5. Compliance verification — the open gap
+## 5. Compliance verification
 
 `DSSC-TRF-02`, `-03` and `-04` require that the rulebook support **automated conformity
 assessment**, and that compliance verification services validate participants and services
 against it.
 
-**This does not exist.** `task compliance:validate` validates a *governance file* against
-the ODRL profile and the registries — it does not validate a *participant* against this
-rulebook. The name is misleading and should not be read as conformity assessment.
+**Onboarding decides whether a party may join; conformity asks whether it still qualifies.**
+The two answers drift apart with nobody acting: a credential expires, an agreement version is
+superseded, a provider stops publishing a DSP address. Each of those passes every check made at
+onboarding.
 
-What would close it, in rough order of cost:
+| Step | State |
+|---|---|
+| A machine-readable projection of the rules on this page | **Done** — `seed/conformity.dev.yaml`, read by `services/conformity.py`. Which credentials, which agreement version, whether a DSP address is required, and `applies_to` so a rule can bind to a role. A *deployment's* file, not a baseline: admitting observers on different terms from providers is a normal dataspace |
+| A periodic check run by the trust anchor against every registered participant | **Done** — `GET /admin/conformity` and `ir-cli conformity check`, which **exits non-zero when anybody is non-conformant**. A check that always exits 0 is a check nothing watches. `task compliance:conformity` |
+| Suspension as a state distinct from deactivation, enforced through the StatusList bit | **Open.** Its stated prerequisite (`P0-3`) is met, so it is now buildable |
 
-1. A machine-readable projection of the rules on this page (participant must hold
-   credential types X, must have accepted agreement version Y, must publish a catalogue
-   reachable at Z).
-2. A periodic check run by the trust anchor against every registered participant.
-3. Suspension as a state distinct from deactivation, with the StatusList bit as the
-   enforcement point — which requires **P0-3** fixed first.
+**The assessment changes nothing.** Suspension is a decision, and a decision an automated check
+makes for you is a decision nobody made — what this produces is the evidence for it.
 
-Until then, conformity is asserted at onboarding and never re-checked.
+**Everything unprovable is non-conformant.** A participant whose owner does not resolve, whose
+credential has no recorded expiry, whom no criterion covers — each is reported with its reason,
+never skipped. A check that silently drops the rules it cannot evaluate reports conformity it
+did not establish.
+
+| # | Rule | Status |
+|---|---|---|
+| P-23 | Conformity is **re-checked**, not asserted once at onboarding, against a machine-readable projection of this page (`DSSC-TRF-02`, `-03`, `-04`) | **Enforced** — `ir-cli conformity check`, non-zero on any failure. It found, the first time it ran, that **no dev participant had ever accepted the participation agreement**: `P-1`'s last step had no seed path, which is exactly the kind of gap a check made once at onboarding cannot see |
+| P-24 | A participant that no criterion covers is a **finding**, not a pass | **Enforced** — it was admitted on terms nobody wrote down, which is a finding about the criteria |
 
 ## 6. Leaving, suspension and revocation
 
@@ -155,6 +164,9 @@ Until then, conformity is asserted at onboarding and never re-checked.
 (revoked listing — P0-3), `DSSC-IAM-04` (issuance is implemented but produces
 revoked-at-birth organisation credentials — P0-3).
 
-**Open:** `DSSC-TRF-02`, `-03`, `-04` (§5). `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41`,
+**Closed by §5:** `DSSC-TRF-02`, `-03`, `-04` — the projection and the periodic check.
+Suspension as a state distinct from deactivation remains open.
+
+**Open:** `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41`,
 `DSSC-SVD-30` — participant-controlled credential stores; deviation recorded in
 [Scope and deviations](scope-and-deviations.md) §3.

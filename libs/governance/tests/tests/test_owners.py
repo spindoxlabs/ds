@@ -119,7 +119,7 @@ owners:
   - id: example-org
     type: schema:NGO
     name: Example Organization
-    did: did:web:provider.dataspaces.localhost
+    did: did:web:rec.dataspaces.localhost
     aliases: [example]
     organization:
       create: true
@@ -138,9 +138,9 @@ owners:
         org = registry.by_id("example-org")
         assert org is not None
         assert org.type == "schema:NGO"
-        assert org.did == "did:web:provider.dataspaces.localhost"
-        assert org.canonical_uri == "did:web:provider.dataspaces.localhost"
-        assert registry.canonical_uri("example") == "did:web:provider.dataspaces.localhost"
+        assert org.did == "did:web:rec.dataspaces.localhost"
+        assert org.canonical_uri == "did:web:rec.dataspaces.localhost"
+        assert registry.canonical_uri("example") == "did:web:rec.dataspaces.localhost"
 
         odp = registry.by_id("open-data-provider")
         assert odp is not None

@@ -137,37 +137,14 @@ spec:
                 name: {{ $fullname }}
                 port:
                   number: {{ $port }}
-{{- if .Values.exposeUserDids }}
----
 # ── User DID resolution ──────────────────────────────────────────────────────
-# did:web:users.<baseDomain>:<id> → https://users.<baseDomain>/<id>/did.json
-# Off by default: only needed when REMOTE verifiers resolve your user DIDs.
-{{- $users := include "ir.usersHost" . }}
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: {{ $fullname }}-user-dids
-  labels:
-    {{- include "ds.labels" . | nindent 4 }}
-  annotations:
-    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" true) | nindent 4 }}
-    nginx.ingress.kubernetes.io/use-regex: "true"
-    nginx.ingress.kubernetes.io/rewrite-target: /dids/did:web:{{ $users }}:$1/did.json
-spec:
-  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
-  {{- include "ds.ingress.tls" (dict "ctx" . "hosts" (list $users)) | nindent 2 }}
-  rules:
-    - host: {{ $users | quote }}
-      http:
-        paths:
-          - path: /([^/]+)/did\.json$
-            pathType: ImplementationSpecific
-            backend:
-              service:
-                name: {{ $fullname }}
-                port:
-                  number: {{ $port }}
-{{- end }}
+# **Gone since `DID-11` step 2.** There was a `users.<baseDomain>` host here,
+# rewriting `/{id}/did.json` to `did:web:users.<domain>:<id>` — a flat namespace
+# under the *trust anchor*, which said that every person in the dataspace
+# belonged to it. A person's DID now sits in the namespace of the organisation
+# that onboarded them and resolves on that organisation's own host, published by
+# the `/users` path on the participant's Ingress in the `ds-edc` chart. One host,
+# one Ingress owner, same rule as `/credentials` and `/sts`.
 {{- if .Values.credentialService.expose }}
 ---
 # ── DCP credential service ───────────────────────────────────────────────────

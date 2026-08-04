@@ -131,7 +131,7 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 
 - `CONNECTOR_PARTICIPANT_ID` — participant identifier (e.g. `provider`)
 - `CONNECTOR_PARTICIPANT_BASE_URL` — base URL used as asset IRI prefix
-- `CONNECTOR_PARTICIPANT_DID` — DID URI (e.g. `did:web:provider.dataspaces.localhost`)
+- `CONNECTOR_PARTICIPANT_DID` — DID URI (e.g. `did:web:rec.dataspaces.localhost`)
 - `EDC_PROVIDER_MANAGEMENT_URL` — provider EDC Management API URL
 - `EDC_CONSUMER_MANAGEMENT_URL` — consumer EDC Management API URL
 - `EDC_API_KEY` — EDC's **Management API** key. No longer accepted on `/internal/*`;
