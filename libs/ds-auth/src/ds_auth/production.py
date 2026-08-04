@@ -69,8 +69,25 @@ class Violation:
 
 
 def current_env() -> str:
-    """The deployment environment, lowercased. Defaults to 'dev'."""
-    return os.environ.get(ENV_VAR, "dev").strip().lower()
+    """The deployment environment, lowercased. **Defaults to production.**
+
+    Inverted deliberately. It used to default to ``dev``, which meant every
+    guard in the platform was disarmed by *forgetting* a variable — a chart that
+    omits ``DS_ENV``, a Helm values file that drops it in a refactor, a
+    hand-rolled deployment that never heard of it. The one case the guard exists
+    for is the one where nobody thought about configuration, and that was
+    precisely the case it stayed silent in.
+
+    Now the safe state is the default and the *unsafe* one has to be asked for:
+    development sets ``DS_ENV=dev`` explicitly (`.env.local`, committed), and
+    anything that does not is treated as production and refuses to start on a
+    dev default. Forgetting the variable now fails loudly instead of silently.
+
+    The charts are unaffected — ``ds.env.common`` has always pinned
+    ``DS_ENV=production`` as a constant rather than a value, which is the same
+    reasoning arrived at from the other end.
+    """
+    return os.environ.get(ENV_VAR, PRODUCTION).strip().lower()
 
 
 def is_production() -> bool:
@@ -112,6 +129,47 @@ class ProductionGuard:
             self.add(setting, "still set to the dev default value", remediation)
         elif text.strip().lower() in UNIVERSAL_WEAK_VALUES:
             self.add(setting, "set to a trivially weak value", remediation)
+
+    def forbid_secret_equal_to_client_id(
+        self,
+        setting: str,
+        client_id: object,
+        client_secret: object,
+        remediation: str,
+    ) -> None:
+        """Flag an OIDC client secret that is still just the client id.
+
+        Dev sets every service client's secret equal to its own ``client_id``,
+        on both sides at once: ``clients.yaml`` declares
+        ``secret: ${SVC_…_SECRET:-<client-id>}`` and each service defaults its
+        own setting to the same string. So the two agree by coincidence, and
+        nothing distinguishes *configured* from *never configured*.
+
+        **This is the only check that can tell the difference at runtime**, and
+        it has to live here rather than in ``secrets:check``. That task reads an
+        env file; it cannot see a realm that was synced before a secret was set,
+        or a chart that renders a Secret nobody filled in. Whether the realm and
+        the service agree is decided at the token endpoint, and the service is
+        the one holding both halves.
+
+        It matters because ``celine-policies keycloak sync`` applies a client
+        secret only when it *creates* the client — its plan does not diff
+        secrets — so a realm synced once keeps the client-id default even after
+        the variable is set. Deliberate: rewriting a live client's secret on
+        every sync would be worse. The cost is that "I set the variable" is not
+        evidence the realm agrees, and this is what says so.
+        """
+        if client_id is None or client_secret is None:
+            return
+        identifier = str(client_id).strip()
+        secret = str(client_secret).strip()
+        if identifier and secret and identifier == secret:
+            self.add(
+                setting,
+                f"is still equal to the client id ({identifier!r}) — the dev "
+                "default, so this client's secret was never overridden",
+                remediation,
+            )
 
     def require_set(self, setting: str, value: object, remediation: str) -> None:
         """Flag a value that must be present in production."""

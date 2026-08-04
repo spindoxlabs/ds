@@ -8,7 +8,20 @@ tasks:
     sources: [pyproject.toml]
 
   test:
+    # A test suite is a development context, and it has to say so: since
+    # `DS_ENV` defaults to `production`, a suite that builds the app hits the
+    # ProductionGuard and the whole module fails to *collect*. Declared here for
+    # the same reason compose declares it — this is the dev topology, so it opts
+    # out explicitly rather than relying on the variable being absent.
+    env:
+      DS_ENV: dev
     desc: Run the ds-auth test suite
+    # `setup` first: without the dev extra there is no pyyaml, and
+    # test_vocabulary.py — the check that the bundle table and
+    # services/keycloak/clients.yaml agree — fails at *collection*. pytest then
+    # reports "1 error" and runs nothing, which reads as a broken suite rather
+    # than a missing dependency. Observed on a venv synced without extras.
+    deps: [setup]
     cmds:
       - uv run pytest tests/ -q
 

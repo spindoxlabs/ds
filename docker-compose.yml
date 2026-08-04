@@ -124,6 +124,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # A presentation query is authorized by the *verifier's* self-issued token,
@@ -400,7 +405,39 @@ services:
     environment:
       CELINE_KEYCLOAK_BASE_URL: http://172.17.0.1:9080
       CELINE_KEYCLOAK_REALM: dataspaces
+      # An OUTPUT path: `keycloak sync` writes the secrets it applied here. It is
+      # not how secrets get in — that is the block below.
       CELINE_KEYCLOAK_SECRETS_FILE: /tmp/.secrets.yaml
+      # ── The client secrets the realm is given ────────────────────────────────
+      #
+      # `clients.effective.yaml` carries each one as `${SVC_…_SECRET:-<client-id>}`
+      # and celine-policies resolves it with `os.getenv` at load time
+      # (`models.py:_resolve_env`). This container had none of them, so every
+      # placeholder fell through to its default and **the realm stored each
+      # client's secret as its own client id**, verified against a running
+      # Keycloak.
+      #
+      # In dev that is invisible: the services default to the same value, so both
+      # sides agree by coincidence. It breaks the moment one real secret is set —
+      # the service presents it, the realm still holds the client id, and that one
+      # client silently stops authenticating. A half-configured deployment is
+      # worse than an unconfigured one, which is why this is a P0.
+      #
+      # Every name here must also exist in .env.example and `secrets:generate`,
+      # or setting it is not possible in the first place.
+      SVC_DS_IDENTITY_REGISTRY_SECRET: ${SVC_DS_IDENTITY_REGISTRY_SECRET:-svc-ds-identity-registry}
+      SVC_DS_ONBOARDING_SECRET: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
+      SVC_DS_PORTAL_SECRET: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}
+      SVC_DS_E2E_SECRET: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}
+      SVC_DS_CONNECTOR_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+      SVC_DS_PROVENANCE_SECRET: ${SVC_DS_PROVENANCE_SECRET:-svc-ds-provenance}
+      SVC_DS_FEDERATED_CATALOG_SECRET: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
+      SVC_DS_DATASET_API_SECRET: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
+      SVC_EDC_SECRET: ${SVC_EDC_SECRET:-svc-edc}
+      # From the domain overlay (`clients.energy.yaml`), so it is only present in
+      # the effective file — but it is in the file this container mounts, and an
+      # unresolved placeholder there is the same defect as any other.
+      SVC_REC_REGISTRY_SECRET: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |

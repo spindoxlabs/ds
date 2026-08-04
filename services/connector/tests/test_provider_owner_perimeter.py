@@ -517,11 +517,26 @@ async def test_an_id_governance_does_not_know_is_not_confined(client, governed):
 
 def test_the_index_covers_policies_and_contracts_from_real_governance():
     """Against the shipped governance file, not a fabricated one — the M9 lesson:
-    an index keyed on ids the test invented proves only that it agrees with itself."""
+    an index keyed on ids the test invented proves only that it agrees with itself.
+
+    Every shipped file, discovered rather than named: this read
+    `governance/governance.yaml`, which the participant rename replaced with one
+    directory per participant. `owner_by_edc_id` returns `{}` for a path that
+    does not exist, so the test failed on its own first assertion rather than on
+    anything about ownership — and a single hardcoded path would have gone on
+    ignoring the second provider's file after being repointed.
+    """
+    from pathlib import Path
+
     from connector.services.governance import owner_by_edc_id
 
-    index = owner_by_edc_id("governance/governance.yaml")
-    assert index, "no owned datasets resolved from the real governance file"
-    assert any(k.endswith("-policy") for k in index)
-    assert any(k.endswith("-contract") for k in index)
-    assert all(v for v in index.values()), "an unowned dataset leaked in as empty"
+    unit = Path(__file__).resolve().parents[1]
+    files = sorted(unit.glob("governance-*/governance.yaml"))
+    assert files, f"no governance-*/governance.yaml under {unit}"
+
+    for path in files:
+        index = owner_by_edc_id(str(path))
+        assert index, f"no owned datasets resolved from {path.relative_to(unit)}"
+        assert any(k.endswith("-policy") for k in index), path
+        assert any(k.endswith("-contract") for k in index), path
+        assert all(v for v in index.values()), f"an unowned dataset leaked in as empty: {path}"

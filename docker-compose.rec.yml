@@ -155,6 +155,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       CONNECTOR_ROLE: provider
       # Drives the server *and* the image's HEALTHCHECK — see the Dockerfile.
       CONNECTOR_PORT: 30001
@@ -228,6 +233,11 @@ services:
     ports:
       - "30000:30000"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_rec
       # Verify bearer tokens in dev too. With no issuer, PROVENANCE_OIDC_INSECURE_DEV
       # defaults true and ds_auth decodes without checking the signature — so every
@@ -269,6 +279,11 @@ services:
       # allocated".
       - "${DATASET_API_MOCK_PORT:-30002}:30002"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
       DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
       # The PEP authenticates to /internal/* as itself, not with the shared
@@ -292,6 +307,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       CONNECTOR_URL: http://ds-connector-rec:30001
       PROVENANCE_URL: http://ds-provenance-rec:30000
       FEDERATED_CATALOG_URL: http://ds-federated-catalog-rec:30003
@@ -346,6 +366,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       CATALOG_CONNECTOR_URL: http://172.17.0.1:31001
       CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
@@ -415,6 +440,11 @@ services:
     ports:
       - "30006:30005"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_rec
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:rec.dataspaces.localhost

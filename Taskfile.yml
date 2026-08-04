@@ -1200,6 +1200,7 @@ tasks:
           SVC_DS_PORTAL_SECRET SVC_DS_CONNECTOR_SECRET \
           SVC_DS_FEDERATED_CATALOG_SECRET SVC_DS_DATASET_API_SECRET \
           SVC_DS_PROVENANCE_SECRET \
+          SVC_DS_E2E_SECRET SVC_REC_REGISTRY_SECRET \
           SVC_EDC_SECRET KEYCLOAK_CLIENT_SECRET \
           OAUTH2_PROXY_CLIENT_SECRET OAUTH2_PROXY_COOKIE_SECRET \
           PORTAL_SERVICE_CLIENT_SECRET"
@@ -1312,10 +1313,45 @@ tasks:
             echo "✗ known dev default present: $bad"; rc=1
           fi
         done
-        # Dev sets every service client secret equal to its own client_id.
-        # Only *_SECRET vars matter here — *_CLIENT_ID legitimately holds that value.
-        if printf '%s\n' "$values" | grep -nE '^[A-Z_]*SECRET=svc-ds-[a-z-]+$'; then
-          echo "✗ service client secret still equals its client_id"; rc=1
+        # ── Client secrets that are still their own client id ─────────────────
+        #
+        # Dev sets every client's secret equal to its own client_id, on both
+        # sides at once, so *configured* and *never configured* look identical.
+        #
+        # This used to be a literal `svc-ds-[a-z-]+` pattern, which missed three
+        # of the eleven clients: `svc-edc`, `svc-rec-registry` and — the one the
+        # row names — `oauth2_proxy`, the deployment's single human login
+        # surface. The pattern is now derived from
+        # `services/keycloak/clients.effective.yaml`, which declares each client
+        # as `secret: ${VAR:-<dev default>}`, so it covers every client the
+        # realm is synced from and cannot go stale when one is added.
+        clients_file="services/keycloak/clients.effective.yaml"
+        if [ -f "$clients_file" ]; then
+          pairs="$(grep -oE '\$\{[A-Z0-9_]+:-[^}]+\}' "$clients_file" | sort -u || true)"
+          if [ -z "$pairs" ]; then
+            echo "✗ no \${VAR:-default} secrets found in $clients_file — this check is not checking anything"; rc=1
+          fi
+          for pair in $pairs; do
+            var="${pair#\$\{}"; var="${var%%:-*}"
+            dev="${pair##*:-}"; dev="${dev%\}}"
+            if printf '%s\n' "$values" | grep -qE "^${var}=${dev}\$"; then
+              echo "✗ ${var} is still '${dev}' — the client id, i.e. this client's secret was never overridden"; rc=1
+            fi
+          done
+        else
+          echo "✗ $clients_file not found — run: task keycloak:merge"; rc=1
+        fi
+        # oauth2_proxy is declared in the realm import rather than by the syncer,
+        # so it has no ${VAR:-default} above and needs naming here.
+        if printf '%s\n' "$values" | grep -qE '^OAUTH2_PROXY_CLIENT_SECRET=oauth2_proxy$'; then
+          echo "✗ OAUTH2_PROXY_CLIENT_SECRET is still 'oauth2_proxy' — the dev default for the one client every human logs in through"; rc=1
+        fi
+        # The dev realm ships seven users whose password is their username, a
+        # literal client secret and open self-registration. Nothing in `helm/`
+        # imports any realm — Keycloak is externally managed — so this is a
+        # tripwire for a hand-rolled deployment, not a chart defect.
+        if printf '%s\n' "$values" | grep -qF 'realm-dataspaces-dev'; then
+          echo "✗ a production env file references realm-dataspaces-dev.json — it ships 7 users whose password equals their username and registrationAllowed=true"; rc=1
         fi
         if printf '%s\n' "$values" | grep -nE '^(KEYCLOAK_ADMIN_PASSWORD|POSTGRES_PASSWORD)=(admin|postgres)$'; then
           echo "✗ weak credential above"; rc=1
@@ -1327,8 +1363,12 @@ tasks:
         if printf '%s\n' "$values" | grep -nE '^DS_DEMO_IDENTITY_ENABLED=true$'; then
           echo "✗ DS_DEMO_IDENTITY_ENABLED is set — the demo identity bypass was removed; a deployment that re-adds it bypasses DSP authentication"; rc=1
         fi
-        if ! grep -qE '^DS_ENV=production$' "$FILE"; then
-          echo "✗ DS_ENV=production is not set — services will only warn, not fail"; rc=1
+        # `DS_ENV` now defaults to production, so an absent one is safe and is
+        # no longer worth failing on. What IS worth failing on is a production
+        # env file that explicitly asks for dev — the only value that downgrades
+        # every guard to a warning.
+        if printf '%s\n' "$values" | grep -qE '^DS_ENV=dev$'; then
+          echo "✗ DS_ENV=dev in a production env file — every ProductionGuard degrades to a warning"; rc=1
         fi
 
         # ── The EDC vault: key material this check could not see at all ───────

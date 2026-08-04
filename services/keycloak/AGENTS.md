@@ -24,7 +24,8 @@ Two hand-written declarations, two generated projections, one org file, two real
 | `clients.effective.yaml` | GENERATED, core + overlays — what `keycloak-sync` applies |
 | `clients.host.generated.yaml` | GENERATED, core only — the ds section a *host* realm must carry |
 | `organizations.yaml` | KC native organizations and members |
-| `realm-dataspaces-dev.json` / `realm-production.example.json` | realm imports |
+| `realm-dataspaces-dev.json` | the dev realm import — mounted by `docker-compose.yml` only |
+| `realm-production.example.json` | **an importable artifact, selected by nothing here** — see below |
 
 Regenerate **both** projections after editing either hand-written file —
 `libs/ds-auth/tests/test_vocabulary.py` and
@@ -132,6 +133,25 @@ via `organizations.yaml` needs no reset, which is the path to prefer.
 | Add a realm-wide seat | realm JSON `groups:` — needs a KC db reset |
 | Re-provision | `task keycloak:reload` |
 
-**The dev realm is not safe to deploy** and a production chart must select
-`realm-production.example.json`, which today nothing does. The differences that matter and
-the CI gate that used to check them are in `helm/AGENTS.md` and `.agents/defect-per-service.md`.
+## The two realm files, and which is which
+
+**`realm-dataspaces-dev.json` is not safe to deploy**: seven users whose password is their
+username, `registrationAllowed: true`, `directAccessGrantsEnabled: true` on the login client
+and a literal `oauth2_proxy` secret. It is mounted by `docker-compose.yml` and by nothing else.
+`task secrets:check` fails if a production env file so much as names it.
+
+**`realm-production.example.json` is an artifact to import into an existing Keycloak, not
+something this repository installs.** *No chart selects it, and that is correct* — **helm does
+not install Keycloak at all**, by design. Earlier notes here and in `helm/AGENTS.md` said a
+production chart "must select" it; there is no such chart, and both are corrected.
+
+Two defects in it are fixed and worth not reintroducing:
+
+- **The `organization` claim was an `oidc-usermodel-attribute-mapper`** with
+  `jsonType.label: String`, emitting a *string*. `extract_groups` needs KC's native
+  object-per-alias shape, so every org-scoped seat would have resolved to nothing — a silent
+  under-grant, not an error. It is now `oidc-organization-membership-mapper`, the same mapper
+  the dev realm uses and the one whose output ds actually parses.
+- **`organizationsEnabled` was absent**, so `ir-cli keycloak org-sync` had nothing to write
+  organizations into — and the mapper above would have emitted nothing even once corrected.
+  The two are one fix; either alone still yields no organization claim.

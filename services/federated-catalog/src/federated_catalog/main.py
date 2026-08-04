@@ -45,6 +45,15 @@ async def lifespan(app: FastAPI):
         {"svc-ds-federated-catalog"},
         "Set the Keycloak client secret for svc-ds-federated-catalog.",
     )
+    # Catches the same secret when the client has been renamed, and the case
+    # where the realm was synced before the variable was set — see `KC-01`.
+    guard.forbid_secret_equal_to_client_id(
+        "CATALOG_SERVICE_CLIENT_SECRET",
+        settings.service_client_id,
+        settings.service_client_secret,
+        "Set a real secret for this client AND make sure the realm has it — a "
+        "realm synced before the variable was set still holds the client id.",
+    )
     guard.enforce()
 
     ir_token_provider = ServiceTokenProvider(

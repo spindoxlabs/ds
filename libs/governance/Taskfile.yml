@@ -3,11 +3,23 @@ version: "3"
 tasks:
   setup:
     desc: Install library in editable mode (idempotent)
+    # `--extra dev`, not a bare `uv sync`: without it there is no `jsonschema`,
+    # and the two schema tests fail at *collection* — pytest then reports
+    # "2 errors" having run nothing, which reads as a broken suite rather than a
+    # missing dependency. Same defect, same fix, as `libs/ds-auth`.
     cmds:
-      - uv sync
+      - uv sync --extra dev
     sources: [pyproject.toml]
 
   test:
+    # A test suite is a development context, and it has to say so: since
+    # `DS_ENV` defaults to `production`, a suite that builds the app hits the
+    # ProductionGuard and the whole module fails to *collect*. Declared here for
+    # the same reason compose declares it — this is the dev topology, so it opts
+    # out explicitly rather than relying on the variable being absent.
+    env:
+      DS_ENV: dev
+    deps: [setup]
     cmds:
       - uv run pytest tests/tests/ -v --cov=src/ds/governance --cov-report=term-missing
 

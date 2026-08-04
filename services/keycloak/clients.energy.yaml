@@ -39,6 +39,11 @@ scopes:
     description: Permission to lookup data
 
 clients:
+  # **Held by a service outside this repository** — the domain platform's
+  # rec-registry, which authenticates against this realm with this client and is
+  # named as the audience in `docker-compose.dataset-api.yml`. Nothing in ds
+  # authenticates as it, and that is expected rather than a dead declaration:
+  # the overlay exists so a shared realm carries what the domain side needs.
   - client_id: svc-rec-registry
     name: REC Registry Service
     secret: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}

@@ -68,6 +68,15 @@ async def lifespan(app: FastAPI):
         "Set the Keycloak client secret for svc-ds-identity-registry — this is "
         "the credential the registry presents on its own outbound calls.",
     )
+    # Catches the same secret when the client has been renamed, and the case
+    # where the realm was synced before the variable was set — see `KC-01`.
+    guard.forbid_secret_equal_to_client_id(
+        "IDENTITY_REGISTRY_SERVICE_CLIENT_SECRET",
+        settings.service_client_id,
+        settings.service_client_secret,
+        "Set a real secret for this client AND make sure the realm has it — a "
+        "realm synced before the variable was set still holds the client id.",
+    )
     # `KEYCLOAK_MUTATE=true` means this service holds realm-admin rights and
     # creates clients with them when a participant is promoted. That is correct
     # where ds owns the realm and wrong where it is a guest — but either way,

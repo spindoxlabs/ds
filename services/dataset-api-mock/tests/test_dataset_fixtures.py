@@ -34,7 +34,11 @@ from dataset_api_mock.main import (
 
 GATED = "datasets.silver.meters_15m"
 REPO = pathlib.Path(__file__).resolve().parents[3]
-GOVERNANCE = REPO / "services" / "connector" / "governance" / "governance.yaml"
+# `governance-rec`, not `governance`: the participant rename replaced the single
+# directory with one per participant, and the REC is the participant whose
+# datasets this mock stands in for. The file this test reconciles against has to
+# be the one the provider actually publishes, or the reconciliation is vacuous.
+GOVERNANCE = REPO / "services" / "connector" / "governance-rec" / "governance.yaml"
 REC_FIXTURE = pathlib.Path(__file__).resolve().parents[1] / "fixtures" / "ds_e2e_rec.yaml"
 
 

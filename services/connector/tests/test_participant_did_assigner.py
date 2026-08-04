@@ -46,8 +46,15 @@ def test_the_mapper_forwards_participant_did_to_the_assigner():
 
 
 def test_the_dev_fallback_still_applies_when_no_did_is_configured():
-    """Unchanged behaviour, pinned: omitting the DID is not the same as a bug."""
-    mapper = ConnectorGovernanceMapper("provider", "https://rec.dataspaces.localhost")
+    """Unchanged behaviour, pinned: omitting the DID is not the same as a bug.
+
+    The fallback is `did:web:{participant_id}.dataspaces.localhost`
+    (`libs/governance/.../mapper.py`) — it derives from the participant **id**,
+    not the base URL. The participant rename updated the expectation here to
+    `rec` and left the id as `provider`, so the two disagreed and the test read
+    as a behaviour change in the mapper. Both are `rec` now.
+    """
+    mapper = ConnectorGovernanceMapper("rec", "https://rec.dataspaces.localhost")
 
     policy = mapper.to_policy_create("datasets.gold.test", _rule())
 

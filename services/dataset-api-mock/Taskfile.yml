@@ -9,6 +9,13 @@ tasks:
     generates: [.venv/bin/uvicorn]
 
   test:
+    # A test suite is a development context, and it has to say so: since
+    # `DS_ENV` defaults to `production`, a suite that builds the app hits the
+    # ProductionGuard and the whole module fails to *collect*. Declared here for
+    # the same reason compose declares it — this is the dev topology, so it opts
+    # out explicitly rather than relying on the variable being absent.
+    env:
+      DS_ENV: dev
     desc: Run unit tests
     deps: [setup]
     cmds:

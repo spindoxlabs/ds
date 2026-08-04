@@ -155,6 +155,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       CONNECTOR_ROLE: consumer
       # Drives the server *and* the image's HEALTHCHECK — see the Dockerfile.
       # The check probed 30001 regardless of role, so this container was never
@@ -229,6 +234,11 @@ services:
     ports:
       - "31000:31000"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_third_party
       # See the provider stack: an unset issuer means tokens are accepted without
       # signature, audience or issuer verification.
@@ -297,6 +307,11 @@ services:
     ports:
       - "30007:30005"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost

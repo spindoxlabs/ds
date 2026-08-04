@@ -130,6 +130,19 @@ async def lifespan(app: FastAPI):
         {"svc-ds-connector"},
         "Set the Keycloak client secret for svc-ds-connector.",
     )
+    # The same secret, checked against the *configured* client id rather than a
+    # literal. `forbid_default` above only fires on the shipped default, so a
+    # deployment that renames the client and leaves secret==client_id passes it.
+    # This is also the only signal that the realm was synced before the variable
+    # was set: `keycloak sync` applies a secret on create only, so setting the
+    # variable does not by itself change an existing realm (`KC-01`).
+    guard.forbid_secret_equal_to_client_id(
+        "CONNECTOR_SERVICE_CLIENT_SECRET",
+        settings.service_client_id,
+        settings.service_client_secret,
+        "Set a real secret for this client AND make sure the realm has it — a "
+        "realm synced before the variable was set still holds the client id.",
+    )
     # A configured-but-absent profile path silently falls back to the bundled
     # energy vocabulary. Every purpose the deployer declared then fails to
     # resolve, and since sync refuses a dataset whose purpose does not resolve,

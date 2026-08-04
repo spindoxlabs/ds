@@ -1,6 +1,7 @@
 {
   "realm": "dataspaces",
   "enabled": true,
+  "organizationsEnabled": true,
   "eventsEnabled": true,
   "adminEventsEnabled": true,
   "adminEventsDetailsEnabled": true,
@@ -71,15 +72,14 @@
         {
           "name": "organization",
           "protocol": "openid-connect",
-          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "protocolMapper": "oidc-organization-membership-mapper",
           "config": {
-            "user.attribute": "organization",
-            "claim.name": "organization",
-            "jsonType.label": "String",
             "id.token.claim": "true",
             "access.token.claim": "true",
+            "claim.name": "organization",
             "userinfo.token.claim": "true"
-          }
+          },
+          "consentRequired": false
         }
       ]
     },

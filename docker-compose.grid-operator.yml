@@ -161,6 +161,11 @@ services:
     ports:
       - "32001:32001"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       CONNECTOR_ROLE: provider
       CONNECTOR_PORT: 32001
       EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:39193/management
@@ -214,6 +219,11 @@ services:
     ports:
       - "32000:32000"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_grid_operator
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       PROVENANCE_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
@@ -271,6 +281,11 @@ services:
     ports:
       - "30008:30005"
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost

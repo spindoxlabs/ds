@@ -38,9 +38,29 @@ async def _run_lifespan(monkeypatch, *, skip_schema: bool = True) -> None:
 
 @pytest.mark.asyncio
 async def test_startup_succeeds_with_the_dev_defaults(monkeypatch):
-    """Dev is zero-config on purpose: the guard warns and startup proceeds."""
-    monkeypatch.delenv("DS_ENV", raising=False)
+    """Dev is zero-config on purpose: the guard warns and startup proceeds.
+
+    `DS_ENV=dev` is now **set**, not deleted. It used to delete the variable and
+    rely on absence meaning dev; the guard's default was inverted to
+    `production` so that forgetting it fails closed, which makes "unset" the
+    strict case — see the test below.
+    """
+    monkeypatch.setenv("DS_ENV", "dev")
     await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_an_absent_ds_env_is_treated_as_production(monkeypatch):
+    """The safety property the inversion buys, at this service's own boundary.
+
+    A deployment that never heard of `DS_ENV` gets the strict guard rather than
+    the permissive one, so its dev defaults stop it at boot instead of being
+    served from.
+    """
+    monkeypatch.delenv("DS_ENV", raising=False)
+
+    with pytest.raises(InsecureProductionConfig):
+        await _run_lifespan(monkeypatch)
 
 
 @pytest.mark.asyncio

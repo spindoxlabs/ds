@@ -207,13 +207,34 @@ def _service(compose_file: str, service: str) -> dict:
     return doc["services"][service]
 
 
+def _host_path_for(service_def: dict, container_dir: str) -> Path:
+    """The repo path mounted at ``container_dir``, read out of the mount itself.
+
+    Derived rather than hardcoded, and that is the point of the test: this
+    asserted ``services/connector/governance/`` until the participant rename
+    replaced that directory with one per participant (``governance-rec``,
+    ``governance-grid-operator``). Hardcoding the host side made the check a
+    restatement of a layout instead of a check of the wiring, so it went stale
+    the moment the layout moved.
+    """
+    for mount in service_def.get("volumes", []):
+        host, _, rest = str(mount).partition(":")
+        target = rest.split(":")[0]
+        if target == container_dir:
+            return ROOT / host.lstrip("./")
+    raise AssertionError(f"no volume mounted at {container_dir}: {service_def.get('volumes')}")
+
+
 @pytest.mark.parametrize("compose_file,service", COMPOSE)
 def test_compose_points_at_a_registry_that_exists(compose_file, service):
-    env = _service(compose_file, service)["environment"]
-    declared = env["CONNECTOR_VOCABULARIES_PATH"]
+    definition = _service(compose_file, service)
+    declared = definition["environment"]["CONNECTOR_VOCABULARIES_PATH"]
     assert declared.startswith("/governance/"), declared
-    # The container path maps to this file in the repo — mounted, not baked.
-    assert (UNIT / "governance" / Path(declared).name).is_file()
+    # The container path maps to a real file in the repo — mounted, not baked.
+    host_dir = _host_path_for(definition, "/governance")
+    assert (host_dir / Path(declared).name).is_file(), (
+        f"{declared} is mounted from {host_dir}, which has no {Path(declared).name}"
+    )
 
 
 @pytest.mark.parametrize("compose_file,service", COMPOSE)
@@ -287,10 +308,15 @@ def test_the_shipped_registry_is_empty():
     loader fetches what it finds registered. That is a one-line change for
     somebody adding an example, so it gets a test rather than a comment.
     """
-    registry = yaml.safe_load(
-        (UNIT / "governance" / "vocabularies.yaml").read_text(encoding="utf-8")
-    )
-    assert registry["vocabularies"] == [], (
-        "the platform ships no vocabularies (rulebook M-6). Registering one here "
-        "makes a default install fetch it at startup, and fail if it cannot."
-    )
+    # Every shipped registry, not one hardcoded path: the participant rename
+    # replaced `governance/` with one directory per participant, and a test
+    # naming a single one both went stale and stopped covering the others.
+    registries = sorted(UNIT.glob("governance-*/vocabularies.yaml"))
+    assert registries, f"no governance-*/vocabularies.yaml under {UNIT}"
+    for path in registries:
+        registry = yaml.safe_load(path.read_text(encoding="utf-8"))
+        assert registry["vocabularies"] == [], (
+            f"{path.relative_to(UNIT)} ships a vocabulary. The platform ships none "
+            "(rulebook M-6): registering one makes a default install fetch it at "
+            "startup, and fail if it cannot."
+        )

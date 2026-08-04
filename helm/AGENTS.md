@@ -52,8 +52,13 @@ plus three Ingress annotations, of which `auth-response-headers` **is the strip*
 `services/oauth2-proxy/AGENTS.md`. `auth.proxy.enabled: false` does not fall back to a portal
 login — there is none.
 
-**Keycloak** — externally managed. The dev realm must never be imported; the chart selects
-`realm-production.example.json` explicitly. The realm is provisioned from
+**Keycloak** — externally managed. **There is no Keycloak chart and no chart imports any
+realm**, so nothing here selects a realm file at all; an earlier version of this line claimed
+the chart selects `realm-production.example.json`, and there is no chart to do it. The dev
+realm (`realm-dataspaces-dev.json`: seven users whose password is their username,
+`registrationAllowed: true`, a literal `oauth2_proxy` secret) is mounted only by
+`docker-compose.yml`. `task secrets:check` fails if a production env file names it. The realm
+is provisioned from
 `clients.effective.yaml`, **not** `clients.yaml`: the syncer recomputes each client's grants
 from the single file it is handed, so pointing it at the core file *strips* whatever an
 overlay granted, silently. Layer B lives in `global.keycloak.aliases` — one block feeding

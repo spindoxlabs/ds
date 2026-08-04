@@ -145,6 +145,19 @@ clients:
     extra_audiences:
       - svc-ds-connector
 
+  # **Held by a service outside this repository**, and that is why nothing here
+  # authenticates as it. The holder is the domain platform's onboarding funnel,
+  # which provisions ds identities for an approved organisation and then calls
+  # `POST /consent/provision` on the connector (see
+  # `services/connector/src/connector/api/v1/consent.py`, and the note in
+  # `tests/test_consent_provisioning.py` saying the production caller is out of
+  # repo).
+  #
+  # This is not an orphan, and the grants below must not be "cleaned up" because
+  # `grep` finds no caller — removing them breaks organisation onboarding in a
+  # deployment this repository cannot test. That ds and the domain platform can
+  # share one realm is the whole point of `clients.host.generated.yaml`, which
+  # exists for "a deployment where ds is a guest rather than the realm's owner".
   - client_id: svc-ds-onboarding
     name: Dataspace Onboarding
     secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
