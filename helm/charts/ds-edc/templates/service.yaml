@@ -5,14 +5,19 @@ metadata:
   labels:
     {{- include "ds.labels" . | nindent 4 }}
 spec:
-  # ClusterIP always. Only protocol and public are published (via Ingress);
-  # management and control are reachable in-cluster but never routed publicly.
+  # ClusterIP always. Only protocol is published (via Ingress); management is
+  # reachable in-cluster but never routed publicly.
+  #
+  # **Control is deliberately not a Service port.** Its registrants —
+  # data-plane self-registration, data-plane signalling and the control-plane
+  # callback — are all this runtime talking to itself, in-process, so nothing
+  # outside the pod has business dialling it. It also now carries a token filter
+  # (`web.http.control.auth.type` in the ConfigMap); not publishing it is the
+  # second control, so reaching the registry needs both a route and a key.
   type: ClusterIP
   ports:
     - {name: api, port: {{ .Values.ports.api }}, targetPort: api, protocol: TCP}
     - {name: management, port: {{ .Values.ports.management }}, targetPort: management, protocol: TCP}
     - {name: protocol, port: {{ .Values.ports.protocol }}, targetPort: protocol, protocol: TCP}
-    - {name: public, port: {{ .Values.ports.public }}, targetPort: public, protocol: TCP}
-    - {name: control, port: {{ .Values.ports.control }}, targetPort: control, protocol: TCP}
   selector:
     {{- include "ds.selectorLabels" . | nindent 4 }}

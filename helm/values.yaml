@@ -187,9 +187,11 @@ authority:
 # ==============================================================================
 # Public host per participant: <name>.<global.baseDomain>, serving exactly
 #   /.well-known/did.json   → identity-registry (rewritten)
+#   /credentials/*, /sts/*, /users/*  → identity-registry (DCP surfaces)
 #   /protocol/2025-1/*      → EDC DSP
-#   /public/*               → EDC data plane
-# Everything else on that host returns 404.
+# Everything else on that host returns 404. There is no /public route: the EDC
+# data-plane public context is registered by no packaged module, and a consumer
+# pulls from the dataset API rather than through any EDC.
 participants:
   - name: rec
     enabled: true

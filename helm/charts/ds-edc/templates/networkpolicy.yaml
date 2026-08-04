@@ -1,18 +1,20 @@
 {{- if ((.Values.global).networkPolicy).enabled }}
 {{ include "ds.networkPolicy.defaultDeny" . }}
 ---
-# Ingress controller reaches only the public ports (protocol, data-plane).
-# Management and control are absent from this list, so no Ingress path — even a
+# Ingress controller reaches the DSP protocol port and nothing else. Management
+# and control are absent from this list, so no Ingress path — even a
 # misconfigured one — can route to them.
-{{ include "ds.networkPolicy.fromIngressController" (dict "ctx" . "ports" (list .Values.ports.protocol .Values.ports.public)) }}
+{{ include "ds.networkPolicy.fromIngressController" (dict "ctx" . "ports" (list .Values.ports.protocol)) }}
 ---
 # In-cluster callers: this participant's connector drives management and reads
 # the API/health context. Restricted to the same namespace.
 {{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.ports.management .Values.ports.api .Values.ports.control) "from" (list
     (dict "namespace" .Release.Namespace "name" "ds-connector"))) }}
 ---
-# Remote participants' EDCs dial the DSP protocol and data-plane endpoints from
-# their own namespaces. Cross-namespace, but only the two public ports.
+# Remote participants' EDCs dial the DSP protocol endpoint from their own
+# namespaces. Cross-namespace, and only that one port — there is no data-plane
+# public port to open, and consumer-pull traffic goes to the dataset API rather
+# than through any EDC.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -33,8 +35,6 @@ spec:
       ports:
         - protocol: TCP
           port: {{ .Values.ports.protocol }}
-        - protocol: TCP
-          port: {{ .Values.ports.public }}
 ---
 # Egress: STS/VP queries to the authority registry, callbacks to this
 # participant's connector, Postgres (in default-deny), DNS, and DSP calls to

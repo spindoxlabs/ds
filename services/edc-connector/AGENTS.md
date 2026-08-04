@@ -17,8 +17,9 @@ image, deployed once per participant with its own config, database and DID.
 | Task | File |
 |---|---|
 | Add or remove an EDC module | `build.gradle.kts` |
-| Change the EDC version | `build.gradle.kts` `edcVersion` — **and** the four places the tag is duplicated (`Dockerfile`, `Dockerfile.base`, two Taskfile entries) |
-| Change connector runtime settings | `services/connector/config/{provider,consumer}.properties` |
+| Change the EDC version | `gradle.properties` `edcVersion` — **and** the copies `BuildConsistencyTest` names, which it will fail on until they agree |
+| Change connector runtime settings | `services/connector/config/{rec,third-party,grid-operator}.properties` |
+| Add a test | `src/test/java/dataspaces/edc/connector/` · `task -d services/edc-connector test` |
 
 ## Configuration: environment, never `${}` in a properties file
 
@@ -41,18 +42,45 @@ setting out of the properties file entirely.
 
 ## Ports
 
-| Suffix | Provider / consumer | Context |
-|---|---|---|
-| x9191 | 19191 / 29191 | default — `/api/check/health` |
-| x9193 | 19193 / 29193 | Management API |
-| x9194 | 19194 / 29194 | DSP protocol (`/protocol/2025-1`) |
+`rec` 19xxx · `third-party` 29xxx · `grid-operator` 39xxx.
 
-`x9195` (version) and `x9291` (public) are configured and published but **no packaged module
-registers them** — those ports refuse connections. Tracked in `.agents/defect-per-service.md`.
+| Suffix | Context | Published |
+|---|---|---|
+| x9191 | default — `/api/check/health` | no; the compose healthcheck runs inside the container |
+| x9192 | control | **never** — see below |
+| x9193 | Management API | yes in compose, ClusterIP-only under Helm |
+| x9194 | DSP protocol (`/protocol/2025-1`) | yes — the only public one |
+
+**Do not add a `public` or `version` context.** Both used to be configured, published by
+compose, given container/Service/NetworkPolicy ports, and `/public` was an Ingress path — and
+no packaged module registers a resource on either. A configured context binds a port and 404s,
+so everything routing to it looks wired and is not; that is how the Helm EDR base URL came to
+name a dead endpoint. `RuntimeContractTest` fails if one is configured again.
 
 **`web.http.management.auth.type=tokenbased` is required, not just `auth.key`.** EDC installs
 an authentication filter only for contexts that declare a type, so the key alone protects
-nothing. The same applies to the control context, which is currently unauthenticated.
+nothing.
+
+**`web.http.control.auth.type=tokenbased` is set, and it must stay set.** Until it was,
+`GET /control/v1/dataplanes` answered 200 with the full data-plane registry to anything on the
+Docker network. Its registrants (`ControlPlaneApiExtension`, `DataPlaneSignalingApiExtension`,
+`DataplaneSelectorControlApiExtension`) are this runtime talking to itself, and because the
+data-plane client is **embedded** the calls never cross the port — so the filter costs nothing.
+Verified by running the full consumer-pull flow with it on.
+
+This is safe *only while the data plane shares the runtime*. Split it out and the signalling
+becomes real HTTP, and the only `ControlClientAuthenticationProvider` packaged here is the
+**no-op default** from `CoreDefaultServicesExtension` — it sends no headers, so every signal
+would 401. Package a real provider in the same change, or transfers stop.
+
+## What this unit can get wrong, and how it is caught
+
+It has no source, so its risk is the *assembly*: which modules are packaged, and whether the
+properties files configure things the result reads. Both fail silently — EDC ignores an
+unknown setting without a word. `src/test/java/.../RuntimeContractTest.java` reads the built
+JAR's constant pools and fails when a configured context has no registrant or a setting has no
+reader. Run it with `task -d services/edc-connector test`, or `task edc:test` for both Java
+units.
 
 ## Persistence
 
@@ -65,8 +93,15 @@ and is not on the classpath. Init containers create the databases only.
 ```bash
 task edc:base       # dependency-cache base image, once per version bump
 task edc:build      # fat JAR, via Docker, cached in data/gradle
-task edc:docker     # image (requires ds-edc-base:0.16.0)
-task edc:restart    # rebuild + force-recreate both containers
+task edc:docker     # image (requires the ds-edc-base image)
+task edc:restart    # rebuild + force-recreate all three EDC containers
+task edc:test       # the Java tests of both units
 ```
 
-No Gradle wrapper is committed. The unit has no test sources.
+**No Gradle wrapper is committed, deliberately** — the build runs in a pinned
+`gradle:8.12-jdk21` container so a checkout needs Docker and nothing else. `./gradlew` has
+never worked here; anything documenting it is stale.
+
+Both Dockerfiles copy the build descriptors individually, and `gradle.properties` is one of
+them. Omit it and the image build fails several minutes in with *"Cannot get non-null property
+'edcVersion'"* — while `task edc:build`, which mounts the whole repo, keeps working.

@@ -39,17 +39,31 @@ data:
     web.http.management.auth.type=tokenbased
     web.http.protocol.port={{ .Values.ports.protocol }}
     web.http.protocol.path=/protocol
-    web.http.public.port={{ .Values.ports.public }}
-    web.http.public.path=/public
     web.http.control.port={{ .Values.ports.control }}
     web.http.control.path=/control
-    web.http.version.port={{ .Values.ports.version }}
-    web.http.version.path=/version
+    # Data-plane signalling, data-plane self-registration and the control-plane
+    # callback. Without a type there is no filter, and `GET /control/v1/dataplanes`
+    # answered the full data-plane registry to anything that could reach the port.
+    # Safe to enforce because the data-plane client is embedded in this runtime —
+    # the control plane signals its own data plane in-process, not over this port.
+    # Key from WEB_HTTP_CONTROL_AUTH_KEY, its own secret, not EDC_API_KEY's.
+    web.http.control.auth.type=tokenbased
+    # There is no `public` or `version` context, and adding one back would bind a
+    # port with nothing behind it: `ApiContext` in this runtime declares only
+    # MANAGEMENT, CONTROL and PROTOCOL, no data-plane public API is packaged, and
+    # the management Version API registers on the default context.
 
-    # ── DSP / data-plane public addressing (what remote participants dial) ────
+    # ── DSP addressing (what remote participants dial) ────────────────────────
     edc.dsp.callback.address=https://{{ $host }}/protocol
-    edc.dataplane.api.public.baseurl=https://{{ $host }}/public
-    ds.edr.endpoint.public.baseurl=https://{{ $host }}/public
+    {{- with .Values.edrPublicBaseUrl }}
+
+    # Rewrites the origin of an asset's own `base_url` into an address the
+    # consumer can reach. This is the DATASET API, not this EDC: consumer-pull
+    # traffic goes straight to the data plane and never through the connector.
+    # Setting it to https://<host>/public — as this chart used to — pointed every
+    # EDR at a port no module listens on.
+    ds.edr.endpoint.public.baseurl={{ . }}
+    {{- end }}
 
     edc.transfer.proxy.token.signer.privatekey.alias=participant-private-key
     edc.transfer.proxy.token.verifier.publickey.alias=participant-private-key
@@ -70,14 +84,16 @@ data:
     ds.connector.internal.client.id={{ .Values.connectorClientId }}
 
     # ── Vault (mounted from the Secret, not the committed dev fixture) ─────────
-    edc.vault.hashicorp.enabled=false
     edc.vault.fs.file=/config/vault.properties
 
     # ── DCP / STS / credential service (via identity-registry) ────────────────
     edc.iam.sts.oauth.token.url={{ $ir }}/sts/{{ $did }}/token
     edc.iam.sts.oauth.client.id={{ $did }}
     edc.iam.sts.oauth.client.secret.alias=sts-client-secret
-    edc.credential.service.url={{ $ir }}/credentials/{{ $did }}
+    # No `edc.credential.service.url`: read by no class in connector.jar. A
+    # counterparty finds this participant's credential service through the
+    # `CredentialService` entry in its DID document, which identity-registry
+    # publishes and the `-dcp` Ingress below routes.
     edc.iam.trusted-issuer.0.id={{ include "edc.trustAnchorDid" . }}
     edc.iam.dcp.scopes.membership.id=membership
     edc.iam.dcp.scopes.membership.type=default

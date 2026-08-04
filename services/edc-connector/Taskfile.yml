@@ -1,0 +1,48 @@
+version: "3"
+
+# Java, so `test` does not mean what it means in the Python units — everything
+# runs through a Gradle container. There is no committed Gradle wrapper and the
+# host carries a JRE only.
+#
+# This unit had no test sources at all, and its only build-time check was
+# `verifyForkedTransformer`. What it can get wrong is the assembly: which modules
+# end up in the fat JAR, and whether the properties files handed to it configure
+# things the JAR actually reads. Both fail silently — EDC ignores an unknown
+# setting without a word, and a web context with no registrant binds a port that
+# 404s. See src/test/java/dataspaces/edc/connector/RuntimeContractTest.java.
+#
+# The tests read the built artifact, so `test` builds the shadow JAR first.
+
+vars:
+  GRADLE_IMAGE: gradle:8.12-jdk21
+  ROOT:
+    sh: git rev-parse --show-toplevel
+
+tasks:
+  test:
+    desc: Run the edc-connector packaging tests (builds the fat JAR first)
+    cmds:
+      - mkdir -p {{.ROOT}}/data/gradle
+      - >-
+        docker run --rm
+        -v "{{.ROOT}}:/project"
+        -v "{{.ROOT}}/data/gradle:/home/gradle/.gradle"
+        -w /project
+        {{.GRADLE_IMAGE}}
+        gradle :edc-connector:test --no-daemon {{.CLI_ARGS}}
+
+  test:report:
+    desc: Print the pass/fail count from the last test run
+    cmds:
+      - |
+        cd {{.ROOT}}/services/edc-connector/build/test-results/test 2>/dev/null || {
+          echo "no test results — run 'task -d services/edc-connector test' first" >&2
+          exit 1
+        }
+        awk -F'"' '/<testsuite /{n+=$4; s+=$6; f+=$8; e+=$10}
+          END {printf "%d tests, %d skipped, %d failures, %d errors\n", n, s, f, e}' ./*.xml
+
+  build:
+    desc: Assemble the fat JAR — the same thing as `task edc:build` at the root
+    cmds:
+      - task: :edc:build

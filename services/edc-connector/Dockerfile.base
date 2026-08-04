@@ -10,8 +10,10 @@ FROM gradle:8.12-jdk21
 
 WORKDIR /cache
 
-# Copy only the build descriptor files — no source code
-COPY settings.gradle.kts build.gradle.kts ./
+# Copy only the build descriptor files — no source code. gradle.properties is
+# one of them: it holds `edcVersion`, which :edc-connector reads with
+# `by project`, so dependency resolution fails without it.
+COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY services/edc-extensions/build.gradle.kts services/edc-extensions/build.gradle.kts
 COPY services/edc-connector/build.gradle.kts  services/edc-connector/build.gradle.kts
 

@@ -40,14 +40,32 @@ The runtime binds a Jetty connector only for contexts something registers. Four 
 | Context | Path | Provider | Consumer | Authentication |
 |---|---|---|---|---|
 | `default` | `/api` | 19191 | 29191 | **none** — health and liveness probes |
-| `control` | `/control` | 19192 | 29192 | **none** — data-plane signalling, in-cluster only |
+| `control` | `/control` | 19192 | 29192 | `x-api-key` — data-plane signalling, in-cluster only |
 | `management` | `/management` | 19193 | 29193 | `X-Api-Key` |
 | `protocol` | `/protocol` | 19194 | 29194 | DSP/DCP self-issued token; `/.well-known/dspace-version` is open |
 
 **Only `protocol` is ever public.** Management creates and deletes assets, policies and
-transfers; control drives the data plane. Both are ClusterIP plus NetworkPolicy in Kubernetes
-and unpublished in compose, and the exposure is denied twice — at routing and at the network
-layer.
+transfers; control drives the data plane. Neither is routed by an Ingress, control is not even
+a Service port, and both are unpublished in compose — so the exposure is denied at routing and
+again at the network layer.
+
+**Control is authenticated too.** Until `web.http.control.auth.type=tokenbased` was set,
+`GET /control/v1/dataplanes` returned 200 with the full data-plane registry to any container on
+the network — measured, not inferred. The filter is free here because the data-plane client is
+**embedded**: the control plane signals its own data plane in-process, so its own calls never
+cross the port. The key is `WEB_HTTP_CONTROL_AUTH_KEY`, its own secret rather than the
+Management API's.
+
+Splitting the data plane into a separate runtime would change that. The only
+`ControlClientAuthenticationProvider` packaged here is the no-op default from
+`CoreDefaultServicesExtension`, so signalling would 401 the moment it became a real HTTP call.
+
+**There is no `public` or `version` context.** Both used to be configured — in every
+participant properties file, in compose port mappings, in the chart's container, Service and
+NetworkPolicy ports, and `/public` was an Ingress path — and no packaged module registers a
+resource on either. `ApiContext` declares `MANAGEMENT`, `CONTROL` and `PROTOCOL` only; no
+data-plane public API is on the classpath; the management Version API registers on the default
+context. `RuntimeContractTest` fails if either is configured again.
 
 The Management API surface is upstream EDC's v3 and v4beta CRUD over assets, policy
 definitions, contract definitions, negotiations, transfer processes, agreements, EDRs and data
@@ -91,8 +109,9 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `edc.participant.id` / `edc.iam.issuer.id` | `did:web:rec.dataspaces.localhost` | this participant's DID |
 | `edc.dsp.callback.address` | `http://172.17.0.1:19194/protocol` | the address counterparties call back on |
 | `web.http.<context>.port` / `.path` | see the table above | context binding |
-| `web.http.management.auth.type` | `tokenbased` | the only context with an auth filter |
+| `web.http.management.auth.type` / `web.http.control.auth.type` | `tokenbased` | the two contexts with an auth filter — `auth.key` alone installs none |
 | `web.http.management.auth.key` | *(from `EDC_API_KEY`)* | **secret** — the Management API key |
+| `web.http.control.auth.key` | *(from `EDC_CONTROL_API_KEY`)* | **secret** — the control API key. Its own value; nothing outside the runtime holds it |
 | `edc.iam.sts.oauth.token.url` | `…/sts/<did>/token` on the identity registry | where this EDC gets its DCP token |
 | `edc.iam.sts.oauth.client.id` / `.client.secret.alias` | the DID / a vault alias | STS credentials |
 | `edc.iam.trusted-issuer.0.id` | `did:web:trust-anchor.dataspaces.localhost` | whose credentials are believed |
@@ -103,12 +122,21 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | `edc.datasource.default.url` / `.user` / `.password` | `jdbc:postgresql://…/edc_rec` | one database per participant |
 | `edc.sql.schema.autocreate` | `true` | see below |
 | `ds.connector.internal.url` | `http://172.17.0.1:30001` | the ds-connector this runtime asks |
+| `ds.edr.endpoint.public.baseurl` | `http://172.17.0.1:30002` | **the dataset API**, not this connector — the origin an asset's own `base_url` is rewritten to in the EDR. Consumer-pull traffic goes straight to the data plane; EDC never proxies it. Under Helm it defaults to unset, so the asset's `base_url` reaches the consumer verbatim |
+
+**Four settings that used to be here are gone**, each read by no class in `connector.jar`:
+`edc.dataplane.api.public.baseurl`, `edc.credential.service.url`, `edc.vault.hashicorp.enabled`
+and `edc.api.key`. EDC ignores an unknown key silently, so they looked like configuration and
+were not — a counterparty finds this participant's credential service through its DID document,
+and the Management API key is `web.http.management.auth.key`. `RuntimeContractTest` fails if a
+setting with no reader is added back.
 
 ### Supplied from the environment
 
 | Variable | Becomes | Why environment |
 |---|---|---|
 | `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` | secret |
+| `WEB_HTTP_CONTROL_AUTH_KEY` | `web.http.control.auth.key` | secret |
 | `DS_CONNECTOR_INTERNAL_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` | `ds.connector.internal.*` | secret; empty is fatal at boot |
 | `EDC_DATASOURCE_DEFAULT_USER` / `_PASSWORD` | database credentials | secret |
 | `DATASPACES_ODRL_NAMESPACE` | `dataspaces.odrl.namespace` | must match the connector's ODRL profile — see [edc-extensions](edc-extensions.md) |

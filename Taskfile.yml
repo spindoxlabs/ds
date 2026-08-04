@@ -26,6 +26,11 @@ vars:
   # Pinned to a major: the release config in releaserc.toml is written against
   # python-semantic-release 10.x, and its option names move between majors.
   SEMANTIC_RELEASE: uvx --from 'python-semantic-release>=10.5,<11' semantic-release -c releaserc.toml
+  # The EDC version, from the one place that holds it. It used to be written out
+  # here twice and in five other files; `BuildConsistencyTest` now asserts the
+  # copies that remain agree with this source.
+  EDC_VERSION:
+    sh: sed -n 's/^edcVersion=//p' gradle.properties
 
 tasks:
   # ── Idempotent workspace setup ────────────────────────────────────────────
@@ -372,7 +377,13 @@ tasks:
     cmds:
       - |
         set +e
-        DEV_PORTS="19191 19193 19194 19291 29191 29193 29194 29291 30000 30001 30002 30003 30004 30005 31000 31001"
+        # Every EDC port for all THREE participants (19xxx rec, 29xxx
+        # third-party, 39xxx grid-operator), plus the Python services. The list
+        # used to name 19291/29291 — the `public` context, which no packaged
+        # module registers — and no 39xxx port at all, so a `dev:*` teardown left
+        # the grid-operator's JVM holding its ports and the next start failed to
+        # bind. Keep this in step with the `fuser -k` list in `edc:restart`.
+        DEV_PORTS="19191 19193 19194 29191 29193 29194 39191 39193 39194 30000 30001 30002 30003 30004 30005 31000 31001"
 
         # 1. Kill the local-dev watch loops FIRST, by name.
         #    `tmux kill-session` does not reach them: the loops are re-parented
@@ -546,22 +557,28 @@ tasks:
   edc:base:
     desc: Build EDC base image with cached deps (run once per version bump)
     cmds:
-      - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
+      - docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:{{.EDC_VERSION}} .
 
   edc:ensure-base:
     desc: Build EDC base image only when missing
     cmds:
-      - docker image inspect ds-edc-base:0.16.0 >/dev/null 2>&1 || task edc:base
+      - docker image inspect ds-edc-base:{{.EDC_VERSION}} >/dev/null 2>&1 || task edc:base
 
   edc:test:
-    desc: Run the edc-extensions Java unit tests
+    desc: Run the Java unit tests — both edc-extensions and edc-connector
     # The Java was invoked by no task and no workflow, so the constraint
     # functions that decide every access were untested *and* unrunnable without
     # knowing the Docker incantation. `task -d services/edc-extensions test` is
     # the same command.
+    #
+    # edc-connector is the second half: it has no source, so what it tests is the
+    # assembly — that every web context configured has a module behind it and
+    # every setting has a reader. Both used to be false and nothing said so.
     cmds:
       - task -d services/edc-extensions test -- {{.CLI_ARGS}}
       - task -d services/edc-extensions test:report
+      - task -d services/edc-connector test -- {{.CLI_ARGS}}
+      - task -d services/edc-connector test:report
 
   edc:build:
     desc: Build EDC connector fat JAR via Docker (caches in data/gradle)
@@ -576,7 +593,7 @@ tasks:
         gradle :edc-connector:shadowJar --no-daemon
 
   edc:docker:
-    desc: Build EDC connector Docker image (requires ds-edc-base:0.16.0)
+    desc: Build EDC connector Docker image (requires the ds-edc-base image)
     cmds:
       - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
 
@@ -593,7 +610,11 @@ tasks:
       - |
         docker stop dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1 2>/dev/null || true
         docker rm -f dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1 2>/dev/null || true
-        fuser -k 19193/tcp 19194/tcp 19195/tcp 19291/tcp 29193/tcp 29194/tcp 29195/tcp 29291/tcp 39193/tcp 39194/tcp 39195/tcp 39291/tcp 2>/dev/null || true
+        # Same set as DEV_PORTS' EDC half, and for the same reason: 19191/29191/
+        # 39191 host the health endpoint every wait loop below polls, and were
+        # missing here, while 19195/19291 and their twins named the `version` and
+        # `public` contexts that no packaged module registers.
+        fuser -k 19191/tcp 19193/tcp 19194/tcp 29191/tcp 29193/tcp 29194/tcp 39191/tcp 39193/tcp 39194/tcp 2>/dev/null || true
         sleep 1
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build --force-recreate --no-deps edc-rec
@@ -1283,7 +1304,8 @@ tasks:
         if printf '%s\n' "$values" | grep -nF 'CHANGE_ME'; then
           echo "✗ unresolved CHANGE_ME placeholders above"; rc=1
         fi
-        for bad in insecure-dev-key dev-encryption-key-change-in-production \
+        for bad in insecure-dev-key insecure-dev-control-key \
+                   dev-encryption-key-change-in-production \
                    ds-local-dev-secret dev-secret-change-in-prod \
                    change-me-local-client-secret insecure-dev-secret; do
           if printf '%s\n' "$values" | grep -nE "=${bad}\$"; then
@@ -1308,7 +1330,51 @@ tasks:
         if ! grep -qE '^DS_ENV=production$' "$FILE"; then
           echo "✗ DS_ENV=production is not set — services will only warn, not fail"; rc=1
         fi
-        [ "$rc" -eq 0 ] && echo "✓ $FILE carries no dev defaults"
+
+        # ── The EDC vault: key material this check could not see at all ───────
+        #
+        # `services/connector/config/*-vault.properties` are committed dev
+        # fixtures carrying a PUBLISHED EC P-256 private key per participant —
+        # the key its data plane signs Endpoint Data References with — and
+        # `insecure-dev-secret` as its STS client secret. Nothing above reaches
+        # them: they are not env vars, and the values that replace them in
+        # production live in `helm/secrets.sops.yaml`, not in "$FILE".
+        #
+        # The chart never mounts the fixtures (ds-edc's Secret renders
+        # vault.properties from `secrets.*`), so the exposure is not the
+        # fixture existing — it is the fixture being COPIED into a real values
+        # or secrets file, which nothing detected. The `d` values are read out
+        # of the fixtures rather than pasted here, so this cannot go stale when
+        # they are rotated.
+        vault_dir="services/connector/config"
+        dev_keys="$(sed -n 's/.*"d":"\([^"]*\)".*/\1/p' "$vault_dir"/*-vault.properties 2>/dev/null | sort -u)"
+        if [ -z "$dev_keys" ]; then
+          echo "✗ no dev EDR keys found in $vault_dir/*-vault.properties — this check is not checking anything"; rc=1
+        fi
+        # Everywhere a deployment's real values could be written. The fixtures
+        # themselves are excluded; they are meant to contain these.
+        for candidate in helm/secrets.sops.yaml helm/secrets.yaml helm/secrets.dec.yaml helm/values.yaml "$FILE"; do
+          [ -f "$candidate" ] || continue
+          for key in $dev_keys; do
+            if grep -qF "$key" "$candidate"; then
+              echo "✗ $candidate carries the committed dev EDR signing key — every EDR it signs is forgeable by anyone with this repository"; rc=1
+            fi
+          done
+          if grep -qF 'insecure-dev-secret' "$candidate"; then
+            echo "✗ $candidate carries the dev STS client secret 'insecure-dev-secret'"; rc=1
+          fi
+          if grep -qF 'CHANGE_ME' "$candidate"; then
+            echo "✗ $candidate still has CHANGE_ME placeholders"; rc=1
+          fi
+        done
+        # An encrypted secrets file is unreadable here, and a check that quietly
+        # passes because it could not look is the failure this ledger keeps
+        # finding. Say so.
+        if [ -f helm/secrets.sops.yaml ] && grep -q '^sops:' helm/secrets.sops.yaml 2>/dev/null; then
+          echo "  helm/secrets.sops.yaml is encrypted — decrypt it to helm/secrets.dec.yaml and re-run to have its values checked"
+        fi
+
+        [ "$rc" -eq 0 ] && echo "✓ $FILE and the EDC vault material carry no dev defaults"
         exit $rc
 
   # ── Documentation ────────────────────────────────────────────────────────

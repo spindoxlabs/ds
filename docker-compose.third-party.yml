@@ -29,17 +29,21 @@ services:
     volumes:
       - ./services/connector/config:/config:ro
     ports:
+      # 29291 (public) and 29195 (version) are gone with the contexts
+      # themselves — no packaged module registers a resource on either. 29191
+      # stays unpublished; the healthcheck below runs inside the container.
       - "29193:29193"
       - "29194:29194"
-      - "29291:29291"
-      - "29195:29195"
     environment:
       # Kept for anything still reading edc.api.key. The Management API key
       # that is actually enforced is WEB_HTTP_MANAGEMENT_AUTH_KEY below — and
       # since the extensions moved onto client credentials, that is now this
       # value's only job. One purpose, one boundary.
+      # No EDC_API_KEY here: on this service it maps to the EDC setting
+      # `edc.api.key`, read by no class in connector.jar. The `${EDC_API_KEY}`
+      # variable still feeds WEB_HTTP_MANAGEMENT_AUTH_KEY, which is enforced,
+      # and the ds-connector service below reads it as its own client credential.
       EDC_PROG_ARGS: ${EDC_PROG_ARGS:-}
-      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
       # dot.notation (ConfigurationLoader → ConfigFactory.fromEnvironment). The
       # properties files cannot carry these: FsConfigurationExtension does a
@@ -47,6 +51,8 @@ services:
       #
       # The Management API key — enforced now that auth.type=tokenbased is set.
       WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # The control API's own key — see docker-compose.rec.yml.
+      WEB_HTTP_CONTROL_AUTH_KEY: ${EDC_CONTROL_API_KEY:-insecure-dev-control-key}
       # How the EDC authenticates to ds-connector: /internal/* during policy
       # evaluation, /webhooks/contract-negotiation to report negotiation state.
       DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
@@ -71,7 +77,10 @@ services:
       - "trust-anchor.dataspaces.localhost:host-gateway"
     networks: [dataspaces]
 
-  # ── EDC database init (Flyway auto-creates schema on startup) ───────────────
+  # ── EDC database init ───────────────────────────────────────────────────────
+  # Creates the DATABASE only. The schema is created inside the connector by
+  # SqlSchemaBootstrapperExtension from the *-schema.sql resources in the JAR —
+  # **not Flyway**, which is not on the classpath at all.
   edc-db-create-third-party:
     image: postgres:17
     command: |

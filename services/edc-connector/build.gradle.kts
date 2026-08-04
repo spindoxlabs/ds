@@ -2,15 +2,27 @@
  * Buildable EDC connector JAR with DCP (Dataspace Credential Protocol) support.
  *
  * Replaces the edc-samples connector used in Iterations 0–4. Produces a
- * self-contained fat JAR via the Shadow plugin that includes:
- *   - controlplane-dcp-bom  — DCP identity/trust + VC verification
- *   - dataplane-base-bom    — HTTP data plane
- *   - filesystem-configuration-bom — .properties file config
- *   - identity-did-web      — did:web resolver
- *   - edc-extensions        — custom ODRL constraint functions
+ * self-contained fat JAR via the Shadow plugin out of:
+ *   - controlplane-dcp-bom     — DCP identity/trust + VC verification
+ *   - dataplane-base-bom       — HTTP data plane
+ *   - configuration-filesystem — .properties file config (a plain module, not a
+ *                                BOM; this header used to name a
+ *                                `filesystem-configuration-bom` that does not
+ *                                exist in any EDC release)
+ *   - identity-did-web         — did:web resolver
+ *   - the SQL stores           — control plane, data plane, EDR index and the
+ *                                policy monitor; see the block below for why the
+ *                                last one is not optional
+ *   - edc-extensions           — custom ODRL constraint functions
  *
- * Build:  ./gradlew :edc-connector:shadowJar
- * Output: edc-connector/build/libs/connector.jar
+ * Build:  task edc:build          → the fat JAR, in Docker, cached in data/gradle
+ *         task edc:docker         → the image
+ * Output: services/edc-connector/build/libs/connector.jar
+ *
+ * **There is no Gradle wrapper in this repository, deliberately** — the build
+ * runs in a pinned `gradle:8.12-jdk21` container so that a checkout needs Docker
+ * and nothing else. `./gradlew :edc-connector:shadowJar`, which this header used
+ * to document, has never worked here.
  */
 import java.util.zip.ZipFile
 
@@ -19,7 +31,9 @@ plugins {
     id("com.github.johnrengelman.shadow") version "8.1.1"
 }
 
-val edcVersion = "0.16.0"
+// From gradle.properties at the repo root — one source for a literal that also
+// has to appear in two Dockerfiles, the Taskfile and a CI workflow.
+val edcVersion: String by project
 
 dependencies {
     // ── Our custom ODRL constraint functions ─────────────────────────────────
@@ -56,11 +70,50 @@ dependencies {
     runtimeOnly("org.eclipse.edc:transaction-local:${edcVersion}")
     runtimeOnly("org.postgresql:postgresql:42.7.5")
 
+    // ── Tests ────────────────────────────────────────────────────────────────
+    //
+    // This project has no main source, and that is precisely why it needs tests:
+    // what it can get wrong is the *assembly* — which modules are packaged, and
+    // whether the configuration handed to the result is configuration the result
+    // reads. Both fail silently at runtime. See RuntimeContractTest.
+    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation("org.junit.jupiter:junit-jupiter")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))
+    }
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
+    // The tests read the assembled artifact, not the source, because the assembly
+    // is the thing under test — dependency order and BOM contents decide what is
+    // in it, and neither is visible from any file in this directory.
+    dependsOn(tasks.shadowJar)
+    systemProperty("ds.connector.jar", tasks.shadowJar.get().archiveFile.get().asFile.absolutePath)
+    systemProperty("ds.repo.root", rootDir.absolutePath)
+
+    // Everything the tests read that is NOT on the compile classpath. Without
+    // this Gradle sees no changed input, reports the task UP-TO-DATE, and the
+    // suite passes without running — which is exactly what happened the first
+    // time a config was edited to check that these tests can fail.
+    inputs.files(
+        fileTree(rootDir.resolve("services/connector/config")) { include("*.properties") },
+        rootDir.resolve("gradle.properties"),
+        rootDir.resolve("Taskfile.yml"),
+        rootDir.resolve("services/edc-connector/Dockerfile"),
+        rootDir.resolve("services/edc-connector/Dockerfile.base"),
+        rootDir.resolve("services/edc-extensions/build.gradle.kts"),
+        rootDir.resolve(".github/workflows/edc-base.yml"),
+        rootDir.resolve(".github/workflows/release.yml"),
+    ).withPropertyName("dsConfigurationUnderTest")
+
+    testLogging {
+        events("passed", "skipped", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
     }
 }
 

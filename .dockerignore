@@ -16,3 +16,15 @@ logs/
 **/.pytest_cache
 **/node_modules
 **/.svelte-kit
+
+# Host build output. **This is the only .dockerignore Docker reads**: every
+# Dockerfile in this repository builds from the repo root, and a
+# `.dockerignore` inside a service directory is never consulted for a root
+# context. Without these two lines `task edc:build` leaves a ~37 MB
+# connector.jar and a full Gradle tree in `services/edc-connector/build/`, and
+# every image build — not just the EDC one — ships them into the daemon.
+#
+# `build` matches a directory of that name, not `build.gradle.kts`, which the
+# EDC builder stage does need.
+**/build
+**/.gradle

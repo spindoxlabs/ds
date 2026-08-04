@@ -16,10 +16,14 @@ helmfile names it `ds-identity-registry-<participant>`; `ds-edc`'s release is
 #   /.well-known/did.json  → this participant's OWN identity-registry
 #   /credentials/*, /sts/*  → the same — its credential service and its STS
 #   /protocol/2025-1/*      → EDC DSP protocol port
-#   /public/*              → EDC data-plane public port
 #
 # Management (:{{ .Values.ports.management }}) and control (:{{ .Values.ports.control }})
 # are NOT routed here — they create and delete assets, policies and transfers.
+#
+# **There is no /public route.** It used to point at the EDC data-plane public
+# port, which no packaged module registers a resource on — so it routed to a
+# listener that does not exist. Consumer-pull traffic never traverses this host:
+# the EDR names the dataset API directly (see `edrPublicBaseUrl`).
 # =============================================================================
 
 # **The ExternalName bridge is gone** (`DID-05`/`DID-16`).
@@ -116,7 +120,7 @@ spec:
                 port:
                   number: 30005
 ---
-# ── DSP protocol + data-plane public endpoint ───────────────────────────────
+# ── DSP protocol ─────────────────────────────────────────────────────────────
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -139,11 +143,4 @@ spec:
                 name: {{ $fullname }}
                 port:
                   number: {{ .Values.ports.protocol }}
-          - path: /public
-            pathType: Prefix
-            backend:
-              service:
-                name: {{ $fullname }}
-                port:
-                  number: {{ .Values.ports.public }}
 {{- end }}

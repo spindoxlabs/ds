@@ -51,17 +51,23 @@ services:
     volumes:
       - ./services/connector/config:/config:ro
     ports:
+      # 39291 (public) and 39195 (version) are gone with the contexts
+      # themselves — no packaged module registers a resource on either. 39191
+      # stays unpublished; the healthcheck below runs inside the container.
       - "39193:39193"
       - "39194:39194"
-      - "39291:39291"
-      - "39195:39195"
     environment:
+      # No EDC_API_KEY here: on this service it maps to the EDC setting
+      # `edc.api.key`, read by no class in connector.jar. The `${EDC_API_KEY}`
+      # variable still feeds WEB_HTTP_MANAGEMENT_AUTH_KEY, which is enforced,
+      # and the ds-connector service below reads it as its own client credential.
       EDC_PROG_ARGS: ${EDC_PROG_ARGS:-}
-      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
       # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
       # dot.notation. The properties file cannot carry these: it is loaded with a
       # plain `Properties.load()` and would store a `${...}` placeholder verbatim.
       WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # The control API's own key — see docker-compose.rec.yml.
+      WEB_HTTP_CONTROL_AUTH_KEY: ${EDC_CONTROL_API_KEY:-insecure-dev-control-key}
       DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
       DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
       DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}

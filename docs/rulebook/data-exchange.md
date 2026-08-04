@@ -112,7 +112,7 @@ participants through the vocabulary or catalogue services.
 | # | Rule | Status |
 |---|---|---|
 | X-12 | The inventory above is authoritative and is updated in the same commit as any version change | **Declared** |
-| X-13 | The protocol publishes a machine-readable description of its capabilities and endpoints (`DSSC-DEX-38`) | **Not enforced** — EDC packages `OpenApiResource` but registers it on no context, so `/api/openapi` and `/management/openapi` both 404. Defect **P1-7**. The ds services do serve FastAPI OpenAPI documents |
+| X-13 | The protocol publishes a machine-readable description of its capabilities and endpoints (`DSSC-DEX-38`) | **Partly enforced.** The *protocol's* capability description is served: the DSP version endpoint (`DspVersionApiExtension`, on the protocol context) answers what protocol versions this connector speaks, which is the description `DSSC-DEX-38` asks a participant to publish. The ds services each serve a FastAPI OpenAPI document. What is absent is an OpenAPI document for EDC's own Management API — and the reason recorded here was wrong: `connector.jar` packages **no** `OpenApiResource` and no OpenAPI document of any kind, so there is nothing "registered on no context". Adding one means packaging an EDC module that is not currently in the BOMs, which is a capability decision rather than a defect fix — and the Management API is a private surface no counterparty reads |
 
 ## 6. Governance of the protocol
 

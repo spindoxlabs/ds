@@ -1,9 +1,0 @@
-.gradle
-build
-*.class
-**/*.class
-data/
-.git
-.gitignore
-*.md
-!README.md
