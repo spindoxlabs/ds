@@ -93,42 +93,27 @@ class GovernanceMapper:
     def owner_did_resolver(self) -> Callable[[str], str | None] | None:
         return self._resolve_owner_did
 
-    # ── What this mapper emits, and where each term is enforced ──────────────
+    # ── A note on operand vocabularies, kept after the code that needed it ────
     #
-    # The emitter declares its own operand vocabulary because it is the only
-    # thing that knows it. `matrix.py` used to carry a hand-written copy —
+    # `matrix.py` used to sort this mapper's constraints into "enforced by EDC"
+    # and "enforced by our services" against a hand-written list:
     # `{"ds:accessScope", "ds:contractRequired"}` and
-    # `{"odrl:purpose", "ds:consentStatus"}` — and two of those four terms were
-    # names this mapper has never emitted. `ds:accessScope` was retired when the
-    # membership operand moved into the profile, and the consent operand is
-    # `{namespace}ConsentStatus`, not the compact form.
+    # `{"odrl:purpose", "ds:consentStatus"}`. **Two of those four were terms this
+    # mapper has never emitted** — the membership operand is
+    # `{namespace}Membership` and the consent operand `{namespace}ConsentStatus`,
+    # both built through `profile.term()`, while `ds:accessScope` was retired
+    # when membership moved into the profile.
     #
-    # The tell is exact: **every operand built through `profile.term()` was
-    # missing from the matrix, and every hardcoded one was present.** So the
-    # matrix reported no membership and no consent constraint on any dataset
-    # while EDC enforced both — the two sets disjoint, silently, for as long as
-    # the profile indirection has existed. Latent rather than live, since nothing
-    # consumes the matrix today, which is exactly why nothing caught it.
+    # The tell was exact: every operand built through `profile.term()` was
+    # missing and every hardcoded one was present. The module is now deleted —
+    # nothing consumed it, which is why nothing caught it — but the shape is
+    # worth keeping in mind: **a second copy of a vocabulary, in a module that
+    # does not own it, drifts the moment the owner adds an indirection.** Ask the
+    # profile, or ask this class; do not re-list its terms.
     #
-    # `test_matrix.py::test_every_emitted_operand_is_classified` is what keeps
-    # these two properties exhaustive: an operand emitted and classified nowhere
-    # fails it, rather than quietly vanishing from the evidence.
-
-    @property
-    def edc_enforced_operands(self) -> set[str]:
-        """Operands the EDC policy engine evaluates (via `services/edc-extensions`)."""
-        return {
-            self.profile.term(self.profile.membership_operand),
-            "ds:contractRequired",
-        }
-
-    @property
-    def connector_enforced_operands(self) -> set[str]:
-        """Operands this platform's own services evaluate, not EDC's engine."""
-        return {
-            "odrl:purpose",
-            self.profile.term(self.profile.consent_operand),
-        }
+    # The live equivalent of that check is `test_odrl_binding_conformance.py`,
+    # which compares what this mapper emits against what `services/edc-extensions`
+    # binds — emission against enforcement, rather than against a copy.
 
     def _resolve_actions(self, keys: list[str]) -> list[str]:
         """Replace ``{query}`` placeholder with profile query-action IRI."""

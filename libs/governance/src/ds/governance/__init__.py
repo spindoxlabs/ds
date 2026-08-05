@@ -48,8 +48,7 @@ from .vocabularies import (
 )
 from .purposes import purpose_failure, unresolved_purposes
 from .resolver import GovernanceConfig, GovernanceResolver
-from .mapper import GovernanceMapper
-from .matrix import build_policy_matrix, build_policy_matrix_entry
+from .mapper import GovernanceMapper, requires_consent
 from .owners import (
     HttpOwnersRegistry,
     OwnerEntry,
@@ -101,8 +100,7 @@ __all__ = [
     "GovernanceConfig",
     "GovernanceResolver",
     "GovernanceMapper",
-    "build_policy_matrix",
-    "build_policy_matrix_entry",
+    "requires_consent",
     "OwnerEntry",
     "OwnersRegistry",
     "HttpOwnersRegistry",

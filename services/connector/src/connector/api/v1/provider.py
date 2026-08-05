@@ -119,11 +119,18 @@ async def get_authorizations(
 # reachable from nothing and the route was declared to nobody. Both are gone.
 #
 # The one thing worth keeping from it is the reason it was never enabled: the
-# matrix projects **access levels, classification, consent rules and row-filter
+# matrix projected **access levels, classification, consent rules and row-filter
 # columns** — the whole enforcement structure, including the columns a row filter
 # keys on. That is an admin disclosure, not a public one, and `require_provider_read`
-# is not enough for it. Anyone rebuilding it should start from
-# `ds.governance.build_policy_matrix`, which is where the logic actually lives.
+# is not enough for it.
+#
+# `ds.governance.build_policy_matrix` is **gone too** (2026-08-05). With the route
+# deleted it had no caller anywhere, in this repository or in any sibling
+# checkout, and it had silently drifted out of agreement with the mapper it
+# describes: two of the four operand names it sorted constraints by were terms
+# the mapper has never emitted. Rebuild it from `GovernanceMapper`'s output if
+# the route ever comes back — and derive the operands from the profile rather
+# than re-listing them, which is the mistake that made the old one wrong.
 
 
 @router.get("/assets")
