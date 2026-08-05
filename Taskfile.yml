@@ -77,7 +77,13 @@ tasks:
   identity:bootstrap:
     desc: Run identity bootstrap init container (trust anchor, owners, enrolment codes)
     cmds:
-      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-registry-bootstrap
+      # **`--exit-code-from`, or a partial seed reports success.** The seed is a
+      # 16-step `sh -euc` script that stops at the first failure, and no service
+      # declares `depends_on` on it — so without this, `docker compose up`
+      # returned 0 whether the anchor was seeded or the run died on step 2, and
+      # the next thing to notice was a flow failing for an unrelated-looking
+      # reason. Same rule as the root guide's warning about init containers.
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-registry-bootstrap --exit-code-from identity-registry-bootstrap
 
   # Deliberately **after** the participants exist. A person's credential is
   # delivered to the organisation that holds it (`DID-11` step 2), and that
@@ -87,7 +93,10 @@ tasks:
   identity:users:
     desc: Issue the dev users' credentials to the participants that hold them
     cmds:
-      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-users-bootstrap
+      # Same reason as `identity:bootstrap` above: this one issues and delivers
+      # every dev user's credential, and a delivery that fails is exactly the
+      # state a re-run is meant to repair — which nobody does if the run says 0.
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up identity-users-bootstrap --exit-code-from identity-users-bootstrap
 
   # ── The REC: a provider that has members (`D-54`) ────────────────────────
   rec:start:
@@ -295,12 +304,16 @@ tasks:
         uv run uvicorn provenance.main:app --reload --host 0.0.0.0 --port 30000
 
   provider:dataset-api:run:
-    desc: Stop Docker container, run dataset-api locally on :30002
+    desc: Stop Docker container, run the dataset-api mock locally on :30022
     cmds:
       - docker stop dataspaces-dataset-api-rec-1 2>/dev/null || true
+      # This task runs the **mock**, so it takes the mock's port. It hardcoded
+      # 30002 — the real celine dataset-api's — so running it while that stack
+      # was up bound a port already taken, and running it alone put a stand-in
+      # on the address `ds-e2e` uses for the real thing without saying so.
       - |
         cd services/dataset-api-mock
-        uv run uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port 30002
+        uv run uvicorn dataset_api_mock.main:app --reload --host 0.0.0.0 --port "${DATASET_API_MOCK_PORT:-30022}"
 
   provider:federated-catalog:run:
     desc: Stop Docker container, run federated-catalog locally on :30003

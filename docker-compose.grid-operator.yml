@@ -94,22 +94,24 @@ services:
   edc-db-create-grid-operator:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_grid_operator'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_grid_operator"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
   connector-db-create-grid-operator:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_grid_operator'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_grid_operator"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -125,17 +127,18 @@ services:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: provider
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_grid_operator
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_grid_operator
     networks: [dataspaces]
 
   provenance-db-create-grid-operator:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_grid_operator'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_grid_operator"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -150,7 +153,7 @@ services:
       provenance-db-create-grid-operator:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_grid_operator
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_grid_operator
     networks: [dataspaces]
 
   # ── Connector (Python orchestration) ────────────────────────────────────────
@@ -175,7 +178,7 @@ services:
       CONNECTOR_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       CONNECTOR_PROVENANCE_URL: http://172.17.0.1:32000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_grid_operator
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_grid_operator
       # **Its own governance, not the REC's** — a different directory, not a
       # different file in the same one. `sharing_offers_path` defaults to the
       # file beside `governance.yaml`, so sharing the directory would have this
@@ -183,6 +186,17 @@ services:
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       CONNECTOR_VOCABULARIES_PATH: /governance/vocabularies.yaml
       CONNECTOR_VOCABULARY_CACHE_DIR: /data/vocabularies
+      # **A provider must be able to publish the key its EDRs are signed with.**
+      # This stack had neither the seed nor the mount, so `/internal/edr-jwks`
+      # answered 503 and any data plane serving this provider's data could not
+      # verify an EDR its own EDC issued. The plan's row named the *consumer*,
+      # which signs nothing; this is where the gap actually was.
+      CONNECTOR_EDC_VAULT_FILE: /edc-config/grid-operator-vault.properties
+      # Layer B group aliases. Empty in dev, declared on every stack so a
+      # deployment that sets it does not get one participant's authority mapped
+      # and another's not — the chart renders it for every service for the same
+      # reason.
+      CONNECTOR_OIDC_GROUP_ALIASES: ${CONNECTOR_OIDC_GROUP_ALIASES:-}
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
@@ -198,6 +212,9 @@ services:
       ds-provenance-grid-operator:
         condition: service_healthy
     volumes:
+      # Its own vault seed, and only its own — see the note in
+      # docker-compose.rec.yml.
+      - ./services/connector/config/grid-operator-vault.properties:/edc-config/grid-operator-vault.properties:ro
       - ./services/connector/governance-grid-operator:/governance:ro
       - ./data/vocabularies:/data/vocabularies
     healthcheck:
@@ -224,7 +241,7 @@ services:
       # never hears about DS_ENV now refuses to start on a dev default
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_grid_operator
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_grid_operator
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       PROVENANCE_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
       PROVENANCE_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
@@ -251,11 +268,12 @@ services:
   ir-grid-operator-db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_grid_operator'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_grid_operator"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -270,7 +288,7 @@ services:
       ir-grid-operator-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_grid_operator
     networks: [dataspaces]
 
   ir-grid-operator:
@@ -287,7 +305,7 @@ services:
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_grid_operator
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:39194/protocol/2025-1
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://grid-operator.dataspaces.localhost
@@ -334,7 +352,7 @@ services:
         condition: service_healthy
     environment:
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_grid_operator
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_grid_operator
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:39194/protocol/2025-1
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://grid-operator.dataspaces.localhost

@@ -84,11 +84,12 @@ services:
   edc-db-create-rec:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_rec'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_rec"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -96,11 +97,12 @@ services:
   connector-db-create-rec:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_rec'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_rec"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -116,17 +118,18 @@ services:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: provider
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_rec
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_rec
     networks: [dataspaces]
 
   provenance-db-create-rec:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_rec'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_rec"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -141,7 +144,7 @@ services:
       provenance-db-create-rec:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_rec
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_rec
     networks: [dataspaces]
 
   # ── Provider connector (Python orchestration) ───────────────────────────────
@@ -170,7 +173,7 @@ services:
       CONNECTOR_PARTICIPANT_DID: did:web:rec.dataspaces.localhost
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       CONNECTOR_PROVENANCE_URL: http://172.17.0.1:30000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_rec
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_rec
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       # The registry is committed configuration and rides the read-only
       # `/governance` mount. The fetched copies are cache, so they live under
@@ -202,7 +205,14 @@ services:
       ds-provenance-rec:
         condition: service_healthy
     volumes:
-      - ./services/connector/config:/edc-config:ro
+      # **This participant's vault seed, and only its own.** The directory holds
+      # every participant's — each with a private JWK and an STS client secret —
+      # so mounting it whole handed the REC's connector third-party's and
+      # grid-operator's signing keys. Same custody rule the registries already
+      # follow: one holder, its own key. Single-file mounts do not survive an
+      # edit-in-place (the inode changes); recreate the container after touching
+      # this file.
+      - ./services/connector/config/rec-vault.properties:/edc-config/rec-vault.properties:ro
       - ./services/connector/governance-rec:/governance:ro
       # Shared with the host on purpose: `task vocab:fetch` fills it from
       # outside, and anything the container fetches lands there too — so a
@@ -238,7 +248,7 @@ services:
       # never hears about DS_ENV now refuses to start on a dev default
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_rec
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_rec
       # Verify bearer tokens in dev too. With no issuer, PROVENANCE_OIDC_INSECURE_DEV
       # defaults true and ds_auth decodes without checking the signature — so every
       # scope test in this stack was passing on an unverified claim, including the
@@ -272,12 +282,16 @@ services:
       context: .
       dockerfile: services/dataset-api-mock/Dockerfile
     ports:
-      # Host port is env-driven so the **real** dataset-api can take 30002 while
-      # the mock stays reachable for comparison. Set DATASET_API_MOCK_PORT in
-      # .env.local when running `docker-compose.dataset-api.yml`; both services
-      # binding 30002 is what makes `docker:restart` fail with "port is already
-      # allocated".
-      - "${DATASET_API_MOCK_PORT:-30002}:30002"
+      # **30022, not 30002.** The two are no longer in contention: 30002 belongs
+      # to the real celine dataset-api (`docker-compose.dataset-api.yml`) and
+      # the mock has its own port. It used to default to 30002 and be moved
+      # aside by a variable set in `.env.local` — an arrangement neither compose
+      # file could enforce, so the two projects collided with "port is already
+      # allocated" whenever that line was missing, and `provider:dataset-api:run`
+      # (which runs the mock) contradicted it outright by hardcoding 30002.
+      # Inside the network nothing is affected: every service addresses
+      # `dataset-api-rec:30002` by name.
+      - "${DATASET_API_MOCK_PORT:-30022}:30002"
     environment:
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
@@ -373,7 +387,15 @@ services:
       DS_ENV: ${DS_ENV:-dev}
       CATALOG_CONNECTOR_URL: http://172.17.0.1:31001
       CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
-      CATALOG_BASE_URL: https://federated-catalog.dataspaces.localhost
+      # **Every identifier this catalogue publishes is built from this.** It is
+      # the `@context`, and the `dcat:record` / `dcat:service` URLs in the DCAT
+      # document (`api/catalog.py`). It named `https://federated-catalog.dataspaces.localhost`
+      # — a host with no Caddy site block, no network alias, and https on a
+      # gateway that serves :80 — so a consumer resolving anything the catalogue
+      # advertised got nothing. Now the address the service actually answers on,
+      # the same choice the chart makes (`ds-federated-catalog/_env.tpl` renders
+      # its in-cluster Service URL, not a public name).
+      CATALOG_BASE_URL: http://172.17.0.1:30003
       CATALOG_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CATALOG_SERVICE_CLIENT_SECRET: ${SVC_DS_FEDERATED_CATALOG_SECRET:-svc-ds-federated-catalog}
       # Without an issuer, `oidc_insecure_dev` defaults true and `ds_auth`
@@ -410,11 +432,12 @@ services:
   ir-rec-db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_rec'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_rec"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -429,7 +452,7 @@ services:
       ir-rec-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_rec
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
     networks: [dataspaces]
 
   ir-rec:
@@ -446,7 +469,7 @@ services:
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_rec
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:rec.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
       # Its own host. This is the value that goes into its DID document as the
@@ -504,7 +527,7 @@ services:
         condition: service_healthy
     environment:
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_rec
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:rec.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:19194/protocol/2025-1
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://rec.dataspaces.localhost

@@ -73,7 +73,12 @@ services:
       - "35432:5432"
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # `secrets:generate` produces POSTGRES_PASSWORD and `secrets:check` fails
+      # when it is still `postgres` — while compose hardcoded the literal here
+      # and in every DATABASE_URL, so setting the variable changed nothing and
+      # the guard demanded a value the topology could not use. Dev is unchanged:
+      # the default is the same literal.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
       POSTGRES_DB: postgres
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -88,11 +93,12 @@ services:
   identity-registry-db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'identity_registry'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE identity_registry"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     depends_on:
       postgres:
@@ -110,7 +116,7 @@ services:
       identity-registry-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
     networks: [dataspaces]
 
   identity-registry:
@@ -129,7 +135,7 @@ services:
       # never hears about DS_ENV now refuses to start on a dev default
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # A presentation query is authorized by the *verifier's* self-issued token,
       # whose signature is checked against the key in the verifier's DID
@@ -191,7 +197,7 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # This container is what *issues* the credentials, so the StatusList URL
       # baked into each one comes from here — not from the service above. Missing
@@ -267,7 +273,7 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
       # Delivery resolves nothing over did:web — it reads the endpoint the
@@ -356,7 +362,19 @@ services:
     volumes:
       - ./services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000"]
+      # **Ask /health/ready, do not just open the socket.** `KC_HEALTH_ENABLED`
+      # above turns the health endpoints on, and this check never used them: a
+      # bare TCP connect to the management port succeeds as soon as the port
+      # listens, which it does before the realm import finishes and even with
+      # health disabled — so `condition: service_healthy` was gating on
+      # "something is listening". The Keycloak image ships no curl or wget,
+      # which is why this speaks HTTP over /dev/tcp by hand.
+      test:
+        - CMD-SHELL
+        - >-
+          exec 3<>/dev/tcp/localhost/9000 &&
+          printf 'GET /health/ready HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n' >&3 &&
+          grep -q '"status": "UP"' <&3
       interval: 5s
       timeout: 5s
       retries: 15
@@ -438,11 +456,20 @@ services:
       # the effective file — but it is in the file this container mounts, and an
       # unresolved placeholder there is the same defect as any other.
       SVC_REC_REGISTRY_SECRET: ${SVC_REC_REGISTRY_SECRET:-svc-rec-registry}
+      # The realm admin, from the same two variables the Keycloak service itself
+      # reads (`KC_BOOTSTRAP_ADMIN_*` above). They were hardcoded `admin`/`admin`
+      # here, so a deployment that set a real admin password had a sync that
+      # could not authenticate — while `.env.example` declares both and
+      # `secrets:check` fails on the dev values. Passed through the environment
+      # rather than on the command line: an argument is visible in `ps`.
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |
         celine-policies keycloak bootstrap \
-          --admin-user admin --admin-password admin &&
+          --admin-user "$$KEYCLOAK_ADMIN_USERNAME" \
+          --admin-password "$$KEYCLOAK_ADMIN_PASSWORD" &&
         celine-policies keycloak sync \
           --secrets-file /tmp/.secrets.yaml
     networks: [dataspaces]
@@ -458,11 +485,17 @@ services:
         condition: service_completed_successfully
     volumes:
       - ./services/keycloak/organizations.yaml:/app/organizations.yaml:ro
+    environment:
+      # Same two variables as `keycloak-sync` above, for the same reason.
+      KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
+      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
     entrypoint: ["/bin/sh", "-euc"]
     command:
       - |
         ir-cli keycloak org-sync \
           --config /app/organizations.yaml \
           --keycloak-url http://172.17.0.1:9080 \
-          --admin-user admin --admin-password admin
+          --admin-user "$$KEYCLOAK_ADMIN_USERNAME" \
+          --admin-password "$$KEYCLOAK_ADMIN_PASSWORD" \
+          --strict
     networks: [dataspaces]

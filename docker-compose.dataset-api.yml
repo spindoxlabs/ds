@@ -38,13 +38,14 @@ services:
   db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       for db in datasets rec_registry; do
         psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'$$db'"'"'" |
         grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE $$db";
       done'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -58,7 +59,7 @@ services:
     environment:
       # ds Postgres, not a second database server. One place to inspect state
       # when a query returns the wrong rows.
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/rec_registry
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/rec_registry
     depends_on:
       db-create:
         condition: service_completed_successfully
@@ -72,7 +73,7 @@ services:
     ports:
       - "30013:8004"
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/rec_registry
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/rec_registry
       # `OidcSettings` carries its own `env_prefix="CELINE_OIDC_"`, so neither
       # `OIDC_ISSUER_URL` nor `OIDC__ISSUER_URL` is ever read — the service
       # silently kept its celine-realm defaults and refused every ds token.
@@ -116,8 +117,8 @@ services:
       dockerfile: Dockerfile
     command: ["alembic", "upgrade", "head"]
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
-      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/datasets
+      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/datasets
     depends_on:
       db-create:
         condition: service_completed_successfully
@@ -134,8 +135,8 @@ services:
       # `dataspaces-dataset-api-rec` first — one of them can hold it.
       - "30002:8001"
     environment:
-      DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
-      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:postgres@172.17.0.1:35432/datasets
+      DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/datasets
+      DATASETS_DATABASE_URL: postgresql+psycopg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/datasets
 
       # ── the dataspace PEP ───────────────────────────────────────────────
       # Without this the `Edc-Contract-Agreement-Id` header is ignored and the
@@ -156,7 +157,14 @@ services:
       # ds refused `/internal/*` with 401, which surfaced as an unexplained
       # query failure rather than as a configuration error.
       CELINE_OIDC_CLIENT_ID: svc-ds-dataset-api
-      CELINE_OIDC_CLIENT_SECRET: svc-ds-dataset-api
+      # The **variable**, not the literal. A secret equal to its own client id is
+      # the `KC-01` defect: it works in dev by coincidence — both sides default
+      # to the same string — and breaks the moment `SVC_DS_DATASET_API_SECRET` is
+      # set anywhere, because the realm would then hold one value and this
+      # service present another. `ProductionGuard.forbid_secret_equal_to_client_id`
+      # refuses exactly this on the ds services; the same rule applies to a
+      # celine service authenticating into the ds realm.
+      CELINE_OIDC_CLIENT_SECRET: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
 
       POLICIES_CHECK_ENABLED: "false"
       LOG_LEVEL: DEBUG

@@ -35,10 +35,6 @@ services:
       - "29193:29193"
       - "29194:29194"
     environment:
-      # Kept for anything still reading edc.api.key. The Management API key
-      # that is actually enforced is WEB_HTTP_MANAGEMENT_AUTH_KEY below — and
-      # since the extensions moved onto client credentials, that is now this
-      # value's only job. One purpose, one boundary.
       # No EDC_API_KEY here: on this service it maps to the EDC setting
       # `edc.api.key`, read by no class in connector.jar. The `${EDC_API_KEY}`
       # variable still feeds WEB_HTTP_MANAGEMENT_AUTH_KEY, which is enforced,
@@ -84,11 +80,12 @@ services:
   edc-db-create-third-party:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'edc_third_party'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE edc_third_party"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -96,11 +93,12 @@ services:
   connector-db-create-third-party:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'connector_third_party'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE connector_third_party"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -116,17 +114,18 @@ services:
         condition: service_completed_successfully
     environment:
       CONNECTOR_ROLE: consumer
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_third_party
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_third_party
     networks: [dataspaces]
 
   provenance-db-create-third-party:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'provenance_third_party'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE provenance_third_party"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -141,7 +140,7 @@ services:
       provenance-db-create-third-party:
         condition: service_completed_successfully
     environment:
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_third_party
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_third_party
     networks: [dataspaces]
 
   # ── Consumer connector (Python orchestration) ───────────────────────────────
@@ -172,7 +171,7 @@ services:
       CONNECTOR_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       CONNECTOR_CONSUMER_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       CONNECTOR_PROVENANCE_URL: http://172.17.0.1:31000
-      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector_third_party
+      CONNECTOR_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/connector_third_party
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       # The registry is committed configuration and rides the read-only
       # `/governance` mount. The fetched copies are cache, so they live under
@@ -180,6 +179,14 @@ services:
       # must never be able to rewrite governance.yaml.
       CONNECTOR_VOCABULARIES_PATH: /governance/vocabularies.yaml
       CONNECTOR_VOCABULARY_CACHE_DIR: /data/vocabularies
+      # **No `CONNECTOR_EDC_VAULT_FILE` here, deliberately.** `/internal/edr-jwks`
+      # publishes the key EDR tokens are *signed* with, and only a provider signs
+      # them — a consumer answering 503 there is the honest answer, and handing
+      # this container a private key it has no use for is the opposite of the
+      # custody rule the providers now follow. The plan's row asked for the
+      # mount here; the gap it describes is on `grid-operator`.
+      # Layer B group aliases — see docker-compose.grid-operator.yml.
+      CONNECTOR_OIDC_GROUP_ALIASES: ${CONNECTOR_OIDC_GROUP_ALIASES:-}
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
       CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
@@ -239,7 +246,7 @@ services:
       # never hears about DS_ENV now refuses to start on a dev default
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
-      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance_third_party
+      PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_third_party
       # See the provider stack: an unset issuer means tokens are accepted without
       # signature, audience or issuer verification.
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
@@ -277,11 +284,12 @@ services:
   ir-third-party-db-create:
     image: postgres:17
     command: |
-      sh -c 'until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do sleep 1; done &&
+      sh -c 'n=0; until pg_isready -h 172.17.0.1 -p 35432 -U postgres; do
+      n=$$((n+1)); [ $$n -lt 60 ] || { echo "postgres 172.17.0.1:35432 not ready after 60s"; exit 1; }; sleep 1; done &&
       psql -h 172.17.0.1 -p 35432 -U postgres -tc "SELECT 1 FROM pg_database WHERE datname='"'"'ir_third_party'"'"'" |
       grep -q 1 || psql -h 172.17.0.1 -p 35432 -U postgres -c "CREATE DATABASE ir_third_party"'
     environment:
-      PGPASSWORD: postgres
+      PGPASSWORD: ${POSTGRES_PASSWORD:-postgres}
     restart: "no"
     networks: [dataspaces]
 
@@ -296,7 +304,7 @@ services:
       ir-third-party-db-create:
         condition: service_completed_successfully
     environment:
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_third_party
     networks: [dataspaces]
 
   ir-third-party:
@@ -313,7 +321,7 @@ services:
       # instead of quietly accepting one.
       DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_third_party
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:29194/protocol/2025-1
       # Its own host. This is the value that goes into its DID document as the
@@ -371,7 +379,7 @@ services:
         condition: service_healthy
     environment:
       IDENTITY_REGISTRY_ROLE: participant
-      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/ir_third_party
+      IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_third_party
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:third-party.dataspaces.localhost
       IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS: http://172.17.0.1:29194/protocol/2025-1
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://third-party.dataspaces.localhost
