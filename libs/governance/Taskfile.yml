@@ -21,7 +21,14 @@ tasks:
       DS_ENV: dev
     deps: [setup]
     cmds:
-      - uv run pytest tests/tests/ -v --cov=src/ds/governance --cov-report=term-missing
+      # `tests/`, **not** `tests/tests/`. This unit has two test roots — the
+      # nested one, and `tests/test_dataplane_contract.py` beside it — and every
+      # runner pointed at the nested one, so the 10 contract tests pinning
+      # `/internal/dataplane/authorize` (the CON-05 / DAM-03 defect) were run by
+      # the unit task, the root task and CI alike: never. Collect the whole tree,
+      # so a file added at either level is run without anyone remembering to
+      # widen a path.
+      - uv run pytest tests/ -v --cov=src/ds/governance --cov-report=term-missing
 
   schema:refresh:
     desc: Re-fetch the cached governance schema from celine-utils

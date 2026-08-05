@@ -1493,7 +1493,8 @@ tasks:
   compliance:test:
     desc: Run the governance validator test suite
     cmds:
-      - cd libs/governance && uv run pytest tests/tests/ -q
+      # `tests/`, not `tests/tests/` — see the note in libs/governance/Taskfile.yml.
+      - cd libs/governance && uv run pytest tests/ -q
 
   auth:test:
     desc: Run the ds-auth test suite (role bundles, permissions, JWT verification)

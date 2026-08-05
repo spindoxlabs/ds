@@ -29,7 +29,8 @@ jobs:
 
       - name: Run governance validator tests
         working-directory: libs/governance
-        run: uv run pytest tests/tests/ -q
+        # `tests/`, not `tests/tests/` — see the note in libs/governance/Taskfile.yml.
+        run: uv run pytest tests/ -q
 
       - name: Validate governance and generate compliance artifacts
         working-directory: libs/governance
