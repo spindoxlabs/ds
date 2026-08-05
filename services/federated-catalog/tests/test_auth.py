@@ -1,4 +1,5 @@
 """Tests for JWT scope enforcement on federated-catalog endpoints."""
+import time
 import jwt as pyjwt
 import pytest
 import pytest_asyncio
@@ -28,6 +29,11 @@ def make_headers(scope: str = "catalog.read") -> dict:
     Keycloak puts `scope` on those too (`openid profile email`). That trades two
     red tests for a collapsed authorization model.
     """
+    # `exp` for the same reason the claims above are what they are: this has to
+    # look like a token Keycloak issues. `ds_auth.verify_token` checks expiry
+    # even on the `insecure_dev` path — it skips the signature and the audience,
+    # not the claim set — so a fixture without `exp` is refused.
+    now = int(time.time())
     token = pyjwt.encode(
         {
             "scope": scope,
@@ -35,6 +41,8 @@ def make_headers(scope: str = "catalog.read") -> dict:
             "azp": "svc-ds-federated-catalog",
             "client_id": "svc-ds-federated-catalog",
             "preferred_username": "service-account-svc-ds-federated-catalog",
+            "iat": now,
+            "exp": now + 300,
         },
         SIGNING_KEY,
         algorithm="HS256",

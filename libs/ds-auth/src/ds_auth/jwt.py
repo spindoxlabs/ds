@@ -201,12 +201,39 @@ def verify_token(token: str, config: OidcConfig) -> dict:
 
     logger.warning(
         "ds-auth: INSECURE_DEV — accepting token WITHOUT signature/audience "
-        "verification. Never enable this outside local development."
+        "verification. Expiry, not-before and issuer are still checked. "
+        "Never enable this outside local development."
     )
     try:
+        # `verify_signature: False` turns **every** other check off in PyJWT
+        # unless it is re-enabled by name — including expiry. So this path used
+        # to accept an arbitrarily old token, which is not what "skip the
+        # signature" means to anyone reading the warning above, and the warning
+        # itself named only signature and audience.
+        #
+        # Signature and audience are the two things a machine with no issuer
+        # genuinely cannot check. Expiry and not-before are properties of the
+        # claim set, checkable without a key, and a dev environment that accepts
+        # last month's token is a dev environment where a leaked token never
+        # stops working. `require: ["exp"]` is what makes the check enforceable
+        # rather than advisory — a token with no `exp` cannot expire.
+        #
+        # `verify_iss` is on for the same reason, and is a no-op here by
+        # construction: this branch is reached only when no issuer is
+        # configured, so PyJWT has nothing to compare against. It is set so that
+        # the option block states the intent rather than the current topology.
         return jwt.decode(
             token,
-            options={"verify_signature": False, "verify_aud": False},
+            issuer=config.issuer_url,
+            leeway=config.leeway,
+            options={
+                "verify_signature": False,
+                "verify_aud": False,
+                "verify_exp": True,
+                "verify_nbf": True,
+                "verify_iss": True,
+                "require": ["exp"],
+            },
         )
     except jwt.PyJWTError as exc:
         raise TokenInvalid(str(exc)) from exc

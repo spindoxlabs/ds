@@ -34,11 +34,22 @@ jobs:
 
       - name: Validate governance and generate compliance artifacts
         working-directory: libs/governance
+        # **No `--participants`.** There is no static participant list to point
+        # at: `5484ff0` deleted `services/connector/governance/participants.yaml`
+        # when participants stopped being declared in a file and started
+        # enrolling themselves against the trust anchor (`DID-09`). This workflow
+        # kept passing the flag anyway, so `owner-participant` and
+        # `controller_role` silently never ran and CI was green because of it.
+        #
+        # So this job checks what an offline run *can* check, and says so. The
+        # two participant checks need a live registry and run in
+        # `task compliance:validate --identity-registry-url`, not here. Naming a
+        # seed that does not exist is now a hard error rather than a skip — see
+        # `_read_participants` in `compliance/validator.py`.
         run: |
           uv run ds-governance evidence \
             --file ../../services/connector/governance-rec/governance.yaml \
             --owners ../../services/identity-registry/seed/owners.dev.yaml \
-            --participants ../../services/connector/governance-rec/participants.yaml \
             --name core \
             --out-dir ../../reports/compliance
 

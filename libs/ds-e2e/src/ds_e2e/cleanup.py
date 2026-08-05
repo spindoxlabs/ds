@@ -50,6 +50,22 @@ EDC_CONTEXT = {"@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"}, "@type": 
 EDC_HEADERS = {"x-api-key": EDC_API_KEY, "Content-Type": "application/json"}
 
 
+def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
+    """Every connector that must re-sync its catalogue after a clean.
+
+    A list, not a literal inside ``run_cleanup``, because the count is the thing
+    that goes stale: `DID-15` added the second provider and the cleanup grew a
+    second sync, while the tests kept asserting ``assert_called_once`` and were
+    red on `main` for it. A test that asserts against this function stays true
+    when a third provider arrives, and fails when one is added to the topology
+    and not to the clean.
+    """
+    return [
+        (settings.connector_url, "provider"),
+        (settings.grid_operator_connector_url, "grid-operator"),
+    ]
+
+
 def _edc_list(client: httpx.Client, mgmt_url: str, resource: str) -> list[dict]:
     resp = client.post(f"{mgmt_url}/v3/{resource}/request", json=EDC_CONTEXT, headers=EDC_HEADERS)
     return resp.json() if resp.status_code == 200 and resp.text else []
@@ -146,10 +162,7 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
     # with nothing to negotiate for — and the failure surfaces as "asset not
     # found" in whichever flow happens to reach it first (`DID-15`).
     token_headers = http.bearer_headers()
-    for url, label in [
-        (settings.connector_url, "provider"),
-        (settings.grid_operator_connector_url, "grid-operator"),
-    ]:
+    for url, label in provider_sync_targets(settings):
         try:
             http.post(f"{url}/provider/sync", {}, headers=token_headers)
             log.info("Provider sync completed (%s)", label)

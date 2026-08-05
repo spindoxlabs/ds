@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .mapper import GovernanceMapper
+from .mapper import GovernanceMapper, requires_consent
 from .models import GovernanceRuleV2
 
 
@@ -83,23 +83,21 @@ def build_policy_matrix_entry(
         for c in constraints
         if c["left_operand"] == "odrl:purpose"
     })
+    # Asked of the mapper, never re-listed here. A literal set in this file is a
+    # second copy of a vocabulary this module does not own, and it drifted: two
+    # of its four terms named operands the mapper has never emitted.
     edc_constraints = [
-        c for c in constraints
-        if c["left_operand"] in {"ds:accessScope", "ds:contractRequired"}
+        c for c in constraints if c["left_operand"] in mapper.edc_enforced_operands
     ]
     app_constraints = [
         c for c in constraints
-        if c["left_operand"] in {"odrl:purpose", "ds:consentStatus"}
+        if c["left_operand"] in mapper.connector_enforced_operands
     ]
 
     access_level = rule.access_level or "internal"
     row_filter_columns = _row_filter_columns(rule)
-    requires_consent = (
-        rule.policy.consent.required
-        or bool(rule.row_filters)
-        or bool(rule.user_filter_column)
-        or (rule.classification == "pii")
-    )
+    # The same predicate the offer is built from — see `mapper.requires_consent`.
+    consent_required = requires_consent(rule)
 
     return {
         "dataset_key": dataset_key,
@@ -126,7 +124,7 @@ def build_policy_matrix_entry(
         "contract_required": access_level == "restricted"
         or rule.policy.obligations.contract_required,
         "consent": {
-            "required": requires_consent,
+            "required": consent_required,
             "scope": rule.policy.consent.scope,
             "on_revocation": rule.policy.consent.on_revocation,
             "row_filter_columns": row_filter_columns,
@@ -151,7 +149,7 @@ def build_policy_matrix_entry(
                 "EDR JWT validation",
                 "transfer/agreement active status check",
                 "row-level consent filter",
-            ] if requires_consent else [
+            ] if consent_required else [
                 "EDR JWT validation",
                 "transfer/agreement active status check",
             ],

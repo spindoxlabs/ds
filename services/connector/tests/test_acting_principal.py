@@ -21,6 +21,7 @@ import pytest
 from ds_auth import Principal
 
 from connector.services.prov_bridge import acting_principal
+from tests import _claims
 from tests.test_provenance_events import prov_client  # noqa: F401 — shared fixture
 
 ISSUER = "http://keycloak.dataspaces.localhost/realms/dataspaces"
@@ -98,13 +99,13 @@ def test_no_principal_yields_no_attribution():
 
 def _user_headers(sub: str) -> dict:
     token = pyjwt.encode(
-        {
-            "sub": sub,
-            "iss": ISSUER,
-            "email": "operator@example.test",
-            "preferred_username": "operator@example.test",
-            "groups": ["ds-participant-admin"],
-        },
+        _claims(
+            sub=sub,
+            iss=ISSUER,
+            email="operator@example.test",
+            preferred_username="operator@example.test",
+            groups=["ds-participant-admin"],
+        ),
         "secret",
         algorithm="HS256",
     )

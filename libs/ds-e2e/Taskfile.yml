@@ -1,0 +1,32 @@
+version: "3"
+
+# This unit had **no Taskfile at all**, against the per-unit contract in the root
+# guide, while configuring pytest, ruff and mypy in `pyproject.toml`. So nothing
+# ran its 42 tests — which is why `test_config.py::test_defaults` sat red on
+# `main` from the commit that renamed the harness's client (`a6e6e34`) until it
+# was found by reading rather than by running.
+#
+# `test` here is the **unit** suite: it mocks the database and the HTTP client
+# and needs no stack. The flows that drive a running dataspace are the root
+# `e2e:*` tasks, and they are a different thing with a different cost.
+
+tasks:
+  setup:
+    desc: Install the harness in editable mode (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+
+  test:
+    deps: [setup]
+    desc: Run the ds-e2e unit suite (no running stack required)
+    cmds:
+      - uv run pytest tests/ -q
+
+  lint:
+    cmds:
+      - uv run ruff check src/ tests/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/

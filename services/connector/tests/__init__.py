@@ -1,7 +1,23 @@
 import base64
 import json
+import time
 
 import jwt as pyjwt
+
+
+def _claims(**over: object) -> dict:
+    """Base claims for a minted test token.
+
+    **Every token carries `exp`.** Keycloak has never issued one without it, and
+    since `ds_auth.verify_token` checks expiry even on the `insecure_dev` path —
+    signature and audience are the only things it skips — a fixture without `exp`
+    is both unrealistic and rejected. It used to be accepted, which is what let
+    an expired token through a dev deployment.
+    """
+    now = int(time.time())
+    claims: dict = {"iat": now, "exp": now + 300}
+    claims.update(over)
+    return claims
 
 
 def make_headers(scope: str = "connector.admin") -> dict:
@@ -12,11 +28,11 @@ def make_headers(scope: str = "connector.admin") -> dict:
     its ``scope`` claim (vs a user token, which authorizes on groups).
     """
     token = pyjwt.encode(
-        {
-            "scope": scope,
-            "sub": "test",
-            "preferred_username": "service-account-svc-ds-test",
-        },
+        _claims(
+            scope=scope,
+            sub="test",
+            preferred_username="service-account-svc-ds-test",
+        ),
         "secret",
         algorithm="HS256",
     )
@@ -69,11 +85,11 @@ def _b64url(value: str | bytes) -> str:
 def make_user_headers(groups: list[str] | None = None) -> dict:
     """A user bearer (group-based authority)."""
     token = pyjwt.encode(
-        {
-            "sub": "user-test",
-            "email": "user@example.test",
-            "groups": list(groups or []),
-        },
+        _claims(
+            sub="user-test",
+            email="user@example.test",
+            groups=list(groups or []),
+        ),
         "secret",
         algorithm="HS256",
     )

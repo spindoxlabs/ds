@@ -1,4 +1,5 @@
 
+import time
 import httpx
 import jwt as pyjwt
 import pytest
@@ -17,11 +18,18 @@ TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
 def make_headers(scope: str = "identity-registry.admin") -> dict:
+    # `exp` is not decoration. `ds_auth.verify_token` checks expiry even with no
+    # issuer configured — signature and audience are the only checks the
+    # `insecure_dev` path skips — so a token without it is refused, and Keycloak
+    # has never minted one.
+    now = int(time.time())
     token = pyjwt.encode(
         {
             "scope": scope,
             "sub": "test",
             "preferred_username": "service-account-svc-ds-identity-registry",
+            "iat": now,
+            "exp": now + 300,
         },
         "secret",
         algorithm="HS256",

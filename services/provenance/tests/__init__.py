@@ -13,6 +13,7 @@ Two consequences worth stating rather than leaving to be discovered:
   on every call besides — a 6-byte HMAC key is below the RFC 7518 minimum.
 """
 import secrets
+import time
 
 import jwt as pyjwt
 
@@ -21,11 +22,18 @@ _TEST_SIGNING_KEY = secrets.token_hex(32)
 
 
 def make_headers(scope: str = "provenance.write provenance.read") -> dict:
+    # `exp` is not decoration. `ds_auth.verify_token` checks expiry even with no
+    # issuer configured — signature and audience are the only checks the
+    # `insecure_dev` path skips — so a token without it is refused, and Keycloak
+    # has never minted one.
+    now = int(time.time())
     token = pyjwt.encode(
         {
             "scope": scope,
             "sub": "test",
             "preferred_username": "service-account-svc-ds-provenance",
+            "iat": now,
+            "exp": now + 300,
         },
         _TEST_SIGNING_KEY,
         algorithm="HS256",

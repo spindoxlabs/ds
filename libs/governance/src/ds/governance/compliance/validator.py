@@ -34,28 +34,52 @@ from .consent_checks import (
 )
 
 
-def load_participant_dids(path: Path | None) -> set[str] | None:
-    """Read participant DIDs from a participants.yaml seed."""
-    if path is None or not path.exists():
+def _read_participants(path: Path | None) -> list[dict] | None:
+    """Load the ``participants:`` list from a seed, or ``None`` if none was asked for.
+
+    **A path that was given and cannot be read is an error, not an absence.**
+    Both participant lookups are optional by design — an offline run with no seed
+    downgrades `owner-participant` and `controller_role` to warnings and carries
+    on. That is correct when the caller *said nothing*. It is a silent hole when
+    the caller named a file and the file is not there: the run reports PASS
+    having skipped exactly the checks it was invoked to perform.
+
+    This is not hypothetical. `.github/workflows/compliance.yml` passed
+    `--participants services/connector/governance/participants.yaml` from the
+    commit that **deleted** that file (`5484ff0`) until this check existed, and
+    every CI run since was green with both checks unexecuted.
+    """
+    if path is None:
         return None
+    if not path.exists():
+        raise FileNotFoundError(
+            f"participants seed '{path}' does not exist. Omit --participants to "
+            f"run without participant checks (they downgrade to warnings), or "
+            f"point it at a real seed — but do not name a file that is not there: "
+            f"the run would pass by skipping the checks you asked for."
+        )
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {
-        entry["id"]
+    return [
+        entry
         for entry in raw.get("participants", [])
         if isinstance(entry, dict) and entry.get("id")
-    }
+    ]
+
+
+def load_participant_dids(path: Path | None) -> set[str] | None:
+    """Read participant DIDs from a participants.yaml seed."""
+    entries = _read_participants(path)
+    if entries is None:
+        return None
+    return {entry["id"] for entry in entries}
 
 
 def load_participant_roles(path: Path | None) -> dict[str, list[str]] | None:
     """Read ``did -> roles`` from a participants.yaml seed."""
-    if path is None or not path.exists():
+    entries = _read_participants(path)
+    if entries is None:
         return None
-    raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    return {
-        entry["id"]: list(entry.get("roles") or [])
-        for entry in raw.get("participants", [])
-        if isinstance(entry, dict) and entry.get("id")
-    }
+    return {entry["id"]: list(entry.get("roles") or []) for entry in entries}
 
 
 def build_role_lookup(

@@ -87,3 +87,40 @@ def test_insecure_dev_accepts_unverified():
     token = _sign(ec.generate_private_key(ec.SECP256R1()), _base_claims())
     claims = verify_token(token, cfg)
     assert claims["scope"] == "connector.admin"
+
+
+# `insecure_dev` skips the signature and the audience — the two things a service
+# with no issuer cannot check. It does **not** skip the claim-set checks, which
+# need no key. PyJWT turns those off along with the signature unless each is
+# re-enabled by name, so these three tests are the whole of what stops that
+# regressing.
+
+
+def test_insecure_dev_rejects_expired():
+    cfg = OidcConfig(issuer_url=None, insecure_dev=True)
+    token = _sign(
+        ec.generate_private_key(ec.SECP256R1()),
+        _base_claims(exp=int(time.time()) - 3600),
+    )
+    with pytest.raises(TokenInvalid):
+        verify_token(token, cfg)
+
+
+def test_insecure_dev_rejects_not_yet_valid():
+    cfg = OidcConfig(issuer_url=None, insecure_dev=True)
+    token = _sign(
+        ec.generate_private_key(ec.SECP256R1()),
+        _base_claims(nbf=int(time.time()) + 3600),
+    )
+    with pytest.raises(TokenInvalid):
+        verify_token(token, cfg)
+
+
+def test_insecure_dev_requires_exp():
+    """A token with no `exp` cannot expire, so accepting one re-opens the hole."""
+    cfg = OidcConfig(issuer_url=None, insecure_dev=True)
+    claims = _base_claims()
+    del claims["exp"]
+    token = _sign(ec.generate_private_key(ec.SECP256R1()), claims)
+    with pytest.raises(TokenInvalid):
+        verify_token(token, cfg)

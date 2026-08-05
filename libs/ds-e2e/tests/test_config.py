@@ -8,7 +8,10 @@ from ds_e2e.config import E2ESettings
 
 
 def test_defaults():
-    settings = E2ESettings()
+    # `_env_file=None` like every sibling test. Without it this reads whatever
+    # `.env` / `.env.local` the working directory happens to expose, so the same
+    # assertion passes or fails depending on where pytest was started.
+    settings = E2ESettings(_env_file=None)
     assert settings.connector_url == "http://172.17.0.1:30001"
     assert settings.consumer_connector_url == "http://172.17.0.1:31001"
     assert settings.dataset_api_url == "http://172.17.0.1:30002"
@@ -17,7 +20,10 @@ def test_defaults():
     # The host-gateway address, not a Docker DNS name: the EDCs are reachable at
     # the same address whether they run in compose or on the host (see config.py).
     assert settings.counter_party_address == "http://172.17.0.1:19194/protocol/2025-1"
-    assert settings.service_client_id == "svc-ds-portal"
+    # `svc-ds-e2e`, not the portal's client. The harness borrowing
+    # `svc-ds-portal` is what `a6e6e34` ended — the portal held ten grants it did
+    # not need because the tests were using its identity.
+    assert settings.service_client_id == "svc-ds-e2e"
     assert settings.poll_timeout == 120
 
 

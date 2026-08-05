@@ -19,15 +19,17 @@ from __future__ import annotations
 import jwt as pyjwt
 import pytest
 
+from tests import _claims
+
 
 def _user_headers(*groups: str, organizations: dict | None = None) -> dict:
     """A *user* bearer: authority from groups, not from a scope claim."""
-    claims: dict = {
-        "sub": "operator-1",
-        "email": "operator@example.test",
-        "preferred_username": "operator@example.test",
-        "groups": list(groups),
-    }
+    claims: dict = _claims(
+        sub="operator-1",
+        email="operator@example.test",
+        preferred_username="operator@example.test",
+        groups=list(groups),
+    )
     if organizations:
         claims["organization"] = organizations
     token = pyjwt.encode(claims, "secret", algorithm="HS256")

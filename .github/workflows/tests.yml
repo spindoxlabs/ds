@@ -1,0 +1,166 @@
+name: Tests
+
+# ==============================================================================
+# The unit suites, for every unit that has one.
+#
+# Until this file existed, **no unit test ran in CI for any unit**. The only
+# workflows were `compliance.yml` (which runs `libs/governance`'s suite as a side
+# effect of generating evidence), `docs.yml`, `edc-base.yml` and `release.yml`.
+# Two of the most expensive defects in this repository were suites that existed
+# and that nothing invoked — `:edc-extensions:test` (`EDC-09`) and
+# `libs/governance/tests/test_dataplane_contract.py` (`REV-01`) — and a third,
+# `libs/ds-e2e`, sat red on `main` because it had no runner at all.
+#
+# Every step runs the unit's **own** task, not a hand-copied command. `task -d
+# libs/ds-auth test` here is the same string a developer types, so CI cannot
+# drift from the local contract the root guide defines.
+#
+# **Not covered, deliberately:** anything needing a running stack. The `e2e:*`
+# flows, the `test:integration` tasks and the portal's Playwright journeys need
+# Keycloak, Postgres and three EDCs, and belong in a separate workflow with a
+# separate cost. That is what test-strategy rows `T-1`…`T-4` plan.
+#
+# **Adding a unit:** add it to the matrix. A unit with a `test` task that is not
+# listed here is the `EDC-09` failure happening again.
+# ==============================================================================
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    name: ${{ matrix.unit }}
+    runs-on: ubuntu-latest
+    strategy:
+      # One red unit must not hide the state of the others — knowing *which*
+      # suites are green is the whole point.
+      fail-fast: false
+      matrix:
+        include:
+          # `lint: true` only where `task lint` is already clean. Lint is a
+          # ratchet here, not a gate: turning it on everywhere today would put
+          # `main` permanently red over pre-existing P3 debt, and a red `main` is
+          # how a workflow stops being read.
+          #
+          # Measured 2026-08-05, and these are the rows that close each one:
+          #   libs/ds-auth              21   AUTH-05
+          #   libs/ds-e2e              183   E2E-11
+          #   libs/governance           10   (all in tests/)
+          #   services/connector       265
+          #   services/federated-catalog 1
+          #   services/identity-registry 78
+          # Flip a unit to `lint: true` in the same commit that clears it.
+          - unit: libs/ds-auth
+            lint: false
+          - unit: libs/ds-e2e
+            lint: false
+          - unit: libs/ds-obs
+            lint: true
+          - unit: libs/governance
+            lint: false
+          - unit: services/connector
+            lint: false
+          - unit: services/dataset-api-mock
+            lint: true
+          - unit: services/federated-catalog
+            lint: false
+          - unit: services/identity-registry
+            lint: false
+          - unit: services/provenance
+            lint: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # Each unit's `test` task declares `deps: [setup]`, so this is belt and
+      # braces — but an explicit failure here reads as "dependencies", not as a
+      # mysteriously empty collection.
+      - name: Install
+        run: task -d ${{ matrix.unit }} setup
+
+      - name: Test
+        run: task -d ${{ matrix.unit }} test
+
+      - name: Lint
+        if: matrix.lint
+        run: task -d ${{ matrix.unit }} lint
+
+  java:
+    name: edc (java)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      # No Gradle wrapper is committed, so the version is pinned here instead of
+      # resolved from the tree. It must match `GRADLE_IMAGE` in the two unit
+      # Taskfiles — `gradle:8.12-jdk21`. Bump all three together.
+      #
+      # This is the one place CI does *not* run the unit's own task: those
+      # tasks shell out to `docker run gradle:…`, which works on a laptop and
+      # would resolve EDC's BOMs from scratch on every CI run. Same command,
+      # same version, cached.
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.12"
+
+      - name: Test both Java units
+        run: gradle :edc-extensions:test :edc-connector:test --no-daemon
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: edc-test-reports
+          path: |
+            services/edc-extensions/build/reports/tests/
+            services/edc-connector/build/reports/tests/
+
+  portal:
+    name: services/portal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: services/portal/package-lock.json
+
+      - name: Install
+        working-directory: services/portal
+        run: npm ci
+
+      - name: Test
+        working-directory: services/portal
+        # vitest — logic in isolation. The Playwright journeys are `test:ui` and
+        # need a running stack; see the note at the top of this file.
+        run: npm run test
+
+      - name: Lint
+        working-directory: services/portal
+        run: npm run lint

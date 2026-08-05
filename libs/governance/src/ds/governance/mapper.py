@@ -29,6 +29,37 @@ _CLASS_PROHIBITIONS: dict[str, list[str]] = {
 }
 
 
+def requires_consent(rule: GovernanceRuleV2) -> bool:
+    """Whether this dataset may only be accessed with the subject's consent.
+
+    **One predicate, because there are two readers.** The mapper decides whether
+    the published offer carries a consent constraint; `matrix.py` decides whether
+    the compliance report says the dataset is consent-gated. They disagreed:
+    the matrix included `classification == "pii"` and the mapper did not, so a
+    `pii` dataset with no filter and no `consent.required` was **reported gated
+    and published ungated** — the divergence pointing the wrong way, since the
+    report is what an auditor reads.
+
+    `pii` is in, and it is the rulebook's own switch: *"`classification: pii` on
+    a dataset is the switch. A dataset carrying that classification is subject to
+    everything on this page"* (Rulebook · Personal data). A producer that
+    classifies a dataset `pii` has declared it personal data; publishing it
+    without a consent term would say the opposite on the wire.
+
+    A `pii` dataset with no row filter is a **separate** defect and stays one:
+    `check_consent_coherence` warns *"classified 'pii' but declares no row-level
+    filtering"*, because a gate no column can evaluate per subject is a gate in
+    name. Gating it here does not fix that; it stops the offer under-claiming
+    while the warning names what is missing.
+    """
+    return bool(
+        rule.policy.consent.required
+        or rule.row_filters
+        or rule.user_filter_column
+        or rule.classification == "pii"
+    )
+
+
 class GovernanceMapper:
     """Converts a GovernanceRuleV2 into ODRL and EDC Management API payloads.
 
@@ -61,6 +92,43 @@ class GovernanceMapper:
     @property
     def owner_did_resolver(self) -> Callable[[str], str | None] | None:
         return self._resolve_owner_did
+
+    # ── What this mapper emits, and where each term is enforced ──────────────
+    #
+    # The emitter declares its own operand vocabulary because it is the only
+    # thing that knows it. `matrix.py` used to carry a hand-written copy —
+    # `{"ds:accessScope", "ds:contractRequired"}` and
+    # `{"odrl:purpose", "ds:consentStatus"}` — and two of those four terms were
+    # names this mapper has never emitted. `ds:accessScope` was retired when the
+    # membership operand moved into the profile, and the consent operand is
+    # `{namespace}ConsentStatus`, not the compact form.
+    #
+    # The tell is exact: **every operand built through `profile.term()` was
+    # missing from the matrix, and every hardcoded one was present.** So the
+    # matrix reported no membership and no consent constraint on any dataset
+    # while EDC enforced both — the two sets disjoint, silently, for as long as
+    # the profile indirection has existed. Latent rather than live, since nothing
+    # consumes the matrix today, which is exactly why nothing caught it.
+    #
+    # `test_matrix.py::test_every_emitted_operand_is_classified` is what keeps
+    # these two properties exhaustive: an operand emitted and classified nowhere
+    # fails it, rather than quietly vanishing from the evidence.
+
+    @property
+    def edc_enforced_operands(self) -> set[str]:
+        """Operands the EDC policy engine evaluates (via `services/edc-extensions`)."""
+        return {
+            self.profile.term(self.profile.membership_operand),
+            "ds:contractRequired",
+        }
+
+    @property
+    def connector_enforced_operands(self) -> set[str]:
+        """Operands this platform's own services evaluate, not EDC's engine."""
+        return {
+            "odrl:purpose",
+            self.profile.term(self.profile.consent_operand),
+        }
 
     def _resolve_actions(self, keys: list[str]) -> list[str]:
         """Replace ``{query}`` placeholder with profile query-action IRI."""
@@ -212,8 +280,7 @@ class GovernanceMapper:
             })
 
         # Consent constraint
-        consent = policy.consent
-        needs_consent = consent.required or bool(rule.row_filters) or bool(rule.user_filter_column)
+        needs_consent = requires_consent(rule)
         if needs_consent:
             constraints.append({
                 "odrl:leftOperand": {"@id": p.term(p.consent_operand)},

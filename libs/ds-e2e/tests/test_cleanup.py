@@ -3,7 +3,12 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from ds_e2e.cleanup import DATABASES, EDC_DATABASES, run_cleanup
+from ds_e2e.cleanup import (
+    DATABASES,
+    EDC_DATABASES,
+    provider_sync_targets,
+    run_cleanup,
+)
 from ds_e2e.config import E2ESettings
 from ds_e2e.http import HttpClient
 
@@ -29,7 +34,11 @@ def test_cleanup_truncates_databases():
     assert mock_connect.call_count == len(DATABASES) + len(EDC_DATABASES)
     # One TRUNCATE per application database; a DROP and a CREATE per EDC store.
     assert mock_cursor.execute.call_count == len(DATABASES) + 2 * len(EDC_DATABASES)
-    http.post.assert_called_once()
+    # Every provider re-syncs, and the assertion names *which* — a count alone
+    # went stale the moment `DID-15` added the second one.
+    assert [c.args[0] for c in http.post.call_args_list] == [
+        f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
+    ]
 
 
 def test_cleanup_continues_on_db_error():
@@ -42,4 +51,8 @@ def test_cleanup_continues_on_db_error():
     with patch("ds_e2e.cleanup.psycopg.connect", side_effect=psycopg.Error("connection refused")):
         run_cleanup(settings, http)
 
-    http.post.assert_called_once()
+    # A database that refused every connection must not stop the provider syncs:
+    # the point of the clean is that the *next* run starts from a known state.
+    assert [c.args[0] for c in http.post.call_args_list] == [
+        f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
+    ]
