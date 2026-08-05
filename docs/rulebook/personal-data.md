@@ -110,7 +110,7 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 | # | Rule | Status |
 |---|---|---|
 | D-16 | The identity recorded against a consent ask is the DCP-verified counterparty, never a self-asserted header | **Enforced** |
-| D-17 | Revocation terminates a **running** transfer, not merely future ones | **Enforced** in design (`policy.monitor`); blocked in fact by defect **P1-1** |
+| D-17 | Revocation terminates a **running** transfer, not merely future ones | **Enforced** — defect **P1-1** is closed, so the consent constraint now reaches EDC and `policy.monitor` evaluates it on a live transfer. `FailClosedTest` covers withdrawal after signing, and denial once a consent outage stops being transient. See [Policies](policies.md) A-12 |
 | D-18 | A pending question that nobody can answer must not park a negotiation forever. A covered processor, and a purpose the offer does not carry, both resolve without asking | **Enforced** for the covered-processor case. The failure mode is real and has occurred: a policy published with no purpose constraint parked every negotiation on a question nobody could answer, with no error and no log |
 | D-19 | A subject may see every consent they hold and every ask outstanding against them | **Enforced** — `/consent/my/*`, authenticated by VC-JWT rather than by service scope |
 
@@ -175,9 +175,10 @@ on a consumer's premises.
 **Closed by this page:** `DSSC-XCT-02`, `-04`, `-05`, `-06`, `-07`, `-08`, `-09`, `-17`,
 `-26`.
 
-**Open:** `DSSC-XCT-27` (anonymisation capability — out of scope, §7). D-17 is stated and
-blocked by defect **P1-1**. **D-22 is now enforced** — `P1-6` is closed: the service serves the
-did:web path form itself rather than depending on an edge-proxy rewrite.
+**Open:** `DSSC-XCT-27` (anonymisation capability — out of scope, §7). **D-17 is now
+enforced** — `P1-1` is closed, so revocation reaches a running transfer rather than only a
+future one. **D-22 is enforced** — `P1-6` is closed: the service serves the did:web path form
+itself rather than depending on an edge-proxy rewrite.
 
 **Beyond the blueprint:** the controller-role dimension of the consent key (D-11), the
 scoped wildcard with opt-out precedence (D-14, D-15), the disclosed-processor rule (D-5),

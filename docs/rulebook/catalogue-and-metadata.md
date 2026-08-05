@@ -118,7 +118,7 @@ pre-conditions, success paths and denial paths for each.
 | C-16 | A publisher must be authorised for the *owner* whose datasets it publishes (`PUB-14`) | **Enforced** — owner-scoped authority; `ds-e2e --flow user-authority` proves the cross-owner refusal with a real token and a real organisation claim |
 | C-17 | An unauthenticated or unauthorised publish, update or remove is **denied** (`PUB-19`, `-23`, `-26`) | **Enforced** |
 | C-18 | A removed offering is no longer discoverable (`PUB-25`) | **Enforced** at the provider; the index reflects it only after the next crawl cycle |
-| C-19 | A discovering consumer must be a registered participant (`PUB-27`) | **Enforced** over DSP; **not enforced** on `POST /consumer/catalog`, which has no guard at all. Defect **P0-1** |
+| C-19 | A discovering consumer must be a registered participant (`PUB-27`) | **Enforced** over DSP, and on `POST /consumer/catalog` since defect **P0-1** closed. `require_consumer_catalog_caller` authenticates by **either** mechanism and never neither — a service on `connector.consumer.read`, or a natural person presenting a `ConsumerUser` VC-JWT; the `CatalogViewed` event is attributed to whichever proved itself, not to a caller-supplied header. `services/connector/tests/test_consumer_catalog_auth.py` |
 | C-20 | An unauthorised consumer's request must not even collect matching offerings (`PUB-32`) | **Enforced** over DSP |
 | C-21 | Offering visibility may be restricted to a subset of participants (`PUB-03`) | **Partially enforced** — expressible through ODRL membership constraints, which gate *negotiation*, not *visibility*. A restricted offering is visible in the catalogue and refuses at negotiation. Recorded as a deviation |
 

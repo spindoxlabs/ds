@@ -237,5 +237,10 @@ and maintained by a defined process.
 `-11`, `-12`, `-13`, `-14`, `-15`, `-16`, `-17`, `-19`, `-20`, `-21`, `-40`, `-41`, `-58`,
 `-59`, `-75`, `-81`, `-84`.
 
-**Open:** `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` (observability, §5). `DSSC-PTO-79`
-(defect P1-4). `DSSC-PTO-83` (declared, unmeasured).
+**Open:** `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` (observability, §5). `DSSC-PTO-83`
+(declared, unmeasured). `DSSC-PTO-79` is **closed** — defect `P1-4` is fixed and `L-12` now
+records how.
+
+**Listed as closed above with a caveat:** `-40` and `-41` are claimed on the strength of
+fourteen of sixteen event types (`L-1`). `UsageObligationFulfilled` has no emitter anywhere
+and `DataDisclosed`'s producer is out of repo, which also leaves `L-2` unasserted.

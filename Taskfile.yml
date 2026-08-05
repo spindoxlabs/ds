@@ -1470,7 +1470,7 @@ tasks:
       # would surface as a refused negotiation, three services away.
       - |
         cd libs/governance
-        for dir in governance governance-grid-operator; do
+        for dir in governance-rec governance-grid-operator; do
           echo "→ $dir"
           uv run ds-governance validate \
             --file ../../services/connector/$dir/governance.yaml \

@@ -105,7 +105,7 @@ unrecoverable loss **for that instance**. The blast radius is one participant, n
 
 | # | Rule | Status |
 |---|---|---|
-| P-12 | The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`) | **Enforced** — `GET /admin/participants`; note the federated catalogue does not filter on `active` (defect P1-3) |
+| P-12 | The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`) | **Enforced** — `GET /admin/participants`. The federated catalogue's half of defect P1-3 is closed: `registry.py` filters on `active`, deliberately at both ends, and a payload that does not say is treated as **not** active. `services/federated-catalog/tests/test_registry_active.py` |
 | P-12a | The list of **accredited entities** — trust anchors and trust service providers, **including revoked ones** — is published machine-readably and unauthenticated (`DSSC-TRF-05`, `-07`, `-17`, `DSSC-BIZ-143`) | **Enforced** — `GET /trust`. Public for the same reason as `P-13`: a counterparty decides whether to accept a credential before it has any relationship with this dataspace, and a federation partner reads this before anything else |
 | P-12b | Every entry names its **scope of attestation** (`DSSC-TRF-19`), and a trust service provider names the anchor it derives authority from (`DSSC-TRF-21`) | **Enforced** — both are required with no default. An empty scope is not a wildcard: defaulting it would make the most permissive possible entry the easiest one to create |
 | P-12c | Withdrawing accreditation **marks an entry revoked with a reason; it never deletes it** | **Enforced** — a list that forgets what it used to trust cannot answer whether a credential already in circulation was legitimate when it was issued |
@@ -150,7 +150,7 @@ did not establish.
 
 | # | Rule | Status |
 |---|---|---|
-| P-16 | Revoking a participant's membership credential removes their ability to negotiate — the DCP presentation query stops satisfying the membership constraint | **Enforced** in design; blocked in fact by **P0-3** |
+| P-16 | Revoking a participant's membership credential removes their ability to negotiate — the DCP presentation query stops satisfying the membership constraint | **Enforced** — **P0-3** is closed. Allocation and revocation are now two distinct operations: `allocate_status_list_index` reserves an index without setting the bit, `revoke_status_list_index` sets it. Consecutive issuances no longer share index 0, and an organisation credential is no longer published as revoked from birth. `services/identity-registry/tests/test_status_list_allocation.py`, `test_status_list.py` |
 | P-17 | Revocation does not retroactively invalidate completed transfers. What was lawfully transferred stays transferred; the obligations attached to it (retention, deletion) survive | **Declared** |
 | P-18 | Revocation of a *consent* is different from revocation of a *credential* and terminates a running transfer | **Enforced** — `AgreementConsentFunction` on EDC's `policy.monitor` scope. See [Personal data](personal-data.md) §5 |
 | P-19 | A departing participant's provenance records are retained; they are evidence about the data space, not the participant's property | **Declared** |
@@ -160,9 +160,9 @@ did not establish.
 **Closed by this page:** `DSSC-TRF-01`, `-05`, `-08`, `-12`, `-13`, `-14`; `DSSC-IAM-08`,
 `-13`, `-14`, `-26`, `-27`, `-28`, `-30`.
 
-**Stated but blocked by a defect:** `DSSC-IAM-05` (validation — P0-3), `DSSC-TRF-05`
-(revoked listing — P0-3), `DSSC-IAM-04` (issuance is implemented but produces
-revoked-at-birth organisation credentials — P0-3).
+**Previously blocked, now closed:** `DSSC-IAM-05` (validation), `DSSC-TRF-05` (revoked
+listing) and `DSSC-IAM-04` (issuance) were all blocked by **P0-3**. That defect is closed —
+see P-16 — so none of the three is blocked any longer.
 
 **Closed by §5:** `DSSC-TRF-02`, `-03`, `-04` — the projection and the periodic check.
 Suspension as a state distinct from deactivation remains open.

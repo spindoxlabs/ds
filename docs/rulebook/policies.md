@@ -159,9 +159,16 @@ this platform's design requires.
   scoped wildcard, and **an explicit opt-out and an explicit grant both win** over the
   wildcard. It also applies to the governance overlay: `governance.<name>.yaml` merges on
   top of the base file.
-- **CR-4** is the rule this platform most needs and least keeps. Its enforcement status is
-  the subject of defect **P0-2**: three constraint functions currently return *permit* on
-  an unreachable or missing input, and one policy function ignores its operands entirely.
+- **CR-4** was the rule this platform most needed and least kept — defect **P0-2**, now
+  closed. Every path that returned *permit* on an unreachable or missing input now denies:
+  `Oauth2InternalAuth.authorize` returns `false` rather than sending an unauthenticated
+  request, `ContractRequiredFunction` denies on an operator it cannot apply and on a right
+  operand it cannot parse, and `AgreementConsentFunction` denies once an outage stops being
+  transient (see `Stance` and `tolerate`, and the note on bounded tolerance below).
+  `ConsentStatusFunction`'s missing-`ds.dataset_id` branch defers to
+  `NegotiationConsentValidator`, a post-validator that reads the dataset off the policy
+  target — post-validators run only after constraint functions pass, so deferring is not a
+  permit. `services/edc-extensions/src/test/java/dataspaces/edc/FailClosedTest.java`.
 - **CR-5** is why `AgreementConsentFunction` is bound to EDC's `policy.monitor` scope
   rather than only to `contract.negotiation` — an agreement is not a standing permission
   over personal data.
@@ -169,8 +176,8 @@ this platform's design requires.
 | # | Rule | Status |
 |---|---|---|
 | A-10 | CR-1, CR-2, CR-3 are implemented by the mapper's emission order and the consent registry's row precedence | **Enforced** |
-| A-11 | CR-4 holds at every evaluation point | **Not enforced** — defect **P0-2**. This is the single most important open item in this rulebook |
-| A-12 | CR-5 holds during a running transfer, not only at negotiation | **Enforced** in design; blocked in fact by defect **P1-1**, which strips the consent constraint before EDC ever evaluates it |
+| A-11 | CR-4 holds at every evaluation point | **Enforced** — defect **P0-2** is closed. `FailClosedTest` covers each path: a definite *no* denies immediately, sustained silence denies, and the PRE_START gate denies on the first unanswerable check. **One deliberate exception:** a *single* unanswerable check in `policy.monitor` does not terminate a running transfer, because the dataset-api PEP fails closed per query and a transient blip is not a revocation. The tolerance is bounded and the streak resets on any definite answer |
+| A-12 | CR-5 holds during a running transfer, not only at negotiation | **Enforced** — defect **P1-1** is closed. The consent constraint now reaches EDC: the mapper emits `ds:contractRequired` (not the unbound `odrl:industry`) and the profile's `ConsentStatus` operand, and both are registered in `policy.monitor` |
 
 ## 5. Enforcement points
 
@@ -180,10 +187,10 @@ the sharing itself, and require every participant to have the capability.
 | Stage | Point | Mechanism | Status |
 |---|---|---|---|
 | **Publication** | `POST /provider/sync` | validation gate; `secret` never published; unresolvable consent gate refused | **Enforced** |
-| **Discovery** | DSP catalogue over a DCP-verified counterparty | the offer carries the policy; a consumer sees the terms before negotiating | **Enforced** over DSP; **not enforced** on the unguarded `POST /consumer/catalog` (defect **P0-1**) |
-| **Negotiation** | EDC constraint functions in `contract.negotiation` scope, calling `ds-connector /internal/*` | membership, purpose, consent, contract acknowledgement | **Not enforced** — the consent and membership operands are stripped or short-circuited. Defect **P1-1** |
+| **Discovery** | DSP catalogue over a DCP-verified counterparty | the offer carries the policy; a consumer sees the terms before negotiating | **Enforced** over DSP, and on `POST /consumer/catalog` since defect **P0-1** closed — `require_consumer_catalog_caller` accepts a service scope **or** a `ConsumerUser` VC-JWT, never neither. `services/connector/tests/test_consumer_catalog_auth.py` |
+| **Negotiation** | EDC constraint functions in `contract.negotiation` scope, calling `ds-connector /internal/*` | membership, purpose, consent, contract acknowledgement | **Enforced** — defect **P1-1** is closed. No emitted operand is stripped: `ds:accessScope` is no longer bound with nothing behind it, `ds:contractRequired` replaced the unbound `odrl:industry`, and consent is registered in both scopes and in both spellings. `PolicyRegistrationTest`, `NegotiationScopeFunctionsTest`, `NegotiationConsentValidatorTest` |
 | **Negotiation** | `ConsentPendingGuard` | parks a negotiation while a subject decides, rather than refusing | **Enforced** |
-| **During transfer** | `AgreementConsentFunction` in `policy.monitor` scope | revocation terminates a live transfer through EDC's state machine | **Enforced, untested** — no test covers any constraint function |
+| **During transfer** | `AgreementConsentFunction` in `policy.monitor` scope | revocation terminates a live transfer through EDC's state machine | **Enforced.** `FailClosedTest` covers this function in both scopes — withdrawal after signing terminates, an agreement with no asset terminates, sustained silence terminates, and a definite answer clears the streak |
 | **Data plane** | `POST /internal/dataplane/authorize` | per-request decision plus the row filter | **Enforced.** The decision shape is `ds.governance.dataplane`, parsed by both ends — a PEP that cannot read it, or cannot apply the filter it names, serves nothing (defect **P1-2**, closed) |
 
 **PAP / PIP / PDP / PEP mapping**, for readers coming from `DSSC-AUP-38`–`-91`:
@@ -198,7 +205,7 @@ the sharing itself, and require every participant to have the capability.
 | # | Rule | Status |
 |---|---|---|
 | A-13 | Every participant runs the policy enforcement capability; there is no unenforced participation tier (`AUP-08`) | **Declared** — the participant agent bundles it |
-| A-14 | An operand emitted by the mapper has a function registered for it in every scope it is bound to, and no operand is bound without a producer | **Not enforced** — three operands violate this today. Defect **P1-1**. A binding-vs-emission conformance test is the fix |
+| A-14 | An operand emitted by the mapper has a function registered for it in every scope it is bound to, and no operand is bound without a producer | **Enforced** — the conformance test this row asked for exists: `PolicyRegistrationTest.everyBoundOperandHasAFunctionSomewhere`, plus `accessScopeIsNotBound`, `consentStaysBoundInEveryScope`, `consentHasAFunctionForBothOperandFormsInEveryScope` and `negotiationOnlyOperandsAreNotBoundElsewhere`. It governs the **policy engine**; the compliance matrix is a separate consumer and §6 below is where it still falls short |
 
 ## 6. The compliance matrix
 
@@ -206,10 +213,22 @@ the sharing itself, and require every participant to have the capability.
 `reports/compliance`, plus a policy matrix intended to show, per dataset, which constraints
 are enforced where.
 
-**Do not currently trust the matrix.** It filters on operands the mapper never emits, so
-membership and consent constraints are absent from every entry, and it reports a `pii`
-dataset as consent-gated in cases where the published policy carries no consent constraint.
-What it reports and what EDC enforces are disjoint sets. Defect **P1-1**.
+**Do not currently trust the matrix**, and note that its cause is *not* the one this page
+used to give. `P1-1` is closed at the policy engine — the operands are emitted, bound and
+registered — but the matrix still misses two of them, because **it filters on CURIEs while
+the mapper emits full IRIs**. `matrix.py` buckets on `ds:consentStatus` and `ds:accessScope`;
+the mapper emits `{profile.namespace}ConsentStatus` and `{profile.namespace}Membership`
+(verified in `reports/compliance/core-odrl-offers.jsonld`:
+`https://w3id.org/dsp/policy/ConsentStatus`, `.../Membership`), and `_constraint_summary`
+does no CURIE/IRI normalisation. So **membership appears in neither bucket and consent in
+none**, and every matrix entry understates what EDC actually evaluates.
+
+Two parts of the old claim no longer hold: `ds:contractRequired` *is* matched, and the
+`pii` over-report is fixed — `requires_consent` no longer includes `classification == "pii"`.
+
+The fix is to normalise both sides to one spelling before comparing, and to assert it, so
+the matrix cannot silently diverge from the mapper again. **Open gap**, with no owning
+defect row since `P1-1` closed.
 
 ## Blueprint rows
 
@@ -217,6 +236,8 @@ What it reports and what EDC enforces are disjoint sets. Defect **P1-1**.
 `-09`, `-10`, `-11`, `-12`, `-16`, `-17`, `-39`, `-44`, `-45`, `-46`, `-50`, `-51`, `-52`,
 `-53`; `DSSC-PUB-38`; `DSSC-SVD-38`.
 
-**Open:** `DSSC-AUP-13` (policy version metadata). Everything under §4 and §5 marked
-*not enforced* — `AUP-06` and `AUP-07` are stated here and blocked by defects **P0-2** and
-**P1-1**, and the rulebook says so rather than claiming them.
+**Open:** `DSSC-AUP-13` (policy version metadata). `AUP-06` and `AUP-07` were previously
+listed here as blocked by defects **P0-2** and **P1-1**; both are closed, so both rows are
+now claimed — see A-11, A-12 and §5. What remains open on this page is the policy version
+(§1), the validity window (A-9), the `rdf:` prefix (A-8), the CI gate (A-4) and the
+compliance matrix's operand spelling (§6).

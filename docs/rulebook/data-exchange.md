@@ -48,10 +48,10 @@ consumer data plane ──HTTP + EDR bearer──▶ provider data plane (partic
 
 | # | Rule | Status |
 |---|---|---|
-| X-4 | No data moves before the control plane has completed identification, authentication and authorisation (`DSSC-DEX-36`) | **Enforced** for the EDR-bearing path; **not enforced** on the dataset API's plain path, which returns rows with no agreement header, no token and no decision. Defect **P0-1** |
+| X-4 | No data moves before the control plane has completed identification, authentication and authorisation (`DSSC-DEX-36`) | **Enforced** on both paths since defect **P0-1** closed. The plain path — no `Edc-Contract-Agreement-Id` — now refuses any consent-gated dataset with a 403 naming what to send, so the gate is no longer opt-in for the party it constrains. Datasets with no data subject behind them still flow, which is what that path is for. `services/dataset-api-mock/tests/test_query_routing.py` |
 | X-5 | The data plane re-checks the decision on every request rather than trusting the EDR alone | **Enforced** — `POST /internal/dataplane/authorize` is called per query |
-| X-6 | The data plane must fail closed when the control plane is unreachable | **Partially enforced** — the dataset API produces a fail-closed 502 on the authorize call, but an unreachable Keycloak or connector on other paths yields a 500 (defect P1-2 cluster) |
-| X-7 | The data-plane endpoint handed to a consumer is the participant's own, not the provider's EDC | **Declared** — this is why `ds.edr.endpoint.public.baseurl` is rewritten. The dev and Helm topologies currently disagree about what it points at (defect P1-7) |
+| X-6 | The data plane must fail closed when the control plane is unreachable | **Enforced** — the 500s on the other paths are gone. An unreachable or refusing Keycloak, an unreachable connector on the EDR key fetch, an unreadable decision and an unrecordable query audit each produce a 502 and serve no rows; the audit failure policy does not depend on how it failed. `services/dataset-api-mock/tests/test_fail_closed.py`. **Note the scope:** that is the *mock*. The real data plane is the celine `dataset-api`, out of this repo, and this rule binds it identically |
+| X-7 | The data-plane endpoint handed to a consumer is the participant's own, not the provider's EDC | **Declared**, and now asserted — this is why `ds.edr.endpoint.public.baseurl` is rewritten. The dev/Helm disagreement (defect P1-7) is resolved: every dev participant names the dataset API, Helm leaves it unset so the asset's own `base_url` reaches the consumer verbatim, and `RuntimeContractTest` fails the build if the value names anything but a consumer-reachable data plane |
 
 ## 3. Interaction patterns
 
@@ -153,8 +153,9 @@ Recorded in [Scope and deviations](scope-and-deviations.md) §2.
 `-58`, `-60`, `-61`; `DSSC-CDP-*` (framing, no mandatory rows); `DSSC-SVD-34`, `-41`;
 `CEEDS-STD-19`, `CEEDS-INT-23`, `-25`, `-26`.
 
-**Open:** `DSSC-DEX-38` (defect P1-7). `DSSC-DEX-50`, `-51`, `-52`, `-64`, `-65`
-(federation — out of scope).
+**Open:** `DSSC-DEX-38` — partly enforced, and no longer a defect: see `X-13` for what is
+served and why the residual is a capability decision. `DSSC-DEX-09` (`X-10`, `X-11` — defect
+P3-4). `DSSC-DEX-50`, `-51`, `-52`, `-64`, `-65` (federation — out of scope).
 
 **`DSSC-DEX-02`** — a data provider describing the technical means of access — is answered
 in [Catalogue and metadata](catalogue-and-metadata.md) §3.
