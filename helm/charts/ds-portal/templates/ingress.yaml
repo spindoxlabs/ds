@@ -74,4 +74,47 @@ spec:
                 name: {{ include "ds.fullname" . }}
                 port:
                   number: {{ .Values.service.port }}
+{{- if and .Values.auth.proxy.enabled .Values.ingress.publicPaths }}
+---
+# =============================================================================
+# The auth-wall carve-outs — the same host, served WITHOUT the annotations above.
+#
+# This is a second Ingress rather than anything clever: nginx merges rules per
+# host and matches the longest prefix, and annotations are per-object, so a path
+# listed here is answered by a rule that never runs the auth subrequest. It is
+# the pattern ds-oauth2-proxy already uses for /oauth2, and the one the sibling
+# deployment uses for its redirects — no configuration-snippet, no regex, and
+# nothing that a cluster with `allow-snippet-annotations: false` will refuse.
+#
+# `issueCert` is false and there is no TLS block: the portal's Ingress above owns
+# this host's certificate, and two objects issuing for one host race for the same
+# secret (see `ds.ingress.annotations` / `ds.ingress.tls`).
+#
+# The list lives in values.yaml, with a reason per path. Read it before adding
+# one: every entry here is reachable by anyone on the internet.
+# =============================================================================
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "ds.fullname" . }}-public
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    {{- include "ds.ingress.annotations" (dict "ctx" . "issueCert" false) | nindent 4 }}
+spec:
+  ingressClassName: {{ ((.Values.global).ingress).className | default "nginx" }}
+  rules:
+    - host: {{ $host | quote }}
+      http:
+        paths:
+          {{- range .Values.ingress.publicPaths }}
+          - path: {{ . | quote }}
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "ds.fullname" $ }}
+                port:
+                  number: {{ $.Values.service.port }}
+          {{- end }}
+{{- end }}
 {{- end }}

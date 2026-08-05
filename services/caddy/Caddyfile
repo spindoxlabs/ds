@@ -379,6 +379,21 @@ http://portal.dataspaces.localhost {
 			reverse_proxy 172.17.0.1:30004
 		}
 
+		# The build output behind /join. Without this the applicant gets the page
+		# and every stylesheet and script behind it 302s to a login form, so the
+		# one page a stranger is meant to see renders unstyled — measured, not
+		# assumed: /join answers 200 anonymously and its three /_app assets did
+		# not. celine-dev's onboarding host makes the same carve-out for the same
+		# reason, in the same words.
+		#
+		# `/_app/immutable/*` only: it is content-hashed build output and carries
+		# no data. `/_app/env.js` is generated at runtime from PUBLIC_* and
+		# `/_app/version.json` is polled by nobody — both stay behind the wall,
+		# and the chart's `ingress.publicPaths` draws the line in the same place.
+		handle /_app/immutable/* {
+			reverse_proxy 172.17.0.1:30004
+		}
+
 		# Machine-scraped, and a 302 to a login form would break a scraper silently
 		# rather than loudly. This preserves the pre-existing exposure that root
 		# AGENTS.md already records as a known gap — it does not widen it.

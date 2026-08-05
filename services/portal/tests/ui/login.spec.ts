@@ -50,6 +50,36 @@ test.describe('the authentication perimeter', () => {
 		await anonymous.close();
 	});
 
+	test("the applicant's page arrives with its stylesheet and scripts", async ({ browser }) => {
+		const anonymous = await browser.newContext();
+		const page = await anonymous.newPage();
+
+		// Reaching /join is not the same as *rendering* it: SvelteKit serves the
+		// stylesheet and the entry chunks from /_app/immutable, and those requests
+		// hit the same wall. Before the carve-out the page answered 200 and all
+		// three assets 302'd to a login form, so the only page a stranger is meant
+		// to see arrived unstyled and unscripted — invisible to an assertion that
+		// only checks the URL and the form field.
+		const assets: { url: string; status: number }[] = [];
+		page.on('response', (r) => {
+			if (r.url().includes('/_app/immutable/')) assets.push({ url: r.url(), status: r.status() });
+		});
+
+		await page.goto('/join?code=whatever');
+		await page.waitForLoadState('networkidle');
+
+		expect(assets.length).toBeGreaterThan(0);
+		expect(assets.filter((a) => a.status !== 200)).toEqual([]);
+
+		// The carve-out is /_app/immutable, not /_app. `env.js` is generated at
+		// runtime from PUBLIC_* rather than built, so it stays behind the wall —
+		// widening the prefix would publish it.
+		const env = await page.request.get('/_app/env.js', { maxRedirects: 0 });
+		expect(env.status()).toBe(302);
+
+		await anonymous.close();
+	});
+
 	test('an anonymous browser is bounced from an authenticated page', async ({ browser }) => {
 		const anonymous = await browser.newContext();
 		const page = await anonymous.newPage();

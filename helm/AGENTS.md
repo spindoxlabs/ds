@@ -73,6 +73,7 @@ Ingress only if it appears here:
 |---|---|---|
 | `portal.<baseDomain>` | `ds-portal` | `/` — the only human-facing host, behind `auth-url` |
 | `portal.<baseDomain>` | `ds-oauth2-proxy` | `/oauth2/*` — same host on purpose: one cookie domain, one redirect URI. **Must not** carry the portal's auth annotations (a user arrives there precisely because they have no session) and no `cluster-issuer` |
+| `portal.<baseDomain>` | `ds-portal` (`-public`) | `ingress.publicPaths` — the auth-wall carve-outs, as a third Ingress on this host carrying no auth annotations. `/join` (the applicant has no account yet) and `/_app/immutable` (its stylesheet and scripts; gate them and that page renders broken). `/_app/env.js` and `/_app/version.json` stay walled, which is why the prefix is `/_app/immutable` and not `/_app`. Adding a path here publishes it to the internet — the reason belongs in `values.yaml` beside it |
 | `<participant>.<baseDomain>` | `ds-edc` | `/.well-known/did.json`, `/protocol/*`, `/public/*`, `/credentials`, `/sts`, and `/users/<id>/did.json` — the DID documents of the people this participant onboarded (`DID-11` step 2). Nothing else |
 | `trust-anchor.<baseDomain>` | `ds-identity-registry` | `/.well-known/did.json`, `/status/*` — StatusList must be publicly fetchable or revocation cannot be checked — plus `/trust` (the accredited-issuer list) and `/issuer` (CIP's Credential Request API, which is how anyone enrols) |
 

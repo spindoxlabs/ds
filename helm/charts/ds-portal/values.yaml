@@ -80,6 +80,33 @@ consumer:
 ingress:
   enabled: true
 
+  # Paths served with NO auth wall, as a second Ingress on the same host that
+  # simply omits the auth annotations. Adding a path here is a deliberate hole,
+  # so each one states why it cannot sit behind the wall:
+  #
+  #   /join            an organisation applying to join HAS no account yet. The
+  #                    invite code is its only credential, and the login form it
+  #                    would be bounced to is for an account that does not exist
+  #                    (`routes/join/+page.server.ts` says so in as many words).
+  #   /_app/immutable  SvelteKit's content-hashed build output. Gating it leaves
+  #                    /join rendering without its stylesheet or scripts — the
+  #                    one page a stranger is meant to see, broken. Same call,
+  #                    and the same reason, as celine-dev's onboarding host.
+  #
+  # `/_app/immutable`, NOT `/_app`: adapter-node also serves `/_app/env.js`,
+  # generated at runtime from `PUBLIC_*`, and `/_app/version.json`. Neither is
+  # needed by an anonymous browser here — no client-side module imports
+  # `$env/dynamic/public` (only `lib/server/*` does) — so both stay walled.
+  #
+  # What is deliberately NOT here, though dev's Caddy carves them out:
+  # `/metrics` (Prometheus scrapes in-cluster) and the four `/api/*` prefixes
+  # (the portal is SSR and calls those services over cluster DNS; publishing
+  # them would contradict the Exposure table in helm/AGENTS.md, and a repo-wide
+  # grep finds no caller of any of the four).
+  publicPaths:
+    - /join
+    - /_app/immutable
+
 secrets:
   portalServiceClientSecret: "" # svc-ds-portal
 
