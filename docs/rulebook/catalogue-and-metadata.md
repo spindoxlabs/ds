@@ -96,7 +96,7 @@ producer write the consent text for another's data.
 | C-9 | An offering missing any mandatory field is not published | **Enforced** — Pydantic models plus `task compliance:validate` |
 | C-10 | A `pii` dataset with an unresolvable sharing offer is not published — advertising a consent gate that can never open is worse than not publishing | **Enforced** |
 | C-11 | An empty `purpose[]` is never a wildcard for personal data | **Enforced** — fails closed |
-| C-12 | Metadata is checked for compliance with the standards it claims (`DSO-11`) | **Not enforced** — `ds-governance validate` checks internal coherence and referential integrity, not DCAT-AP conformance. **Open gap** |
+| C-12 | Metadata is checked for compliance with the standards it claims (`DSO-11`) | **Enforced.** The `dcat-ap` check in `ds-governance validate` splits DCAT-AP's own obligation levels: **mandatory** properties (`dct:title`, `dct:description`) are errors, **recommended** ones (`dcat:theme`, `dct:license`, `dct:accrualPeriodicity`, `dct:spatial`, `dct:temporal`) are warnings. It checks the *governance input*, not the emitted record — both mandatory properties have a fallback in the emitter, so a file declaring neither publishes a structurally valid document that says nothing, and a validator reading the output would pass it. `libs/governance/tests/tests/test_declared_not_enforced.py`, including one case asserting this repository's own governance files conform |
 | C-13 | Metadata is checked for compliance with this rulebook (`DSO-12`) | **Not enforced** — nothing reads this document. **Open gap** |
 | C-14 | Metadata is checked for completeness (`DSO-13`) | **Enforced** for the mandatory set above |
 
@@ -129,8 +129,8 @@ they negotiated. **Open gap.**
 
 ## 5. Open gaps, in priority order
 
-1. **DCAT-AP conformance checking (`DSO-11`)** — a validator step against the published
-   DCAT-AP shapes, runnable in `task compliance:validate`.
+1. ~~**DCAT-AP conformance checking (`DSO-11`)**~~ — **done.** The `dcat-ap` check runs in
+   `task compliance:validate`; see `C-12`.
 2. **Metadata versioning (`DSO-14`, `-15`)** — needs a design decision first: version the
    offering, or snapshot it into the agreement?
 3. **Rulebook conformance (`DSO-12`)** — depends on this section having a machine-readable

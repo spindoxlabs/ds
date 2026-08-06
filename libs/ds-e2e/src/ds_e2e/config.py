@@ -7,8 +7,18 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class E2ESettings(BaseSettings):
+    # **No `env_file`** (`E2E-07`). It declared `(".env", ".env.local")`, which
+    # pydantic resolves relative to the process's working directory — and the
+    # harness runs from `libs/ds-e2e/`, which holds neither file. So the
+    # declaration loaded nothing, ever, while reading as the thing that
+    # configured the harness.
+    #
+    # The root files are already in the environment when it matters: the root
+    # `Taskfile.yml` declares `dotenv: [".env", ".env.local"]`, so every `e2e:*`
+    # task exports them before this runs. Pointing `env_file` at the repo root
+    # would have made the same values arrive twice by two mechanisms with
+    # different precedence — the harder thing to reason about, for no gain.
     model_config = SettingsConfigDict(
-        env_file=(".env", ".env.local"),
         env_file_encoding="utf-8",
         extra="ignore",
     )
@@ -20,8 +30,22 @@ class E2ESettings(BaseSettings):
     consumer_connector_url: str = Field(
         "http://172.17.0.1:31001", validation_alias="CATALOG_CONNECTOR_URL"
     )
+    # **30022, not 30002** (`E2E-13`). The default has to name what
+    # `task docker:restart` actually starts, and that is the mock: `9a8e3e5`
+    # gave it its own port permanently, because 30002 belongs to the real celine
+    # `dataset-api` in `docker-compose.dataset-api.yml` — a stack `build` and
+    # `docker:restart` **both skip by name**, since it builds sibling checkouts
+    # whose paths are optional.
+    #
+    # So the sequence the root guide calls *"this must pass before e2e means
+    # anything"* dialled a port nothing was listening on, and the run did not
+    # fail a flow: it raised `ConnectError` out of `run_all` and produced zero
+    # results.
+    #
+    # Running against the real data plane stays one variable away — that is
+    # `T-1`, and `data_plane_label` below is the other half of it.
     dataset_api_url: str = Field(
-        "http://172.17.0.1:30002", validation_alias="CONNECTOR_DATASET_API_URL"
+        "http://172.17.0.1:30022", validation_alias="CONNECTOR_DATASET_API_URL"
     )
     provenance_url: str = Field(
         "http://172.17.0.1:30000", validation_alias="CONNECTOR_PROVENANCE_URL_PROVIDER"
@@ -73,8 +97,16 @@ class E2ESettings(BaseSettings):
     )
 
     # Auth
+    # `172.17.0.1`, not `localhost` (`E2E-07`). This was the **only** default in
+    # this file on `localhost`, against the host-binding rule the root guide
+    # states: `172.17.0.1` is the Docker host gateway and resolves identically
+    # from the host and from a container, which is what lets a service be
+    # stopped in Docker and restarted on the host with nothing else changing.
+    # `localhost` resolves to two different things depending on where the
+    # harness runs, so this default worked from a laptop and not from a
+    # container — and the failure reads as "Keycloak is down".
     keycloak_token_url: str = Field(
-        "http://localhost:9080/realms/dataspaces/protocol/openid-connect/token",
+        "http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",
         validation_alias="KEYCLOAK_TOKEN_URL",
     )
     # The harness has its own Keycloak client. It drives endpoints belonging to
@@ -190,7 +222,15 @@ class E2ESettings(BaseSettings):
     consumer_email: str = "consumer@example.test"
     data_subject_id: str = "did:web:rec.dataspaces.localhost:users:data-subject"
     data_subject_email: str = "subject@example.test"
-    asset_id: str = "datasets.silver.meters_15m"
+    # `E2E_ASSET_ID`, the name `Taskfile.yml:1064` already sets when it waits for
+    # the federated catalogue to list the asset (`E2E-08`). `E2ESettings`
+    # declares no `env_prefix`, so an un-aliased field is read from the **bare**
+    # name — `ASSET_ID` — and the variable the Taskfile exports reached nothing.
+    # The readiness gate and the flows could therefore wait for one asset and
+    # assert on another, and agree only because both were left at the default.
+    asset_id: str = Field(
+        "datasets.silver.meters_15m", validation_alias="E2E_ASSET_ID"
+    )
 
     # Organisation onboarding (Block D). The agreement must be seeded via
     # `ir-cli agreement import` at bootstrap; the flow asserts it exists.
@@ -208,6 +248,47 @@ class E2ESettings(BaseSettings):
     # the negative case that proves the purpose chain is enforced.
     unconsented_purpose: str = "IncentiveCalculation"
 
+    # EDC control planes, for `ds-e2e clean` (`E2E-07`).
+    #
+    # These were module constants in `cleanup.py`, so a stack whose EDC key or
+    # ports differed could not be cleaned — and the clean reported success
+    # having deleted nothing, since a 401 on a delete was not checked. Same dev
+    # defaults, now overridable like every other address the harness uses.
+    edc_api_key: str = Field("insecure-dev-key", validation_alias="EDC_API_KEY")
+    edc_provider_management_url: str = Field(
+        "http://172.17.0.1:19193/management",
+        validation_alias="E2E_EDC_PROVIDER_MANAGEMENT_URL",
+    )
+    edc_consumer_management_url: str = Field(
+        "http://172.17.0.1:29193/management",
+        validation_alias="E2E_EDC_CONSUMER_MANAGEMENT_URL",
+    )
+    edc_grid_operator_management_url: str = Field(
+        "http://172.17.0.1:39193/management",
+        validation_alias="E2E_EDC_GRID_OPERATOR_MANAGEMENT_URL",
+    )
+
+    #: The container serving the provider's `/internal/*` PDP, for the
+    #: fail-closed flow (`E2E-06`), which stops it to prove the enforcement
+    #: points deny. A setting rather than a literal because the compose project
+    #: name is configurable, and a flow that stops the wrong container — or
+    #: silently stops nothing — is worse than one that fails.
+    #: The container serving the PDP the fail-closed flow stops (`E2E-06`).
+    #:
+    #: The **grid operator's**, because that is the exchange whose baseline can
+    #: be established in one call: `two-providers` proves this consumer
+    #: negotiates for `grid_operator_asset_id` with no consent gate, while both
+    #: REC datasets terminate the negotiation without a prior grant — a
+    #: different property, tested by `consent-request`.
+    #:
+    #: A setting rather than a literal because the compose project name is
+    #: configurable, and a flow that stops the wrong container — or silently
+    #: stops nothing — is worse than one that fails.
+    pdp_container: str = Field(
+        "dataspaces-ds-connector-grid-operator-1",
+        validation_alias="E2E_PDP_CONTAINER",
+    )
+
     # Timeouts
     poll_timeout: int = 120
     poll_interval: float = 2.0
@@ -218,6 +299,26 @@ class E2ESettings(BaseSettings):
         "postgresql://postgres:postgres@172.17.0.1:35432",
         validation_alias="SMOKE_DATABASE_URL",
     )
+
+    #: Which data plane this run exercised, in words (`T-1`).
+    #:
+    #: The data plane has two implementations and a run exercises exactly one,
+    #: while *nothing in the output said which*. A green suite against the mock
+    #: and a green suite against the real celine `dataset-api` are different
+    #: evidence, and they were indistinguishable after the fact — which is the
+    #: root guide's own warning, *a green run is only evidence about the thing
+    #: that actually ran*, at the layer that costs the most to re-run.
+    #:
+    #: Derived from the port rather than configured, so it cannot be set to
+    #: something the run did not do.
+    @property
+    def data_plane_label(self) -> str:
+        port = self.dataset_api_url.rsplit(":", 1)[-1].split("/")[0]
+        known = {
+            "30022": "dataset-api mock (docker-compose.rec.yml)",
+            "30002": "real celine dataset-api (docker-compose.dataset-api.yml)",
+        }
+        return f"{known.get(port, 'unrecognised data plane')} at {self.dataset_api_url}"
 
 
 @lru_cache(maxsize=1)

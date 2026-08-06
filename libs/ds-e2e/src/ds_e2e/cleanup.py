@@ -10,7 +10,22 @@ from ds_e2e.http import HttpClient
 
 log = logging.getLogger(__name__)
 
-EDC_API_KEY = "insecure-dev-key"
+
+class CleanupIncomplete(RuntimeError):
+    """A clean that could not do everything it was asked to.
+
+    Raised rather than logged so `ds-e2e clean` and `e2e:prepare` stop, instead
+    of handing the next run a stack still holding the previous one's agreements
+    — which surfaces as an unrelated flow failing on stale state.
+    """
+
+# The EDC management credentials and endpoints (`E2E-07`).
+#
+# Hardcoded module constants until now, so a stack whose EDC key or ports were
+# changed could not be cleaned — and `run_cleanup` reported success having
+# deleted nothing, because a 401 on a delete is not something it checked. Every
+# other address the harness uses is a setting; these are now too, with the same
+# dev defaults so nothing changes for a default stack.
 
 CONNECTOR_TABLES = [
     "consumer_access_requests",
@@ -42,12 +57,20 @@ DATABASES = {
 # owned by the connector runtime, so the table set is not ours to enumerate.
 EDC_DATABASES = ("edc_rec", "edc_third_party", "edc_grid_operator")
 
-EDC_PROVIDER_MGMT = "http://172.17.0.1:19193/management"
-EDC_CONSUMER_MGMT = "http://172.17.0.1:29193/management"
-EDC_GRID_OPERATOR_MGMT = "http://172.17.0.1:39193/management"
-
 EDC_CONTEXT = {"@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"}, "@type": "QuerySpec"}
-EDC_HEADERS = {"x-api-key": EDC_API_KEY, "Content-Type": "application/json"}
+
+
+def edc_headers(settings: E2ESettings) -> dict[str, str]:
+    return {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
+
+
+def edc_management_urls(settings: E2ESettings) -> dict[str, str]:
+    """Control-plane management endpoints, by role."""
+    return {
+        "provider": settings.edc_provider_management_url,
+        "consumer": settings.edc_consumer_management_url,
+        "grid-operator": settings.edc_grid_operator_management_url,
+    }
 
 
 def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
@@ -66,12 +89,19 @@ def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
     ]
 
 
-def _edc_list(client: httpx.Client, mgmt_url: str, resource: str) -> list[dict]:
-    resp = client.post(f"{mgmt_url}/v3/{resource}/request", json=EDC_CONTEXT, headers=EDC_HEADERS)
+def _edc_list(
+    client: httpx.Client, mgmt_url: str, resource: str, headers: dict[str, str]
+) -> list[dict]:
+    resp = client.post(
+        f"{mgmt_url}/v3/{resource}/request", json=EDC_CONTEXT, headers=headers
+    )
     return resp.json() if resp.status_code == 200 and resp.text else []
 
 
-def _edc_terminate(client: httpx.Client, mgmt_url: str, resource: str, item_id: str, body_type: str) -> None:
+def _edc_terminate(
+    client: httpx.Client, mgmt_url: str, resource: str, item_id: str,
+    body_type: str, headers: dict[str, str],
+) -> None:
     client.post(
         f"{mgmt_url}/v3/{resource}/{item_id}/terminate",
         json={
@@ -79,36 +109,38 @@ def _edc_terminate(client: httpx.Client, mgmt_url: str, resource: str, item_id: 
             "@type": body_type,
             "reason": "e2e cleanup",
         },
-        headers=EDC_HEADERS,
+        headers=headers,
     )
 
 
-def _clear_edc(client: httpx.Client, mgmt_url: str, label: str) -> None:
-    headers = {"x-api-key": EDC_API_KEY}
+def _clear_edc(
+    client: httpx.Client, mgmt_url: str, label: str, settings: E2ESettings
+) -> None:
+    headers = edc_headers(settings)
 
     # Terminate active transfer processes first (block agreement cleanup)
-    transfers = _edc_list(client, mgmt_url, "transferprocesses")
+    transfers = _edc_list(client, mgmt_url, "transferprocesses", headers)
     for tp in transfers:
         tp_id = tp.get("@id", "")
         state = tp.get("edc:state", tp.get("state", ""))
         if state not in ("TERMINATED", "COMPLETED"):
-            _edc_terminate(client, mgmt_url, "transferprocesses", tp_id, "TerminateTransfer")
+            _edc_terminate(client, mgmt_url, "transferprocesses", tp_id, "TerminateTransfer", headers)
     if transfers:
         log.info("Terminated %d transfers (%s)", len(transfers), label)
 
     # Terminate active negotiations
-    negotiations = _edc_list(client, mgmt_url, "contractnegotiations")
+    negotiations = _edc_list(client, mgmt_url, "contractnegotiations", headers)
     for neg in negotiations:
         neg_id = neg.get("@id", "")
         state = neg.get("edc:state", neg.get("state", ""))
         if state not in ("TERMINATED",):
-            _edc_terminate(client, mgmt_url, "contractnegotiations", neg_id, "TerminateNegotiation")
+            _edc_terminate(client, mgmt_url, "contractnegotiations", neg_id, "TerminateNegotiation", headers)
     if negotiations:
         log.info("Terminated %d negotiations (%s)", len(negotiations), label)
 
     # Delete contract definitions, policy definitions, assets (in dependency order)
     for resource in ("contractdefinitions", "policydefinitions", "assets"):
-        items = _edc_list(client, mgmt_url, resource)
+        items = _edc_list(client, mgmt_url, resource, headers)
         for item in items:
             client.delete(f"{mgmt_url}/v3/{resource}/{item.get('@id', '')}", headers=headers)
         if items:
@@ -144,16 +176,24 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
             log.warning("Could not reset %s: %s", edc_db, exc)
 
     edc_client = httpx.Client(timeout=10)
+    failures: list[str] = []
     try:
-        for mgmt_url, label in [
-            (EDC_PROVIDER_MGMT, "provider"),
-            (EDC_CONSUMER_MGMT, "consumer"),
-            (EDC_GRID_OPERATOR_MGMT, "grid-operator"),
-        ]:
+        for label, mgmt_url in edc_management_urls(settings).items():
             try:
-                _clear_edc(edc_client, mgmt_url, label)
+                _clear_edc(edc_client, mgmt_url, label, settings)
             except Exception as exc:
+                # Logged **and collected**. This used to warn and continue, and
+                # `run_cleanup` then returned normally — so `Cleanup complete`
+                # was printed over three control planes that had not been
+                # cleaned, and the next run's flows failed on the previous run's
+                # agreements with no connection to the cause.
+                #
+                # Found exactly that way: threading settings through these calls
+                # left one call site unfixed, every unit test stayed green, and
+                # the live clean printed three warnings and then `Cleanup
+                # complete`. A warning nobody has to act on is not a result.
                 log.warning("EDC cleanup failed (%s): %s", label, exc)
+                failures.append(f"{label}: {exc}")
     finally:
         edc_client.close()
 
@@ -168,3 +208,10 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
             log.info("Provider sync completed (%s)", label)
         except Exception as exc:
             log.warning("Provider sync after cleanup failed (%s): %s", label, exc)
+            failures.append(f"provider sync {label}: {exc}")
+
+    if failures:
+        raise CleanupIncomplete(
+            "cleanup did not finish; the next run starts on state this did not "
+            "remove:\n  " + "\n  ".join(failures)
+        )

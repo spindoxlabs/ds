@@ -44,6 +44,11 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "smoke": SmokeFlow,
 }
 
+# `fail-closed` (`E2E-06`) is written and **not registered** — see the header of
+# `flows/fail_closed.py` for what is left. It is one access-request revocation
+# away from working, and registering it before then would put a red flow in
+# `--flow all`.
+
 # The delegation chains. They assert against `ds-e2e scenario apply` fixtures
 # and clean up their own consent rows, so the set is re-runnable in place.
 CHAIN_FLOWS: tuple[str, ...] = (
@@ -52,8 +57,16 @@ CHAIN_FLOWS: tuple[str, ...] = (
     "chain-unbundling",
 )
 
-# Flows that need neither the EDC nor a completed data exchange — the set that
-# runs on a partial stack, and the set worth running on every change.
+# Flows that need no **EDC** and no completed data exchange — the set worth
+# running on every change.
+#
+# Not "runs on a partial stack" (`E2E-09`): the comment said that before
+# `CHAIN_FLOWS` was folded in, and the three chain flows need the delegation
+# scenario applied (`task e2e:scenario:apply`, which `e2e:fast` now declares as
+# a dep). They still need no EDC, so the *stated* property held while the
+# implied one — "nothing to set up first" — quietly stopped being true, and the
+# chains failed on missing fixtures for whoever ran `e2e:fast` first on a fresh
+# stack.
 FAST_FLOWS: tuple[str, ...] = (
     "api-contract",
     "authz-perimeter",

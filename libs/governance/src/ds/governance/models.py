@@ -124,6 +124,13 @@ class DataspaceDataAddress(BaseModel):
 class DataspaceContract(BaseModel):
     access_policy_id: str | None = None
     contract_policy_id: str | None = None
+    #: The EDC ContractDefinition's own `@id`.
+    #:
+    #: Separate from `access_policy_id` since `GOV-12`: the contract definition
+    #: used to *be* the access policy id, so a deployment that named one named
+    #: both and the id stopped identifying which entity was meant. Unset, the
+    #: mapper derives `<dataset-key>-contract`.
+    contract_definition_id: str | None = None
 
 
 class DataspaceSpec(BaseModel):
@@ -268,6 +275,24 @@ class OdrlProfile(BaseModel):
     purpose_base: str = "purpose/"
 
     profile_iri: str | None = None
+
+    #: The profile's version, carried into every offer this profile generates.
+    #:
+    #: `GOV-08`. Nothing in an emitted offer said which version of the policy
+    #: vocabulary produced it, so a consumer holding an agreement could not ask
+    #: what the terms meant when they negotiated, and a provider changing the
+    #: profile could not tell which agreements predate the change. The rulebook
+    #: files that under *metadata versioning*, and names this the smallest
+    #: concrete piece of it.
+    #:
+    #: **Metadata, never a constraint.** It is emitted beside `@context`, not as
+    #: an `odrl:constraint`, so it claims nothing about enforcement — the
+    #: distinction `GOV-04` and `GOV-10` both turn on. A counterparty reads it;
+    #: no policy engine evaluates it.
+    #:
+    #: Unset, no version key is emitted at all: an offer that names a version it
+    #: does not have would be worse than one that stays silent.
+    version: str | None = None
 
     tag_to_purpose: dict[str, str] = Field(default_factory=dict)
     purposes: list[PurposeConcept] = Field(default_factory=list)

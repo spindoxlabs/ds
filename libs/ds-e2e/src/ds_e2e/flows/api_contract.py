@@ -252,15 +252,47 @@ class ApiContractFlow(BaseFlow):
                 return marker
         return None
 
+    def _services_this_flow_calls(self) -> list[str]:
+        """Every service named by a route this flow will probe.
+
+        **Derived, not listed** (`E2E-14`). The health gate named four services
+        by hand while `PUBLIC_ROUTES` also probes `dataset-api`, so an
+        unreachable data plane escaped the gate and raised `ConnectError` out of
+        `_check_public_perimeter` — through `run_all`, ending the whole suite
+        with a traceback and **zero** flow results. The gate exists precisely to
+        turn "something is not up" into one legible failure, and it was checking
+        four of the five services it went on to call.
+
+        One list, computed from the routes, so a route added to a new service
+        cannot outrun its health check.
+        """
+        seen: list[str] = []
+        for service, *_ in list(PUBLIC_ROUTES) + [
+            (svc, m, p) for svc, m, p, _b in _guarded_routes(self.settings)
+        ]:
+            if service not in seen:
+                seen.append(service)
+        return seen
+
     def _check_health(self, result: FlowResult) -> bool:
-        for service in ("connector", "identity-registry", "provenance", "federated-catalog"):
+        services = self._services_this_flow_calls()
+        for service in services:
             url = self._base(service)
             try:
                 self.http.get(f"{url}/health")
             except Exception as exc:
-                result.fail_step("health", f"{service} unreachable at {url}: {exc}")
+                result.fail_step(
+                    "health",
+                    f"{service} unreachable at {url}: {exc}",
+                    hint=(
+                        "The data plane is not started by `task docker:restart` when "
+                        "it is the real celine dataset-api — see E2E-13."
+                        if service == "dataset-api"
+                        else None
+                    ),
+                )
                 return False
-        result.pass_step("health", "connector, identity-registry, provenance, federated-catalog reachable")
+        result.pass_step("health", f"{', '.join(services)} reachable")
         return True
 
     # ── 1. public perimeter ──────────────────────────────────────────────────

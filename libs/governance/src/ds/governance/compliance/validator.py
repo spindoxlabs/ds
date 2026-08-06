@@ -16,7 +16,10 @@ from .checks import (
     ValidationResult,
     check_consent_coherence,
     check_data_address,
+    check_dcat_ap,
+    check_policy_contract_id_collision,
     check_enums,
+    check_declared_not_enforced,
     check_identifier_collisions,
     check_key_policy,
     check_owners,
@@ -177,6 +180,9 @@ def validate(
 
     check_enums(result, exposed)
     check_identifier_collisions(result, exposed)
+    check_policy_contract_id_collision(result, exposed)
+    check_declared_not_enforced(result, exposed)
+    check_dcat_ap(result, exposed)
     check_data_address(result, exposed)
     check_consent_coherence(result, exposed)
     check_retention(result, exposed)

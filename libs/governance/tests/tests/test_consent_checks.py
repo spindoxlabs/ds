@@ -59,6 +59,11 @@ def dataset(**overrides) -> dict:
     rule = {
         "access_level": "open",
         "classification": "green",
+        # DCAT-AP mandatory on a `dcat:Dataset`, and the emitter has a fallback
+        # for each, so a file omitting them publishes a valid-looking record that
+        # says nothing (`GOV-07`).
+        "title": "Household energy flexibility",
+        "description": "A dataset used by the sharing-offer tests.",
         "policy": {"purpose": ["FlexibilityResearch"]},
         "dataspace": {
             "expose": True,

@@ -37,9 +37,18 @@ def exposed_dataset(**overrides) -> dict:
     purpose is published with no purpose constraint, so `purpose-declared` now
     rejects it. Before that check covered the empty case, this fixture was
     "valid" while describing a dataset nothing would have limited the use of.
+
+    `title` and `description` joined it for the same reason (`GOV-07`): they are
+    DCAT-AP **mandatory** on a `dcat:Dataset`, and the emitter has a fallback for
+    each — the dataset key for one, `""` for the other — so a file declaring
+    neither publishes a structurally valid record that says nothing. Every
+    governance file in this repository already declares both; it was only this
+    fixture that treated them as optional.
     """
     rule = {
         "access_level": "open",
+        "title": "Test dataset",
+        "description": "A dataset used by the compliance-check tests.",
         "policy": {"purpose": ["GridMonitoring"]},
         "dataspace": {
             "expose": True,

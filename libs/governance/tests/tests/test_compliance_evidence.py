@@ -345,6 +345,8 @@ class TestValidateAgainstRuntime:
                 "sources": {
                     "a": {
                         "access_level": "open",
+                        "title": "Owner-resolution fixture",
+                        "description": "Exercises the runtime owner lookup.",
                         "ownership": [{"name": "example-org"}],
                         "policy": {"purpose": ["GridMonitoring"]},
                         "dataspace": {
@@ -382,6 +384,8 @@ class TestValidateAgainstRuntime:
                 "sources": {
                     "a": {
                         "access_level": "open",
+                        "title": "Owner-resolution fixture",
+                        "description": "Exercises the runtime owner lookup.",
                         "ownership": [{"name": "ghost-org"}],
                         "dataspace": {
                             "expose": True,

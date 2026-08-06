@@ -292,8 +292,29 @@ class LineageFlow(BaseFlow):
             )
             return
 
-        total = summary.get("total") or summary.get("total_accesses") or summary.get("count")
-        if isinstance(total, int) and total != len(entries):
+        # `total_queries` — the field `AccessLogSummary` actually declares
+        # (`provenance/schemas/audit.py`), set from `len(entries)` in
+        # `api/v1/audit.py`.
+        #
+        # This read `total`, then `total_accesses`, then `count` (`E2E-04`).
+        # Provenance has never emitted any of the three, so `total` was always
+        # `None`, the `isinstance(total, int)` guard was always False, and the
+        # summary-versus-log comparison — the entire point of the step — could
+        # not fire. It then passed, reporting `summary_total=None`.
+        #
+        # Three candidate names and no assertion that one of them was found is
+        # the shape to avoid: a missing key must be a failure, not a fallback to
+        # the next guess.
+        if "total_queries" not in summary:
+            result.fail_step(
+                "audit log",
+                "the audit summary carries no 'total_queries' — provenance's "
+                "AccessLogSummary shape has changed",
+                summary_keys=sorted(summary),
+            )
+            return
+        total = summary["total_queries"]
+        if total != len(entries):
             result.fail_step(
                 "audit log",
                 "the summary and the log disagree on how many accesses occurred",

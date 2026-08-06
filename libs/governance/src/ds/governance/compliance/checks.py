@@ -38,6 +38,9 @@ CHECKS = (
     "classification",
     "asset-id-collision",
     "policy-id-collision",
+    "policy-contract-id-collision",
+    "declared-not-enforced",
+    "dcat-ap",
     "data-address",
     "consent-coherence",
     "retention",
@@ -193,6 +196,151 @@ def check_identifier_collisions(
                 result.error(
                     check,
                     f"Datasets {', '.join(sorted(keys))} all derive {label} '{identifier}'",
+                )
+
+
+def check_policy_contract_id_collision(
+    result: ValidationResult, exposed: list[DatasetEvidence]
+) -> None:
+    """One dataset's policy id and contract id must differ (``GOV-12``).
+
+    They are separate EDC collections, so nothing rejects the duplicate — the id
+    just stops identifying which entity is meant, in logs, in evidence rows and
+    in whatever an operator greps. Both used to derive from the single
+    ``dataspace.contract.access_policy_id``, so naming the access policy was
+    enough to collide them.
+    """
+    for item in exposed:
+        if item.policy_id == item.contract_id:
+            result.error(
+                "policy-contract-id-collision",
+                f"policy and contract definition both derive @id '{item.policy_id}'. "
+                "Set dataspace.contract.contract_definition_id, or leave both unset "
+                "so the -policy/-contract suffixes apply.",
+                item.key,
+            )
+
+
+#: Fields governance may declare that reach no emitter and no enforcement point.
+#:
+#: Each is parsed, merged through overlays and validated, and then read by
+#: nothing — so a producer who sets one has stated an intention this platform
+#: does not act on, and nothing has ever said so. `DSSC-AUP-06` forbids showing
+#: a counterparty a term that is not enforced; the same argument applies inward,
+#: to the producer who wrote it.
+#:
+#: **Warnings, not errors** (`GOV-13`, `GOV-14`). The declaration is not invalid
+#: — it is unimplemented, which is the platform's gap and not the file's — and a
+#: hard failure would block a deployment over a field that has been accepted for
+#: as long as it has existed.
+#:
+#: The alternative was deleting the fields. That is worse: it turns "we do not do
+#: this yet" into silence, and the next producer re-adds the key expecting it to
+#: work. Wiring one is what closes its line here.
+UNENFORCED_DECLARATIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "policy.valid_from",
+        "policy.valid_from",
+        "no ODRL constraint is emitted for it and no enforcement point reads it; "
+        "the value is order-checked against valid_until and nothing else",
+    ),
+    (
+        "policy.valid_until",
+        "policy.valid_until",
+        "no ODRL constraint is emitted for it and no enforcement point reads it; "
+        "an offer does not expire",
+    ),
+    (
+        "policy.obligations.notify_on_access",
+        "policy.obligations.notify_on_access",
+        "no notification is sent on access",
+    ),
+    (
+        "policy.obligations.anonymize_before_use",
+        "policy.obligations.anonymize_before_use",
+        "no anonymisation is applied; the data plane returns the rows the row "
+        "filter selects, unchanged",
+    ),
+)
+
+
+def _declared_value(rule: object, dotted: str) -> object:
+    node: object = rule
+    for part in dotted.split("."):
+        node = getattr(node, part, None)
+        if node is None:
+            return None
+    return node
+
+
+def check_declared_not_enforced(
+    result: ValidationResult, exposed: list[DatasetEvidence]
+) -> None:
+    """Warn on a governance field this platform parses and does not act on."""
+    for item in exposed:
+        for label, dotted, consequence in UNENFORCED_DECLARATIONS:
+            if _declared_value(item.rule, dotted):
+                result.warning(
+                    "declared-not-enforced",
+                    f"{label} is declared, and this platform does not enforce it: "
+                    f"{consequence}.",
+                    item.key,
+                )
+
+
+#: DCAT-AP properties, by obligation, on the `dcat:Dataset` this platform emits.
+#:
+#: Only those whose value comes from **governance** are listed. `dct:identifier`,
+#: `dct:publisher` and `dcat:distribution` are synthesised by the emitter from
+#: the asset id, the participant and the data address, so a governance file
+#: cannot omit them and a check on them would test the emitter, not the input —
+#: which is the boundary the module docstring above draws.
+_DCAT_AP_MANDATORY: tuple[tuple[str, str, str], ...] = (
+    ("dct:title", "title", "the dataset key is used as a title, which is an identifier"),
+    ("dct:description", "description", "the dataset is published with an empty description"),
+)
+
+_DCAT_AP_RECOMMENDED: tuple[tuple[str, str, str], ...] = (
+    ("dcat:theme", "dcat.themes", "the dataset appears under no theme in a harvester"),
+    ("dct:license", "license", "a consumer cannot tell what they may do with the data"),
+    ("dct:accrualPeriodicity", "dcat.accrual_periodicity", "how often it updates is unstated"),
+    ("dct:spatial", "dcat.spatial_uris", "the geographic coverage is unstated"),
+    ("dct:temporal", "dcat.temporal", "the time span covered is unstated"),
+)
+
+
+def check_dcat_ap(result: ValidationResult, exposed: list[DatasetEvidence]) -> None:
+    """DCAT-AP conformance of the metadata this file will publish (``GOV-07``).
+
+    Rulebook `C-12` / `DSSC-DSO-11`: *metadata is checked for compliance with the
+    standards it claims*, recorded there as an open gap — `ds-governance
+    validate` checked internal coherence and referential integrity, and nothing
+    checked the thing the catalogue is actually judged as.
+
+    **Mandatory properties are errors, recommended ones are warnings**, which is
+    DCAT-AP's own distinction rather than a severity we chose. The mandatory two
+    both have fallbacks in the emitter, and that is exactly why they need a check
+    here: `dct:title` falls back to the dataset key and `dct:description` to
+    `""`, so a dataset with neither publishes a *structurally valid* DCAT record
+    that tells a consumer nothing. A validator that only looked at the emitted
+    shape would pass it.
+    """
+    for item in exposed:
+        for prop, source, consequence in _DCAT_AP_MANDATORY:
+            if not _declared_value(item.rule, source):
+                result.error(
+                    "dcat-ap",
+                    f"{prop} is mandatory in DCAT-AP and governance declares no "
+                    f"'{source}' — {consequence}",
+                    item.key,
+                )
+        for prop, source, consequence in _DCAT_AP_RECOMMENDED:
+            if not _declared_value(item.rule, source):
+                result.warning(
+                    "dcat-ap",
+                    f"{prop} is recommended in DCAT-AP and governance declares no "
+                    f"'{source}' — {consequence}",
+                    item.key,
                 )
 
 

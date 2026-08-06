@@ -1104,8 +1104,23 @@ tasks:
         fi
         sleep 5
         exit 0
+      # **After the restart, not before** (`E2E-12`). `e2e:clean` syncs as its
+      # last step and the restart above then replaces the store it published
+      # into, so that catalogue does not survive. The REC provider usually
+      # recovered because `e2e:wait-ready` polls the federated catalogue for its
+      # asset; nothing waited for the grid operator, so `two-providers` failed
+      # or passed depending on where the restart fell — observed both ways on
+      # the same build, minutes apart.
+      #
+      # The flows now assert against a catalogue this task *caused*.
+      - task: e2e:sync-providers
       - task: e2e:wait-ready
       - task: e2e:scenario:apply
+
+  e2e:sync-providers:
+    desc: "E2E: re-publish every provider's catalogue to its EDC"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e sync-providers
 
   e2e:all:
     desc: Run all E2E flows (clean state, EDC restart, fixtures, then every flow)
@@ -1133,8 +1148,39 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow security
 
+  e2e:user-authority:
+    desc: "E2E: every dev user's token reaches what its bundle grants, and no more"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow user-authority
+
+  # One task per chain. `e2e:chains` runs all three; these exist because a
+  # failing chain is debugged one at a time, and `--flow` already accepts each
+  # name — the tasks were simply never written (`E2E-08`).
+  e2e:chain-community:
+    desc: "E2E: the community delegation chain"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow chain-community
+
+  e2e:chain-partner:
+    desc: "E2E: the partner delegation chain"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow chain-partner
+
+  e2e:chain-unbundling:
+    desc: "E2E: the unbundling delegation chain"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow chain-unbundling
+
   e2e:fast:
     desc: "E2E: every flow that runs without the EDC"
+    # `FAST_FLOWS` includes `CHAIN_FLOWS`, and those need the delegation
+    # scenario applied — the same dependency `e2e:chains` already declares.
+    # Without it the three chain flows failed on missing fixtures whenever
+    # `e2e:fast` was the first thing run on a fresh stack (`E2E-08`).
+    deps: [e2e:scenario:apply]
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow fast
 

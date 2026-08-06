@@ -32,7 +32,18 @@ class FlowResult:
 
     @property
     def passed(self) -> bool:
-        return all(s.status == "PASS" for s in self.steps)
+        """Every recorded step passed, **and at least one was recorded**.
+
+        `all([])` is `True`, so a flow that returned before asserting anything
+        reported PASS (`E2E-01`). That is not a hypothetical: a flow that exits
+        early on a setup problem, or one whose body is refactored to return
+        before its first assertion, produced a green line with no steps under it
+        — and `run_all`'s exit code said the dataspace was healthy.
+
+        This is the same failure the ledger closes with — *a green check is not a
+        check that ran* — inside the harness whose whole job is to notice it.
+        """
+        return bool(self.steps) and all(s.status == "PASS" for s in self.steps)
 
     def pass_step(self, name: str, detail: str = "", **data: Any) -> None:
         self.steps.append(

@@ -199,7 +199,7 @@ class GovernanceMapper:
         if p.profile_iri:
             context["odrl:profile"] = p.profile_iri
 
-        return {
+        offer: dict[str, Any] = {
             "@context": context,
             "@type": "odrl:Offer",
             "@id": offer_id,
@@ -208,6 +208,13 @@ class GovernanceMapper:
             "odrl:prohibition": prohibitions,
             "odrl:obligation": obligations,
         }
+        # `GOV-08`. Metadata, not a constraint: a counterparty can ask what the
+        # vocabulary meant when they negotiated, and no policy engine evaluates
+        # it. Omitted entirely when the profile declares no version — naming one
+        # it does not have would be worse than silence.
+        if p.version:
+            offer[f"{p.prefix}:profileVersion"] = p.version
+        return offer
 
     def _build_permission(
         self,
@@ -422,7 +429,7 @@ class GovernanceMapper:
         # context prefix it never references is a claim about vocabularies this
         # asset speaks, and EDC compacts against the context it is given.
         context: dict[str, Any] = {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"}
-        if rule.dcat.conforms_to:
+        if rule.dcat.conforms_to or rule.documentation_url:
             context["dct"] = "http://purl.org/dc/terms/"
 
         return {
@@ -456,6 +463,19 @@ class GovernanceMapper:
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
                 ] or None,
+                # `GOV-14`. Parsed, merged through overlays and read by nothing
+                # until now — so a producer who documented their dataset saw the
+                # link go nowhere, and a consumer browsing the catalogue had no
+                # way to reach it.
+                #
+                # Emitted here and **not** as an ODRL term, which is the whole
+                # distinction the other three fields in this row fail: this is
+                # *description*, so publishing it claims nothing about
+                # enforcement. `notify_on_access` and `anonymize_before_use` are
+                # obligations, and emitting either would tell a counterparty this
+                # dataspace does something it does not — `DSSC-AUP-06`. They are
+                # reported by the `declared-not-enforced` check instead.
+                "dct:references": rule.documentation_url,
             },
             "dataAddress": data_address,
         }
@@ -483,7 +503,22 @@ class GovernanceMapper:
         self, dataset_key: str, rule: GovernanceRuleV2, policy_id: str, asset_id: str
     ) -> dict[str, Any]:
         ds = rule.dataspace
-        contract_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-contract"
+        # **Not `access_policy_id`** (`GOV-12`). A deployment that named its
+        # access policy gave the *contract definition* the same `@id`, because
+        # this line and `to_policy_create` both derived from that one field. The
+        # two live in different EDC collections so nothing 409s — the id simply
+        # stops identifying anything: a log line, an evidence row or an operator
+        # grepping for it gets two entities of different kinds, and "delete the
+        # policy" and "delete the contract" become the same sentence.
+        #
+        # `contract_definition_id` is the explicit override; the derived default
+        # keeps the `-contract` suffix that already distinguished it whenever the
+        # field was unset. `check_policy_contract_id_collision` fails the
+        # validation gate if the two ever coincide again.
+        contract_id = (
+            ds.contract.contract_definition_id
+            or f"{dataset_key.replace('.', '-')}-contract"
+        )
         return {
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "ContractDefinition",

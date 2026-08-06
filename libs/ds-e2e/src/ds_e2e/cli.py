@@ -9,7 +9,7 @@ import typer
 from rich.console import Console
 from rich.logging import RichHandler
 
-from ds_e2e.cleanup import run_cleanup
+from ds_e2e.cleanup import provider_sync_targets, run_cleanup
 from ds_e2e.config import E2ESettings
 from ds_e2e.flows import CHAIN_FLOWS, FAST_FLOWS, FLOW_REGISTRY, SECURITY_FLOWS
 from ds_e2e.http import HttpClient
@@ -83,7 +83,23 @@ def _print_result(result: FlowResult, fmt: Format) -> None:
             console.print(f"  {icon} {step.name}{detail}")
 
 
-def _print_summary(results: list[FlowResult], fmt: Format) -> None:
+def _print_backend(settings: E2ESettings, fmt: Format) -> None:
+    """Name the data plane this run exercised, before it runs (`T-1`).
+
+    The data plane has two implementations and a run exercises exactly one. Both
+    produce the same green output, so a suite that passed against the mock and
+    one that passed against the real celine `dataset-api` were indistinguishable
+    afterwards — at the layer that costs the most to re-run.
+
+    Printed *first*, not in the summary: a run that dies part-way should still
+    have said what it was pointed at.
+    """
+    if fmt != Format.text:
+        return
+    console.print(f"[dim]data plane:[/dim] {settings.data_plane_label}")
+
+
+def _print_summary(results: list[FlowResult], fmt: Format, settings: E2ESettings) -> None:
     """One line per flow after a multi-flow run.
 
     A dozen flows scroll off the screen; without a roll-up the exit code is the
@@ -93,6 +109,7 @@ def _print_summary(results: list[FlowResult], fmt: Format) -> None:
     if fmt != Format.text:
         return
     console.print("\n[bold]Summary[/bold]")
+    console.print(f"  [dim]data plane:[/dim] {settings.data_plane_label}")
     for r in results:
         failed = [s.name for s in r.steps if s.status == "FAIL"]
         status = "[green]PASS[/green]" if r.passed else "[red]FAIL[/red]"
@@ -111,6 +128,7 @@ def run(
     """Execute one or all E2E verification flows."""
     _setup_logging(verbose, quiet)
     settings = E2ESettings()
+    _print_backend(settings, fmt)
 
     if clean_first:
         http = HttpClient(settings)
@@ -131,7 +149,7 @@ def run(
         all_passed = all(r.passed for r in results)
         for r in results:
             _print_result(r, fmt)
-        _print_summary(results, fmt)
+        _print_summary(results, fmt, settings)
         raise typer.Exit(code=0 if all_passed else 1)
     else:
         result = run_flow(flow.value, settings)
@@ -151,6 +169,55 @@ def clean(
     try:
         run_cleanup(settings, http)
         console.print("[green]Cleanup complete[/green]")
+    finally:
+        http.close()
+
+
+@app.command("sync-providers")
+def sync_providers(
+    verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
+    quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
+) -> None:
+    """Re-publish every provider's catalogue to its EDC.
+
+    Exists because of **ordering** (`E2E-12`). `run_cleanup` syncs as its last
+    step, and `e2e:prepare` then *restarts* the EDCs so they re-run their schema
+    migration against the freshly recreated database — so that sync publishes
+    into a store which is about to be replaced, and the catalogue it built does
+    not survive.
+
+    The REC provider usually recovered because `e2e:wait-ready` polls the
+    federated catalogue for its asset and gives it time. **Nothing waited for the
+    grid operator**, so its catalogue was empty or not depending on where the
+    restart fell — which is how `two-providers` came to fail and then pass on a
+    re-run against the same build, with no code change between.
+
+    A verdict decided by ordering is not a verdict about the platform. This runs
+    *after* the restart, so the catalogue the flows assert on is one this command
+    caused rather than one it hoped for.
+    """
+    _setup_logging(verbose, quiet)
+    settings = E2ESettings()
+    http = HttpClient(settings)
+    try:
+        headers = http.bearer_headers()
+        failures: list[str] = []
+        for url, label in provider_sync_targets(settings):
+            try:
+                result = http.post(f"{url}/provider/sync", {}, headers=headers)
+                synced = (result or {}).get("synced", []) if isinstance(result, dict) else []
+                console.print(f"  synced {label}: {len(synced)} asset(s)")
+                if not synced:
+                    failures.append(f"{label} published nothing")
+            except Exception as exc:
+                failures.append(f"{label}: {exc}")
+        if failures:
+            # A sync that published nothing is the empty catalogue the flows
+            # would then blame on the platform. Fail here, where the cause is
+            # still legible.
+            console.print(f"[red]provider sync incomplete:[/red] {'; '.join(failures)}")
+            raise typer.Exit(code=1)
+        console.print("[green]Providers re-synced[/green]")
     finally:
         http.close()
 
