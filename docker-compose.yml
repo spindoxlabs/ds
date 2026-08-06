@@ -394,6 +394,20 @@ services:
     image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
     restart: unless-stopped
     command: ["--config=/etc/oauth2-proxy/oauth2-proxy.cfg"]
+    environment:
+      # The two secrets the config file deliberately does not carry. Same split
+      # the chart makes — config in a ConfigMap, these two from a Secret — so
+      # the file mounted below is shape only and can stay tracked.
+      #
+      # Defaults are the dev values, in the same category as
+      # `POSTGRES_PASSWORD:-postgres` above: weak and public on purpose. They
+      # are here rather than only in `.env.local` because the root compose is
+      # documented as runnable by hand, and `docker compose` does not read
+      # `.env.local`. `task` does, through its `dotenv:`, so overriding either
+      # in `.env` reaches the container — which is what the config-file literals
+      # made impossible.
+      OAUTH2_PROXY_CLIENT_SECRET: ${OAUTH2_PROXY_CLIENT_SECRET:-oauth2_proxy}
+      OAUTH2_PROXY_COOKIE_SECRET: ${OAUTH2_PROXY_COOKIE_SECRET:-cc7f1b2e4a6d8f0b3c5e7a9d1f2b4c6e}
     volumes:
       - ./services/oauth2-proxy/oauth2-proxy.cfg:/etc/oauth2-proxy/oauth2-proxy.cfg:ro
     depends_on:

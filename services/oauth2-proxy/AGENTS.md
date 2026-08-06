@@ -38,8 +38,12 @@ proxy forwards. That design is only safe if the thing in front does two jobs: au
 ## When editing the config
 
 - Every URL is portless: the gateway owns `:80` — see the traps in `services/caddy/AGENTS.md`.
-- `cookie_secret` and `client_secret` are committed literals. They are dev fixtures; in
-  production both come from a Secret (`secrets.cookieSecret` on `ds-oauth2-proxy`). A known
-  cookie secret means forgeable sessions for every human in the deployment.
+- **`cookie_secret` and `client_secret` are not in the config file, in either mode.** Both
+  arrive as `OAUTH2_PROXY_<OPTION>` environment variables — from `docker-compose.yml` (dev
+  defaults in `.env.local`) and from a Secret in the chart (`secrets.cookieSecret` on
+  `ds-oauth2-proxy`). A known cookie secret means forgeable sessions for every human in the
+  deployment, and while they were literals here no deployment could override either without
+  editing a tracked file. Do not re-add them: `libs/ds-e2e/tests/test_oauth2_proxy_secrets.py`
+  checks both files and both modes.
 - The compose and Kubernetes forms of this config differ in more than one place. If you
   change one, check the other — `helm/charts/ds-oauth2-proxy/templates/configmap.yaml`.

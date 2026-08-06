@@ -80,9 +80,9 @@ the dev file `services/oauth2-proxy/oauth2-proxy.cfg` and the Helm ConfigMap.
 | `oidc_issuer_url` | `http://keycloak.dataspaces.localhost/realms/dataspaces` | `global.keycloak.issuerUrl` |
 | `scope` | `openid email profile organization:*` | same — **the `organization:*` scope is required**, or no per-owner group claim is emitted |
 | `client_id` | `oauth2_proxy` | `auth.clientId` |
-| `client_secret` | literal in the file | env, from a Secret |
+| `client_secret` | **not in the file** — `OAUTH2_PROXY_CLIENT_SECRET`, passed by compose, defaulting to `.env.local` | env, from a Secret |
 | `redirect_url` | `http://sso.dataspaces.localhost/oauth2/callback` | `https://portal.<baseDomain>/oauth2/callback` — the portal host, there is no separate SSO host |
-| `cookie_secret` | literal in the file | env, from a Secret. Must be 16, 24 or 32 bytes |
+| `cookie_secret` | **not in the file** — `OAUTH2_PROXY_COOKIE_SECRET`, same route | env, from a Secret. Must be 16, 24 or 32 bytes |
 | `cookie_name` | `_oauth2_proxy_ds` | same |
 | `cookie_domains` | `.dataspaces.localhost` | `.<baseDomain>` |
 | `cookie_secure` | `false` | **`true`** |

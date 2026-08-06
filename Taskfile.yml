@@ -1445,6 +1445,13 @@ tasks:
         fi
         # oauth2_proxy is declared in the realm import rather than by the syncer,
         # so it has no ${VAR:-default} above and needs naming here.
+        #
+        # This check was vacuous until `O2P-01`: the compose service passed
+        # neither `OAUTH2_PROXY_CLIENT_SECRET` nor `OAUTH2_PROXY_COOKIE_SECRET`
+        # to the container, because both were literals in the mounted
+        # `oauth2-proxy.cfg`. So it demanded a value the dev topology could not
+        # consume — the same shape the `POSTGRES_PASSWORD` note above records.
+        # Both are environment variables in both modes now.
         if printf '%s\n' "$values" | grep -qE '^OAUTH2_PROXY_CLIENT_SECRET=oauth2_proxy$'; then
           echo "✗ OAUTH2_PROXY_CLIENT_SECRET is still 'oauth2_proxy' — the dev default for the one client every human logs in through"; rc=1
         fi
