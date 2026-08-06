@@ -130,9 +130,19 @@ async def get_context():
 
 @router.get("/meta")
 async def get_meta(request: Request):
-    """Crawl health, provider list, and dataset counts."""
+    """Crawl health, provider list, dataset counts, and how often it refreshes.
+
+    `crawl_interval_seconds` is served because *how stale can this be?* is a
+    question every reader of an advisory index has, and until now the only way
+    to answer it was to read this service's configuration. A caller that has to
+    hold its own copy of the number holds a second copy that drifts — and one
+    such caller is `ds-e2e --flow catalog-discovery`, whose verdict used to
+    depend on where a 300s boundary happened to fall relative to the run
+    (`E2E-12`). It waits this interval out instead, derived from here.
+    """
     cache = request.app.state.cache
-    return cache.meta
+    settings = request.app.state.settings
+    return {**cache.meta, "crawl_interval_seconds": settings.crawl_interval}
 
 
 @router.get("/{dataset_iri:path}")

@@ -65,6 +65,19 @@ The wrong-scope sweep uses `svc-ds-federated-catalog` as the under-privileged cl
 realm rather than a comment** — it is currently wrong, and the effect is that three routes
 are excluded from the sweep that exists to test them.
 
+## The unit suite may not touch the network
+
+`tests/conftest.py` refuses every outbound socket, autouse. This is not hygiene:
+`run_cleanup` built its own `httpx.Client` rather than taking one, so `task test` —
+eight green tests that mocked `psycopg` and `HttpClient` — **deleted every contract
+definition and policy from the running dev stack's three EDCs** (`E2E-17`). The
+assets survived, because their deletes 409 while an agreement references them, so
+the damage looked like a half-finished provider sync and cost three sessions.
+
+**If a test trips the guard, inject the client — do not add an exemption.** A code
+path that constructs its own HTTP client or database connection is one no caller can
+isolate, and that is the defect the guard is reporting.
+
 ## Scenario fixtures
 
 The `chain-*` flows assert against declared fixtures rather than creating their own. Flows

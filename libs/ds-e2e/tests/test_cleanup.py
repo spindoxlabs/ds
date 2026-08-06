@@ -1,7 +1,17 @@
-"""Tests for cleanup module."""
+"""Tests for cleanup module.
+
+**These tests used to clean the developer's running stack** (`E2E-17`).
+`run_cleanup` built its own `httpx.Client`, so mocking `psycopg` and
+`HttpClient` left the EDC Management API calls live: eight green assertions
+here deleted every contract definition and policy from both providers' EDCs.
+The client is now injected, and `conftest.py` refuses any socket in this suite
+so the next such path fails loudly instead of succeeding quietly.
+"""
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+
+import httpx
 
 from ds_e2e.cleanup import (
     DATABASES,
@@ -11,6 +21,21 @@ from ds_e2e.cleanup import (
 )
 from ds_e2e.config import E2ESettings
 from ds_e2e.http import HttpClient
+
+
+def fake_edc_client(items=()):
+    """An `httpx.Client` stand-in that reaches nothing.
+
+    `_edc_list` reads `.json()`, so the GET answer is shaped like a Management
+    API list response; everything else only has to not raise."""
+    client = MagicMock(spec=httpx.Client)
+    response = MagicMock()
+    response.json.return_value = list(items)
+    response.status_code = 200
+    client.get.return_value = response
+    client.post.return_value = response
+    client.delete.return_value = response
+    return client
 
 
 def test_cleanup_truncates_databases():
@@ -26,8 +51,9 @@ def test_cleanup_truncates_databases():
     mock_conn.cursor.return_value.__enter__ = MagicMock(return_value=mock_cursor)
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
+    edc = fake_edc_client()
     with patch("ds_e2e.cleanup.psycopg.connect", return_value=mock_conn) as mock_connect:
-        run_cleanup(settings, http)
+        run_cleanup(settings, http, edc_client=edc)
 
     # One connection per application database it truncates, plus one to the
     # `postgres` database per EDC store it drops and recreates.
@@ -48,8 +74,11 @@ def test_cleanup_continues_on_db_error():
     http.post.return_value = {}
 
     import psycopg
-    with patch("ds_e2e.cleanup.psycopg.connect", side_effect=psycopg.Error("connection refused")):
-        run_cleanup(settings, http)
+    with patch(
+        "ds_e2e.cleanup.psycopg.connect",
+        side_effect=psycopg.Error("connection refused"),
+    ):
+        run_cleanup(settings, http, edc_client=fake_edc_client())
 
     # A database that refused every connection must not stop the provider syncs:
     # the point of the clean is that the *next* run starts from a known state.
@@ -134,3 +163,46 @@ def test_a_clean_that_finished_returns_quietly():
     http.bearer_headers.return_value = {}
     with patch("ds_e2e.cleanup.psycopg.connect"), patch("ds_e2e.cleanup._clear_edc"):
         run_cleanup(settings, http)
+
+
+# ── E2E-17 · the clean must only clean what it was handed ────────────────────
+
+
+def test_the_clean_sends_its_deletes_to_the_injected_client(monkeypatch):
+    """The regression guard for `E2E-17`, stated as the property it broke.
+
+    `run_cleanup` must issue **every** EDC call through the client it was
+    given. It did not: it constructed one, so a caller that had mocked
+    everything it knew about still reached three live control planes. The
+    assertion is on the fake receiving the deletes — if a future edit builds a
+    client again, the fake sees nothing and this fails.
+    """
+    settings = E2ESettings(_env_file=None)
+    http = MagicMock(spec=HttpClient)
+    http.bearer_headers.return_value = {}
+    edc = fake_edc_client(items=[{"@id": "some-contract-definition"}])
+
+    with patch("ds_e2e.cleanup.psycopg.connect"):
+        run_cleanup(settings, http, edc_client=edc)
+
+    deleted = [c.args[0] for c in edc.delete.call_args_list]
+    assert deleted, "the clean issued no deletes through the injected client"
+    # Three control planes × three resource kinds, all through the fake.
+    for role_url in ("19193", "29193", "39193"):
+        assert any(role_url in url for url in deleted)
+
+
+def test_the_clean_does_not_close_a_client_it_was_given():
+    """The caller owns the lifetime of a client it passed in.
+
+    Closing it here would break the caller's next use of it, and the failure
+    would appear far from this function."""
+    settings = E2ESettings(_env_file=None)
+    http = MagicMock(spec=HttpClient)
+    http.bearer_headers.return_value = {}
+    edc = fake_edc_client()
+
+    with patch("ds_e2e.cleanup.psycopg.connect"):
+        run_cleanup(settings, http, edc_client=edc)
+
+    edc.close.assert_not_called()

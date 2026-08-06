@@ -147,7 +147,33 @@ def _clear_edc(
             log.info("Deleted %d %s (%s)", len(items), resource, label)
 
 
-def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
+def run_cleanup(
+    settings: E2ESettings,
+    http: HttpClient,
+    edc_client: httpx.Client | None = None,
+) -> None:
+    """Reset the dataspace to a known state. **Destructive, by design.**
+
+    `edc_client` is a parameter because it used to be a `httpx.Client()`
+    constructed here, and a caller that mocked `http` and `psycopg` still got a
+    live one (`E2E-17`). The unit suite did exactly that: eight green tests in
+    `test_cleanup.py` called this function and **deleted every contract
+    definition and policy from the running dev stack's EDCs**, on both
+    providers, while asserting on mocks.
+
+    The symptom was three sessions of debugging a federated catalogue that had
+    gone empty on its own — the assets survived, because the asset delete 409s
+    while an agreement references it, so the wreckage looked like a half-run
+    provider sync rather than a clean. Nothing in any service log accounted for
+    it: the deletes go straight to the EDC Management API.
+
+    Two things follow, and the second is the one that generalises:
+
+    - The client is injected, so a test can supply one that goes nowhere.
+    - `tests/conftest.py` refuses **any** outbound socket in the unit suite. A
+      unit suite that can reach the network will eventually change something,
+      and no amount of care at each call site prevents the next instance.
+    """
     base_url = settings.database_url.rstrip("/")
 
     for db_name, tables in DATABASES.items():
@@ -175,7 +201,8 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
         except psycopg.Error as exc:
             log.warning("Could not reset %s: %s", edc_db, exc)
 
-    edc_client = httpx.Client(timeout=10)
+    owns_client = edc_client is None
+    edc_client = edc_client or httpx.Client(timeout=10)
     failures: list[str] = []
     try:
         for label, mgmt_url in edc_management_urls(settings).items():
@@ -195,7 +222,10 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
                 log.warning("EDC cleanup failed (%s): %s", label, exc)
                 failures.append(f"{label}: {exc}")
     finally:
-        edc_client.close()
+        # Only what this function opened. Closing a caller's client would break
+        # the next use of it, and the caller is the one that knows its lifetime.
+        if owns_client:
+            edc_client.close()
 
     # **Both providers re-sync.** Dropping an EDC's database empties its
     # catalogue, so a provider that is not re-synced afterwards is a provider

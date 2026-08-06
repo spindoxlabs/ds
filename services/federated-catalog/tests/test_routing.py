@@ -50,6 +50,20 @@ async def test_meta_is_not_eaten_by_the_dataset_catch_all(client):
 
 
 @pytest.mark.asyncio
+async def test_meta_reports_the_crawl_interval_it_actually_uses(client):
+    """*How stale can this be?* must be answerable from the catalogue itself.
+
+    A caller that cannot ask has to hold its own copy of the interval, and a
+    second copy of a number owned elsewhere drifts. `ds-e2e --flow
+    catalog-discovery` is one such caller: it waits out a crawl cycle rather
+    than asserting on whichever one it happened to inherit (`E2E-12`), and it
+    derives the wait from here. Pinned against the settings object rather than
+    against `300`, so the assertion cannot pass by both sides being wrong."""
+    r = await client.get("/catalog/meta", headers=make_headers())
+    assert r.json()["crawl_interval_seconds"] == get_settings().crawl_interval
+
+
+@pytest.mark.asyncio
 async def test_search_resolves_to_search_not_the_catch_all(client):
     """`POST /catalog/search` is **not** shadowed, contrary to the plan's row.
 
