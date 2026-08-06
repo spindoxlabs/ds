@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -21,7 +21,7 @@ class Organization:
     """
 
     alias: str
-    type: Optional[str] = None
+    type: str | None = None
     attributes: dict[str, list[str]] = field(default_factory=dict)
     # The groups held *within this organisation*.
     #
@@ -70,7 +70,9 @@ class Organization:
                 # Leading slashes stripped to match `extract_groups`, so the same
                 # name compares equal whichever path it arrived by.
                 groups = tuple(
-                    g.lstrip("/") for g in raw_groups if isinstance(g, str) and g.strip()
+                    g.lstrip("/")
+                    for g in raw_groups
+                    if isinstance(g, str) and g.strip()
                 )
 
         return cls(alias=alias, type=org_type, attributes=attributes, groups=groups)

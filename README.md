@@ -19,7 +19,7 @@ mechanism described in three files is one mechanism described three different wa
 |---|---|
 | How the pieces fit together | [Architecture](https://spindoxlabs.github.io/ds/architecture/) |
 | DIDs, credentials, the trust anchor | [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) |
-| `governance.yaml` → ODRL offers | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
+| `governance.yaml` → ODRL offers | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
 | Consent, purposes, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
 | Deploying it | [Deployment](https://spindoxlabs.github.io/ds/deployment/) |
 | Working on the code as an agent | `AGENTS.md`, at the root and in each unit |

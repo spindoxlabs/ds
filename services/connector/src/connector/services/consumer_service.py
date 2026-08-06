@@ -218,6 +218,9 @@ class ConsumerService:
             poll_interval=self._neg_poll_interval,
             timeout=self._neg_timeout,
         )
+        # A stall no longer arrives here as `state="TIMEOUT"`: `poll_negotiation`
+        # raises `EdcPollTimeout`, which the route turns into a 504. This branch
+        # is now only reached for a state EDC actually produced.
         if neg_state.state not in ("FINALIZED", "VERIFIED", "AGREED") or not neg_state.contract_agreement_id:
             raise RuntimeError(
                 f"Negotiation {negotiation_id} failed: state={neg_state.state} "

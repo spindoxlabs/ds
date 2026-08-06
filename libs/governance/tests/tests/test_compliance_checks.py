@@ -471,13 +471,16 @@ class TestOverlay:
         path = write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
         assert run(path, overlay_name="absent").datasets_checked == 1
 
-    @pytest.mark.xfail(
-        reason="GovernanceResolver._merge treats an overlay 'dataspace' block equal to "
-        "the model defaults as unset, and expose:false IS the default — so an overlay "
-        "cannot un-expose a dataset. Use access_level:secret instead.",
-        strict=True,
-    )
-    def test_overlay_cannot_unexpose_via_expose_false(self, tmp_path: Path):
+    def test_an_overlay_can_unexpose_a_dataset(self, tmp_path: Path):
+        """`GOV-06`, and it was an `xfail(strict)` until 2026-08-06.
+
+        Withdrawing a dataset in one environment is the obvious thing an overlay
+        is for, and it was unexpressible: `_merge_models` dumped with
+        `exclude_defaults`, `expose` defaults to `False`, so `expose: false`
+        dumped to nothing and the base's `expose: true` survived. The overlay
+        validated clean and the dataset stayed in the catalogue — the failure
+        mode being that the *safe* instruction was the one that got lost.
+        """
         write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
         write_governance(
             tmp_path,
@@ -485,6 +488,60 @@ class TestOverlay:
             name="governance.prod.yaml",
         )
         assert run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 0
+
+    def test_an_overlay_that_says_nothing_still_inherits_expose(self, tmp_path: Path):
+        """The other half, and the reason `exclude_unset` is not `model_dump()`.
+
+        Silence must keep inheriting. Dumping everything would make every
+        unmentioned field an override with its default value — un-exposing every
+        dataset an overlay merely re-titled.
+        """
+        write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
+        write_governance(
+            tmp_path,
+            {"sources": {"a": {"title": "Renamed in prod"}}},
+            name="governance.prod.yaml",
+        )
+        assert run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 1
+
+    def test_the_tightening_rules_survive_the_unset_fix(self, tmp_path: Path):
+        """The risk `GOV-06`'s fix introduced, pinned.
+
+        `consent.required` and `contract_required` are deliberately **OR**-ed by
+        `_merge_policy`: *a deployer override may tighten, never loosen*, mirroring
+        `dataset-api`'s own `_merge_dataspace` so that both tools reading the same
+        files reach the same conclusion. Making explicit `false` meaningful is
+        exactly the change that could have turned those into "override wins" and
+        let an overlay un-gate a consent-gated dataset.
+
+        `expose` is not in that set, and should not be: withdrawing a dataset is
+        the tightening direction.
+        """
+        from ds.governance.resolver import GovernanceResolver
+
+        write_governance(
+            tmp_path,
+            {"sources": {"a": {
+                **exposed_dataset(),
+                "policy": {
+                    "consent": {"required": True},
+                    "obligations": {"contract_required": True},
+                },
+            }}},
+        )
+        write_governance(
+            tmp_path,
+            {"sources": {"a": {"policy": {
+                "consent": {"required": False},
+                "obligations": {"contract_required": False},
+            }}}},
+            name="governance.prod.yaml",
+        )
+        rule = GovernanceResolver.from_file_with_override(
+            tmp_path / "governance.yaml", overlay_name="prod"
+        ).resolve("a")
+        assert rule.policy.consent.required is True
+        assert rule.policy.obligations.contract_required is True
 
 
 class TestResultSerialization:

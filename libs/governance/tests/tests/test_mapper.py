@@ -313,7 +313,14 @@ def test_access_requirements_contract_adds_membership_and_contract():
         ]
         assert len(membership) == 1
         assert len(contract) == 1
-        assert contract[0]["odrl:rightOperand"] == "true"
+        # Typed, like every sibling constraint (`GOV-11`) — it was the one bare
+        # literal this mapper emitted. `ContractRequiredFunction.asBoolean`
+        # reaches `@value` through `Purposes.unwrapScalar`, which is the same
+        # unwrapping EDC's own expansion already required.
+        assert contract[0]["odrl:rightOperand"] == {
+            "@value": "true",
+            "@type": "xsd:boolean",
+        }
 
 
 def test_access_requirements_contract_does_not_emit_odrl_industry():
@@ -557,8 +564,9 @@ def test_several_purposes_stay_one_multi_valued_isanyof():
     whole Management API list response and leaves the DSP catalogue empty.
 
     Unreadable purposes beat no catalogue, so the multi-valued operand stays and
-    this test pins it. `docs/governance-and-odrl.md` carries the full account and
-    names the packaging guard that keeps the forked transformer in the shadow JAR.
+    this test pins it. `docs/rulebook/policies.md` carries the account of the
+    profile; the packaging guard that keeps the forked transformer in the shadow
+    JAR lives in `services/edc-extensions`.
     """
     mapper = _mapper(profile=_ENERGY_PROFILE)
     rule = _rule(
@@ -619,13 +627,31 @@ def test_single_declared_purpose_uses_is_a():
         assert constraint["odrl:rightOperand"] == {"@id": _P.purpose_iri("GridMonitoring")}
 
 
-def test_derive_purposes_from_tags_is_authoring_only():
-    """The tag map still suggests slugs when scaffolding, but never maps."""
+def test_tags_never_become_purposes(_p=_ENERGY_PROFILE):
+    """`GOV-15` — the tag→purpose helper is gone, and the rule it broke is not.
+
+    This asserted that `derive_purposes_from_tags` produced slugs. The helper was
+    called by nothing, here or in any sibling checkout, and it stood next to the
+    emitter implying a supported conversion — against the unit's own rule that
+    *purposes are declared, never derived from tags*.
+
+    What replaces it is the assertion that matters: tags the profile knows how to
+    map are present on the rule, and the offer still carries **no** purpose
+    constraint, because `policy.purpose[]` is empty. A dataset gets a purpose
+    because someone declared a reason for processing, never because it was
+    tagged.
+    """
     mapper = _mapper(profile=_ENERGY_PROFILE)
-    assert mapper.derive_purposes_from_tags(["rec", "grid", "meters"]) == [
-        "EnergyBalancing",
-        "GridMonitoring",
-    ]
+    assert not hasattr(mapper, "derive_purposes_from_tags")
+
+    rule = _rule(
+        access_level="open",
+        classification="green",
+        tags=["rec", "grid", "meters"],
+        policy=_policy(purpose=[]),
+    )
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert _purpose_constraints(offer) == []
 
 
 def test_medallion_inference():
@@ -788,3 +814,53 @@ def test_the_semantic_model_is_not_respelled_under_the_profile_prefix():
     )
     assert "ex-policy:conformsTo" not in asset["properties"]
     assert asset["properties"]["dct:conformsTo"] == "https://saref.etsi.org/saref4ener/"
+
+
+# ── GOV-10 · the emitted @context declares what the document uses ────────────
+
+def test_rdf_is_declared_when_an_obligation_uses_it():
+    """A delete obligation carries `rdf:value`, so `rdf:` must be defined.
+
+    Undeclared, `rdf:value` is not a compact IRI at all — a consumer's policy
+    tooling either drops the term or keeps an unresolvable string, and either
+    way the obligation this dataspace published does not mean what it says.
+    """
+    mapper = _mapper()
+    rule = _rule(access_level="open", classification="green", retention_days=30)
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert offer["odrl:obligation"], "expected a delete obligation for retention_days"
+    assert offer["@context"]["rdf"] == "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+
+def test_rdf_is_not_declared_when_nothing_uses_it():
+    """Same rule as `dct` on the asset: a prefix a document never references is
+    a claim about vocabularies it does not speak."""
+    mapper = _mapper()
+    rule = _rule(access_level="open", classification="green")
+    offer = mapper.to_odrl_offer("ds", rule)
+    assert offer["odrl:obligation"] == []
+    assert "rdf" not in offer["@context"]
+
+
+def test_the_contract_operand_is_still_the_string_edc_binds():
+    """`GOV-10`'s open half, pinned so it cannot be closed by accident.
+
+    `services/edc-extensions` binds the **literal** `"ds:contractRequired"`.
+    Declaring `ds:` in the context would make EDC expand the term, the binding
+    would stop matching, and the constraint would silently stop being evaluated
+    — a policy term shown and not enforced, which is what `GOV-04` was.
+
+    So this asserts both halves together: the token is unchanged **and** the
+    prefix stays undeclared. Closing the row means changing the Java binding and
+    this test in the same commit, and proving it on a running exchange.
+    """
+    mapper = _mapper()
+    rule = _rule(access_level="restricted", classification="green")
+    offer = mapper.to_odrl_offer("ds", rule)
+    operands = [
+        c["odrl:leftOperand"]["@id"]
+        for perm in offer["odrl:permission"]
+        for c in perm.get("odrl:constraint", [])
+    ]
+    assert "ds:contractRequired" in operands
+    assert "ds" not in offer["@context"]

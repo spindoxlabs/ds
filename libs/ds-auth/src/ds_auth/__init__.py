@@ -45,6 +45,17 @@ from .permissions import grant_satisfies, has_exact_permission, has_permission
 from .principal import Principal
 
 __all__ = [
+    # The role-bundle table and its helpers. Imported here and named nowhere,
+    # so `ruff` flagged six unused imports on every run and the names were
+    # importable from `ds_auth` only by accident — `from ds_auth import
+    # expand_bundles` worked, `ds_auth.__all__` denied it. `bundles_export.py`
+    # and `test_vocabulary.py` both rely on them.
+    "MACHINE_IDENTITY_PERMISSIONS",
+    "ROLE_BUNDLES",
+    "SERVICE_ONLY_PERMISSIONS",
+    "all_bundled_permissions",
+    "bundle_capabilities",
+    "expand_bundles",
     "OidcConfig",
     "default_jwks_uri",
     "Organization",

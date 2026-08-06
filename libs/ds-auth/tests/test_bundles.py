@@ -251,7 +251,9 @@ def test_legacy_scope_named_org_group_still_works():
 # is exactly why it must not be able to grant anything Layer A does not already
 # define. These tests are that boundary.
 
-from ds_auth import parse_group_aliases
+# Imported here rather than at the top so it sits with the prose above that
+# explains what Layer B is; `E402` is the price of keeping the two together.
+from ds_auth import parse_group_aliases  # noqa: E402
 
 
 def test_an_alias_translates_a_foreign_group():

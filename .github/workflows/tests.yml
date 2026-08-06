@@ -53,7 +53,7 @@ jobs:
           # how a workflow stops being read.
           #
           # Measured 2026-08-05, and these are the rows that close each one:
-          #   libs/ds-auth              21   AUTH-05
+          #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06, now `lint: true`
           #   libs/ds-e2e              183   E2E-11
           #   libs/governance           10   (all in tests/)
           #   services/connector       265
@@ -61,9 +61,13 @@ jobs:
           #   services/identity-registry 78
           # Flip a unit to `lint: true` in the same commit that clears it.
           - unit: libs/ds-auth
-            lint: false
+            lint: true
           - unit: libs/ds-e2e
             lint: false
+          # New unit, so no ratchet debt to inherit: `lint` and `mypy --strict`
+          # were both clean the day its `tests/` directory was added (EDCL-10).
+          - unit: libs/ds-edc
+            lint: true
           - unit: libs/ds-obs
             lint: true
           - unit: libs/governance

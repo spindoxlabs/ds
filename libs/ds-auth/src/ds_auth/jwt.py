@@ -30,7 +30,9 @@ def _jwks_client(jwks_uri: str) -> PyJWKClient:
 
 def get_bearer_token(authorization_header: str | None) -> str:
     """Extract the raw token from an ``Authorization: Bearer <t>`` header."""
-    if not authorization_header or not authorization_header.lower().startswith("bearer "):
+    if not authorization_header or not authorization_header.lower().startswith(
+        "bearer "
+    ):
         raise TokenMissing("Missing bearer token")
     token = authorization_header.split(" ", 1)[1].strip()
     if not token:
@@ -124,6 +126,21 @@ def is_service_account(claims: dict) -> bool:
     Keycloak sets ``preferred_username`` to ``service-account-<client_id>`` for
     every client-credentials grant — the most reliable signal. User tokens are
     identified by an email, group membership, or a human ``preferred_username``.
+
+    **A bare ``scope`` claim is deliberately not a signal**, and this is the one
+    thing to read before changing anything here. Keycloak puts ``scope`` on
+    *user* tokens too — ``openid profile email`` — so treating it as evidence of
+    a service would classify every human as a machine and collapse the
+    authorization model in the permissive direction. The defect ledger carried a
+    row asking for exactly that change; the argument against it is written out in
+    ``services/federated-catalog/tests/test_auth.py``, and the row's real cause
+    was four test helpers minting tokens Keycloak cannot issue.
+
+    What remains is a token with **no** indicator either way — no ``azp``, no
+    ``client_id``, no ``preferred_username``, no ``email``, no groups. Keycloak
+    issues no such token, so it is classified as a user (the closed direction)
+    and logged, because the 403 that follows is otherwise unexplainable from
+    the outside.
     """
     preferred_username = claims.get("preferred_username", "")
 
@@ -151,6 +168,21 @@ def is_service_account(claims: dict) -> bool:
     # and client_id (e.g. clients provisioned by celine-policies sync).
     if claims.get("azp") and not claims.get("email") and not preferred_username:
         return True
+
+    # Neither kind of evidence. Classify as a user — the closed direction, since
+    # a user with no groups grants nothing — but say so: the caller is about to
+    # get a 403 that names a permission and nothing about why its scope was
+    # never consulted.
+    if extract_scopes(claims):
+        logger.warning(
+            "Token for sub=%r carries scopes %s but no service-account indicator "
+            "(azp, client_id, preferred_username) and no user indicator (email, "
+            "groups). Treating it as a user, so its scopes are not consulted and "
+            "authorization will rest on group membership it does not have. "
+            "Keycloak issues no such token — check whichever component minted it.",
+            claims.get("sub"),
+            extract_scopes(claims),
+        )
 
     return False
 

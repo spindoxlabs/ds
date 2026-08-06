@@ -91,3 +91,18 @@ build breaks:
 docker run --rm -v "$PWD":/w -w /w node:22-alpine \
   sh -c 'npm install --package-lock-only --include=optional'
 ```
+
+## The portal has a production guard now
+
+`src/lib/server/production.ts` mirrors `ds_auth.production.ProductionGuard`, and
+`hooks.server.ts` calls `buildPortalGuard().enforce()` at **module scope** — so a production
+portal with a dev-default `PORTAL_SERVICE_CLIENT_SECRET` fails to boot rather than serving
+pages that 401 against every upstream (`AUTH-04`). Before it existed, the fallback to the
+client id was a single `console.warn`.
+
+`DS_ENV` defaults to **`production`** here, exactly as it does on the Python side: an unset
+variable must not be the insecure mode. Compose passes `DS_ENV: ${DS_ENV:-dev}`, which is the
+explicit opt-out.
+
+**Register a new dev default with the guard in the same change** — the root guide's rule, now
+followable on this side. `tests/unit/production-guard.test.ts` covers both directions.

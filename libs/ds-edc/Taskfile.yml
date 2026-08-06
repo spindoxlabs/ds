@@ -1,0 +1,31 @@
+version: "3"
+
+# This unit configured pytest, ruff and mypy in `pyproject.toml` and had **no
+# `tests/` directory and no Taskfile** — the last unit in the repository with
+# neither, after `libs/ds-e2e` got one. Ten defect rows sat open against it and
+# every one of them was found by reading, because there was nothing to run.
+#
+# `test` is a pure unit suite: `httpx.MockTransport` stands in for the EDC
+# control plane, so it needs no stack and no network. What a mock cannot prove —
+# that EDC answers these paths at all — is the job of the root `e2e:*` flows.
+
+tasks:
+  setup:
+    desc: Install the library in editable mode (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+
+  test:
+    deps: [setup]
+    desc: Run the ds-edc unit suite (no running stack required)
+    cmds:
+      - uv run pytest tests/ -q
+
+  lint:
+    cmds:
+      - uv run ruff check src/ tests/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/

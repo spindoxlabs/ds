@@ -333,6 +333,8 @@ version = "0.1.0"
 source = { editable = "../../libs/ds-auth" }
 dependencies = [
     { name = "cryptography" },
+    { name = "fastapi" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt", extra = ["crypto"] },
@@ -341,9 +343,8 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=42" },
-    { name = "fastapi", marker = "extra == 'dev'", specifier = ">=0.115" },
-    { name = "fastapi", marker = "extra == 'fastapi'", specifier = ">=0.115" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "fastapi", specifier = ">=0.115" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
     { name = "pydantic", specifier = ">=2.7" },
     { name = "pydantic-settings", specifier = ">=2.4" },
@@ -354,7 +355,7 @@ requires-dist = [
     { name = "pyyaml", marker = "extra == 'dev'", specifier = ">=6" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.6" },
 ]
-provides-extras = ["fastapi", "dev"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "ds-identity-registry"

@@ -9,7 +9,7 @@ URL: `http://portal.dataspaces.localhost/api/connector/`
 > point: what runs, which endpoints exist, how to configure and start it. The
 > reasoning behind the ODRL derivation, the consent model and the enforcement
 > matrix is published at **<https://spindoxlabs.github.io/ds/>** — start with
-> [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) and
+> [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) and
 > [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/).
 > Working on the code? Read `AGENTS.md` in this directory first.
 
@@ -94,8 +94,8 @@ files ended up describing one mechanism differently. The site is the source:
 
 | Topic | Page |
 |---|---|
-| How `governance.yaml` becomes an ODRL offer — actions, prohibitions, constraints, obligations | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
-| Why purposes come from `policy.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/governance-and-odrl/) |
+| How `governance.yaml` becomes an ODRL offer — actions, prohibitions, constraints, obligations | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
+| Why purposes come from `policy.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
 | Consent lifecycle, the circle, material-change rules, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
 | Revocation — why EDC's policy monitor terminates transfers and this service does not | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
 | Subject identity, the identifier cascade, unbound subjects | [Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/) |

@@ -1,6 +1,8 @@
 """Production configuration guard — warn in dev, refuse to boot in production."""
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from ds_auth.production import (
@@ -177,8 +179,50 @@ def test_whitespace_and_absence_do_not_flag():
         guard.enforce()
 
 
-def test_dev_only_warns(caplog):
-    """Same rule as every other guard: loud in dev, fatal in production."""
+def test_secret_equal_to_client_id_dev_only_warns(caplog):
+    """Same rule as every other guard: loud in dev, fatal in production.
+
+    Named `test_dev_only_warns` until `AUTH-05` cleared ruff: a second function
+    by that name shadowed the one at the top of this file, so the
+    `forbid_default` dev-path check silently stopped running the day this was
+    added. `F811` had been reporting it the whole time, on a linter nothing
+    invoked — the smallest possible instance of *a green check is not a check
+    that ran*.
+    """
     guard = ProductionGuard("svc", env="dev")
     guard.forbid_secret_equal_to_client_id("SVC_SECRET", "svc-x", "svc-x", "r")
+    guard.enforce()  # must not raise
+    assert len(guard.violations) == 1
+
+
+# ── AUTH-06 · a guard method with no caller enforces nothing ─────────────────
+
+def test_require_https_is_registered_by_every_service_that_has_an_issuer():
+    """`require_https` existed, was tested, and was called by no service.
+
+    A guard method is only a rule once something registers a setting with it, so
+    the unit test above proves the method works and this one proves it runs. The
+    JWKS every signature is checked against is fetched from the issuer URL;
+    over plain HTTP an on-path attacker substitutes the key set.
+    """
+    root = Path(__file__).resolve().parents[3]
+    mains = {
+        "connector": root / "services/connector/src/connector/main.py",
+        "federated-catalog":
+            root / "services/federated-catalog/src/federated_catalog/main.py",
+        "identity-registry":
+            root / "services/identity-registry/src/identity_registry/main.py",
+        "provenance": root / "services/provenance/src/provenance/main.py",
+    }
+    missing = [
+        name for name, path in mains.items()
+        if "guard.require_https(" not in path.read_text()
+    ]
+    assert not missing, f"{missing} build a ProductionGuard and register no https rule"
+
+
+def test_require_https_accepts_https_and_an_unset_value():
+    guard = ProductionGuard("svc", env="production")
+    guard.require_https("ISSUER", "https://sso.example.org/realms/ds", "use https")
+    guard.require_https("ABSENT", None, "use https")
     guard.enforce()  # must not raise

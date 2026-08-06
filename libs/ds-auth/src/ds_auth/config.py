@@ -48,8 +48,6 @@ class OidcConfig:
     # deployment that names its groups the ds way wants.
     group_aliases: Mapping[str, str] = field(default_factory=dict)
 
-    _resolved_jwks: str | None = field(default=None, init=False, repr=False, compare=False)
-
     @property
     def verification_enabled(self) -> bool:
         return bool(self.issuer_url)

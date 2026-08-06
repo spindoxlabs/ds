@@ -28,7 +28,7 @@ interoperable, and nothing negotiates the version down.
 | # | Rule | Status |
 |---|---|---|
 | X-1 | Control-plane exchanges between participants use DSP `2025-1`. No other control protocol is accepted | **Enforced** — no other client exists |
-| X-2 | A participant advertising a DSP endpoint without the `/2025-1` suffix is not reachable | **Enforced** by the URL, though three configuration files document the URL without the suffix (defect P2-2) |
+| X-2 | A participant advertising a DSP endpoint without the `/2025-1` suffix is not reachable | **Enforced, and now checked.** `libs/ds-edc/tests/test_protocol_pin.py` derives the segment from the pin and fails on any configured DSP address in the tree that omits it, or that names a different version. The three files of defect P2-2 no longer omit it; the check is what stops a fourth appearing |
 | X-3 | The data plane is HTTP pull. Push, streaming and file-drop transfers are not supported | **Enforced** — no other `DataAddress` type is emitted |
 
 ## 2. The control plane / data plane split
@@ -86,8 +86,8 @@ example by defining what happens when a connection is lost.
 
 | # | Rule | Status |
 |---|---|---|
-| X-10 | A timeout is reported as a timeout, never as a terminal protocol state | **Not enforced** — both polls synthesise `state="TIMEOUT"`, which callers then compare against real EDC state names. Defect **P3-4** |
-| X-11 | A failed termination is reported as failed | **Not enforced** — `405`, `404` and `409` are all treated as success, and the user is told `{"terminated": true}`. Defect **P3-4** |
+| X-10 | A timeout is reported as a timeout, never as a terminal protocol state | **Enforced.** Both polls raise `EdcPollTimeout`, which is a `TimeoutError` and carries the last state actually observed; the connector answers **504**, not 502. The deadline is monotonic, so a slow control plane no longer extends the wait past what the caller asked for. `libs/ds-edc/tests/test_polling.py` |
+| X-11 | A failed termination is reported as failed | **Enforced.** `404`, `405` and `409` all raise. The one tolerated case is a `409` on an entity that reads back as `TERMINATED` — a termination *observed* rather than assumed, which keeps the TTL sweep idempotent without covering the case that mattered: a `409` on a `FINALIZED` negotiation, where the refusal could not undo the agreement and the subject was told it had. `libs/ds-edc/tests/test_termination.py` |
 
 ## 5. The specification inventory
 
@@ -124,7 +124,9 @@ in the rulebook.
 1. A protocol version change is a **breaking change** and requires a major release of this
    platform.
 2. The version pin lives in exactly one place (`libs/ds-edc/src/ds_edc/schemas.py`); changing
-   it anywhere else is a defect.
+   it anywhere else is a defect. `test_protocol_pin.py` asserts that the string occurs in no
+   other file, and that every DSP address in the tree carries the version derived from it —
+   so a bump is a one-line edit plus whatever that test then names.
 3. Before a version change ships, `task e2e:all` must pass against a two-participant stack
    on the new version — the DSP exchange is the one thing no unit test can substitute for.
 4. Participants get notice equal to one release cycle. There is no in-band version
@@ -154,8 +156,10 @@ Recorded in [Scope and deviations](scope-and-deviations.md) §2.
 `CEEDS-STD-19`, `CEEDS-INT-23`, `-25`, `-26`.
 
 **Open:** `DSSC-DEX-38` — partly enforced, and no longer a defect: see `X-13` for what is
-served and why the residual is a capability decision. `DSSC-DEX-09` (`X-10`, `X-11` — defect
-P3-4). `DSSC-DEX-50`, `-51`, `-52`, `-64`, `-65` (federation — out of scope).
+served and why the residual is a capability decision. `DSSC-DEX-50`, `-51`, `-52`, `-64`,
+`-65` (federation — out of scope).
+
+**`DSSC-DEX-09` closed** — `X-10` and `X-11` are both enforced, defect P3-4 with them.
 
 **`DSSC-DEX-02`** — a data provider describing the technical means of access — is answered
 in [Catalogue and metadata](catalogue-and-metadata.md) §3.

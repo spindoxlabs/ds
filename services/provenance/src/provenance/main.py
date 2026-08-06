@@ -33,6 +33,16 @@ async def lifespan(app: FastAPI):
         settings.oidc_issuer_url,
         "Point at the Keycloak realm issuer so JWT signatures are verified.",
     )
+    # The JWKS every signature is checked against is fetched from this URL.
+    # Over plain HTTP an on-path attacker substitutes the key set and every
+    # token verifies. `require_https` existed on the guard from the start and
+    # was registered by nobody (`AUTH-06`) — a check that is written, tested
+    # and never runs, which is the failure this ledger keeps re-finding.
+    guard.require_https(
+        "PROVENANCE_OIDC_ISSUER_URL",
+        settings.oidc_issuer_url,
+        "Use an https:// issuer URL; the realm's JWKS is fetched from it.",
+    )
     guard.forbid_true(
         "PROVENANCE_OIDC_INSECURE_DEV",
         settings.oidc_insecure_dev,

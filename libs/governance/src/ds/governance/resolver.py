@@ -59,30 +59,19 @@ class GovernanceResolver:
         }
         return cls(GovernanceConfig(defaults=defaults, sources=sources))
 
-    @classmethod
-    def auto_discover(
-        cls,
-        app_name: str | None = None,
-        project_dir: str | None = None,
-    ) -> GovernanceResolver:
-        env_path = os.getenv("GOVERNANCE_CONFIG_PATH")
-        if env_path:
-            p = Path(env_path)
-            if p.is_file():
-                return cls.from_file(p)
-
-        if app_name:
-            root = Path(os.environ.get("PIPELINES_ROOT", "./"))
-            candidate = root / "apps" / app_name / "governance.yaml"
-            if candidate.is_file():
-                return cls.from_file(candidate)
-
-        if project_dir:
-            candidate = Path(project_dir).parent / "governance.yaml"
-            if candidate.is_file():
-                return cls.from_file(candidate)
-
-        return cls(GovernanceConfig())
+    # `auto_discover` was removed here (`GOV-15`). It guessed a `governance.yaml`
+    # from `GOVERNANCE_CONFIG_PATH`, `PIPELINES_ROOT/apps/<app>/` or a project
+    # directory, and **returned an empty config when it found nothing** — so a
+    # wrong path produced a resolver that exposed no datasets and reported no
+    # error, which is the `CI-02` shape. Nothing in this repository called it.
+    #
+    # It has callers in `celine-utils`, and they are **not these**:
+    # `celine.utils.pipelines.governance.GovernanceResolver` is a parallel class
+    # with its own `auto_discover`, and no sibling checkout imports
+    # `ds.governance` at all. Checked before deleting, because this ledger
+    # records three rows where the holder of a *"nothing uses X"* lived outside
+    # this repository — the discovery conventions are celine's, and they belong
+    # with the pipelines that follow them.
 
     def resolve(self, dataset_name: str) -> GovernanceRuleV2:
         sources = self.config.sources
@@ -305,9 +294,27 @@ def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> Dataspace
 def _merge_models(base, override, model_cls):
     """Override's explicitly-set fields on top of base, recursively.
 
-    `exclude_defaults` is what makes "explicitly set" mean something: a field
-    the source never mentioned is absent from the dump and therefore cannot
-    silently overwrite an inherited value with a default.
+    **`exclude_unset`, not `exclude_defaults`** (`GOV-06`). Both drop a field the
+    source never mentioned — which is the point, so an unmentioned field cannot
+    overwrite an inherited value with a default. They differ on a field the
+    source *did* mention whose value happens to equal the default, and
+    `exclude_defaults` drops that too: it cannot tell "silent" from "said no".
+
+    That made one instruction unexpressible. `DataspaceSpec.expose` defaults to
+    `False`, so an overlay saying `expose: false` — the obvious way to withdraw a
+    dataset in one environment — dumped to nothing and the base's `expose: true`
+    survived. The dataset stayed in the catalogue, and the overlay that withdrew
+    it validated clean. The documented workaround was `access_level: secret`,
+    which is a different statement about a different thing.
+
+    Pydantic tracks this per instance in `model_fields_set`, populated by
+    `model_validate` — which is how `_parse_rule` builds every one of these — and
+    `model_validate` on the merged dict carries the set forward, so a chain of
+    overlays keeps working.
+
+    Generalises past `expose`: every boolean defaulting to `False` and every
+    optional defaulting to `None` had the same hole, so an overlay could turn a
+    flag on and never off.
     """
 
     def deep_merge(a: dict, b: dict) -> dict:
@@ -321,7 +328,7 @@ def _merge_models(base, override, model_cls):
 
     return model_cls.model_validate(
         deep_merge(
-            base.model_dump(exclude_defaults=True),
-            override.model_dump(exclude_defaults=True),
+            base.model_dump(exclude_unset=True),
+            override.model_dump(exclude_unset=True),
         )
     )

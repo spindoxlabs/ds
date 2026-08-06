@@ -6,8 +6,12 @@ caller is a service or a human, expands a human's groups into capabilities, and 
 FastAPI dependencies every Python service mounts. It also carries the outbound service-token
 provider, the VC verifier for subject-facing routes, and the boot-time `ProductionGuard`.
 
-`errors.py` / `config.py` / `jwt.py` / `permissions.py` / `principal.py` are framework-free;
-only `fastapi.py` imports FastAPI.
+`errors.py` / `config.py` / `jwt.py` / `permissions.py` / `principal.py` are framework-free.
+The **package** is not: `user_credentials.py` raises `HTTPException` from 24 call sites and
+imports FastAPI at module level, so `fastapi` and `httpx` are core dependencies rather than
+extras (`AUTH-03`). `tests/test_declared_dependencies.py` fails on any module-level import
+that is not declared — the check that would have caught `ServiceTokenProvider` being
+unimportable from a plain install.
 
 ## References
 
@@ -111,3 +115,18 @@ ship `insecure_dev=True` with the production issuer unset.
 Helm chart.
 
 `task -d libs/ds-auth test`.
+
+## Two traps in `jwt.py` and `production.py`
+
+**Do not teach `is_service_account` that a bare `scope` claim means a service.** Keycloak puts
+`scope` on user tokens too (`openid profile email`), so that change classifies every human as
+a machine and authorizes them on OIDC scopes instead of group membership. The defect ledger
+carried a row asking for exactly it; the argument is written out in the function's docstring
+and in `services/federated-catalog/tests/test_auth.py`, and the real cause was test helpers
+minting tokens Keycloak cannot issue. A token with **no** indicator either way is read as a
+user and logged, so the 403 that follows is diagnosable.
+
+**A guard method is a rule only once a service registers a setting with it.** `require_https`
+was written, unit-tested and called by nobody for as long as it existed. `test_production.py`
+now asserts that every service with an issuer URL registers it — add the assertion when you
+add the method, or the method is documentation.

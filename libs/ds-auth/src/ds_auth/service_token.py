@@ -57,5 +57,9 @@ class ServiceTokenProvider:
 
         self._token = data["access_token"]
         self._expires_at = now + data.get("expires_in", 300) - 30
-        log.debug("Acquired service token for %s (expires in %ds)", self._client_id, data.get("expires_in", 300))
+        log.debug(
+            "Acquired service token for %s (expires in %ds)",
+            self._client_id,
+            data.get("expires_in", 300),
+        )
         return self._token

@@ -27,6 +27,7 @@ from ...services.agreement_service import (
 )
 from ...services.odrl_reader import extract_purposes
 from ds_auth.user_credentials import verify_user_vc_jwt
+from ds_edc import EdcPollTimeout
 
 router = APIRouter(prefix="/consumer", tags=["consumer"])
 
@@ -698,6 +699,13 @@ async def run_flow(
         return await svc.run_flow(req)
     except UnknownParticipantError as exc:
         raise HTTPException(403, "Unknown dataspace participant") from exc
+    except EdcPollTimeout as exc:
+        # Rulebook, data exchange X-10: a timeout is reported as a timeout. It
+        # used to arrive as `state="TIMEOUT"` and leave here as a 502, which
+        # says the counterparty answered badly — the one thing that did not
+        # happen. 504 says nobody answered in time, and the message names the
+        # last state the exchange was actually seen in.
+        raise HTTPException(504, str(exc)) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             502,

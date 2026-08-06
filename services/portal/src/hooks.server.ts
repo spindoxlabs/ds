@@ -19,8 +19,15 @@
  */
 import { env } from '$env/dynamic/private';
 import { resolveUserByEmail } from '$lib/server/identity-registry';
+import { buildPortalGuard } from '$lib/server/production';
 import { verifyAccessToken } from '$lib/server/token';
 import { redirect, type Handle } from '@sveltejs/kit';
+
+// `AUTH-04`. Module scope, so this runs once when the server starts and a
+// production portal with a dev-default service secret never reaches the first
+// request — the same contract every Python service's lifespan has. In dev
+// (`DS_ENV=dev`, which compose sets) it logs and continues.
+buildPortalGuard().enforce();
 
 /** Where the browser goes to start or end a session. Caddy routes /oauth2/* here. */
 const SSO_BASE = env.OAUTH2_PROXY_BASE_URL ?? 'http://sso.dataspaces.localhost';

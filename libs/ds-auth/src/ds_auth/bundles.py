@@ -181,7 +181,8 @@ def parse_group_aliases(raw: str | None) -> dict[str, str]:
 
     Layer B maps a *foreign* IdP's group names onto ds bundles::
 
-        {"celine-manager": "ds-participant-admin", "celine-viewer": "ds-participant-viewer"}
+        {"celine-manager": "ds-participant-admin",
+         "celine-viewer": "ds-participant-viewer"}
 
     The values must be **bundle names**, never capabilities. An alias pointing
     straight at ``connector.provider.write`` would make deployment configuration a
@@ -218,7 +219,9 @@ def parse_group_aliases(raw: str | None) -> dict[str, str]:
     aliases: dict[str, str] = {}
     for foreign, target in parsed.items():
         if not isinstance(foreign, str) or not isinstance(target, str):
-            logger.error("ds-auth: ignoring non-string alias entry %r -> %r", foreign, target)
+            logger.error(
+                "ds-auth: ignoring non-string alias entry %r -> %r", foreign, target
+            )
             continue
         if target not in ROLE_BUNDLES:
             logger.error(

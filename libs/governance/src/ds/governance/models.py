@@ -394,14 +394,25 @@ def subject_column(rule: "GovernanceRule | GovernanceRuleV2") -> str | None:
 
     Mirrors `get_row_filter_specs` in the real dataset-api, which treats the
     second as legacy input to the first. Every consumer of this fact — the ODRL
-    mapper, the compliance matrix, the connector's data-plane authorisation —
-    must go through here, because the two readings disagree exactly where it
-    matters: a consent-gated dataset declared canonically has no
-    `user_filter_column`, and a reader that only knows that field concludes
-    there is nothing to filter on.
+    mapper, the connector's data-plane authorisation — must go through here,
+    because the two readings disagree exactly where it matters: a consent-gated
+    dataset declared canonically has no `user_filter_column`, and a reader that
+    only knows that field concludes there is nothing to filter on.
+
+    **Canonical wins** (`GOV-05`). This function read `user_filter_column`
+    *first* until 2026-08-06 — contradicting the paragraph above, and
+    contradicting `GovernanceMapper.to_asset_create`, which has always preferred
+    `row_filters[0]`. A rule declaring both therefore published one column to EDC
+    as `{prefix}:userFilterColumn` and reported the other to every
+    `/internal/dataplane/authorize` decision: the catalogue described a filter on
+    one column while the data plane filtered on another.
+
+    The tie-break is not this repository's to invent. `get_row_filter_specs` in
+    the real dataset-api appends the `row_filters` entries first and *then*
+    migrates the legacy column in behind them, so the canonical spelling leads.
+    The defect ledger recorded this row as an inversion in the mapper; the mapper
+    was the half that already agreed with the data plane.
     """
-    if getattr(rule, "user_filter_column", None):
-        return rule.user_filter_column
     for row_filter in getattr(rule, "row_filters", None) or []:
         args = getattr(row_filter, "args", None)
         # A model when parsed from governance YAML, a plain dict when a rule is
@@ -409,4 +420,6 @@ def subject_column(rule: "GovernanceRule | GovernanceRuleV2") -> str | None:
         column = args.get("column") if isinstance(args, dict) else getattr(args, "column", None)
         if column:
             return str(column)
+    if getattr(rule, "user_filter_column", None):
+        return rule.user_filter_column
     return None

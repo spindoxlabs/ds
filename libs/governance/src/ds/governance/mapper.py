@@ -4,10 +4,40 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from .models import GovernanceRuleV2, OdrlProfile
+from .models import GovernanceRuleV2, OdrlProfile, subject_column
 
 # No module-level tag→purpose mapping — deployers configure this via
 # OdrlProfile.tag_to_purpose so the platform stays domain-neutral.
+
+RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+# ── `ds:contractRequired` is deliberately left undeclared (`GOV-10`, half open)
+#
+# The emitted offer uses one prefix its `@context` does not define: `ds:`, in
+# `ds:contractRequired`. Declaring it is **not** a context tweak, and the reason
+# is worth stating before someone does it as a tidy-up.
+#
+# `services/edc-extensions` binds the **literal string**:
+#
+#     ruleBindingRegistry.bind("ds:contractRequired", NEGOTIATION_SCOPE);
+#
+# Declare `ds:` here and EDC's JSON-LD expansion resolves the term to a full
+# IRI, the binding stops matching, and the contract constraint is silently no
+# longer evaluated. That is precisely the failure `GOV-04` and `EDC-06` were —
+# a policy term shown to counterparties that nothing enforces — arrived at from
+# the opposite direction, and it would pass every unit test in this repository.
+#
+# Closing it properly is one change across three places, verified live:
+#   1. give the profile a `contract_operand`, so this stops being a second
+#      hardcoded vocabulary beside `p.term(p.membership_operand)`;
+#   2. bind that operand in `DataspacesExtension` the way `membershipOperand`
+#      already is, from configuration rather than a literal;
+#   3. rebuild the EDC image and prove it on a running exchange — the
+#      binding-vs-emission conformance test checks the two lists agree, not that
+#      the engine matched.
+#
+# `rdf:` has none of that risk: it appears only inside `odrl:obligation`, which
+# carries no bound operand, so it is declared below.
 
 # ── Permitted actions by access_level ─────────────────────────────────────────
 # "{profile}" is replaced with the profile query-action IRI at runtime.
@@ -161,6 +191,11 @@ class GovernanceMapper:
             p.prefix: p.namespace,
             "xsd": "http://www.w3.org/2001/XMLSchema#",
         }
+        # `rdf:` is declared when an obligation uses it, on the same rule as
+        # `dct` on the asset: a context prefix a document never references is a
+        # claim about vocabularies it does not speak (`GOV-10`).
+        if any("rdf:value" in str(o) for o in obligations):
+            context["rdf"] = RDF_NAMESPACE
         if p.profile_iri:
             context["odrl:profile"] = p.profile_iri
 
@@ -225,7 +260,18 @@ class GovernanceMapper:
             constraints.append({
                 "odrl:leftOperand": {"@id": "ds:contractRequired"},
                 "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": "true",
+                # Typed, like every sibling constraint (`GOV-11`). It was a bare
+                # `"true"` — the only untyped right operand this mapper emitted,
+                # so a JSON-LD processor was free to read it as a plain literal
+                # while the membership and purpose operands beside it carried
+                # their type. `xsd:boolean` rather than the siblings'
+                # `xsd:string`, because the value is one.
+                #
+                # Safe against the enforcement side: `ContractRequiredFunction`
+                # parses through `Purposes.unwrapScalar`, which reaches `@value`
+                # inside a `JsonObject` before comparing — the same unwrapping
+                # that exists because EDC's expansion produces this shape anyway.
+                "odrl:rightOperand": {"@value": "true", "@type": "xsd:boolean"},
             })
 
         # Purpose constraint — ONE constraint listing every permitted purpose.
@@ -250,7 +296,11 @@ class GovernanceMapper:
         # (`IRI_CONFUSED_WITH_PREFIX`), 500ing the entire Management API list
         # response and emptying the DSP catalogue.
         #
-        # See `docs/governance-and-odrl.md` and the plan §3b.
+        # The rulebook's account of the profile and its required elements is
+        # `docs/rulebook/policies.md`; the packaging guard that keeps the
+        # forked transformer in the shadow JAR is in `services/edc-extensions`.
+        # (This used to cite `docs/governance-and-odrl.md`, which has never
+        # existed in this tree — `GOV-16`.)
         if len(purposes) == 1:
             constraints.append({
                 "odrl:leftOperand": {"@id": "odrl:purpose"},
@@ -336,21 +386,20 @@ class GovernanceMapper:
                 seen.add(iri)
         return purposes
 
-    def derive_purposes_from_tags(self, tags: list[str]) -> list[str]:
-        """Authoring helper — suggest ``policy.purpose[]`` slugs from tags.
-
-        Used when scaffolding a new governance entry.  Never called during
-        mapping: a tag is a catalogue keyword, not a reason for processing.
-        """
-        tag_map = self.profile.tag_to_purpose
-        seen: set[str] = set()
-        slugs: list[str] = []
-        for tag in tags:
-            slug = tag_map.get(tag)
-            if slug and slug not in seen:
-                slugs.append(slug)
-                seen.add(slug)
-        return slugs
+    # `derive_purposes_from_tags` was removed here (`GOV-15`). It mapped tags to
+    # purpose slugs through `OdrlProfile.tag_to_purpose`, described itself as a
+    # scaffolding helper, and was called by nothing in this repository or any
+    # sibling checkout.
+    #
+    # It is worth being clear why it does not come back rather than only that it
+    # went. The unit's own rule is *purposes are declared, never derived from
+    # tags*: a tag is a topic, a purpose is a reason for processing, and
+    # `policy.purpose[]` is the only runtime source. A helper that turns the
+    # first into the second is the wrong shape to have lying around next to the
+    # emitter, however carefully its docstring disclaims itself — the next reader
+    # sees a supported conversion. `OdrlProfile.tag_to_purpose` stays: it is
+    # profile data a deployer may carry for their own authoring tools, and
+    # nothing in the mapper reads it.
 
     # ── EDC Asset ─────────────────────────────────────────────────────────────
 
@@ -396,10 +445,13 @@ class GovernanceMapper:
                 f"{pfx}:classification": rule.classification,
                 f"{pfx}:sourceSystem": rule.source_system,
                 f"{pfx}:tags": ",".join(rule.tags),
-                f"{pfx}:userFilterColumn": (
-                    rule.row_filters[0].args.column if rule.row_filters
-                    else rule.user_filter_column
-                ),
+                # `subject_column(rule)`, never the two fields by hand. This
+                # site had its own copy of the precedence, and the copy and the
+                # helper resolved it in *opposite* orders — so a rule declaring
+                # both spellings published one column here and reported the
+                # other to `/internal/dataplane/authorize` (`GOV-05`). One fact,
+                # one reader; `test_subject_column.py` asserts they agree.
+                f"{pfx}:userFilterColumn": subject_column(rule),
                 f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
