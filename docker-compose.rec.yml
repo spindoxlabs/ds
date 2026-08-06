@@ -58,6 +58,15 @@ services:
       DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
       DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
       DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
+      # `ds.access.scope.cache.ttl.seconds` — how long the membership and
+      # consent decisions the EDC takes from ds-connector stay valid without
+      # re-asking. It was documented in `.env.example` and passed to **nothing**,
+      # so the extension's own 60s default was the only value the platform ever
+      # had, and a deployment tuning it changed nothing (`T-4`: a setting nothing
+      # reads). It is also the window in which the platform *cannot* fail closed,
+      # which is why `ds-e2e --flow fail-closed` reads the same variable and
+      # outlasts it before asserting a refusal.
+      DS_ACCESS_SCOPE_CACHE_TTL_SECONDS: ${DS_ACCESS_SCOPE_CACHE_TTL_SECONDS:-60}
     depends_on:
       edc-db-create-rec:
         condition: service_completed_successfully

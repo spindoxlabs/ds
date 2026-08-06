@@ -19,4 +19,11 @@ class BaseFlow(ABC):
     def execute(self) -> FlowResult: ...
 
     def cleanup(self) -> None:
-        """Override for per-flow cleanup. Default: no-op."""
+        """Restore whatever this flow changed outside its own records.
+
+        `runner.run_flow` calls this in a `finally` for **every** flow, so it
+        runs on the exception path as well as the happy one. Override it when a
+        flow mutates the stack itself — `fail-closed` stops a container — and
+        make it idempotent: `execute` is expected to undo its own work too, so
+        this is the net, not the primary path.
+        """

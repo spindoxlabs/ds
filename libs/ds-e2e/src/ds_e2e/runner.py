@@ -19,11 +19,25 @@ def run_flow(flow_name: str, settings: E2ESettings) -> FlowResult:
         return result
 
     http = HttpClient(settings)
+    flow: BaseFlow | None = None
     try:
         flow = flow_cls(settings, http)
         log.info("Running flow: %s — %s", flow.name, flow.description)
         return flow.execute()
     finally:
+        # `BaseFlow.cleanup` had no caller (`E2E-10` listed it as dead code),
+        # and a flow that mutates the stack — `fail-closed` stops a container —
+        # needs a net that runs on the exception path too, not only on its own
+        # happy path. Before `http.close()`, because cleanup uses the client.
+        #
+        # Swallowed and logged on purpose: a cleanup that raises must not
+        # replace the flow's verdict with its own traceback, which is `E2E-14`
+        # one layer out.
+        if flow is not None:
+            try:
+                flow.cleanup()
+            except Exception:
+                log.exception("cleanup of flow %s failed", flow_name)
         http.close()
 
 

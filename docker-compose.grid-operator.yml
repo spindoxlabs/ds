@@ -71,6 +71,7 @@ services:
       DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
       DS_CONNECTOR_INTERNAL_CLIENT_ID: ${SVC_EDC_ID:-svc-edc}
       DS_CONNECTOR_INTERNAL_CLIENT_SECRET: ${SVC_EDC_SECRET:-svc-edc}
+      DS_ACCESS_SCOPE_CACHE_TTL_SECONDS: ${DS_ACCESS_SCOPE_CACHE_TTL_SECONDS:-60}
     depends_on:
       edc-db-create-grid-operator:
         condition: service_completed_successfully

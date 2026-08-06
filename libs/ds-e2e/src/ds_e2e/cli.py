@@ -44,6 +44,7 @@ class FlowName(str, Enum):
     lineage = "lineage"
     two_providers = "two-providers"
     smoke = "smoke"
+    fail_closed = "fail-closed"
     # Aggregates
     all = "all"
     fast = "fast"

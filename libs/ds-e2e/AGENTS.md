@@ -1,6 +1,6 @@
 # ds-e2e
 
-The `ds-e2e` CLI. Sixteen named **flows**, each a class making a sequence of live HTTP calls
+The `ds-e2e` CLI. Seventeen named **flows**, each a class making a sequence of live HTTP calls
 against a running stack and recording a `Step` per assertion. Plus a declarative fixture
 provisioner (`ds-e2e scenario`), a destructive state reset (`ds-e2e clean`) and a
 reachability probe (`ds-e2e health`).
@@ -47,6 +47,11 @@ Four rules the security flows follow, and new ones should too:
   refusal there is always about the credential.
 - **A flow that records no step must not report PASS.** Check what `FlowResult.passed`
   actually evaluates before trusting a green run.
+- **A refusal must be attributable to the thing you removed.** Two refusals that look
+  identical on the wire — the provider denying, and *our* connector declining to ask (409
+  deduplication) — are the difference between an assertion and a placebo. `fail_closed.py`
+  classifies every attempt by which side answered and fails on the wrong one; copy that shape
+  before writing another negative flow.
 
 ## The two route tables
 
@@ -96,6 +101,23 @@ purpose chain is enforced rather than merely declared.
 4. Add `task e2e:<name>` to the root `Taskfile.yml`
 5. Declare fixtures in a scenario rather than creating them in `execute()`, and revoke
    anything the flow itself writes
+6. Override `cleanup()` if the flow changes anything outside its own records — `run_flow`
+   calls it in a `finally` for every flow, including the exception and Ctrl-C paths
+
+## A flow that stops a service
+
+`fail-closed` is the only one, and its three traps generalise. Read
+`flows/fail_closed.py`'s header before changing it; the short version:
+
+- **Target an offer the PDP actually decides.** Only `{ns}Membership` and `{ns}ConsentStatus`
+  reach ds-connector. `odrl:purpose` is evaluated inside the EDC JVM, so a flow targeting a
+  purpose-only offer stops a service that the negotiation never consults — and reports a
+  fail-open. `_assert_offer_needs_the_pdp` checks the *published* offer, not `governance.yaml`.
+- **Outlast `ds.access.scope.cache.ttl.seconds`** (default 60, and now actually passed to the
+  EDC containers). It is the window in which the platform cannot fail closed, and it bounds
+  recovery too — the `false` computed during an outage outlives the restart.
+- **Restore in `cleanup()`, not only on the happy path.** Everything after a flow that leaves
+  a container down fails for reasons of its own.
 
 Sync httpx — no async needed for a sequential runner. Known gaps are in
 `.agents/defect-per-service.md`.

@@ -48,6 +48,8 @@ pair, the dataset API, both provenance instances and the identity registry.
 | `uc1` / `uc2` / `uc3` | the three business use cases |
 | `catalog-discovery` | catalogue freshness, shape, resolution, search and paging |
 | `lineage` | ingestion → provenance events → lineage traversal → audit log |
+| `two-providers` | that a second provider with no members keeps its own catalogue, governance and counterparty |
+| `fail-closed` | **stops `ds-connector` and proves the negotiation gate denies**, then that service resumes. Runs last, takes ~3 minutes — it must outlast the EDC's decision cache in both directions — and needs the Docker topology |
 
 Four aggregates: `all`, `fast`, `security` (`api-contract`, `authz-perimeter`,
 `user-authority`, `dcp-trust`) and `chains`.

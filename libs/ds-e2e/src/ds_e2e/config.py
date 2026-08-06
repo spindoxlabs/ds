@@ -268,25 +268,54 @@ class E2ESettings(BaseSettings):
         validation_alias="E2E_EDC_GRID_OPERATOR_MANAGEMENT_URL",
     )
 
-    #: The container serving the provider's `/internal/*` PDP, for the
-    #: fail-closed flow (`E2E-06`), which stops it to prove the enforcement
-    #: points deny. A setting rather than a literal because the compose project
-    #: name is configurable, and a flow that stops the wrong container — or
-    #: silently stops nothing — is worse than one that fails.
     #: The container serving the PDP the fail-closed flow stops (`E2E-06`).
     #:
-    #: The **grid operator's**, because that is the exchange whose baseline can
-    #: be established in one call: `two-providers` proves this consumer
-    #: negotiates for `grid_operator_asset_id` with no consent gate, while both
-    #: REC datasets terminate the negotiation without a prior grant — a
-    #: different property, tested by `consent-request`.
+    #: The **REC's**, and it must stay the connector `connector_url` addresses:
+    #: the flow proves the container it stopped is the one that went silent by
+    #: watching that URL, so a mismatch fails the flow rather than producing a
+    #: refusal from a service nobody stopped.
+    #:
+    #: It was the grid operator's, chosen because that exchange has no consent
+    #: gate and so costs one call to baseline. That convenience deleted the
+    #: subject of the test: the grid operator's offer carries only
+    #: `odrl:purpose`, which the EDC evaluates in-process, so its negotiation
+    #: never asks a PDP and stopping one cannot refuse it. See
+    #: `flows/fail_closed.py`.
     #:
     #: A setting rather than a literal because the compose project name is
     #: configurable, and a flow that stops the wrong container — or silently
     #: stops nothing — is worse than one that fails.
     pdp_container: str = Field(
-        "dataspaces-ds-connector-grid-operator-1",
+        "dataspaces-ds-connector-rec-1",
         validation_alias="E2E_PDP_CONTAINER",
+    )
+
+    #: The dataset the fail-closed flow negotiates for (`E2E-06`).
+    #:
+    #: Membership-gated and **not** consent-gated, which is the pair of
+    #: properties the flow needs: `{ns}Membership` is evaluated by
+    #: `AccessScopeFunction`, which calls `GET /internal/participants/check` on
+    #: ds-connector — so there is a PDP to be unreachable — while the absence of
+    #: a consent constraint means the baseline needs no prior grant.
+    #:
+    #: Not `asset_id`: `datasets.silver.meters_15m` is consent-gated, and its
+    #: baseline is `consent-request`'s property, not this flow's.
+    fail_closed_asset_id: str = Field(
+        "datasets.gold.om_weather_features",
+        validation_alias="E2E_FAIL_CLOSED_ASSET_ID",
+    )
+
+    #: `ds.access.scope.cache.ttl.seconds` — how long the EDC's constraint
+    #: functions reuse a decision ds-connector gave them (`E2E-06`).
+    #:
+    #: **The window in which the platform cannot fail closed**, because there is
+    #: nothing to ask. Measured on the running stack: a negotiation at ~10s of
+    #: PDP downtime reached VERIFIED off a cached `true`; the same one at ~75s
+    #: TERMINATED on the unfulfilled membership constraint. So the flow waits it
+    #: out, and reads the same variable the EDC containers are given, or the
+    #: harness would wait a number the platform is not using.
+    pdp_cache_ttl_s: int = Field(
+        60, validation_alias="DS_ACCESS_SCOPE_CACHE_TTL_SECONDS"
     )
 
     # Timeouts

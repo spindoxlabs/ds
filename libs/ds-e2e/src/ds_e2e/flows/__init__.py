@@ -12,6 +12,7 @@ from ds_e2e.flows.chains import (
 from ds_e2e.flows.consent_purpose import ConsentPurposeFlow
 from ds_e2e.flows.consent_request import ConsentRequestFlow
 from ds_e2e.flows.dcp_trust import DcpTrustFlow
+from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
 from ds_e2e.flows.smoke import SmokeFlow
@@ -42,12 +43,15 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "lineage": LineageFlow,
     "two-providers": TwoProvidersFlow,
     "smoke": SmokeFlow,
+    # **Last, and deliberately.** It stops a container and restarts it, so it is
+    # the one flow whose failure mode is *the next flow fails for reasons of its
+    # own*. Running it last bounds that to zero, and `runner.run_flow` calls
+    # `cleanup()` in a `finally` so an exception mid-outage still restores the
+    # PDP. It also has to run after `two-providers`: both negotiate the same
+    # consumer/asset pair, and this one revokes the request the other leaves
+    # behind (`REV-03`).
+    "fail-closed": FailClosedFlow,
 }
-
-# `fail-closed` (`E2E-06`) is written and **not registered** — see the header of
-# `flows/fail_closed.py` for what is left. It is one access-request revocation
-# away from working, and registering it before then would put a red flow in
-# `--flow all`.
 
 # The delegation chains. They assert against `ds-e2e scenario apply` fixtures
 # and clean up their own consent rows, so the set is re-runnable in place.

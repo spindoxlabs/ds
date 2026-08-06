@@ -1153,6 +1153,15 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow user-authority
 
+  # Takes ~3 minutes and **stops ds-connector-rec for most of it** — the EDC's
+  # decision cache has to expire before a refusal means anything, and again
+  # before service resumes. Needs the Docker topology: under `task dev:*` the
+  # connector is a host process and the flow fails rather than skipping.
+  e2e:fail-closed:
+    desc: "E2E: the PDP is stopped, and the negotiation gate must refuse (~3 min)"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow fail-closed
+
   # One task per chain. `e2e:chains` runs all three; these exist because a
   # failing chain is debugged one at a time, and `--flow` already accepts each
   # name — the tasks were simply never written (`E2E-08`).
