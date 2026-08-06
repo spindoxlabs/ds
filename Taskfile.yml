@@ -53,15 +53,38 @@ tasks:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d keycloak keycloak-org-sync keycloak-sync
 
   build:
-    desc: Rebuild all Docker images (infra + provider + consumer)
+    desc: Rebuild all Docker images (shared infra + every participant stack)
     cmds:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose build
+      # **Iterate the stacks, do not list them.** This task named `rec` and
+      # `third-party` and stopped there, so from `DID-15` — which added the
+      # grid operator as a second provider — `task build` left that stack on its
+      # previous image while rebuilding the other two. A rebuild-then-restart
+      # then produced a dataspace running half old code, and nothing said so:
+      # every container is healthy, and the stale one only misbehaves where the
+      # change was. `edc:restart` had the identical defect and its fix is
+      # recorded in place (see `edc:restart` below); the same commit did not
+      # look here.
+      #
+      # A glob cannot be forgotten the next time a participant is added, which
+      # is the whole reason this is a loop. `test_build_covers_every_stack.py`
+      # in `libs/ds-e2e` fails if a stack is skipped without being declared.
+      #
+      # `docker-compose.dataset-api.yml` is **deliberately** skipped: it builds
+      # celine's `rec-registry` and `dataset-api` from sibling checkouts whose
+      # paths are optional (`REC_REGISTRY_PATH`, `DATASET_API_PATH`), so on a
+      # machine without them this task would fail on somebody else's source.
+      # `task dataset-api:start` owns that stack.
       - |
-        COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.rec.yml build
-      - |
-        COMPOSE_IGNORE_ORPHANS=true \
-          docker compose --env-file .env.local -f docker-compose.third-party.yml build
+        set -e
+        for f in docker-compose.*.yml; do
+          case "$f" in
+            docker-compose.override.yml|docker-compose.dataset-api.yml) continue ;;
+          esac
+          echo "→ $f"
+          COMPOSE_IGNORE_ORPHANS=true \
+            docker compose --env-file .env.local -f "$f" build
+        done
 
   infra:start:
     desc: Start shared infrastructure (postgres, caddy, identity-registry, keycloak)
