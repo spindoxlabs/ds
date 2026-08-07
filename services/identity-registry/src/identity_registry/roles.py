@@ -119,6 +119,15 @@ ROUTERS: tuple[RouterSpec, ...] = (
     RouterSpec("dids", did_router, BOTH),
 )
 
+#: Registered directly on the app rather than through a router: `/health` in
+#: `main.py`, `/metrics` by `ds_obs.install_metrics`. Named once because three
+#: places need the same answer — `main.py` seeds the mounted list from it,
+#: `PATH_ROLES` has to classify it, and `test_a_stale_classification_entry_is_visible`
+#: has to know it is served. That test held the second copy and reported the
+#: `/metrics` entry as governing nothing, which is the drift this module exists
+#: to catch, arriving through its own test.
+APP_PATHS: tuple[str, ...] = ("/health", "/metrics")
+
 #: Independent classification, by path prefix, longest first. This is the half
 #: that catches a route added to a router whose role it does not share.
 #:
@@ -127,6 +136,9 @@ ROUTERS: tuple[RouterSpec, ...] = (
 #: behaviour the router ordering relies on.
 PATH_ROLES: tuple[tuple[str, frozenset[str]], ...] = (
     ("/health", BOTH),
+    # Infrastructure, like `/health`: served by every instance whatever its role,
+    # and carrying nothing role-specific. `ds_obs` registers it.
+    ("/metrics", BOTH),
     ("/admin", ANCHOR_ONLY),
     ("/onboarding", ANCHOR_ONLY),
     ("/issuer", ANCHOR_ONLY),

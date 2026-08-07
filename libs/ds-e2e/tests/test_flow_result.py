@@ -76,4 +76,4 @@ def test_the_health_list_is_not_hardcoded():
 
     source = inspect.getsource(ApiContractFlow._services_this_flow_calls)
     assert "PUBLIC_ROUTES" in source
-    assert "_guarded_routes" in source
+    assert "SWEPT_SERVICES" in source

@@ -10,7 +10,9 @@ from __future__ import annotations
 import inspect
 from collections.abc import Awaitable, Callable
 
-from fastapi import Depends, HTTPException, Request
+from fastapi import Depends, HTTPException, Request, Security
+from fastapi.security import HTTPBearer
+from fastapi.security.http import HTTPAuthorizationCredentials
 
 from .config import OidcConfig
 from .errors import AuthConfigError, PermissionDenied, TokenInvalid, TokenMissing
@@ -19,6 +21,42 @@ from .principal import Principal
 
 # perimeter(principal, request) -> bool | Awaitable[bool]
 PerimeterFn = Callable[[Principal, Request], bool | Awaitable[bool]]
+
+# The name under which a guarded route advertises itself in the app's OpenAPI
+# document. `libs/ds-e2e` reads it to derive the API-contract sweep.
+PERMISSION_SCHEME_NAME = "DataspacePermission"
+
+# Declared only so the route table describes itself.
+#
+# Authentication is done by `authenticate()` below, from the raw header, and
+# `auto_error=False` keeps it that way: this scheme never raises, never denies
+# and never sees a decision — absent or malformed credentials resolve to None
+# and the guard produces the same 401 it always did. What it *does* is make
+# FastAPI record `security: [{DataspacePermission: [<permissions>]}]` on every
+# operation the guard covers, which turns two facts that were previously
+# readable only from the source into published API:
+#
+#   * **which routes are guarded.** `libs/ds-e2e`'s api-contract sweep used to
+#     carry a hand-kept table of routes to probe for refusal, beside the routers
+#     it mirrored. It had drifted to 70 of 110 routes (`E2E-03`), which is what a
+#     hand-kept list does. It now derives the table from this marker, so a route
+#     cannot be added without being swept.
+#   * **which permissions each route requires.** The sweep replays every route
+#     with a deliberately under-privileged token and needs to know which routes
+#     that token legitimately holds; it read a hardcoded set that had gone stale.
+#
+# OpenAPI 3.1 permits role names in the requirement array for non-oauth2
+# schemes, which is exactly what a permission string is here.
+_permission_scheme = HTTPBearer(
+    scheme_name=PERMISSION_SCHEME_NAME,
+    description=(
+        "A Keycloak access token. Service clients authorise on the `scope` claim, "
+        "users on their groups expanded through the ds role bundles. The values "
+        "listed beside this scheme are the permissions the route accepts — any "
+        "one of them is enough."
+    ),
+    auto_error=False,
+)
 
 
 def get_oidc_config(request: Request) -> OidcConfig:
@@ -65,6 +103,9 @@ def require_exact_permission(
     async def _dependency(
         request: Request,
         config: OidcConfig = Depends(get_oidc_config),
+        _published: HTTPAuthorizationCredentials | None = Security(
+            _permission_scheme, scopes=list(perms)
+        ),
     ) -> Principal:
         principal = await authenticate(request, config)
 
@@ -115,6 +156,9 @@ def require_permission(
     async def _dependency(
         request: Request,
         config: OidcConfig = Depends(get_oidc_config),
+        _published: HTTPAuthorizationCredentials | None = Security(
+            _permission_scheme, scopes=list(perms)
+        ),
     ) -> Principal:
         principal = await authenticate(request, config)
 

@@ -15,7 +15,7 @@ sharply and that difference is the headline of this page.
 |---|---|---|
 | **Provenance** — backward-looking: where did the data come from | PROV-O graph of entities, activities and agents | **Implemented.** The defects that stopped it rendering are closed (`L-5`, `L-7`, `L-8`, `L-12`) |
 | **Traceability** — the whole path: how was the data handled and by whom | The same graph, plus the domain-event record | **Implemented.** The remaining gap is `L-2` and the two event types `L-1` names, not the graph |
-| **Observability** — monitoring and troubleshooting | — | **Absent.** No metrics pipeline, no tracing, no OpenTelemetry. `/metrics` endpoints exist and are scraped by nothing. They are unauthenticated *by design* — reachability is a NetworkPolicy question, not an application one (§5 step 1) |
+| **Observability** — monitoring and troubleshooting | — | **Absent.** No metrics pipeline, no tracing, no OpenTelemetry. `/metrics` endpoints exist on all five services and are scraped by nothing. They are unauthenticated *by design* — reachability is a NetworkPolicy question, not an application one (§5 step 1) |
 
 Note that **CEEDS drops Observability entirely** — its building block is named "Provenance
 & traceability" and the concern appears nowhere in that blueprint. So this gap costs DSSC
@@ -164,7 +164,7 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
 | Transaction observability for monitoring and troubleshooting (`-03`) | **absent for transactions; the troubleshooting floor now exists.** Until `libs/ds-obs`, *no Python service configured logging at all* — the root logger dropped INFO, so every service's own `log.info` reached nobody and only failures were visible. A successful crawl and no crawl were indistinguishable in `docker logs`. That is now one configured, level-controlled format across every service (`DS_LOG_LEVEL`, `DS_LOG_FORMAT`, `DS_LOG_ACCESS_HEALTH`). It is a floor, not the capability: nothing correlates a transaction across services |
 | Horizontal and vertical requirements satisfied (`-42`, `-43`) | absent |
 | Security controls, audit trails, compliance documentation maintained (`-44`–`-46`) | audit trail partially — see L-12 |
-| Centralised metrics collection and visualisation | **absent, but the targets are now worth collecting.** `/metrics` is served by four services and scraped by nothing: no collector is deployed and **no chart emits a ServiceMonitor** — `global.monitoring.serviceMonitor` gates only the NetworkPolicy, so with it on the network path opens and nothing walks through it. `ds-identity-registry` serves no `/metrics` at all |
+| Centralised metrics collection and visualisation | **absent, but every service is now a target.** `/metrics` is served by **all five** — `ds-identity-registry` was the last without one and gained it 2026-08-07, endpoint and `metricsFromPrometheus` NetworkPolicy in the same change — and scraped by nothing: no collector is deployed and **no chart emits a ServiceMonitor**, so `global.monitoring.serviceMonitor` opens the network path and nothing walks through it. That flag is now the only thing left between the targets and a collector |
 | Real-time monitoring | absent |
 | Global performance metrics, SLIs, SLOs | **possible, not built.** Latency was a bare `_sum` with no `_count`, no buckets and no path label, so no quantile was derivable from any service. `libs/ds-obs` makes it a histogram, which is what an SLI needs. Nothing consumes it yet, and the three *cross-service* operations below are still unmeasurable |
 | Regular reports on performance, usage and security incidents | absent |
@@ -194,11 +194,20 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    its raw URL — which had been minting one permanent Prometheus series per URL anyone
    tried. The redundant `ds_http_5xx_total` family is gone.
 
-   Still open, and all three are needed before a collector is useful:
-   `ds-identity-registry` serves no `/metrics` and its chart carries no
-   `metricsFromPrometheus`; **no chart emits a `ServiceMonitor`**, so nothing tells
-   Prometheus what to scrape; and the metric set is described in `libs/ds-obs/AGENTS.md` but
-   is **not documented in `docs/`**, which is what this step asks for.
+   **`ds-identity-registry` closed 2026-08-07** — it served no `/metrics` at all, so the one
+   component every participant depends on for identity was the only one nothing could
+   observe. Endpoint and NetworkPolicy landed together, which is the lesson `ds-provenance`
+   left one step earlier: *a target needs a path to it in the same change*, or turning
+   `serviceMonitor` on aims a scrape at a pod default-deny still refuses and the only signal
+   is a metric that never appears. Verified live on the dev stack — request counters and the
+   latency histogram labelled by **route template**, `<unmatched>` for an unrouted URL — and
+   the registry's own role sweep classifies the path, so an instance that mounted it without
+   classifying it refuses to start (`roles.APP_PATHS`).
+
+   Still open, and both are needed before a collector is useful:
+   **no chart emits a `ServiceMonitor`**, so nothing tells Prometheus what to scrape; and the
+   metric set is described in `libs/ds-obs/AGENTS.md` but is **not documented in `docs/`**,
+   which is what this step asks for.
 3. OpenTelemetry traces across the DSP exchange, correlated by agreement id — which
    requires settling the three-names-for-one-agreement-id problem first (defect P3-4).
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to

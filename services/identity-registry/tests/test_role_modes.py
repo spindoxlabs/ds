@@ -182,7 +182,7 @@ def test_a_stale_classification_entry_is_visible():
         roles._strip_converters(path)
         for spec in ROUTERS
         for path in spec.paths()
-    } | {"/health"}
+    } | set(roles.APP_PATHS)
 
     unused = [
         prefix
@@ -253,3 +253,69 @@ def test_every_router_is_served_by_some_role():
     for spec in ROUTERS:
         assert spec.roles, f"{spec.name} is mounted by no role"
         assert spec.roles <= roles.ROLES, f"{spec.name} names an unknown role"
+
+
+# ── /metrics — the last service without a scrape target ──────────────────────
+
+
+@pytest.mark.parametrize("role", [TRUST_ANCHOR, PARTICIPANT])
+def test_every_role_serves_metrics(role: str, monkeypatch: pytest.MonkeyPatch):
+    """Infrastructure, like `/health`: not role-specific, so both serve it.
+
+    This registry was the only ds service with no scrape target at all
+    (`docs/rulebook/provenance-and-logging.md` step 2), so the one component
+    every participant depends on was the one nothing could observe.
+    """
+    monkeypatch.setenv("IDENTITY_REGISTRY_ROLE", role)
+    monkeypatch.setenv(
+        "IDENTITY_REGISTRY_PARTICIPANT_DID", "did:web:rec.dataspaces.localhost"
+    )
+    get_settings.cache_clear()
+    try:
+        response = TestClient(create_app()).get("/metrics")
+    finally:
+        get_settings.cache_clear()
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "ds_http_requests_total" in response.text
+
+
+def test_metrics_is_unauthenticated_deliberately(monkeypatch: pytest.MonkeyPatch):
+    """A scraper holds no Keycloak token.
+
+    Requiring one would replace a working production control with a broken one,
+    which is why step 1 of the rulebook's observability close reads *"done, and
+    **not** the way this said"*. Exposure is answered by the chart instead:
+    `/metrics` is in no Ingress on any chart, `global.networkPolicy.enabled`
+    applies default-deny, and `ds.networkPolicy.metricsFromPrometheus` opens the
+    port to the monitoring namespace alone — gated on `serviceMonitor`, false by
+    default. Pinned here so that adding a guard is a deliberate act with a test
+    to change, not a tidy-up.
+    """
+    monkeypatch.setenv("IDENTITY_REGISTRY_ROLE", TRUST_ANCHOR)
+    get_settings.cache_clear()
+    try:
+        assert TestClient(create_app()).get("/metrics").status_code == 200
+    finally:
+        get_settings.cache_clear()
+
+
+def test_metrics_is_classified_like_any_other_path():
+    """The route sweep must know about it, or startup fails.
+
+    `main.py` appends `/metrics` to `mounted`, so an unclassified entry in
+    `roles.PATH_ROLES` would raise `RoleConfigurationError` at import. Asserting
+    the classification directly says which of the two halves is being pinned.
+    """
+    assert roles_for_path("/metrics") == roles.BOTH
+
+
+def test_metrics_stays_out_of_the_published_surface(monkeypatch: pytest.MonkeyPatch):
+    """`include_in_schema=False`, so it is not part of the API contract.
+
+    `libs/ds-e2e`'s api-contract sweep derives what to probe from this document
+    (`E2E-03`). `/metrics` is deliberately not in it and deliberately not in that
+    flow's `PUBLIC_ROUTES` — pinning an anonymous 200 would assert exactly what
+    the deployment is built to make unreachable.
+    """
+    assert "/metrics" not in paths_for(TRUST_ANCHOR, monkeypatch)

@@ -4,12 +4,13 @@ import logging
 from contextlib import asynccontextmanager
 
 from ds_auth.production import ProductionGuard
-from ds_obs import configure_logging
+from ds_obs import configure_logging, install_metrics
 from fastapi import FastAPI
 
 from .config import get_settings
 from .db.engine import verify_schema
 from .roles import (
+    APP_PATHS,
     PARTICIPANT,
     RoleConfigurationError,
     audit,
@@ -246,6 +247,19 @@ def create_app() -> FastAPI:
     async def health():
         return {"status": "ok", "role": role, "version": "0.1.0"}
 
+    # The last service without a scrape target. Unauthenticated like the other
+    # three, deliberately: a scraper holds no Keycloak token, so a bearer guard
+    # would replace a working control with a broken one. Reachability is the
+    # control — `/metrics` is in no chart's Ingress, and the chart's
+    # `metricsFromPrometheus` NetworkPolicy opens the port to the Prometheus
+    # namespace alone. See `docs/rulebook/provenance-and-logging.md` step 1.
+    #
+    # Both halves land together on purpose: `ds-provenance` had the endpoint and
+    # not the NetworkPolicy, so turning `serviceMonitor` on pointed a scrape at a
+    # pod default-deny still refused, and the only signal was a metric that never
+    # appeared. A target needs a path to it in the same change.
+    install_metrics(app, "ds-identity-registry")
+
     # Mount by role, then check the result against an independent classification
     # of every path. `roles.py` explains why both halves exist; the short version
     # is that this is the one kind of check that fails because of something a
@@ -256,7 +270,7 @@ def create_app() -> FastAPI:
     # by design — an organisation applying to join has no identity yet, and the
     # invite code in the body is the gate. It is anchor-only, which is now
     # enforced rather than implied. See api/v1/onboarding.py.
-    mounted: list[str] = ["/health"]
+    mounted: list[str] = list(APP_PATHS)
     for spec in specs_for_role(role):
         app.include_router(spec.router)
         mounted.extend(spec.paths())

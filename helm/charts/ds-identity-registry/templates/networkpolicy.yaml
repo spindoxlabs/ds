@@ -28,6 +28,21 @@ spec:
         - protocol: TCP
           port: {{ .Values.service.port }}
 ---
+{{/*
+Lands with the `/metrics` endpoint itself, not after it. `ds-provenance` served
+metrics while its chart carried no such rule, so `global.monitoring.serviceMonitor=true`
+aimed a scrape at a pod the default-deny baseline still refused, and the operator's
+only signal was a metric that never appeared.
+
+Note the rule above admits every participant namespace to this same port — that is
+what makes an explicit Prometheus rule necessary rather than redundant: the monitoring
+namespace does not carry the participant label, and it must not have to.
+
+Gated on the same flag as the others, so with chart defaults `/metrics` here is
+reachable by nobody. It is in no Ingress on any chart.
+*/}}
+{{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
+---
 # Egress: Keycloak over TLS. The registry verifies every JWT against the JWKS
 # endpoint, so without this rule the default-deny baseline (DNS + Postgres only)
 # fails every authenticated request. The optional keycloak-org-sync init

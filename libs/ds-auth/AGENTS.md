@@ -36,6 +36,17 @@ about who someone is. It returns the subject id from the *credential*, never fro
 asks for a permission and does not care which token satisfied it. `{service}.admin` is a
 superset of `{service}.*`.
 
+**Both guard factories publish themselves.** Each declares the `DataspacePermission`
+security scheme, so a guarded operation carries
+`security: [{DataspacePermission: [<permissions>]}]` in its service's `/openapi.json`. It is
+declared `auto_error=False` and decides nothing — `authenticate()` still produces every 401.
+It exists so the route table is machine-readable: `libs/ds-e2e`'s api-contract sweep derives
+which routes to probe, and which an under-privileged token legitimately holds, from it
+instead of from a hand-kept list that had drifted to 70 of 110 routes (`E2E-03`).
+**A guard that does not go through these two factories is invisible to that sweep** — the
+VC-JWT and DCP surfaces are, deliberately, and `api_contract.SELF_AUTHENTICATED_ROUTES`
+names each one with the flow that covers it.
+
 The claim semantics deliberately mirror `celine-sdk` so a realm synced by `celine-policies`
 authorizes identically in both projects. **A mirrored approach, not a code dependency** —
 there is no import edge. Prefer upstreaming a backward-compatible feature over diverging.

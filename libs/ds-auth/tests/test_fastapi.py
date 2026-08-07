@@ -7,7 +7,11 @@ from fastapi.testclient import TestClient
 
 from ds_auth import OidcConfig, Principal
 from ds_auth.errors import PermissionDenied
-from ds_auth.fastapi import require_exact_permission, require_permission
+from ds_auth.fastapi import (
+    PERMISSION_SCHEME_NAME,
+    require_exact_permission,
+    require_permission,
+)
 
 
 def _token(**claims):
@@ -158,3 +162,66 @@ def test_exact_permission_still_requires_a_token(exact_client):
 def test_exact_permission_rejects_an_empty_permission_list():
     with pytest.raises(ValueError):
         require_exact_permission()
+
+
+# ── E2E-03 · the route table has to describe itself ──────────────────────────
+#
+# `libs/ds-e2e`'s api-contract sweep probes every guarded route for refusal.
+# Which routes those are was a hand-kept list in the harness, beside the routers
+# it mirrored, and it had drifted to 70 of 110. The guard now publishes itself,
+# so the sweep can be derived — and these pin both halves of that: the document
+# says the right thing, and nothing about the request path changed.
+
+
+def test_a_guarded_route_publishes_the_permissions_it_accepts(client):
+    """The fact the sweep reads: guarded, and guarded by *what*.
+
+    The permissions matter as much as the marker. The sweep replays every route
+    with a deliberately under-privileged token, so it has to know which routes
+    that token legitimately holds — and asking the route is the only way to stop
+    that answer going stale, which is what happened to the hardcoded one.
+    """
+    spec = client.app.openapi()
+    scheme = spec["components"]["securitySchemes"][PERMISSION_SCHEME_NAME]
+    assert scheme["type"] == "http" and scheme["scheme"] == "bearer"
+    assert spec["paths"]["/provider"]["get"]["security"] == [
+        {PERMISSION_SCHEME_NAME: ["connector.provider.read"]}
+    ]
+    assert spec["paths"]["/scoped"]["get"]["security"] == [
+        {PERMISSION_SCHEME_NAME: ["connector.admin"]}
+    ]
+
+
+def test_require_exact_permission_publishes_itself_too(exact_client):
+    """Both factories, or the sweep would read `/webhooks/*` as unguarded."""
+    spec = exact_client.app.openapi()
+    assert spec["paths"]["/webhook"]["get"]["security"] == [
+        {PERMISSION_SCHEME_NAME: ["connector.webhook"]}
+    ]
+
+
+def test_an_unguarded_route_publishes_nothing():
+    """The marker must mean something, so it must be absent where it should be."""
+    app = FastAPI()
+
+    @app.get("/health")
+    async def health():
+        return {"ok": True}
+
+    assert "security" not in app.openapi()["paths"]["/health"]["get"]
+    assert "securitySchemes" not in app.openapi().get("components", {})
+
+
+def test_publishing_the_scheme_changed_no_refusal(client):
+    """`auto_error=False`, so the scheme never decides anything.
+
+    It is declared to make the route table self-describing and for no other
+    reason. If it ever started answering, an absent or malformed credential
+    would come back 403 (its own default) instead of the 401 `authenticate`
+    produces, and every caller distinguishing "who are you" from "you may not"
+    would silently change meaning.
+    """
+    assert client.get("/provider").status_code == 401
+    basic = client.get("/provider", headers={"Authorization": "Basic x"})
+    assert basic.status_code == 401
+    assert client.get("/provider", headers=_auth("not-a-jwt")).status_code == 401

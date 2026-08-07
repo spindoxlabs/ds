@@ -10,7 +10,7 @@ from ds_e2e.flows import (
     SECURITY_FLOWS,
     BaseFlow,
 )
-from ds_e2e.flows.api_contract import PUBLIC_ROUTES, _guarded_routes
+from ds_e2e.flows.api_contract import ANONYMOUS_ROUTES, PUBLIC_ROUTES
 
 AGGREGATE_FLOWS = {"all", "fast", "security", "chains"}
 
@@ -57,19 +57,13 @@ def test_flow_subsets_are_registered():
     assert set(CHAIN_FLOWS) <= set(FLOW_REGISTRY)
 
 
-def test_public_and_guarded_route_tables_are_disjoint():
-    """A route cannot be both intentionally public and required to refuse.
+def test_the_pinned_public_probes_have_no_duplicates():
+    """`PUBLIC_ROUTES` is the one table still written out route by route.
 
-    The two tables encode opposite expectations, so an overlap would make the
-    contract flow assert both 200 and 401 for the same endpoint — and whichever
-    assertion ran second would silently define the policy."""
-    settings = E2ESettings(_env_file=None)
-    public = {(svc, method, path) for svc, method, path in PUBLIC_ROUTES}
-    guarded = {(svc, method, path) for svc, method, path, _ in _guarded_routes(settings)}
-    assert not (public & guarded)
-
-
-def test_guarded_route_table_has_no_duplicates():
-    settings = E2ESettings(_env_file=None)
-    routes = [(svc, method, path) for svc, method, path, _ in _guarded_routes(settings)]
-    assert len(routes) == len(set(routes))
+    The guarded side is derived from each service's OpenAPI document now
+    (`E2E-03`), so it cannot duplicate or drift; `tests/test_route_inventory.py`
+    holds the rest of the rules about these tables, including that a route
+    cannot be both open and self-authenticated.
+    """
+    assert len(PUBLIC_ROUTES) == len(set(PUBLIC_ROUTES))
+    assert set(ANONYMOUS_ROUTES)

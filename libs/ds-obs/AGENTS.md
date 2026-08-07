@@ -56,9 +56,18 @@ does not, so a CLI can use it without pulling a web framework in.
 3. `main.py`: `configure_logging("<service>")` as the first statement of the app factory,
    then `install_metrics(app, "<service>")` if the service's chart opens a scrape path.
 
-`ds-identity-registry` takes logging and **not** metrics: its chart mounts no
-`metricsFromPrometheus` and it serves no `/metrics`. Adding one would be new exposure, not
-de-duplication.
+**Both halves in the same change, or neither.** An endpoint whose chart opens no scrape path
+is a target Prometheus is refused by default-deny, and the operator's only signal is a metric
+that never appears — that is how `ds-provenance` sat, and `ds-identity-registry` was the
+inverse until 2026-08-07: no endpoint at all, so the one component every participant depends
+on for identity was the only one nothing could observe. **All five services now serve
+`/metrics` and all five charts carry `metricsFromPrometheus`.**
+
+Adding one is not new exposure. `/metrics` is in **no chart's Ingress**, default-deny applies,
+and the policy admits the monitoring namespace alone — gated on `global.monitoring.serviceMonitor`,
+false by default. It stays unauthenticated deliberately: a scraper holds no Keycloak token, so
+a bearer guard would replace a working control with a broken one. See
+[the rulebook's step 1](../../docs/rulebook/provenance-and-logging.md) and decision `D-2`.
 
 ## Testing
 

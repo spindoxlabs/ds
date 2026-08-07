@@ -53,17 +53,34 @@ Four rules the security flows follow, and new ones should too:
   classifies every attempt by which side answered and fails on the wrong one; copy that shape
   before writing another negative flow.
 
-## The two route tables
+## The route table is derived
 
-`api_contract.py` holds `PUBLIC_ROUTES` (must answer anonymously) and `_guarded_routes()`
-(must refuse). **Adding a route to a service means adding a line to one of them.** Unit tests
-assert the tables are disjoint and duplicate-free, but nothing can detect a route in neither —
-that is a review responsibility.
+`api_contract.py` reads every service's `/openapi.json` and sweeps what it finds
+(`route_inventory.py`). **Adding a guarded route to a service needs no change here** — it is
+probed the moment the app publishes it, because `ds_auth.require_permission` marks it with
+the `DataspacePermission` security scheme. The previous hand-kept table covered 70 of 110
+routes and nothing said so (`E2E-03`).
 
-The wrong-scope sweep uses `svc-ds-federated-catalog` as the under-privileged client; its
-`held` set must stay in step with `services/keycloak/clients.yaml`. **Verify that against the
-realm rather than a comment** — it is currently wrong, and the effect is that three routes
-are excluded from the sweep that exists to test them.
+What is still declared by hand is the *opposite* — the routes that are **not** expected to
+refuse a bearer-less caller:
+
+| Table | Means |
+|---|---|
+| `ANONYMOUS_ROUTES` | reachable with no credential by design. Adding a line widens the anonymous perimeter |
+| `PUBLIC_ROUTES` | the subset asserted to answer **200**, as concrete paths |
+| `SELF_AUTHENTICATED_ROUTES` | refuses, but on a VC-JWT or a DCP token rather than a permission — so the wrong-scope battery would prove nothing about it |
+| `HIDDEN_ROUTES` | `include_in_schema=False`, so absent from the document the sweep reads |
+
+**A published route in none of them fails the sweep**, which is the fail-safe direction:
+forget to classify a new route and it gets probed for refusal. Two things the derivation
+cannot see are checked in `tests/test_route_inventory.py`: that the scheme name still agrees
+with `ds_auth`'s (this package deliberately does not import it), and that no service hides a
+route from its OpenAPI document without declaring it.
+
+The wrong-scope sweep uses `svc-ds-federated-catalog` as the under-privileged client, and
+which routes it legitimately holds is now **read from its own token's `scope` claim**
+intersected with the permissions each route publishes — the realm answering, rather than a
+comment about the realm.
 
 ## The unit suite may not touch the network
 

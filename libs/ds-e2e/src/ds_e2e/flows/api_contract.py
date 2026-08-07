@@ -9,10 +9,10 @@ deployable outside a lab. It asserts four things about every service:
    not regress to 401 (they are protocol surfaces — DID resolution, StatusList,
    the ODRL vocabulary — that unauthenticated parties must read), and nothing
    else may join them silently.
-2. **Every guarded route refuses an anonymous caller.** Not "most routes" — a
-   table covering each router of each service, asserting a 401. A 200 here is an
-   open endpoint; a 500 is a guard that crashed instead of denying.
-3. **Authentication is not authorisation.** The same table replayed with a real,
+2. **Every guarded route refuses an anonymous caller.** Not "most routes" — every
+   route each service publishes, asserting a 401. A 200 here is an open endpoint;
+   a 500 is a guard that crashed instead of denying.
+3. **Authentication is not authorisation.** The same routes replayed with a real,
    fully-valid token that simply lacks the scope. Anything other than a refusal
    means the route authenticates but never checks what the caller may do.
 4. **Bad input is rejected, not absorbed.** Malformed bodies, out-of-range
@@ -21,6 +21,15 @@ deployable outside a lab. It asserts four things about every service:
 
 Every refusal is additionally checked for leakage: no stack traces, no driver
 names, no connection strings in an error body.
+
+**The route table is derived, not listed** (`E2E-03`). Batteries 2 and 3 used to
+walk a literal table maintained beside the routers it mirrored; measured against
+the apps, it covered 70 of 110 guarded routes, and four of the six missing
+connector routes were the *item* under a collection that was already probed —
+the signature of a list kept by hand. `ds_e2e.route_inventory` reads each
+service's own `/openapi.json` instead, so the only thing left to declare is
+which routes are anonymous **by design**, and an unclassified route fails the
+sweep rather than escaping it.
 
 Needs no EDC: connector, identity-registry, provenance, federated-catalog and
 Keycloak are enough.
@@ -31,11 +40,27 @@ import logging
 import urllib.parse
 from typing import Any
 
-from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
+from ds_e2e.route_inventory import (
+    Route,
+    routes_from_openapi,
+    routes_held_by,
+    token_scopes,
+)
 
 log = logging.getLogger(__name__)
+
+# The services whose whole published surface is swept. `dataset-api` is not one:
+# the real data plane is celine's and is not a ds service (root `AGENTS.md`), so
+# only its health probe appears below.
+SWEPT_SERVICES = (
+    "connector",
+    "consumer-connector",
+    "identity-registry",
+    "provenance",
+    "federated-catalog",
+)
 
 # Substrings that must never reach a client in an error body.
 LEAK_MARKERS = (
@@ -49,162 +74,233 @@ LEAK_MARKERS = (
     "site-packages",
 )
 
-# Routes that are public *by design* and must stay reachable with no credential.
-# Adding a line here is a deliberate decision to widen the anonymous perimeter.
+# ── The anonymous surface: the only part still declared by hand ──────────────
+#
+# Batteries 2 and 3 walk what the services publish, so nothing below enumerates
+# a guarded route. What is left to declare is the opposite: which routes are
+# reachable, or refuse, **without** a bearer permission — and why. A published
+# route in none of these tables is swept for refusal, which is the fail-safe
+# direction: forgetting to classify a new route makes it probed, not exempt.
+#
+# Keyed by *app*, because `connector` and `consumer-connector` are one image in
+# two roles and their shared routers would otherwise be listed twice.
+
+# Named once, because the same mechanism covers a whole router and repeating the
+# sentence per route is how two entries come to disagree about one guard.
+SUBJECT_VC = "DataSubject VC-JWT"
+CONSUMER_AUTH = "ConsumerUser VC-JWT or connector.consumer.read"
+DID_WEB = "did:web resolution — an unknown verifier must resolve it"
+
+# What a probe puts where a real caller would put an identifier. It has to be
+# schema-valid and resolve to nothing: a probe that succeeded would be asserting
+# on a request the platform accepted.
+PROBE_ID = "e2e-nonexistent"
+PROBE_ADDRESS = "http://provider.invalid/protocol/2025-1"
+
+# Reachable with no credential by design. Widening this table widens the
+# anonymous perimeter, so each entry says what an unauthenticated party is doing
+# with it.
+ANONYMOUS_ROUTES: dict[tuple[str, str, str], str] = {
+    ("connector", "GET", "/health"): "liveness",
+    ("connector", "GET", "/ns"): "the vocabulary index this participant serves",
+    ("connector", "GET", "/ns/policy"): "the ODRL profile a policy engine dereferences",
+    ("connector", "GET", "/ns/sharing-offers"): "the sharing-offer vocabulary",
+    ("connector", "GET", "/ns/vocabularies"): "the fetched-vocabulary index",
+    ("connector", "GET", "/ns/{slug}"): (
+        "one fetched vocabulary. No 200 probe: it is 404 until a vocabulary has "
+        "been cached, so asserting a status here would assert cache state"
+    ),
+    ("identity-registry", "GET", "/health"): "liveness",
+    ("identity-registry", "GET", "/.well-known/did.json"): (
+        f"{DID_WEB}, for a `did:web:<host>` with no path. **404 here, measured**: "
+        "every dev DID carries a path, so nothing resolves the root document and "
+        "there is no 200 to pin"
+    ),
+    ("identity-registry", "GET", "/dids/{did}/did.json"): DID_WEB,
+    ("identity-registry", "GET", "/{did_path}/did.json"): DID_WEB,
+    ("identity-registry", "GET", "/status/{list_id}"): (
+        "StatusList revocation — a checker must read it before it has any "
+        "relationship with this dataspace (rulebook P-13)"
+    ),
+    ("identity-registry", "GET", "/trust"): (
+        "the accreditation list (DSSC-TRF-05, -07, -17), public for the same reason"
+    ),
+    ("identity-registry", "GET", "/issuer/metadata"): (
+        "what this issuer can issue, read before a client has an identity here"
+    ),
+    ("provenance", "GET", "/health"): "liveness",
+    ("provenance", "GET", "/prov/context"): "the PROV-O JSON-LD context",
+    ("federated-catalog", "GET", "/health"): "liveness",
+    ("federated-catalog", "GET", "/catalog/context"): "the DCAT JSON-LD context",
+}
+
+# The subset of the above asserted to answer **200** anonymously, as concrete
+# paths. Separate from the classification because a route can be anonymous
+# without having a status worth pinning: `/ns/{slug}` and `/status/{list_id}`
+# answer about a resource that may not exist yet, and `/dids/{did}/did.json` is
+# derived at run time from the provider DID (see `_check_public_perimeter`).
+#
+# `dataset-api` appears only here: the real data plane is celine's, not a ds
+# service, so its surface is out of scope and its health is not.
 PUBLIC_ROUTES: list[tuple[str, str, str]] = [
     ("connector", "GET", "/health"),
+    ("connector", "GET", "/ns"),
     ("connector", "GET", "/ns/policy"),
     ("connector", "GET", "/ns/sharing-offers"),
+    ("connector", "GET", "/ns/vocabularies"),
     ("identity-registry", "GET", "/health"),
+    ("identity-registry", "GET", "/trust"),
+    ("identity-registry", "GET", "/issuer/metadata"),
     ("provenance", "GET", "/health"),
     ("provenance", "GET", "/prov/context"),
     ("federated-catalog", "GET", "/health"),
+    ("federated-catalog", "GET", "/catalog/context"),
     ("dataset-api", "GET", "/health"),
 ]
 
+# Refuses an anonymous caller, but not through `require_permission` — so it
+# carries no `DataspacePermission` requirement and the bearer-token battery
+# would prove nothing about it. Each entry names the mechanism and the flow that
+# exercises it positively, because a negative sweep alone cannot tell a route
+# that verifies a credential from one that rejects every caller.
+SELF_AUTHENTICATED_ROUTES: dict[tuple[str, str, str], str] = {
+    # X-User-VC + X-Subject-Id. Asserted negatively by `_check_user_vc_surface`
+    # below — including a forged signature — and positively by `consent-request`
+    # and `uc2`.
+    ("connector", "GET", "/consent/my"): SUBJECT_VC,
+    ("connector", "GET", "/consent/my/shares"): SUBJECT_VC,
+    ("connector", "POST", "/consent/my/shares"): SUBJECT_VC,
+    ("connector", "GET", "/consent/my/{consent_id}"): SUBJECT_VC,
+    ("connector", "POST", "/consent/my/{consent_id}/approve"): SUBJECT_VC,
+    ("connector", "POST", "/consent/my/{consent_id}/reject"): SUBJECT_VC,
+    ("connector", "POST", "/consent/my/{consent_id}/revoke"): SUBJECT_VC,
+    ("connector", "GET", "/consent/status"): SUBJECT_VC,
+    ("provenance", "GET", "/prov/my/events"): f"{SUBJECT_VC}; asserted by `lineage`",
+    # `require_consumer_catalog_caller` and its siblings take **either** a
+    # ConsumerUser VC-JWT or `connector.consumer.read`, and decide inside the
+    # handler rather than in a dependency — so the app publishes no requirement
+    # and the wrong-scope battery cannot reach them. Asserted positively by
+    # `smoke`, `uc1` and `two-providers`.
+    ("connector", "POST", "/consumer/catalog"): CONSUMER_AUTH,
+    ("connector", "POST", "/consumer/negotiate"): CONSUMER_AUTH,
+    ("connector", "POST", "/consumer/transfer"): CONSUMER_AUTH,
+    ("connector", "POST", "/consumer/flow"): CONSUMER_AUTH,
+    ("connector", "GET", "/consumer/requests"): CONSUMER_AUTH,
+    ("connector", "POST", "/consumer/requests/{request_id}/revoke"): CONSUMER_AUTH,
+    ("connector", "GET", "/consumer/transfers"): CONSUMER_AUTH,
+    ("connector", "GET", "/consumer/transfers/{transfer_id}"): CONSUMER_AUTH,
+    ("connector", "GET", "/consumer/negotiations/{negotiation_id}"): CONSUMER_AUTH,
+    ("connector", "GET", "/consumer/edr/{transfer_id}"): CONSUMER_AUTH,
+    # The DCP and STS protocol surfaces. Their credential is a self-issued token
+    # proving control of a DID, verified against that DID's document — a bearer
+    # scope is the wrong shape entirely. Asserted by `dcp-trust`.
+    ("identity-registry", "POST", "/sts/{did}/token"): "DCP: STS client credentials",
+    ("identity-registry", "POST", "/credentials/{did}/presentations/query"): (
+        "DCP: self-issued token carrying an STS grant"
+    ),
+    ("identity-registry", "POST", "/credentials/{did}/credentials"): (
+        "DCP: issuance callback, self-issued token"
+    ),
+    ("identity-registry", "POST", "/issuer/credentials"): (
+        "DCP: issuance request, self-issued token"
+    ),
+    ("identity-registry", "GET", "/issuer/requests/{issuer_pid}"): (
+        "DCP: request status, self-issued token"
+    ),
+    # Invite-gated intake: anonymous by design, but an application without a
+    # valid invite code is refused. Asserted by `org-onboarding`.
+    ("identity-registry", "POST", "/onboarding/applications"): "a valid invite code",
+}
 
-def _guarded_routes(s: Any) -> list[tuple[str, str, str, dict[str, Any] | None]]:
-    """(service, method, path, body) for every route that must require a token.
+# Declared `include_in_schema=False`, so they are absent from the document this
+# sweep derives from and would otherwise escape it entirely. Listed by hand, and
+# `tests/test_route_inventory.py` fails when a service hides a route that is not
+# here — the one hole deriving from OpenAPI opens, closed from the outside.
+#
+# `GET /metrics` is hidden too, on all four services. It is installed by
+# `ds_obs`, not by a service, and it answers **200 anonymously** — deliberately
+# left out of this sweep rather than pinned as public, because that is an open
+# rulebook item (Observability, `DSSC-PTO`) and not a decision.
+HIDDEN_ROUTES: tuple[Route, ...] = (
+    Route(
+        service="connector",
+        method="POST",
+        template="/consent/register-transfer",
+        permissions=("connector.internal",),
+    ),
+)
 
-    One line per guarded route. Bodies are only present where the framework
-    would otherwise reject the request before the guard runs — the point is to
-    reach the guard, never to succeed.
-    """
-    did = urllib.parse.quote(s.provider_did, safe="")
-    return [
-        # ── connector: provider management ───────────────────────────────────
-        ("connector", "POST", "/provider/sync", {}),
-        ("connector", "GET", "/provider/assets", None),
-        ("connector", "GET", "/provider/policies", None),
-        ("connector", "GET", "/provider/contracts", None),
-        ("connector", "GET", "/provider/transfers", None),
-        ("connector", "GET", "/provider/authorizations", None),
-        ("connector", "DELETE", "/provider/assets/e2e-nonexistent", None),
-        ("connector", "DELETE", "/provider/policies/e2e-nonexistent", None),
-        ("connector", "DELETE", "/provider/contracts/e2e-nonexistent", None),
-        # ── connector: admin ─────────────────────────────────────────────────
-        ("connector", "GET", "/admin/participants", None),
-        ("connector", "POST", "/admin/ingestion", {"dataset_id": s.asset_id}),
-        # ── connector: internal (dataset-api and EDC call these) ─────────────
-        ("connector", "GET", "/internal/edr-jwks", None),
-        ("connector", "GET", "/internal/consent/check?dataset_id=x&consumer_id=y&subject_id=z", None),
-        ("connector", "GET", "/internal/participants/check?did=x&scope=y", None),
-        ("connector", "GET", "/internal/agreements/e2e-nonexistent/status", None),
-        ("connector", "GET", "/internal/transfers/e2e-nonexistent/status", None),
-        ("connector", "POST", "/internal/audit/query", {}),
-        # The EDC pending guard records an ask here. Anonymous access would let
-        # anyone raise a consent request against any subject pool.
-        (
-            "connector",
-            "POST",
-            "/internal/consent/asks",
-            {
-                "negotiation_id": "e2e-nonexistent",
-                "dataset_id": s.asset_id,
-                "consumer_id": s.consumer_did,
-            },
-        ),
-        # ── connector: webhooks (the EDC calls these) ────────────────────────
-        ("connector", "POST", "/webhooks/contract-negotiation", {}),
-        ("connector", "POST", "/webhooks/transfer-process", {}),
-        # ── consumer connector: DSP catalogue discovery ──────────────────────
-        # Had no guard of any kind (defect P0-1, rulebook C-19), which is also
-        # why the federated catalogue's crawler worked while sending nothing.
-        # It takes either a `ConsumerUser` VC-JWT or `connector.consumer.read`,
-        # and this battery proves it takes neither by default.
-        (
-            "consumer-connector",
-            "POST",
-            "/consumer/catalog",
-            {"counter_party_address": "http://provider.invalid/protocol/2025-1"},
-        ),
-        # ── connector: history ───────────────────────────────────────────────
-        ("connector", "GET", "/history/agreements", None),
-        ("connector", "GET", "/history/negotiations", None),
-        ("connector", "GET", "/history/transfers", None),
-        # ── connector: operator-provisioned consent ──────────────────────────
-        (
-            "connector",
-            "POST",
-            "/consent/admin/shares",
-            {
-                "subject_id": s.data_subject_id,
-                "offer_id": s.sharing_offer_id,
-                "enabled": True,
-                # A body that would otherwise 422 makes the refusal probe
-                # pass without the guard ever running.
-                "legal_basis": legal_basis("api-contract"),
-            },
-        ),
-        ("connector", "POST", "/consent/register-transfer", {}),
-        # Provider-local seeding. It used to authenticate on the *consumer's*
-        # VC-JWT; it is now a service route, so it belongs in this battery.
-        (
-            "connector",
-            "POST",
-            "/consent/request",
-            {
-                "consumer_id": s.consumer_did,
-                "dataset_id": s.asset_id,
-                "subject_ids": [s.data_subject_id],
-            },
-        ),
-        # The operator view names subjects — it must never answer anonymously.
-        ("connector", "GET", "/consent/asks", None),
-        # Status only, but still a participant-scoped question about somebody
-        # else's negotiation.
-        ("connector", "GET", "/consent/pending?correlation_id=e2e-nonexistent", None),
-        # ── identity-registry: admin ─────────────────────────────────────────
-        ("identity-registry", "GET", "/admin/participants", None),
-        ("identity-registry", "POST", "/admin/participants", {}),
-        ("identity-registry", "GET", f"/admin/participants/{did}", None),
-        ("identity-registry", "DELETE", f"/admin/participants/{did}", None),
-        ("identity-registry", "GET", "/admin/participants/check?did=x&scope=y", None),
-        ("identity-registry", "GET", "/admin/owners", None),
-        ("identity-registry", "POST", "/admin/owners", {}),
-        ("identity-registry", "GET", "/admin/credentials", None),
-        ("identity-registry", "POST", "/admin/credentials/organization", {}),
-        ("identity-registry", "POST", "/admin/credentials/membership", {}),
-        ("identity-registry", "POST", "/admin/credentials/data-subject", {}),
-        ("identity-registry", "GET", "/admin/memberships", None),
-        ("identity-registry", "POST", "/admin/memberships", {}),
-        ("identity-registry", "GET", "/admin/organizations/applications", None),
-        ("identity-registry", "POST", "/admin/organizations/applications", {}),
-        ("identity-registry", "POST", "/admin/dids", {}),
-        ("identity-registry", "GET", f"/admin/dids/{did}", None),
-        ("identity-registry", "POST", f"/admin/keys/rotate/{did}", {}),
-        ("identity-registry", "POST", "/admin/keycloak/sync", {}),
-        ("identity-registry", "GET", "/admin/keycloak/mapping", None),
-        # ── identity-registry: scoped reads ──────────────────────────────────
-        ("identity-registry", "GET", "/owners/resolve?alias=example-org", None),
-        ("identity-registry", "GET", "/memberships/check?user_did=x&organization=y", None),
-        ("identity-registry", "GET", "/users/resolve?email=nobody@example.test", None),
-        ("identity-registry", "GET", "/agreements", None),
-        (
-            "identity-registry",
-            "GET",
-            "/agreements/current?participant_did=did:web:nobody.example",
-            None,
-        ),
-        # ── provenance ───────────────────────────────────────────────────────
-        ("provenance", "GET", "/prov/events", None),
-        ("provenance", "GET", "/prov/entities", None),
-        ("provenance", "GET", "/prov/activities", None),
-        ("provenance", "GET", "/prov/agents", None),
-        ("provenance", "POST", "/prov/entities", {}),
-        ("provenance", "POST", "/prov/activities", {}),
-        ("provenance", "POST", "/prov/agents", {}),
-        ("provenance", "POST", "/prov/events", {}),
-        ("provenance", "POST", "/prov/relations", {}),
-        ("provenance", "GET", "/prov/lineage/urn:e2e:nonexistent", None),
-        ("provenance", "GET", "/audit/log", None),
-        ("provenance", "POST", "/audit/log", {}),
-        ("provenance", "GET", f"/audit/log/summary?dataset_id={s.asset_id}", None),
-        # ── federated catalog ────────────────────────────────────────────────
-        ("federated-catalog", "GET", "/catalog", None),
-        ("federated-catalog", "GET", "/catalog/meta", None),
-        ("federated-catalog", "POST", "/catalog/search", {"q": "energy"}),
-    ]
+# What a probe has to send for the request to reach the credential check.
+#
+# **Measured, and the answer differs by mechanism.** `require_permission` is a
+# FastAPI dependency, so it runs before the endpoint's own body and query
+# parameters are validated: 153 of the 165 routes refuse an anonymous caller
+# with 401 whatever is sent, and need nothing here. The self-authenticated
+# routes check their credential *inside the handler*, so validation answers
+# first — every one of them returned **422** to a bodiless probe, which is 4xx
+# and would have counted as a refusal with the guard deleted.
+#
+# Two levels of fix, and the first covers most of it:
+#
+# * every write verb sends `{}` by default, because *no body at all* is a
+#   different refusal from *no credential*. That alone moved the three DCP
+#   endpoints from 422 to 401.
+# * the rest declare the minimum their schema requires. Values are placeholders
+#   — the probe must be **schema-valid and semantically nonexistent**, never
+#   close enough to succeed.
+#
+# Forgetting an entry is loud: the route reports under `refused_before_the_guard`
+# rather than passing quietly, which is why this table is safe to keep by hand
+# where `_guarded_routes` was not.
+PROBE_PAYLOADS: dict[tuple[str, str, str], dict[str, Any]] = {
+    ("connector", "POST", "/consent/my/shares"): {
+        "body": {"offer_id": PROBE_ID, "enabled": True}
+    },
+    ("connector", "GET", "/consent/status"): {
+        "query": f"?consumer_id={PROBE_ID}&dataset_id={PROBE_ID}&subject_id={PROBE_ID}"
+    },
+    ("connector", "POST", "/consumer/negotiate"): {
+        "body": {
+            "counter_party_address": PROBE_ADDRESS,
+            "offer_id": PROBE_ID,
+            "asset_id": PROBE_ID,
+            "assigner": PROBE_ID,
+        }
+    },
+    ("connector", "POST", "/consumer/flow"): {
+        "body": {
+            "counter_party_address": PROBE_ADDRESS,
+            "asset_id": PROBE_ID,
+            "assigner": PROBE_ID,
+        }
+    },
+    ("connector", "POST", "/consumer/transfer"): {
+        "body": {
+            "contract_agreement_id": PROBE_ID,
+            "counter_party_address": PROBE_ADDRESS,
+            "asset_id": PROBE_ID,
+            "connector_id": PROBE_ID,
+        }
+    },
+    ("identity-registry", "POST", "/onboarding/applications"): {
+        "body": {"invite_code": PROBE_ID, "alias": PROBE_ID, "legal_name": PROBE_ID}
+    },
+    # OAuth2 at the STS, so the payload is form-encoded and a JSON body is a
+    # 422 no matter what it contains.
+    ("identity-registry", "POST", "/sts/{did}/token"): {
+        "form": {
+            "grant_type": "client_credentials",
+            "client_id": PROBE_ID,
+            "client_secret": PROBE_ID,
+        }
+    },
+}
+
+# A refusal that is neither 401 nor 403 did not come from a guard. 422 is the
+# one to watch: it means input validation answered before authorisation was
+# settled, and it counts as "4xx" to a sweep that only checks the class — which
+# is how a probe passes with the guard deleted.
+REFUSAL_STATUSES = (401, 403)
 
 
 class ApiContractFlow(BaseFlow):
@@ -214,10 +310,16 @@ class ApiContractFlow(BaseFlow):
         "refusal, input validation and error-leak checks across all services"
     )
 
+    #: Built by `_check_route_inventory`, which runs before anything reads it.
+    _inventory: list[Route] | None = None
+
     def execute(self) -> FlowResult:
         result = FlowResult(flow_name=self.name)
 
         if not self._check_health(result):
+            return result
+
+        if not self._check_route_inventory(result):
             return result
 
         self._check_public_perimeter(result)
@@ -252,6 +354,40 @@ class ApiContractFlow(BaseFlow):
                 return marker
         return None
 
+    @staticmethod
+    def _app(service: str) -> str:
+        """The image behind a service name.
+
+        `connector` and `consumer-connector` are the same app started in two
+        roles, so the classification tables are keyed by this rather than by the
+        endpoint they happen to be reached through.
+        """
+        return "connector" if service == "consumer-connector" else service
+
+    def _key(self, route: Route) -> tuple[str, str, str]:
+        """How a route is looked up in the classification tables."""
+        return (self._app(route.service), route.method, route.template)
+
+    def _is_anonymous(self, route: Route) -> bool:
+        return self._key(route) in ANONYMOUS_ROUTES
+
+    def _probe(
+        self, route: Route
+    ) -> tuple[str, dict[str, Any] | None, dict[str, str] | None]:
+        """The URL, JSON body and form body a probe of this route must send.
+
+        A write verb defaults to `{}` rather than to nothing: an absent body is
+        a 422, and a 422 is a refusal by shape, not by credential. See
+        `PROBE_PAYLOADS`.
+        """
+        payload = PROBE_PAYLOADS.get(self._key(route), {})
+        url = self._url(route.service, route.path + payload.get("query", ""))
+        body = payload.get("body")
+        form = payload.get("form")
+        if body is None and form is None and route.method in ("POST", "PUT", "PATCH"):
+            body = {}
+        return url, body, form
+
     def _services_this_flow_calls(self) -> list[str]:
         """Every service named by a route this flow will probe.
 
@@ -263,16 +399,25 @@ class ApiContractFlow(BaseFlow):
         turn "something is not up" into one legible failure, and it was checking
         four of the five services it went on to call.
 
-        One list, computed from the routes, so a route added to a new service
-        cannot outrun its health check.
+        One list, computed from what the flow goes on to call, so a service
+        added to either cannot outrun its health check.
         """
         seen: list[str] = []
-        for service, *_ in list(PUBLIC_ROUTES) + [
-            (svc, m, p) for svc, m, p, _b in _guarded_routes(self.settings)
-        ]:
+        for service in list(SWEPT_SERVICES) + [svc for svc, _m, _p in PUBLIC_ROUTES]:
             if service not in seen:
                 seen.append(service)
         return seen
+
+    def _routes(self) -> list[Route]:
+        """Every route the swept services publish, read once per run.
+
+        The sweep is only as complete as this call, so a service that cannot be
+        read is a failure of the flow rather than a smaller sweep — see
+        `_check_route_inventory`.
+        """
+        if self._inventory is None:
+            raise RuntimeError("route inventory not built")
+        return self._inventory
 
     def _check_health(self, result: FlowResult) -> bool:
         services = self._services_this_flow_calls()
@@ -293,6 +438,86 @@ class ApiContractFlow(BaseFlow):
                 )
                 return False
         result.pass_step("health", f"{', '.join(services)} reachable")
+        return True
+
+    # ── 0. the route inventory ───────────────────────────────────────────────
+
+    def _check_route_inventory(self, result: FlowResult) -> bool:
+        """Read the surface from the services, and check every route is classified.
+
+        This is the step that makes the two refusal batteries below complete.
+        It fails on three things, and each is a way the old hand-kept table went
+        wrong before anyone noticed:
+
+        * **a route in no class.** Neither guarded by the app, nor declared
+          anonymous, nor declared self-authenticated. It is swept anyway — the
+          default is to probe — but it is reported, because an unclassified
+          route means nobody decided what it should do.
+        * **a stale declaration.** An entry naming a route no service publishes
+          any more. That is how an exemption outlives the thing it exempted.
+        * **a contradiction.** A route declared anonymous or self-authenticated
+          that the app in fact guards. The declaration would exclude it from the
+          wrong-scope battery, so the weaker claim would silently win.
+        """
+        inventory: list[Route] = list(HIDDEN_ROUTES)
+        for service in SWEPT_SERVICES:
+            url = self._url(service, "/openapi.json")
+            status, spec = self.http.raw("GET", url)
+            if status != 200 or not isinstance(spec, dict):
+                result.fail_step(
+                    "route inventory",
+                    f"{service} does not publish its route table: {url} → {status}",
+                    hint=(
+                        "The sweep is derived from each service's OpenAPI document. "
+                        "A deployment that sets openapi_url=None cannot be swept, "
+                        "and a smaller sweep must not read as a green one."
+                    ),
+                )
+                return False
+            inventory.extend(routes_from_openapi(service, spec))
+        self._inventory = inventory
+
+        declared = set(ANONYMOUS_ROUTES) | set(SELF_AUTHENTICATED_ROUTES)
+        published = {self._key(r) for r in inventory}
+
+        unclassified = sorted(
+            {
+                r.label
+                for r in inventory
+                if not r.guarded and self._key(r) not in declared
+            }
+        )
+        stale = sorted(f"{svc} {m} {t}" for svc, m, t in declared - published)
+        contradicted = sorted(
+            {
+                r.label
+                for r in inventory
+                if r.guarded and self._key(r) in declared
+            }
+        )
+
+        if unclassified or stale or contradicted:
+            result.fail_step(
+                "route inventory",
+                "the published API surface and its classification disagree",
+                unclassified=unclassified or None,
+                stale_declarations=stale or None,
+                declared_open_but_guarded=contradicted or None,
+                published=len(inventory),
+            )
+            return False
+
+        guarded = [r for r in inventory if r.guarded]
+        result.pass_step(
+            "route inventory",
+            "every published route is guarded, or declared open with a reason",
+            services=len(SWEPT_SERVICES),
+            published=len(inventory),
+            guarded=len(guarded),
+            anonymous=len(ANONYMOUS_ROUTES),
+            self_authenticated=len(SELF_AUTHENTICATED_ROUTES),
+            hidden_from_openapi=len(HIDDEN_ROUTES),
+        )
         return True
 
     # ── 1. public perimeter ──────────────────────────────────────────────────
@@ -339,41 +564,54 @@ class ApiContractFlow(BaseFlow):
     # ── 2. anonymous refusal ─────────────────────────────────────────────────
 
     def _check_anonymous_refusal(self, result: FlowResult) -> None:
-        """No credential must mean no answer — on every guarded route.
+        """No credential must mean no answer — on every route that is not open.
 
-        401 is the expected code. A 200 is an unguarded endpoint. A 5xx is a
-        guard that raised instead of denying, which is equally a defect: it
-        means the request reached application code before authentication was
-        settled.
+        Every published route except those declared anonymous above: the ones
+        the app guards, and the ones that authenticate by their own mechanism.
+        Both must refuse a caller carrying nothing.
+
+        **The refusal has to be the guard's.** 401 or 403 and nothing else — a
+        422 means input validation answered before authorisation was settled,
+        and it is 4xx, so a sweep that only checks the class passes on it with
+        the guard deleted. That is the placebo `legal_basis` was introduced to
+        avoid on one route; asserting the status instead covers every route and
+        needs no bodies. A 200 is an open endpoint. A 5xx is a guard that raised
+        instead of denying, which is the same defect one step later.
         """
         open_routes: list[str] = []
         crashed: list[str] = []
         leaked: list[str] = []
+        not_the_guard: list[str] = []
 
-        routes = _guarded_routes(self.settings)
-        for service, method, path, body in routes:
-            status, payload = self.http.raw(method, self._url(service, path), body=body)
-            label = f"{service} {method} {path}"
+        routes = [r for r in self._routes() if not self._is_anonymous(r)]
+        for route in routes:
+            url, body, form = self._probe(route)
+            status, payload = self.http.raw(route.method, url, body=body, form=form)
+            label = f"{route.label} → {status}"
             if status < 400:
-                open_routes.append(f"{label} → {status}")
+                open_routes.append(label)
             elif status >= 500:
-                crashed.append(f"{label} → {status}")
+                crashed.append(label)
+            elif status not in REFUSAL_STATUSES:
+                not_the_guard.append(label)
             elif self._leaks(payload):
-                leaked.append(f"{label} leaks {self._leaks(payload)!r}")
+                leaked.append(f"{route.label} leaks {self._leaks(payload)!r}")
 
-        if open_routes or crashed or leaked:
+        if open_routes or crashed or leaked or not_the_guard:
             result.fail_step(
                 "anonymous refusal",
-                "guarded routes did not refuse an anonymous caller cleanly",
+                "routes did not refuse an anonymous caller cleanly",
                 unguarded=open_routes or None,
                 crashed=crashed or None,
+                refused_before_the_guard=not_the_guard or None,
                 leaked=leaked or None,
                 probed=len(routes),
             )
             return
         result.pass_step(
             "anonymous refusal",
-            "every guarded route refuses an unauthenticated caller with a 4xx and no leak",
+            "every non-public route refuses an unauthenticated caller with "
+            "401/403 and no leak",
             probed=len(routes),
         )
 
@@ -382,20 +620,47 @@ class ApiContractFlow(BaseFlow):
     def _check_wrong_scope_refusal(self, result: FlowResult) -> None:
         """A valid token is not a permit.
 
-        Replays the same table with a genuine Keycloak token from a client that
-        holds neither connector nor provenance nor identity-registry.admin
-        scopes. Every route must still refuse. Both 403 (permission checked and
-        denied) and 401 (audience rejected first) are correct refusals, but at
-        least one true 403 must be observed — otherwise the audience check could
-        be masking a missing permission check everywhere.
+        Replays every permission-guarded route with a genuine Keycloak token
+        from a deliberately under-privileged client. Each must still refuse.
+        Both 403 (permission checked and denied) and 401 (audience rejected
+        first) are correct refusals, but at least one true 403 must be observed
+        — otherwise the audience check could be masking a missing permission
+        check everywhere.
+
+        **Which routes that client legitimately holds is derived, not listed.**
+        The exceptions used to be eight hardcoded paths, and `AGENTS.md`
+        recorded them as wrong: the realm had moved and three routes were being
+        excluded from the sweep that exists to test them. The token's own
+        `scope` claim is intersected with the permissions each route publishes,
+        so the answer comes from the realm that issued it.
+
+        Routes with no published requirement are out of scope here by
+        construction — `/consumer/*` and the DCP endpoints decide on a
+        credential that is not a bearer scope, so a refusal would prove nothing
+        about permissions. `_check_anonymous_refusal` covers them.
         """
         s = self.settings
         try:
-            headers = self.http.bearer_headers_for(s.low_priv_client_id, s.low_priv_client_secret)
+            token = self.http.token_for(s.low_priv_client_id, s.low_priv_client_secret)
         except Exception as exc:
             result.fail_step(
                 "wrong-scope refusal",
-                f"could not obtain a low-privilege token for '{s.low_priv_client_id}': {exc}",
+                "could not obtain a low-privilege token for "
+                f"'{s.low_priv_client_id}': {exc}",
+            )
+            return
+        headers = {"Authorization": f"Bearer {token}"}
+
+        guarded = [r for r in self._routes() if r.guarded]
+        scopes = token_scopes(token)
+        held = {r.key for r in routes_held_by(guarded, scopes)}
+        routes = [r for r in guarded if r.key not in held]
+        if not routes:
+            result.fail_step(
+                "wrong-scope refusal",
+                f"'{s.low_priv_client_id}' holds a permission on every guarded route — "
+                "it is not under-privileged and proves nothing",
+                scopes=sorted(scopes),
             )
             return
 
@@ -403,31 +668,15 @@ class ApiContractFlow(BaseFlow):
         crashed: list[str] = []
         forbidden_seen = 0
 
-        # catalog.read and identity-registry.read are genuinely held by this
-        # client, so those routes are expected to succeed and are not probed.
-        held = {
-            ("federated-catalog", "GET", "/catalog"),
-            ("federated-catalog", "GET", "/catalog/meta"),
-            ("federated-catalog", "POST", "/catalog/search"),
-            ("identity-registry", "GET", "/admin/participants"),
-            ("identity-registry", "GET", "/admin/participants/check?did=x&scope=y"),
-            ("identity-registry", "GET", "/owners/resolve?alias=example-org"),
-            ("identity-registry", "GET", "/agreements"),
-            (
-                "identity-registry",
-                "GET",
-                "/agreements/current?participant_did=did:web:nobody.example",
-            ),
-        }
-
-        routes = [r for r in _guarded_routes(s) if (r[0], r[1], r[2]) not in held]
-        for service, method, path, body in routes:
-            status, _ = self.http.raw(method, self._url(service, path), body=body, headers=headers)
-            label = f"{service} {method} {path}"
+        for route in routes:
+            url, body, form = self._probe(route)
+            status, _ = self.http.raw(
+                route.method, url, body=body, form=form, headers=headers
+            )
             if status < 400:
-                allowed.append(f"{label} → {status}")
+                allowed.append(f"{route.label} → {status}")
             elif status >= 500:
-                crashed.append(f"{label} → {status}")
+                crashed.append(f"{route.label} → {status}")
             elif status == 403:
                 forbidden_seen += 1
 
@@ -438,6 +687,7 @@ class ApiContractFlow(BaseFlow):
                 authorised_anyway=allowed or None,
                 crashed=crashed or None,
                 probed=len(routes),
+                held_and_skipped=sorted(f"{svc} {m} {t}" for svc, m, t in held) or None,
             )
             return
         if forbidden_seen == 0:
@@ -453,6 +703,7 @@ class ApiContractFlow(BaseFlow):
             "an authenticated but unauthorised token is refused everywhere",
             probed=len(routes),
             explicit_403=forbidden_seen,
+            held_and_skipped=len(held),
         )
 
     # ── 4. the user-VC surface ───────────────────────────────────────────────
