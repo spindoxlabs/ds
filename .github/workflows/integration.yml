@@ -1,0 +1,103 @@
+name: Integration
+
+# ==============================================================================
+# The `test:integration` layer — the units against a real PostgreSQL.
+#
+# Separate from `tests.yml` because the cost is different: this one needs a
+# database service, so it is its own workflow with its own runtime, exactly as
+# `tests.yml`'s header says the `T-1`…`T-4` rows planned.
+#
+# **What this buys that `tests.yml` cannot.** Every Python service builds its
+# unit-test schema with `Base.metadata.create_all` on SQLite in memory. So the
+# migrations — eight in the connector, three in provenance — run in no unit
+# test, and no model is ever exercised against Postgres. A model changed without
+# a revision keeps every suite green and is found by a deployment.
+#
+# **Scope, and why it is two units and not thirteen.** A `test:integration` task
+# with nothing behind it is the `EDCL-10` shape — configuration for a suite that
+# does not exist — and a job that is red on arrival is the `CI-01` shape, since a
+# red `main` is how a workflow stops being read. So this lists the units whose
+# integration suite exists, passes, and needs **only** Postgres.
+#
+# `services/identity-registry` is deliberately **not** here. It has the oldest
+# `test:integration` task in the repository and that suite is **red**: it drives
+# `ir-cli participant add`, which `D-51` removed on purpose when participant
+# enrolment became a two-party handshake. Nothing had run it since, which is the
+# `EDC-09` / `REV-01` pattern one layer out — a suite that exists and that
+# nothing invokes rots without anybody being told. Add it here in the commit
+# that repairs it.
+# ==============================================================================
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres:
+    name: ${{ matrix.unit }} (integration)
+    runs-on: ubuntu-latest
+
+    strategy:
+      # One red unit must not hide the state of the others — the same reason
+      # `tests.yml` sets it.
+      fail-fast: false
+      matrix:
+        unit:
+          - services/connector
+          - services/provenance
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        # Without this the job races the database: `uv sync` is fast enough that
+        # the first CREATE DATABASE can arrive before Postgres accepts
+        # connections, and the failure reads as a broken test.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # The suites default to `172.17.0.1:35432` — the dev host-binding rule,
+      # which is right on a laptop and wrong here, where the service container
+      # is published on localhost. Each harness reads its own override for
+      # exactly this case; they are per-unit so a future suite can point at a
+      # different server.
+      CONNECTOR_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
+      PROVENANCE_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install
+        run: task -d ${{ matrix.unit }} setup
+
+      # The unit's own task, not a hand-copied pytest line — the rule
+      # `tests.yml` states and the reason CI cannot drift from what a developer
+      # types locally.
+      - name: Integration tests
+        run: task -d ${{ matrix.unit }} test:integration

@@ -70,6 +70,39 @@ That gap is where the failures above lived. The row-filter shape was a **contrac
 services: each end's unit tests passed against its own reading of it, and e2e never touched
 the mock, so nothing compared them.
 
+### What exists today
+
+| Unit | `test:integration` | Covers | Runs in CI |
+|---|---|---|---|
+| `services/connector` | yes | the 8 migrations against a real Postgres, and the migrated schema vs the models | `integration.yml` |
+| `services/provenance` | yes | the same, for its 3 migrations | `integration.yml` |
+| `services/identity-registry` | yes, **red** | a DCP round trip between two real registries | no — see below |
+
+The first two exist because of a gap worth naming: **every Python service builds its unit-test
+schema with `Base.metadata.create_all` on SQLite in memory.** So the migrations run in no unit
+test, and no model is ever exercised against PostgreSQL. A model changed without a revision
+keeps all 319 connector tests green and is found by a deployment. `db/engine.py`'s startup guard
+does not catch it — it compares the recorded revision *stamp* against head, so a database that
+is at head and shaped wrong passes.
+
+Both suites create and drop their **own** database and never touch the developer's. Both were
+verified by mutation, not by observing them pass: adding a column to a model with no revision
+turns each red.
+
+They also found four columns per service where the migrations left a timestamp nullable and the
+model declares it `NOT NULL`. Recorded as a **ratchet** (`KNOWN_NULLABLE_DRIFT`) rather than
+fixed, because the remedy is an `ALTER COLUMN … SET NOT NULL` against every deployed database —
+a schema change with its own blast radius, and not something a test should smuggle in. A ninth
+one fails.
+
+`services/identity-registry`'s suite is **red and has been since `D-51`**: it drives
+`ir-cli participant add`, which that change deliberately removed when participant enrolment
+became a two-party handshake. Nothing had run it since, so nothing said so — the `EDC-09` /
+`REV-01` pattern applied to an integration suite. It is excluded from CI until it is repaired,
+because a job that is red on arrival stops being read.
+
+### What still belongs here
+
 **Each service should carry an integration layer** under `task -d <unit> test:integration`,
 kept separate from `test` so the unit suite stays fast and dependency-free. What belongs there:
 

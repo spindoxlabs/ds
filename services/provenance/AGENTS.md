@@ -61,3 +61,9 @@ Every edge points backwards in time, so `direction=upstream` follows subject→o
 ("how this came to be") and `downstream` follows object→subject ("what was made from it").
 
 `task -d services/provenance run|test|lint|db:migrate`. Tests use SQLite via `aiosqlite`.
+
+**`task -d services/provenance test:integration` is a second suite** needing a real Postgres on
+`172.17.0.1:35432` (`PROVENANCE_TEST_PG` overrides it). Not collected by `test`. It exists
+because the SQLite `create_all` above means the migrations run in no unit test and no model
+meets Postgres — so a model changed without a revision stays green here and fails on deploy.
+It creates and drops its own database, never `provenance`.

@@ -50,6 +50,19 @@ tasks:
     cmds:
       - uv run pytest tests/ -v --cov={{.SRC}} --cov-report=term-missing
 
+  test:integration:
+    desc: |
+      The connector against a real PostgreSQL on 172.17.0.1:35432. Creates its
+      own throwaway database, never the dev one. Proves what the unit suite
+      structurally cannot: it builds its schema with `create_all` on SQLite, so
+      the eight migrations run nowhere and no model is ever exercised against
+      Postgres.
+    deps: [setup]
+    env:
+      DS_ENV: dev
+    cmds:
+      - uv run pytest tests/integration -v
+
   lint:
     cmds:
       - uv run ruff check {{.SRC}} tests/

@@ -94,6 +94,14 @@ negotiation parked forever on a question nobody could answer. No error, no log.
 `task -d services/connector test` · `lint` · `db:migrate`. pytest-asyncio, respx, SQLite
 in-memory.
 
+**`task -d services/connector test:integration` is a second suite and needs a real Postgres**
+on `172.17.0.1:35432` (`CONNECTOR_TEST_PG` overrides it; CI does). `tests/integration/` is
+never collected by `test` — `norecursedirs` in `pyproject.toml`. It exists because the unit
+suite's SQLite `create_all` means **the migrations run in no unit test and no model is ever
+exercised against Postgres**: change a model without a revision and all 319 unit tests stay
+green. Add a migration → run it. It creates and drops its own database and never touches
+`connector`.
+
 `tests/conftest.py` points the consent vocabulary at `tests/fixtures/` before settings are
 read and clears the caches per test, so the suite asserts against a stable vocabulary rather
 than the dev catalogue. `tests/__init__.py` provides `make_headers` (service token),
