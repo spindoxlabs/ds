@@ -57,6 +57,18 @@ auth:
     # changed together — an `auth-url` whose backend does not resolve fails
     # **closed**, and every request to the portal 500s.
     port: 4180
+    # The proxy's Keycloak client id — the second cross-chart constant, and set
+    # here for the same reason as the port: it belongs to the `ds-oauth2-proxy`
+    # release (`auth.clientId`) and this chart cannot read it.
+    #
+    # Sign-out is the only thing that needs it (`REV-04`). The portal sends the
+    # browser to the realm's `end_session` endpoint naming this client, and
+    # Keycloak validates the return URI against *that* client's registered
+    # post-logout URIs. Rename the client in one place only and sign-out stops at
+    # a Keycloak error page — the SSO session survives, which is the defect the
+    # whole chain exists to prevent. See docs/deployment/keycloak.md for the
+    # registration this assumes.
+    clientId: oauth2_proxy
 
 # The dataset-api is external in production (no chart ships it), so it cannot be
 # derived. Leave empty and the catalogue detail view, /my-data's "data held about

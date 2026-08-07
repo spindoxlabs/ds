@@ -94,7 +94,8 @@ prefix; each call site supplies its own fallback.
 | Variable | Default | Meaning |
 |---|---|---|
 | `ORIGIN` | — | consumed by `adapter-node` for CSRF. Must equal the public URL |
-| `OAUTH2_PROXY_BASE_URL` | `http://sso.dataspaces.localhost` | sign-in / sign-out redirect base |
+| `OAUTH2_PROXY_BASE_URL` | `http://sso.dataspaces.localhost` | sign-in / sign-out redirect base. In the cluster this is the **portal** origin — the chart serves `/oauth2/*` there and there is no separate SSO host |
+| `OAUTH2_PROXY_CLIENT_ID` | `oauth2_proxy` | the **proxy's** realm client, not `PORTAL_SERVICE_CLIENT_ID`. Named when the portal asks Keycloak to end the session; Keycloak validates the post-logout redirect URI against it (`REV-04`) |
 | `CONNECTOR_URL` | `http://ds-connector:30001` | provider connector |
 | `CONSUMER_CONNECTOR_URL` | `http://172.17.0.1:31001` | consumer connector, for `/consumer/*` |
 | `PROVENANCE_URL` | `http://ds-provenance:30000` | events, lineage |

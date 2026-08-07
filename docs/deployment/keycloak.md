@@ -121,10 +121,26 @@ So the realm needs **one browser-login client**, named as `oauth2_proxy_client:`
 `clients.yaml`:
 
 - redirect URI `https://portal.<baseDomain>/oauth2/callback`;
+- **post-logout redirect URI `https://portal.<baseDomain>/oauth2/sign_out`** — see below;
 - it must request the scope `organization:*`, or Keycloak emits no `organization.<alias>.groups`
   and every participant-scoped seat silently grants nothing;
 - naming it in `clients.yaml` is what makes the syncer attach an audience mapper per service
   client, so a user's token passes the `aud` check at each service.
+
+!!! warning "Without the post-logout URI, signing out leaves the SSO session alive"
+    Two sessions exist behind the proxy: Keycloak's SSO session and the proxy's cookie. The
+    portal signs out by sending the browser to the realm's `end_session` endpoint — naming this
+    client, and asking to be returned to the proxy's `/oauth2/sign_out` so the cookie is cleared
+    too (`services/portal/src/lib/server/signout.ts`). Keycloak 18+ **rejects an unregistered
+    `post_logout_redirect_uri` outright**, so if it is missing the chain stops at a Keycloak
+    error page with the SSO session untouched, and the next visit re-authenticates silently.
+
+    It is the **portal** host, not a separate SSO host: the chart serves `/oauth2/*` on the
+    portal origin (`ds-portal`'s `_env.tpl` sets `OAUTH2_PROXY_BASE_URL` to it), so a realm
+    registering `https://sso.<baseDomain>/oauth2/sign_out` instead does not match what the
+    portal sends. If the client id is not `oauth2_proxy`, set `auth.proxy.clientId` on the
+    `ds-portal` release to match — Keycloak validates the return URI against the client named
+    in the logout request.
 
 !!! warning "A Keycloak access token carries `sub` only if the client has a mapper for it"
     The stock route is the `basic` client scope. A realm import that declares its own

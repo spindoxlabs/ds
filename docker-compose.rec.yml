@@ -363,6 +363,10 @@ services:
       # Where to send a browser to start or end a session. Caddy routes /oauth2/*
       # on this host to the proxy.
       OAUTH2_PROXY_BASE_URL: http://sso.dataspaces.localhost
+      # The **proxy's** client, not the portal's service account. Sign-out sends
+      # the browser to Keycloak's end_session first (`REV-04`), and Keycloak
+      # validates the return URI against the client named in that request.
+      OAUTH2_PROXY_CLIENT_ID: ${OAUTH2_PROXY_CLIENT_ID:-oauth2_proxy}
       ORIGIN: http://portal.dataspaces.localhost
       PORTAL_SERVICE_CLIENT_ID: svc-ds-portal
       PORTAL_SERVICE_CLIENT_SECRET: ${SVC_DS_PORTAL_SECRET:-svc-ds-portal}

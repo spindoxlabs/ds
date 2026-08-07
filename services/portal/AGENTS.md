@@ -8,6 +8,14 @@ and forwards the access token as `X-Auth-Request-Access-Token`; `hooks.server.ts
 session per request. The header is transport, never authority — Caddy strips client-supplied
 copies and every ds service re-verifies the JWT.
 
+**But sign-out is the portal's, in both modes** (`REV-04`). There are *two* sessions —
+Keycloak's SSO session and the proxy's cookie — and clearing either alone is not a sign-out:
+the survivor re-authenticates silently. `lib/server/signout.ts` builds the chain that ends
+both. It lives here rather than in the gateway because the gateway is Caddy in dev and nginx
+Ingress annotations in the cluster, so a rule written there is written twice and drifts — it
+did, and the cluster half was never written at all. Do not "simplify" this back to a redirect
+to `/oauth2/sign_out`.
+
 ## References
 
 | | |

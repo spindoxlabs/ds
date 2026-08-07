@@ -55,6 +55,15 @@ ds-<service>-<participant>.
 # start or end a session; the ds-oauth2-proxy release serves it on this host.
 - name: OAUTH2_PROXY_BASE_URL
   value: {{ include "portal.origin" . | quote }}
+# The proxy's Keycloak client, needed only by sign-out (`REV-04`): the portal
+# sends the browser to the realm's `end_session` endpoint and Keycloak validates
+# `post_logout_redirect_uri` against the client named there. It is the **proxy's**
+# client, so it must match `auth.clientId` on the `ds-oauth2-proxy` release — a
+# cross-chart constant, for the same reason `auth.proxy.port` is one. Getting it
+# wrong is visible: Keycloak refuses the logout with an invalid-redirect page
+# instead of failing silently.
+- name: OAUTH2_PROXY_CLIENT_ID
+  value: {{ .Values.auth.proxy.clientId | default "oauth2_proxy" | quote }}
 # The realm issuer. The portal verifies every forwarded access token's signature
 # against this issuer's JWKS (`hooks.server.ts` → `lib/server/token.ts`) and
 # requests its service token from it — with no in-code fallback, so an unset

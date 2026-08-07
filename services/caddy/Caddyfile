@@ -155,12 +155,19 @@ http://grid-operator.dataspaces.localhost {
 # Adapted from a configuration already proven in the sibling platform. The two
 # parts that took the longest to get right are kept verbatim in spirit:
 #
-#  1. **sign_out is intercepted before oauth2-proxy sees it.** The browser goes to
-#     Keycloak's end_session endpoint first, which clears the *Keycloak* SSO
-#     session, and Keycloak then redirects to the proxy's sign_out to clear the
-#     proxy cookie. Skip this and only the local cookie is cleared — Keycloak
-#     silently re-authenticates on the next visit, so "sign out" appears to do
-#     nothing.
+#  1. **sign_out must end the Keycloak session, not only the proxy cookie.** Skip
+#     that and Keycloak silently re-authenticates on the next visit, so "sign out"
+#     appears to do nothing.
+#
+#     **The portal owns that chain now, not this file (`REV-04`).**
+#     `services/portal/src/lib/server/signout.ts` builds the end_session URL, so
+#     it is the same in dev and in the cluster — which has no Caddy, and
+#     therefore had no implementation of this at all while it lived here. These
+#     two `handle /oauth2/sign_out` blocks are a **backstop for a direct hit**,
+#     no longer the mechanism: the portal redirects to `OAUTH2_PROXY_BASE_URL`,
+#     which is the `sso.` host, and that block (below) imports neither of them.
+#     Do not re-point the portal at them — that is the defect, from the other
+#     direction.
 #  2. **`/oauth2/*` is excluded from the auth pre-flight.** sign_in and callback
 #     must reach oauth2-proxy directly; running forward_auth on them means the
 #     callback code is checked for a session that does not exist yet.
@@ -361,6 +368,8 @@ http://portal.dataspaces.localhost {
 		# copy: inside `route` the first matching `handle` wins, so a generic
 		# /oauth2/* would shadow the more specific sign_out and clear only the proxy
 		# cookie — leaving Keycloak's SSO session alive to re-authenticate silently.
+		# A backstop for a direct hit on this host; the portal owns the sign-out
+		# chain (`REV-04`, see the snippet's header).
 		handle /oauth2/sign_out {
 			redir * http://keycloak.dataspaces.localhost/realms/dataspaces/protocol/openid-connect/logout?client_id=oauth2_proxy&post_logout_redirect_uri=http%3A%2F%2Fsso.dataspaces.localhost%2Foauth2%2Fsign_out 302
 		}

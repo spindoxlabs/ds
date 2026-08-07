@@ -20,7 +20,8 @@
 import { env } from '$env/dynamic/private';
 import { resolveUserByEmail } from '$lib/server/identity-registry';
 import { buildPortalGuard } from '$lib/server/production';
-import { verifyAccessToken } from '$lib/server/token';
+import { buildSignOutUrl } from '$lib/server/signout';
+import { resolveIssuer, verifyAccessToken } from '$lib/server/token';
 import { redirect, type Handle } from '@sveltejs/kit';
 
 // `AUTH-04`. Module scope, so this runs once when the server starts and a
@@ -31,6 +32,17 @@ buildPortalGuard().enforce();
 
 /** Where the browser goes to start or end a session. Caddy routes /oauth2/* here. */
 const SSO_BASE = env.OAUTH2_PROXY_BASE_URL ?? 'http://sso.dataspaces.localhost';
+
+/**
+ * The **proxy's** Keycloak client, which is not the portal's service client.
+ *
+ * Only sign-out needs it: Keycloak validates `post_logout_redirect_uri` against
+ * the client named in the request. The dev default matches the realm import and
+ * the chart's `auth.clientId`; a deployment that renames the client sets this,
+ * and `ds-portal`'s `_env.tpl` passes it from the same value the proxy release
+ * uses so the two cannot drift silently.
+ */
+const PROXY_CLIENT_ID = env.OAUTH2_PROXY_CLIENT_ID ?? 'oauth2_proxy';
 
 /**
  * The identity-registry lookup is a network call, and under Auth.js it happened
@@ -53,6 +65,21 @@ async function cachedIdentity(email: string): Promise<Identity> {
 	// dataspace identity yet re-queries the registry on every navigation.
 	identityCache.set(email, { at: now, identity });
 	return identity;
+}
+
+/**
+ * The ID token, which is a different token from the one `bearerFrom` returns.
+ *
+ * `set_authorization_header` puts the **ID token** on `Authorization` while
+ * `pass_access_token` puts the *access* token on `X-Auth-Request-Access-Token`.
+ * Only sign-out wants this one, as `id_token_hint` — see `lib/server/signout.ts`
+ * for what Keycloak does without it. Never used to authorise anything: the two
+ * are not interchangeable, and this one is not re-verified here.
+ */
+function idTokenFrom(request: Request): string | null {
+	const authorization = request.headers.get('authorization');
+	if (!authorization?.toLowerCase().startsWith('bearer ')) return null;
+	return authorization.slice(7).trim() || null;
 }
 
 function bearerFrom(request: Request): string | null {
@@ -101,12 +128,23 @@ async function buildSession(request: Request) {
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-	// Sign-out is the proxy's, and the redirect chain matters: Caddy intercepts
-	// /oauth2/sign_out to end the *Keycloak* session first, then Keycloak returns
-	// to the proxy to drop its cookie. Clearing only one of the two leaves the
-	// other able to re-authenticate silently, so "sign out" appears to do nothing.
+	// Two sessions exist behind this proxy — Keycloak's SSO session and the
+	// proxy's cookie — and clearing either one alone is not a sign-out: the
+	// survivor re-authenticates silently and sign-out appears to do nothing.
+	// `buildSignOutUrl` sends the browser through both, in the order that fails
+	// safe. This used to redirect to the proxy alone and rely on the gateway to
+	// insert the Keycloak hop, which no gateway on either path actually did
+	// (`REV-04` — see `lib/server/signout.ts` for what was wrong where).
 	if (event.url.pathname === '/auth/signout') {
-		throw redirect(303, `${SSO_BASE}/oauth2/sign_out`);
+		throw redirect(
+			303,
+			buildSignOutUrl({
+				issuer: resolveIssuer(),
+				ssoBase: SSO_BASE,
+				proxyClientId: PROXY_CLIENT_ID,
+				idToken: idTokenFrom(event.request),
+			}),
+		);
 	}
 	// `startsWith`, because the layout's form still posts to the Auth.js-shaped
 	// `/auth/signin/keycloak`. Behind the proxy this path is rarely reached at all —
