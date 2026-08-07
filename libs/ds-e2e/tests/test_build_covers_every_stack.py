@@ -21,6 +21,7 @@ the image it had.
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -93,10 +94,45 @@ def test_declared_skips_are_skipped_in_the_task(script: str):
         )
 
 
+def _is_tracked(path: str) -> bool:
+    """Is *path* committed to this repository?
+
+    `docker-compose.override.yml` is not, and cannot be: compose applies it
+    automatically and it is where a developer puts machine-local changes. So it
+    exists on the machine that wrote one and in no fresh clone — which is
+    precisely the state CI is always in.
+    """
+    result = subprocess.run(
+        ["git", "ls-files", "--error-unmatch", path],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    return result.returncode == 0
+
+
 def test_declared_skips_still_exist():
-    """Drop the exemption when the file goes, so the list cannot rot."""
-    gone = [s for s in DECLARED_SKIPS if not (ROOT / s).exists()]
-    assert not gone, f"declared exempt but no longer present: {gone}"
+    """Drop the exemption when the file goes, so the list cannot rot.
+
+    **Tracked files only**, and that is not a loophole — it is the difference
+    between *deleted* and *never committed*. This asserted plain existence and so
+    was red on `main` for as long as `docker-compose.override.yml` was in the
+    list: the file is untracked by design, so a CI checkout has none and the test
+    failed on every run while passing on every laptop. The sibling test above
+    already made the distinction (`if not (ROOT / stack).exists(): continue`);
+    this one did not, and the two disagreed.
+
+    An untracked entry is still checked for rot, just not by existence: it must
+    remain named in the task, which `test_declared_skips_are_skipped_in_the_task`
+    covers wherever the file is present.
+    """
+    gone = [
+        s for s in DECLARED_SKIPS if _is_tracked(s) and not (ROOT / s).exists()
+    ]
+    assert not gone, (
+        f"declared exempt but no longer present: {gone}. The file was deleted or "
+        "renamed — drop it from DECLARED_SKIPS, and from the build task."
+    )
 
 
 def test_the_three_participant_stacks_are_covered(script: str):
