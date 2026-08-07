@@ -116,6 +116,16 @@ Helm chart.
 
 `task -d libs/ds-auth test`.
 
+**`test:integration` is a second suite** and needs a Keycloak whose realm has been through
+`celine-policies keycloak sync` — `task docker:restart` locally; in CI the `keycloak` job in
+`integration.yml` starts and provisions one itself. It **skips** on a laptop with no stack and
+**fails** when `CI` is set, because those two absences mean different things (`CI-02`). Run it
+when you touch `verify_token`, `OidcConfig`, or
+`services/keycloak/clients.yaml`: the unit suite **signs its own tokens** and compares
+`clients.yaml` with `bundles.py` — declaration against declaration — so neither the shape of a
+real Keycloak token nor the *result of the sync* is covered anywhere else. A scope declared in
+`clients.yaml` and never synced 403s at runtime with every unit test green.
+
 ## Two traps in `jwt.py` and `production.py`
 
 **Do not teach `is_service_account` that a bare `scope` claim means a service.** Keycloak puts

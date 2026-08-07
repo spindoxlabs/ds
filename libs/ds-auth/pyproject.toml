@@ -51,6 +51,11 @@ packages = ["src/ds_auth"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+# `tests/integration` needs a running Keycloak realm, so it is never collected
+# by `task test` — the unit suite stays fast and dependency-free.
+# `task test:integration` names the directory explicitly.
+norecursedirs = ["tests/integration"]
+markers = ["integration: needs a running Keycloak with the dataspaces realm"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]

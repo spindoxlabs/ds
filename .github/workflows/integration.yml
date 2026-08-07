@@ -1,11 +1,15 @@
 name: Integration
 
 # ==============================================================================
-# The `test:integration` layer — the units against a real PostgreSQL.
+# The `test:integration` layer — the units against their real dependencies.
 #
-# Separate from `tests.yml` because the cost is different: this one needs a
-# database service, so it is its own workflow with its own runtime, exactly as
-# `tests.yml`'s header says the `T-1`…`T-4` rows planned.
+# Two jobs, because there are two dependencies: `postgres` for the units with a
+# database, and `keycloak` for `libs/ds-auth`, which needs a realm that has been
+# **provisioned**, not merely started.
+#
+# Separate from `tests.yml` because the cost is different: these need services,
+# so they get their own workflow with their own runtime, exactly as `tests.yml`'s
+# header says the `T-1`…`T-4` rows planned.
 #
 # **What this buys that `tests.yml` cannot.** Every Python service builds its
 # unit-test schema with `Base.metadata.create_all` on SQLite in memory. So the
@@ -28,6 +32,22 @@ name: Integration
 #
 # That one starts **four** uvicorn processes and takes ~45s, against ~4s for the
 # other two. Worth its own note so a slow job is not mistaken for a hung one.
+#
+# **The `keycloak` job runs the real provisioning tool**, and that is the whole
+# reason it can exist. `realm-dataspaces-dev.json` carries only `oauth2_proxy`
+# and six stock scopes — every ds scope, service client and audience mapper is
+# created by `celine-policies keycloak sync`. It was first assumed that made the
+# suite un-runnable here; it does not. The image is **public**, and both inputs
+# it needs are committed, so CI provisions the realm exactly as
+# `docker-compose.yml` does and then asserts against the result.
+#
+# That makes this job stronger than a mock would be: it does not check that a
+# realm *can* issue tokens, it checks that **the sync grants what
+# `clients.yaml` declares**, which is the step nothing else covers. Measured
+# both ways before it was written — synced realm: 13 passed; the same realm with
+# the sync step skipped: 8 failed, 5 errors. So a broken or absent sync turns
+# this job red rather than green-by-default, which is the property a check that
+# skips when its dependency is missing does not have.
 # ==============================================================================
 
 on:
@@ -105,3 +125,106 @@ jobs:
       # types locally.
       - name: Integration tests
         run: task -d ${{ matrix.unit }} test:integration
+
+  # ===========================================================================
+  # `libs/ds-auth` against a realm provisioned the way the dev stack provisions
+  # one. Its own job because the dependency is a Keycloak that has been through
+  # `celine-policies keycloak sync`, not a database.
+  # ===========================================================================
+  keycloak:
+    name: libs/ds-auth (integration)
+    runs-on: ubuntu-latest
+
+    env:
+      # Keycloak is told to advertise this, so it is the `iss` of every token it
+      # mints and the base of the JWKS URL the verifier fetches. There is no
+      # Caddy here, so it is not the dev spelling — which is exactly why the
+      # harness reads `DS_AUTH_TEST_ISSUER`: the suite asserts on scopes and
+      # signatures, never on the address it reached the realm at.
+      KC_URL: http://localhost:9080
+      DS_AUTH_TEST_ISSUER: http://localhost:9080/realms/dataspaces
+      # Dev defaults, matching `clients.yaml`'s `${…:-<client_id>}` spellings.
+      # A real secret here would prove less: what is under test is whether the
+      # sync grants the declared scopes, not whether a password travels.
+      KEYCLOAK_ADMIN_USERNAME: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Not a `services:` container: it needs the committed realm file mounted,
+      # and service containers start *before* the checkout that would provide
+      # it. Version pinned to `docker-compose.yml`'s — bump both together.
+      - name: Start Keycloak with the dev realm
+        run: |
+          docker run -d --name keycloak \
+            -e KC_BOOTSTRAP_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USERNAME" \
+            -e KC_BOOTSTRAP_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+            -e KC_HTTP_ENABLED=true \
+            -e KC_HEALTH_ENABLED=true \
+            -e KC_HOSTNAME="$KC_URL" \
+            -e KC_SPI_LOGIN_DEFAULT_REALM_NAME=dataspaces \
+            -p 9080:9080 \
+            -v "$PWD/services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro" \
+            quay.io/keycloak/keycloak:26.6.0 \
+            start-dev --import-realm --http-port=9080
+
+      - name: Wait for the realm
+        run: |
+          for i in $(seq 1 90); do
+            if curl -sf "$DS_AUTH_TEST_ISSUER/.well-known/openid-configuration" >/dev/null; then
+              echo "realm up after ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::the dataspaces realm did not come up"; docker logs keycloak; exit 1
+
+      # **The step that makes this job mean something.** Without it the realm has
+      # `oauth2_proxy` and six stock scopes, and the suite fails — measured: 8
+      # failed, 5 errors. The same image, inputs and commands as
+      # `docker-compose.yml`'s `keycloak-sync`, so CI provisions what dev does.
+      - name: Provision the realm (celine-policies)
+        run: |
+          docker run --rm --network host \
+            -e CELINE_KEYCLOAK_BASE_URL="$KC_URL" \
+            -e CELINE_KEYCLOAK_REALM=dataspaces \
+            -e CELINE_KEYCLOAK_SECRETS_FILE=/tmp/.secrets.yaml \
+            -e KEYCLOAK_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USERNAME" \
+            -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
+            -e SVC_DS_IDENTITY_REGISTRY_SECRET=svc-ds-identity-registry \
+            -e SVC_DS_ONBOARDING_SECRET=svc-ds-onboarding \
+            -e SVC_DS_PORTAL_SECRET=svc-ds-portal \
+            -e SVC_DS_E2E_SECRET=svc-ds-e2e \
+            -e SVC_DS_CONNECTOR_SECRET=svc-ds-connector \
+            -e SVC_DS_PROVENANCE_SECRET=svc-ds-provenance \
+            -e SVC_DS_FEDERATED_CATALOG_SECRET=svc-ds-federated-catalog \
+            -e SVC_DS_DATASET_API_SECRET=svc-ds-dataset-api \
+            -e SVC_EDC_SECRET=svc-edc \
+            -e SVC_REC_REGISTRY_SECRET=svc-rec-registry \
+            -v "$PWD/services/keycloak/clients.effective.yaml:/app/clients.yaml:ro" \
+            --entrypoint /bin/sh \
+            ghcr.io/celine-eu/celine-policies:dev -c \
+            'celine-policies keycloak bootstrap \
+               --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
+               --admin-password "$KEYCLOAK_ADMIN_PASSWORD" &&
+             celine-policies keycloak sync --secrets-file /tmp/.secrets.yaml'
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install
+        run: task -d libs/ds-auth setup
+
+      - name: Integration tests
+        run: task -d libs/ds-auth test:integration
+
+      - name: Keycloak logs
+        if: failure()
+        run: docker logs keycloak

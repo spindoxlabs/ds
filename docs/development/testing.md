@@ -77,6 +77,7 @@ the mock, so nothing compared them.
 | `services/connector` | yes | the 8 migrations against a real Postgres, and the migrated schema vs the models | `integration.yml` |
 | `services/provenance` | yes | the same, for its 3 migrations | `integration.yml` |
 | `services/identity-registry` | yes | a DCP round trip across a trust anchor and two participants | `integration.yml` |
+| `libs/ds-auth` | yes | `ds_auth` against a **real Keycloak realm** | `integration.yml`, which provisions the realm itself |
 
 The first two exist because of a gap worth naming: **every Python service builds its unit-test
 schema with `Base.metadata.create_all` on SQLite in memory.** So the migrations run in no unit
@@ -118,6 +119,51 @@ anchor` used to compare two DIDs served by one process, and now names a key held
 the holder cannot read.
 
 Verified by mutation: drop the `--code` and five tests fail, including every custody assertion.
+
+`libs/ds-auth`'s suite closes the second thing this page asks for — *authentication against a
+real Keycloak, not a stubbed verifier*. Two suites existed and neither could see the gap:
+`test_verify.py` **signs its own tokens**, so the RS256 / published-`kid` / list-valued-`aud`
+shape a real realm produces had never met `verify_token`; and `test_vocabulary.py` compares
+`clients.yaml` with `ds_auth.bundles` — declaration against declaration. What *applies* them is
+`celine-policies keycloak sync`, and its result was checked by nothing. That is `KC-01`'s shape:
+a realm synced before a value was set keeps the old one, silently, until a 403 at runtime.
+
+It asserts `default_scopes` ⊆ the token's `scope` claim, per client, for all eight — a subset
+because a deployment's domain overlay legitimately adds more. Verified by mutation: declare a
+scope the realm does not grant and it fails, naming the scope and the remedy.
+
+**CI runs the real provisioning tool.** `realm-dataspaces-dev.json` carries only `oauth2_proxy`
+and six stock scopes, so a bare Keycloak proves nothing — but the `celine-policies` image is
+public and both inputs it needs (`clients.effective.yaml`, the realm file) are committed, so the
+`keycloak` job in `integration.yml` starts Keycloak and syncs it exactly as `docker-compose.yml`
+does, then asserts against the result. That is the point: what is under test is **the sync's
+output**, so a job that skipped the sync would be testing nothing. Measured both ways —
+provisioned realm: 13 passed; same realm without the sync step: 8 failed, 5 errors.
+
+The suite **skips on a laptop with no stack and fails when `CI` is set**. `CI-02`'s rule applied
+one layer out: an absent dependency has two meanings. *No stack is running* is a supported mode
+for a developer; in CI the job provisions the realm itself, so its absence is a broken workflow,
+and skipping would report green for a suite that asserted nothing.
+
+### What does *not* need a layer
+
+"One per service" would be cargo cult, and three of the four categories above are already
+answered or belong elsewhere:
+
+| Unit | Verdict |
+|---|---|
+| `services/federated-catalog` | **no database, no migrations.** Its real dependencies are the EDC catalogues and the identity registry, which is what `ds-e2e`'s `catalog-discovery` flow already exercises live |
+| `services/portal` | has one, under a different name: `test:ui` is Playwright against the running stack |
+| `services/dataset-api-mock` | a stand-in, excluded from assessments. The contract it must honour is `T-3`'s, not this row's |
+| `services/edc-connector` | a Gradle fat-JAR build with no source of its own |
+| `services/edc-extensions` | its `:test` runs in `tests.yml`; a real EDC exercise is `ds-e2e`'s job |
+| `libs/ds-edc` | its dependency is a running EDC — an e2e concern, and `ds-e2e` drives every method that matters |
+| `libs/governance` | pure library. Its one real-dependency test is `test_dataplane_contract.py`, which is `T-3` |
+| `libs/ds-obs` | logging and metrics configuration; nothing to integrate against |
+| `libs/ds-e2e` | **is** the stack layer |
+
+So `T-2` is done: four units, all four in CI. What remains is `T-1` — running the *flows*
+against both data planes — which is a different row and does not block anything here.
 
 ### What still belongs here
 

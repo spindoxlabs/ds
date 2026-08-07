@@ -25,6 +25,19 @@ tasks:
     cmds:
       - uv run pytest tests/ -q
 
+  test:integration:
+    desc: |
+      ds_auth against a **real Keycloak realm** — needs a running stack
+      (`task docker:restart`). Proves what the unit suite structurally cannot:
+      it signs its own tokens and compares clients.yaml with bundles.py, so
+      neither the shape of a real Keycloak token nor the result of the realm
+      sync has ever been checked. Skips cleanly when no realm is reachable.
+    deps: [setup]
+    env:
+      DS_ENV: dev
+    cmds:
+      - uv run pytest tests/integration -v
+
   bundles:generate:
     desc: Regenerate the portal's copy of the role-bundle table from ds_auth.bundles
     cmds:
