@@ -10,7 +10,7 @@ URL: `http://portal.dataspaces.localhost/api/connector/`
 > reasoning behind the ODRL derivation, the consent model and the enforcement
 > matrix is published at **<https://spindoxlabs.github.io/ds/>** — start with
 > [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) and
-> [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/).
+> [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/).
 > Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
@@ -59,7 +59,7 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 - `POST /consent/request` — **provider-local**: an operator or the portal seeds a consent request for a set of subjects. Guarded by `connector.consent.provision`
 - `GET /consent/pending?correlation_id=` — is this negotiation waiting on a consent decision, and since when. Status only, for the counterparty. Guarded by `connector.consent.read`
 - `GET /consent/asks` — operator view: which asks are holding up which negotiation. Guarded by `connector.provider.read`
-- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record. **Granting requires evidence** — `source`, `consent_text_version` and `rendered_text_sha256`, else 422; withdrawal requires none. See [Integrating an external application](https://spindoxlabs.github.io/ds/external-application-integration/)
+- `POST /consent/admin/shares` — a service (onboarding) provisions a subject's standing consent from an `offer_id`; guarded by `connector.consent.provision`. Writes `consumer_id = "*"` wildcard rows with a non-PII `legal_basis` record. **Granting requires evidence** — `source`, `consent_text_version` and `rendered_text_sha256`, else 422; withdrawal requires none. See [this service's page](https://spindoxlabs.github.io/ds/services/connector/)
 - `GET /consent/my` — data subject retrieves their own consent requests (requires `X-Subject-Id` header)
 - `POST /consent/my/{id}/approve` — data subject approves a request; resumes the negotiation it was blocking
 - `POST /consent/my/{id}/reject` — data subject rejects a request; terminates the negotiation only once every subject has refused
@@ -96,10 +96,10 @@ files ended up describing one mechanism differently. The site is the source:
 |---|---|
 | How `governance.yaml` becomes an ODRL offer — actions, prohibitions, constraints, obligations | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
 | Why purposes come from `policy.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
-| Consent lifecycle, the circle, material-change rules, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
-| Revocation — why EDC's policy monitor terminates transfers and this service does not | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
-| Subject identity, the identifier cascade, unbound subjects | [Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/) |
-| Provenance events emitted from here | [Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/) |
+| Consent lifecycle, the circle, material-change rules, the enforcement matrix | [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) |
+| Revocation — why EDC's policy monitor terminates transfers and this service does not | [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) |
+| Subject identity, the identifier cascade, unbound subjects | [this service's page](https://spindoxlabs.github.io/ds/services/connector/) |
+| Provenance events emitted from here | [Provenance and logging](https://spindoxlabs.github.io/ds/rulebook/provenance-and-logging/) |
 
 `POST /provider/sync` reads `governance/governance.yaml`, takes datasets where
 `expose: true` and `access_level != secret`, and upserts an EDC `Asset` +

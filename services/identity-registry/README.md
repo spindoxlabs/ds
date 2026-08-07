@@ -8,8 +8,8 @@ DSSC alignment: BB02 (Identity & Attestation) — participant identity managemen
 
 > **Concepts live in the docs site, not here.** This README is the local entry
 > point: what runs, which endpoints exist, how to configure and start it. The
-> reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) and
-> [the security model](https://spindoxlabs.github.io/ds/identity-registry-security/).
+> reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with [this service's page](https://spindoxlabs.github.io/ds/services/identity-registry/) and
+> [Participation and trust](https://spindoxlabs.github.io/ds/rulebook/participation/).
 > Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
@@ -140,7 +140,8 @@ The module-by-module walkthrough that used to sit here is in `AGENTS.md`, beside
 the source it describes — it is a map for someone editing the code, not something
 an operator or integrator needs. The security model (trust tiers, key management,
 credential lifecycle, network posture) is published at
-[Identity Registry — security model](https://spindoxlabs.github.io/ds/identity-registry-security/).
+[Identity registry](https://spindoxlabs.github.io/ds/services/identity-registry/), with the
+rules it enforces in [Participation and trust](https://spindoxlabs.github.io/ds/rulebook/participation/).
 
 ---
 

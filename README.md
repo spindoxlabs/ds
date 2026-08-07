@@ -1,393 +1,199 @@
-# Dataspaces
+# ds — a data space for energy communities
 
-A DSSC-aligned dataspace implementation for energy communities, built on top of Eclipse Dataspace Connector.
+**Independent organisations publish data to each other under machine-readable contracts,
+and the people the data describes decide what may be shared about them.**
 
-The project delivers the full consumer-pull data exchange flow: catalogue discovery, contract negotiation, EDR-gated data transfer, consent enforcement, and provenance tracking — all aligned to the DSSC Blueprint Building Blocks.
+`ds` is a working implementation of that second half. Contract-based data exchange between
+organisations is well-trodden ground — the [Eclipse Dataspace
+Components](https://projects.eclipse.org/projects/technology.edc) do it, and `ds` builds on
+them rather than reinventing them. What is not well-trodden is what happens when the data
+is *about households*: smart-meter readings, consumption profiles, flexibility events. Then
+a contract between two companies is not enough, because a third party — the person the
+data describes — has a say that neither signatory can give away.
 
-## 📖 Documentation
+So the consent of a data subject is a first-class object here. It is checked at contract
+negotiation, again while a transfer is running, and once more on every query, and it
+narrows results **row by row** before any data leaves the provider. Withdraw it and a
+running transfer stops.
 
-**<https://spindoxlabs.github.io/ds/>** — architecture, the identity and DCP flow,
-the governance/ODRL pipeline, consent and sovereignty, provenance, and the
-deployment reference.
+📖 **[Documentation](https://spindoxlabs.github.io/ds/)** — architecture, the rulebook, the
+blueprint requirements, and the deployment reference.
 
-That site is the single place concepts are explained. This README and the
-per-service ones are **local entry points**: what a unit is, how to run it, what
-it is configured with. Each links out rather than re-explaining, because one
-mechanism described in three files is one mechanism described three different ways.
+---
 
-| Looking for | Go to |
+## Who this is for
+
+| If you are | What is here for you |
 |---|---|
-| How the pieces fit together | [Architecture](https://spindoxlabs.github.io/ds/architecture/) |
-| DIDs, credentials, the trust anchor | [Identity & DCP](https://spindoxlabs.github.io/ds/identity-and-dcp/) |
-| `governance.yaml` → ODRL offers | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
-| Consent, purposes, the enforcement matrix | [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) |
-| Deploying it | [Deployment](https://spindoxlabs.github.io/ds/deployment/) |
-| Working on the code as an agent | `AGENTS.md`, at the root and in each unit |
+| **A DSO or grid operator** | A second provider in the dev fixture is a grid operator, deliberately: it shares its own network data and has no members, which is structurally different from a community and is the case a one-provider demo quietly assumes away |
+| **An energy community or REC** | The consent plane — households granting and withdrawing use of their own data, per purpose, with the withdrawal reaching a running transfer |
+| **A software company** | A platform, not a deployment. Domain specifics live in extension points: an ODRL profile, governance overlays, Keycloak client overlays. Apache-2.0 |
+| **An EU research project** | Every blueprint requirement is rendered as a citable row with an enforcement status, and every deviation is written down. You can check the claims rather than take them |
 
 ---
 
-## What it provides
+## What actually runs
 
-Participants in the dataspace can publish datasets through a governed catalogue and allow other participants to negotiate contracts, obtain Endpoint Data References, and query data with row-level consent filtering applied at query time.
+One command brings up a three-participant data space — an energy community, a consumer, and
+a grid operator — each with its own EDC connector, behind a shared trust anchor, plus a
+federated catalogue, provenance and a portal:
 
-The stack covers the following DSSC Blueprint building blocks:
+```bash
+task docker:restart     # 19 containers
+task e2e:all            # 18 end-to-end flows against the running stack
+```
 
-- **BB02** — Participant identities as `did:web:` URIs with `JsonWebKey2020` verification methods
-- **BB05** — ODRL policies derived from `governance.yaml` with access-level, purpose, consent, and obligation constraints
-- **BB06** — EDC-based data exchange with EDR token issuance and HTTP data plane proxy
-- **BB07** — W3C PROV-O provenance logging via a JSON-LD REST API
-- **BB08** — DCAT-AP 3.0 catalogue with `application/ld+json` responses
-- **BB09** — Consent portal for per-subject data usage consent, with revocation linked to active transfer processes
-- **DCP** — Dataspace Credential Protocol identity verification using Verifiable Credentials
+The exchange it runs end to end is the **consumer-pull** flow:
+
+```
+discover in the catalogue → negotiate an ODRL contract → receive an Endpoint Data
+Reference → pull the data → every row filtered by the consent of the person it describes
+```
+
+with a `did:web` identity for each participant, verifiable credentials presented over the
+Dataspace Credential Protocol, and a W3C PROV-O record of what happened.
+
+**Things worth knowing before you evaluate it:**
+
+- The **policy decision point fails closed**. Stop the control plane and negotiation is
+  refused rather than permitted — asserted against a stopped container on every full run,
+  not argued in a document.
+- **Withdrawing consent reaches a *running* transfer**, not merely the next one: the
+  agreement is terminated and later queries refused. Neither blueprint asks for this; the
+  rulebook records it as a rule participants can rely on anyway (`D-17`).
+- The real data plane is an **external** service. `ds` addresses it over HTTP and calls it
+  back for a per-query decision, so it does not own or copy your data.
+- The **catalogue is advisory, never authority.** It is a crawler's projection; the
+  provider's connector decides.
 
 ---
 
-## Repository layout
+## Where it stands against the blueprints
 
-```
-dataspaces/
-├── docker-compose.yml          shared infra — caddy, postgres, identity-registry, keycloak
-├── docker-compose.rec.yml provider participant stack
-├── docker-compose.third-party.yml consumer participant stack
-├── Taskfile.yml                root orchestration
-├── build.gradle.kts            Gradle root (EDC subprojects)
-├── settings.gradle.kts
-├── services/
-│   ├── caddy/                  reverse proxy config + DID document routing
-│   ├── connector/              port 30001/31001 — EDC orchestrator (Python/FastAPI)
-│   ├── provenance/             port 30000/31000 — PROV-O REST API (Python/FastAPI)
-│   ├── portal/                 port 30004 — web frontend (SvelteKit)
-│   ├── identity-registry/      port 30005 — DID lifecycle, STS, credential service, participant registry
-│   ├── federated-catalog/      port 30003 — DCAT-AP catalog crawler (Python/FastAPI)
-│   ├── dataset-api-mock/       port 30002 — mock dataset API for dev
-│   ├── dataset-api-fiware-adapter/  FIWARE NGSI-LD adapter
-│   ├── edc-connector/          Gradle — DCP-enabled EDC connector fat JAR (v0.16.0)
-│   ├── edc-extensions/         Java — custom ODRL constraint functions for EDC
-│   ├── oauth2-proxy/           the human login surface, behind Caddy forward_auth
-│   └── keycloak/               OIDC realm + client/scope declarations for dev
-├── libs/                       importable shared Python packages (no Dockerfile, no port)
-│   ├── governance/             ds-governance — GovernanceRuleV2 + ODRL mapper + CLI
-│   ├── ds-auth/                ds-auth — JWT verification + role bundles + permissions
-│   ├── ds-edc/                 ds-edc — EDC Management API v3 client
-│   └── ds-e2e/                 ds-e2e — end-to-end verification framework
-├── schemas/                    JSON Schema for the YAML shapes that cross a repo boundary
-├── helm/                       Helm charts + helmfile for Kubernetes deployment
-├── data/                       runtime data (gitignored) — caddy PKI, gradle cache
-└── docs/                       the published docs site (spindoxlabs.github.io/ds)
-```
+This is the part usually written as a claim. Here it is written as a table you can audit.
+
+`ds` implements the **[DSSC Blueprint](https://spindoxlabs.github.io/ds/blueprints/dssc/)**
+reference architecture and specialises it for energy through
+**[CEEDS](https://spindoxlabs.github.io/ds/blueprints/ceeds/)**. Both are rendered in the
+docs as citable requirements — `DSSC-DEX-…`, `CEEDS-INT-…` — and the
+[rulebook](https://spindoxlabs.github.io/ds/rulebook/) records what this data space decided
+about each, **with an enforcement status per rule**:
+
+| Status | Rules |
+|---|--:|
+| **Enforced** — code does it, and a test says so | 103 |
+| **Declared** — a recorded decision rather than a mechanism | 21 |
+| **Partly enforced** — stated with what is missing | 6 |
+| **Not enforced** — written down rather than quietly dropped | 5 |
+| | **135** |
+
+**No conformance certification is claimed.** "DSSC-compliant" is not a badge this project
+holds or has been assessed for, and a README that implied otherwise would be the kind of
+claim this rulebook exists to make unnecessary. What is offered instead: every requirement
+is named, every gap is either a recorded decision or a defect, and
+**[Scope and deviations](https://spindoxlabs.github.io/ds/rulebook/scope-and-deviations/)**
+lists what this platform deliberately does not do — value creation services, cross-data-space
+federation, anonymisation, push and streaming transfers, and the largest CEEDS gap, payload
+semantic models (CIM, SAREF4ENER and their neighbours), which is deferred to the deployment
+rather than to nobody.
+
+Where the two blueprints disagree — marketplaces are optional in DSSC and integral in CEEDS —
+the choice is stated and the reasoning given. See
+**[the comparison](https://spindoxlabs.github.io/ds/blueprints/comparison/)**.
 
 ---
 
 ## Quick start
 
-### Prerequisites
-
-- Docker with Compose v2
-- [Task](https://taskfile.dev) (v3+)
-- [uv](https://docs.astral.sh/uv/) (for local Python service overrides)
-- Node.js (for the portal)
-
-### Start in local development mode
-
-Brings the container stack up, then replaces most services with hot-reload host
-processes in a tmux session named `ds`. Fast to iterate on; it does **not**
-exercise the service Dockerfiles or the compose `environment:` blocks.
-
-Note: requires `tmux` installed (eg. `apt install tmux`)
+**Prerequisites** — Docker with Compose v2, [Task](https://taskfile.dev) v3+,
+[uv](https://docs.astral.sh/uv/), Node.js, and `tmux` for the hot-reload mode.
+Full list: [Prerequisites](https://spindoxlabs.github.io/ds/deployment/prerequisites/).
 
 ```bash
-task dev:restart          # stop + start, then attach to the tmux session
-task dev:stop             # stop everything, including the watch loops
+task docker:restart     # everything in containers — exercises the images and compose env
+task status             # what is running
+task e2e:all            # prove it works, end to end
 ```
 
-### Start the full stack (everything in containers)
+Then open **<http://portal.dataspaces.localhost>** and sign in as
+`subject@example.test` (password `subject`) to see the consent plane from a household's
+side, or `provider@example.test` to publish a dataset. Every dev password equals its
+username; the eight seeded users and what each one exists to prove are in
+[the realm reference](https://spindoxlabs.github.io/ds/services/keycloak/).
 
-The mode that validates a change to a Dockerfile, a compose environment block or
-a dependency — nothing runs on the host.
+For iterating on code, `task dev:restart` replaces most services with hot-reload host
+processes. It is faster and does **not** exercise the Dockerfiles or compose environment —
+use `docker:restart` before trusting a result.
 
 ```bash
-task docker:restart              # stop + rebuild images + start
-task docker:restart BUILD=false  # skip the rebuild (fast; only when source is unchanged)
-task docker:stop
-```
-
-`task start` alone starts the stack without stopping anything first or
-rebuilding images.
-
-```bash
-task start
-```
-
-This brings up, in order:
-
-1. **Shared infrastructure** — postgres, caddy, identity-registry, keycloak (+ keycloak-sync for scopes/clients)
-2. **Identity bootstrap** — trust anchor + provider/consumer participant registration
-3. **Provider stack** — EDC provider, ds-connector, ds-provenance, dataset-api, federated-catalog
-4. **Consumer stack** — EDC consumer, ds-connector, ds-provenance
-
-Or step by step:
-
-```bash
-task infra:start          # shared infra (postgres, caddy, identity-registry, keycloak)
-task identity:bootstrap   # trust anchor + participant DIDs
-task rec:start       # provider participant stack
-task third-party:start       # consumer participant stack
-```
-
-### Portal (local dev with hot-reload)
-
-```bash
-task rec:portal:run  # SvelteKit dev server on http://localhost:30004
-```
-
-### Stop everything
-
-```bash
-task stop
-```
-
-### Verify the stack
-
-After services are up, the following should respond:
-
-- `http://localhost:30001/health` (provider connector)
-- `http://localhost:31001/health` (consumer connector)
-- `http://localhost:30005/health` (identity-registry)
-- `http://localhost:30005/dids/did:web:rec.dataspaces.localhost/did.json` (DID document)
-
----
-
-## Services
-
-### identity-registry (`services/identity-registry`)
-
-Centralized trust anchor service (DSSC BB02). Manages DID lifecycle, STS token issuance (ES256 SI JWTs), DCP credential service, participant registry, and StatusList2021. DID private keys never leave this service — they are Fernet-encrypted at rest.
-
-### ds-connector (`services/connector`)
-
-The central orchestration layer. Wraps both an EDC provider and consumer connector instance, exposes a clean REST API for governance sync, consumer data flows, consent management, and participant registry lookups. Uses PostgreSQL via async SQLAlchemy + Alembic.
-
-### ds-provenance (`services/provenance`)
-
-A W3C PROV-O compatible REST API that logs catalogue publication, contract negotiation, data transfer, and obligation fulfilment events as linked-data graph nodes. Uses a relational database with BFS lineage traversal — no triple stores.
-
-### ds-portal (`services/portal`)
-
-A SvelteKit web application covering the full portal surface: catalogue browser, consumer negotiation wizard, provider governance management, consent portal for data subjects, and provenance lineage viewer.
-
-### ds-federated-catalog (`services/federated-catalog`)
-
-A DCAT-AP catalog crawler. Periodically queries participant connectors and builds an aggregated catalog. Backed by the connector's participant registry.
-
-### edc-extensions (`services/edc-extensions`)
-
-Java extensions for the EDC policy engine. Registers `AtomicConstraintFunction` implementations for the profile-namespaced ODRL constraints (e.g. `dsp-policy:Membership`, `dsp-policy:ConsentStatus`).
-
-### edc-connector (`services/edc-connector`)
-
-Gradle project that assembles a fat JAR combining EDC v0.16.0 modules with DCP support. Built via a versioned base image (`ds-edc-base:0.16.0`) that pre-caches all Maven dependencies.
-
----
-
-## How services interact
-
-```
-Portal (30004) ──→ ds-connector (30001/31001) ──→ EDC Provider/Consumer
-                                               ──→ ds-provenance (30000/31000)
-                                               ──→ Federated Catalog (30003)
-
-EDC Provider ←──DSP──→ EDC Consumer
-  ├──→ identity-registry (30005)   STS token issuance (/sts/{did}/token)
-  ├──→ identity-registry (30005)   VP queries (/credentials/{did}/presentations/query)
-  └──→ ds-connector /internal/*    ODRL constraint evaluation
-
-identity-registry (30005)
-  ├── DID documents      Caddy rewrites /.well-known/did.json → /dids/{did}/did.json
-  ├── STS tokens         POST /sts/{did}/token (ES256 SI JWTs)
-  ├── Credential service POST /credentials/{did}/presentations/query (DCP VP queries)
-  ├── Participant registry GET /admin/participants, GET /admin/participants/check?did=&scope=
-  └── StatusList2021     GET /status/{list_id}
-
-Federated Catalog (30003) ──→ identity-registry /participants (provider discovery)
-ds-connector ──→ identity-registry /participants (HttpParticipantRegistry with TTL cache)
-
-dataset-api (30002, external) ──→ ds-connector /internal/*  agreement + consent checks
+task --list             # every command
 ```
 
 ---
 
-## Compose topology
-
-Three compose files form the full stack:
-
-| File | Services | Purpose |
-|------|----------|---------|
-| `docker-compose.yml` | caddy, postgres, identity-registry, keycloak, keycloak-sync, keycloak-org-sync, oauth2-proxy | Shared infrastructure |
-| `docker-compose.rec.yml` | edc-rec, ds-connector-rec, ds-provenance-rec, dataset-api-rec, ds-federated-catalog-rec, ds-portal | Provider participant |
-| `docker-compose.third-party.yml` | edc-third-party, ds-connector-third-party, ds-provenance-third-party | Consumer participant |
-
-The portal runs in the provider compose. For local dev with hot-reload: `task rec:portal:run`.
-
-All containers share the `dataspaces` bridge network.
-
-## Port scheme
-
-| Port | Service |
-|------|---------|
-| 30000 | ds-provenance (provider) |
-| 30001 | ds-connector (provider) |
-| 30002 | dataset-api (provider) |
-| 30003 | federated-catalog (provider) |
-| 30004 | portal (run locally) |
-| 30005 | identity-registry (shared infra) |
-| 31000 | ds-provenance (consumer) |
-| 31001 | ds-connector (consumer) |
-| 35432 | PostgreSQL |
-| 9080 | Keycloak |
-| 80 | Caddy gateway — every `*.dataspaces.localhost` host, split by Host header |
-| 19xxx | EDC provider (management, protocol, public, control) |
-| 29xxx | EDC consumer (management, protocol, public, control) |
-| 30900+ | debugpy ports |
-
----
-
-## Local dev overrides
-
-Any service can be run locally (with hot-reload) instead of in Docker. Stop the container first, then run the service with `task`:
-
-```bash
-# Example: run provider connector locally
-task provider:connector:run
-
-# Or with debugpy attached
-task provider:connector:debug
-```
-
-Available overrides: `task identity-registry:run`, `task provider:connector:run`, `task provider:provenance:run`, `task provider:dataset-api:run`, `task provider:federated-catalog:run`, `task consumer:connector:run`, `task consumer:provenance:run`.
-
----
-
-## Participant identities
-
-Each participant is identified by a `did:web:` URI:
-
-- Provider: `did:web:rec.dataspaces.localhost`
-- Consumer: `did:web:third-party.dataspaces.localhost`
-- Trust anchor: `did:web:trust-anchor.dataspaces.localhost`
-
-DID documents are served dynamically by identity-registry. Caddy rewrites `/.well-known/did.json` requests to the identity-registry API.
-
-DID private keys are generated and stored inside identity-registry, encrypted at rest with Fernet. The `ir-cli` tool (inside the identity-registry container) handles bootstrap and participant registration — see `task identity:bootstrap`.
-
----
-
-## Authentication and authorisation
-
-Two token kinds reach the same guard, and one permission vocabulary serves both:
-
-- **Service tokens** (Keycloak client credentials) authorise on their `scope`.
-- **User tokens** (OIDC login) authorise on their Keycloak **groups**, never
-  roles. Each group names a **role bundle** — `ds-admin`,
-  `ds-participant-admin`, `ds-participant-viewer`, `ds-onboarding-operator`,
-  `ds-member` — which ds expands into capabilities in its own code.
-
-Five group names rather than one per endpoint is the point: the group vocabulary
-is the part an external realm owner has to reproduce, so it is deliberately small
-and stable, while the ~30 permission names stay an internal API surface. Where a
-realm uses different names, `*_OIDC_GROUP_ALIASES` maps them onto bundles.
-
-**Humans log in through oauth2-proxy**, which Caddy delegates to with
-`forward_auth`. The portal is *not* an OIDC client — it reads the access token the
-proxy forwards. Nothing downstream trusts that header: every service re-verifies
-the JWT against JWKS and re-authorises the request.
-
-A third mechanism exists for the data-subject plane: `/consent/my/*` and
-`/consumer/*` authenticate with `X-Subject-Id` + a verifiable credential
-(`X-User-VC`) checked against the trust anchor. A person's consent authority is a
-credential, not a group.
-
-What each service client may hold is declared in
-`services/keycloak/clients.yaml`; what each bundle may do is
-`libs/ds-auth/src/ds_auth/bundles.py`. A CI test reconciles the two in both
-directions, so a permission no human could ever be granted fails the build.
-
----
-
-## Governance and ODRL policies
-
-Datasets are described in `services/connector/governance-rec/governance.yaml`. The pipeline:
+## How it fits together
 
 ```
-governance.yaml → GovernanceResolver → GovernanceRuleV2 → GovernanceMapper
-  → ODRL Offer + EDC Asset + EDC PolicyDefinition + EDC ContractDefinition
-  → POST /provider/sync pushes to EDC Management API
-  → EDC serves to consumers via DSP
-  → edc-extensions evaluate constraints at negotiation time
+                    ┌──────────────────── identity-registry ────────────────────┐
+                    │  trust anchor · did:web · STS · credentials · revocation   │
+                    └───────────▲───────────────────────────────▲───────────────┘
+                                │                               │
+   ┌────────────────────────────┴──────┐         ┌──────────────┴────────────────┐
+   │  PROVIDER participant             │         │  CONSUMER participant         │
+   │                                   │  DSP    │                               │
+   │   EDC connector  ◀────────────────┼─────────┼──▶  EDC connector             │
+   │        ▲                          │         │          ▲                    │
+   │   ds-connector ──▶ ds-provenance  │         │   ds-connector ──▶ provenance │
+   │        ▲  control plane, PDP      │         │                               │
+   │   dataset-api ─┘ "may I return    │         └───────────────────────────────┘
+   │    (external)     these rows?"    │
+   └───────────────────────────────────┘         federated-catalog · portal
 ```
 
-Access levels map to ODRL as follows:
+Each unit has a page in [the docs](https://spindoxlabs.github.io/ds/services/connector/);
+each directory has an `AGENTS.md` with its boundaries and traps.
 
-- `open` — no constraints; `downloadURL` included in DCAT distribution
-- `internal` / `restricted` — constraints driven by the `access_requirements` field; `partner` adds a profile-namespaced `Membership` constraint (e.g. `dsp-policy:Membership`)
-- `secret` — not exposed to EDC or the catalogue
-
-When `user_filter_column` is set on a dataset, a profile-namespaced `ConsentStatus` constraint (e.g. `dsp-policy:ConsentStatus eq "active"`) is added to the ODRL offer and consent-based row filtering is applied at query time.
+| | |
+|---|---|
+| `services/` | deployable units — connector, identity-registry, portal, provenance, federated-catalog, EDC extensions, gateway, realm |
+| `libs/` | importable Python packages — governance/ODRL mapping, auth, EDC client, the e2e harness |
+| `helm/` | Kubernetes charts and helmfile |
+| `schemas/` | JSON Schema for the YAML shapes that cross a repository boundary |
+| `docs/` | the published site |
 
 ---
 
-## Data exchange flow
+## Reading further
 
-```
-Consumer negotiates via ds-connector
-  POST /consumer/negotiate → negotiation_id
-  GET  /consumer/negotiations/{id} → FINALIZED
-  POST /consumer/transfer → transfer_id
-  GET  /consumer/transfers/{id} → STARTED
-  GET  /consumer/edr/{id} → EDR (endpoint + token)
+| Looking for | Go to |
+|---|---|
+| What a data space must implement | [Blueprints](https://spindoxlabs.github.io/ds/blueprints/) — DSSC and CEEDS as citable requirements |
+| What *this* data space decided | [Rulebook](https://spindoxlabs.github.io/ds/rulebook/) — each rule with its enforcement status |
+| `governance.yaml` → ODRL offers | [Policies](https://spindoxlabs.github.io/ds/rulebook/policies/) |
+| Consent, personal data, GDPR posture | [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) |
+| The exchange protocol in detail | [Data exchange](https://spindoxlabs.github.io/ds/rulebook/data-exchange/) |
+| What the code currently does | [Services](https://spindoxlabs.github.io/ds/services/connector/) — one page per unit |
+| Running and testing it | [Development](https://spindoxlabs.github.io/ds/development/running-the-stack/) · [Testing](https://spindoxlabs.github.io/ds/development/testing/) |
+| Deploying it | [Deployment](https://spindoxlabs.github.io/ds/deployment/) |
+| Shared file formats | [Schemas](https://spindoxlabs.github.io/ds/schemas/) |
 
-Consumer queries dataset-api
-  POST /query  (Edc-Contract-Agreement-Id, Edc-Bpn headers)
-  → agreement check via ds-connector /internal/agreements/{id}/status
-  → consent row-filter via ds-connector /internal/consent/check
-  → SQL executed with IN(subject_ids) predicate
-```
-
----
-
-## Compliance evidence
-
-```bash
-task compliance:validate
-task compliance:test
-task compliance:evidence    # DCAT-AP catalog + ODRL offers → reports/compliance
-task e2e                    # smoke flow — requires a running stack
-```
-
-See [the DSSC Blueprint reference](https://spindoxlabs.github.io/ds/dssc-blueprint-docs/) for the blueprint material.
+The documentation site is where concepts are explained. This README and the per-unit
+`AGENTS.md` files are entry points: what a unit is, how to run it, what constrains it. They
+link out rather than re-explain, because one mechanism described in three places is one
+mechanism described three different ways.
 
 ---
 
-## Useful task commands
+## Status
 
-| Command | Description |
-|---------|-------------|
-| `task start` | Start everything |
-| `task stop` | Stop everything |
-| `task status` | Show all running containers |
-| `task rec:logs` | Follow provider logs |
-| `task third-party:logs` | Follow consumer logs |
-| `task reset-demo-state` | Clear runtime data (requests, consents, agreements, transfers, provenance) |
-| `task edc:base` | Build EDC base image (once per version bump) |
-| `task e2e:all` | Every e2e flow — cleans state, restarts the EDCs, applies fixtures, then runs |
-| `task e2e:fast` | Every flow that runs without the EDC |
-| `task e2e:prepare` | Just the preconditions: clean, EDC restart, readiness wait, fixtures |
+Actively developed, and honest about the difference between working and finished. The
+exchange, consent, identity and provenance paths run end to end and are covered by
+end-to-end flows on every change. The gaps are enumerated rather than implied — start with
+[Scope and deviations](https://spindoxlabs.github.io/ds/rulebook/scope-and-deviations/).
 
-Run `task --list` for all available commands.
-
----
+Dev fixtures use `example-org`, `grid-operator` and `*.dataspaces.localhost` throughout: no
+real organisation, site or dataset appears in this repository, and none should.
 
 ## License
 
-Copyright © 2025 Spindox Labs
-
-Licensed under the Apache License, Version 2.0.
+Copyright © 2025 Spindox Labs. Licensed under the [Apache License 2.0](LICENSE).

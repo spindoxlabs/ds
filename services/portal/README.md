@@ -12,8 +12,8 @@ Built with SvelteKit, targeting the latest stable release. Mobile-first componen
 > **Concepts live in the docs site, not here.** This README is the local entry
 > point: routes, components, configuration and how to run it. The reasoning is
 > published at **<https://spindoxlabs.github.io/ds/>** — start with
-> [Architecture](https://spindoxlabs.github.io/ds/architecture/) and
-> [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/).
+> [the overview](https://spindoxlabs.github.io/ds/) and
+> [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/).
 > Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
@@ -118,10 +118,10 @@ Operator actions forward the **signed-in user's own token**. The `svc-ds-portal`
 service account deliberately holds no onboarding grant — its single use is the
 login-time `/users/resolve`, which is also where the subject's DID comes from
 (there is no `dataspace_did` claim; see
-[Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/)).
+[the connector, on subject identity](https://spindoxlabs.github.io/ds/services/connector/)).
 
 Login surface, bundles and the realm contract:
-[Architecture](https://spindoxlabs.github.io/ds/architecture/) and
+[the overview](https://spindoxlabs.github.io/ds/) and
 [Keycloak requirements](https://spindoxlabs.github.io/ds/deployment/keycloak/).
 
 ---

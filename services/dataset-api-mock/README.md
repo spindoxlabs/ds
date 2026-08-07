@@ -9,7 +9,7 @@ decides which rows actually leave.
 - **Stack**: Python 3.12, FastAPI
 
 
-> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Consent & Sovereignty](https://spindoxlabs.github.io/ds/consent-and-sovereignty/) and [Subject identity](https://spindoxlabs.github.io/ds/consent-subject-id/). This README covers the
+> Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) for the consent rules, and [the connector](https://spindoxlabs.github.io/ds/services/connector/) for subject identity and the `/internal/*` contract this mock implements. This README covers the
 > local surface only. Working on the code? Read `AGENTS.md` in this directory.
 
 ## Run

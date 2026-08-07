@@ -16,7 +16,7 @@ Consumers of the API can reconstruct the full lineage of any data product: who g
 > **Concepts live in the docs site, not here.** This README is the local entry
 > point: what runs, which endpoints exist, how to configure and start it. The
 > reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with
-> [Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/).
+> [Provenance and logging](https://spindoxlabs.github.io/ds/rulebook/provenance-and-logging/).
 > Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
@@ -27,7 +27,8 @@ W3C PROV-O: three node types (`Entity`, `Activity`, `Agent`) and seven relation
 types. The node and relation catalogue, the domain events the connector emits,
 the acting-principal attribution on policy-authoring events, and the
 no-PII rule are documented at
-[Provenance & Lineage](https://spindoxlabs.github.io/ds/provenance-and-lineage/).
+[Provenance and logging](https://spindoxlabs.github.io/ds/rulebook/provenance-and-logging/)
+and [this service's page](https://spindoxlabs.github.io/ds/services/provenance/).
 
 ---
 
