@@ -76,7 +76,7 @@ the mock, so nothing compared them.
 |---|---|---|---|
 | `services/connector` | yes | the 8 migrations against a real Postgres, and the migrated schema vs the models | `integration.yml` |
 | `services/provenance` | yes | the same, for its 3 migrations | `integration.yml` |
-| `services/identity-registry` | yes, **red** | a DCP round trip between two real registries | no — see below |
+| `services/identity-registry` | yes | a DCP round trip across a trust anchor and two participants | `integration.yml` |
 
 The first two exist because of a gap worth naming: **every Python service builds its unit-test
 schema with `Base.metadata.create_all` on SQLite in memory.** So the migrations run in no unit
@@ -95,11 +95,29 @@ fixed, because the remedy is an `ALTER COLUMN … SET NOT NULL` against every de
 a schema change with its own blast radius, and not something a test should smuggle in. A ninth
 one fails.
 
-`services/identity-registry`'s suite is **red and has been since `D-51`**: it drives
-`ir-cli participant add`, which that change deliberately removed when participant enrolment
-became a two-party handshake. Nothing had run it since, so nothing said so — the `EDC-09` /
-`REV-01` pattern applied to an integration suite. It is excluded from CI until it is repaired,
-because a job that is red on arrival stops being read.
+`services/identity-registry`'s suite **had been red since `D-51`** and is the reason this
+workflow matters. It drove `ir-cli participant add`, which that change deliberately removed when
+participant enrolment became a two-party handshake — and because no workflow invoked the suite,
+nothing said so. The `EDC-09` / `REV-01` pattern applied to an integration suite.
+
+It now follows the real handshake, and that made it a stronger test rather than merely a green
+one. Three processes instead of two:
+
+```
+anchor:       ir-cli bootstrap → owner add → org enrolment-token --alias <owner>
+participant:  ir-cli participant init --code <code>     # generates its own key
+```
+
+The participant generates its keypair locally and sends the anchor a *signature*; the anchor
+resolves its DID document over real did:web to get the public half. Two things follow that the
+old two-peer harness could not assert. **A participant must be serving before it can enrol** —
+the anchor fetches `did.json` over HTTP and there is no local shortcut, which is the same order
+`docker-compose.rec.yml` encodes by making `ir-rec-bootstrap` wait for `ir-rec` to be healthy.
+And **the trust anchor is genuinely a third party**: `the credential is signed by the trust
+anchor` used to compare two DIDs served by one process, and now names a key held in a database
+the holder cannot read.
+
+Verified by mutation: drop the `--code` and five tests fail, including every custody assertion.
 
 ### What still belongs here
 

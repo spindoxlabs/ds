@@ -13,19 +13,21 @@ name: Integration
 # test, and no model is ever exercised against Postgres. A model changed without
 # a revision keeps every suite green and is found by a deployment.
 #
-# **Scope, and why it is two units and not thirteen.** A `test:integration` task
-# with nothing behind it is the `EDCL-10` shape — configuration for a suite that
-# does not exist — and a job that is red on arrival is the `CI-01` shape, since a
-# red `main` is how a workflow stops being read. So this lists the units whose
-# integration suite exists, passes, and needs **only** Postgres.
+# **Scope, and why it is three units and not thirteen.** A `test:integration`
+# task with nothing behind it is the `EDCL-10` shape — configuration for a suite
+# that does not exist — and a job that is red on arrival is the `CI-01` shape,
+# since a red `main` is how a workflow stops being read. So this lists the units
+# whose integration suite exists, passes, and needs **only** Postgres.
 #
-# `services/identity-registry` is deliberately **not** here. It has the oldest
-# `test:integration` task in the repository and that suite is **red**: it drives
-# `ir-cli participant add`, which `D-51` removed on purpose when participant
-# enrolment became a two-party handshake. Nothing had run it since, which is the
-# `EDC-09` / `REV-01` pattern one layer out — a suite that exists and that
-# nothing invokes rots without anybody being told. Add it here in the commit
-# that repairs it.
+# `services/identity-registry` is the reason this workflow matters. Its
+# `test:integration` is the oldest in the repository and it had been **red**
+# since `D-51` removed `ir-cli participant add`; nothing invoked it, so nothing
+# said so — the `EDC-09` / `REV-01` pattern one layer out. `T-2a` rewrote the
+# harness onto the enrolment handshake and it is in the matrix from that commit,
+# which is the point: a suite nobody runs is a suite that rots.
+#
+# That one starts **four** uvicorn processes and takes ~45s, against ~4s for the
+# other two. Worth its own note so a slow job is not mistaken for a hung one.
 # ==============================================================================
 
 on:
@@ -53,6 +55,7 @@ jobs:
       matrix:
         unit:
           - services/connector
+          - services/identity-registry
           - services/provenance
 
     services:
@@ -79,6 +82,7 @@ jobs:
       # different server.
       CONNECTOR_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
       PROVENANCE_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
+      IDENTITY_REGISTRY_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
       - uses: actions/checkout@v4

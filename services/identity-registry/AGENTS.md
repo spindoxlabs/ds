@@ -140,6 +140,15 @@ Rules that are easy to break:
 
 `task -d services/identity-registry run|debug|test|lint|type-check|db:migrate`.
 
+**`test:integration` is a second suite** and needs a real Postgres on `172.17.0.1:35432`
+(`IDENTITY_REGISTRY_TEST_PG` overrides it; CI does). Not collected by `test`. It starts a
+**trust anchor and two participants** as three processes on three databases and runs the real
+enrolment handshake — `org enrolment-token` on the anchor, `participant init --code` on the
+participant, which generates its own key and sends only a signature. If you change enrolment,
+`api/v1/issuer.py`, the STS or did:web publication, run it: those paths have no other live
+coverage. It was red and unnoticed for one release because nothing invoked it (`T-2a`), so it
+is in `integration.yml` now — keep it there.
+
 ## The StatusList register is not an allocator
 
 `status_lists.bitstring` answers "is credential *n* revoked". `status_lists.next_index`
