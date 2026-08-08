@@ -23,7 +23,7 @@ serialization, profile and version:
 | Language | `@type: odrl:Offer` and the ODRL `@context` | **Enforced** |
 | Serialization | JSON-LD, implicit in the payload | **Enforced** |
 | Profile | `odrl:profile` in the `@context`, set from the profile's `profile_iri` | **Enforced** when the profile declares one |
-| Version | — | **Not enforced.** No policy carries a version. **Open gap** |
+| Version | `{prefix}:profileVersion` on the offer, from `OdrlProfile.version` | **Enforced** when the profile declares one, and omitted entirely when it does not. It is **metadata, not a constraint** — emitted beside `@context`, never inside a permission — so it claims nothing about enforcement and needs no operand binding. That distinction is the one `A-9` and `GOV-04` both turn on |
 
 ## 2. The profile
 
@@ -86,8 +86,8 @@ JSON Schema under `schemas/` and generated from the models rather than hand-writ
 | # | Rule | Status |
 |---|---|---|
 | A-3 | No governance file reaches an EDC without passing the gate | **Declared** — the CLI exists and CI runs it, but `POST /provider/sync` does not itself require that it passed |
-| A-4 | CI runs the gate on every change | **Not enforced** — CI passes `--participants` pointing at a file that does not exist, so the `owner-participant` and `controller_role` checks are silently skipped. Defect **P1-8** |
-| A-5 | The policy-id collision sweep detects collisions between policy ids and contract ids | **Not enforced** — the two id spaces are compared in separate buckets and the check is registered under the wrong name, so the collision the mapper can actually produce is undetectable. Defect **P3-3** |
+| A-4 | CI runs the gate on every change | **Partly enforced**, and the silent half is fixed. `compliance.yml` no longer passes `--participants`: there is no static list to point at since `5484ff0` deleted `participants.yaml` and participants began enrolling themselves, and a path that *is* given and cannot be read is now a hard error rather than an absence (`_read_participants`). Measured before and after: the old command exited **0** having skipped the checks; it exits **1** now. **What still does not run in CI:** `owner-participant` and `controller_role` need a live registry, so they run only under `task compliance:validate --identity-registry-url`; and the job validates **one** producer's governance (`governance-rec`), not the grid-operator's |
+| A-5 | The policy-id collision sweep detects collisions between policy ids and contract ids | **Enforced** — `policy-contract-id-collision`, an **error** (`compliance/checks.py`). The collision itself was also removed at the source: `DataspaceContract.contract_definition_id` means a contract id no longer derives from `access_policy_id`, so naming the access policy stops renaming the contract definition. The check stays because that field is an override a deployment can still set to the policy id by hand |
 
 ## 3. What a policy says
 
@@ -127,8 +127,8 @@ an attribution obligation when the dataset declares one.
 |---|---|---|
 | A-6 | `access_level: secret` means the dataset is never mapped or published | **Enforced** |
 | A-7 | A `pii` dataset may never be transferred onward, derived from, distributed or sublicensed | **Enforced** as an ODRL prohibition. Note that a prohibition is a *statement to the consumer*; nothing in this platform technically prevents a consumer from doing it after receipt |
-| A-8 | Retention is expressed as a machine-readable duty on every dataset that declares one | **Enforced** in emission. Its `rdf:` prefix is not declared in the emitted `@context` (defect P3-3) |
-| A-9 | A policy's validity window (`valid_from` / `valid_until`) is enforced | **Not enforced** — the fields are order-checked and never emitted into the policy. Defect **P3-3** |
+| A-8 | Retention is expressed as a machine-readable duty on every dataset that declares one | **Enforced**, prefix included: `rdf:` is declared in the emitted `@context` when an obligation uses it, on the same rule `dct` follows. Note the asymmetry with `ds:`, which must **not** be declared — see the header of `mapper.py` and the `GOV-10` note in `.agents/`: EDC binds the literal string `"ds:contractRequired"`, so declaring that prefix would expand the term and silently stop the contract constraint being evaluated |
+| A-9 | A policy's validity window (`valid_from` / `valid_until`) is enforced | **Not enforced, and deliberately not emitted** — a decision rather than a defect now. Emitting them as ODRL constraints would show a counterparty a term nothing enforces: no date operand is bound in `services/edc-extensions`, and advertising an unenforced term is exactly what `DSSC-AUP-06` forbids and what `GOV-04` was. Deleting the fields would replace *"we do not do this yet"* with silence, and the next producer would re-add the key expecting it to work. They are **reported** instead, by the `declared-not-enforced` check, as warnings: the file is not invalid, the platform is incomplete. Closing this properly means binding a date operand in the EDC first |
 
 ## 4. Conflict resolution
 
@@ -207,28 +207,38 @@ the sharing itself, and require every participant to have the capability.
 | A-13 | Every participant runs the policy enforcement capability; there is no unenforced participation tier (`AUP-08`) | **Declared** — the participant agent bundles it |
 | A-14 | An operand emitted by the mapper has a function registered for it in every scope it is bound to, and no operand is bound without a producer | **Enforced** — the conformance test this row asked for exists: `PolicyRegistrationTest.everyBoundOperandHasAFunctionSomewhere`, plus `accessScopeIsNotBound`, `consentStaysBoundInEveryScope`, `consentHasAFunctionForBothOperandFormsInEveryScope` and `negotiationOnlyOperandsAreNotBoundElsewhere`. It governs the **policy engine**; the compliance matrix is a separate consumer and §6 below is where it still falls short |
 
-## 6. The compliance matrix
+## 6. Compliance evidence
 
-`task compliance:evidence` produces a DCAT-AP catalogue and an ODRL offer report under
-`reports/compliance`, plus a policy matrix intended to show, per dataset, which constraints
-are enforced where.
+`task compliance:evidence` produces, under `reports/compliance`: a DCAT-AP catalogue
+(`*-dcat-catalog.jsonld`), an ODRL offer report (`*-odrl-offers.jsonld`), and the validation
+result as JSON and Markdown. `compliance.yml` runs it on every push and uploads the four as
+artifacts.
 
-**Do not currently trust the matrix**, and note that its cause is *not* the one this page
-used to give. `P1-1` is closed at the policy engine — the operands are emitted, bound and
-registered — but the matrix still misses two of them, because **it filters on CURIEs while
-the mapper emits full IRIs**. `matrix.py` buckets on `ds:consentStatus` and `ds:accessScope`;
-the mapper emits `{profile.namespace}ConsentStatus` and `{profile.namespace}Membership`
-(verified in `reports/compliance/core-odrl-offers.jsonld`:
-`https://w3id.org/dsp/policy/ConsentStatus`, `.../Membership`), and `_constraint_summary`
-does no CURIE/IRI normalisation. So **membership appears in neither bucket and consent in
-none**, and every matrix entry understates what EDC actually evaluates.
+**There is no longer a policy matrix, and its removal is the point of this section.**
 
-Two parts of the old claim no longer hold: `ds:contractRequired` *is* matched, and the
-`pii` over-report is fixed — `requires_consent` no longer includes `classification == "pii"`.
+It was meant to show, per dataset, which constraints are enforced where. It could not: it
+bucketed on `ds:accessScope` and `ds:consentStatus` while the mapper emits
+`{profile.namespace}Membership` and `{profile.namespace}ConsentStatus`, and nothing
+normalised CURIE against IRI — so **membership appeared in neither bucket and consent in
+none**, and every entry understated what EDC actually evaluates. A report that is confidently
+wrong about enforcement is worse than no report, because it is the artifact someone quotes.
 
-The fix is to normalise both sides to one spelling before comparing, and to assert it, so
-the matrix cannot silently diverge from the mapper again. **Open gap**, with no owning
-defect row since `P1-1` closed.
+The fix considered was to normalise both spellings and assert it. The module was deleted
+instead, because it had **no consumer**: `GET /governance/matrix` had already been removed as
+an over-broad disclosure, `ds-governance evidence` never emitted it, and a grep across every
+sibling checkout on disk found no importer. That check mattered — this ledger records three
+rows where the holder of a *"nothing uses X"* lived outside this repository — so it was run
+before deleting rather than after.
+
+**What survived is the half that reached the wire.** `requires_consent` lives in `mapper.py`
+with its `pii` clause, because that changes what a counterparty is offered.
+
+**The transferable part**, recorded because it is why this section existed at all: *a second
+copy of a vocabulary, in a module that does not own it, drifts the moment the owner adds an
+indirection.* The matrix and the mapper were built against different operand spellings and no
+test compared them. The check that now holds the line is on the engine, not on a report —
+`A-14`'s `PolicyRegistrationTest`, which asserts every bound operand has a function and no
+operand is bound without a producer.
 
 ## Blueprint rows
 
@@ -236,8 +246,17 @@ defect row since `P1-1` closed.
 `-09`, `-10`, `-11`, `-12`, `-16`, `-17`, `-39`, `-44`, `-45`, `-46`, `-50`, `-51`, `-52`,
 `-53`; `DSSC-PUB-38`; `DSSC-SVD-38`.
 
-**Open:** `DSSC-AUP-13` (policy version metadata). `AUP-06` and `AUP-07` were previously
-listed here as blocked by defects **P0-2** and **P1-1**; both are closed, so both rows are
-now claimed — see A-11, A-12 and §5. What remains open on this page is the policy version
-(§1), the validity window (A-9), the `rdf:` prefix (A-8), the CI gate (A-4) and the
-compliance matrix's operand spelling (§6).
+**Open:** `DSSC-AUP-06` for the validity window alone — `valid_from` / `valid_until` are
+declared, reported and not emitted (A-9), and closing it needs a date operand bound in the
+EDC, not a mapper change.
+
+**Everything else this section used to list as open is closed**, and the list is kept because
+a reader who remembers it should not go looking: `DSSC-AUP-13` (policy version — §1 now
+carries `{prefix}:profileVersion`), the `rdf:` prefix (A-8), the policy-id collision sweep
+(A-5), and the compliance matrix's operand spelling (§6 — the matrix is gone). `AUP-06` and
+`AUP-07` were previously blocked by defects **P0-2** and **P1-1**; both are closed and both
+rows are claimed — see A-11, A-12 and §5.
+
+**Partly:** `DSSC-AUP-45`, `-46` — the gate runs in CI and the silent skip is fixed, but the
+two participant checks need a live registry and run outside CI, and CI validates one
+producer's governance rather than both (A-4).

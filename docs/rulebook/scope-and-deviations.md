@@ -220,26 +220,40 @@ That is a breaking change to a published surface and wants its own decision.
 ## 4. Known non-conformances
 
 Distinct from §2 and §3: rows this rulebook **states as rules** and the code does not keep.
-They are defects, not decisions, and each is tracked in `.agents/defects.md`.
+They are defects, not decisions.
 
-| Row | Rule stated in | Defect |
+**Re-verified against the code on 2026-08-08.** Five of the ten rows this table carried were
+already closed — the code moved and this page did not, which for a compliance artifact is the
+failure mode that matters most: it is the page an assessor reads, and it understated the
+platform in every one of the five. They are listed at the bottom rather than deleted.
+
+| Row | Rule stated in | What is missing |
 |---|---|---|
-| `DSSC-AUP-45`, `-46` | [Policies](policies.md) A-4 | **P1-8** — CI runs the validation gate with `--participants` pointing at a file that does not exist. `load_participant_dids` returns `None` for a missing path, so the `owner-participant` and `controller_role` checks are skipped in silence. CI also validates one producer's governance, not both |
-| `DSSC-AUP-13` | [Policies](policies.md) §1, A-9 | **P3-3** — no policy carries a version, and `valid_from` / `valid_until` are order-checked but never emitted into the policy |
-| `DSSC-AUP-16` | [Policies](policies.md) A-8 | **P3-3** — the retention duty is emitted with an `rdf:` prefix that the emitted `@context` never declares |
-| `DSSC-AUP-38`–`-91` | [Policies](policies.md) §6 | no defect id — the compliance matrix filters on CURIEs while the mapper emits full IRIs, so membership and consent are missing from every entry. `P1-1` used to carry this and is closed; the matrix half was never the same bug |
-| `DSSC-PTO-40`, `-41` | [Provenance and logging](provenance-and-logging.md) L-1, L-2 | no defect id — `UsageObligationFulfilled` has no emitter anywhere and no inbound route to receive one; `DataDisclosed`'s only producer is out of repo, so `consent_snapshot_hash` is unasserted |
-| `DSSC-DSO-11`, `-12` | [Catalogue and metadata](catalogue-and-metadata.md) C-12, C-13 | no defect id — metadata is not checked against DCAT-AP, and nothing reads this rulebook |
-| `DSSC-DSO-14`, `-15` | [Catalogue and metadata](catalogue-and-metadata.md) §4 | no defect id — metadata versioning is not implemented |
-| `DSSC-DEX-09` | [Data exchange](data-exchange.md) X-10, X-11 | **P3-4** — `ds-edc` synthesises `state="TIMEOUT"` into a namespace of real EDC states, and reports a failed termination as `{"terminated": true}` |
-| `DSSC-TRF-02`, `-03`, `-04` | [Participation](participation.md) §5 | Two of three built — the projection and the periodic check. **Suspension as a state distinct from deactivation** remains; its prerequisite (`P0-3`) is now met, so it is buildable |
-| `DSSC-DEX-38` | [Data exchange](data-exchange.md) X-13 | Partly enforced, and **not** the defect once recorded here. The protocol's own capability description *is* served; what is absent is an OpenAPI document for EDC's Management API, which needs a module not in the BOMs. A capability decision, not a defect |
+| `DSSC-AUP-45`, `-46` | [Policies](policies.md) A-4 | **Partly.** The silent skip is fixed — `compliance.yml` no longer passes `--participants`, and a path that is given and missing is a hard error rather than an absence. What still runs nowhere automatically: `owner-participant` and `controller_role` need a live registry, so they run only under `task compliance:validate --identity-registry-url`, and CI validates **one** producer's governance (`governance-rec`), not the grid-operator's |
+| `DSSC-AUP-06` | [Policies](policies.md) A-9 | A policy's validity window is declared, reported by the `declared-not-enforced` check, and **not emitted** — because emitting a term nothing enforces is what this very row forbids. Closing it means binding a date operand in `services/edc-extensions` first; until then this is a stated incapacity, not a silent one |
+| `DSSC-PTO-40`, `-41` | [Provenance and logging](provenance-and-logging.md) L-1, L-2 | `UsageObligationFulfilled` has **no emitter in any component and no inbound route** to receive one, so by `L-15` it does not exist. `DataDisclosed`'s only producer is out of this repository, so `consent_snapshot_hash` — the proof of *which* consent state backed a handover — is unasserted for the one event it was designed for |
+| `DSSC-DSO-12` | [Catalogue and metadata](catalogue-and-metadata.md) C-13 | Metadata is not checked against this rulebook, because **nothing reads this document**. Needs a machine-readable projection of the rulebook — the same prerequisite as [Participation](participation.md) §5, and the same one this table's own staleness argues for |
+| `DSSC-DSO-14`, `-15` | [Catalogue and metadata](catalogue-and-metadata.md) §4 | Metadata versioning is not implemented: a consumer cannot ask what an offering said when they negotiated. Blocked on a design decision — version the offering, or snapshot it into the agreement |
+| `DSSC-TRF-02`, `-03`, `-04` | [Participation](participation.md) §5 | Two of three built — the projection and the periodic check. **Suspension as a state distinct from deactivation** remains; its prerequisite (`P0-3`) is met, so it is buildable |
+| `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` | [Provenance and logging](provenance-and-logging.md) §5 | Observability. Listed in §2 so it is not mistaken for a declared exclusion, and here because it is a rule the code does not keep. All five services now serve `/metrics`, but **no chart emits a `ServiceMonitor`** — the flag opens the network path and nothing walks through it — and the metric set is documented in `libs/ds-obs/AGENTS.md` rather than in `docs/` |
+| `DSSC-DEX-38` | [Data exchange](data-exchange.md) X-13 | Partly enforced, and **not** a defect. The protocol's own capability description *is* served; what is absent is an OpenAPI document for EDC's Management API, which needs a module not in the BOMs. A capability decision, and the surface is private |
 
-**Closed since this table was last accurate**, and listed so a reader who remembers them does
-not go looking: **P0-1** (unguarded catalogue route — C-19, X-4), **P0-2** (enforcement failed
-open — A-11), **P1-1** (the consent constraint never reached the connector — A-12, A-14),
-**P0-3** (credential revocation unusable — P-16), **P1-3**'s catalogue half (P-12), **P1-4**
-(lineage and audit log — L-12) and **P1-7** (the EDR endpoint disagreement — X-7).
+**Closed since this table was last accurate.** Listed so a reader who remembers them does not
+go looking, and because four of the five were closed by work that never updated this page:
+
+| Row | Was | Now |
+|---|---|---|
+| `DSSC-AUP-13` | no policy carries a version | `{prefix}:profileVersion` is emitted from `OdrlProfile.version`, as metadata beside `@context` rather than as a constraint |
+| `DSSC-AUP-16` | the retention duty uses an `rdf:` prefix the emitted `@context` never declares | declared when an obligation uses it, on the same rule `dct` follows |
+| `DSSC-AUP-38`–`-91` | the compliance matrix filters CURIEs while the mapper emits IRIs, so membership and consent are missing from every entry | **the matrix is gone.** It had no consumer — no route, no CLI output, no importer in any sibling checkout — and a report confidently wrong about enforcement is worse than none. See [Policies](policies.md) §6 |
+| `DSSC-DSO-11` | metadata is not checked against DCAT-AP | the `dcat-ap` check runs in `task compliance:validate`, splitting DCAT-AP's own obligation levels: mandatory → error, recommended → warning |
+| `DSSC-DEX-09` | `ds-edc` synthesises `state="TIMEOUT"` into the namespace of real EDC states, and reports a failed termination as success | `EdcPollTimeout` carries the last state observed and the connector answers **504**; every terminate path raises, the one tolerated `409` being on an entity that *reads back* as `TERMINATED` |
+
+Earlier closures, from before that: **P0-1** (unguarded catalogue route — C-19, X-4), **P0-2**
+(enforcement failed open — A-11), **P1-1** (the consent constraint never reached the connector
+— A-12, A-14), **P0-3** (credential revocation unusable — P-16), **P1-3**'s catalogue half
+(P-12), **P1-4** (lineage and audit log — L-12) and **P1-7** (the EDR endpoint disagreement —
+X-7).
 
 ## 5. Reviewing this page
 
@@ -253,3 +267,10 @@ whenever a new deployment is onboarded, and specifically re-ask:
 3. Are its participants mutually distrustful enough that the centralised trust anchor is
    disqualifying? (§3.1)
 4. Is the existence of any of its datasets sensitive? (§3.2)
+
+**And re-verify §4 against the code, not against memory.** On 2026-08-08 five of its ten
+rows were closed and the page still carried them, every one understating the platform. A
+non-conformance table is a claim about *now*; it decays faster than the deviations above it,
+because a deviation closes by decision and a defect closes by someone fixing it in another
+unit and not thinking to come here. Until `DSSC-DSO-12` gives this rulebook a machine-readable
+projection, that re-check is manual and belongs in this list.

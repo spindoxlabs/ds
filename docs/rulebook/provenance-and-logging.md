@@ -204,10 +204,29 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    the registry's own role sweep classifies the path, so an instance that mounted it without
    classifying it refuses to start (`roles.APP_PATHS`).
 
-   Still open, and both are needed before a collector is useful:
-   **no chart emits a `ServiceMonitor`**, so nothing tells Prometheus what to scrape; and the
-   metric set is described in `libs/ds-obs/AGENTS.md` but is **not documented in `docs/`**,
-   which is what this step asks for.
+   **Closed 2026-08-08.** All four service charts emit a `ServiceMonitor`, gated on the same
+   `global.monitoring.serviceMonitor` flag as the NetworkPolicy — both halves or neither, since
+   a policy without a monitor opens a path nothing walks through (which is what this platform
+   shipped) and a monitor without a policy is refused by default-deny (which is what
+   `ds-provenance` did). It selects the Service by label and scrapes the **port name** `http`,
+   not a number: a ServiceMonitor naming a port that does not exist scrapes nothing and reports
+   nothing, which is the same silence this closes. Off by default, because a `ServiceMonitor`
+   referencing a CRD the cluster lacks is a failed install.
+
+   **The metric set**, served by every ds service at `GET /metrics` in Prometheus text format
+   `0.0.4`:
+
+   | Metric | Type | Labels | Meaning |
+   |---|---|---|---|
+   | `ds_service_up` | gauge | `service` | 1 while the process serves |
+   | `ds_service_uptime_seconds` | gauge | `service` | seconds since start |
+   | `ds_http_requests_total` | counter | `service`, `method`, `path`, `status` | requests, by outcome |
+   | `ds_http_request_duration_seconds_bucket` / `_sum` / `_count` | histogram | `service`, `method`, `path` | latency, from which a quantile is derivable |
+
+   **`path` is the route template, never the request URL** — `/admin/participants`, not
+   `/admin/participants/did:web:…`. An unmatched request reports `<unmatched>`. The distinction
+   is load-bearing: the version this replaces labelled by raw URL and minted one permanent
+   series per URL anyone tried, which is a cardinality leak reachable by an anonymous caller.
 3. OpenTelemetry traces across the DSP exchange, correlated by agreement id — which
    requires settling the three-names-for-one-agreement-id problem first (defect P3-4).
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to

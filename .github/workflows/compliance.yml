@@ -46,12 +46,37 @@ jobs:
         # `task compliance:validate --identity-registry-url`, not here. Naming a
         # seed that does not exist is now a hard error rather than a skip — see
         # `_read_participants` in `compliance/validator.py`.
+        #
+        # **Iterated, not named.** This job validated `governance-rec` alone while
+        # `governance-grid-operator` — a second producer, published by the same
+        # platform to the same dataspace — was checked by nothing. Naming one of
+        # two is the shape `TASK-09` fixed for `task build`, which built two of
+        # three compose stacks and left the third on a stale image. A producer
+        # added tomorrow is picked up here without editing this file.
         run: |
-          uv run ds-governance evidence \
-            --file ../../services/connector/governance-rec/governance.yaml \
-            --owners ../../services/identity-registry/seed/owners.dev.yaml \
-            --name core \
-            --out-dir ../../reports/compliance
+          set -euo pipefail
+          shopt -s nullglob
+          found=0
+          for f in ../../services/connector/governance-*/governance.yaml; do
+            name="$(basename "$(dirname "$f")")"
+            name="${name#governance-}"
+            echo "::group::validating $name"
+            uv run ds-governance evidence \
+              --file "$f" \
+              --owners ../../services/identity-registry/seed/owners.dev.yaml \
+              --name "$name" \
+              --out-dir ../../reports/compliance
+            echo "::endgroup::"
+            found=$((found + 1))
+          done
+          # A loop that matched nothing would exit 0 having validated nothing —
+          # the `all([]) == True` failure this repository has already paid for
+          # twice (`E2E-01`, `CI-02`).
+          if [ "$found" -eq 0 ]; then
+            echo "no services/connector/governance-*/governance.yaml matched — nothing was validated" >&2
+            exit 1
+          fi
+          echo "validated $found producer(s)"
 
       - name: Upload evidence artifacts
         uses: actions/upload-artifact@v4
