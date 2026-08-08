@@ -40,7 +40,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 
 - `keys` — EC P-256 key pairs (JSONB for private_jwk/public_jwk), owner_did, kid, active flag, rotation tracking
 - `dids` — DID records with type (participant/user), service_endpoints (JSONB), FK to keys
-- `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/revoked), StatusList2021 index
+- `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/suspended/revoked), StatusList2021 index
 - `participants` — participant registry with DID (FK), role, allowed_scopes (JSONB), dsp_address, sts_client_secret
 - `keycloak_mappings` — DID-to-Keycloak user mappings (realm, user_id, email, subject_id)
 - `owners` — owner registry + Gaia-X legal identity, verification lifecycle, current agreement + capacity (Block D)
@@ -48,7 +48,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 - `agreements` — service-agreement definitions (id + version, capacity, per-locale text path + SHA-256) (Block D)
 - `agreement_acceptances` — an org's acceptance of an agreement version (capacity, locale, text SHA-256) (Block D)
 - `organization_memberships` — user-DID → owner-alias memberships
-- `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose (revocation)
+- `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose: `1` is `revocation` (terminal), `2` is `suspension` (cleared on reinstatement)
 
 ---
 
@@ -128,7 +128,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli status export` | Export StatusList2021 as JSON |
 | `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
 | `ir-cli org apply --file owners.yaml` | Walk that whole lifecycle per `owners.yaml` entry carrying a `dataspace:` block — idempotent, reports every failure in one pass, `--dry-run` available |
-| `ir-cli org list/show/suspend/revoke/import` | Manage organisations |
+| `ir-cli org list/show/suspend/reinstate/revoke/import` | Manage organisations |
 | `ir-cli agreement import/list` | Import + list service-agreement definitions |
 | `ir-cli org bundle --alias --format` | Render a connection bundle (same renderers as the HTTP endpoint, so the two cannot drift) |
 

@@ -17,8 +17,11 @@ class OrgOnboardingFlow(BaseFlow):
     register → verify → agreement → issue-credential → promote, asserting each
     gate (issue-before-agreement and promote-before-credential both fail closed)
     and the resulting transaction-readiness (participant registered, did:web
-    resolvable, OrganizationCredential active). Finishes with suspend, proving
-    the StatusList bit and participant deactivation land in one step.
+    resolvable, OrganizationCredential active). Finishes with suspend and
+    reinstate, proving the register bit and participant deactivation land in one
+    step — and come back off in one step, on the credential the organisation
+    already holds. A suspension nothing can lift is a revocation, so the two
+    steps only mean anything together.
 
     A fresh unique alias is used per run so the negative-gate assertions never
     depend on prior state.
@@ -355,6 +358,16 @@ class OrgOnboardingFlow(BaseFlow):
                     creds=org_creds,
                 )
                 return result
+            # Held, not finished. A suspension recorded as a revocation cannot
+            # be lifted — a revocation bit is never cleared — so the next step
+            # would be impossible and this one would have been a lie.
+            if any(c.get("status") != "suspended" for c in org_creds):
+                result.fail_step(
+                    "suspend",
+                    "suspend left the credential in a state other than 'suspended'",
+                    creds=org_creds,
+                )
+                return result
             check = self.http.get(
                 f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
                 "&scope=dataspaces.query",
@@ -365,10 +378,57 @@ class OrgOnboardingFlow(BaseFlow):
                 return result
             result.pass_step(
                 "suspend",
-                "suspend revoked the credential and deactivated the participant",
+                "suspend held the credential and deactivated the participant",
             )
         except Exception as exc:
             result.fail_step("suspend", str(exc))
+            return result
+
+        # 13. Reinstate — the half that makes suspension a state rather than a
+        # slower revocation. The organisation gets the credential it already
+        # holds back, unchanged: no re-issuance, no new StatusList index.
+        try:
+            reinstated = self.http.patch(
+                f"{ir}/admin/owners/{urllib.parse.quote(alias)}",
+                {"status": "verified"},
+                headers=admin,
+            ) or {}
+            if reinstated.get("status") != "verified":
+                result.fail_step("reinstate", "owner not reinstated", body=reinstated)
+                return result
+            creds = self.http.get(
+                f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
+                headers=admin,
+            ) or []
+            back = [c for c in creds if c.get("credential_type") == "OrganizationCredential"]
+            if not back or any(c.get("status") != "active" for c in back):
+                result.fail_step(
+                    "reinstate", "credential not valid again after reinstate", creds=back
+                )
+                return result
+            if {c.get("id") for c in back} != {c.get("id") for c in org_creds}:
+                result.fail_step(
+                    "reinstate",
+                    "reinstate minted a new credential instead of lifting the hold",
+                    creds=back,
+                )
+                return result
+            check = self.http.get(
+                f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
+                "&scope=dataspaces.query",
+                headers=admin,
+            ) or {}
+            if not check.get("allowed"):
+                result.fail_step(
+                    "reinstate", "participant still unauthorised after reinstate"
+                )
+                return result
+            result.pass_step(
+                "reinstate",
+                "the same credential is valid again and the participant is authorised",
+            )
+        except Exception as exc:
+            result.fail_step("reinstate", str(exc))
             return result
 
         result.pass_step(

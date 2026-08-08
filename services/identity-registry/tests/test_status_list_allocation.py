@@ -22,7 +22,12 @@ from conftest import CUSTODIAN_DID, make_headers, register_enrolled
 from sqlalchemy import select
 
 from identity_registry.db.models import Credential, StatusList
-from identity_registry.services.status_list import find_duplicate_indices, get_bit
+from identity_registry.services.status_list import (
+    REVOCATION_LIST_ID,
+    SUSPENSION_LIST_ID,
+    find_duplicate_indices,
+    get_bit,
+)
 
 HEADERS = make_headers()
 TA_DID = "did:web:trust-anchor.dataspaces.localhost"
@@ -32,7 +37,7 @@ ORG_DID = "did:web:acme.dataspaces.localhost"
 # ── Reading the tables ────────────────────────────────────────────
 
 
-async def _bitstring(db_session) -> bytes:
+async def _bitstring(db_session, list_id: str = REVOCATION_LIST_ID) -> bytes:
     """The stored register, read fresh.
 
     The rollback matters: the client's sessions and this one share an engine,
@@ -41,9 +46,13 @@ async def _bitstring(db_session) -> bytes:
     """
     await db_session.rollback()
     sl = (
-        await db_session.execute(select(StatusList).where(StatusList.id == "1"))
+        await db_session.execute(select(StatusList).where(StatusList.id == list_id))
     ).scalar_one_or_none()
     return sl.bitstring if sl else b""
+
+
+async def _suspension_bitstring(db_session) -> bytes:
+    return await _bitstring(db_session, SUSPENSION_LIST_ID)
 
 
 async def _indices(db_session) -> list[int]:
@@ -288,8 +297,14 @@ async def test_revoking_one_credential_does_not_revoke_the_other(client, db_sess
 @pytest.mark.asyncio
 async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_session):
     """Suspension is the enforcement point rulebook §5.6 relies on, and it runs
-    through a different revocation site than `DELETE /admin/credentials/{id}`.
-    A membership credential issued alongside must survive it."""
+    through a different site than `DELETE /admin/credentials/{id}`.
+    A membership credential issued alongside must survive it.
+
+    It also writes to a **different register**. Suspension sets a bit on the
+    suspension list and leaves the revocation list untouched, which is what
+    makes it undoable: a revocation bit is never cleared, so a suspension
+    recorded there could only ever be lifted by re-issuing the credential.
+    """
     await _issue_organization(client, db_session)
     survivor = await _issue_membership(client, "did:web:bystander.dataspaces.localhost", db_session)
 
@@ -306,10 +321,16 @@ async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_sessi
     _, bystander_status, bystander_index = rows[survivor["credentialId"]]
     assert bystander_status == "active", "suspension revoked an unrelated credential"
 
-    bitstring = await _bitstring(db_session)
-    assert not get_bit(bitstring, bystander_index)
+    revocation = await _bitstring(db_session)
+    suspension = await _suspension_bitstring(db_session)
     org = [idx for typ, _, idx in rows.values() if typ == "OrganizationCredential"]
-    assert org and all(get_bit(bitstring, idx) for idx in org)
+    assert org
+    assert all(get_bit(suspension, idx) for idx in org)
+    assert not any(get_bit(revocation, idx) for idx in org), (
+        "suspension set a revocation bit — the one bit that can never be cleared"
+    )
+    assert not get_bit(suspension, bystander_index)
+    assert not get_bit(revocation, bystander_index)
 
 
 # ── The counter is monotonic, not first-unset ─────────────────────

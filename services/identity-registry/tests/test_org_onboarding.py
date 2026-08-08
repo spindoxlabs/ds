@@ -39,6 +39,7 @@ def test_build_organization_credential_shape():
         credentials_context_url="https://x/ns",
         dataspace_uri="https://x/ds",
         status_list_credential_url="https://x/status/1",
+        suspension_list_credential_url="https://x/status/2",
         status_list_index=7,
         parent_organizations=["did:web:parent"],
         dsp_address="https://acme/dsp",
@@ -51,7 +52,10 @@ def test_build_organization_credential_shape():
     assert subj["legalAddress"] == {"countryCode": "IT-TN"}
     assert subj["parentOrganization"] == ["did:web:parent"]
     assert subj["dspAddress"] == "https://acme/dsp"
-    assert vc["credentialStatus"]["type"] == "StatusList2021Entry"
+    assert {e["statusPurpose"] for e in vc["credentialStatus"]} == {
+        "revocation",
+        "suspension",
+    }
 
 
 def test_sign_organization_credential_roundtrip():
@@ -68,6 +72,7 @@ def test_sign_organization_credential_roundtrip():
         credentials_context_url="https://x/ns",
         dataspace_uri="https://x/ds",
         status_list_credential_url="https://x/status/1",
+        suspension_list_credential_url="https://x/status/2",
         status_list_index=1,
     )
     kp = generate_key_pair(TA_DID)
@@ -327,26 +332,54 @@ async def test_full_lifecycle_and_suspend(client, db_session):
     )
     assert check.json()["allowed"] is True
 
-    # Suspend → credential revoked + participant deactivated in one step.
+    # Suspend → credential held + participant deactivated in one step.
     suspend = await client.patch(
         "/admin/owners/acme-energy", json={"status": "suspended"}, headers=HEADERS
     )
     assert suspend.status_code == 200
     assert suspend.json()["status"] == "suspended"
 
-    creds = (
-        await client.get(
-            f"/admin/credentials?subject_did={quote(ORG_DID, safe='')}", headers=HEADERS
-        )
-    ).json()
-    org_creds = [c for c in creds if c["credential_type"] == "OrganizationCredential"]
-    assert org_creds and all(c["status"] == "revoked" for c in org_creds)
+    async def _org_creds():
+        creds = (
+            await client.get(
+                f"/admin/credentials?subject_did={quote(ORG_DID, safe='')}",
+                headers=HEADERS,
+            )
+        ).json()
+        return [c for c in creds if c["credential_type"] == "OrganizationCredential"]
+
+    held = await _org_creds()
+    assert held and all(c["status"] == "suspended" for c in held)
+    # Not `revoked`, and the difference is the whole of `DSSC-TRF-04`: a revoked
+    # credential is finished, and this one is coming back three lines from here.
+    assert all(c["status"] != "revoked" for c in held)
 
     check2 = await client.get(
         f"/admin/participants/check?did={quote(ORG_DID, safe='')}&scope=dataspaces.query",
         headers=HEADERS,
     )
     assert check2.json()["allowed"] is False
+
+    # Reinstate → the same credentials, valid again. No re-issuance: a
+    # suspension that could only be lifted by minting a new credential is a
+    # revocation with a friendlier name.
+    reinstated = await client.patch(
+        "/admin/owners/acme-energy", json={"status": "verified"}, headers=HEADERS
+    )
+    assert reinstated.status_code == 200, reinstated.text
+    assert reinstated.json()["status"] == "verified"
+
+    back = await _org_creds()
+    assert {c["id"] for c in back} == {c["id"] for c in held}, (
+        "reinstatement minted a new credential instead of lifting the hold"
+    )
+    assert all(c["status"] == "active" for c in back)
+
+    check3 = await client.get(
+        f"/admin/participants/check?did={quote(ORG_DID, safe='')}&scope=dataspaces.query",
+        headers=HEADERS,
+    )
+    assert check3.json()["allowed"] is True
 
 
 # ── T27 — the intake is an upsert on alias ────────────────────────

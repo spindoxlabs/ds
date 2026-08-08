@@ -329,17 +329,26 @@ async def patch_owner(
             setattr(owner, key, fields[key])
 
     # Status transitions with side effects go through the shared, gated ops so
-    # the StatusList bit + participant deactivation happen atomically (§5.6).
-    if new_status == "suspended":
-        await ops.suspend_owner(db, owner)
-    elif new_status == "revoked":
-        await ops.revoke_owner(db, owner)
-    elif new_status == "verified":
-        owner.status = "verified"
-        if owner.verified_at is None:
-            owner.verified_at = datetime.now(UTC)
-    elif new_status is not None:
-        owner.status = new_status
+    # the register bits + participant activation happen atomically (§5.6).
+    # `verified` is two different transitions depending on where it comes from:
+    # from `suspended` it is a reinstatement and must clear what suspension set,
+    # which is why it cannot be an assignment.
+    try:
+        if new_status == "suspended":
+            await ops.suspend_owner(db, owner)
+        elif new_status == "revoked":
+            await ops.revoke_owner(db, owner)
+        elif new_status == "verified":
+            if owner.status == "suspended":
+                await ops.reinstate_owner(db, owner)
+            else:
+                owner.status = "verified"
+                if owner.verified_at is None:
+                    owner.verified_at = datetime.now(UTC)
+        elif new_status is not None:
+            owner.status = new_status
+    except ops.OrgOnboardingError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
     owner.updated_at = datetime.now(UTC)
     await db.commit()

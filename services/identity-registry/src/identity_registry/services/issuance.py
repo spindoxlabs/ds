@@ -41,7 +41,7 @@ from .crypto import decrypt_private_jwk, generate_credential_id
 from .did import subject_id_of
 from .enrolment import CREDENTIAL_SERVICE_TYPE, endpoint_of, service_endpoints
 from .org_onboarding import OrgOnboardingError, get_trust_anchor_key
-from .status_list import allocate_status_list_index
+from .status_list import SUSPENSION_LIST_ID, allocate_suspendable_index
 from .token import create_self_signed_token
 from .vc import build_membership_credential, sign_credential
 
@@ -239,7 +239,7 @@ async def _membership_credentials(
     """
     out: list[tuple[dict, int]] = []
     for role in list(participant.roles or []) or ["consumer"]:
-        index = await allocate_status_list_index(db)
+        index = await allocate_suspendable_index(db)
         out.append(
             (
                 build_membership_credential(
@@ -250,6 +250,9 @@ async def _membership_credentials(
                     credentials_context_url=settings.credentials_context_url,
                     dataspace_uri=settings.dataspace_uri,
                     status_list_credential_url=settings.status_list_url(),
+                    suspension_list_credential_url=settings.status_list_url(
+                        SUSPENSION_LIST_ID
+                    ),
                     status_list_index=index,
                     credential_id=generate_credential_id(),
                     ttl_days=ttl,

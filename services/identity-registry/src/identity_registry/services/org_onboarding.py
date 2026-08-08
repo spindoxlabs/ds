@@ -32,7 +32,13 @@ from .crypto import (
     decrypt_private_jwk,
     generate_credential_id,
 )
-from .status_list import allocate_status_list_index, revoke_status_list_index
+from .status_list import (
+    SUSPENSION_LIST_ID,
+    allocate_suspendable_index,
+    revoke_status_list_index,
+    suspend_status_list_index,
+    unsuspend_status_list_index,
+)
 from .vc import build_organization_credential, sign_credential
 
 
@@ -178,6 +184,22 @@ async def upsert_owner_from_application(
     if owner is None:
         owner = Owner(id=app.alias, type="schema:Organization", name=app.legal_name)
         db.add(owner)
+    elif owner.status in ("suspended", "revoked"):
+        # Promotion writes `status = "verified"` unconditionally a few lines
+        # down. Reached with a suspended owner it silently undid the suspension
+        # *and nothing else* — no bit cleared, no participant reactivated —
+        # leaving a verified organisation whose credential the register still
+        # reports as held. Lifting a suspension is `reinstate_owner`, and it is
+        # not something a re-applied seed does by accident.
+        raise OrgOnboardingError(
+            f"Owner {app.alias!r} is {owner.status!r} and cannot be re-verified "
+            "in passing. "
+            + (
+                "Use `org reinstate` to lift the suspension."
+                if owner.status == "suspended"
+                else "Revocation is terminal."
+            )
+        )
 
     owner.name = app.legal_name
     if app.did:
@@ -327,7 +349,7 @@ async def issue_organization_credential(
             status_code=409,
         )
 
-    sl_index = await allocate_status_list_index(db)
+    sl_index = await allocate_suspendable_index(db)
     cred_id = generate_credential_id()
 
     vc = build_organization_credential(
@@ -343,6 +365,7 @@ async def issue_organization_credential(
         credentials_context_url=settings.credentials_context_url,
         dataspace_uri=settings.dataspace_uri,
         status_list_credential_url=status_list_url,
+        suspension_list_credential_url=settings.status_list_url(SUSPENSION_LIST_ID),
         status_list_index=sl_index,
         parent_organizations=owner.parent_organizations,
         sub_organizations=owner.sub_organizations,
@@ -435,50 +458,207 @@ async def promote_owner_to_participant(
     return participant
 
 
-# ── Suspend / revoke (status + StatusList + deactivate, one tx) ────
+# ── Suspend / reinstate / revoke ──────────────────────────────────
+#
+# `participation.md` §5 asks for **suspension as a state distinct from
+# deactivation**, and the distinction is not a label. Suspension says *does not
+# qualify right now*; revocation says *finished*. Two things have to be true for
+# that to mean anything:
+#
+# 1. **A verifier must be able to tell them apart.** It can: a participant
+#    credential names both registers, and EDC reports the purpose of whichever
+#    bit it found set (see `status_list.py`). Both answers stop a negotiation —
+#    a suspended participant must not transact — but they are different answers,
+#    and only one of them can be taken back.
+# 2. **There must be a way out.** `reinstate_owner` is that way, and it is the
+#    half whose absence made suspension a slower revocation. It clears the
+#    suspension bits on the credentials that are already issued: no re-issuance,
+#    no new indices, the same signed credential valid again.
+#
+# Revocation is terminal and stays terminal. Nothing here clears a revocation
+# bit, and `revoke_owner` refuses nothing — it is reachable from `verified` and
+# from `suspended` alike, because escalating a suspension is the normal ending.
+
+#: What suspension and revocation act on. **Both** types, not just the
+#: organisation's: an org whose `OrganizationCredential` is revoked while its
+#: `MembershipCredential` stays active still satisfies the membership constraint
+#: at a counterparty's connector, so revoking one and not the other suspends
+#: nobody. Both are issued to the same subject DID (`promote_owner_to_
+#: participant` uses `owner.did` as the participant DID), so both are reachable
+#: from the owner.
+PARTICIPANT_CREDENTIAL_TYPES = ("OrganizationCredential", "MembershipCredential")
 
 
-async def _revoke_org_credentials(db: AsyncSession, owner: Owner) -> None:
+def suspension_index(credential_json: dict) -> int | None:
+    """The credential's index on the *suspension* register, or `None` if it
+    names no such register.
+
+    `None` is not a detail to route around. A credential issued before this
+    registry published a suspension register carries one `credentialStatus`
+    entry, for revocation — suspending its holder would set a bit no verifier
+    fetches, and report a suspension that does not hold anywhere it counts.
+    """
+    status = credential_json.get("credentialStatus")
+    entries = status if isinstance(status, list) else [status]
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("statusPurpose") == "suspension":
+            raw = entry.get("statusListIndex")
+            try:
+                return int(raw)
+            except (TypeError, ValueError):
+                return None
+    return None
+
+
+async def _participant_credentials(
+    db: AsyncSession, owner: Owner, statuses: tuple[str, ...]
+) -> list[Credential]:
     if not owner.did:
-        return
+        return []
     result = await db.execute(
         select(Credential).where(
             and_(
                 Credential.subject_did == owner.did,
-                Credential.credential_type == "OrganizationCredential",
-                Credential.status == "active",
+                Credential.credential_type.in_(PARTICIPANT_CREDENTIAL_TYPES),
+                Credential.status.in_(statuses),
             )
         )
     )
-    now = datetime.now(UTC)
-    for cred in result.scalars().all():
-        cred.status = "revoked"
-        cred.revoked_at = now
-        if cred.status_list_index is not None:
-            await revoke_status_list_index(db, cred.status_list_index)
+    return list(result.scalars().all())
+
+
+async def _participant_for(db: AsyncSession, owner: Owner) -> Participant | None:
+    if not owner.did:
+        return None
+    result = await db.execute(select(Participant).where(Participant.did == owner.did))
+    return result.scalar_one_or_none()
 
 
 async def suspend_owner(db: AsyncSession, owner: Owner) -> None:
-    """Suspend: set the StatusList bit(s) AND deactivate the participant (one tx, §5.6)."""  # noqa: E501
-    await _revoke_org_credentials(db, owner)
-    owner.status = "suspended"
-    owner.updated_at = datetime.now(UTC)
-    if owner.did:
-        result = await db.execute(
-            select(Participant).where(Participant.did == owner.did)
+    """Suspend: set the suspension bits AND deactivate the participant (one tx).
+
+    Deactivating the participant is not what makes this suspension — it is what
+    stops the registry itself issuing tokens for a party that does not currently
+    qualify. What makes it suspension is that `reinstate_owner` undoes all of
+    it, and that the bit a verifier reads says `suspension`.
+    """
+    if owner.status == "revoked":
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} is revoked; revocation is terminal and cannot be "
+            "reduced to a suspension."
         )
-        participant = result.scalar_one_or_none()
-        if participant:
-            participant.active = False
-            participant.deactivated_at = datetime.now(UTC)
+
+    # `status_list_index is None` means this registry did not issue it — a
+    # holder's own stored copy (`issuance._store_holder_credentials`) carries no
+    # index, because the register belongs to the issuer. Its `credentialStatus`
+    # names the *issuer's* index, so acting on it here would set a bit on this
+    # registry's register at a number that means somebody else entirely.
+    creds = [
+        c
+        for c in await _participant_credentials(db, owner, ("active",))
+        if c.status_list_index is not None
+    ]
+    unsuspendable = [c for c in creds if suspension_index(c.credential_json) is None]
+    if unsuspendable:
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} holds {len(unsuspendable)} credential(s) issued "
+            "before this registry published a suspension register, so no verifier "
+            "would see them suspended: "
+            + ", ".join(sorted(c.id for c in unsuspendable))
+            + ". Re-issue them to make the organisation suspendable, or use "
+            "`revoke` if the intent is terminal."
+        )
+
+    now = datetime.now(UTC)
+    for cred in creds:
+        index = suspension_index(cred.credential_json)
+        if index is not None:
+            await suspend_status_list_index(db, index)
+        cred.status = "suspended"
+
+    owner.status = "suspended"
+    owner.updated_at = now
+    participant = await _participant_for(db, owner)
+    if participant:
+        participant.active = False
+        participant.deactivated_at = now
+    await db.flush()
+
+
+async def reinstate_owner(db: AsyncSession, owner: Owner) -> None:
+    """The inverse of `suspend_owner`, and the reason suspension is a state.
+
+    Clears the suspension bits on the credentials the organisation already
+    holds. No re-issuance: the credential in its wallet is signed, unexpired and
+    unchanged, and it was never revoked — only held. Re-minting one here would
+    burn a fresh index and leave the holder carrying a credential the register
+    no longer covers.
+    """
+    if owner.status == "revoked":
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} is revoked. Revocation is terminal: re-admitting "
+            "this organisation is a new verification and a new credential, not a "
+            "reinstatement."
+        )
+    if owner.status != "suspended":
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} is {owner.status!r}, not 'suspended'; there is "
+            "nothing to reinstate."
+        )
+    if not owner.verified_by:
+        # `ck_owner_verified_has_evidence` would refuse the write anyway. Saying
+        # so here is the difference between a message and an IntegrityError.
+        raise OrgOnboardingError(
+            f"Owner {owner.id!r} has no recorded verification evidence, so it "
+            "cannot return to 'verified'.",
+            status_code=422,
+        )
+
+    now = datetime.now(UTC)
+    for cred in await _participant_credentials(db, owner, ("suspended",)):
+        if cred.status_list_index is None:
+            continue  # not ours to lift; see `suspend_owner`
+        index = suspension_index(cred.credential_json)
+        if index is not None:
+            await unsuspend_status_list_index(db, index)
+        cred.status = "active"
+
+    owner.status = "verified"
+    owner.updated_at = now
+    participant = await _participant_for(db, owner)
+    if participant:
+        participant.active = True
+        participant.deactivated_at = None
     await db.flush()
 
 
 async def revoke_owner(db: AsyncSession, owner: Owner) -> None:
-    """Revoke: same as suspend but terminal."""
-    await suspend_owner(db, owner)
+    """Revoke: terminal, and reachable from `verified` or `suspended` alike.
+
+    This no longer runs `suspend_owner` first. Doing so was what made the two
+    indistinguishable — one function, one set of effects, one label written over
+    the top. A revocation bit is set here and by nothing else, and no path in
+    this module clears one.
+
+    A suspension bit already set is left set. It is still true, the credential
+    is finished either way, and leaving it means `unsuspend_status_list_index`
+    has exactly one caller.
+    """
+    now = datetime.now(UTC)
+    for cred in await _participant_credentials(db, owner, ("active", "suspended")):
+        if cred.status_list_index is not None:
+            await revoke_status_list_index(db, cred.status_list_index)
+        cred.status = "revoked"
+        cred.revoked_at = now
+
     owner.status = "revoked"
-    owner.updated_at = datetime.now(UTC)
+    owner.updated_at = now
+    participant = await _participant_for(db, owner)
+    if participant:
+        participant.active = False
+        participant.deactivated_at = now
     await db.flush()
 
 

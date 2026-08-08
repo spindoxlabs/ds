@@ -74,6 +74,20 @@ Revocation is a StatusList2021 bitstring published at `GET /status/{list_id}` �
 necessity, because a verifier that cannot fetch it cannot tell a live credential from a
 revoked one.
 
+**There are two registers, and the difference between them is a state.** `/status/1` is
+published with `statusPurpose: revocation` and `/status/2` with `statusPurpose: suspension`.
+A `MembershipCredential` or `OrganizationCredential` names both, on the one index they share;
+a `DataSubjectCredential` names only the first, because a natural person's credential is
+revoked or it is not. A revocation bit is terminal and is never cleared. A suspension bit is
+held while the organisation does not currently qualify and is cleared when it is reinstated —
+the same signed credential, valid again, never re-issued. EDC checks every `credentialStatus`
+entry a credential carries and rejects it while either bit is set, reporting which, so
+"suspended" and "revoked" are different answers at the verifier and not only in this database.
+
+Both registers exist from the moment a credential names them. A suspension register created
+lazily on first use would 404 for every credential issued before anyone was suspended, and a
+verifier that cannot fetch a register fails closed — so those credentials would be rejected.
+
 **The bitstring records revocations and allocates nothing.** A credential's index comes from
 the `status_lists.next_index` counter, taken under a row lock; a bit is set only when
 something is revoked, and an index is never reused. Reading the register for its first unset
@@ -291,7 +305,7 @@ database-touching command verifies the schema revision first, and every command 
 | `owner` | `add`, `list`, `remove`, `import` |
 | `membership` | `add`, `list`, `remove`, `import` |
 | `agreement` | `import`, `list` |
-| `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `revoke`, `bundle`, `enrolment-token` |
+| `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `reinstate`, `revoke`, `bundle`, `enrolment-token` |
 | `key` | `rotate`, `custody-check` |
 | `status` | `export`, `check-indices` |
 | `keycloak` | `org-sync`, `merge`, `mirror`, `map-user` |

@@ -131,10 +131,22 @@ onboarding.
 |---|---|
 | A machine-readable projection of the rules on this page | **Done** — `seed/conformity.dev.yaml`, read by `services/conformity.py`. Which credentials, which agreement version, whether a DSP address is required, and `applies_to` so a rule can bind to a role. A *deployment's* file, not a baseline: admitting observers on different terms from providers is a normal dataspace |
 | A periodic check run by the trust anchor against every registered participant | **Done** — `GET /admin/conformity` and `ir-cli conformity check`, which **exits non-zero when anybody is non-conformant**. A check that always exits 0 is a check nothing watches. `task compliance:conformity` |
-| Suspension as a state distinct from deactivation, enforced through the StatusList bit | **Open.** Its stated prerequisite (`P0-3`) is met, so it is now buildable |
+| Suspension as a state distinct from deactivation, enforced through the StatusList bit | **Done** — two registers, `/status/1` (`revocation`) and `/status/2` (`suspension`), and `ir-cli org reinstate`. See `P-25` |
 
 **The assessment changes nothing.** Suspension is a decision, and a decision an automated check
-makes for you is a decision nobody made — what this produces is the evidence for it.
+makes for you is a decision nobody made — what this produces is the evidence for it. The
+operator acts on that evidence with `ir-cli org suspend`; `services/conformity.py` still writes
+no state at all.
+
+**What made suspension distinct.** It was previously the same operation as revocation with a
+different string written over the top: both revoked every credential, set the one register's
+bit, and deactivated the participant, and nothing transitioned out of either. Two things
+changed. A participant credential now names **two** StatusList2021 registers on the index they
+share — `/status/1` published as `revocation`, `/status/2` as `suspension` — and EDC checks
+every `credentialStatus` entry, rejecting the credential while either bit is set and reporting
+which. And a suspension bit is the only bit anything clears, so `reinstate` returns the
+organisation's *existing* credential to service rather than minting a replacement. Revocation
+is unchanged and still terminal: reachable from a suspension, never the reverse.
 
 **Everything unprovable is non-conformant.** A participant whose owner does not resolve, whose
 credential has no recorded expiry, whom no criterion covers — each is reported with its reason,
@@ -145,6 +157,7 @@ did not establish.
 |---|---|---|
 | P-23 | Conformity is **re-checked**, not asserted once at onboarding, against a machine-readable projection of this page (`DSSC-TRF-02`, `-03`, `-04`) | **Enforced** — `ir-cli conformity check`, non-zero on any failure. It found, the first time it ran, that **no dev participant had ever accepted the participation agreement**: `P-1`'s last step had no seed path, which is exactly the kind of gap a check made once at onboarding cannot see |
 | P-24 | A participant that no criterion covers is a **finding**, not a pass | **Enforced** — it was admitted on terms nobody wrote down, which is a finding about the criteria |
+| P-25 | **Suspension is a state, not a slower revocation**: a verifier can tell the two apart, and a suspension can be lifted on the credential the holder already has (`DSSC-TRF-04`) | **Enforced** — `suspend_owner` / `reinstate_owner` / `revoke_owner`, `services/identity-registry/tests/test_suspension.py`, and the `suspend` + `reinstate` steps of the `org-onboarding` e2e flow |
 
 ## 6. Leaving, suspension and revocation
 
@@ -154,6 +167,7 @@ did not establish.
 | P-17 | Revocation does not retroactively invalidate completed transfers. What was lawfully transferred stays transferred; the obligations attached to it (retention, deletion) survive | **Declared** |
 | P-18 | Revocation of a *consent* is different from revocation of a *credential* and terminates a running transfer | **Enforced** — `AgreementConsentFunction` on EDC's `policy.monitor` scope. See [Personal data](personal-data.md) §5 |
 | P-19 | A departing participant's provenance records are retained; they are evidence about the data space, not the participant's property | **Declared** |
+| P-26 | **Revocation is terminal.** Nothing transitions out of it, no path clears a revocation bit, and re-admitting a revoked organisation is a fresh verification and a fresh credential — not a reinstatement | **Enforced** — `revoke_owner` no longer shares a body with `suspend_owner`; `reinstate_owner` and `suspend_owner` both refuse a revoked owner, and `upsert_owner_from_application` refuses to re-verify one in passing (it used to, silently, on any re-applied seed). `test_suspension.py` |
 
 ## Blueprint rows
 
@@ -164,8 +178,8 @@ did not establish.
 listing) and `DSSC-IAM-04` (issuance) were all blocked by **P0-3**. That defect is closed —
 see P-16 — so none of the three is blocked any longer.
 
-**Closed by §5:** `DSSC-TRF-02`, `-03`, `-04` — the projection and the periodic check.
-Suspension as a state distinct from deactivation remains open.
+**Closed by §5:** `DSSC-TRF-02`, `-03`, `-04` — the projection, the periodic check, and
+suspension as a state distinct from deactivation.
 
 **Open:** `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41`,
 `DSSC-SVD-30` — participant-controlled credential stores; deviation recorded in

@@ -72,8 +72,18 @@ register (application) → verify (→ Owner, status=verified)
   → enrolment-token   [gate: verified. The organisation enrols its own key]
   → issue-credential  [gate: verified AND a current agreement accepted]
   → promote           [gate: a valid, unrevoked OrganizationCredential]
-  → suspend | revoke  [StatusList bit + participant deactivation, one tx]
+  → suspend           [suspension bit + participant deactivation, one tx]
+  → reinstate         [gate: suspended. Clears the bits; no re-issuance]
+  → revoke            [revocation bit + deactivation. Terminal — no way back]
 ```
+
+**Suspension and revocation are different states, not one operation with two
+labels.** A participant credential names two StatusList2021 registers — `/status/1`
+(`revocation`) and `/status/2` (`suspension`) — on the one index they share, and EDC
+reports the purpose of whichever bit it finds set. Both stop a negotiation; only the
+suspension bit can be cleared, which is what `reinstate` does, on the credential the
+organisation already holds. `revoke_owner` no longer runs `suspend_owner` first: that
+was the shared body that made the two indistinguishable.
 
 **Enrolment is where a key enters, and it is not this service's key to make.**
 `services/enrolment.py` + `api/v1/issuer.py` implement DCP's Credential Issuance Protocol:
@@ -131,7 +141,7 @@ Rules that are easy to break:
 | New credential type | `services/vc.py` + `api/v1/admin.py` + `cli/main.py` |
 | DID document shape | `services/did.py` |
 | SI token claims / VP format | `services/token.py`, `services/presentation.py` |
-| StatusList behaviour | `services/status_list.py` — allocate with `allocate_status_list_index`, revoke with `revoke_status_list_index`. **Never derive an index from the bitstring**; see below |
+| StatusList behaviour | `services/status_list.py` — allocate a participant credential's index with `allocate_suspendable_index` (it opens both registers), revoke with `revoke_status_list_index`, suspend/lift with `suspend_status_list_index` / `unsuspend_status_list_index`. **Never derive an index from the bitstring**; see below |
 | Onboarding logic or a gate | `services/org_onboarding.py` — never in one caller only |
 | Service agreement | `seed/agreements.dev.yaml` + `seed/content/*.md`, then `ir-cli agreement import` |
 | Keycloak realm interaction | `services/keycloak_{admin,merge,mirror}.py` |

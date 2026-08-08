@@ -61,7 +61,9 @@ from ...services import conformity
 from ...services.issuance import IssuanceError, deliver_to_custodian
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import (
+    SUSPENSION_LIST_ID,
     allocate_status_list_index,
+    allocate_suspendable_index,
     revoke_status_list_index,
 )
 from ...services.vc import (
@@ -484,7 +486,7 @@ async def issue_membership_credential(
         settings.max_credential_ttl_days,
     )
 
-    sl_index = await allocate_status_list_index(db)
+    sl_index = await allocate_suspendable_index(db)
 
     cred_id = generate_credential_id()
     vc = build_membership_credential(
@@ -495,6 +497,7 @@ async def issue_membership_credential(
         credentials_context_url=settings.credentials_context_url,
         dataspace_uri=settings.dataspace_uri,
         status_list_credential_url=status_list_url,
+        suspension_list_credential_url=settings.status_list_url(SUSPENSION_LIST_ID),
         status_list_index=sl_index,
         credential_id=cred_id,
         ttl_days=ttl,

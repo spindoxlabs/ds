@@ -107,6 +107,13 @@ class Credential(Base):
         Text, ForeignKey("dids.did"), nullable=False
     )
     credential_json: Mapped[dict] = mapped_column(JsonType, nullable=False)
+    #: `active` | `suspended` | `revoked`.
+    #:
+    #: `suspended` is reversible and `revoked` is not, and everything that
+    #: presents or offers a credential filters on `active`, so a suspended one
+    #: is withheld exactly as a revoked one is — the difference is that it can
+    #: come back. `revoked_at` is stamped only by revocation; a suspension is
+    #: not an ending and does not claim to be one.
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="active"
     )
@@ -225,7 +232,10 @@ class Owner(Base):
     # Owners default to 'pending'. 'verified' is written only *because*
     # something verified them — every construction path that sets it also sets
     # `verified_by`/`evidence_ref`, and `ck_owner_verified_has_evidence` above
-    # holds that invariant. Owners move pending → verified → suspended | revoked.
+    # holds that invariant. Owners move pending → verified, verified ⇄ suspended
+    # (`suspend_owner` / `reinstate_owner`), and either → revoked, which is
+    # terminal: nothing transitions out of it, and re-admitting a revoked
+    # organisation is a fresh verification and a fresh credential.
     status: Mapped[str] = mapped_column(
         String(16), nullable=False, default="pending", server_default="pending"
     )

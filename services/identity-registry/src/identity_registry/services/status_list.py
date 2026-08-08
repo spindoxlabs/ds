@@ -17,6 +17,44 @@ from .crypto import generate_credential_id
 BITSTRING_SIZE = 16384  # 16KB = 131072 bits
 BITSTRING_CAPACITY = BITSTRING_SIZE * 8
 
+# ── Two registers, and the difference between them ────────────────
+#
+# A **revocation** bit is terminal: set once, never cleared, because the
+# credential it refers to is finished. A **suspension** bit is a *state* — set
+# while the holder is suspended, cleared when they are reinstated. That is the
+# whole difference between suspension and deactivation, and StatusList2021
+# carries it in `statusPurpose`.
+#
+# A verifier enforces it. EDC 0.16's `StatusList2021RevocationService` refuses
+# an entry whose `statusPurpose` does not match the fetched list's
+# (`"Credential's statusPurpose value must match the status list's purpose"`),
+# and `RevocationServiceRegistryImpl` checks **every** `credentialStatus` entry a
+# credential carries, failing with the purpose it found set
+# (`"Credential status is '%s', status at index %d is '1'"`). So a credential
+# naming both registers is rejected while either bit is set, and the rejection
+# says which — suspended, or revoked.
+#
+# The index space is **mirrored, not allocated twice**: a credential's one index
+# means the same credential on both registers. Two counters would drift the
+# moment one register was written to more than the other, and a drifted index is
+# a bit that suspends somebody else.
+REVOCATION_LIST_ID = "1"
+SUSPENSION_LIST_ID = "2"
+
+LIST_PURPOSE = {
+    REVOCATION_LIST_ID: "revocation",
+    SUSPENSION_LIST_ID: "suspension",
+}
+
+
+class StatusListPurposeMismatch(RuntimeError):
+    """An operation that only one register permits was asked of the other.
+
+    Clearing a revocation bit is the one this exists for: it would make a
+    finished credential valid again, and it is exactly the mistake a reinstate
+    path makes when it is handed the wrong list id.
+    """
+
 
 class StatusListFull(RuntimeError):
     """The register has no room for another credential.
@@ -35,6 +73,14 @@ def set_bit(bitstring: bytes, index: int) -> bytes:
     byte_index = index // 8
     bit_offset = 7 - (index % 8)
     ba[byte_index] |= 1 << bit_offset
+    return bytes(ba)
+
+
+def clear_bit(bitstring: bytes, index: int) -> bytes:
+    ba = bytearray(bitstring)
+    byte_index = index // 8
+    bit_offset = 7 - (index % 8)
+    ba[byte_index] &= ~(1 << bit_offset) & 0xFF
     return bytes(ba)
 
 
@@ -85,19 +131,30 @@ def decode_bitstring(encoded: str) -> bytes:
 
 
 async def get_or_create_status_list(
-    db: AsyncSession, list_id: str = "1", *, lock: bool = False
+    db: AsyncSession, list_id: str = REVOCATION_LIST_ID, *, lock: bool = False
 ) -> StatusList:
-    """The status list row, created on first use.
+    """The status list row, created on first use with the purpose its id means.
 
     `lock=True` takes `SELECT … FOR UPDATE`, which is required for allocation
     and pointless for anything else. SQLite ignores the clause, so the test
     suite exercises the same code path without it.
+
+    A row whose stored purpose disagrees with `LIST_PURPOSE` is refused rather
+    than used. `/status/{list_id}` publishes `statusPurpose` from this column, so
+    a wrong value is not a local inconsistency: it is a register every verifier
+    reads under the wrong meaning, and EDC rejects credentials pointing at it.
     """
+    purpose = LIST_PURPOSE.get(list_id, "revocation")
     stmt = select(StatusList).where(StatusList.id == list_id)
     if lock:
         stmt = stmt.with_for_update()
     sl = (await db.execute(stmt)).scalar_one_or_none()
     if sl is not None:
+        if sl.purpose != purpose:
+            raise StatusListPurposeMismatch(
+                f"Status list {list_id!r} is published as {sl.purpose!r}, but this "
+                f"deployment uses it as {purpose!r}."
+            )
         return sl
 
     # Two workers can reach this line for the same list. The savepoint means
@@ -107,7 +164,7 @@ async def get_or_create_status_list(
         async with db.begin_nested():
             sl = StatusList(
                 id=list_id,
-                purpose="revocation",
+                purpose=purpose,
                 bitstring=create_bitstring(),
                 next_index=0,
             )
@@ -118,7 +175,9 @@ async def get_or_create_status_list(
     return sl
 
 
-async def allocate_status_list_index(db: AsyncSession, list_id: str = "1") -> int:
+async def allocate_status_list_index(
+    db: AsyncSession, list_id: str = REVOCATION_LIST_ID
+) -> int:
     """Reserve the next credential index on `list_id`.
 
     Taken from the counter under a row lock. The lock is not decorative:
@@ -148,15 +207,62 @@ async def allocate_status_list_index(db: AsyncSession, list_id: str = "1") -> in
     return index
 
 
+async def allocate_suspendable_index(db: AsyncSession) -> int:
+    """One index, usable on both registers.
+
+    Allocated from the revocation counter — the only counter — and the
+    suspension register is *created here* rather than on first suspension. A
+    credential is issued naming `/status/2`; if that route 404s because nobody
+    has suspended anyone yet, a verifier that fails closed rejects a perfectly
+    valid credential. The register a credential points at has to exist from the
+    moment the credential does.
+    """
+    index = await allocate_status_list_index(db, REVOCATION_LIST_ID)
+    await get_or_create_status_list(db, SUSPENSION_LIST_ID)
+    return index
+
+
 async def revoke_status_list_index(
-    db: AsyncSession, index: int, list_id: str = "1"
+    db: AsyncSession, index: int, list_id: str = REVOCATION_LIST_ID
 ) -> StatusList:
-    """Set the register's bit for `index` — the *only* thing that may set one.
+    """Set the revocation register's bit for `index` — terminal, and never undone.
 
     Idempotent, so re-revoking is not an error.
     """
     sl = await get_or_create_status_list(db, list_id, lock=True)
+    if sl.purpose != "revocation":
+        raise StatusListPurposeMismatch(
+            f"Status list {list_id!r} is a {sl.purpose!r} register; revocation "
+            "belongs on the revocation register."
+        )
     sl.bitstring = set_bit(sl.bitstring, index)
+    sl.updated_at = datetime.now(UTC)
+    return sl
+
+
+async def suspend_status_list_index(db: AsyncSession, index: int) -> StatusList:
+    """Set the *suspension* register's bit for `index`.
+
+    Idempotent. The list id is not a parameter: a suspension written to the
+    revocation register is a revocation, and the difference between the two is
+    the entire point of this pair.
+    """
+    sl = await get_or_create_status_list(db, SUSPENSION_LIST_ID, lock=True)
+    sl.bitstring = set_bit(sl.bitstring, index)
+    sl.updated_at = datetime.now(UTC)
+    return sl
+
+
+async def unsuspend_status_list_index(db: AsyncSession, index: int) -> StatusList:
+    """Clear the *suspension* register's bit for `index` — the only bit that
+    may ever be cleared.
+
+    Idempotent. Nothing here can reach the revocation register, by construction:
+    revoking is final, and a "clear" that could touch it would make a finished
+    credential valid again.
+    """
+    sl = await get_or_create_status_list(db, SUSPENSION_LIST_ID, lock=True)
+    sl.bitstring = clear_bit(sl.bitstring, index)
     sl.updated_at = datetime.now(UTC)
     return sl
 

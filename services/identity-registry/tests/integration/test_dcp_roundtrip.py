@@ -105,14 +105,33 @@ def test_the_credential_is_signed_by_the_trust_anchor(holder, anchor, dcp_exchan
     assert vc["issuer"] != holder.did
 
 
-def _status_list_url(holder, dcp_exchange) -> str:
+def _status_list_urls(holder, dcp_exchange) -> dict[str, str]:
+    """Every register the presented credential names, by purpose."""
     body = _ask(holder, dcp_exchange()).json()
     vp = _claims(body["dcp:presentation"]["@value"][0])
     vc = _claims(vp["vp"]["verifiableCredential"][0])["vc"]
-    return vc["credentialStatus"]["statusListCredential"]
+    status = vc["credentialStatus"]
+    entries = status if isinstance(status, list) else [status]
+    return {e["statusPurpose"]: e["statusListCredential"] for e in entries}
 
 
-def test_the_status_list_url_is_fetchable(holder, dcp_exchange):
+def _status_list_url(holder, dcp_exchange) -> str:
+    return _status_list_urls(holder, dcp_exchange)["revocation"]
+
+
+def test_a_presented_credential_names_both_registers(holder, dcp_exchange):
+    """Suspension is only a state if a verifier can read it.
+
+    A participant credential that named the revocation register alone could be
+    revoked and nothing else, so suspending its holder would set a bit nobody
+    fetches — suspension as a slower revocation, which is the gap
+    `participation.md` §5 records.
+    """
+    urls = _status_list_urls(holder, dcp_exchange)
+    assert set(urls) == {"revocation", "suspension"}
+
+
+def test_every_named_status_list_url_is_fetchable(holder, dcp_exchange):
     """A revocation check that cannot fetch the list fails closed.
 
     Every credential issued in dev carried an `https://` URL that dev does not
@@ -120,10 +139,15 @@ def test_the_status_list_url_is_fetchable(holder, dcp_exchange):
     a unit test because only a running server can answer it — the URL is built
     from `public_base_url` and is the one value that outlives the process, since
     it is written *inside* every credential.
+
+    It covers **both** registers now, and the suspension one is the more fragile
+    of the two: nothing writes to it until somebody is first suspended, so a
+    register created lazily on first use would 404 for every credential issued
+    before then — and fail closed means those credentials are rejected.
     """
-    url = _status_list_url(holder, dcp_exchange)
-    response = httpx.get(url, timeout=10)
-    assert response.status_code == 200, f"{url} → {response.status_code}"
+    for purpose, url in sorted(_status_list_urls(holder, dcp_exchange).items()):
+        response = httpx.get(url, timeout=10)
+        assert response.status_code == 200, f"{purpose}: {url} → {response.status_code}"
 
 
 def test_the_status_list_is_served_signed_by_default(holder, dcp_exchange):

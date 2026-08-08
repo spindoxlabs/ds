@@ -30,7 +30,9 @@ from ..services.crypto import (
     generate_key_pair,
 )
 from ..services.status_list import (
+    SUSPENSION_LIST_ID,
     allocate_status_list_index,
+    allocate_suspendable_index,
     revoke_status_list_index,
 )
 from ..services.vc import build_membership_credential, sign_credential
@@ -352,7 +354,7 @@ def credential_issue_membership(
                 typer.echo("Trust anchor not bootstrapped. Run: ir-cli bootstrap", err=True)
                 raise typer.Exit(1)
 
-            sl_index = await allocate_status_list_index(session)
+            sl_index = await allocate_suspendable_index(session)
             cred_id = generate_credential_id()
             status_list_url = settings.status_list_url()
 
@@ -364,6 +366,9 @@ def credential_issue_membership(
                 credentials_context_url=settings.credentials_context_url,
                 dataspace_uri=settings.dataspace_uri,
                 status_list_credential_url=status_list_url,
+                suspension_list_credential_url=settings.status_list_url(
+                    SUSPENSION_LIST_ID
+                ),
                 status_list_index=sl_index,
                 credential_id=cred_id,
                 ttl_days=ttl_days,
@@ -1803,7 +1808,11 @@ def org_show(
 def org_suspend(
     alias: str = typer.Option(..., help="Owner alias"),
 ):
-    """Suspend an organisation (StatusList bit + participant deactivation)."""
+    """Suspend an organisation — reversible, unlike `revoke`.
+
+    Sets the suspension bit on every participant credential it holds and
+    deactivates the participant. `org reinstate` undoes exactly this.
+    """
     from ..services import org_onboarding as ops
 
     async def _suspend():
@@ -1813,11 +1822,45 @@ def org_suspend(
             if owner is None:
                 typer.echo(f"Owner not found: {alias}", err=True)
                 raise typer.Exit(1)
-            await ops.suspend_owner(session, owner)
+            try:
+                await ops.suspend_owner(session, owner)
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
             await session.commit()
             typer.echo(f"Suspended: {alias}")
 
     _run(_suspend())
+
+
+@org_app.command("reinstate")
+def org_reinstate(
+    alias: str = typer.Option(..., help="Owner alias"),
+):
+    """Lift a suspension — the credentials the organisation already holds
+    become valid again, unchanged and un-re-issued.
+
+    Refused for a revoked organisation: revocation is terminal, and re-admitting
+    one is a new verification, not a reinstatement.
+    """
+    from ..services import org_onboarding as ops
+
+    async def _reinstate():
+        factory = await _ensure_db()
+        async with factory() as session:
+            owner = await ops.resolve_owner(session, alias)
+            if owner is None:
+                typer.echo(f"Owner not found: {alias}", err=True)
+                raise typer.Exit(1)
+            try:
+                await ops.reinstate_owner(session, owner)
+            except ops.OrgOnboardingError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(f"Reinstated: {alias}")
+
+    _run(_reinstate())
 
 
 @org_app.command("revoke")

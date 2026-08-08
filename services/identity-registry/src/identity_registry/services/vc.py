@@ -10,6 +10,41 @@ W3C_CREDENTIALS_V1 = "https://www.w3.org/2018/credentials/v1"
 JWS_2020_V1 = "https://w3id.org/security/suites/jws-2020/v1"
 
 
+def _status_entry(url: str, index: int, purpose: str) -> dict[str, Any]:
+    return {
+        "id": f"{url}#{index}",
+        "type": "StatusList2021Entry",
+        "statusPurpose": purpose,
+        "statusListIndex": str(index),
+        "statusListCredential": url,
+    }
+
+
+def _participant_credential_status(
+    *,
+    status_list_credential_url: str,
+    suspension_list_credential_url: str,
+    status_list_index: int,
+) -> list[dict[str, Any]]:
+    """Both registers, on the one index they share.
+
+    A participant credential carries **two** `credentialStatus` entries because
+    suspension and revocation are different answers: one is reversible and one
+    is not, and a verifier can only tell them apart if the credential names both
+    registers. A credential naming only the revocation register can be revoked
+    and nothing else — suspending its holder would set a bit nobody reads.
+
+    Emitting a list rather than an object is safe for every reader that matters:
+    EDC's `BaseRevocationListService` enables Jackson's
+    `ACCEPT_SINGLE_VALUE_AS_ARRAY`, so both shapes parse, and
+    `RevocationServiceRegistryImpl` checks each entry it finds.
+    """
+    return [
+        _status_entry(status_list_credential_url, status_list_index, "revocation"),
+        _status_entry(suspension_list_credential_url, status_list_index, "suspension"),
+    ]
+
+
 def build_membership_credential(
     *,
     issuer_did: str,
@@ -19,6 +54,7 @@ def build_membership_credential(
     credentials_context_url: str,
     dataspace_uri: str,
     status_list_credential_url: str,
+    suspension_list_credential_url: str,
     status_list_index: int,
     credential_id: str | None = None,
     ttl_days: int = 365,
@@ -41,13 +77,11 @@ def build_membership_credential(
             "role": role.capitalize(),
             "allowedScopes": allowed_scopes,
         },
-        "credentialStatus": {
-            "id": f"{status_list_credential_url}#{status_list_index}",
-            "type": "StatusList2021Entry",
-            "statusPurpose": "revocation",
-            "statusListIndex": str(status_list_index),
-            "statusListCredential": status_list_credential_url,
-        },
+        "credentialStatus": _participant_credential_status(
+            status_list_credential_url=status_list_credential_url,
+            suspension_list_credential_url=suspension_list_credential_url,
+            status_list_index=status_list_index,
+        ),
     }
 
 
@@ -108,13 +142,14 @@ def build_data_subject_credential(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "credentialSubject": subject,
-        "credentialStatus": {
-            "id": f"{status_list_credential_url}#{status_list_index}",
-            "type": "StatusList2021Entry",
-            "statusPurpose": "revocation",
-            "statusListIndex": str(status_list_index),
-            "statusListCredential": status_list_credential_url,
-        },
+        # **One register, deliberately.** Suspension is a *participant*
+        # lifecycle state (`participation.md` §5) — an organisation stops
+        # qualifying and may qualify again. A natural person's credential is
+        # revoked or it is not; there is no state in between for it to be in, so
+        # it names the revocation register only.
+        "credentialStatus": _status_entry(
+            status_list_credential_url, status_list_index, "revocation"
+        ),
     }
 
 
@@ -132,6 +167,7 @@ def build_organization_credential(
     credentials_context_url: str,
     dataspace_uri: str,
     status_list_credential_url: str,
+    suspension_list_credential_url: str,
     status_list_index: int,
     parent_organizations: list[str] | None = None,
     sub_organizations: list[str] | None = None,
@@ -182,13 +218,11 @@ def build_organization_credential(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "credentialSubject": subject,
-        "credentialStatus": {
-            "id": f"{status_list_credential_url}#{status_list_index}",
-            "type": "StatusList2021Entry",
-            "statusPurpose": "revocation",
-            "statusListIndex": str(status_list_index),
-            "statusListCredential": status_list_credential_url,
-        },
+        "credentialStatus": _participant_credential_status(
+            status_list_credential_url=status_list_credential_url,
+            suspension_list_credential_url=suspension_list_credential_url,
+            status_list_index=status_list_index,
+        ),
     }
 
 
