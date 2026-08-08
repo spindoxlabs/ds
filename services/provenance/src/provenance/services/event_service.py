@@ -695,6 +695,7 @@ async def _materialise_data_disclosed(
         started_at=event.occurred_at,
         ended_at=event.occurred_at,
         external_meta={
+            "datasetId": event.dataset_id,
             "purpose": event.purpose,
             "columns": event.columns,
             "subjectCount": event.subject_count,
@@ -708,6 +709,17 @@ async def _materialise_data_disclosed(
     )
     await session.flush()
     await _edge(session, "wasAssociatedWith", activity.id, recipient.id)
+    # The dataset the snapshot hash is computed over. Without this edge the
+    # disclosure hangs off the recipient alone, so "what was disclosed, and
+    # under which consent state" is answerable only by reading `external_meta` —
+    # and the lineage graph, which is what an auditor traverses, does not connect
+    # the handover to the data product at all.
+    dataset = await upsert_node(
+        session, event.dataset_id, "Entity", label=event.dataset_id,
+        energy_type="DataProduct",
+    )
+    await session.flush()
+    await _edge(session, "used", activity.id, dataset.id)
     if event.source_ref:
         source = await upsert_node(
             session, event.source_ref, "Entity", label=event.source_ref

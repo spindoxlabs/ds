@@ -62,6 +62,8 @@ scopes:
   description: Is a negotiation awaiting a consent decision (GET /consent/pending)
 - name: connector.ingestion.record
   description: Record a DSO/offline data handover (POST /admin/ingestion)
+- name: connector.disclosure.record
+  description: Record data leaving the platform (POST /admin/disclosure)
 - name: provenance.read
   description: Query provenance lineage and audit log
 - name: provenance.write
@@ -87,6 +89,7 @@ clients:
   - identity-registry.memberships.write
   - identity-registry.keycloak.sync
   - connector.consent.provision
+  - connector.disclosure.record
   - provenance.write
   extra_audiences:
   - svc-ds-identity-registry

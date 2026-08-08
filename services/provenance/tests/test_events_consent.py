@@ -44,6 +44,7 @@ DATA_DISCLOSED = {
     "event_type": "DataDisclosed",
     "event_id": "test-disclosed-001",
     "occurred_at": "2026-02-04T10:00:00Z",
+    "dataset_id": "datasets.silver.meters_15m",
     "recipient_ref": "dso-org",
     "purpose": ["GridMonitoring"],
     "columns": ["pod_code", "consumption", "dataspace_did"],
@@ -94,6 +95,62 @@ async def test_data_disclosed_materialises_recipient_agent(client):
     agent_ids = [n["@id"] for n in agents.json()["@graph"]]
     assert DATA_DISCLOSED["recipient_ref"] in agent_ids
     assert DATA_DISCLOSED["disclosed_by"] in agent_ids
+
+
+# ── L-2: the authorising consent state, or no record ──────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "missing", ["consent_snapshot_hash", "dataset_id"], ids=["no-hash", "no-dataset"]
+)
+async def test_a_disclosure_without_its_consent_evidence_is_refused(client, missing):
+    """`L-2` asks a `DataDisclosed` to prove *which* consent state backed the
+    handover. Both fields were optional, so an event omitting them was accepted
+    and stored — indistinguishable, afterwards, from a disclosure made under no
+    consent at all, and counted as a compliant record either way.
+
+    They are one requirement, not two: a digest with no dataset id is a number
+    nobody can recompute.
+    """
+    event = {k: v for k, v in DATA_DISCLOSED.items() if k != missing}
+
+    response = await client.post("/prov/events", json=event)
+
+    assert response.status_code == 422, response.text
+    assert missing in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "value", ["", "unknown", "pending", "B" * 64, "b" * 63, "sha256:" + "b" * 64],
+    ids=["empty", "unknown", "pending", "uppercase", "too-short", "prefixed"],
+)
+async def test_a_consent_hash_that_cannot_be_a_digest_is_refused(client, value):
+    """Required is not enough on its own. A field typed `str` accepts
+    `"unknown"` and `"pending"`, each of which satisfies "the field is present"
+    while proving nothing — and `L-2` asks for a hash that can be **recomputed**.
+
+    The accepted shape is exactly what `consent_service.consent_snapshot_hash`
+    produces: `hashlib.sha256(...).hexdigest()`, bare and lowercase.
+    """
+    response = await client.post(
+        "/prov/events", json={**DATA_DISCLOSED, "consent_snapshot_hash": value}
+    )
+
+    assert response.status_code == 422, response.text
+
+
+@pytest.mark.asyncio
+async def test_a_disclosure_is_linked_to_the_dataset_its_hash_is_over(client):
+    """Otherwise the disclosure hangs off the recipient alone, and the lineage
+    graph an auditor traverses never connects the handover to the data product.
+    """
+    await client.post("/prov/events", json=DATA_DISCLOSED)
+
+    entities = await client.get("/prov/entities")
+    entity_ids = [n["@id"] for n in entities.json()["@graph"]]
+    assert DATA_DISCLOSED["dataset_id"] in entity_ids
 
 
 @pytest.mark.asyncio

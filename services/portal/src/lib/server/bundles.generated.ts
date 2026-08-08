@@ -34,6 +34,7 @@ export const ROLE_BUNDLES: Record<string, string[]> = {
 		'connector.registry.invalidate',
 		'connector.consent.provision',
 		'connector.ingestion.record',
+		'connector.disclosure.record',
 		'catalog.read',
 		'provenance.read',
 		'identity-registry.read',

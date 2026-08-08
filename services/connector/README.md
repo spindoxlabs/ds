@@ -82,6 +82,7 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 
 - `GET /admin/participants` — list registered participants (guard `connector.admin`)
 - `POST /admin/ingestion` — record a manual DSO/offline data handover (guard `connector.ingestion.record`); computes the `consent_snapshot_hash` from the consent DB and emits a `DataIngested` provenance event
+- `POST /admin/disclosure` — record data leaving the platform to a named recipient (guard `connector.disclosure.record`); computes the same `consent_snapshot_hash` and emits a `DataDisclosed` event. The caller does not supply the hash — it is a fingerprint of this connector's consent DB, which is why rulebook `L-2` was unenforceable while the only producer was out of repo. **Emission is fatal here**: the disclosure has not happened yet, so a 502 leaves no unrecorded handover
 
 Consent grants and revocations (`/consent/admin/shares`, `/consent/my/shares`, `/consent/my/{id}/approve|revoke`) emit `ConsentGranted` / `ConsentRevoked` provenance events after the write commits. All Block C events carry **codes, DIDs and hashes only, never PII**.
 

@@ -29,6 +29,7 @@ SUBJECT_DID = "did:web:rec.dataspaces.localhost:users:sub-001"
 SUBJECT = make_vc_headers(subject_did=SUBJECT_DID)
 PROVISION = make_headers(scope="connector.consent.provision")
 INGEST = make_headers(scope="connector.ingestion.record")
+DISCLOSE = make_headers(scope="connector.disclosure.record")
 
 
 class FakeProv:
@@ -49,10 +50,12 @@ class FakeProv:
     async def data_ingested(self, **kwargs) -> None:
         await self._record("data_ingested", **kwargs)
 
-    # No `data_disclosed`. The double carried one and no test ever asserted on
-    # it, because no route emits it — the event's producer is out of repo
-    # (`tests/test_prov_bridge_emitters.py`). A double that answers for a call
-    # nobody makes is how the dead emitter on the real bridge stayed invisible.
+    # `data_disclosed` is here now because `POST /admin/disclosure` emits it.
+    # It was deliberately absent while nothing did: a double that answers for a
+    # call nobody makes is how the dead emitter on the real bridge stayed
+    # invisible. Adding one is only correct alongside a route that calls it.
+    async def data_disclosed(self, **kwargs) -> None:
+        await self._record("data_disclosed", **kwargs)
 
     def of(self, name: str) -> list[dict]:
         return [kw for n, kw in self.calls if n == name]
@@ -228,6 +231,107 @@ async def test_ingestion_unknown_dataset_422(prov_client):
     client, _ = prov_client
     r = await client.post(
         "/admin/ingestion", headers=INGEST, json={"dataset_id": "datasets.no.such"}
+    )
+    assert r.status_code == 422
+
+
+# ── disclosure record ─────────────────────────────────────────────────────────
+#
+# `L-2` requires a `DataDisclosed` to carry a recomputable `consent_snapshot_hash`.
+# Until this route existed the event's only producer was out of repo, and that
+# producer cannot compute the hash — it is a fingerprint of *this* service's
+# consent DB. The rule was addressed to the one component unable to comply.
+
+
+@pytest.mark.asyncio
+async def test_disclosure_computes_the_snapshot_the_caller_cannot(engine, prov_client):
+    """The caller does not send a hash and could not honestly produce one."""
+    client, fake = prov_client
+    await _seed(engine)  # one standing granted wildcard row
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={
+            "dataset_id": DATASET,
+            "recipient_ref": "dso-org",
+            "purpose": ["GridMonitoring"],
+            "columns": ["pod_code", "consumption"],
+            "subject_count": 10,
+            "agreement_ref": "dpa-1.0",
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["granted_party_count"] == 1
+    assert len(body["consent_snapshot_hash"]) == 64
+
+    disclosed = fake.of("data_disclosed")
+    assert len(disclosed) == 1
+    assert disclosed[0]["dataset_id"] == DATASET
+    assert disclosed[0]["recipient_ref"] == "dso-org"
+    assert disclosed[0]["consent_snapshot_hash"] == body["consent_snapshot_hash"]
+    # The same consent state, hashed the same way an ingestion of it would be —
+    # recomputable, which is the whole of what `L-2` asks the hash to be.
+    async with async_sessionmaker(engine, expire_on_commit=False)() as session:
+        expected, _ = await dataset_consent_snapshot(session, DATASET)
+    assert disclosed[0]["consent_snapshot_hash"] == expected
+
+
+@pytest.mark.asyncio
+async def test_a_disclosure_that_cannot_be_recorded_does_not_proceed(engine, monkeypatch):
+    """`L-1`'s failure policy is chosen by position. A transfer that already
+    happened is recorded non-fatally, because refusing loses the fact too. This
+    one has *not* happened — the caller is about to hand the data over — so a
+    provenance failure must refuse, or the disclosure goes ahead unrecorded.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with factory() as session:
+            yield session
+
+    class Broken:
+        async def data_disclosed(self, **_kwargs):
+            raise RuntimeError("provenance unreachable")
+
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_prov] = lambda: Broken()
+    app.dependency_overrides[get_notifier] = lambda: None
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        r = await client.post(
+            "/admin/disclosure",
+            headers=DISCLOSE,
+            json={"dataset_id": DATASET, "recipient_ref": "dso-org"},
+        )
+    assert r.status_code == 502, r.text
+
+
+@pytest.mark.asyncio
+async def test_disclosure_requires_its_own_scope(prov_client):
+    """Not `connector.ingestion.record`. The two are opposite directions across
+    the same boundary, and the discloser has no business recording inbound
+    handovers.
+    """
+    client, _ = prov_client
+    r = await client.post(
+        "/admin/disclosure",
+        headers=INGEST,
+        json={"dataset_id": DATASET, "recipient_ref": "dso-org"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_disclosure_unknown_dataset_422(prov_client):
+    client, _ = prov_client
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={"dataset_id": "datasets.no.such", "recipient_ref": "dso-org"},
     )
     assert r.status_code == 422
 

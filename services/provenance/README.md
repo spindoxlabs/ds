@@ -51,7 +51,7 @@ Domain event types:
 - `UsageObligationFulfilled` — creates ObligationFulfilmentActivity + wasAssociatedWith
 - `ConsentGranted` / `ConsentRevoked` — consent Activity + dataset Entity + subject Agent (`used`/`invalidated` + `wasAssociatedWith`)
 - `DataIngested` — Ingestion Activity + dataset Entity (`wasGeneratedBy`); records a DSO/offline handover
-- `DataDisclosed` — Disclosure Activity + recipient Agent; records an offline CSV export
+- `DataDisclosed` — Disclosure Activity + recipient Agent + dataset Entity (`used`); records data leaving the platform. `dataset_id` and `consent_snapshot_hash` are **required** (`L-2`): the hash proves which consent state authorised the handover, and the dataset id is what makes it recomputable. Emitted by `POST /admin/disclosure` on the connector, which computes the hash from its own consent DB
 
 The consent/ingestion/disclosure events (Block C) carry **codes, DIDs and hashes only, never PII** — a `consent_snapshot_hash` fingerprints the authorising consent state without storing it.
 

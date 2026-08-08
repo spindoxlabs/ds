@@ -406,6 +406,15 @@ require_consent_read = require_permission(
 require_ingestion_record = require_permission(
     "connector.ingestion.record", "connector.admin"
 )
+# The outbound counterpart: data leaving the platform to a named recipient.
+# **A separate permission from `ingestion.record`, not a reuse of it.** The two
+# are opposite directions across the same boundary, and the out-of-repo service
+# that discloses after a CSV export has no business recording inbound handovers
+# — nor the reverse. Granting one to get the other is how a scope stops meaning
+# anything.
+require_disclosure_record = require_permission(
+    "connector.disclosure.record", "connector.admin"
+)
 
 
 # `/consumer/catalog` — a service driving the consumer side. A *person* browsing

@@ -47,19 +47,22 @@ RULEBOOK_EVENT_TYPES = frozenset({
     "DataDisclosed",
 })
 
-# The two the connector does not produce, and why. Listed rather than silently
-# tolerated, so that closing one is a deliberate edit here.
+# The one the connector does not produce, and why. Listed rather than silently
+# tolerated, so that closing it is a deliberate edit here.
 NOT_EMITTED_BY_THIS_CONNECTOR = {
-    # Produced out of repo: the onboarding service emits it after a CSV export,
-    # holding `provenance.write` and posting to `POST /prov/events` itself
-    # (`services/keycloak/clients.yaml`). It was never reachable through a
-    # Python method on this class.
-    "DataDisclosed",
     # Produced by nobody, anywhere — a real `L-1`/`L-15` gap, recorded in
     # `docs/rulebook/provenance-and-logging.md`. It is a *consumer reporting* an
     # obligation it met, so closing it needs an inbound guarded route.
     "UsageObligationFulfilled",
 }
+
+# `DataDisclosed` was in that set, as "produced out of repo by the onboarding
+# service after a CSV export". It is emitted here now, through
+# `POST /admin/disclosure`, and the reason is `L-2` rather than tidiness: the
+# event must carry a **recomputable** `consent_snapshot_hash`, that hash is a
+# fingerprint of this connector's consent DB, and the out-of-repo producer
+# cannot read it. A rule addressed to the one component unable to comply is not
+# a rule anything enforces, so the emitter moved to where the fact lives.
 
 
 def _emitter_methods() -> dict[str, str]:

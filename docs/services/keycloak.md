@@ -48,7 +48,7 @@ Roughly thirty permission names in `clients.yaml`, grouped by service prefix:
 | Prefix | Covers |
 |---|---|
 | `identity-registry.*` | admin, read, resolve, membership.read, organizations.{read,write,promote}, agreements.read, participants.write, credentials.write, memberships.write, keycloak.sync |
-| `connector.*` | admin, provider.{read,write}, history.read, registry.invalidate, internal, webhook, consent.{provision,read}, ingestion.record |
+| `connector.*` | admin, provider.{read,write}, history.read, registry.invalidate, internal, webhook, consent.{provision,read}, ingestion.record, disclosure.record |
 | `provenance.*` | read, write |
 | `catalog.*` | read |
 | `dataset.*` | admin, query, read, write |

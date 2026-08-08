@@ -81,6 +81,7 @@ ROLE_BUNDLES: dict[str, tuple[str, ...]] = {
         "connector.registry.invalidate",
         "connector.consent.provision",
         "connector.ingestion.record",
+        "connector.disclosure.record",
         "catalog.read",
         "provenance.read",
         "identity-registry.read",

@@ -409,20 +409,61 @@ class ProvBridge:
             "acted_by": acted_by,
         })
 
-    # `DataDisclosed` and `UsageObligationFulfilled` had a method here and no
-    # caller, which read as coverage this bridge does not have. Two different
-    # reasons, and the difference is the point:
+    async def data_disclosed(
+        self,
+        dataset_id: str,
+        consent_snapshot_hash: str,
+        recipient_ref: str,
+        purpose: list[str] | None = None,
+        columns: list[str] | None = None,
+        subject_count: int | None = None,
+        source_ref: str | None = None,
+        disclosed_by: str | None = None,
+        agreement_ref: str | None = None,
+        event_id: str | None = None,
+    ) -> None:
+        """Data left the platform to a named recipient (`L-1`, `L-2`).
+
+        No ``acted_by``, deliberately. `ActingPrincipal` exists for the acts that
+        decide *what the terms are* — publishing a catalogue, recording an
+        offline ingestion — and its own docstring says naming the participant is
+        enough for a disclosure, where the organisation is the controller.
+        ``disclosed_by`` carries that, and is already materialised as an agent.
+
+        ``consent_snapshot_hash`` is a required argument rather than an optional
+        one **because this bridge cannot compute it**: it is a fingerprint of the
+        consent DB, and the caller (`POST /admin/disclosure`) is the thing
+        holding a session over it. Defaulting it to ``None`` here would put the
+        one field the rule is about behind a keyword nobody has to pass.
+        """
+        await self._prov.emit_event({
+            "event_type": "DataDisclosed",
+            "event_id": event_id,
+            "occurred_at": _now(),
+            "dataset_id": dataset_id,
+            "recipient_ref": recipient_ref,
+            "purpose": purpose or [],
+            "columns": columns or [],
+            "subject_count": subject_count,
+            "source_ref": source_ref,
+            "disclosed_by": _did(disclosed_by),
+            "consent_snapshot_hash": consent_snapshot_hash,
+            "agreement_ref": agreement_ref,
+        })
+
+    # `UsageObligationFulfilled` is emitted by nobody, anywhere. That is a real
+    # gap against rulebook `L-1`/`L-15`, and it is recorded as one in
+    # `docs/rulebook/provenance-and-logging.md` rather than left looking covered.
+    # The event is a *consumer reporting* an obligation it met — a cross-
+    # participant write — so closing it needs an inbound route with a guard and
+    # an authorisation model, not a bridge method.
     #
-    # - **`DataDisclosed` is emitted, but not from here.** Its producer is the
-    #   out-of-repo onboarding service after a CSV export, which holds
-    #   `provenance.write` (`services/keycloak/clients.yaml`) and posts to
-    #   `POST /prov/events` itself. A Python method on this class was never
-    #   reachable by it. Deleting the method drops no emission.
-    # - **`UsageObligationFulfilled` is emitted by nobody, anywhere.** That is a
-    #   real gap against rulebook `L-1`/`L-15`, and it is recorded as one in
-    #   `docs/rulebook/provenance-and-logging.md` rather than left looking
-    #   covered. The event is a *consumer reporting* an obligation it met, so
-    #   closing it needs an inbound route with a guard — not a bridge method.
+    # `DataDisclosed` used to sit in this note too, as "emitted, but not from
+    # here": its only producer was the out-of-repo onboarding service posting to
+    # `POST /prov/events`. That arrangement could not satisfy `L-2` — the
+    # authorising `consent_snapshot_hash` is computable only from *this*
+    # service's consent DB, so the sole producer was the one component unable to
+    # supply the field the rule requires. Hence the emitter above.
     #
     # `tests/test_provenance_events.py` asserts this class carries an emitter for
     # every event type the connector produces, and only those.

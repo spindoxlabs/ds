@@ -117,6 +117,8 @@ scopes:
     description: Is a negotiation awaiting a consent decision (GET /consent/pending)
   - name: connector.ingestion.record
     description: Record a DSO/offline data handover (POST /admin/ingestion)
+  - name: connector.disclosure.record
+    description: Record data leaving the platform (POST /admin/disclosure)
 
   # Provenance
   - name: provenance.read
@@ -190,7 +192,16 @@ clients:
       # Provision a subject's standing sharing decision on the connector after
       # onboarding approval (POST /consent/admin/shares).
       - connector.consent.provision
-      # Emit a DataDisclosed provenance event after a CSV export (Block C).
+      # Record a CSV export as a disclosure (Block C). This is the route to use:
+      # `POST /admin/disclosure` on the connector computes the authorising
+      # `consent_snapshot_hash` from the consent DB, which this service cannot
+      # read — rulebook `L-2` requires that hash, so posting the event directly
+      # is now refused (422) rather than silently accepted without it.
+      - connector.disclosure.record
+      # Retained, and **no longer for `DataDisclosed`**. Dropping it is a
+      # decision about an out-of-repo service's other uses of `POST /prov/events`,
+      # which are not visible from here — so it is left granted deliberately
+      # rather than removed on an assumption.
       - provenance.write
     extra_audiences:
       - svc-ds-identity-registry
@@ -254,6 +265,7 @@ clients:
       - connector.history.read
       - connector.consent.provision
       - connector.ingestion.record
+      - connector.disclosure.record
       # Machine-identity permissions: granted by name because they are exempt
       # from the admin superset (ds_auth.require_exact_permission).
       - connector.internal

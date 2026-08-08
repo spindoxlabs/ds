@@ -18,6 +18,11 @@ It also asserts two production properties the happy path never exercises:
 - **Consent-snapshot stability.** The ingestion record fingerprints the consent
   state that authorised it. Recomputing it over unchanged consent must give the
   same hash, or the fingerprint proves nothing.
+- **Disclosure carries the same fingerprint.** Data leaving the platform is
+  recorded through the connector, which computes the hash itself — rulebook
+  `L-2` is only enforceable because the caller cannot supply one. A disclosure
+  and an ingestion over the same consent state must agree, or neither is
+  recomputable.
 
 Needs connector, provenance and identity-registry. Runs richer assertions when a
 `smoke` run has already populated the store, and says so when it has not.
@@ -64,6 +69,7 @@ class LineageFlow(BaseFlow):
         if not self._check_ingestion(result, headers, event_id):
             return result
         self._check_idempotency(result, headers, event_id)
+        self._check_disclosure(result, headers)
         self._check_lineage(result, headers)
         self._check_audit_log(result, headers)
         return result
@@ -168,6 +174,85 @@ class LineageFlow(BaseFlow):
             "event idempotency",
             "an event replayed under the same id is deduplicated",
             data_ingested_events=after,
+        )
+
+    # ── disclosure ───────────────────────────────────────────────────────────
+
+    def _check_disclosure(self, result: FlowResult, headers: dict[str, str]) -> None:
+        """Data leaving the platform must carry the consent state that allowed it.
+
+        The mirror of `_check_ingestion`, and the reason rulebook `L-2` is
+        enforceable at all. The caller never sends a `consent_snapshot_hash` —
+        it is computed from the connector's own consent DB, which is precisely
+        what the out-of-repo producer this route replaced could not do. So the
+        assertion is not "the field arrived" but "the connector produced the same
+        fingerprint the ingestion of that consent state produced".
+        """
+        s = self.settings
+        status, payload = self.http.raw(
+            "POST",
+            f"{s.connector_url}/admin/disclosure",
+            body={
+                "dataset_id": s.asset_id,
+                "recipient_ref": "e2e-recipient",
+                "purpose": ["GridMonitoring"],
+                "columns": ["pod_code", "consumption"],
+                "subject_count": 1,
+                "source_ref": "e2e-lineage-export",
+                "agreement_ref": "e2e-dpa-ref",
+                "event_id": f"e2e-disclosure-{uuid.uuid4().hex[:12]}",
+            },
+            headers=headers,
+        )
+        if status != 200 or not isinstance(payload, dict):
+            result.fail_step(
+                "disclosure recorded",
+                "the disclosure was not recorded",
+                status_code=status,
+                response=payload,
+            )
+            return
+
+        snapshot = payload.get("consent_snapshot_hash")
+        if not snapshot:
+            result.fail_step(
+                "disclosure recorded",
+                "no consent snapshot hash was computed — the record does not say "
+                "which consent state authorised the handover (L-2)",
+                response=payload,
+            )
+            return
+
+        # The same consent state, so the same fingerprint the ingestion got. A
+        # hash that differs per call proves nothing by recomputation.
+        _, ingested = self.http.raw(
+            "POST",
+            f"{s.connector_url}/admin/ingestion",
+            body={
+                "dataset_id": s.asset_id,
+                "source_ref": "e2e-lineage-handover",
+                "record_count": 42,
+                "agreement_ref": "e2e-dpa-ref",
+                "event_id": f"e2e-ingestion-recheck-{uuid.uuid4().hex[:12]}",
+            },
+            headers=headers,
+        )
+        if isinstance(ingested, dict) and ingested.get("consent_snapshot_hash") != snapshot:
+            result.fail_step(
+                "disclosure recorded",
+                "the disclosure and the ingestion fingerprinted the same consent "
+                "state differently — neither is recomputable",
+                disclosure=snapshot,
+                ingestion=ingested.get("consent_snapshot_hash"),
+            )
+            return
+
+        result.pass_step(
+            "disclosure recorded",
+            "the disclosure carries the consent-state fingerprint the connector "
+            "computed, not one the caller supplied",
+            consent_snapshot_hash=snapshot,
+            granted_party_count=payload.get("granted_party_count"),
         )
 
     # ── lineage graph ────────────────────────────────────────────────────────

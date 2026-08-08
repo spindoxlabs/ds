@@ -248,6 +248,18 @@ class ConsentRevoked(BaseModel):
     reason: str | None = None
 
 
+#: A bare lowercase SHA-256 digest — the shape `consent_service.
+#: consent_snapshot_hash` produces (`hashlib.sha256(...).hexdigest()`).
+#:
+#: Validating the *shape* is not pedantry. `L-2` asks for a hash that can be
+#: **recomputed**, and a field typed `str` accepts `"unknown"`, `""` and
+#: `"pending"` — each of which satisfies "the field is present" while proving
+#: nothing at all. A value that cannot be a digest is not a weaker digest.
+ConsentSnapshotHash = Annotated[
+    str, Field(pattern=r"^[0-9a-f]{64}$", description="SHA-256 hex digest")
+]
+
+
 class DataIngested(BaseModel):
     event_type: Literal["DataIngested"] = "DataIngested"
     event_id: str | None = None
@@ -256,7 +268,7 @@ class DataIngested(BaseModel):
     provider_did: str | None = None
     source_ref: str | None = None        # opaque handle for the source handover, never PII
     record_count: int | None = None
-    consent_snapshot_hash: str | None = None  # SHA-256 over the authorising consent tuples
+    consent_snapshot_hash: ConsentSnapshotHash | None = None
     agreement_ref: str | None = None     # identifies the DPA, never its contents
     # An offline handover is recorded *by a person*; without this the record says
     # a participant ingested data and cannot say who decided to.
@@ -264,16 +276,32 @@ class DataIngested(BaseModel):
 
 
 class DataDisclosed(BaseModel):
+    """Data left the platform to a named recipient (`L-1`, `L-2`).
+
+    ``dataset_id`` and ``consent_snapshot_hash`` are **required**, and they are
+    one requirement rather than two. `L-2` asks the event to prove *which*
+    consent state backed the handover, and a hash proves that only if the record
+    also says what it is a hash *of*: recomputation means re-hashing the granted
+    consent rows for a dataset, so an event carrying a digest and no dataset id
+    is a number nobody can check.
+
+    Both were optional, which made an omission indistinguishable from a
+    disclosure made under no consent at all — accepted, stored, and reported as
+    a compliant record. `POST /admin/disclosure` on the connector computes the
+    hash from its own consent DB, so the ordinary path cannot omit it.
+    """
+
     event_type: Literal["DataDisclosed"] = "DataDisclosed"
     event_id: str | None = None
     occurred_at: datetime
+    dataset_id: str                      # the governance key the hash is computed over
     recipient_ref: str                   # who received the data (org alias/DID/DPA ref)
     purpose: list[str] = []
     columns: list[str] = []              # disclosed column *names*, not values (Art. 13/14)
     subject_count: int | None = None
     source_ref: str | None = None        # what was disclosed (e.g. a REC slug), never PII
     disclosed_by: str | None = None      # the disclosing agent (e.g. the REC controller)
-    consent_snapshot_hash: str | None = None
+    consent_snapshot_hash: ConsentSnapshotHash
     agreement_ref: str | None = None
 
 

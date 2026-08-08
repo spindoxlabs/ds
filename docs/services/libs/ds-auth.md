@@ -101,7 +101,7 @@ Layer A: ds's own semantics, in code, deliberately **not** deployment configurat
 | Bundle | Expands to |
 |---|---|
 | `ds-admin` | `identity-registry.admin`, `connector.admin`, `provenance.read`, `provenance.write`, `catalog.read` |
-| `ds-participant-admin` | `connector.provider.read`, `.write`, `connector.history.read`, `connector.registry.invalidate`, `connector.consent.provision`, `connector.ingestion.record`, `catalog.read`, `provenance.read`, `identity-registry.read`, `.membership.read` |
+| `ds-participant-admin` | `connector.provider.read`, `.write`, `connector.history.read`, `connector.registry.invalidate`, `connector.consent.provision`, `connector.ingestion.record`, `connector.disclosure.record`, `catalog.read`, `provenance.read`, `identity-registry.read`, `.membership.read` |
 | `ds-participant-viewer` | `connector.provider.read`, `connector.history.read`, `catalog.read`, `provenance.read`, `identity-registry.read` |
 | `ds-onboarding-operator` | `identity-registry.organizations.read`, `.write`, `.agreements.read`, `.participants.write`, `identity-registry.read` |
 | `ds-member` | `catalog.read` |
