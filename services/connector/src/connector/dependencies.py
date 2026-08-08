@@ -7,7 +7,9 @@ from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from functools import lru_cache
 
+import httpx
 from ds_auth import Principal
+from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
 from ds_auth.user_credentials import verify_user_vc_jwt
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -161,6 +163,15 @@ async def _canonical_owner(request: Request, alias: str) -> str:
     return entry.id if entry is not None else alias
 
 
+class OwnerUnknown(Exception):
+    """The owner of the target could not be determined.
+
+    Deliberately distinct from *the target has no owner*: one is an answer this
+    perimeter can act on, the other is the absence of one. Collapsing them is
+    `ENV-09`, and it opened the perimeter for as long as the lookup was failing.
+    """
+
+
 async def _target_owner(request: Request) -> str:
     """The owning organisation of whatever this request is about to mutate.
 
@@ -174,21 +185,41 @@ async def _target_owner(request: Request) -> str:
       references assets only through a selector and a policy definition
       references nothing at all.
 
-    Returns ``""`` when there is no owner to scope against — an unowned dataset,
-    an id governance does not know, or a lookup that failed. Every one of those is
-    "not an authorization decision": a missing object is the endpoint's 404 to
-    report, and refusing here would turn "does not exist" into "not yours", which
-    is a worse answer and a weaker one.
+    Returns ``""`` when there is genuinely no owner to scope against — an unowned
+    dataset, or an id governance does not know. Neither is an authorization
+    decision: a missing object is the endpoint's 404 to report, and refusing
+    there would turn "does not exist" into "not yours", which is a worse answer
+    and a weaker one.
+
+    Raises :class:`OwnerUnknown` when the lookup **failed** — which used to
+    return ``""`` as well, and that was a fail-open (`ENV-09`). *There is no
+    owner* and *I could not find out who the owner is* are different states, and
+    only the first is safe to allow: with the provider EDC unreachable, an
+    operator for one participant passed this perimeter on another participant's
+    asset. Same rule the Java constraint functions are held to in the root
+    guide — a guard denies on error — and the same two-absent-states rule as
+    `CI-02`.
+
+    The split is by *what EDC said*: a 404 is an answer (there is no such asset,
+    so there is no owner), anything else is the absence of one.
     """
     asset_id = request.path_params.get("asset_id")
     if asset_id:
         edc = getattr(request.app.state, "provider_edc", None)
         if edc is None:
-            return ""
+            raise OwnerUnknown("the provider EDC client is not configured")
         try:
             asset = await edc.get_asset(asset_id)
-        except Exception:  # noqa: BLE001
-            return ""
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                return ""
+            raise OwnerUnknown(
+                f"EDC answered {exc.response.status_code} for asset {asset_id!r}"
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 — transport, timeout, anything
+            raise OwnerUnknown(
+                f"the provider EDC could not be reached for asset {asset_id!r}: {exc}"
+            ) from exc
         return _asset_owner((asset or {}).get("properties") or {})
 
     object_id = request.path_params.get("policy_id") or request.path_params.get(
@@ -206,17 +237,31 @@ async def _target_owner(request: Request) -> str:
             overlay_name=settings.governance_overlay_name,
         )
     except Exception as exc:  # noqa: BLE001
-        # Governance is a file this process may fail to read. Say so rather than
-        # deciding authority from an empty index, which would silently unscope
-        # every policy and contract in the deployment.
+        # Governance is a file this process may fail to read. This comment used
+        # to end "say so rather than deciding authority from an empty index,
+        # which would silently unscope every policy and contract" — and then
+        # returned "", which is exactly that. Saying so is the log line; the
+        # decision is the raise.
         log.error(
-            "owner scoping: could not read governance to resolve %r (%s) — the "
-            "delete is left to `connector.provider.write` alone.",
+            "owner scoping: could not read governance to resolve %r (%s)",
             object_id,
             exc,
         )
-        return ""
+        raise OwnerUnknown(f"governance could not be read: {exc}") from exc
     return index.get(object_id, "")
+
+
+def _models_no_organisations(principal: Principal) -> bool:
+    """Whether owner scoping can decide anything at all for this caller.
+
+    A caller with no organisation claims in a deployment that has not turned
+    `owner_scoping_strict` on is allowed either way, so a failed owner lookup
+    changes nothing for them — refusing there would trade an availability
+    regression for no security gain. Named once because the `ENV-09` refusal and
+    the ordinary path both have to ask it, and two copies of this condition
+    would drift into disagreeing about who is exempt.
+    """
+    return not principal.organizations and not get_settings().owner_scoping_strict
 
 
 async def _own_owner_only(principal: Principal, request: Request) -> bool:
@@ -264,21 +309,54 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
     if principal.is_service:
         return True
 
-    owner = await _target_owner(request)
+    try:
+        owner = await _target_owner(request)
+    except OwnerUnknown as exc:
+        # The lookup failed, so this perimeter has nothing to decide with — and
+        # the safe direction is a refusal (`ENV-09`). Two things bound the cost
+        # of that, and both are above: `connector.admin` and every service
+        # principal have already returned, so an EDC outage cannot break the
+        # governance sync or lock the deployment operator out of the fix.
+        if _models_no_organisations(principal):
+            log.warning(
+                "owner scoping: could not determine the owner for caller %s (%s); "
+                "allowing, because this caller holds no organisation claims and "
+                "CONNECTOR_OWNER_SCOPING_STRICT is off — owner scoping cannot "
+                "decide anything for them either way.",
+                principal.subject,
+                exc,
+            )
+            return True
+        log.error(
+            "owner scoping: refusing a provider write for caller %s — the owner "
+            "of the target could not be determined (%s)",
+            principal.subject,
+            exc,
+        )
+        # `PermissionDenied` rather than a bare False: `require_permission`
+        # turns it into a 403 carrying this message, so the refusal says *why*.
+        # An unattributable 403 during an EDC outage is the kind of alarm that
+        # gets dismissed, and this one is worth acting on.
+        raise PermissionDenied(
+            f"cannot determine which organisation owns this object ({exc}) — "
+            "refusing rather than allowing a write that may cross an owner "
+            "boundary"
+        ) from exc
+
     if not owner:
         return True
 
+    if _models_no_organisations(principal):
+        log.info(
+            "owner scoping: caller %s holds no organisation claims; allowing "
+            "write to owner %r. Set CONNECTOR_OWNER_SCOPING_STRICT=true where "
+            "organisations are modelled.",
+            principal.subject,
+            owner,
+        )
+        return True
     if not principal.organizations:
-        strict = get_settings().owner_scoping_strict
-        if not strict:
-            log.info(
-                "owner scoping: caller %s holds no organisation claims; allowing "
-                "write to owner %r. Set CONNECTOR_OWNER_SCOPING_STRICT=true where "
-                "organisations are modelled.",
-                principal.subject,
-                owner,
-            )
-        return not strict
+        return False
 
     target = await _canonical_owner(request, owner)
     for alias in principal.organization_aliases:

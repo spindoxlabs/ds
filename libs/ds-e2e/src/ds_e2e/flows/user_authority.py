@@ -268,6 +268,23 @@ class UserAuthorityFlow(BaseFlow):
                 f"{s.other_org} operator cannot delete an asset owned by "
                 f"{s.owning_org} ({status})",
             )
+        elif status >= 500:
+            # A 5xx here is **not** evidence either way, and reading it as one
+            # cost a session: on a stack whose provider EDC was down this step
+            # reported "was allowed to delete" — a P1-shaped failure whose cause
+            # was an outage. Worse, the same outage is what made the perimeter
+            # allow the request in the first place (`ENV-09`), so the two
+            # failures arrive together and the harness pointed at the wrong one.
+            #
+            # It fails rather than skips, because a provider surface that cannot
+            # answer is a real problem — but it says which problem.
+            result.fail_step(
+                "cross-owner write is refused",
+                f"the provider surface answered {status}, so the refusal could "
+                "not be observed: this says nothing about owner scoping. Check "
+                "the provider EDC is up before reading this as a fail-open",
+                detail_body=str(body)[:200],
+            )
         else:
             result.fail_step(
                 "cross-owner write is refused",

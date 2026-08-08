@@ -125,9 +125,15 @@ spec:
 {{- end -}}
 
 {{/*
-/metrics is unauthenticated on ds-connector, ds-provenance and
-ds-federated-catalog (see root AGENTS.md — a known gap, not a pattern).
-It is never exposed through an Ingress; this restricts it to Prometheus.
+/metrics is unauthenticated on every ds service, deliberately: a Prometheus
+scraper holds no Keycloak token, so a bearer guard would replace a working
+control with a broken one. Reachability is the control, and this is it — the
+endpoint is in no chart's Ingress, the default-deny baseline applies, and this
+rule opens the port to the monitoring namespace alone.
+
+See docs/rulebook/provenance-and-logging.md step 1, which settled it. This
+comment used to cite root AGENTS.md as recording "a known gap"; that page has
+never mentioned /metrics, and "gap" is the wrong word for a decision (ENV-07).
 
 Args: dict "ctx" $ "port" <int>
 */}}

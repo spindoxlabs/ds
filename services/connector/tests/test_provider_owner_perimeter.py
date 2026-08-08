@@ -16,6 +16,7 @@ this from the registry would refuse every operator in the deployment.
 """
 from __future__ import annotations
 
+import httpx
 import jwt as pyjwt
 import pytest
 
@@ -542,3 +543,188 @@ def test_the_index_covers_policies_and_contracts_from_real_governance():
         assert any(k.endswith("-policy") for k in index), path
         assert any(k.endswith("-contract") for k in index), path
         assert all(v for v in index.values()), f"an unowned dataset leaked in as empty: {path}"
+
+
+# ── ENV-09 · a lookup that failed is not an absence of owner ─────────────────
+#
+# `_target_owner` used to return "" for *unowned*, *unknown id* **and** *the
+# lookup blew up*, and the perimeter reads "" as "nothing to scope against" and
+# allows. So with the provider EDC unreachable the guard was off: measured on a
+# dev stack whose EDC was down, a grid-operator seat's delete of an example-org
+# asset passed this perimeter and reached the handler.
+#
+# `test_unowned_asset_is_not_confined` and
+# `test_an_id_governance_does_not_know_is_not_confined` above are the states
+# that must keep allowing, and they are why this is a split rather than a
+# blanket refusal: turning "does not exist" into "not yours" is a worse answer.
+
+
+class _BrokenEdc:
+    """A provider EDC that fails the owner lookup the way a real one does."""
+
+    def __init__(self, error: Exception):
+        self._error = error
+        self.deleted: list[str] = []
+
+    async def get_asset(self, asset_id: str):
+        raise self._error
+
+    async def delete_asset(self, asset_id: str):
+        # Asserted on rather than the status alone: during a real outage the
+        # handler fails too, so a 5xx cannot tell "refused" from "allowed and
+        # then broke" — which is exactly how this stayed invisible.
+        self.deleted.append(asset_id)
+
+
+def _http_error(status: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("GET", f"http://edc.invalid/v3/assets/{ASSET}")
+    response = httpx.Response(status, request=request)
+    return httpx.HTTPStatusError(
+        f"EDC get_asset {status}", request=request, response=response
+    )
+
+
+@pytest.fixture
+def lookup_fails(client):
+    def _install(error: Exception) -> _BrokenEdc:
+        edc = _BrokenEdc(error)
+        client._transport.app.state.provider_edc = edc
+        return edc
+
+    return _install
+
+
+def _grid_operator() -> dict:
+    return _user_headers(
+        organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "error, why",
+    [
+        (httpx.ConnectError("connection refused"), "the EDC is down"),
+        (httpx.ReadTimeout("timed out"), "the EDC is slow"),
+        (_http_error(500), "the EDC errored"),
+        (_http_error(401), "the EDC rejected our management key"),
+    ],
+    ids=["unreachable", "timeout", "edc-500", "edc-401"],
+)
+async def test_a_failed_owner_lookup_refuses_the_write(
+    client, lookup_fails, error, why
+):
+    """Deny on error — the rule the root guide states for the constraint functions.
+
+    The window is narrow and not empty, which is why this is a defect and not a
+    theoretical one: `get_asset` can fail where the following `delete_asset`
+    would have succeeded — one transient 5xx, a read timeout, a deserialisation
+    error on a single asset — and then the delete goes through against another
+    participant's data.
+    """
+    edc = lookup_fails(error)
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_grid_operator())
+    assert r.status_code == 403, why
+    assert edc.deleted == [], "the write reached the handler despite the refusal"
+
+
+@pytest.mark.asyncio
+async def test_the_refusal_says_the_owner_could_not_be_determined(client, lookup_fails):
+    """An unattributable 403 during an outage is an alarm that gets dismissed.
+
+    `PermissionDenied` carries its message into the 403 body, so an operator can
+    tell this from an ordinary cross-owner refusal — the two mean different
+    things and want different fixes.
+    """
+    lookup_fails(httpx.ConnectError("connection refused"))
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_grid_operator())
+    assert "cannot determine which organisation owns" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_a_404_from_the_edc_is_an_answer_not_a_failure(client, lookup_fails):
+    """"There is no such asset" means there is no owner, so it is not confined.
+
+    The one status that must stay on the allowing side: refusing here would turn
+    the endpoint's own 404 into a 403, which tells a caller that someone else's
+    asset exists.
+    """
+    lookup_fails(_http_error(404))
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_grid_operator())
+    assert r.status_code != 403
+
+
+@pytest.mark.asyncio
+async def test_an_unreadable_governance_file_refuses_a_policy_delete(
+    client, monkeypatch, owned_by
+):
+    """Same split on the other lookup.
+
+    The comment there already said that returning an empty index "would silently
+    unscope every policy and contract in the deployment" — and then returned
+    one. It now logs *and* refuses.
+    """
+    owned_by(None)
+
+    def _boom(*args, **kwargs):
+        raise FileNotFoundError("governance file not found: governance/governance.yaml")
+
+    monkeypatch.setattr("connector.services.governance.owner_by_edc_id", _boom)
+    r = await client.delete(f"/provider/policies/{POLICY}", headers=_grid_operator())
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_a_caller_with_no_organisations_is_unaffected_by_a_failed_lookup(
+    client, lookup_fails
+):
+    """No security gain, so no availability cost.
+
+    Owner scoping already allows this caller whatever the owner turns out to be
+    (non-strict), so a failed lookup decides nothing for them. Refusing would
+    take out every deployment that models no organisations the moment its EDC
+    hiccups.
+    """
+    edc = lookup_fails(httpx.ConnectError("connection refused"))
+    r = await client.delete(
+        f"/provider/assets/{ASSET}", headers=_user_headers("ds-participant-admin")
+    )
+    assert r.status_code != 403
+    assert edc.deleted == [ASSET]
+
+
+@pytest.mark.asyncio
+async def test_strict_mode_refuses_that_caller_too(client, lookup_fails, monkeypatch):
+    """A deployment that models owners gets the tighter posture on both paths."""
+    from connector.config import get_settings
+
+    monkeypatch.setenv("CONNECTOR_OWNER_SCOPING_STRICT", "true")
+    get_settings.cache_clear()
+    try:
+        edc = lookup_fails(httpx.ConnectError("connection refused"))
+        r = await client.delete(
+            f"/provider/assets/{ASSET}", headers=_user_headers("ds-participant-admin")
+        )
+    finally:
+        get_settings.cache_clear()
+    assert r.status_code == 403
+    assert edc.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_an_edc_outage_does_not_lock_out_the_operator_or_the_syncs(
+    client, lookup_fails
+):
+    """What bounds the cost of denying, and it is deliberate ordering.
+
+    `connector.admin` and every service principal return *before* the owner
+    lookup happens — so an EDC outage cannot break the governance sync or stop
+    the deployment operator from fixing it. A refusal that locked the operator
+    out of the repair would be a worse failure than the one being prevented.
+    """
+    edc = lookup_fails(httpx.ConnectError("connection refused"))
+    r = await client.delete(
+        f"/provider/assets/{ASSET}", headers=_user_headers("ds-admin")
+    )
+    assert r.status_code != 403
+    assert edc.deleted == [ASSET]

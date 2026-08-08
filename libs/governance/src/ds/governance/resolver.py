@@ -48,8 +48,38 @@ class GovernanceResolver:
 
     @classmethod
     def from_file(cls, path: Path) -> GovernanceResolver:
+        """Load a governance file. **A path that does not resolve is an error.**
+
+        It used to return an empty config, which is the `CI-02` shape and the
+        exact reason `auto_discover` was deleted from this module (`GOV-15`,
+        below) — the deletion took the caller and left the behaviour.
+
+        What it cost, measured 2026-08-07: the connector's default
+        `governance_yaml_path` is `governance/governance.yaml`, and `245ae53`
+        renamed that directory to `governance-rec/`. Compose was unaffected — it
+        mounts the directory at `/governance` — so only the **host-run** path
+        broke, and it broke like this: the provider connector started clean,
+        logged nothing, and served an empty dataset list and an empty
+        `/ns/sharing-offers` while `sharing-offers.yaml` sat on disk. Every
+        `task dev:*` stack since that rename has run a provider with no
+        governance, and the first thing to notice was `task e2e:fast` failing on
+        a fixture whose offer was right there in the file.
+
+        *Nothing was asked for* and *what you asked for is not there* are two
+        different states, and only one of them is a supported mode. This method
+        is always handed a path, so it is always the second.
+
+        Callers that legitimately tolerate absence check first and say so:
+        `from_file_with_override` for the overlay, `compliance.validator` so the
+        CLI reports it as a result rather than a traceback.
+        """
         if not path.exists():
-            return cls(GovernanceConfig())
+            raise FileNotFoundError(
+                f"governance file not found: {path}. A configured path that is "
+                "missing is an error, not an empty governance config — set "
+                "CONNECTOR_GOVERNANCE_YAML_PATH (or the caller's equivalent) to "
+                "the file you mean."
+            )
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
         defaults = cls._parse_rule(raw.get("defaults") or {})

@@ -18,10 +18,45 @@ def _write_yaml(tmp_path: Path, content: str) -> Path:
 
 # ── tests ─────────────────────────────────────────────────────────────────────
 
-def test_from_file_missing_returns_empty(tmp_path):
-    resolver = GovernanceResolver.from_file(tmp_path / "nonexistent.yaml")
-    rule = resolver.resolve("anything")
-    assert rule.access_level is None
+def test_from_file_missing_raises(tmp_path):
+    """A configured path that is missing is an error, not an empty config.
+
+    It returned an empty config until 2026-08-07, and the cost was measurable:
+    the connector's default path named a directory `245ae53` had renamed, so
+    every `task dev:*` provider since ran with **no governance** — no datasets,
+    no sharing offers — starting clean and logging nothing. Compose was fine, so
+    nothing in CI or in a container run could see it.
+
+    This is `CI-02`'s rule, and it is the same one `GOV-15` applied when it
+    deleted `auto_discover` from this module for returning an empty config when
+    it found nothing. That deletion removed the caller and left the behaviour
+    one function below it.
+    """
+    missing = tmp_path / "nonexistent.yaml"
+    with pytest.raises(FileNotFoundError) as excinfo:
+        GovernanceResolver.from_file(missing)
+    # The message has to name the file and a way out: the failure this replaces
+    # was invisible, so an exception that only says "not found" trades silence
+    # for a traceback.
+    assert str(missing) in str(excinfo.value)
+    assert "CONNECTOR_GOVERNANCE_YAML_PATH" in str(excinfo.value)
+
+
+def test_an_absent_overlay_is_still_absence(tmp_path):
+    """The one caller that legitimately tolerates a missing file.
+
+    `from_file_with_override` checks the overlay exists before loading it —
+    *nothing was asked for* is a supported mode there, and it must stay one, or
+    naming no overlay would become an error.
+    """
+    base = _write_yaml(tmp_path, """
+version: 2
+sources:
+  datasets.a:
+    access_level: internal
+""")
+    resolver = GovernanceResolver.from_file_with_override(base, overlay_name="nope")
+    assert resolver.resolve("datasets.a").access_level == "internal"
 
 
 def test_from_file_v1_yaml(tmp_path):

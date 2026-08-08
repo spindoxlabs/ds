@@ -77,3 +77,30 @@ def test_the_health_list_is_not_hardcoded():
     source = inspect.getsource(ApiContractFlow._services_this_flow_calls)
     assert "PUBLIC_ROUTES" in source
     assert "SWEPT_SERVICES" in source
+
+
+# ── ENV-09 · a 5xx is not evidence of a fail-open ────────────────────────────
+
+def test_the_cross_owner_step_separates_an_outage_from_a_fail_open():
+    """`user-authority` reported a P1 whose cause was an outage.
+
+    Its refusal branch accepted 401/403 and read *everything else* as "deleted
+    or was allowed to delete" — so on a stack whose provider EDC was down it
+    named a cross-owner delete that had merely 500'd at the handler. The two
+    failures even arrive together: the same unreachable EDC is what made the
+    perimeter allow the request (`ENV-09`), so the harness pointed at the
+    consequence and not the cause.
+
+    Asserted on the source, because reproducing it needs a broken stack — which
+    is exactly the condition the branch exists for.
+    """
+    import inspect
+
+    from ds_e2e.flows.user_authority import UserAuthorityFlow
+
+    source = inspect.getsource(UserAuthorityFlow.execute)
+    assert "status >= 500" in source, (
+        "the cross-owner refusal branch no longer separates a 5xx from an "
+        "allowed write — a broken provider surface will read as a fail-open"
+    )
+    assert "says nothing about owner scoping" in source

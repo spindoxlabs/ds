@@ -403,9 +403,16 @@ http://portal.dataspaces.localhost {
 			reverse_proxy 172.17.0.1:30004
 		}
 
-		# Machine-scraped, and a 302 to a login form would break a scraper silently
-		# rather than loudly. This preserves the pre-existing exposure that root
-		# AGENTS.md already records as a known gap — it does not widen it.
+		# Machine-scraped, and a 302 to a login form would break a scraper
+		# silently rather than loudly.
+		#
+		# **Dev only, and this is the one place `/metrics` is reachable through a
+		# gateway.** No chart puts it in an Ingress; in the cluster it is
+		# restricted to the monitoring namespace by NetworkPolicy. Unauthenticated
+		# is the decision, not the gap — a scraper holds no Keycloak token — see
+		# `docs/rulebook/provenance-and-logging.md` step 1. This comment used to
+		# cite root `AGENTS.md` as recording a "known gap"; that page has never
+		# mentioned `/metrics` (`ENV-07`).
 		handle /metrics* {
 			reverse_proxy 172.17.0.1:30004
 		}
