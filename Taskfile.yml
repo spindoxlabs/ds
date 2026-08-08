@@ -1604,6 +1604,12 @@ tasks:
     cmds:
       - task -d libs/ds-auth bundles:generate
 
+  rulebook:generate:
+    desc: "Regenerate docs/rulebook/rules.json — the machine-readable rulebook (DSO-12)"
+    cmds:
+      - cd libs/ds-e2e && uv run python -c "from ds_e2e.rulebook import write; print(write())"
+      - cd libs/ds-e2e && uv run pytest tests/test_rulebook_projection.py -q
+
   keycloak:merge:
     desc: "Regenerate the effective clients.yaml the sync applies (OVERLAYS=energy)"
     vars:

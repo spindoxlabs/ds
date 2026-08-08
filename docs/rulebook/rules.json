@@ -1,0 +1,1382 @@
+{
+  "$comment": "GENERATED from docs/rulebook/*.md by `task rulebook:generate`. The markdown is the source; edit that and regenerate.",
+  "statuses": [
+    "enforced",
+    "partly enforced",
+    "not enforced",
+    "declared"
+  ],
+  "counts": {
+    "enforced": 107,
+    "partly enforced": 8,
+    "not enforced": 1,
+    "declared": 21
+  },
+  "rules": [
+    {
+      "id": "A-1",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "`odrl:isA` matching follows **only** the local `broader` chain, never `dpv_mapping`. A `broadMatch` to a generic DPV term would let an unrelated use satisfy a specific consent",
+      "evidence": []
+    },
+    {
+      "id": "A-2",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Consent to a child purpose does **not** cover its parent",
+      "evidence": []
+    },
+    {
+      "id": "A-3",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "No governance file reaches an EDC without passing the gate",
+      "evidence": []
+    },
+    {
+      "id": "A-4",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced",
+      "text": "CI runs the gate on every change",
+      "evidence": []
+    },
+    {
+      "id": "A-5",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The policy-id collision sweep detects collisions between policy ids and contract ids",
+      "evidence": [
+        "compliance/checks.py"
+      ]
+    },
+    {
+      "id": "A-6",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "`access_level: secret` means the dataset is never mapped or published",
+      "evidence": []
+    },
+    {
+      "id": "A-7",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A `pii` dataset may never be transferred onward, derived from, distributed or sublicensed",
+      "evidence": []
+    },
+    {
+      "id": "A-8",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Retention is expressed as a machine-readable duty on every dataset that declares one",
+      "evidence": []
+    },
+    {
+      "id": "A-9",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "not enforced",
+      "status_raw": "Not enforced, and deliberately not emitted",
+      "text": "A policy's validity window (`valid_from` / `valid_until`) is enforced",
+      "evidence": [
+        "services/edc-extensions"
+      ]
+    },
+    {
+      "id": "A-10",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "CR-1, CR-2, CR-3 are implemented by the mapper's emission order and the consent registry's row precedence",
+      "evidence": []
+    },
+    {
+      "id": "A-11",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "CR-4 holds at every evaluation point",
+      "evidence": []
+    },
+    {
+      "id": "A-12",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "CR-5 holds during a running transfer, not only at negotiation",
+      "evidence": []
+    },
+    {
+      "id": "A-13",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Every participant runs the policy enforcement capability; there is no unenforced participation tier (`AUP-08`)",
+      "evidence": []
+    },
+    {
+      "id": "A-14",
+      "page": "policies.md",
+      "prefix": "A",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An operand emitted by the mapper has a function registered for it in every scope it is bound to, and no operand is bound without a producer",
+      "evidence": []
+    },
+    {
+      "id": "C-1",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every participant implements or uses a catalogue service as part of its control plane (`DSSC-PUB-05`)",
+      "evidence": []
+    },
+    {
+      "id": "C-2",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "The federated index is advisory. A discrepancy between index and provider is resolved in favour of the provider",
+      "evidence": []
+    },
+    {
+      "id": "C-3",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The index crawls only active participants",
+      "evidence": []
+    },
+    {
+      "id": "C-4",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The index authenticates to the connector it crawls through",
+      "evidence": []
+    },
+    {
+      "id": "C-5",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Access and usage control of offerings are expressed as ODRL policies (`DSSC-PUB-38`)",
+      "evidence": []
+    },
+    {
+      "id": "C-6",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "`dcat:keyword` carries no policy meaning. A dataset's permitted purposes come from `policy.purpose[]` and nowhere else",
+      "evidence": []
+    },
+    {
+      "id": "C-7",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A catalogue includes at least one `dcat:DataService` referencing the service that provides its datasets (`DSSC-PUB-41`)",
+      "evidence": []
+    },
+    {
+      "id": "C-8",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced, with a declared deviation",
+      "text": "A catalogue response references its entries via `dcat:record` rather than inlining them (`DSSC-PUB-45`)",
+      "evidence": []
+    },
+    {
+      "id": "C-9",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An offering missing any mandatory field is not published",
+      "evidence": []
+    },
+    {
+      "id": "C-10",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A `pii` dataset with an unresolvable sharing offer is not published — advertising a consent gate that can never open is worse than not publishing",
+      "evidence": []
+    },
+    {
+      "id": "C-11",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An empty `purpose[]` is never a wildcard for personal data",
+      "evidence": []
+    },
+    {
+      "id": "C-12",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "Metadata is checked for compliance with the standards it claims (`DSO-11`)",
+      "evidence": [
+        "libs/governance/tests/tests/test_declared_not_enforced.py"
+      ]
+    },
+    {
+      "id": "C-13",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced.",
+      "text": "Metadata is checked for compliance with this rulebook (`DSO-12`)",
+      "evidence": [
+        "docs/rulebook/rules.json",
+        "libs/ds-e2e/src/ds_e2e/rulebook.py",
+        "libs/ds-e2e/tests/test_rulebook_projection.py"
+      ]
+    },
+    {
+      "id": "C-14",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Metadata is checked for completeness (`DSO-13`)",
+      "evidence": []
+    },
+    {
+      "id": "C-15",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A publisher must be a registered participant, authenticated as such (`PUB-13`)",
+      "evidence": []
+    },
+    {
+      "id": "C-16",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A publisher must be authorised for the *owner* whose datasets it publishes (`PUB-14`)",
+      "evidence": []
+    },
+    {
+      "id": "C-17",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An unauthenticated or unauthorised publish, update or remove is **denied** (`PUB-19`, `-23`, `-26`)",
+      "evidence": []
+    },
+    {
+      "id": "C-18",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A removed offering is no longer discoverable (`PUB-25`)",
+      "evidence": []
+    },
+    {
+      "id": "C-19",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A discovering consumer must be a registered participant (`PUB-27`)",
+      "evidence": [
+        "services/connector/tests/test_consumer_catalog_auth.py"
+      ]
+    },
+    {
+      "id": "C-20",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An unauthorised consumer's request must not even collect matching offerings (`PUB-32`)",
+      "evidence": []
+    },
+    {
+      "id": "C-21",
+      "page": "catalogue-and-metadata.md",
+      "prefix": "C",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced",
+      "text": "Offering visibility may be restricted to a subset of participants (`PUB-03`)",
+      "evidence": []
+    },
+    {
+      "id": "D-1",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Pseudonymised data is personal data. A dataset keyed by device id or subject DID rather than by name is still `pii`",
+      "evidence": []
+    },
+    {
+      "id": "D-2",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Provenance records carry **codes, pseudonymous DIDs and hashes only — never PII**",
+      "evidence": []
+    },
+    {
+      "id": "D-3",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A dataset may not be reclassified downward (from `pii`) without a documented assessment",
+      "evidence": []
+    },
+    {
+      "id": "D-4",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Only `dpv:Consent` offers get a UI control",
+      "evidence": []
+    },
+    {
+      "id": "D-5",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A **covered processor** — same controller, same operation, acting under a data processing agreement (GDPR Art. 28) — is disclosed, never asked. `POST /consent/request` returns 409 and `/internal/consent/check` returns `should_ask: false`, so the pending guard does not park a negotiation on a question that has no answer",
+      "evidence": []
+    },
+    {
+      "id": "D-6",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A legal basis other than consent or contract requires legal analysis and appropriate protection measures before it is added to the vocabulary (`DSSC-XCT-07`, `-08`)",
+      "evidence": []
+    },
+    {
+      "id": "D-7",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An empty `purpose[]` is **never** a wildcard for personal data. The person was never told the use, so consent would fail GDPR Art. 4(11). Fail closed — and this applies to the *requested* purpose too, not only the declared one",
+      "evidence": []
+    },
+    {
+      "id": "D-8",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Purpose matching follows the local `broader` chain only, never the DPV mapping",
+      "evidence": []
+    },
+    {
+      "id": "D-9",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Consent to a child purpose does not cover its parent",
+      "evidence": []
+    },
+    {
+      "id": "D-10",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A purpose not in the active profile is a 422 at consent-write time, not a silently ignored value",
+      "evidence": []
+    },
+    {
+      "id": "D-11",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The consent key is (subject, purpose, controller-role). Matching on controller alone is insufficient",
+      "evidence": []
+    },
+    {
+      "id": "D-12",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A consent record carries a `legal_basis` evidence record: the DPV basis IRI, the consent-text version, the locale, a SHA-256 of the rendered text, the `user_visible_hash` and a submission reference. **Codes and hashes only, never PII**",
+      "evidence": []
+    },
+    {
+      "id": "D-13",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The rendered-text hash is what proves *what the person was shown*. A translation may never widen a coverage window, change a resolution or invent a legal basis — the codes are authoritative and the frontend translates them",
+      "evidence": []
+    },
+    {
+      "id": "D-14",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The wildcard admits any party **inside the circle** for that controller and purpose. It never admits a new controller and never a new purpose",
+      "evidence": []
+    },
+    {
+      "id": "D-15",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A per-party row overrides the wildcard. An explicit grant and an explicit **opt-out** both win",
+      "evidence": []
+    },
+    {
+      "id": "D-16",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The identity recorded against a consent ask is the DCP-verified counterparty, never a self-asserted header",
+      "evidence": []
+    },
+    {
+      "id": "D-17",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Revocation terminates a **running** transfer, not merely future ones",
+      "evidence": []
+    },
+    {
+      "id": "D-18",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A pending question that nobody can answer must not park a negotiation forever. A covered processor, and a purpose the offer does not carry, both resolve without asking",
+      "evidence": []
+    },
+    {
+      "id": "D-19",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A subject may see every consent they hold and every ask outstanding against them",
+      "evidence": []
+    },
+    {
+      "id": "D-20",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Subject-facing surfaces authenticate the subject's credential, never a service's scope. A service token must not be able to read one person's consents",
+      "evidence": []
+    },
+    {
+      "id": "D-21",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Membership in an owner organisation is checked against the registry at consent-write time, not read from a JWT claim. The portal reads claims for UX; **data access decisions always go through the registry API**",
+      "evidence": []
+    },
+    {
+      "id": "D-22",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A path-bearing subject DID must resolve, and its document asserts **no verification method** — the person holds no key",
+      "evidence": []
+    },
+    {
+      "id": "D-22a",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A person's DID sits in the namespace of the organisation that holds their credentials — `did:web:<participant>:users:<id>` — and **that** organisation publishes it",
+      "evidence": []
+    },
+    {
+      "id": "D-22b",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "**One human, one identifier**, however many organisations hold credentials about them",
+      "evidence": []
+    },
+    {
+      "id": "L-1",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced.",
+      "text": "Every participant records all sixteen types. Recording is not optional and not per-dataset (`PTO-40`, `-41`)",
+      "evidence": [
+        "services/connector/tests/test_prov_bridge_emitters.py"
+      ]
+    },
+    {
+      "id": "L-2",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A `DataDisclosed` event carries a `consent_snapshot_hash` — a recomputable SHA-256 over the authorising consent tuples — proving *which* consent state backed the handover",
+      "evidence": [
+        "services/connector/tests/test_provenance_events.py",
+        "services/provenance/tests/test_events_consent.py"
+      ]
+    },
+    {
+      "id": "L-3",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Provenance records carry codes, pseudonymous DIDs and hashes only, never PII",
+      "evidence": []
+    },
+    {
+      "id": "L-4",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "An event is recorded once. Re-posting the same event is a no-op, not a duplicate",
+      "evidence": [
+        "services/provenance/tests/test_event_idempotency.py"
+      ]
+    },
+    {
+      "id": "L-5",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "Every principal named in an event becomes an agent in the graph",
+      "evidence": [
+        "services/provenance/tests/test_event_agents.py"
+      ]
+    },
+    {
+      "id": "L-6",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "The model is PROV-O. A participant storing logs in another model does not satisfy this rulebook",
+      "evidence": []
+    },
+    {
+      "id": "L-7",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced, by a sweep rather than by review.",
+      "text": "The JSON-LD `@context` defines every relation the ingest path can produce",
+      "evidence": [
+        "services/provenance/tests/test_relation_vocabulary.py"
+      ]
+    },
+    {
+      "id": "L-8",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A node's PROV-O type is a property of the node, not of the position it first appeared in",
+      "evidence": [
+        "services/portal",
+        "services/portal/tests/unit/lineage.test.ts",
+        "services/provenance/tests/test_jsonld_service.py"
+      ]
+    },
+    {
+      "id": "L-9",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "All principles from the Data Models building block apply to this data too (`PTO-59`)",
+      "evidence": []
+    },
+    {
+      "id": "L-10",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A participant's provenance store is not readable by another participant",
+      "evidence": []
+    },
+    {
+      "id": "L-11",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A subject may read the record concerning themselves, authenticated by credential rather than by service scope",
+      "evidence": []
+    },
+    {
+      "id": "L-12",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "Mandatory P&T data can be accessed and presented on demand (`PTO-79`)",
+      "evidence": [
+        "services/provenance/tests/test_audit_log.py"
+      ]
+    },
+    {
+      "id": "L-13",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A service reading lineage holds a scope that permits it",
+      "evidence": []
+    },
+    {
+      "id": "L-14",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Recording must not slow the data path (`PTO-83`)",
+      "evidence": []
+    },
+    {
+      "id": "L-15",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced",
+      "text": "An event type has a schema, a materialiser and an emitter, or it does not exist",
+      "evidence": [
+        "services/edc-extensions"
+      ]
+    },
+    {
+      "id": "L-16",
+      "page": "provenance-and-logging.md",
+      "prefix": "L",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Provenance is retained for the life of the deployment and survives a participant's departure",
+      "evidence": []
+    },
+    {
+      "id": "M-1",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every offering declares its data format and content type",
+      "evidence": []
+    },
+    {
+      "id": "M-2",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every offering declares its refinement stage",
+      "evidence": []
+    },
+    {
+      "id": "M-3",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every offering declares the vocabulary its *policy* is written in (`odrl:profile`)",
+      "evidence": []
+    },
+    {
+      "id": "M-4",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced.",
+      "text": "Every offering declares the semantic model its *payload* conforms to",
+      "evidence": []
+    },
+    {
+      "id": "M-5",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A deployment records its payload models in its rulebook",
+      "evidence": []
+    },
+    {
+      "id": "M-6",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The platform ships no payload model and imposes none",
+      "evidence": []
+    },
+    {
+      "id": "M-7",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An offering's declared model must be resolvable — a bare name is not a model reference",
+      "evidence": []
+    },
+    {
+      "id": "M-8",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Vocabularies are published in a machine-readable form, resolvable and unauthenticated",
+      "evidence": []
+    },
+    {
+      "id": "M-9",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "`schemas/` publishes every shape that crosses a repository boundary, generated from the models and never hand-edited, with a no-diff test",
+      "evidence": []
+    },
+    {
+      "id": "M-10",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced, untested",
+      "text": "`schemas/purpose-vocabulary.json` is regenerated whenever the ODRL profile changes — it carries the slug `enum` the *active profile* accepts, which no static schema can",
+      "evidence": []
+    },
+    {
+      "id": "M-11",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced.",
+      "text": "A vocabulary hub supporting editing and browsing exists (`DMO-19`)",
+      "evidence": []
+    },
+    {
+      "id": "M-12",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A vocabulary change states the consents it would widen, or states that it widens none",
+      "evidence": []
+    },
+    {
+      "id": "M-13",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The local hierarchy is authoritative for enforcement; external alignments are documentation",
+      "evidence": []
+    },
+    {
+      "id": "M-14",
+      "page": "data-models.md",
+      "prefix": "M",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Deployment-owned payload models have their own documented management process",
+      "evidence": []
+    },
+    {
+      "id": "P-1",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An organisation is not a participant until it has been promoted. Promotion requires a verified application, a resolved owner, and an accepted agreement",
+      "evidence": []
+    },
+    {
+      "id": "P-2",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Promotion issues an `OrganizationCredential` signed by the trust anchor",
+      "evidence": []
+    },
+    {
+      "id": "P-3",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every participant holds at minimum a data space membership credential (`DSSC-IAM-08`)",
+      "evidence": []
+    },
+    {
+      "id": "P-4",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced, untested",
+      "text": "Onboarding is idempotent — re-running it must not duplicate a participant, an owner, a credential or an agreement acceptance",
+      "evidence": []
+    },
+    {
+      "id": "P-5",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "declared",
+      "status_raw": "Declared, and now carried by the credential.",
+      "text": "Assurance levels for verification are the deployment's responsibility (`DSSC-IAM-14`, KYC/KYB). For an **organisation** the platform records *that* verification happened (`verified_by`, `evidence_ref`); for a **natural person** the credential additionally records *who attested and by what method* (`verifiedBy`, `verificationMethod`)",
+      "evidence": []
+    },
+    {
+      "id": "P-6",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A DID document is served only by the instance that holds that DID's key. A **subject** DID has no key and its document carries no verification method — it resolves so that consent records and provenance can point at it, and asserts nothing it cannot back",
+      "evidence": []
+    },
+    {
+      "id": "P-7",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A DID's private key never leaves the instance that generated it, and is encrypted at rest. **The trust anchor holds no private key but its own, and a natural person has none**",
+      "evidence": []
+    },
+    {
+      "id": "P-8",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A presentation query is answered only to a **verifier** that proves control of its own DID *and* presents an access token this participant's STS granted it. The grant's scope bounds what the presentation may contain (`DSSC-IAM-13`, proof of control)",
+      "evidence": []
+    },
+    {
+      "id": "P-8a",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold",
+      "evidence": []
+    },
+    {
+      "id": "P-8b",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The revocation list is served signed, by the trust anchor, GZIP-encoded as StatusList2021 requires",
+      "evidence": []
+    },
+    {
+      "id": "P-8c",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "**The same rule applies to a credential's issuer.** A service verifying a user Verifiable Credential resolves the issuer's DID document and reads the key out of it — never a key it was handed or mounted — and refuses an issuer the dataspace trust list does not carry as **active**",
+      "evidence": []
+    },
+    {
+      "id": "P-9",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every issued credential is allocated a distinct StatusList index",
+      "evidence": [
+        "tests/test_status_list_allocation.py"
+      ]
+    },
+    {
+      "id": "P-10",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A credential's status bit is set **only** on revocation, never at issuance",
+      "evidence": []
+    },
+    {
+      "id": "P-11",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "Signature verification is never skipped, in any environment",
+      "evidence": []
+    },
+    {
+      "id": "P-12",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The list of participants, including inactive ones, is published to participants (`DSSC-TRF-05`)",
+      "evidence": [
+        "services/federated-catalog/tests/test_registry_active.py"
+      ]
+    },
+    {
+      "id": "P-12a",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The list of **accredited entities** — trust anchors and trust service providers, **including revoked ones** — is published machine-readably and unauthenticated (`DSSC-TRF-05`, `-07`, `-17`, `DSSC-BIZ-143`)",
+      "evidence": []
+    },
+    {
+      "id": "P-12b",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Every entry names its **scope of attestation** (`DSSC-TRF-19`), and a trust service provider names the anchor it derives authority from (`DSSC-TRF-21`)",
+      "evidence": []
+    },
+    {
+      "id": "P-12c",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Withdrawing accreditation **marks an entry revoked with a reason; it never deletes it**",
+      "evidence": []
+    },
+    {
+      "id": "P-13",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The revocation list is public and unauthenticated",
+      "evidence": []
+    },
+    {
+      "id": "P-14",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Trust services validate attestations submitted by participants against the criteria (`DSSC-TRF-38`)",
+      "evidence": []
+    },
+    {
+      "id": "P-15",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Every instance's encryption key must be backed up outside the cluster; losing one makes that instance's DID keys unrecoverable",
+      "evidence": []
+    },
+    {
+      "id": "P-16",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Revoking a participant's membership credential removes their ability to negotiate — the DCP presentation query stops satisfying the membership constraint",
+      "evidence": [
+        "services/identity-registry/tests/test_status_list_allocation.py"
+      ]
+    },
+    {
+      "id": "P-17",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "Revocation does not retroactively invalidate completed transfers. What was lawfully transferred stays transferred; the obligations attached to it (retention, deletion) survive",
+      "evidence": []
+    },
+    {
+      "id": "P-18",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Revocation of a *consent* is different from revocation of a *credential* and terminates a running transfer",
+      "evidence": []
+    },
+    {
+      "id": "P-19",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A departing participant's provenance records are retained; they are evidence about the data space, not the participant's property",
+      "evidence": []
+    },
+    {
+      "id": "P-20",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A participant's identity is **proved, never issued**: the organisation generates its own keypair, publishes its own DID document, and presents a self-issued token signed by that key to enrol (`DSSC-IAM-13`, proof of control). The anchor mints no participant key and no STS secret",
+      "evidence": []
+    },
+    {
+      "id": "P-21",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A credential is issued only to a DID whose control has been proved, and is **delivered to the holder's own credential store** — the issuer keeps the issuance record, the holder keeps what it can present",
+      "evidence": []
+    },
+    {
+      "id": "P-22",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "**Where to enrol is discoverable from the anchor's DID alone**: its DID document publishes an `IssuerService` entry, and that URL is routed and serves issuer metadata",
+      "evidence": []
+    },
+    {
+      "id": "P-23",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Conformity is **re-checked**, not asserted once at onboarding, against a machine-readable projection of this page (`DSSC-TRF-02`, `-03`, `-04`)",
+      "evidence": []
+    },
+    {
+      "id": "P-24",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A participant that no criterion covers is a **finding**, not a pass",
+      "evidence": []
+    },
+    {
+      "id": "P-25",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "**Suspension is a state, not a slower revocation**: a verifier can tell the two apart, and a suspension can be lifted on the credential the holder already has (`DSSC-TRF-04`)",
+      "evidence": [
+        "services/identity-registry/tests/test_suspension.py"
+      ]
+    },
+    {
+      "id": "P-26",
+      "page": "participation.md",
+      "prefix": "P",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "**Revocation is terminal.** Nothing transitions out of it, no path clears a revocation bit, and re-admitting a revoked organisation is a fresh verification and a fresh credential — not a reinstatement",
+      "evidence": []
+    },
+    {
+      "id": "X-1",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "Control-plane exchanges between participants use DSP `2025-1`. No other control protocol is accepted",
+      "evidence": []
+    },
+    {
+      "id": "X-2",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced, and now checked.",
+      "text": "A participant advertising a DSP endpoint without the `/2025-1` suffix is not reachable",
+      "evidence": [
+        "libs/ds-edc/tests/test_protocol_pin.py"
+      ]
+    },
+    {
+      "id": "X-3",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The data plane is HTTP pull. Push, streaming and file-drop transfers are not supported",
+      "evidence": []
+    },
+    {
+      "id": "X-4",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "No data moves before the control plane has completed identification, authentication and authorisation (`DSSC-DEX-36`)",
+      "evidence": [
+        "services/dataset-api-mock/tests/test_query_routing.py"
+      ]
+    },
+    {
+      "id": "X-5",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The data plane re-checks the decision on every request rather than trusting the EDR alone",
+      "evidence": []
+    },
+    {
+      "id": "X-6",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "The data plane must fail closed when the control plane is unreachable",
+      "evidence": [
+        "services/dataset-api-mock/tests/test_fail_closed.py"
+      ]
+    },
+    {
+      "id": "X-6b",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced, and asserted live",
+      "text": "**The negotiation gate must fail closed when the policy decision point is unreachable**",
+      "evidence": []
+    },
+    {
+      "id": "X-7",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "The data-plane endpoint handed to a consumer is the participant's own, not the provider's EDC",
+      "evidence": []
+    },
+    {
+      "id": "X-8",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "A query result is bounded. A provider may cap `limit` and must not be obliged to return an unbounded set",
+      "evidence": []
+    },
+    {
+      "id": "X-9",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced, untested",
+      "text": "The query surface is dataset-scoped: a query naming a dataset the agreement does not cover is refused",
+      "evidence": []
+    },
+    {
+      "id": "X-10",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A timeout is reported as a timeout, never as a terminal protocol state",
+      "evidence": [
+        "libs/ds-edc/tests/test_polling.py"
+      ]
+    },
+    {
+      "id": "X-11",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "enforced",
+      "status_raw": "Enforced.",
+      "text": "A failed termination is reported as failed",
+      "evidence": [
+        "libs/ds-edc/tests/test_termination.py"
+      ]
+    },
+    {
+      "id": "X-12",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "The inventory above is authoritative and is updated in the same commit as any version change",
+      "evidence": []
+    },
+    {
+      "id": "X-13",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "partly enforced",
+      "status_raw": "Partly enforced.",
+      "text": "The protocol publishes a machine-readable description of its capabilities and endpoints (`DSSC-DEX-38`)",
+      "evidence": []
+    },
+    {
+      "id": "X-14",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "The DSP version is changed only by the governance authority, never per participant",
+      "evidence": []
+    },
+    {
+      "id": "X-15",
+      "page": "data-exchange.md",
+      "prefix": "X",
+      "status": "declared",
+      "status_raw": "Declared",
+      "text": "A version change is announced before it ships",
+      "evidence": []
+    }
+  ],
+  "open_non_conformances": [
+    {
+      "blueprint_rows": [
+        "DSSC-AUP-45",
+        "-46"
+      ],
+      "page": "policies.md",
+      "rules": [
+        "A-4"
+      ],
+      "section": null,
+      "detail": "**Partly.** The silent skip is fixed — `compliance.yml` no longer passes `--participants`, and a path that is given and missing is a hard error rather than an absence. CI now iterates `services/connector/governance-*/governance.yaml` rather than naming one, so a producer added tomorrow is validated without editing the workflow, and a loop matching nothing is a hard failure. What still runs nowhere automatically: `owner-participant` and `controller_role` need a live registry, so they run only under `task compliance:validate --identity-registry-url`"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-AUP-06"
+      ],
+      "page": "policies.md",
+      "rules": [
+        "A-9"
+      ],
+      "section": null,
+      "detail": "A policy's validity window is declared, reported by the `declared-not-enforced` check, and **not emitted** — because emitting a term nothing enforces is what this very row forbids. Closing it means binding a date operand in `services/edc-extensions` first; until then this is a stated incapacity, not a silent one"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-PTO-40",
+        "-41"
+      ],
+      "page": "provenance-and-logging.md",
+      "rules": [
+        "L-1",
+        "L-2"
+      ],
+      "section": null,
+      "detail": "`UsageObligationFulfilled` has **no emitter in any component and no inbound route** to receive one, so by `L-15` it does not exist. It is a *consumer* reporting an obligation it met — a cross-participant write — so it wants an authorisation model before it wants code. `L-2` is closed: `DataDisclosed` now has an in-repo emitter (`POST /admin/disclosure`) and carries a required, recomputable `consent_snapshot_hash`"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-DSO-12"
+      ],
+      "page": "catalogue-and-metadata.md",
+      "rules": [
+        "C-13"
+      ],
+      "section": null,
+      "detail": "**Partly.** The prerequisite is built — the rulebook is projected to `rules.json` and this table is now checked against it, which is what caught its next drift. What remains is the direction the row is actually about: no metadata check consults a rule in that projection. `ds-governance validate` checks DCAT-AP and the ODRL profile, neither of which is *this rulebook*"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-DSO-14",
+        "-15"
+      ],
+      "page": "catalogue-and-metadata.md",
+      "rules": [],
+      "section": "4",
+      "detail": "Metadata versioning is not implemented: a consumer cannot ask what an offering said when they negotiated. Blocked on a design decision — version the offering, or snapshot it into the agreement"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-PTO-03",
+        "-42",
+        "-46",
+        "-57",
+        "-63"
+      ],
+      "page": "provenance-and-logging.md",
+      "rules": [],
+      "section": "5",
+      "detail": "Observability. Listed in §2 so it is not mistaken for a declared exclusion, and here because it is a rule the code does not keep. Steps 1 and 2 are done — reachability is gated per deployment, all four service charts emit a `ServiceMonitor` under the same flag, and the metric set is a table in the rulebook. **No tracing**: `OpenTelemetry` spans correlated by `dsp_agreement_id` are not started, and three of the four SLIs need them"
+    },
+    {
+      "blueprint_rows": [
+        "DSSC-DEX-38"
+      ],
+      "page": "data-exchange.md",
+      "rules": [
+        "X-13"
+      ],
+      "section": null,
+      "detail": "Partly enforced, and **not** a defect. The protocol's own capability description *is* served; what is absent is an OpenAPI document for EDC's Management API, which needs a module not in the BOMs. A capability decision, and the surface is private"
+    }
+  ]
+}

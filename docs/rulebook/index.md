@@ -32,14 +32,53 @@ Each rule carries an **enforcement status**:
 | Marker | Meaning |
 |---|---|
 | **Enforced** | Code refuses the violating case, and a test covers it |
-| **Enforced, untested** | Code refuses the violating case; no test asserts it |
+| **Partly enforced** | Code refuses some violating cases and not others; the status says which |
 | **Declared** | The rule is a decision, not a check — nothing could enforce it automatically |
 | **Not enforced** | The rule is stated, the code does not currently keep it. Carries a link to the defect task |
+
+**Those four, and no synonyms.** Nuance goes after a comma — "Enforced, untested" and
+"Enforced, with a declared deviation" are both *enforced*, and the qualifier is for a reader.
+The marker itself is what an assessor filters on, so a page reading "Partially enforced" while
+six others read "Partly enforced" is not a finer distinction, it is a value nobody can grep
+for. `libs/ds-e2e/tests/test_rulebook_projection.py` refuses anything outside the four.
 
 A rulebook that overstates enforcement is worse than no rulebook, because it converts a
 known gap into an unknown one. Where the platform does not currently keep a rule, that is
 recorded here rather than in a separate place a reader might not reach. The open items are
 tracked in `.agents/defects.md`.
+
+## The rulebook is machine-readable
+
+`DSSC-DSO-12` asks that metadata be checked against this rulebook, and for a long time
+nothing could be: the rulebook was nine markdown pages maintained by hand, and **nothing read
+the document**. [`rules.json`](rules.json) is the projection of it — every rule with its id,
+page, status and the files it cites as evidence, plus the open non-conformances of
+[Scope and deviations](scope-and-deviations.md) §4. The site serves it, so a check does not
+have to parse markdown to ask what this dataspace decided.
+
+The markdown stays the source; the JSON is generated from it by `task rulebook:generate`, and
+a test fails if the two disagree.
+
+**Why the markdown is the source, and not a YAML file this is generated from.** The obvious
+objection to parsing prose is that a parser can quietly stop matching — and it did: the first
+version of this one read 128 of 137 rules, because nine are lettered (`P-8a`, `D-22b`, `X-6b`)
+and the pattern ended at the digits. Nothing failed; the record just said less than it did.
+
+The fix is not to move authorship into YAML. It is that **the parse is total**: a
+`| # | Rule | Status |` header is what makes a table a rule table, *every* row beneath one must
+parse or the build fails naming the page and line, and a rule-shaped row outside such a table
+is reported too. A silent drop is unrepresentable in either direction, which is the guarantee a
+schema would have bought — without making the most-read, most-argued document in the repository
+a generated artifact nobody may edit. A status here is a paragraph of reasoning with links and
+citations, not a field; it is written where it reads best.
+
+**It is also what keeps this section honest.** A compliance record drifts in the direction
+nobody checks for — the code gets better and the pages do not move — and that had already
+happened to ten rows at once. Every CI run now re-asks: is every status one of the four
+markers, is every rule id unique and stated by the page its prefix names, does every file
+cited as evidence still exist, and does every open non-conformance still cite a rule that is
+not enforced. What it cannot yet do is the direction `C-13` is really about: no metadata check
+consults a rule in the projection.
 
 ## Contents
 
