@@ -4,6 +4,18 @@
       "additionalProperties": false,
       "description": "A semantic vocabulary this deployment publishes a local copy of.",
       "properties": {
+        "definition": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Definition"
+        },
         "format": {
           "default": "jsonld",
           "title": "Format",

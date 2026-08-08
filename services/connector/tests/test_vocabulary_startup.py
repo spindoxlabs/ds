@@ -300,23 +300,50 @@ def test_the_registry_is_not_under_data():
     assert default is None, "the registry resolves beside governance.yaml, not in data/"
 
 
-def test_the_shipped_registry_is_empty():
+def test_no_shipped_vocabulary_needs_the_network_at_boot():
     """`V-5`, asserted rather than trusted.
 
-    A vocabulary committed here would make every `task start` — and every CI run,
-    and every fresh clone — depend on an external host at boot, because the
-    loader fetches what it finds registered. That is a one-line change for
-    somebody adding an example, so it gets a test rather than a comment.
+    **This used to require the shipped registries to be empty**, and that was the
+    right assertion while `source:` was the only way to register anything: the
+    loader fetches what it finds, so one committed entry made every `task start`,
+    every CI run and every fresh clone depend on an external host at boot.
+
+    `definition:` removed the reason without removing the risk. An entry the
+    participant ships needs no fetch, so the seam can be exercised offline — but
+    a `source:` added beside it still reintroduces the boot dependency, and now
+    it would arrive next to entries that look fine. So the assertion moved to the
+    property that was always the point: **nothing shipped here is fetched.**
     """
-    # Every shipped registry, not one hardcoded path: the participant rename
-    # replaced `governance/` with one directory per participant, and a test
-    # naming a single one both went stale and stopped covering the others.
     registries = sorted(UNIT.glob("governance-*/vocabularies.yaml"))
     assert registries, f"no governance-*/vocabularies.yaml under {UNIT}"
     for path in registries:
         registry = yaml.safe_load(path.read_text(encoding="utf-8"))
-        assert registry["vocabularies"] == [], (
-            f"{path.relative_to(UNIT)} ships a vocabulary. The platform ships none "
-            "(rulebook M-6): registering one makes a default install fetch it at "
-            "startup, and fail if it cannot."
-        )
+        for entry in registry["vocabularies"] or []:
+            assert not entry.get("source"), (
+                f"{path.relative_to(UNIT)} registers {entry['slug']!r} with a "
+                "`source:`, so a default install fetches it at startup and fails "
+                "if it cannot. Ship the document with `definition:` instead."
+            )
+            assert entry.get("definition"), (
+                f"{path.relative_to(UNIT)} registers {entry['slug']!r} with "
+                "neither `source:` nor `definition:` — startup cannot obtain it "
+                "and will refuse to boot (V-4)."
+            )
+
+
+def test_no_shipped_vocabulary_imposes_a_real_world_model():
+    """`M-6` — the platform mandates no payload model.
+
+    A fixture exercising the seam is not the platform imposing a model, and the
+    difference is visible in the IRI: these are `*.dataspaces.localhost`, the dev
+    fixture namespace, the same rule the rest of this repository follows. An
+    entry naming a real published ontology would be a deployment's choice
+    committed as everyone's default.
+    """
+    for path in sorted(UNIT.glob("governance-*/vocabularies.yaml")):
+        registry = yaml.safe_load(path.read_text(encoding="utf-8"))
+        for entry in registry["vocabularies"] or []:
+            assert ".dataspaces.localhost" in entry["iri"], (
+                f"{path.relative_to(UNIT)} ships {entry['iri']!r}. A real model is "
+                "a deployment overlay, not a committed fixture (M-6)."
+            )

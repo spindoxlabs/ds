@@ -1,0 +1,25 @@
+{
+  "@context": {
+    "@vocab": "https://rec.dataspaces.localhost/ns/meter-readings#",
+    "dct": "http://purl.org/dc/terms/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "deviceId": {
+      "@id": "https://rec.dataspaces.localhost/ns/meter-readings#deviceId",
+      "@type": "xsd:string"
+    },
+    "timestamp": {
+      "@id": "https://rec.dataspaces.localhost/ns/meter-readings#timestamp",
+      "@type": "xsd:dateTime"
+    },
+    "kwh": {
+      "@id": "https://rec.dataspaces.localhost/ns/meter-readings#kwh",
+      "@type": "xsd:decimal"
+    }
+  },
+  "@id": "https://rec.dataspaces.localhost/ns/meter-readings",
+  "@type": "rdfs:Class",
+  "dct:title": "Meter readings (dev fixture)",
+  "dct:description": "A dev fixture vocabulary, deliberately domain-neutral. It exists so the semantic-model seam can be exercised end to end offline: a producer declares this IRI in governance.yaml, this participant serves it at GET /ns/meter-readings from a definition it ships, and the contract check compares the declaration against what the data plane renders. A real deployment points dcat.conforms_to at its own ontology profile instead and registers that IRI here; nothing about the mechanism changes.",
+  "dct:hasVersion": "0.1.0"
+}

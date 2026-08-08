@@ -26,4 +26,18 @@
 # register the result. `task vocab:fetch` fills the cache; a deployment overlay is
 # `vocabularies.<name>.yaml`, replace-by-slug.
 
-vocabularies: []
+vocabularies:
+  # **This participant's own model, served by this participant.** No `source:`,
+  # so `task start` still reaches no network (`V-5`) — `definition:` names a file
+  # shipped beside this registry, and the connector publishes it at
+  # `GET /ns/meter-readings`.
+  #
+  # A deployment aligning these columns to a published ontology replaces the
+  # `iri` and swaps `definition:` for `source:`. The mechanism does not change,
+  # and ds does not get a say in which model (`M-6`).
+  - slug: meter-readings
+    title: Meter readings (dev fixture)
+    version: "0.1.0"
+    iri: https://rec.dataspaces.localhost/ns/meter-readings
+    definition: meter-readings.jsonld
+    format: jsonld

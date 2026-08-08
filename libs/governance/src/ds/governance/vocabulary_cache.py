@@ -91,6 +91,51 @@ def read_cached(cache_dir: Path | str, vocab: Vocabulary) -> dict | None:
         ) from exc
 
 
+def _write_document(cache_dir: Path | str, vocab: Vocabulary, body: bytes, origin: str) -> Path:
+    """Validate and write one vocabulary document into the cache.
+
+    Parsed **before** it is written, wherever it came from, so a login page
+    served with a 200 or a half-edited local file is refused here rather than
+    cached and served from ``/ns/{slug}`` as though it were a vocabulary. A cache
+    is only worth having if what it holds was checked once.
+    """
+    if len(body) > MAX_BYTES:
+        raise VocabularyFetchError(
+            f"vocabulary '{vocab.slug}' is {len(body)} bytes, over the "
+            f"{MAX_BYTES}-byte limit — that is not a vocabulary document"
+        )
+    try:
+        document = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise VocabularyFetchError(
+            f"vocabulary '{vocab.slug}' from {origin} is not JSON-LD: {exc}. "
+            "Only 'format: jsonld' is supported — convert the source and register "
+            "the result."
+        ) from exc
+
+    path = cache_path(cache_dir, vocab)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def _copy_definition(cache_dir: Path | str, vocab: Vocabulary) -> Path:
+    """Publish a definition this participant ships, from committed configuration.
+
+    No socket: the participant *is* the publisher, so there is nothing to fetch.
+    `load_vocabularies` has already resolved the path and refused one that does
+    not exist or escapes the registry's directory, so by here it is a readable
+    file inside a config directory.
+    """
+    source = Path(vocab.definition)
+    written = _write_document(cache_dir, vocab, source.read_bytes(), str(source))
+    logger.info("Published vocabulary '%s' from %s", vocab.slug, source)
+    return written
+
+
 def fetch_one(
     cache_dir: Path | str,
     vocab: Vocabulary,
@@ -99,10 +144,15 @@ def fetch_one(
     timeout: float = DEFAULT_TIMEOUT,
 ) -> Path:
     """Retrieve *vocab* into the cache and return the path written."""
+    if vocab.definition:
+        return _copy_definition(cache_dir, vocab)
+
     if not vocab.source:
         raise VocabularyFetchError(
-            f"vocabulary '{vocab.slug}' has no source and no cached copy. Supply "
-            f"{cache_path(cache_dir, vocab)} manually, or add a 'source:' URL."
+            f"vocabulary '{vocab.slug}' has no source, no definition and no cached "
+            f"copy. Supply {cache_path(cache_dir, vocab)} manually, add a 'source:' "
+            f"URL to mirror somebody else's vocabulary, or a 'definition:' file to "
+            f"publish this participant's own."
         )
 
     owned = client is None
@@ -119,31 +169,7 @@ def fetch_one(
         if owned:
             http.close()
 
-    if len(body) > MAX_BYTES:
-        raise VocabularyFetchError(
-            f"vocabulary '{vocab.slug}' is {len(body)} bytes, over the "
-            f"{MAX_BYTES}-byte limit — that is not a vocabulary document"
-        )
-
-    # Parsed before it is written, so a login page or an error document served
-    # with a 200 is refused here rather than cached and served from `/ns/{slug}`
-    # as though it were SAREF. A cache is only worth having if what it holds was
-    # checked once.
-    try:
-        document = json.loads(body.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise VocabularyFetchError(
-            f"vocabulary '{vocab.slug}' from {vocab.source} is not JSON-LD: {exc}. "
-            "Only 'format: jsonld' is supported — convert the source and register "
-            "the result."
-        ) from exc
-
-    path = cache_path(cache_dir, vocab)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    path = _write_document(cache_dir, vocab, body, vocab.source)
     logger.info("Cached vocabulary '%s' from %s", vocab.slug, vocab.source)
     return path
 
@@ -166,13 +192,22 @@ def ensure_cached(
     ``vocab:fetch --refresh`` path. Startup never refreshes: a cached copy is
     what the deployment is serving, and silently replacing it on a restart would
     change what a running catalogue's IRIs resolve to.
+
+    **A shipped definition is always re-published, refresh or not**, and the
+    asymmetry is deliberate. A fetched copy is a snapshot of a document somebody
+    else controls, so replacing it on a restart changes what a running catalogue
+    resolves to behind the operator's back — that is what `refresh` exists to
+    make deliberate. A `definition:` is *this deployment's own committed file*:
+    it changes only by a reviewed commit, the commit is the deliberate act, and a
+    cache that ignored it would serve a version of the participant's vocabulary
+    that no longer exists in the repository.
     """
     written: list[Path] = []
     failures: list[str] = []
 
     for vocab in registry.vocabularies:
         path = cache_path(cache_dir, vocab)
-        if path.is_file() and not refresh:
+        if path.is_file() and not refresh and not vocab.definition:
             continue
         try:
             written.append(fetch_one(cache_dir, vocab, client=client))

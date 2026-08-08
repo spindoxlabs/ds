@@ -36,7 +36,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,55 @@ class Vocabulary(BaseModel):
     #: operator" — legitimate for a vocabulary behind a login or published only
     #: as a download.
     source: str | None = None
+    #: A JSON-LD file **this participant ships**, as a path relative to
+    #: `vocabularies.yaml`.
+    #:
+    #: Distinct from `source`, and not an overload of it. `source` mirrors a
+    #: vocabulary somebody else publishes — SAREF, CIM — and is fetched over
+    #: HTTP. This is for the case the registry could not express at all: a
+    #: participant that **defines its own model** for its own response shape and
+    #: serves it from its own `/ns/{slug}`. There is no URL to fetch, because
+    #: this participant is the publisher.
+    #:
+    #: That case is the common one, not the exotic one. A dataset's payload model
+    #: is a fact about what a producer's data plane returns, so most producers
+    #: are describing their own shape rather than conforming to a standard —
+    #: and a deployment that *does* align to SAREF4ENER simply sets `source`
+    #: instead. It also keeps `V-5` true: a shipped definition means a registered
+    #: vocabulary that needs no network at startup, so `task start` stays
+    #: offline-capable with entries present.
+    #:
+    #: Resolved to an absolute path when the registry is loaded, so nothing
+    #: downstream needs to know where the file was written.
+    definition: str | None = None
     format: str = JSONLD
+
+    @field_validator("definition")
+    @classmethod
+    def _check_definition(cls, value: str | None) -> str | None:
+        if value is None:
+            return value
+        if not value:
+            raise ValueError("vocabulary definition must name a file")
+        # Read from a committed config directory and served on a public route, so
+        # the path is constrained rather than trusted — the same reason `slug` is.
+        if ".." in Path(value).parts:
+            raise ValueError(
+                f"vocabulary definition {value!r} must stay within the registry's "
+                "directory — it is committed configuration, not an arbitrary read"
+            )
+        return value
+
+    @model_validator(mode="after")
+    def _check_one_origin(self) -> Vocabulary:
+        if self.source and self.definition:
+            raise ValueError(
+                f"vocabulary '{self.slug}' declares both a 'source' and a "
+                "'definition'. One mirrors somebody else's vocabulary and the "
+                "other publishes this participant's own — which of the two is "
+                "being served is not something to resolve by precedence."
+            )
+        return self
 
     @field_validator("slug")
     @classmethod
@@ -160,7 +208,44 @@ def _read(path: Path) -> VocabularyRegistry:
         raw = yaml.safe_load(fh) or {}
     if not isinstance(raw, dict):
         raise VocabularyError(f"{path.name} must be a mapping with a 'vocabularies' key")
-    return VocabularyRegistry.model_validate(raw)
+    registry = VocabularyRegistry.model_validate(raw)
+    for vocab in registry.vocabularies:
+        if vocab.definition:
+            vocab.definition = str(_resolve_definition(path, vocab))
+    return registry
+
+
+def _resolve_definition(registry_path: Path, vocab: Vocabulary) -> Path:
+    """A shipped definition, resolved against the registry that names it.
+
+    Two checks, and both are refusals rather than warnings.
+
+    **It must stay inside the registry's directory.** The field validator already
+    refuses `..` in the written path, but a symlink does not contain `..` and
+    still leaves the directory — so containment is re-checked after resolution,
+    against the real path. This file is read by a service and served on a public
+    unauthenticated route; "committed configuration" is a claim about where it
+    came from, and that claim is what is being enforced.
+
+    **It must exist now, not at fetch time.** A registry naming a file that is
+    not there is a deployment that will fail to boot (`V-4`), and the useful
+    moment to say so is while reading the registry — with the registry's path in
+    hand — not later from a cache filler that only knows a slug.
+    """
+    base = registry_path.parent.resolve()
+    resolved = (base / vocab.definition).resolve()
+    if not resolved.is_relative_to(base):
+        raise VocabularyError(
+            f"vocabulary '{vocab.slug}' definition {vocab.definition!r} resolves to "
+            f"{resolved}, outside {base}"
+        )
+    if not resolved.is_file():
+        raise VocabularyError(
+            f"vocabulary '{vocab.slug}' names definition {vocab.definition!r}, which "
+            f"does not exist at {resolved}. A shipped definition is committed "
+            f"configuration — if the file is meant to be fetched, use 'source:'."
+        )
+    return resolved
 
 
 def load_vocabularies(

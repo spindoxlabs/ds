@@ -1,0 +1,29 @@
+{
+  "@context": {
+    "@vocab": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#",
+    "dct": "http://purl.org/dc/terms/",
+    "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+    "substation": {
+      "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#substation",
+      "@type": "xsd:string"
+    },
+    "timestamp": {
+      "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#timestamp",
+      "@type": "xsd:dateTime"
+    },
+    "headroomKw": {
+      "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#headroomKw",
+      "@type": "xsd:decimal"
+    },
+    "loadKw": {
+      "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#loadKw",
+      "@type": "xsd:decimal"
+    }
+  },
+  "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity",
+  "@type": "rdfs:Class",
+  "dct:title": "Substation capacity headroom (dev fixture)",
+  "dct:description": "A second producer's vocabulary, and the point of having two: conforms_to is per dataset and per producer, so two participants declaring different models in one dataspace is the normal case rather than a conflict to resolve. Domain-neutral by design — see the note on the REC's meter-readings fixture.",
+  "dct:hasVersion": "0.1.0"
+}

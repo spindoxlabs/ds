@@ -51,6 +51,13 @@ sources:
     tags: [grid, gold, capacity]
     source_system: DSO SCADA export
 
+    # A second producer, its own model, served from its own connector. Two
+    # participants declaring different models in one dataspace is the normal
+    # case — `conforms_to` is per dataset and per producer, which is why the
+    # platform states none (`M-6`). See the note on the REC's meter dataset.
+    dcat:
+      conforms_to: https://grid-operator.dataspaces.localhost/ns/grid-capacity
+
     dataspace:
       expose: true
       medallion: gold

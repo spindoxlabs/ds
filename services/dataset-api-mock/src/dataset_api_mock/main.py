@@ -154,6 +154,21 @@ DATASETS: dict[str, dict[str, Any]] = {
     "datasets.silver.meters_15m": {
         "asset_id": "datasets.silver.meters_15m",
         "requires_consent": True,
+        # **The model these columns mean, stated by the thing that renders them.**
+        #
+        # `governance.yaml`'s `dcat.conforms_to` says what the *producer declares*
+        # and is what ds publishes into the DSP catalogue. This says what the data
+        # plane actually serves. They are two holders of one fact, and until both
+        # existed nothing could compare them — a producer could declare SAREF4ENER
+        # and return whatever it liked, with `dct:conformsTo` an unverified claim
+        # in the catalogue (rulebook `data-models.md` §3, `T-3`).
+        #
+        # The IRI belongs to the *participant*, not to ds and not to a standards
+        # body: this is the REC's own model for its own response shape, served by
+        # the REC's own connector at `/ns/{slug}`. A deployment aligning to
+        # SAREF4ENER or CIM registers that IRI here instead — the mechanism does
+        # not care which, and `M-6` is why ds must not.
+        "conforms_to": "https://rec.dataspaces.localhost/ns/meter-readings",
         "row_filters": [{"handler": REC_REGISTRY, "args": {"column": "device_id"}}],
         "rows": [
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0001", "kwh": 0.42},
@@ -175,6 +190,11 @@ DATASETS: dict[str, dict[str, Any]] = {
     "datasets.gold.grid_capacity": {
         "asset_id": "datasets.gold.grid_capacity",
         "requires_consent": False,
+        # A second participant, a second model, served by that participant. The
+        # point of two is that neither is the platform's: `conforms_to` is per
+        # dataset and per producer, and two producers in one dataspace declaring
+        # different models is the normal case, not a conflict to resolve.
+        "conforms_to": "https://grid-operator.dataspaces.localhost/ns/grid-capacity",
         "rows": [
             {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-014",
              "headroom_kw": 320.5, "load_kw": 179.5},
@@ -283,6 +303,14 @@ def _catalogue_entry(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             else "Open weather feature sample rows."
         ),
         "dcat:keyword": keywords,
+        # Absent rather than null when the dataset declares none: a dataset that
+        # states no model and a dataset that states "no model" are different
+        # claims, and only the first is what an undeclared one means.
+        **(
+            {"dct:conformsTo": {"@id": spec["conforms_to"]}}
+            if spec.get("conforms_to")
+            else {}
+        ),
         "access_level": access_level,
         "requires_consent": spec["requires_consent"],
         # An external dataset holds no rows here; its count is the upstream's and

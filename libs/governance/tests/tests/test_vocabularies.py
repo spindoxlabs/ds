@@ -219,3 +219,103 @@ def test_a_file_that_is_not_a_mapping_is_refused(tmp_path):
 
 def test_an_empty_registry_object_is_valid():
     assert VocabularyRegistry().vocabularies == []
+
+
+# ── A definition this participant ships ───────────────────────────
+
+
+def _write(tmp_path, registry_yaml: str, *, definition: str | None = None):
+    (tmp_path / "vocabularies.yaml").write_text(registry_yaml, encoding="utf-8")
+    if definition is not None:
+        (tmp_path / "own.jsonld").write_text(definition, encoding="utf-8")
+    return tmp_path / "vocabularies.yaml"
+
+
+_ENTRY = (
+    "vocabularies:\n"
+    "  - slug: own\n"
+    "    title: Our own model\n"
+    "    iri: https://rec.dataspaces.localhost/ns/own\n"
+    "    definition: {definition}\n"
+)
+
+
+def test_a_definition_is_resolved_against_the_registry_that_names_it(tmp_path):
+    from ds.governance.vocabularies import load_vocabularies
+
+    path = _write(tmp_path, _ENTRY.format(definition="own.jsonld"), definition="{}")
+    registry = load_vocabularies(path)
+
+    resolved = Path(registry.vocabularies[0].definition)
+    assert resolved.is_absolute() and resolved == (tmp_path / "own.jsonld").resolve()
+
+
+def test_a_missing_definition_is_refused_when_the_registry_is_read(tmp_path):
+    """With the registry's path in hand, so the message can name where it looked.
+
+    A registry naming a file that is not there is a deployment that will fail to
+    boot (`V-4`); saying so from a cache filler that only knows a slug would say
+    it later and less usefully.
+    """
+    from ds.governance.vocabularies import VocabularyError, load_vocabularies
+
+    path = _write(tmp_path, _ENTRY.format(definition="absent.jsonld"))
+
+    with pytest.raises(VocabularyError, match="does not exist"):
+        load_vocabularies(path)
+
+
+def test_a_definition_may_not_escape_the_registry_directory(tmp_path):
+    from ds.governance.vocabularies import VocabularyError, load_vocabularies
+
+    outside = tmp_path.parent / "outside.jsonld"
+    outside.write_text("{}", encoding="utf-8")
+    registry_dir = tmp_path / "governance"
+    registry_dir.mkdir()
+    (registry_dir / "link.jsonld").symlink_to(outside)
+    path = _write(registry_dir, _ENTRY.format(definition="link.jsonld"))
+
+    with pytest.raises(VocabularyError, match="outside"):
+        load_vocabularies(path)
+
+
+def test_a_written_definition_may_not_traverse_upwards(tmp_path):
+    """Refused by the field validator, before any path is resolved."""
+    from pydantic import ValidationError
+
+    from ds.governance.vocabularies import VocabularyRegistry
+
+    with pytest.raises(ValidationError, match="within the registry"):
+        VocabularyRegistry.model_validate(
+            {
+                "vocabularies": [
+                    {
+                        "slug": "own",
+                        "title": "t",
+                        "iri": "https://x.test/ns/own",
+                        "definition": "../elsewhere.jsonld",
+                    }
+                ]
+            }
+        )
+
+
+def test_source_and_definition_are_mutually_exclusive():
+    from pydantic import ValidationError
+
+    from ds.governance.vocabularies import VocabularyRegistry
+
+    with pytest.raises(ValidationError, match="both a 'source' and a 'definition'"):
+        VocabularyRegistry.model_validate(
+            {
+                "vocabularies": [
+                    {
+                        "slug": "own",
+                        "title": "t",
+                        "iri": "https://x.test/ns/own",
+                        "source": "https://x.test/own.jsonld",
+                        "definition": "own.jsonld",
+                    }
+                ]
+            }
+        )

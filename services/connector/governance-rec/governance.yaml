@@ -54,6 +54,24 @@ sources:
           column: device_id
     tags: [meters, silver, pii, rec]
 
+    # The payload semantic model these columns conform to (rulebook
+    # `data-models.md` §3, `M-7`). **This is the producer's statement, and this
+    # file is the only place it can be made** — ds mandates no model and supplies
+    # no default (`M-6`).
+    #
+    # The IRI is this participant's own and this participant serves it: the REC
+    # publishes it from its own connector at `/ns/meter-readings`, registered in
+    # `vocabularies.yaml` with no `source`, so nothing here depends on an
+    # external host being up. A deployment aligning these columns to SAREF4ENER
+    # or CIM points `conforms_to` at that IRI instead; the mechanism is the same
+    # and ds does not get a say in which.
+    #
+    # It must agree with what the data plane actually renders. The dataset API
+    # states its own model on `/catalogue`, and `test_semantic_model_contract.py`
+    # compares the two — otherwise this is a claim nobody checks.
+    dcat:
+      conforms_to: https://rec.dataspaces.localhost/ns/meter-readings
+
     # One meter dataset serves several distinct reasons for processing; the
     # negotiated purpose decides which consent rows apply.
     dataspace:

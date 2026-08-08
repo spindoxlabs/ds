@@ -162,3 +162,80 @@ def test_status_reports_what_is_cached(tmp_path):
 def test_the_cache_path_stays_inside_the_cache_directory(tmp_path):
     """Belt and braces over the slug validator, because a public route reads this."""
     assert cache_path(tmp_path, vocab()).parent == tmp_path
+
+
+# ── A definition this participant ships ───────────────────────────
+#
+# The registry could previously only *mirror* somebody else's vocabulary:
+# `source` must be an absolute http(s) URI, so a participant that defines its own
+# model for its own response shape had no way to register it. That is the common
+# case, not the exotic one — a dataset's payload model is a fact about what a
+# producer's data plane returns.
+
+
+def _registry_with_definition(tmp_path, body: str = None):
+    registry_dir = tmp_path / "governance"
+    registry_dir.mkdir()
+    (registry_dir / "own.jsonld").write_text(
+        body if body is not None else json.dumps(DOCUMENT), encoding="utf-8"
+    )
+    (registry_dir / "vocabularies.yaml").write_text(
+        "vocabularies:\n"
+        "  - slug: own\n"
+        "    title: Our own model\n"
+        "    iri: https://rec.dataspaces.localhost/ns/own\n"
+        "    definition: own.jsonld\n",
+        encoding="utf-8",
+    )
+    return registry_dir
+
+
+def test_a_shipped_definition_is_published_without_a_network(tmp_path):
+    """No client is passed, so reaching the network would be a real request.
+
+    Returning without one is the assertion — this is what keeps `V-5` true for a
+    deployment that has entries registered: `task start` stays offline-capable.
+    """
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    registry = load_vocabularies(registry_dir / "vocabularies.yaml")
+
+    ensure_cached(tmp_path / "cache", registry)
+
+    assert read_cached(tmp_path / "cache", registry.vocabularies[0]) == DOCUMENT
+
+
+def test_a_shipped_definition_tracks_its_file_across_restarts(tmp_path):
+    """The asymmetry with `source`, and it is deliberate.
+
+    A fetched copy is a snapshot of a document somebody else controls, so a
+    restart must not silently replace it. A definition is *this deployment's own
+    committed file* — it changes only by a reviewed commit, and a cache that
+    ignored the change would serve a version of the participant's vocabulary that
+    no longer exists in the repository.
+    """
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    path = registry_dir / "vocabularies.yaml"
+    ensure_cached(tmp_path / "cache", load_vocabularies(path))
+
+    edited = {"@context": {"own": "https://rec.dataspaces.localhost/ns/own#"}}
+    (registry_dir / "own.jsonld").write_text(json.dumps(edited), encoding="utf-8")
+    ensure_cached(tmp_path / "cache", load_vocabularies(path))
+
+    registry = load_vocabularies(path)
+    assert read_cached(tmp_path / "cache", registry.vocabularies[0]) == edited
+
+
+def test_a_definition_that_is_not_jsonld_is_refused(tmp_path):
+    """Same rule as a fetched body. A half-edited local file reaching
+    `/ns/{slug}` as though it were a vocabulary is the failure this prevents."""
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path, body="not json at all")
+    registry = load_vocabularies(registry_dir / "vocabularies.yaml")
+
+    with pytest.raises(VocabularyFetchError, match="not JSON-LD"):
+        ensure_cached(tmp_path / "cache", registry)

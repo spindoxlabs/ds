@@ -26,4 +26,12 @@
 # register the result. `task vocab:fetch` fills the cache; a deployment overlay is
 # `vocabularies.<name>.yaml`, replace-by-slug.
 
-vocabularies: []
+vocabularies:
+  # The second producer's own model. See the note in the REC's registry — two
+  # participants declaring different models is the normal case.
+  - slug: grid-capacity
+    title: Substation capacity headroom (dev fixture)
+    version: "0.1.0"
+    iri: https://grid-operator.dataspaces.localhost/ns/grid-capacity
+    definition: grid-capacity.jsonld
+    format: jsonld
