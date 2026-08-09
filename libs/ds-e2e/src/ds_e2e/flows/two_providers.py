@@ -27,7 +27,6 @@ from __future__ import annotations
 
 import logging
 import urllib.parse
-from typing import Any
 
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
@@ -350,10 +349,3 @@ class TwoProvidersFlow(BaseFlow):
             result.fail_step("consumer credential", str(exc))
             return None
 
-    def _policy(self, dataset: dict[str, Any]) -> dict[str, Any]:
-        policies = dataset.get("hasPolicy") or dataset.get("odrl:hasPolicy") or []
-        if isinstance(policies, dict):
-            return policies
-        if isinstance(policies, list) and policies and isinstance(policies[0], dict):
-            return policies[0]
-        return {}

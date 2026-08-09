@@ -11,6 +11,7 @@ from ds_e2e.flows.chains import (
 )
 from ds_e2e.flows.consent_purpose import ConsentPurposeFlow
 from ds_e2e.flows.consent_request import ConsentRequestFlow
+from ds_e2e.flows.consent_withdrawal import ConsentWithdrawalFlow
 from ds_e2e.flows.dcp_trust import DcpTrustFlow
 from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
@@ -43,6 +44,10 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "lineage": LineageFlow,
     "two-providers": TwoProvidersFlow,
     "smoke": SmokeFlow,
+    # After `smoke`, which leaves the scoped wildcard consent behind that this
+    # flow has to out-rank with an explicit opt-out (`D-15`) — running it first
+    # would assert against a subject state the suite has not produced yet.
+    "consent-withdrawal": ConsentWithdrawalFlow,
     # **Last, and deliberately.** It stops a container and restarts it, so it is
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls

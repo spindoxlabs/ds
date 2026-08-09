@@ -268,6 +268,26 @@ class E2ESettings(BaseSettings):
         validation_alias="E2E_EDC_GRID_OPERATOR_MANAGEMENT_URL",
     )
 
+    #: How long to wait for a withdrawn consent to terminate a running transfer
+    #: before the `consent-withdrawal` flow calls it a failure.
+    #:
+    #: **A harness deadline, not a platform window**, and the distinction is the
+    #: whole of what was learned writing that flow. EDC's policy monitor has a
+    #: `edc.policy.monitor.period` that defaults to `PT1H`, and the obvious
+    #: reading — *that is how long a withdrawal takes to bite* — is **wrong**:
+    #: measured on 2026-08-09 with the period at both `PT1M` and `PT1H`, four
+    #: minutes after boot so no start-up pass was in play, termination landed
+    #: **3s** after withdrawal both times. Whatever schedules that evaluation, it
+    #: is not that setting.
+    #:
+    #: So this is generous on purpose: it bounds a wait, and a value near the
+    #: measured latency would turn ordinary jitter into a red flow. If a run ever
+    #: does exhaust it, the finding is real and belongs in the ledger — do not
+    #: raise the number to make it pass.
+    consent_withdrawal_timeout_seconds: float = Field(
+        120.0, validation_alias="E2E_CONSENT_WITHDRAWAL_TIMEOUT_SECONDS"
+    )
+
     #: The container serving the PDP the fail-closed flow stops (`E2E-06`).
     #:
     #: The **REC's**, and it must stay the connector `connector_url` addresses:
