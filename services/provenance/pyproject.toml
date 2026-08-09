@@ -20,7 +20,7 @@ dependencies = [
     "python-ulid>=2.0",
     "pyjwt[crypto]>=2.9",
     "ds-auth",
-    "ds-obs",
+    "ds-obs[tracing]",
 ]
 
 [project.optional-dependencies]

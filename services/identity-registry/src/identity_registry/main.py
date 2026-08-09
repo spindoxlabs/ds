@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 
 from ds_auth.production import ProductionGuard
-from ds_obs import configure_logging, install_metrics
+from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import FastAPI
 
 from .config import get_settings
@@ -259,6 +259,11 @@ def create_app() -> FastAPI:
     # pod default-deny still refused, and the only signal was a metric that never
     # appeared. A target needs a path to it in the same change.
     install_metrics(app, "ds-identity-registry")
+    # Spans for this service, and outbound spans for every httpx call it
+    # makes, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — the same variable
+    # the EDC's Java agent reads, so one value covers both. A no-op
+    # otherwise, and it says so once at startup.
+    install_tracing(app, "ds-identity-registry")
 
     # Mount by role, then check the result against an independent classification
     # of every path. `roles.py` explains why both halves exist; the short version

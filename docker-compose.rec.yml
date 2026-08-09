@@ -36,6 +36,15 @@ services:
       - "19193:19193"
       - "19194:19194"
     environment:
+      # Traces. The same switch the Python services read, so one value
+      # covers the whole exchange — `entrypoint.sh` attaches the Java agent
+      # when this is set and does nothing when it is not.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # **Per participant, because one image runs all three.** Without this
+      # every EDC's spans would arrive under the same name and the DSP hop —
+      # the thing worth tracing — would be invisible: consumer and provider
+      # would look like one service talking to itself.
+      OTEL_SERVICE_NAME: edc-rec
       # No EDC_API_KEY. It maps to the setting `edc.api.key`, which is read by
       # no class in connector.jar — it was a second name for the Management API
       # key that nothing consumed. The `${EDC_API_KEY}` *variable* still feeds
@@ -167,6 +176,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Traces, when a collector is configured. **The one switch**, and the EDCs
+      # below read the same variable through the OpenTelemetry Java agent — so a
+      # deployment turns tracing on for the whole exchange with one value, and
+      # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
       # never hears about DS_ENV now refuses to start on a dev default
@@ -252,6 +266,11 @@ services:
     ports:
       - "30000:30000"
     environment:
+      # Traces, when a collector is configured. **The one switch**, and the EDCs
+      # below read the same variable through the OpenTelemetry Java agent — so a
+      # deployment turns tracing on for the whole exchange with one value, and
+      # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
       # never hears about DS_ENV now refuses to start on a dev default
@@ -393,6 +412,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Traces, when a collector is configured. **The one switch**, and the EDCs
+      # below read the same variable through the OpenTelemetry Java agent — so a
+      # deployment turns tracing on for the whole exchange with one value, and
+      # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
       # never hears about DS_ENV now refuses to start on a dev default
@@ -476,6 +500,11 @@ services:
     ports:
       - "30006:30005"
     environment:
+      # Traces, when a collector is configured. **The one switch**, and the EDCs
+      # below read the same variable through the OpenTelemetry Java agent — so a
+      # deployment turns tracing on for the whole exchange with one value, and
+      # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
       # never hears about DS_ENV now refuses to start on a dev default

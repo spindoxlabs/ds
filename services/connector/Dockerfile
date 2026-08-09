@@ -16,7 +16,7 @@ COPY libs/ds-edc/ /build/ds-edc/
 COPY libs/ds-obs/ /build/ds-obs/
 RUN uv venv /opt/venv && \
     uv pip install --python /opt/venv/bin/python \
-      /build/governance /build/ds-auth /build/ds-edc /build/ds-obs
+      /build/governance /build/ds-auth /build/ds-edc '/build/ds-obs[tracing]'
 
 # Everything else comes from pyproject.toml and from nowhere else. There is no
 # fallback list: a dependency this service declares but the image lacks must

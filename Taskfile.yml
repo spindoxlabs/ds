@@ -1122,7 +1122,36 @@ tasks:
             done
           done
         fi
-        sleep 5
+        # **Wait for the management API, do not sleep at it.** This was `sleep 5`,
+        # and five seconds is not a property of anything — it is how long a JVM
+        # happened to take to boot, migrate its schema and bind :x9193 on the
+        # machine where it was written. `e2e:sync-providers` runs next and talks
+        # to exactly this port, so when the guess is short the sync reports
+        # `0 asset(s)` and the whole run fails on "published nothing", three
+        # tasks away from the cause.
+        #
+        # Exposed by adding the OpenTelemetry Java agent: ~5s of extra startup
+        # turned a race that usually passed into one that always failed. The
+        # agent did not break this; it stopped hiding it.
+        #
+        # **Any HTTP answer counts, including 401** — the management API requires
+        # auth, and "it refused me" is proof it is listening, which is the only
+        # question here. The health endpoint is on a *different* port (x9191), so
+        # a container reporting healthy says nothing about this one.
+        for port in 19193 29193 39193; do
+          echo -n "Waiting for EDC management API on :${port}... "
+          for i in $(seq 1 60); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+              "http://172.17.0.1:${port}/management/v3/assets/request" -X POST 2>/dev/null)
+            [ "$code" != "000" ] && break
+            sleep 1
+          done
+          if [ "$code" = "000" ]; then
+            echo "not listening after 60s" >&2
+            exit 1
+          fi
+          echo "ready (HTTP $code)"
+        done
         exit 0
       # **After the restart, not before** (`E2E-12`). `e2e:clean` syncs as its
       # last step and the restart above then replaces the store it published

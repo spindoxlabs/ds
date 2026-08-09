@@ -9,7 +9,7 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 COPY libs/ds-auth/ /build/ds-auth/
 COPY libs/ds-obs/ /build/ds-obs/
 RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv/bin/python /build/ds-auth /build/ds-obs
+    uv pip install --python /opt/venv/bin/python /build/ds-auth '/build/ds-obs[tracing]'
 
 COPY services/identity-registry/pyproject.toml ./
 COPY services/identity-registry/src/ src/

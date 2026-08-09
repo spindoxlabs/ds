@@ -12,7 +12,7 @@ COPY libs/governance/ /build/governance/
 COPY libs/ds-obs/ /build/ds-obs/
 RUN uv venv /opt/venv && \
     uv pip install --python /opt/venv/bin/python \
-      /build/ds-auth /build/governance /build/ds-obs
+      /build/ds-auth /build/governance '/build/ds-obs[tracing]'
 
 # Everything else comes from pyproject.toml and from nowhere else. The list this
 # replaces had drifted: it omitted `typer`, which cli/main.py imports.

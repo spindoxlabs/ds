@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from ds_obs import correlate_agreement
 from fastapi import APIRouter, Depends, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -92,6 +93,14 @@ async def transfer_process_event(
         )
         return {"status": "ok"}
 
+    # A transfer event carries only the **local** `contractId`, so the shared id
+    # comes from the agreement this connector recorded when the negotiation
+    # finalized — the same record, resolved just above, that the attribution
+    # below reads. Without this a transfer's spans and its negotiation's spans
+    # sit in the same backend with no value in common, which is the correlation
+    # this whole layer exists for.
+    correlate_agreement(agreement.get("dsp_agreement_id"))
+
     prov = request.app.state.prov
     common = {
         "transfer_id": event.transfer_id or "unknown",
@@ -135,6 +144,14 @@ async def contract_negotiation_event(
         "Contract-negotiation webhook: %s negotiation=%s agreement=%s",
         event.type, event.negotiation_id, event.agreement_id,
     )
+
+    # **The shared id, not the local one** (`EDCL-06`). Every span from here on —
+    # this handler's, the provenance write's, the outbound httpx call's — carries
+    # it, which is what makes "show me both sides of agreement X" answerable at
+    # all: the counterparty's spans carry the same value and its local id is a
+    # different string. `None` before FINALIZED, and that stamps nothing rather
+    # than a placeholder.
+    correlate_agreement(event.dsp_agreement_id)
 
     # One transaction for the whole event. The session auto-begins on first use,
     # so the work is done inline and committed once — calling ``db.begin()``

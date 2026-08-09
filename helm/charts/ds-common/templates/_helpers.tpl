@@ -145,6 +145,29 @@ one object per line, a person reading `docker logs` does not.
 - name: DS_LOG_ACCESS_HEALTH
   value: {{ . | quote }}
 {{- end }}
+{{- /*
+Traces, read by `ds_obs.tracing` in every Python service and by the
+OpenTelemetry Java agent in every EDC — one variable, both languages, which is
+why it keeps OpenTelemetry's own name instead of a `DS_` alias. Rulebook
+`provenance-and-logging.md` §5 step 3.
+
+**Rendered only when set, and unset by default.** Same rule as
+`global.monitoring.serviceMonitor`: a cluster with no collector should get no
+exporter rather than one aimed at a name that does not resolve, which retries on
+every span and reports the failure as the *service's* log noise.
+
+`global.tracing.attributes` is the escape hatch for everything else the SDK and
+the agent both read — sampling above all, since the default records every trace
+and a busy dataspace is not the place to discover that.
+*/}}
+{{- with ((.Values.global).tracing).endpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
+{{- range $name, $value := ((.Values.global).tracing).attributes }}
+- name: {{ $name }}
+  value: {{ $value | quote }}
+{{- end }}
 {{- end -}}
 
 {{/*

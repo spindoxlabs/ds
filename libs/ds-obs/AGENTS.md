@@ -1,11 +1,12 @@
 # ds-obs
 
-Logging configuration and HTTP metrics, shared by every Python service. Two things every
+Logging configuration, HTTP metrics and tracing, shared by every Python service. Things every
 deployable unit needs identically, and which were previously either **missing entirely**
-(logging) or **duplicated four times** (metrics).
+(logging, tracing) or **duplicated four times** (metrics).
 
-No runtime dependencies. `install_metrics` needs the `fastapi` extra; `configure_logging`
-does not, so a CLI can use it without pulling a web framework in.
+No runtime dependencies in the base package. `install_metrics` needs the `fastapi` extra and
+`install_tracing` needs `fastapi` plus `tracing`; `configure_logging` needs neither, so a CLI
+can use it without pulling a web framework or an OTLP exporter in.
 
 ## References
 
@@ -20,6 +21,7 @@ does not, so a CLI can use it without pulling a web framework in.
 |---|---|
 | Log level, format, filters | `logging.py` |
 | A new metric, or a label | `metrics.py` |
+| Spans, the exporter, correlation | `tracing.py` |
 
 ## Rules that are not visible from the code
 
@@ -47,6 +49,27 @@ does not, so a CLI can use it without pulling a web framework in.
   should add noise, never remove signal — so a non-2xx probe, or an access record whose
   shape is not uvicorn's, is always emitted.
 
+### Tracing
+
+- **`OTEL_EXPORTER_OTLP_ENDPOINT` is the only switch, and it is not a `DS_` name by
+  design.** The EDCs read the same variable through the OpenTelemetry Java agent
+  (`services/edc-connector/entrypoint.sh`), so one value covers the Python services and the
+  DSP hop between two participants' EDCs — and cannot cover half of it. Adding a
+  `DS_TRACING_ENABLED` beside it would be a second holder of one fact; the failure it
+  produces is a trace that stops at the DSP hop with nothing saying why.
+- **Correlate with `correlate_agreement`, never by tagging a span by hand.** It sets a
+  context variable and a span processor stamps `ds.dsp.agreement_id` on **every** span
+  started while it is set. Tagging at call sites puts the attribute on whichever span happens
+  to be current, so a span added later is silently unlabelled — the hand-kept-list shape
+  `E2E-03` and `E2E-14` both fixed.
+- **Always the *shared* `dsp_agreement_id`, never the local `agreement_id`** (`EDCL-06`).
+  The counterparty holds a different value for the local one, so correlating on it produces
+  two backends whose spans have nothing in common and no error anywhere.
+- **No SQLAlchemy instrumentation, and that is a decision.** It would need the ORM as a
+  dependency here, and it hooks engine *creation* — `connector.db.engine` builds its engine
+  at import, before any app factory runs. Installing it would give a working import, no
+  spans, and nothing saying so. DB spans want the engine passed in, per service.
+
 ## Adding it to a service
 
 1. `pyproject.toml`: `"ds-obs"` in `[project].dependencies`, and
@@ -54,7 +77,13 @@ does not, so a CLI can use it without pulling a web framework in.
 2. `Dockerfile`: `COPY libs/ds-obs/ /build/ds-obs/` and add `/build/ds-obs` to the by-path
    `uv pip install` beside the other libs.
 3. `main.py`: `configure_logging("<service>")` as the first statement of the app factory,
-   then `install_metrics(app, "<service>")` if the service's chart opens a scrape path.
+   then `install_metrics(app, "<service>")` if the service's chart opens a scrape path, then
+   `install_tracing(app, "<service>")`.
+
+For tracing the dependency is `"ds-obs[tracing]"` in `[project].dependencies` **and**
+`'/build/ds-obs[tracing]'` in the Dockerfile's by-path install — the extra is not implied by
+the path, so getting only one of the two produces an image whose `install_tracing` raises on
+an import a unit test never reaches.
 
 **Both halves in the same change, or neither.** An endpoint whose chart opens no scrape path
 is a target Prometheus is refused by default-deny, and the operator's only signal is a metric

@@ -208,6 +208,23 @@ http://keycloak.dataspaces.localhost {
 	reverse_proxy 172.17.0.1:9080
 }
 
+# ── Trace UI — Jaeger, dev only ──────────────────────────────────────────────
+#
+# Named rather than left on a host port, because the user's rule for anything
+# browser-facing here is a Caddy domain (root AGENTS.md's host-binding table).
+# The published :36686 stays as well: `task dev:*` runs services as host
+# processes outside this network, and a developer reading traces then is not
+# necessarily going through the gateway.
+#
+# **No auth wall, and this is dev-only.** Spans carry route templates, timings
+# and a DSP agreement id — no payloads and no credentials — and the container
+# holds them in memory until it stops. A deployment does not run this: the chart
+# exports to whatever collector the cluster already has, behind whatever that
+# cluster already requires.
+http://tracing.dataspaces.localhost {
+	reverse_proxy 172.17.0.1:36686
+}
+
 # ── SSO host — oauth2-proxy's own endpoints ──────────────────────────────────
 #
 # Docker service name, not 172.17.0.1: the proxy publishes no host port, so this

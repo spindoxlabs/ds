@@ -154,14 +154,15 @@ ensures it is by having no third-party observer.
 
 ## 5. Observability — the open gap
 
-**Still an open gap.** Two of the four steps below have moved and none is closed; recording
-that precisely, rather than omitting the section or claiming the capability, is its point.
+**Narrowing, and no longer the same gap.** Three of the four steps below are closed; step 4
+is the one left, and one of its four SLIs was already derivable. Recording that precisely,
+rather than omitting the section or claiming the whole capability, is its point.
 
 What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
 
 | Asked | Status |
 |---|---|
-| Transaction observability for monitoring and troubleshooting (`-03`) | **absent for transactions; the troubleshooting floor now exists.** Until `libs/ds-obs`, *no Python service configured logging at all* — the root logger dropped INFO, so every service's own `log.info` reached nobody and only failures were visible. A successful crawl and no crawl were indistinguishable in `docker logs`. That is now one configured, level-controlled format across every service (`DS_LOG_LEVEL`, `DS_LOG_FORMAT`, `DS_LOG_ACCESS_HEALTH`). It is a floor, not the capability: nothing correlates a transaction across services |
+| Transaction observability for monitoring and troubleshooting (`-03`) | **present as of 2026-08-09** — traces span the services and the DSP hop, correlated by `ds.dsp.agreement_id`; see step 3. Before that: the troubleshooting floor only.** Until `libs/ds-obs`, *no Python service configured logging at all* — the root logger dropped INFO, so every service's own `log.info` reached nobody and only failures were visible. A successful crawl and no crawl were indistinguishable in `docker logs`. That is now one configured, level-controlled format across every service (`DS_LOG_LEVEL`, `DS_LOG_FORMAT`, `DS_LOG_ACCESS_HEALTH`). It is a floor, not the capability: nothing correlates a transaction across services |
 | Horizontal and vertical requirements satisfied (`-42`, `-43`) | absent |
 | Security controls, audit trails, compliance documentation maintained (`-44`–`-46`) | audit trail partially — see L-12 |
 | Centralised metrics collection and visualisation | **absent, but every service is now a target.** `/metrics` is served by **all five** — `ds-identity-registry` was the last without one and gained it 2026-08-07, endpoint and `metricsFromPrometheus` NetworkPolicy in the same change — and scraped by nothing: no collector is deployed and **no chart emits a ServiceMonitor**, so `global.monitoring.serviceMonitor` opens the network path and nothing walks through it. That flag is now the only thing left between the targets and a collector |
@@ -227,15 +228,72 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    `/admin/participants/did:web:…`. An unmatched request reports `<unmatched>`. The distinction
    is load-bearing: the version this replaces labelled by raw URL and minted one permanent
    series per URL anyone tried, which is a cardinality leak reachable by an anonymous caller.
-3. OpenTelemetry traces across the DSP exchange, correlated by agreement id — which
-   requires settling the three-names-for-one-agreement-id problem first (defect P3-4).
+3. OpenTelemetry traces across the DSP exchange, correlated by agreement id.
+   **Done 2026-08-09.** The three-names-for-one-agreement-id problem it waited on was
+   settled by `EDCL-06`: `dsp_agreement_id` is the *shared* id, `agreement_id` is local,
+   and the correlation key has to be the first.
+
+   **One switch, two languages.** `OTEL_EXPORTER_OTLP_ENDPOINT` — OpenTelemetry's own
+   variable name, deliberately not a `DS_` alias — turns tracing on for the Python services
+   through `ds_obs.tracing` and for the EDCs through the OpenTelemetry Java agent, which
+   `services/edc-connector/entrypoint.sh` attaches on the same condition. So a deployment
+   cannot enable half an exchange, which is the one failure mode that would leave the DSP
+   hop dark while everything else looked instrumented. Unset means off everywhere, and each
+   process says which at startup: *"no spans arriving"* and *"never switched on"* are
+   otherwise the same observation.
+
+   **The DSP hop is the EDCs' to produce, not ours.** A negotiation runs consumer EDC →
+   provider EDC and neither is instrumented in this repository's code. EDC's own decision
+   record (`2022-02-07-tracing`) settles the mechanism as the Java agent and propagates W3C
+   trace context across the boundary — which is why the agent is in the image rather than a
+   Python span pretending to cover a hop it cannot see.
+
+   **Correlation is by attribute, not by parent span**, and that is what makes it survive a
+   real dataspace. A counterparty exports to its own backend and may run no tracing at all,
+   so a trace that needs both halves joinable works in dev and nowhere else. Every span a ds
+   service emits while an agreement is in scope carries `ds.dsp.agreement_id`, stamped by a
+   span processor rather than by tagging call sites — a hand-kept set of tag sites is the
+   shape `E2E-03` and `E2E-14` both had to fix. The consumer's and provider's spans then
+   carry the same value even when their traces never meet.
+
+   | Property | Value |
+   |---|---|
+   | Protocol | OTLP over HTTP (`/v1/traces`) |
+   | Server spans | named by **route template**, `/health` and `/metrics` excluded |
+   | Client spans | every outbound `httpx` call, in all four Python services |
+   | EDC spans | the Java agent's, including the DSP hop, named per participant via `OTEL_SERVICE_NAME` |
+   | Correlation | `ds.dsp.agreement_id` on every span in scope |
+   | Not covered | database spans — see `libs/ds-obs/AGENTS.md` for why they are deferred rather than half-installed |
+
+   **The two mechanisms are complementary, and it is worth knowing which does what.** The
+   attribute is on ds's own spans; the EDCs' spans are the Java agent's and carry no ds
+   vocabulary. Inside one deployment they still land in the same trace, because the agent
+   propagates trace context across the DSP hop — so "find the agreement, then read the whole
+   exchange" is one query on the attribute followed by the trace id. Across two independently
+   operated participants only the attribute survives, which is why it is the recorded key.
+
+   **Measured on the dev stack, 2026-08-09**, after a full `task e2e:all`: seven services
+   reporting (`ds-connector`, `ds-identity-registry`, `ds-provenance`,
+   `ds-federated-catalog`, and `edc-rec`, `edc-third-party`, `edc-grid-operator`), **12
+   traces spanning two EDCs plus three ds services** — both provider pairs among them — and
+   `ds.dsp.agreement_id` present on the connector's spans for every agreement the run
+   signed.
+
+   Dev runs a Jaeger all-in-one at `http://tracing.dataspaces.localhost`, in the root
+   compose, for the reason step 2 learned the hard way: **a target needs something to send
+   to, in the same change**, or the only signal is a span that never appears.
 4. SLIs and SLOs for the four operations that matter: catalogue fetch, negotiation to
    agreement, transfer to first row, consent decision to negotiation resume.
-   **Unblocked for one of the four.** *Catalogue fetch* is a single HTTP request and the new
-   histogram measures it directly. The other three are **cross-service business latencies** —
-   they span the connector, the EDC, the data plane and a human consent decision, and no
-   per-request HTTP histogram can express them. They need either step 3's traces or
-   purpose-built domain timers, and they remain unmeasurable.
+   **The only step still open, and now unblocked for all four.** *Catalogue fetch* is a
+   single HTTP request the histogram measures directly. The other three are cross-service
+   business latencies that no per-request histogram can express — they needed step 3, which
+   now exists: each is the span of a trace filtered by `ds.dsp.agreement_id`.
+
+   What is left is not instrumentation but **decision**: an SLI is a chosen numerator and
+   denominator, and an SLO is a target somebody commits to. Deriving them from traces is
+   mechanical; agreeing what counts as a failed negotiation, and at what percentile, is not.
+   Do not close this by writing four queries — the numbers have to be ones an operator will
+   be held to.
 
 ## 6. Governance of these rules
 

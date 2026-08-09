@@ -45,6 +45,28 @@ global:
     # logged. Set true to restore them.
     accessHealth: false
 
+  # Traces — rulebook `provenance-and-logging.md` §5 step 3.
+  #
+  # **One endpoint, both languages.** The Python services read it through
+  # `ds_obs.tracing`; the EDCs read it through the OpenTelemetry Java agent,
+  # which `services/edc-connector/entrypoint.sh` attaches on the same condition.
+  # So this turns tracing on for the whole exchange — including the DSP hop
+  # between two participants' EDCs, which is the only part no Python span can
+  # cover — and it cannot turn it on for half of it.
+  #
+  # **Empty by default**, like `monitoring.serviceMonitor`: a cluster with no
+  # collector should get no exporter rather than one aimed at a name that does
+  # not resolve, which retries on every span and surfaces as the *service's* log
+  # noise.
+  tracing:
+    endpoint: "" # e.g. http://otel-collector.monitoring:4318
+    # Anything else the SDK and the agent both read. Sampling first: the default
+    # records every trace, which is a decision worth taking deliberately rather
+    # than discovering under load.
+    attributes: {}
+    #   OTEL_TRACES_SAMPLER: parentbased_traceidratio
+    #   OTEL_TRACES_SAMPLER_ARG: "0.1"
+
   # ── Images ──────────────────────────────────────────────────────────────────
   # ghcr.io/spindoxlabs/ds-<service>. Assumed public; pullSecrets are optional.
   #

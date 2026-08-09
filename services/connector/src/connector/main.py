@@ -17,7 +17,7 @@ from ds.governance.owners import HttpOwnersRegistry
 from ds.governance.models import profile_path_is_missing
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
-from ds_obs import configure_logging, install_metrics
+from ds_obs import configure_logging, install_metrics, install_tracing
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.pending_sweep import parse_duration, run_sweeper
@@ -309,6 +309,11 @@ def create_app() -> FastAPI:
         return {"status": "ok", "role": settings.role, "version": "0.1.0"}
 
     install_metrics(app, "ds-connector")
+    # Spans for this service, and outbound spans for every httpx call it
+    # makes, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — the same variable
+    # the EDC's Java agent reads, so one value covers both. A no-op
+    # otherwise, and it says so once at startup.
+    install_tracing(app, "ds-connector")
 
     # Shared routers — always mounted
     app.include_router(webhooks_router)

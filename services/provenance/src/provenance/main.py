@@ -16,7 +16,7 @@ from .api.v1.events import subject_router as subject_events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
 from ds_auth.production import ProductionGuard
-from ds_obs import configure_logging, install_metrics
+from ds_obs import configure_logging, install_metrics, install_tracing
 
 log = logging.getLogger(__name__)
 
@@ -108,6 +108,11 @@ def create_app() -> FastAPI:
         return {"status": "ok", "version": "0.1.0"}
 
     install_metrics(app, "ds-provenance")
+    # Spans for this service, and outbound spans for every httpx call it
+    # makes, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — the same variable
+    # the EDC's Java agent reads, so one value covers both. A no-op
+    # otherwise, and it says so once at startup.
+    install_tracing(app, "ds-provenance")
 
     @app.get("/prov/context", response_class=JSONResponse)
     async def context():

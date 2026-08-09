@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
-from ds_obs import configure_logging, install_metrics
+from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import Depends, FastAPI, Request
 
 from .api.catalog import public_router as public_catalog_router
@@ -121,6 +121,11 @@ def create_app() -> FastAPI:
         }
 
     install_metrics(app, "ds-federated-catalog")
+    # Spans for this service, and outbound spans for every httpx call it
+    # makes, when `OTEL_EXPORTER_OTLP_ENDPOINT` is set — the same variable
+    # the EDC's Java agent reads, so one value covers both. A no-op
+    # otherwise, and it says so once at startup.
+    install_tracing(app, "ds-federated-catalog")
 
     # Order matters and is load-bearing. `catalog_router` carries the catch-all
     # `GET /catalog/{dataset_iri:path}`, which matches `/catalog/context` as

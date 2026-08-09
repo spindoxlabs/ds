@@ -177,6 +177,7 @@ connector, federated-catalog ──▶ identity-registry   participants, owners,
 | 30003 | federated-catalog | | 35432 | PostgreSQL (one DB per service) |
 | 30004 | portal | | 30022 | dataset-api mock, when the real one holds 30002 |
 | 30005 | identity-registry | | 309xx / 319xx | debugpy |
+| 34318 | Jaeger OTLP/HTTP in (dev collector) | | 36686 | Jaeger UI — `tracing.dataspaces.localhost` |
 
 ### Host binding — the rule that makes local and Docker interchangeable
 

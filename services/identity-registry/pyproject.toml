@@ -23,7 +23,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-multipart>=0.0.20",
     "ds-auth",
-    "ds-obs",
+    "ds-obs[tracing]",
 ]
 
 [project.optional-dependencies]

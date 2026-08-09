@@ -194,3 +194,71 @@ async def test_it_requires_the_webhook_grant(client, agreement):
         headers=make_headers(scope="connector.provider.read"),
     )
     assert r.status_code == 403
+
+
+# ── Trace correlation (rulebook §5 step 3) ───────────────────────────────────
+#
+# The SLIs that matter span services: *transfer to first row* starts here and
+# ends in the data plane. Joining those spans needs a value both sides carry, and
+# a transfer event carries only the **local** `contractId` — so the shared id has
+# to come off the agreement record. If it does not, the transfer's spans and the
+# negotiation's spans sit in one backend with nothing in common, and the layer
+# looks installed while answering nothing.
+
+
+@pytest_asyncio.fixture
+async def correlated(monkeypatch):
+    """Capture what the handler correlates on.
+
+    Patched at the **call site** — `connector.api.v1.webhooks.correlate_agreement`
+    — rather than asserting the ContextVar afterwards: the var is per-task, so a
+    read from the test's own context would return `None` whether the handler set
+    it or not, and the test would pass against a handler that does nothing.
+    """
+    captured: list[str | None] = []
+    from connector.api.v1 import webhooks as module
+
+    monkeypatch.setattr(module, "correlate_agreement", captured.append)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_a_transfer_correlates_on_the_shared_agreement_id(
+    client, engine, correlated
+):
+    """Not `contractId`. The counterparty's local id is a different string."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await upsert_agreement(
+            session,
+            agreement_id=AGREEMENT,
+            asset_id=ASSET,
+            consumer_id=CONSUMER,
+            provider_id=PROVIDER,
+            policy_snapshot={},
+            agreed_at=datetime.now(UTC),
+            dsp_agreement_id="dsp-shared-77",
+        )
+        await session.commit()
+
+    ac, _ = client
+    assert (await _post(ac, "TRANSFER_PROCESS_STARTED")).status_code == 200
+
+    assert correlated == ["dsp-shared-77"], (
+        f"correlated on {correlated!r} — the local contract id would be "
+        f"{AGREEMENT!r}, which the counterparty does not hold"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_agreement_with_no_shared_id_correlates_on_nothing(
+    client, agreement, correlated
+):
+    """The `agreement` fixture records no `dsp_agreement_id`.
+
+    A placeholder here would be worse than absence: it satisfies "the attribute
+    is present" while joining spans that have nothing to do with each other.
+    """
+    ac, _ = client
+    assert (await _post(ac, "TRANSFER_PROCESS_STARTED")).status_code == 200
+    assert correlated == [None]

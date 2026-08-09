@@ -64,6 +64,7 @@ services:
           - keycloak.dataspaces.localhost
           - sso.dataspaces.localhost
           - portal.dataspaces.localhost
+          - tracing.dataspaces.localhost
 
   # ── Shared PostgreSQL (one database per service, all on port 35432) ──────────
   postgres:
@@ -87,6 +88,38 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks: [dataspaces]
+
+  # ── Traces — the collector that makes them checkable ────────────────────────
+  #
+  # **A target needs something to send to, in the same change.** That is the
+  # lesson step 2 of the rulebook's §5 left: the platform shipped a
+  # `metricsFromPrometheus` NetworkPolicy that opened a path nothing walked
+  # through, and the only signal was a metric that never appeared. A tracing layer
+  # with no collector is the same defect and harder to notice, because "no spans"
+  # and "no traffic" look identical.
+  #
+  # Jaeger all-in-one rather than an OpenTelemetry Collector plus a backend: it
+  # speaks OTLP natively, needs no configuration file, and has a UI a person can
+  # open — which is the whole point of a dev collector. Nothing forwards anywhere,
+  # so this is memory-only and dies with the container.
+  #
+  # **Ports are shifted, like every other dev port here.** Postgres is 35432 and
+  # Keycloak is 9080 for the same reason: 4318 and 16686 are the ports any other
+  # collector on this machine would also want.
+  jaeger:
+    image: jaegertracing/all-in-one:1.76.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      # OTLP/HTTP in. `172.17.0.1:34318` resolves identically from the host and
+      # from a container, which is what lets a service be moved between `dev:*`
+      # and `docker:*` without changing the endpoint (root AGENTS.md).
+      - "34318:4318"
+      # The UI. Proxied at http://tracing.dataspaces.localhost by Caddy as well;
+      # the host port stays because `task dev:*` runs services outside the network.
+      - "36686:16686"
     networks: [dataspaces]
 
   # ── Writable host directories the services own ──────────────────────────────
@@ -164,6 +197,11 @@ services:
       - path: .env.celine
         required: false
     environment:
+      # Traces, when a collector is configured. **The one switch**, and the EDCs
+      # below read the same variable through the OpenTelemetry Java agent — so a
+      # deployment turns tracing on for the whole exchange with one value, and
+      # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
       # Compose IS the development topology, so it declares the unsafe mode
       # explicitly. ProductionGuard defaults to `production`; a service that
       # never hears about DS_ENV now refuses to start on a dev default

@@ -17,7 +17,7 @@ dependencies = [
     "typer>=0.12",
     "pyjwt[crypto]>=2.9",
     "ds-auth",
-    "ds-obs",
+    "ds-obs[tracing]",
     # For `ds.governance.dcat` only — the `dcat:DataService` / `dcat:record`
     # shapes, shared with the compliance evidence catalogue so the two
     # catalogues this platform publishes cannot answer `DSSC-PUB-41`/`-45`
