@@ -75,9 +75,21 @@ wants them for planning, and consent to one is not consent to the other. `contro
 is what makes that boundary checkable — a request arriving in the metering role is refused
 against a row consented for operations, even though the controller matches.
 
+**Decision, 2026-08-08: the controller-role vocabulary is declared by the producer, in
+`controller_roles` beside the sharing offers.** It is not a participant attribute. A
+participant's `roles` are DSP capacities — the identity-registry pins them to
+`{provider, consumer}` — and an unbundled controller function is a data-protection fact about
+one legal entity, not a capacity in the protocol. `D-11a` was checked against participant
+roles until this date and was therefore **unsatisfiable**: no legal `controller_role` could be
+in that set, so the check either compared against an empty set and passed on anything, or
+failed every offer that named a role. It compared against an empty set everywhere, which is
+why nothing noticed. Declaring it beside the offers also makes it checkable offline, by the
+producer's own gate, which is where a producer's declaration belongs.
+
 | # | Rule | Status |
 |---|---|---|
 | D-11 | The consent key is (subject, purpose, controller-role). Matching on controller alone is insufficient | **Enforced** |
+| D-11a | An offer's `controller_role` must be one the file declares in `controller_roles`, and an offer naming a controller that *is* unbundled must say which function | **Enforced** — `offer-controller`, both directions errors (`compliance/consent_checks.py`). Checked offline, so it runs in `compliance.yml` on every change rather than only against a live registry |
 | D-12 | A consent record carries a `legal_basis` evidence record: the DPV basis IRI, the consent-text version, the locale, a SHA-256 of the rendered text, the `user_visible_hash` and a submission reference. **Codes and hashes only, never PII** | **Enforced** — surfaced on `GET /consent/my`, `/consent/status` and `/internal/consent/check` |
 | D-13 | The rendered-text hash is what proves *what the person was shown*. A translation may never widen a coverage window, change a resolution or invent a legal basis — the codes are authoritative and the frontend translates them | **Enforced** by construction: `GET /ns/sharing-offers` serves codes plus an English fallback, and dataset keys are not in the public projection |
 

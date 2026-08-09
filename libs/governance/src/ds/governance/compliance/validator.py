@@ -8,7 +8,12 @@ import yaml
 from ..mapper import GovernanceMapper
 from ..models import OdrlProfile, load_odrl_profile
 from ..resolver import GovernanceResolver
-from ..sharing import DuplicateOfferError, SharingOfferCatalogue, load_sharing_offers
+from ..sharing import (
+    ConflictingControllerRolesError,
+    DuplicateOfferError,
+    SharingOfferCatalogue,
+    load_sharing_offers,
+)
 from ..vocabularies import VocabularyRegistry
 from .checks import (
     CHECKS,
@@ -30,7 +35,7 @@ from .checks import (
 )
 from .consent_checks import (
     CONSENT_CHECKS,
-    RoleLookup,
+    ControllerLookup,
     check_dataset_purposes,
     check_purpose_taxonomy,
     check_sharing_offers,
@@ -41,16 +46,16 @@ def _read_participants(path: Path | None) -> list[dict] | None:
     """Load the ``participants:`` list from a seed, or ``None`` if none was asked for.
 
     **A path that was given and cannot be read is an error, not an absence.**
-    Both participant lookups are optional by design — an offline run with no seed
-    downgrades `owner-participant` and `controller_role` to warnings and carries
-    on. That is correct when the caller *said nothing*. It is a silent hole when
+    The participant lookup is optional by design — an offline run with no seed
+    downgrades `owner-participant` to a warning and carries on. That is correct
+    when the caller *said nothing*. It is a silent hole when
     the caller named a file and the file is not there: the run reports PASS
     having skipped exactly the checks it was invoked to perform.
 
     This is not hypothetical. `.github/workflows/compliance.yml` passed
     `--participants services/connector/governance/participants.yaml` from the
     commit that **deleted** that file (`5484ff0`) until this check existed, and
-    every CI run since was green with both checks unexecuted.
+    every CI run since was green with the check unexecuted.
     """
     if path is None:
         return None
@@ -77,39 +82,30 @@ def load_participant_dids(path: Path | None) -> set[str] | None:
     return {entry["id"] for entry in entries}
 
 
-def load_participant_roles(path: Path | None) -> dict[str, list[str]] | None:
-    """Read ``did -> roles`` from a participants.yaml seed."""
-    entries = _read_participants(path)
-    if entries is None:
-        return None
-    return {entry["id"]: list(entry.get("roles") or []) for entry in entries}
-
-
-def build_role_lookup(
+def build_controller_lookup(
     catalogue: SharingOfferCatalogue,
     owners: OwnerLookup | None,
-    participant_roles: dict[str, list[str]] | None,
-) -> RoleLookup | None:
-    """Resolve each offer's controller alias to the roles that participant holds.
+) -> ControllerLookup | None:
+    """Which of the offers' controller aliases resolve in the owners registry.
 
-    Owner aliases and participant roles live in two different tables, joined by
-    the owner's DID.  When the owners registry is unavailable there is nothing
-    to check against, so the caller gets ``None`` and the controller check
-    downgrades to a warning rather than failing an offline run.
+    When the owners registry is unavailable there is nothing to resolve against,
+    so the caller gets ``None`` and the controller check downgrades to a warning
+    rather than failing an offline run.
+
+    This used to also join each alias to that participant's DSP roles, to check
+    ``controller_role`` against them. It cannot: the registry pins participant
+    roles to ``{provider, consumer}`` and a ``controller_role`` is a controller
+    *function*. The vocabulary is declared beside the offers now, so this
+    function no longer reads participants at all.
     """
     if owners is None:
         return None
-    roles_by_alias: dict[str, list[str]] = {}
-    for offer in catalogue.offers:
-        alias = offer.recipients.controller
-        if alias in roles_by_alias:
-            continue
-        entry = owners.by_id(alias)
-        if entry is None:
-            continue
-        did = getattr(entry, "did", None)
-        roles_by_alias[alias] = list((participant_roles or {}).get(did) or [])
-    return RoleLookup(roles_by_alias)
+    known = {
+        offer.recipients.controller
+        for offer in catalogue.offers
+        if owners.by_id(offer.recipients.controller) is not None
+    }
+    return ControllerLookup(known)
 
 
 def validate(
@@ -124,7 +120,6 @@ def validate(
     overlay_name: str | None = None,
     deny_key_patterns: list[str] | None = None,
     sharing_offers_path: Path | None = None,
-    participant_roles: dict[str, list[str]] | None = None,
     # The semantic vocabulary registry, when the caller has one. `None` means
     # "do not check registration" rather than "nothing is registered": the
     # difference is a warning that would otherwise fire on every dataset for a
@@ -198,10 +193,18 @@ def validate(
     # A duplicate id is fatal to *loading* — with no baseline there is no winner
     # to pick — but the gate must report it like any other finding. A traceback
     # is a worse answer to "which file should I fix" than a named error.
+    #
+    # Two exceptions, two check codes. A conflicting unbundling is a controller
+    # finding, not a duplicate offer, and the code is what a machine filters on —
+    # reporting it as `offer-duplicate` would send a reader looking for two offers
+    # with one id.
     try:
         catalogue = load_sharing_offers(sharing_offers_path, overlay_name=overlay_name)
     except DuplicateOfferError as exc:
         result.error("offer-duplicate", str(exc))
+        return result
+    except ConflictingControllerRolesError as exc:
+        result.error("offer-controller", str(exc))
         return result
 
     if catalogue.offers:
@@ -210,7 +213,7 @@ def validate(
             catalogue,
             exposed,
             active_profile,
-            build_role_lookup(catalogue, owners, participant_roles),
+            build_controller_lookup(catalogue, owners),
         )
         result.offers_checked = len(catalogue.offers)
 

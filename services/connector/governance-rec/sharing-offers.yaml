@@ -13,6 +13,19 @@
 # the ODRL profile, whose datasets do not resolve, or whose datasets do not
 # declare the offer's purpose in policy.purpose[] fails the gate.
 
+# The controller functions each named controller is unbundled into — the
+# vocabulary `recipients.controller_role` is checked against, and the only
+# authority for it. A controller absent here is not unbundled, and an offer
+# naming it may not carry a `controller_role`; a controller present here is, so
+# an offer naming it must say which function (rulebook `D-11`).
+#
+# **Not the identity-registry's participant `roles`.** Those are DSP capacities,
+# pinned to `{provider, consumer}` by the registry's own schema, so no legal
+# `controller_role` could ever be one — the check that compared the two was
+# unsatisfiable and passed by comparing against an empty set (`GOV-20`).
+controller_roles:
+  grid-operator: [metering, operations]
+
 sharing_offers:
   - id: household-energy-flexibility
     purpose: FlexibilityResearch

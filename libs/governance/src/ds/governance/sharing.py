@@ -78,13 +78,19 @@ class OfferRecipients(BaseModel):
 
     Independent controllers are never listed here — each one is its own offer,
     because consent under Art. 4(11) is consent to a *specific* controller's
-    processing.  ``controller_role`` names which role of that participant is
+    processing.  ``controller_role`` names which function of that entity is
     acting: a DSO's grid-operations and metering functions are different
     controllers under unbundling rules, same legal entity.
+
+    **``controller_role`` is not a participant role.**  A participant's roles are
+    DSP capacities — the identity-registry pins them to ``{provider, consumer}``
+    (``schemas/requests.py``) — and ``metering`` is neither.  The vocabulary this
+    is checked against is the one declared in ``controller_roles`` beside the
+    offers; see :class:`SharingOfferCatalogue`.
     """
 
     controller: str                      # owner alias
-    controller_role: str | None = None   # one of that participant's roles
+    controller_role: str | None = None   # one of controller_roles[controller]
     processors: ProcessorCategory
 
 
@@ -173,14 +179,47 @@ class DuplicateOfferError(ValueError):
     """
 
 
+class ConflictingControllerRolesError(ValueError):
+    """Two files declared different unbundlings of the same controller.
+
+    Same argument as :class:`DuplicateOfferError`, one level up: whether a
+    controller is unbundled decides which consent rows a request can reach, so a
+    silent winner would let one producer widen what another producer's subjects
+    agreed to.  An *identical* redeclaration is accepted — it is one fact stated
+    twice, not two facts.
+    """
+
+
 class SharingOfferCatalogue(BaseModel):
-    """The loaded set of offers, indexed by id."""
+    """The loaded set of offers, indexed by id.
+
+    ``controller_roles`` is the vocabulary an offer's ``controller_role`` is
+    checked against: ``{controller alias: the functions that entity is unbundled
+    into}``.  **Declared, never derived**, for the same reason purposes are — and
+    declared *here*, by the producer, because there is no other authority for it.
+
+    The alternative was to read it from the identity-registry's participant
+    ``roles``, and that is what the ``controller_role`` check did until
+    2026-08-08.  It cannot work: those are DSP capacities, pinned to
+    ``{provider, consumer}`` by the registry's own schema, so no legal value of
+    ``controller_role`` could ever be in the set.  The check was unsatisfiable —
+    it either compared against an empty set and passed on anything, or errored on
+    every offer that named a role.  It compared against an empty set everywhere,
+    which is why nothing noticed (``GOV-19``, ``GOV-20``).
+
+    An alias absent from this map is *not* unbundled, and an offer naming it may
+    not carry a ``controller_role``.  An alias present in it **is**, so an offer
+    naming it must say which function — matching on the legal entity alone is
+    what ``docs/rulebook/personal-data.md`` `D-11` calls insufficient.
+    """
 
     offers: list[SharingOffer] = Field(default_factory=list)
     #: offer id → the file that declared it. Attribution, and the reason a
     #: duplicate can name both sides. Offers are contributed by whoever declares
     #: the datasets, so "who declared this" must be answerable.
     sources: dict[str, str] = Field(default_factory=dict)
+    #: controller alias → its unbundled controller functions.
+    controller_roles: dict[str, list[str]] = Field(default_factory=dict)
 
     @property
     def by_id(self) -> dict[str, SharingOffer]:
@@ -194,6 +233,10 @@ class SharingOfferCatalogue(BaseModel):
 
     def consent_based(self) -> list[SharingOffer]:
         return [offer for offer in self.offers if offer.requires_consent]
+
+    def roles_of(self, controller: str) -> list[str]:
+        """The functions *controller* is unbundled into; empty when it is not."""
+        return list(self.controller_roles.get(controller) or [])
 
 
 def datasets_by_offer(
@@ -220,8 +263,16 @@ def datasets_by_offer(
 
 def _parse(raw: dict[str, Any]) -> SharingOfferCatalogue:
     entries = raw.get("sharing_offers") or []
+    declared = raw.get("controller_roles") or {}
+    # Sorted and de-duplicated on the way in, so a reordered list is not a
+    # different unbundling — `ConflictingControllerRolesError` compares these.
+    controller_roles = {
+        alias: sorted({str(role) for role in (roles or []) if str(role).strip()})
+        for alias, roles in declared.items()
+    }
     return SharingOfferCatalogue(
-        offers=[SharingOffer.model_validate(entry) for entry in entries if entry]
+        offers=[SharingOffer.model_validate(entry) for entry in entries if entry],
+        controller_roles=controller_roles,
     )
 
 
@@ -281,8 +332,11 @@ def load_sharing_offers(
 
     offers: dict[str, SharingOffer] = {}
     sources: dict[str, str] = {}
+    controller_roles: dict[str, list[str]] = {}
+    role_sources: dict[str, str] = {}
     for file in _contributing_files(base_path):
-        for offer in _read(file).offers:
+        contributed = _read(file)
+        for offer in contributed.offers:
             previous = sources.get(offer.id)
             if previous is not None:
                 raise DuplicateOfferError(
@@ -292,6 +346,18 @@ def load_sharing_offers(
                 )
             offers[offer.id] = offer
             sources[offer.id] = file.name
+        for alias, roles in contributed.controller_roles.items():
+            previous_roles = controller_roles.get(alias)
+            if previous_roles is not None and previous_roles != roles:
+                raise ConflictingControllerRolesError(
+                    f"Controller '{alias}' is unbundled two different ways — "
+                    f"{previous_roles} in '{role_sources[alias]}' and {roles} in "
+                    f"'{file.name}'. Whether a controller is unbundled decides "
+                    "which consent a request can reach, so there is no winner to "
+                    "pick: agree on one list."
+                )
+            controller_roles[alias] = roles
+            role_sources[alias] = file.name
 
     if not offers and not base_path.exists():
         logger.debug("No sharing offers at %s — empty catalogue", base_path)
@@ -300,8 +366,17 @@ def load_sharing_offers(
     if name:
         overlay_path = base_path.parent / f"sharing-offers.{name}.yaml"
         if overlay_path.exists():
-            for offer in _read(overlay_path).offers:
+            overlay = _read(overlay_path)
+            for offer in overlay.offers:
                 offers[offer.id] = offer
                 sources[offer.id] = overlay_path.name
+            # The overlay may rebind an unbundling for the same reason it may
+            # rebind a controller alias: it is a deliberate, opt-in deployment
+            # statement, not a contribution competing with one.
+            controller_roles.update(overlay.controller_roles)
 
-    return SharingOfferCatalogue(offers=list(offers.values()), sources=sources)
+    return SharingOfferCatalogue(
+        offers=list(offers.values()),
+        sources=sources,
+        controller_roles=controller_roles,
+    )

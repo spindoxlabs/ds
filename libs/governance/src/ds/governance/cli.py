@@ -21,9 +21,7 @@ from .compliance import (
     RuntimeOwnerLookup,
     build_evidence,
     fetch_participant_dids,
-    fetch_participant_roles,
     load_participant_dids,
-    load_participant_roles,
     render_markdown,
     validate as run_validate,
     write_artifacts,
@@ -92,26 +90,38 @@ def _resolve_registries(
     participants_path: Path | None,
     identity_registry_url: str | None,
     token: str | None,
-) -> tuple[OwnerLookup | None, set[str] | None, dict[str, list[str]] | None, list]:
+) -> tuple[OwnerLookup | None, set[str] | None, list]:
     """Build owner/participant lookups from a live registry or YAML seeds."""
     closers: list = []
     if identity_registry_url:
         lookup = RuntimeOwnerLookup(identity_registry_url, token=token)
         closers.append(lookup.close)
-        return (
-            lookup,
-            fetch_participant_dids(identity_registry_url, token=token),
-            fetch_participant_roles(identity_registry_url, token=token),
-            closers,
-        )
+        dids = fetch_participant_dids(identity_registry_url, token=token)
+        # **Asking for a live check and not getting one is a failure, not a
+        # quieter pass.** The fetch answers `None` when the registry cannot be
+        # read, and `owner-participant` reads `None` as "nothing to compare" and
+        # returns — which is the correct behaviour for an *offline* run and
+        # exactly wrong here, where the caller named a registry on the command
+        # line.
+        #
+        # This is not hypothetical. `runtime.py` requested `/participants`, a
+        # route that does not exist, so the fetch 404'd and the check skipped —
+        # against every registry, since the flag was added. The rulebook
+        # meanwhile recorded it as running here. Fixing the path without closing
+        # the silence would leave the same trap set for the next wrong URL or
+        # missing token.
+        if dids is None:
+            raise RuntimeError(
+                f"Cannot read participants from {identity_registry_url}. "
+                "`--identity-registry-url` was given, so `owner-participant` was "
+                "meant to run and cannot — check the URL and that `--token` "
+                "carries `identity-registry.admin` or a read scope. Refusing "
+                "rather than reporting a pass that check did not make."
+            )
+        return (lookup, dids, closers)
 
     owners = load_owners_yaml(owners_path) if owners_path else None
-    return (
-        owners,
-        load_participant_dids(participants_path),
-        load_participant_roles(participants_path),
-        closers,
-    )
+    return (owners, load_participant_dids(participants_path), closers)
 
 
 def _resolve_sharing_offers(governance_file: Path, explicit: Path | None) -> Path | None:
@@ -176,7 +186,7 @@ def validate(
     ),
 ):
     """Validate a governance file before importing it into a connector."""
-    owner_lookup, participant_dids, participant_roles, closers = _resolve_registries(
+    owner_lookup, participant_dids, closers = _resolve_registries(
         owners, participants, identity_registry_url, token
     )
     try:
@@ -191,7 +201,6 @@ def validate(
             overlay_name=overlay,
             deny_key_patterns=list(deny_key or []),
             sharing_offers_path=_resolve_sharing_offers(file, sharing_offers),
-            participant_roles=participant_roles,
             vocabularies=(
                 load_vocabularies(vocabularies, overlay_name=overlay)
                 if vocabularies
@@ -240,7 +249,7 @@ def evidence(
 ):
     """Validate, then write DCAT-AP catalog and ODRL offers as audit evidence."""
     odrl_profile = load_odrl_profile(profile) if profile else None
-    owner_lookup, participant_dids, participant_roles, closers = _resolve_registries(
+    owner_lookup, participant_dids, closers = _resolve_registries(
         owners, participants, identity_registry_url, token
     )
     try:
@@ -255,7 +264,6 @@ def evidence(
             overlay_name=overlay,
             deny_key_patterns=list(deny_key or []),
             sharing_offers_path=_resolve_sharing_offers(file, sharing_offers),
-            participant_roles=participant_roles,
         )
     finally:
         for close in closers:

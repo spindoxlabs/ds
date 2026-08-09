@@ -15,6 +15,21 @@ from ..owners import OwnerEntry
 
 log = logging.getLogger(__name__)
 
+#: **`/admin/participants`, not `/participants`.** The latter is not a route this
+#: registry serves and never was, so :func:`fetch_participant_dids` answered
+#: `None` on a 404 and logged *"skipping … check"* — against every registry,
+#: every time.
+#:
+#: The effect is worse than an outage: `owner-participant` is a check that exists
+#: *only* on the runtime path, and the rulebook recorded it as running there. It
+#: ran, found no participants, and passed. A check that degrades to silence when
+#: its dependency is missing reports conformity it never established — the same
+#: failure `services/conformity.py` was written to refuse.
+#:
+#: Both routes also require `identity-registry.admin` or a read scope, so a
+#: `--token` is not optional either; without one the owner lookup 401s.
+PARTICIPANTS_PATH = "/admin/participants"
+
 
 class RuntimeOwnerLookup:
     """``OwnerLookup`` backed by a live identity-registry.
@@ -88,43 +103,14 @@ class RuntimeOwnerLookup:
         return self._listed
 
 
-def fetch_participant_roles(
-    identity_registry_url: str,
-    *,
-    token: str | None = None,
-    timeout: float = 10.0,
-    client: httpx.Client | None = None,
-) -> dict[str, list[str]] | None:
-    """Fetch ``did -> roles`` for every participant. Returns None if unavailable.
-
-    Used to validate an offer's ``controller_role`` against the roles the
-    controller actually holds — a participant can act in several capacities
-    (a DSO's grid-operations and metering functions are distinct controllers),
-    and only the declared ones may appear in an offer.
-    """
-    headers = {"Authorization": f"Bearer {token}"} if token else {}
-    owns_client = client is None
-    client = client or httpx.Client(timeout=timeout)
-    try:
-        resp = client.get(
-            f"{identity_registry_url.rstrip('/')}/participants", headers=headers
-        )
-        resp.raise_for_status()
-        return {
-            item["did"]: list(item.get("roles") or [])
-            for item in resp.json()
-            if isinstance(item, dict) and item.get("did")
-        }
-    except (httpx.HTTPError, KeyError, ValueError) as exc:
-        log.warning(
-            "Cannot list participant roles from %s (%s) — skipping controller-role check",
-            identity_registry_url,
-            exc,
-        )
-        return None
-    finally:
-        if owns_client:
-            client.close()
+#: **There is no `fetch_participant_roles`.** There was, and it existed to check
+#: an offer's `controller_role` against the roles a participant holds. Those are
+#: DSP capacities — the registry pins them to `{provider, consumer}` — and a
+#: `controller_role` is a controller *function* (`operations`, `metering`), so
+#: the comparison could never succeed. The vocabulary is declared beside the
+#: offers instead; see `ds.governance.sharing.SharingOfferCatalogue`. Deleted
+#: rather than left unused, because a second holder of a vocabulary is what
+#: produced the drift in the first place.
 
 
 def fetch_participant_dids(
@@ -140,7 +126,7 @@ def fetch_participant_dids(
     client = client or httpx.Client(timeout=timeout)
     try:
         resp = client.get(
-            f"{identity_registry_url.rstrip('/')}/participants", headers=headers
+            f"{identity_registry_url.rstrip('/')}{PARTICIPANTS_PATH}", headers=headers
         )
         resp.raise_for_status()
         return {

@@ -44,29 +44,34 @@ CONSENT_CHECKS = (
 )
 
 
-class RoleLookup:
-    """Owner alias → declared roles, for ``controller_role`` validation.
+class ControllerLookup:
+    """Which controller aliases resolve, for ``offer-controller``.
 
     Built from whatever the caller has: the owners YAML seed, or a live
     identity-registry.  ``available`` is explicit rather than inferred from
     emptiness — "no registry to check against" (warn) and "the registry has no
-    such controller" (error) are different findings, and an empty map is a
+    such controller" (error) are different findings, and an empty set is a
     legitimate result of the second.
+
+    It used to be ``RoleLookup`` and carry ``alias -> participant roles`` as
+    well. That half is gone: an offer's ``controller_role`` is a controller
+    *function*, and participant roles are DSP capacities the registry pins to
+    ``{provider, consumer}``, so the two could never be compared. The vocabulary
+    now lives beside the offers that use it
+    (:class:`~ds.governance.sharing.SharingOfferCatalogue`), which is also why
+    this lookup no longer needs the participants endpoint at all.
     """
 
     def __init__(
         self,
-        roles_by_alias: dict[str, list[str]] | None = None,
+        aliases: Iterable[str] | None = None,
         available: bool = True,
     ):
-        self._roles = roles_by_alias or {}
+        self._aliases = set(aliases or ())
         self.available = available
 
     def known(self, alias: str) -> bool:
-        return alias in self._roles
-
-    def roles(self, alias: str) -> list[str]:
-        return list(self._roles.get(alias) or [])
+        return alias in self._aliases
 
 
 # ── Purpose taxonomy ─────────────────────────────────────────────────────────
@@ -182,7 +187,7 @@ def check_sharing_offers(
     catalogue: SharingOfferCatalogue,
     exposed: list[DatasetEvidence],
     profile: OdrlProfile,
-    roles: RoleLookup | None = None,
+    controllers: ControllerLookup | None = None,
 ) -> None:
     """Validate the offers a person will actually be shown.
 
@@ -192,7 +197,7 @@ def check_sharing_offers(
     """
     for offer in catalogue.offers:
         _check_offer_purpose(result, offer, profile)
-        _check_offer_controller(result, offer, roles)
+        _check_offer_controller(result, offer, controllers, catalogue)
         _check_offer_legal_basis(result, offer)
         _check_offer_durations(result, offer)
         _check_offer_codes(result, offer)
@@ -278,22 +283,36 @@ def _check_offer_purpose(
 
 
 def _check_offer_controller(
-    result: ValidationResult, offer: SharingOffer, roles: RoleLookup | None
+    result: ValidationResult,
+    offer: SharingOffer,
+    controllers: ControllerLookup | None,
+    catalogue: SharingOfferCatalogue,
 ) -> None:
+    """Two separate questions, and only the first one needs a registry.
+
+    **Does the controller exist?** The owners registry answers that, and without
+    one the finding downgrades to a warning — an offline run has nothing to
+    resolve against and should say so rather than fail.
+
+    **Is the named function one this controller has?** *catalogue* answers that,
+    offline, always. It used to be asked of the identity-registry's participant
+    ``roles``, which are DSP capacities pinned to ``{provider, consumer}`` — so
+    the answer could not be *yes* for any legal ``controller_role`` and the check
+    was unsatisfiable. See
+    :class:`~ds.governance.sharing.SharingOfferCatalogue`.
+    """
     alias = offer.recipients.controller
     if not alias.strip():
         result.error("offer-controller", f"Offer '{offer.id}' names no controller")
         return
 
-    if roles is None or not roles.available:
+    if controllers is None or not controllers.available:
         result.warning(
             "offer-controller",
             f"Offer '{offer.id}' controller '{alias}' was not checked — no owners "
             "registry available to this run",
         )
-        return
-
-    if not roles.known(alias):
+    elif not controllers.known(alias):
         result.error(
             "offer-controller",
             f"Offer '{offer.id}' controller '{alias}' does not resolve in the owners registry",
@@ -301,12 +320,32 @@ def _check_offer_controller(
         return
 
     role = offer.recipients.controller_role
-    declared = roles.roles(alias)
-    if role and declared and role not in declared:
+    declared = catalogue.roles_of(alias)
+
+    if role and not declared:
         result.error(
             "offer-controller",
-            f"Offer '{offer.id}' declares controller_role '{role}', which is not one of "
-            f"'{alias}' roles {sorted(declared)}",
+            f"Offer '{offer.id}' declares controller_role '{role}', but controller "
+            f"'{alias}' declares no controller_roles — a role naming nothing cannot "
+            "keep consent to one function from reaching another. Declare "
+            f"controller_roles['{alias}'] beside the offers, or drop the role",
+        )
+    elif role and role not in declared:
+        result.error(
+            "offer-controller",
+            f"Offer '{offer.id}' declares controller_role '{role}', which is not one "
+            f"of '{alias}' declared controller_roles {declared}",
+        )
+    elif declared and not role:
+        # `D-11`: the consent key is (subject, purpose, controller-role). Naming
+        # an unbundled entity without saying which function is consenting leaves
+        # that key one element short, and the connector then matches on the legal
+        # entity alone — which is what `D-11` calls insufficient.
+        result.error(
+            "offer-controller",
+            f"Offer '{offer.id}' names controller '{alias}', which is unbundled into "
+            f"{declared}, but declares no controller_role — consent to one function "
+            "would reach the others",
         )
 
 

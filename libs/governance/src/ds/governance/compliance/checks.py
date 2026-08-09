@@ -451,7 +451,13 @@ def check_owners(
                 dataset_key,
             )
 
-    if not participant_dids:
+    # `is None`, not falsy. `None` is "no participant list was asked for" and
+    # skipping is correct; `set()` is "asked, and the registry has nobody
+    # enrolled", where every owner with a DID is unregistered and every one of
+    # them is a finding. Reading the two the same way is how this check reported
+    # conformity against an empty registry — the shape `CI-02` and `GOV-19` are
+    # both instances of.
+    if participant_dids is None:
         return
     for entry in owners.all():
         did = getattr(entry, "did", None)

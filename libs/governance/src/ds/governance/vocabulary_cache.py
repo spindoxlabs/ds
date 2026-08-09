@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -114,11 +115,43 @@ def _write_document(cache_dir: Path | str, vocab: Vocabulary, body: bytes, origi
         ) from exc
 
     path = cache_path(cache_dir, vocab)
+    serialised = json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+
+    # **A write that would change nothing is not performed**, and this is a
+    # correctness fix rather than an optimisation. A `definition:` is republished
+    # on *every* start by design (see `ensure_cached`), so the old unconditional
+    # write demanded a writable cache on every start — and the two places the
+    # cache is legitimately not writable are both documented as preferred:
+    #
+    #   * `helm/charts/ds-connector/values.yaml` calls `vocabularies.cache.configMap`
+    #     "the one to prefer", and a ConfigMap volume is **read-only**;
+    #   * the compose mount is shared with the host so `task vocab:fetch` can fill
+    #     it from outside, and whoever wrote a file there owns it — not uid 10001.
+    #
+    # Both produced `PermissionError` and a container that would not start, on a
+    # cache already holding exactly the right bytes. Comparing first is what makes
+    # "always republish" mean *the committed file wins* rather than *the directory
+    # must be writable*.
+    if path.is_file():
+        try:
+            if path.read_text(encoding="utf-8") == serialised:
+                return path
+        except OSError:
+            pass  # unreadable — fall through and try to replace it
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(
-        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
+    # Replace through a temporary file in the same directory: `os.replace` is
+    # atomic, so a concurrent `/ns/{slug}` read never sees a half-written
+    # document, and it needs write permission on the **directory** rather than on
+    # the existing file — which is what lets the host and the container take turns
+    # filling a shared cache neither of them owns outright.
+    tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+    try:
+        tmp.write_text(serialised, encoding="utf-8")
+        os.replace(tmp, path)
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        raise
     return path
 
 

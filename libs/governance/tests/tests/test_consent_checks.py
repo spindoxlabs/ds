@@ -42,7 +42,12 @@ PROFILE = OdrlProfile(
 OWNERS = OwnersRegistry([
     OwnerEntry(id="example-org", name="Example Org", did="did:web:example.org"),
 ])
-ROLES = {"did:web:example.org": ["provider", "community-operator"]}
+# The unbundling `controller_role` is checked against is declared where the real
+# files declare it — beside the offers — so it is a per-test input rather than a
+# module constant. It used to be
+# `ROLES = {"did:web:example.org": ["provider", "community-operator"]}`, a
+# *participant roles* map mixing a DSP capacity and a controller function in one
+# list, which is the confusion `GOV-20` was.
 
 
 def codes(findings) -> set[str]:
@@ -103,7 +108,7 @@ def run(
     offers: list[dict] | None = None,
     profile: OdrlProfile | None = PROFILE,
     owners: OwnersRegistry | None = OWNERS,
-    roles: dict | None = None,
+    controller_roles: dict | None = None,
 ) -> ValidationResult:
     gov = write(
         tmp_path,
@@ -112,7 +117,10 @@ def run(
     )
     offers_path = None
     if offers is not None:
-        offers_path = write(tmp_path, "sharing-offers.yaml", {"sharing_offers": offers})
+        raw: dict = {"sharing_offers": offers}
+        if controller_roles is not None:
+            raw["controller_roles"] = controller_roles
+        offers_path = write(tmp_path, "sharing-offers.yaml", raw)
     return validate(
         gov,
         participant_id=PARTICIPANT,
@@ -120,7 +128,6 @@ def run(
         profile=profile,
         owners=owners,
         sharing_offers_path=offers_path,
-        participant_roles=roles if roles is not None else ROLES,
     )
 
 
@@ -257,6 +264,29 @@ class TestSharingOffers:
         assert "offer-duplicate" in codes(result.errors)
         assert not result.passed
 
+    def test_a_conflicting_unbundling_is_reported_as_a_controller_finding(
+        self, tmp_path: Path
+    ):
+        """Reported, not raised, and under the right code.
+
+        `offer-duplicate` would send a reader looking for two offers sharing an
+        id. This is two files disagreeing about whether one controller is
+        unbundled, which decides which consent a request can reach.
+        """
+        run(tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]})
+        contrib = tmp_path / "sharing-offers.d"
+        contrib.mkdir()
+        (contrib / "other.yaml").write_text(
+            yaml.safe_dump({"controller_roles": {"example-org": ["b"]}}),
+            encoding="utf-8",
+        )
+
+        result = run(tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]})
+
+        assert "offer-controller" in codes(result.errors)
+        assert "offer-duplicate" not in codes(result.errors)
+        assert not result.passed
+
     def test_pii_dataset_must_require_consent(self, tmp_path: Path):
         """An offer over PII promises a control; the dataset must enforce it."""
         result = run(
@@ -309,22 +339,82 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[broken])
         assert "offer-controller" in codes(result.errors)
 
-    def test_controller_role_must_be_declared_by_the_participant(self, tmp_path: Path):
+    def test_a_controller_role_with_no_declared_vocabulary_is_an_error(self, tmp_path: Path):
+        """The state the whole repository was in until 2026-08-08.
+
+        `governance-rec` declared `controller_role: operations` and no file
+        anywhere said what `operations` was. The old check asked the
+        identity-registry for the answer, got an empty set, and passed — so the
+        one shape that must never be silent is the one that was.
+        """
         broken = offer()
         broken["recipients"] = {**broken["recipients"], "controller_role": "metering"}
         result = run(tmp_path, offers=[broken])
         assert "offer-controller" in codes(result.errors)
 
+    def test_a_controller_role_outside_the_declared_vocabulary_is_an_error(
+        self, tmp_path: Path
+    ):
+        broken = offer()
+        broken["recipients"] = {**broken["recipients"], "controller_role": "metering"}
+        result = run(
+            tmp_path,
+            offers=[broken],
+            controller_roles={"example-org": ["community-operator"]},
+        )
+        assert "offer-controller" in codes(result.errors)
+
     def test_declared_controller_role_passes(self, tmp_path: Path):
         ok = offer()
         ok["recipients"] = {**ok["recipients"], "controller_role": "community-operator"}
-        result = run(tmp_path, offers=[ok])
+        result = run(
+            tmp_path,
+            offers=[ok],
+            controller_roles={"example-org": ["community-operator", "metering"]},
+        )
         assert "offer-controller" not in codes(result.errors)
 
-    def test_controller_not_checked_without_a_registry(self, tmp_path: Path):
+    def test_an_unbundled_controller_must_be_named_by_role(self, tmp_path: Path):
+        """`D-11`: the consent key is (subject, purpose, controller-role).
+
+        Declaring the entity unbundled and then omitting the function leaves the
+        key one element short, and the connector matches on the legal entity —
+        so a consent given to metering would be honoured for operations.
+        """
+        result = run(
+            tmp_path,
+            offers=[offer()],
+            controller_roles={"example-org": ["community-operator", "metering"]},
+        )
+        assert "offer-controller" in codes(result.errors)
+
+    def test_a_controller_that_is_not_unbundled_needs_no_role(self, tmp_path: Path):
+        """Most controllers are one controller. Requiring a role from all of them
+        would make the ordinary case declare a distinction it does not have."""
+        result = run(tmp_path, offers=[offer()])
+        assert "offer-controller" not in codes(result.errors)
+
+    def test_controller_existence_not_checked_without_a_registry(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer()], owners=None)
         assert "offer-controller" not in codes(result.errors)
         assert "offer-controller" in codes(result.warnings)
+
+    def test_the_role_vocabulary_is_still_checked_without_a_registry(self, tmp_path: Path):
+        """The two halves are independent, and this is the point of splitting them.
+
+        Whether the entity exists needs a registry; whether the named function is
+        one it declared does not — that answer is in the file being validated, so
+        an offline run checks it in full instead of downgrading to a warning.
+        """
+        broken = offer()
+        broken["recipients"] = {**broken["recipients"], "controller_role": "operations"}
+        result = run(
+            tmp_path,
+            offers=[broken],
+            owners=None,
+            controller_roles={"example-org": ["metering"]},
+        )
+        assert "offer-controller" in codes(result.errors)
 
     def test_unknown_legal_basis_is_an_error(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer(legal_basis="https://example.org#Vibes")])

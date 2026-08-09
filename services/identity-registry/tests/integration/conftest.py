@@ -67,8 +67,12 @@ from pathlib import Path
 import httpx
 import psycopg
 import pytest
+import yaml
 
 UNIT_DIR = Path(__file__).resolve().parents[2]
+#: The repository root — this suite reads the *shipped* governance fixtures, not
+#: copies of them, so a producer added tomorrow is picked up without an edit.
+REPO_ROOT = Path(__file__).resolve().parents[4]
 
 ADMIN_DB_URL = os.environ.get(
     "IDENTITY_REGISTRY_TEST_PG", "postgresql://postgres:postgres@172.17.0.1:35432/postgres"
@@ -333,7 +337,13 @@ def _register_owner(anchor: Anchor, alias: str) -> None:
     )
 
 
-def _start_participant(name: str, anchor: Anchor) -> Registry:
+def _start_participant(
+    name: str,
+    anchor: Anchor,
+    *,
+    alias: str | None = None,
+    roles: str = "provider",
+) -> Registry:
     """Serve a participant, then enrol it. The order is not negotiable.
 
     The anchor verifies the enrolment request by resolving this instance's DID
@@ -370,9 +380,15 @@ def _start_participant(name: str, anchor: Anchor) -> Registry:
     )
     try:
         _await_health(registry.url, process)
-        alias = f"{name}-org"
+        # `alias` and `roles` are parameters because a participant is not always
+        # a fixture of this suite's own making. Validating the *shipped*
+        # governance against a live registry needs owners named the way that
+        # governance names them (`example-org`, `grid-operator`) holding the
+        # roles its offers declare — and the alias is what joins the two, via
+        # the owner's DID that enrolment binds here.
+        alias = alias or f"{name}-org"
         _register_owner(anchor, alias)
-        code = anchor.enrolment_token(alias)
+        code = anchor.enrolment_token(alias, roles=roles)
         # One command, two steps: it generates and commits the identity, then
         # presents it. The commit happens before the POST, which is what lets
         # the anchor resolve the DID document this call just published.
@@ -437,6 +453,56 @@ def ephemeral_verifier(anchor: Anchor) -> Registry:
     registry = _start_participant("ephemeral", anchor)
     yield registry
     registry.stop()
+
+
+@pytest.fixture(scope="session")
+def dataspace_registry(anchor: Anchor):
+    """An anchor populated the way the *shipped* governance assumes.
+
+    Every controller alias `services/connector/governance-*/sharing-offers.yaml`
+    names, enrolled as a real participant.
+
+    This is what makes `owner-participant` mean anything: it joins an owner to a
+    participant **through the owner's DID**, which only enrolment binds — so a
+    registry seeded with owners alone (`ir-cli owner import`) has no participant
+    to find, and the check compares nothing. Vacuously green is the outcome this
+    fixture exists to avoid.
+
+    **The roles are `provider` because that is what a participant role is.** An
+    earlier version of this fixture enrolled each controller with the
+    `controller_role` its offers declared (`operations`), to satisfy a check that
+    compared the two. It could not have worked in the platform: `POST`/`PATCH
+    /admin/participants` reject anything outside `{provider, consumer}`
+    (`schemas/requests.py`), so the fixture was building a registry state the API
+    forbids — only the `ir-cli` enrolment path let it through, which is `GOV-21`.
+    The controller-role vocabulary lives beside the offers now and is checked
+    offline, in `libs/governance/tests/tests/test_consent_checks.py`.
+    """
+    started = []
+    for index, alias in enumerate(_governance_controllers()):
+        started.append(
+            _start_participant(f"gov{index}", anchor, alias=alias, roles="provider")
+        )
+    yield anchor
+    for registry in started:
+        registry.stop()
+
+
+def _governance_controllers() -> list[str]:
+    """The controller aliases the shipped offers name, read from what ships.
+
+    Derived rather than listed: a producer added tomorrow brings its controllers
+    with it, and a hardcoded list here would go stale exactly the way naming one
+    producer in CI did.
+    """
+    aliases: set[str] = set()
+    for offers in sorted(REPO_ROOT.glob("services/connector/governance-*/sharing-offers.yaml")):
+        raw = yaml.safe_load(offers.read_text(encoding="utf-8")) or {}
+        for offer in raw.get("sharing_offers") or []:
+            alias = (offer.get("recipients") or {}).get("controller")
+            if alias:
+                aliases.add(alias)
+    return sorted(aliases)
 
 
 @pytest.fixture

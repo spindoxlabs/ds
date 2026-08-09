@@ -91,6 +91,27 @@ def hash_code(code: str) -> str:
     return hashlib.sha256(code.encode()).hexdigest()
 
 
+def _validate_roles(roles: list[str]) -> None:
+    """The same closed vocabulary ``/admin/participants`` enforces.
+
+    Imported rather than restated: ``VALID_ROLES`` is the fact, and a second copy
+    here is how the two doors drifted apart in the first place. A participant role
+    is a **DSP capacity** — it is not the place for a controller function
+    (``operations``, ``metering``), which belongs to the sharing-offer vocabulary.
+    """
+    from ..schemas.requests import VALID_ROLES
+
+    invalid = sorted(set(roles) - VALID_ROLES)
+    if invalid:
+        raise EnrolmentError(
+            f"Invalid roles {invalid}; must be one of {sorted(VALID_ROLES)}. A "
+            "participant role is a DSP capacity — a controller function belongs "
+            "in `controller_roles` beside the sharing offers, not here",
+            status_code=422,
+            public="Invalid roles",
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class IssuedEnrolmentToken:
     """Returned once, on issue. The registry keeps only the hash."""
@@ -121,7 +142,16 @@ async def create_enrolment_token(
 
     The agreement is *not* checked here. Acceptance can legitimately come after
     admission, and issuance — not enrolment — is where it gates.
+
+    **The roles are validated here, against the same vocabulary the API enforces.**
+    They were not, and the token is what a participant's ``roles`` are written
+    from — so ``ir-cli org enrolment-token --roles operations`` produced a
+    participant that ``POST``/``PATCH /admin/participants`` would have rejected
+    with a 422. One field, two vocabularies depending on which door you came
+    through, and the CLI is the door the dev bootstrap uses (`GOV-21`).
     """
+    _validate_roles(list(roles or []))
+
     owner = (
         await db.execute(select(Owner).where(Owner.id == owner_alias))
     ).scalar_one_or_none()

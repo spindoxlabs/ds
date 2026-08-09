@@ -386,6 +386,33 @@ class TestOwners:
         result = run(path, owners=registry, participant_dids={"did:web:other.test"})
         assert "owner-participant" in codes(result.warnings)
 
+    def test_an_empty_participant_set_is_not_nothing_to_compare(
+        self, tmp_path: Path, registry
+    ):
+        """`set()` means the registry was read and has nobody enrolled.
+
+        It used to be read the same way as `None` — *no participant list was
+        asked for* — and skipped, so a reachable registry with zero participants
+        reported conformity. Same shape as `CI-02` and `GOV-19`: the absent state
+        and the empty state are different findings.
+        """
+        path = write_governance(
+            tmp_path,
+            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+        )
+        result = run(path, owners=registry, participant_dids=set())
+        assert "owner-participant" in codes(result.warnings)
+
+    def test_no_participant_list_still_skips(self, tmp_path: Path, registry):
+        """The other side of it: an offline run that named no seed asked for
+        nothing, and must not be told its owners are unregistered."""
+        path = write_governance(
+            tmp_path,
+            {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
+        )
+        result = run(path, owners=registry, participant_dids=None)
+        assert "owner-participant" not in codes(result.warnings)
+
     def test_owner_did_registered_as_participant_is_clean(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,

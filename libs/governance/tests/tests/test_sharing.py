@@ -10,6 +10,7 @@ from ds.governance.models import (
 )
 from ds.governance.sharing import (
     CONSENT_BASIS,
+    ConflictingControllerRolesError,
     DuplicateOfferError,
     OfferCoverage,
     OfferRecipients,
@@ -479,3 +480,100 @@ def test_the_overlay_still_replaces_and_is_not_a_contribution(tmp_path):
     assert len(catalogue.offers) == 1
     assert catalogue.get("local-offer").recipients.controller == "site-org"
     assert catalogue.source_of("local-offer") == "sharing-offers.site.yaml"
+
+
+# ── The controller-role vocabulary (GOV-20) ──────────────────────────────────
+#
+# `controller_role` was checked against the identity-registry's participant
+# roles until 2026-08-08. Those are DSP capacities the registry pins to
+# `{provider, consumer}`, so no legal `controller_role` could be one of them —
+# the check could only pass by comparing against an empty set, which is what it
+# did against every registry. The vocabulary lives here now, in the file that
+# uses it.
+
+
+def _roles_yaml(offer_id: str, controller: str, roles: list[str]) -> str:
+    listed = ", ".join(roles)
+    return _offer_yaml(offer_id, controller=controller) + (
+        f"controller_roles:\n  {controller}: [{listed}]\n"
+    )
+
+
+def test_controller_roles_are_read_from_the_file(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _roles_yaml("local-offer", "grid-operator", ["operations", "metering"])
+    )
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.roles_of("grid-operator") == ["metering", "operations"]
+
+
+def test_a_controller_that_declares_nothing_is_not_unbundled(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.roles_of("example-org") == []
+
+
+def test_declaration_order_is_not_a_different_unbundling(tmp_path):
+    """Sorted on the way in, so `[a, b]` and `[b, a]` are one fact, not two.
+
+    Without this, two producers stating the same unbundling in a different order
+    would be a `ConflictingControllerRolesError`.
+    """
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _roles_yaml("local-offer", "grid-operator", ["operations", "metering"])
+    )
+    _contrib(
+        tmp_path,
+        "acme.yaml",
+        _roles_yaml("acme-offer", "grid-operator", ["metering", "operations"]),
+    )
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.roles_of("grid-operator") == ["metering", "operations"]
+
+
+def test_two_files_unbundling_a_controller_differently_names_both(tmp_path):
+    """Whether a controller is unbundled decides which consent a request reaches,
+    so there is no winner to pick silently."""
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _roles_yaml("local-offer", "grid-operator", ["operations"])
+    )
+    _contrib(
+        tmp_path,
+        "acme.yaml",
+        _roles_yaml("acme-offer", "grid-operator", ["operations", "metering"]),
+    )
+
+    with pytest.raises(ConflictingControllerRolesError) as exc:
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    assert "grid-operator" in str(exc.value)
+    assert "sharing-offers.yaml" in str(exc.value)
+    assert "acme.yaml" in str(exc.value)
+
+
+def test_a_contribution_may_declare_an_unbundling_the_base_does_not(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
+    _contrib(
+        tmp_path,
+        "acme.yaml",
+        _roles_yaml("acme-offer", "grid-operator", ["operations"]),
+    )
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.roles_of("grid-operator") == ["operations"]
+
+
+def test_the_overlay_may_rebind_an_unbundling(tmp_path):
+    """Same standing as rebinding a controller alias: a deliberate deployment
+    statement, not a contribution competing with one."""
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _roles_yaml("local-offer", "grid-operator", ["operations"])
+    )
+    (tmp_path / "sharing-offers.site.yaml").write_text(
+        _roles_yaml("local-offer", "grid-operator", ["dispatch"])
+    )
+
+    catalogue = load_sharing_offers(
+        tmp_path / "sharing-offers.yaml", overlay_name="site"
+    )
+
+    assert catalogue.roles_of("grid-operator") == ["dispatch"]

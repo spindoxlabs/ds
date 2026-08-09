@@ -71,7 +71,23 @@ def sharing_offers_schema() -> dict[str, Any]:
             "sharing_offers": {
                 "type": "array",
                 "items": {"$ref": "#/$defs/sharingOffer"},
-            }
+            },
+            # The file's second key, and it has to be here for the same reason
+            # the wrapper does: a schema that omits it makes a producer's
+            # `controller_roles:` look like a typo to every editor that reads
+            # this, while `ds-governance validate` requires it.
+            "controller_roles": {
+                "type": "object",
+                "description": (
+                    "controller alias -> the controller functions that entity is "
+                    "unbundled into. The vocabulary an offer's controller_role is "
+                    "checked against; not the identity-registry's participant roles."
+                ),
+                "additionalProperties": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
         },
         "$defs": defs,
     }

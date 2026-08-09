@@ -89,6 +89,40 @@ services:
       retries: 10
     networks: [dataspaces]
 
+  # ── Writable host directories the services own ──────────────────────────────
+  #
+  # **A bind mount whose source does not exist is created by Docker, as root.**
+  # `./data/` is gitignored in full, so a fresh clone has none of it, and the
+  # connector runs as uid 10001 (`services/connector/Dockerfile`) — so the first
+  # `docker compose up` creates `./data/vocabularies` owned by root:root and the
+  # connector then **exits 3** on `PermissionError` before serving anything. It
+  # refuses to boot without its vocabulary copies deliberately, so this is not a
+  # degraded start; it is no start. `task vocab:fetch` fails on the same
+  # directory, which removes the documented way out.
+  #
+  # Helm does not have this problem and that is why nobody saw it: the chart sets
+  # `fsGroup: 10001` and the cache is an emptyDir or a ConfigMap, both owned by
+  # the pod. There is no `fsGroup` for a compose bind mount, so dev needs this
+  # and only dev does.
+  #
+  # **`chmod 0777`, not `chown 10001`**, and the mount's own comment says why:
+  # the directory is shared with the host on purpose, since `task vocab:fetch`
+  # fills it from outside and the container fills it from inside. Only one of
+  # those two is uid 10001, and the other one's uid is not knowable here. A
+  # gitignored dev cache is the one place that trade is worth making.
+  data-dirs-init:
+    image: busybox:1.37
+    user: root
+    command: ["sh", "-euc", "mkdir -p /data/vocabularies && chmod 0777 /data/vocabularies"]
+    restart: "no"
+    volumes:
+      # `./data` wholesale, uniquely and only here: this service exists to
+      # prepare the directories and reads nothing. Every other service mounts the
+      # specific subdirectory it needs, because `./data` also holds credentials
+      # and keys (root AGENTS.md).
+      - ./data:/data
+    networks: [dataspaces]
+
   # ── Identity Registry — DID lifecycle, VC issuance, STS, credential service ─
   identity-registry-db-create:
     image: postgres:17

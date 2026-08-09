@@ -32,7 +32,7 @@
       "type": "object"
     },
     "OfferRecipients": {
-      "description": "Who may receive the data, and in what capacity.\n\nIndependent controllers are never listed here — each one is its own offer,\nbecause consent under Art. 4(11) is consent to a *specific* controller's\nprocessing.  ``controller_role`` names which role of that participant is\nacting: a DSO's grid-operations and metering functions are different\ncontrollers under unbundling rules, same legal entity.",
+      "description": "Who may receive the data, and in what capacity.\n\nIndependent controllers are never listed here — each one is its own offer,\nbecause consent under Art. 4(11) is consent to a *specific* controller's\nprocessing.  ``controller_role`` names which function of that entity is\nacting: a DSO's grid-operations and metering functions are different\ncontrollers under unbundling rules, same legal entity.\n\n**``controller_role`` is not a participant role.**  A participant's roles are\nDSP capacities — the identity-registry pins them to ``{provider, consumer}``\n(``schemas/requests.py``) — and ``metering`` is neither.  The vocabulary this\nis checked against is the one declared in ``controller_roles`` beside the\noffers; see :class:`SharingOfferCatalogue`.",
       "properties": {
         "controller": {
           "title": "Controller",
@@ -166,6 +166,16 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "description": "Sharing offers declared alongside a governance.yaml. Generated from the SharingOffer model in ds-governance — do not edit by hand.",
   "properties": {
+    "controller_roles": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "controller alias -> the controller functions that entity is unbundled into. The vocabulary an offer's controller_role is checked against; not the identity-registry's participant roles.",
+      "type": "object"
+    },
     "sharing_offers": {
       "items": {
         "$ref": "#/$defs/sharingOffer"

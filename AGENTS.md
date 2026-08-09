@@ -119,7 +119,14 @@ Three consequences worth stating, because each has already been got wrong:
   governance file stays with its unit; only what a process *produces* is `data/`. Putting a
   committed file under `data/` deletes it from a fresh clone.
 - **Compose mounts the specific subdirectory, never `./data` wholesale** — that directory also
-  holds credentials and keys, which most services have no business seeing.
+  holds credentials and keys, which most services have no business seeing. The one exception is
+  `data-dirs-init`, which exists to prepare them and reads nothing.
+- **A bind-mounted `data/` subdirectory the container *writes* needs an entry in
+  `data-dirs-init`.** A fresh clone has no `data/`, and a bind mount whose source does not exist
+  is created by Docker **as root** — while every service runs as uid 10001, so it cannot write
+  what it was given. Helm has `fsGroup`; compose has nothing, which is why this is a dev-only
+  init and why forgetting it produces a container that will not start rather than one that
+  degrades (`TASK-10`).
 
 | Unit | Role |
 |---|---|

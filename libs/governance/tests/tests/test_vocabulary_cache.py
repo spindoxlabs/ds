@@ -239,3 +239,106 @@ def test_a_definition_that_is_not_jsonld_is_refused(tmp_path):
 
     with pytest.raises(VocabularyFetchError, match="not JSON-LD"):
         ensure_cached(tmp_path / "cache", registry)
+
+
+# ── A cache that is already right does not need to be writable (TASK-10) ──────
+#
+# `ensure_cached` republishes a `definition:` on every start, which used to mean
+# an unconditional write — so every start required a writable cache directory.
+# Both documented ways of supplying a cache make it un-writable: the chart's
+# preferred `vocabularies.cache.configMap` is a **read-only** ConfigMap volume,
+# and the compose mount is shared with the host so `task vocab:fetch` can fill it,
+# which leaves the files owned by whoever wrote them and not by uid 10001. The
+# connector exited 3 on `PermissionError` in both cases, over bytes that were
+# already correct.
+
+
+def test_republishing_an_unchanged_definition_writes_nothing(tmp_path, monkeypatch):
+    """The write is skipped, not merely tolerated.
+
+    Asserted by making any write fail: if `_write_document` still opened the file
+    for writing, this raises. Checking the mtime instead would pass on a
+    write-identical-bytes implementation, which is the thing that broke.
+    """
+    from ds.governance import vocabulary_cache
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    path = registry_dir / "vocabularies.yaml"
+    cache = tmp_path / "cache"
+    ensure_cached(cache, load_vocabularies(path))
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("wrote to a cache that already held the right bytes")
+
+    monkeypatch.setattr(vocabulary_cache.Path, "write_text", refuse)
+
+    ensure_cached(cache, load_vocabularies(path))
+
+    assert read_cached(cache, load_vocabularies(path).vocabularies[0]) == DOCUMENT
+
+
+def test_a_read_only_cache_still_starts_when_it_is_already_correct(tmp_path):
+    """The ConfigMap case, reproduced with the filesystem rather than mocks.
+
+    A ConfigMap volume mounts its files read-only inside a read-only directory,
+    so **both** are locked down here — locking only the directory would still let
+    an unconditional `write_text` reopen the existing file and pass.
+    """
+    import os
+    import stat
+
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    path = registry_dir / "vocabularies.yaml"
+    cache = tmp_path / "cache"
+    ensure_cached(cache, load_vocabularies(path))
+
+    cached = cache_path(cache, load_vocabularies(path).vocabularies[0])
+    os.chmod(cached, stat.S_IRUSR)
+    os.chmod(cache, stat.S_IRUSR | stat.S_IXUSR)
+    try:
+        ensure_cached(cache, load_vocabularies(path))  # must not raise
+    finally:
+        os.chmod(cache, stat.S_IRWXU)
+        os.chmod(cached, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def test_a_changed_definition_is_still_republished_over_a_file_it_does_not_own(tmp_path):
+    """The property the skip must not cost: the committed file still wins.
+
+    Replacement goes through a temporary file and `os.replace`, so it needs write
+    permission on the **directory** rather than on the existing file — which is
+    what lets the container replace a copy `task vocab:fetch` wrote from the host.
+    """
+    import os
+    import stat
+
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    path = registry_dir / "vocabularies.yaml"
+    cache = tmp_path / "cache"
+    ensure_cached(cache, load_vocabularies(path))
+
+    cached = cache_path(cache, load_vocabularies(path).vocabularies[0])
+    os.chmod(cached, stat.S_IRUSR)  # read-only file, writable directory
+
+    edited = {"@context": {"own": "https://rec.dataspaces.localhost/ns/own#"}}
+    (registry_dir / "own.jsonld").write_text(json.dumps(edited), encoding="utf-8")
+    ensure_cached(cache, load_vocabularies(path))
+
+    assert read_cached(cache, load_vocabularies(path).vocabularies[0]) == edited
+
+
+def test_no_temporary_file_is_left_behind(tmp_path):
+    """A `.own.jsonld.<pid>.tmp` surviving in the cache would be served by
+    nothing but would make `status` and any directory listing lie."""
+    from ds.governance.vocabularies import load_vocabularies
+
+    registry_dir = _registry_with_definition(tmp_path)
+    cache = tmp_path / "cache"
+    ensure_cached(cache, load_vocabularies(registry_dir / "vocabularies.yaml"))
+
+    assert [p.name for p in sorted(cache.iterdir())] == ["own.jsonld"]

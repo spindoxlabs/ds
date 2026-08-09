@@ -64,10 +64,22 @@ task compliance:evidence           # DCAT-AP catalog + ODRL offers → reports/c
 ```
 
 It validates **input**. It deliberately does not re-assert the mapper's output, which
-`tests/test_mapper.py` covers. Controller-role validation needs owner alias → DID →
-participant roles; with no registry available it downgrades to a warning rather than blocking
-an offline run — `RoleLookup.available` distinguishes "nothing to check against" from "the
-registry has no such controller".
+`tests/test_mapper.py` covers.
+
+`compliance:validate:runtime` needs a **token** — `/admin/participants` and `/owners/resolve`
+are both scoped — and it refuses rather than skipping when it cannot read them: a caller naming
+a registry asked for `owner-participant`, so a quieter pass would hide the check not running.
+That is not hypothetical; it is how `GOV-19` survived. `ControllerLookup.available`
+distinguishes "no registry to check against" (warning) from "the registry has no such
+controller" (error).
+
+**`controller_role` is *not* checked against participant roles.** Participant roles are DSP
+capacities the registry pins to `{provider, consumer}`; a `controller_role` is an unbundled
+controller function. The vocabulary is declared by the producer in `controller_roles` beside the
+offers, so the check is offline — see
+[docs](../../docs/services/libs/governance.md#controller_roles-the-unbundling-vocabulary) and
+rulebook `D-11a`. Reintroducing the registry join re-creates `GOV-20`: an unsatisfiable check
+that passes by comparing against an empty set.
 
 **Pass `--participant-did` outside dev**, or the ODRL assigner falls back to a dev hostname.
 

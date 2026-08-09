@@ -890,3 +890,63 @@ async def test_re_enrolment_redelivers_and_does_not_re_mint(
     ).scalars().all()
     assert len(rows) == 1
     assert len(credential_store) == 2  # delivered twice, minted once
+
+
+# ── The role vocabulary is one vocabulary (GOV-21) ─────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_an_enrolment_token_cannot_admit_a_role_the_api_would_reject(
+    client, db_session
+):
+    """One field, one vocabulary, whichever door you come through.
+
+    ``POST``/``PATCH /admin/participants`` have always rejected anything outside
+    ``{provider, consumer}``, and the enrolment token — which is what a
+    participant's ``roles`` are written from — validated nothing. So
+    ``ir-cli org enrolment-token --roles operations`` produced a participant the
+    API itself forbids, and the dev bootstrap is the caller that uses that door.
+
+    Found by a governance check: an offer named ``controller_role: operations``,
+    and closing it meant deciding that a controller function is not a participant
+    role. That decision is only enforceable if both doors agree.
+    """
+    await make_owner(db_session)
+    r = await client.post(
+        "/admin/onboarding/enrolments",
+        json={"owner_alias": "rec", "roles": ["operations"]},
+        headers=HEADERS,
+    )
+    assert r.status_code == 422, r.text
+
+
+@pytest.mark.asyncio
+async def test_the_service_layer_refuses_it_too_not_only_the_request_model(
+    db_session,
+):
+    """Asserted at the service, because the CLI does not go through the API.
+
+    `ir-cli org enrolment-token` calls `create_enrolment_token` directly, so a
+    check that lives only in `CreateEnrolmentTokenRequest` leaves the one caller
+    that mattered unguarded — which is exactly the state this fixes.
+    """
+    from identity_registry.services import enrolment as enrol_service
+
+    await make_owner(db_session, alias="rec-service")
+    with pytest.raises(enrol_service.EnrolmentError) as exc:
+        await enrol_service.create_enrolment_token(
+            db_session, "rec-service", roles=["operations"]
+        )
+    assert "operations" in exc.value.message
+
+
+@pytest.mark.asyncio
+async def test_the_dsp_roles_are_still_accepted(db_session):
+    """The guard must not have closed the door it exists to keep open."""
+    from identity_registry.services import enrolment as enrol_service
+
+    await make_owner(db_session, alias="rec-ok")
+    issued = await enrol_service.create_enrolment_token(
+        db_session, "rec-ok", roles=["provider", "consumer"]
+    )
+    assert issued.code

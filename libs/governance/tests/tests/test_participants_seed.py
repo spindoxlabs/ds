@@ -4,8 +4,8 @@ The subject is not parsing — it is the difference between *"no seed was asked
 for"* and *"the seed you asked for is not there"*. Both used to return ``None``,
 and ``check_owners`` treats ``None`` as "nothing to check against" and returns
 early. So a caller that named a missing file got a clean PASS with the
-`owner-participant` and `controller_role` checks silently skipped, which is
-exactly what `.github/workflows/compliance.yml` did from `5484ff0` onwards.
+`owner-participant` check silently skipped, which is exactly what
+`.github/workflows/compliance.yml` did from `5484ff0` onwards.
 """
 from __future__ import annotations
 
@@ -13,10 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from ds.governance.compliance.validator import (
-    load_participant_dids,
-    load_participant_roles,
-)
+from ds.governance.compliance.validator import load_participant_dids
 
 SEED = """\
 participants:
@@ -41,18 +38,11 @@ class TestNoSeedRequested:
     def test_dids_none(self):
         assert load_participant_dids(None) is None
 
-    def test_roles_none(self):
-        assert load_participant_roles(None) is None
-
 
 class TestMissingSeedIsAnError:
     def test_dids_raise(self, tmp_path: Path):
         with pytest.raises(FileNotFoundError, match="does not exist"):
             load_participant_dids(tmp_path / "not-here.yaml")
-
-    def test_roles_raise(self, tmp_path: Path):
-        with pytest.raises(FileNotFoundError, match="does not exist"):
-            load_participant_roles(tmp_path / "not-here.yaml")
 
     def test_the_message_names_the_way_out(self, tmp_path: Path):
         """A hard error has to say what to do instead, or it just gets deleted."""
@@ -69,16 +59,8 @@ class TestReadsTheSeed:
             "did:web:nameless.example",
         }
 
-    def test_roles(self, seed: Path):
-        assert load_participant_roles(seed) == {
-            "did:web:rec.dataspaces.localhost": ["provider"],
-            "did:web:third-party.dataspaces.localhost": ["consumer"],
-            "did:web:nameless.example": [],
-        }
-
     def test_empty_seed_is_not_an_error(self, tmp_path: Path):
         """An empty list is a statement; a missing file is not."""
         path = tmp_path / "participants.yaml"
         path.write_text("participants: []\n", encoding="utf-8")
         assert load_participant_dids(path) == set()
-        assert load_participant_roles(path) == {}

@@ -89,6 +89,16 @@ tasks:
   infra:start:
     desc: Start shared infrastructure (postgres, caddy, identity-registry, keycloak)
     cmds:
+      # **To completion, and before anything else mounts `./data`.** `up -d` does
+      # not wait for a one-shot service, and the participant stacks bind-mount
+      # `./data/vocabularies` from their own compose files — so whichever process
+      # gets there first decides the owner, and if that is Docker the owner is
+      # root and the connector exits 3. Run it as its own step rather than
+      # relying on the minutes between this task and `rec:start`: a guarantee
+      # that holds because a later task happens to be slow is not a guarantee.
+      # A cross-file `depends_on` cannot express this — `rec:start` passes only
+      # `-f docker-compose.rec.yml`.
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose up data-dirs-init --exit-code-from data-dirs-init
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d
 
   infra:stop:
@@ -426,7 +436,17 @@ tasks:
         # module registers — and no 39xxx port at all, so a `dev:*` teardown left
         # the grid-operator's JVM holding its ports and the next start failed to
         # bind. Keep this in step with the `fuser -k` list in `edc:restart`.
-        DEV_PORTS="19191 19193 19194 29191 29193 29194 39191 39193 39194 30000 30001 30002 30003 30004 30005 31000 31001"
+        #
+        # **30022, not 30002** (`TASK-04`). `9a8e3e5` moved the stack's own
+        # dataset-api mock to 30022 so the real celine one could keep 30002, and
+        # this list was not moved with it — so a `dev:*` mock left running on
+        # 30022 survived the teardown and the container that wanted the port
+        # failed to bind, while 30002 belongs to `docker-compose.dataset-api.yml`,
+        # a *different* compose project this task has no business killing.
+        # 19195/29195 are deliberately still absent: they name the `version` and
+        # `public` contexts no packaged module registers, which is the same
+        # reasoning that removed them from `edc:restart`.
+        DEV_PORTS="19191 19193 19194 29191 29193 29194 39191 39193 39194 30000 30001 30003 30004 30005 30022 31000 31001"
 
         # 1. Kill the local-dev watch loops FIRST, by name.
         #    `tmux kill-session` does not reach them: the loops are re-parented
@@ -1565,10 +1585,49 @@ tasks:
   compliance:validate:runtime:
     desc: Validate governance against the running identity-registry (owners + participants)
     cmds:
+      # **Iterate, never name.** This validated `governance-rec` alone, which is
+      # the same by-name-instead-of-by-iteration shape `TASK-09` fixed for
+      # `build` and `compliance.yml` fixed for the offline gate — and it means
+      # `owner-participant` and `controller_role`, the two checks that exist
+      # *only* here, never ran against the grid-operator at all.
+      #
+      # A loop matching nothing is a hard failure, not a green run: `all([])` is
+      # `True`, and that has cost this repository twice (`E2E-01`, `CI-02`).
+      #
+      # **A token is not optional.** Both routes the runtime path reads —
+      # `/admin/participants` and `/owners/resolve` — are guarded by
+      # `require_admin_or_read_scope`, so this task ran anonymously and got 401s
+      # for as long as it has existed. That was invisible while the CLI answered
+      # `None` and skipped; the CLI now refuses, so the task has to bring a
+      # credential. `IDENTITY_REGISTRY_TOKEN` overrides for a deployment that
+      # mints its own; the fallback is the dev/CI harness client, which holds
+      # `identity-registry.read` and is the same identity `rec:start` already
+      # uses for driver-side calls.
       - |
-        cd libs/governance && uv run ds-governance validate \
-          --file ../../services/connector/governance-rec/governance.yaml \
-          --identity-registry-url "${IDENTITY_REGISTRY_URL:-http://172.17.0.1:30005}"
+        set -euo pipefail
+        registry="${IDENTITY_REGISTRY_URL:-http://172.17.0.1:30005}"
+        token="${IDENTITY_REGISTRY_TOKEN:-}"
+        if [ -z "$token" ]; then
+          token=$(curl -fsS -X POST "${KEYCLOAK_TOKEN_URL}" \
+            -d grant_type=client_credentials \
+            -d "client_id=${SVC_DS_E2E_ID}" \
+            -d "client_secret=${SVC_DS_E2E_SECRET}" \
+            | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+        fi
+        cd libs/governance
+        shopt -s nullglob
+        producers=(../../services/connector/governance-*/governance.yaml)
+        if [ ${#producers[@]} -eq 0 ]; then
+          echo "✗ no services/connector/governance-*/governance.yaml matched" >&2
+          exit 1
+        fi
+        for file in "${producers[@]}"; do
+          echo "→ $(basename "$(dirname "$file")")"
+          uv run ds-governance validate \
+            --file "$file" \
+            --identity-registry-url "$registry" \
+            --token "$token"
+        done
 
   compliance:conformity:
     desc: "Assess every participant against the rulebook (DSSC-TRF-02…-04)"

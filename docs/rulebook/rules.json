@@ -7,8 +7,8 @@
     "declared"
   ],
   "counts": {
-    "enforced": 107,
-    "partly enforced": 8,
+    "enforced": 109,
+    "partly enforced": 7,
     "not enforced": 1,
     "declared": 21
   },
@@ -44,10 +44,12 @@
       "id": "A-4",
       "page": "policies.md",
       "prefix": "A",
-      "status": "partly enforced",
-      "status_raw": "Partly enforced",
+      "status": "enforced",
+      "status_raw": "Enforced.",
       "text": "CI runs the gate on every change",
-      "evidence": []
+      "evidence": [
+        "services/identity-registry/tests/integration/test_governance_runtime_validation.py"
+      ]
     },
     {
       "id": "A-5",
@@ -438,6 +440,17 @@
       "status_raw": "Enforced",
       "text": "The consent key is (subject, purpose, controller-role). Matching on controller alone is insufficient",
       "evidence": []
+    },
+    {
+      "id": "D-11a",
+      "page": "personal-data.md",
+      "prefix": "D",
+      "status": "enforced",
+      "status_raw": "Enforced",
+      "text": "An offer's `controller_role` must be one the file declares in `controller_roles`, and an offer naming a controller that *is* unbundled must say which function",
+      "evidence": [
+        "compliance/consent_checks.py"
+      ]
     },
     {
       "id": "D-12",
@@ -1297,18 +1310,6 @@
     }
   ],
   "open_non_conformances": [
-    {
-      "blueprint_rows": [
-        "DSSC-AUP-45",
-        "-46"
-      ],
-      "page": "policies.md",
-      "rules": [
-        "A-4"
-      ],
-      "section": null,
-      "detail": "**Partly.** The silent skip is fixed — `compliance.yml` no longer passes `--participants`, and a path that is given and missing is a hard error rather than an absence. CI now iterates `services/connector/governance-*/governance.yaml` rather than naming one, so a producer added tomorrow is validated without editing the workflow, and a loop matching nothing is a hard failure. What still runs nowhere automatically: `owner-participant` and `controller_role` need a live registry, so they run only under `task compliance:validate --identity-registry-url`"
-    },
     {
       "blueprint_rows": [
         "DSSC-AUP-06"
