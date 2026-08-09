@@ -260,6 +260,61 @@ def _order(rule: Rule) -> tuple[str, int, str]:
     return match["prefix"], int(match["number"]), match["suffix"]
 
 
+#: A full blueprint row id. `DSSC-PTO-03`, `CEEDS-INT-27`.
+BLUEPRINT_ROW_ID = re.compile(r"(?:DSSC|CEEDS)-[A-Z]{3}-\d+")
+_BLUEPRINT_ROW = BLUEPRINT_ROW_ID
+
+#: The shorthand §4 rows are written in: a family named once, then bare suffixes,
+#: with en-dash ranges. `` `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ``.
+_ROW_TOKEN = re.compile(r"`((?:DSSC|CEEDS)-[A-Z]{3}-\d+|-\d+)`(\s*[–-]\s*(?=`-))?")
+
+
+def expand_blueprint_rows(cell: str) -> tuple[str, ...]:
+    """Every blueprint row a §4 `Row` cell names, written out in full.
+
+    **The shorthand has to be expanded, not tokenised.** This took every
+    backticked token literally, so
+    a cell naming ``DSSC-PTO-03``, then ``-42``–``-46``, then ``-57``–``-63`` produced
+    ``('DSSC-PTO-03', '-42', '-46', '-57', '-63')`` — thirteen rows reported as
+    five, four of them not ids at all. Anything downstream comparing ids against
+    the blueprints therefore matched nothing and said nothing, which is `DOC-02`'s
+    own failure inside the tool written to catch it: a pattern written for the
+    common case, under-reporting invisibly.
+
+    A bare suffix inherits the family of the last full id. A range expands
+    inclusive, which is what the prose means and what a reader counting rows
+    would do.
+    """
+    out: list[str] = []
+    family = ""
+    pending_range = False
+    for match in _ROW_TOKEN.finditer(cell):
+        token, dash = match.group(1), match.group(2)
+        if _BLUEPRINT_ROW.fullmatch(token):
+            family = token.rsplit("-", 1)[0]
+            current = token
+        else:
+            if not family:
+                # A suffix with no family before it: keep it visible rather than
+                # inventing a prefix, and let the guard fail on it.
+                out.append(token)
+                pending_range = bool(dash)
+                continue
+            current = f"{family}{token}"
+        if pending_range and out:
+            start = int(out[-1].rsplit("-", 1)[1])
+            end = int(current.rsplit("-", 1)[1])
+            width = len(current.rsplit("-", 1)[1])
+            out.extend(
+                f"{family}-{n:0{width}d}" for n in range(start + 1, end + 1)
+            )
+        else:
+            out.append(current)
+        pending_range = bool(dash)
+    # Order-preserving de-duplication: a row may name an id twice.
+    return tuple(dict.fromkeys(out))
+
+
 def parse_deviations() -> list[Deviation]:
     """The **open** rows of §4 only.
 
@@ -284,7 +339,7 @@ def parse_deviations() -> list[Deviation]:
         section_ref = re.search(r"§(?P<n>[\d.]+)", stated_in)
         deviations.append(
             Deviation(
-                blueprint_rows=tuple(_BACKTICKED.findall(rows)),
+                blueprint_rows=expand_blueprint_rows(rows),
                 page=page["page"] if page else "",
                 rules=tuple(re.findall(r"\b[A-Z]-\d+[a-z]?\b", stated_in)),
                 section=section_ref["n"] if section_ref else None,

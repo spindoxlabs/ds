@@ -6,6 +6,21 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def describe_data_plane(url: str) -> str:
+    """`"dataset-api mock (docker-compose.rec.yml) at http://…:30022"`.
+
+    Derived from the **port**, never configured, so a run cannot claim a backend
+    it did not use — the property `E2E-13` earned in its first hour, when it
+    revealed `.env.local` overriding the harness to a port nothing served.
+    """
+    port = url.rsplit(":", 1)[-1].split("/")[0]
+    known = {
+        "30022": "dataset-api mock (docker-compose.rec.yml)",
+        "30002": "real celine dataset-api (docker-compose.dataset-api.yml)",
+    }
+    return f"{known.get(port, 'unrecognised data plane')} at {url}"
+
+
 class E2ESettings(BaseSettings):
     # **No `env_file`** (`E2E-07`). It declared `(".env", ".env.local")`, which
     # pydantic resolves relative to the process's working directory — and the
@@ -46,6 +61,13 @@ class E2ESettings(BaseSettings):
     # `T-1`, and `data_plane_label` below is the other half of it.
     dataset_api_url: str = Field(
         "http://172.17.0.1:30022", validation_alias="CONNECTOR_DATASET_API_URL"
+    )
+    #: Comma-separated data-plane URLs the query flows exercise (`T-1`). Both by
+    #: default: the mock on :30022 and the real celine `dataset-api` on :30002.
+    #: Set to one URL to run against one, and the output still names which.
+    e2e_data_planes: str = Field(
+        "http://172.17.0.1:30022,http://172.17.0.1:30002",
+        validation_alias="E2E_DATA_PLANES",
     )
     provenance_url: str = Field(
         "http://172.17.0.1:30000", validation_alias="CONNECTOR_PROVENANCE_URL_PROVIDER"
@@ -362,12 +384,34 @@ class E2ESettings(BaseSettings):
     #: something the run did not do.
     @property
     def data_plane_label(self) -> str:
-        port = self.dataset_api_url.rsplit(":", 1)[-1].split("/")[0]
-        known = {
-            "30022": "dataset-api mock (docker-compose.rec.yml)",
-            "30002": "real celine dataset-api (docker-compose.dataset-api.yml)",
-        }
-        return f"{known.get(port, 'unrecognised data plane')} at {self.dataset_api_url}"
+        return describe_data_plane(self.dataset_api_url)
+
+    #: Every data plane a run should exercise — `T-1`'s remaining half.
+    #:
+    #: **The platform has two implementations of the query surface and a run used
+    #: to exercise exactly one.** `services/dataset-api-mock` is a stand-in; the
+    #: real one is the celine `dataset-api`. The root guide states the
+    #: consequence: *"Both must be run, and each run must name its backend. Until
+    #: that is wired, a change to either data plane needs its own check."*
+    #:
+    #: **One exchange covers both, measured 2026-08-09 rather than assumed.** A
+    #: single EDR presented to `:30002` and `:30022` was accepted by both — 200
+    #: from each, five rows and two — because both verify the same bearer and both
+    #: ask the same connector's `/internal/dataplane/authorize`. So this needs no
+    #: second negotiation, no second transfer and no doubled suite: the flows that
+    #: query iterate this list with the credential they already hold.
+    #:
+    #: Absent, it falls back to the single configured plane, so a deployment
+    #: running only one is unaffected and says which.
+    @property
+    def data_planes(self) -> tuple[tuple[str, str], ...]:
+        raw = (self.e2e_data_planes or "").strip()
+        urls = [u.strip() for u in raw.split(",") if u.strip()] or [self.dataset_api_url]
+        # Order-preserving de-duplication: a deployment where the real plane holds
+        # :30002 and the mock is absent would otherwise probe one URL twice and
+        # report it as two backends.
+        seen: dict[str, None] = dict.fromkeys(urls)
+        return tuple((describe_data_plane(u), u) for u in seen)
 
 
 @lru_cache(maxsize=1)

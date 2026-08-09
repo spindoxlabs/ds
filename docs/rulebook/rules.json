@@ -1332,7 +1332,7 @@
     {
       "blueprint_rows": [
         "DSSC-DSO-14",
-        "-15"
+        "DSSC-DSO-15"
       ],
       "page": "catalogue-and-metadata.md",
       "rules": [],
@@ -1342,10 +1342,18 @@
     {
       "blueprint_rows": [
         "DSSC-PTO-03",
-        "-42",
-        "-46",
-        "-57",
-        "-63"
+        "DSSC-PTO-42",
+        "DSSC-PTO-43",
+        "DSSC-PTO-44",
+        "DSSC-PTO-45",
+        "DSSC-PTO-46",
+        "DSSC-PTO-57",
+        "DSSC-PTO-58",
+        "DSSC-PTO-59",
+        "DSSC-PTO-60",
+        "DSSC-PTO-61",
+        "DSSC-PTO-62",
+        "DSSC-PTO-63"
       ],
       "page": "provenance-and-logging.md",
       "rules": [],

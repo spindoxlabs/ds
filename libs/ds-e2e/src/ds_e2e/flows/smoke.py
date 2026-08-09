@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import logging
 import time
 import urllib.parse
@@ -340,7 +339,7 @@ class SmokeFlow(BaseFlow):
             result.fail_step("query with consent", "EDR carries no authorization token")
             return result
 
-        def data_query(purpose: str | None) -> tuple[int, Any]:
+        def data_query(purpose: str | None, url: str | None = None) -> tuple[int, Any]:
             headers = {
                 "Authorization": edr_token,
                 "Edc-Contract-Agreement-Id": shared_agreement_id,
@@ -349,52 +348,87 @@ class SmokeFlow(BaseFlow):
             if purpose:
                 headers["Edc-Purpose"] = purpose
             return self.http.post_raw(
-                f"{s.dataset_api_url}/query",
+                f"{url or s.dataset_api_url}/query",
                 {"sql": f"SELECT * FROM {asset_id}", "limit": 100},
                 headers=headers,
             )
 
-        status, query_payload = data_query(s.consented_purpose)
-        if status != 200 or not isinstance(query_payload, dict) or query_payload.get("count", 0) < 1:
-            result.fail_step("query with consent", "expected at least one authorized row", status_code=status)
-            return result
-        result.pass_step(
-            "query with consent",
-            "consent and active transfer allow data query for the consented purpose",
-            rows=query_payload.get("count"),
-            purpose=s.consented_purpose,
-        )
+        # 11. **Both data planes, with the one credential** (`T-1`).
+        #
+        # The query surface has two implementations — `services/dataset-api-mock`
+        # and the real celine `dataset-api` — and a run used to exercise exactly
+        # one while nothing in the output said which. A green suite against the
+        # mock and a green suite against the real one are different evidence.
+        #
+        # One exchange covers both, measured rather than assumed: the same EDR is
+        # accepted by both, because both verify the same bearer and both ask the
+        # same connector's `/internal/dataplane/authorize`. So this is a loop, not
+        # a second negotiation — and each backend is named in its own step, so a
+        # plane that was not reached cannot hide inside a passing one.
+        for label, url in s.data_planes:
+            status, query_payload = data_query(s.consented_purpose, url)
+            if (
+                status != 200
+                or not isinstance(query_payload, dict)
+                or query_payload.get("count", 0) < 1
+            ):
+                result.fail_step(
+                    "query with consent",
+                    f"expected at least one authorized row from {label}",
+                    status_code=status,
+                    data_plane=label,
+                )
+                return result
+            result.pass_step(
+                "query with consent",
+                f"consent and active transfer allow data query for the consented "
+                f"purpose — {label}",
+                rows=query_payload.get("count"),
+                purpose=s.consented_purpose,
+                data_plane=label,
+            )
 
         # 11b. The purpose is binding, not decorative. The same agreement and
         #      the same active transfer must yield nothing for a purpose this
         #      subject never agreed to — ds refuses the request outright rather
         #      than returning rows it should not.
-        status, _ = data_query(s.unconsented_purpose)
-        if status != 403:
-            result.fail_step(
-                "query for an unconsented purpose",
-                "expected a refusal for an unconsented purpose",
-                status_code=status,
-            )
-            return result
+        # **Refusals on every plane, not just the configured one.** A refusal is
+        # the assertion most worth having on both: a data plane that *serves* when
+        # it should refuse is the failure, and testing one implementation says
+        # nothing about the other's enforcement.
+        for label, url in s.data_planes:
+            status, _ = data_query(s.unconsented_purpose, url)
+            if status != 403:
+                result.fail_step(
+                    "query for an unconsented purpose",
+                    f"expected a refusal for an unconsented purpose — {label}",
+                    status_code=status,
+                    data_plane=label,
+                )
+                return result
         result.pass_step(
             "query for an unconsented purpose",
-            "a purpose the subject did not consent to is refused",
+            "a purpose the subject did not consent to is refused by every data plane",
             purpose=s.unconsented_purpose,
+            data_planes=[label for label, _ in s.data_planes],
         )
 
         # 11c. Omitting the purpose entirely must not behave like a wildcard.
-        status, _ = data_query(None)
-        if status != 403:
-            result.fail_step(
-                "query without a purpose",
-                "an undeclared purpose did not fail closed",
-                status_code=status,
-            )
-            return result
+        for label, url in s.data_planes:
+            status, _ = data_query(None, url)
+            if status != 403:
+                result.fail_step(
+                    "query without a purpose",
+                    f"an undeclared purpose did not fail closed — {label}",
+                    status_code=status,
+                    data_plane=label,
+                )
+                return result
         result.pass_step(
             "query without a purpose",
-            "an undeclared purpose fails closed on a consent-required dataset",
+            "an undeclared purpose fails closed on a consent-required dataset, on "
+            "every data plane",
+            data_planes=[label for label, _ in s.data_planes],
         )
 
         # 11d. The agreement is bound to the consumer the token proves. Naming a

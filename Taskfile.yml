@@ -1692,6 +1692,23 @@ tasks:
     cmds:
       - task -d libs/ds-auth bundles:generate
 
+  ledger:check:
+    desc: "Check .agents/remaining.md against docs/rulebook (the working ledger drifts)"
+    cmds:
+      # **Not in CI, and the reason is not laziness:** `.agents/` is gitignored,
+      # so CI has no copy to check. When the file is absent this prints that and
+      # exits 0 — a silent pass on a missing input is what made
+      # `test_rulebook_citations.py` green for a wrong path depth.
+      #
+      # Narrow on purpose. It checks the one section that is a claim about the
+      # present ("Start here next session") against the one record that is
+      # generated rather than maintained, plus that every at-a-glance link
+      # resolves. It does **not** compare the summary counts — that was built and
+      # abandoned: the cell is prose (`5 + REV-02`, `half of GOV-10`) and the
+      # attempt reported six disagreements of which one was real. See
+      # `libs/ds-e2e/src/ds_e2e/ledger.py`.
+      - cd libs/ds-e2e && uv run python -c "from ds_e2e.ledger import report; raise SystemExit(report())"
+
   rulebook:generate:
     desc: "Regenerate docs/rulebook/rules.json — the machine-readable rulebook (DSO-12)"
     cmds:

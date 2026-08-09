@@ -24,6 +24,8 @@ import pytest
 from ds_e2e.rulebook import (
     PROJECTION,
     RULEBOOK,
+    BLUEPRINT_ROW_ID,
+    expand_blueprint_rows,
     STATUSES,
     RulebookParseError,
     orphan_rule_rows,
@@ -54,13 +56,25 @@ PREFIX_BY_PAGE = {
 #: neither section states a numbered rule for the thing the row is about.
 #: Declared rather than tolerated, so a row that starts citing a section to
 #: escape the staleness check below has to be added here on purpose.
+# Keys are the **expanded** blueprint rows. They were the literal backticked
+# tokens until 2026-08-09 — `("DSSC-PTO-03", "-42", "-46", "-57", "-63")` — and
+# four of those five are not ids: the parser took a family named once followed by
+# en-dash ranges and reported the fragments. Thirteen rows counted as five, and
+# anything comparing these against the blueprints matched nothing and said so
+# nowhere. `expand_blueprint_rows` writes them out; this pin changing is how that
+# fix announced itself.
 SECTION_ONLY_ROWS = {
     # Metadata versioning is discussed in the offering-lifecycle prose; §4 of
     # that page numbers rules about publication authority, not about versioning.
-    ("DSSC-DSO-14", "-15"): ("catalogue-and-metadata.md", "4"),
+    ("DSSC-DSO-14", "DSSC-DSO-15"): ("catalogue-and-metadata.md", "4"),
     # "Observability — the open gap" carries no numbered rules at all, which is
     # itself the point: there is nothing yet to state as a rule.
-    ("DSSC-PTO-03", "-42", "-46", "-57", "-63"): ("provenance-and-logging.md", "5"),
+    (
+        "DSSC-PTO-03",
+        "DSSC-PTO-42", "DSSC-PTO-43", "DSSC-PTO-44", "DSSC-PTO-45", "DSSC-PTO-46",
+        "DSSC-PTO-57", "DSSC-PTO-58", "DSSC-PTO-59", "DSSC-PTO-60", "DSSC-PTO-61",
+        "DSSC-PTO-62", "DSSC-PTO-63",
+    ): ("provenance-and-logging.md", "5"),
 }
 
 
@@ -342,3 +356,60 @@ def test_the_projection_matches_regeneration():
     assert PROJECTION.read_text(encoding="utf-8") == render(), (
         f"{PROJECTION} is stale — regenerate with `task rulebook:generate`"
     )
+
+
+# ── The ids in the record are ids ─────────────────────────────────
+
+
+def test_every_blueprint_row_is_a_well_formed_id():
+    """`DSSC-PTO-42`, never `-42`.
+
+    The parser took the literal backticked tokens, so a §4 cell naming a family
+    once and then bare suffixes — the shorthand every multi-row entry uses —
+    produced fragments. Thirteen rows were reported as five and four of the five
+    were not ids, so anything cross-referencing this record against the
+    blueprints matched nothing and reported nothing. That is `DOC-02`'s failure
+    happening inside the tool written to catch it.
+
+    A guard on the *shape* rather than the count, because the count is what went
+    wrong quietly.
+    """
+    malformed = {
+        row
+        for deviation in DEVIATIONS
+        for row in deviation.blueprint_rows
+        if not BLUEPRINT_ROW_ID.fullmatch(row)
+    }
+    assert not malformed, (
+        f"§4 yields blueprint rows that are not ids: {sorted(malformed)}. A bare "
+        "suffix means `expand_blueprint_rows` did not resolve its family — the "
+        "row is probably written in a shorthand it does not read yet."
+    )
+
+
+def test_a_range_is_expanded_rather_than_read_as_two_endpoints():
+    """`-42`–`-46` is five rows, and reading it as two understates the gap.
+
+    Asserted on the function rather than on today's rulebook, so it keeps holding
+    when the pages change.
+    """
+    rows = expand_blueprint_rows("`DSSC-PTO-03`, `-42`–`-46`")
+    assert rows == (
+        "DSSC-PTO-03",
+        "DSSC-PTO-42", "DSSC-PTO-43", "DSSC-PTO-44", "DSSC-PTO-45", "DSSC-PTO-46",
+    )
+
+
+def test_a_suffix_inherits_the_family_named_before_it():
+    assert expand_blueprint_rows("`DSSC-TRF-02`, `-03`, `-04`") == (
+        "DSSC-TRF-02", "DSSC-TRF-03", "DSSC-TRF-04",
+    )
+
+
+def test_a_suffix_with_no_family_is_kept_visible_rather_than_guessed():
+    """It fails the shape guard above, which is the intended outcome.
+
+    Inventing a prefix would make a malformed row look well-formed — the same
+    trade `resolve_evidence` refuses when a suffix is ambiguous.
+    """
+    assert expand_blueprint_rows("`-42`") == ("-42",)
