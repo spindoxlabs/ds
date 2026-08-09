@@ -187,15 +187,6 @@ class QueryExecuted(BaseModel):
     authorized_subject_ids: list[str] | None = None
 
 
-class UsageObligationFulfilled(BaseModel):
-    event_type: Literal["UsageObligationFulfilled"] = "UsageObligationFulfilled"
-    event_id: str | None = None
-    occurred_at: datetime
-    agreement_id: str
-    consumer_did: str
-    obligation_type: str          # e.g. "odrl:delete", "odrl:attribute"
-
-
 class AccessRevoked(BaseModel):
     event_type: Literal["AccessRevoked"] = "AccessRevoked"
     event_id: str | None = None
@@ -316,7 +307,6 @@ DomainEvent = Annotated[
     | TransferStarted
     | DataTransferCompleted
     | QueryExecuted
-    | UsageObligationFulfilled
     | AccessRevoked
     | ConsentGranted
     | ConsentRevoked

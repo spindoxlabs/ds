@@ -23,6 +23,7 @@ import pytest
 
 from ds_e2e.rulebook import (
     PROJECTION,
+    RULEBOOK,
     STATUSES,
     RulebookParseError,
     orphan_rule_rows,
@@ -181,9 +182,24 @@ def test_lettered_rules_are_parsed():
     assert len(lettered) >= 9, (
         f"only {lettered} parsed — lettered ids are being dropped"
     )
-    assert len(DEVIATIONS) >= 5, (
-        f"only {len(DEVIATIONS)} open non-conformances parsed from §4 — either "
-        "the table shape changed or parsing stopped early"
+    # **Not a floor on how many rows are open.** That is what this was — `>= 5`
+    # — and it failed the moment two non-conformances were legitimately closed,
+    # reporting a parsing defect where the truth was progress. A count of
+    # unfinished work is not a property of the parser, and pinning it makes
+    # closing a row look like a regression.
+    #
+    # What the parser must be held to is that it reads **every row that is
+    # there**, which is checkable against the markdown itself.
+    section = (RULEBOOK / "scope-and-deviations.md").read_text(encoding="utf-8")
+    section = section.split("## 4. Known non-conformances", 1)[-1]
+    section = section.split("**Closed since", 1)[0]
+    rows = [
+        line for line in section.splitlines()
+        if line.startswith("| `") and "|" in line[3:]
+    ]
+    assert len(DEVIATIONS) == len(rows), (
+        f"§4 has {len(rows)} rows and the parser produced {len(DEVIATIONS)} — "
+        "parsing stopped early or the table shape changed"
     )
 
 

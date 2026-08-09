@@ -451,12 +451,19 @@ class ProvBridge:
             "agreement_ref": agreement_ref,
         })
 
-    # `UsageObligationFulfilled` is emitted by nobody, anywhere. That is a real
-    # gap against rulebook `L-1`/`L-15`, and it is recorded as one in
-    # `docs/rulebook/provenance-and-logging.md` rather than left looking covered.
-    # The event is a *consumer reporting* an obligation it met — a cross-
-    # participant write — so closing it needs an inbound route with a guard and
-    # an authorisation model, not a bridge method.
+    # **There is no `UsageObligationFulfilled`, and that is a decision**
+    # (2026-08-09). It had a schema, a materialiser and no emitter anywhere, and
+    # it is now deleted rather than wired.
+    #
+    # The event was a *consumer* reporting that it met an obligation, and a
+    # provider cannot verify such a report: the obligations this platform
+    # declares — notify on access, anonymise before use, retention — are ones no
+    # third party can attest. So the record's only content would have been that
+    # somebody said so, which is `PROV-01`'s mistake with a hash, one layer out.
+    # Checked before deleting: neither DSP (11 messages, none of them a
+    # post-agreement report in this direction) nor EDC's policy monitor models
+    # this, so no standard shape was being declined. `L-15` — an event type with
+    # no emitter does not exist — now matches the code.
     #
     # `DataDisclosed` used to sit in this note too, as "emitted, but not from
     # here": its only producer was the out-of-repo onboarding service posting to

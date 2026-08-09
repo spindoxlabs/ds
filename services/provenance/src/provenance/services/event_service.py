@@ -28,7 +28,6 @@ from ..schemas.events import (
     NegotiationTerminated,
     QueryExecuted,
     TransferStarted,
-    UsageObligationFulfilled,
 )
 from .prov_service import upsert_node
 
@@ -87,8 +86,6 @@ async def ingest_event(
         prov_node = await _materialise_transfer_completed(session, event)
     elif isinstance(event, QueryExecuted):
         prov_node = await _materialise_query_executed(session, event)
-    elif isinstance(event, UsageObligationFulfilled):
-        prov_node = await _materialise_obligation_fulfilled(session, event)
     elif isinstance(event, AccessRevoked):
         prov_node = await _materialise_access_revoked(session, event)
     elif isinstance(event, ConsentGranted):
@@ -532,23 +529,6 @@ async def _materialise_query_executed(
             await _edge(session, "wasAssociatedWith", activity.id, agent.id)
     return activity
 
-
-async def _materialise_obligation_fulfilled(
-    session: AsyncSession, event: UsageObligationFulfilled
-) -> ProvNodeORM:
-    activity = await upsert_node(
-        session,
-        f"urn:activity:obligation:{event.agreement_id}:{event.obligation_type}",
-        "Activity",
-        label=f"Obligation: {event.obligation_type}",
-        started_at=event.occurred_at,
-        ended_at=event.occurred_at,
-        external_meta={"obligationType": event.obligation_type},
-    )
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
-    await session.flush()
-    await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
-    return activity
 
 
 async def _materialise_access_revoked(

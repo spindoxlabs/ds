@@ -33,14 +33,6 @@ TRANSFER_EVENT = {
     "bytes_transferred": 4096,
 }
 
-OBLIGATION_EVENT = {
-    "event_type": "UsageObligationFulfilled",
-    "event_id": "test-obligation-001",
-    "occurred_at": "2026-01-04T10:00:00Z",
-    "agreement_id": "urn:uuid:agreement-001",
-    "consumer_did": "did:web:third-party.dataspaces.localhost",
-    "obligation_type": "odrl:delete",
-}
 
 
 @pytest.mark.asyncio
@@ -91,10 +83,29 @@ async def test_ingest_data_transfer(client):
 
 
 @pytest.mark.asyncio
-async def test_ingest_obligation_fulfilled(client):
-    response = await client.post("/prov/events", json=OBLIGATION_EVENT)
-    assert response.status_code == 201
-    assert response.json()["status"] == "created"
+async def test_an_unknown_event_type_is_refused(client):
+    """`UsageObligationFulfilled` used to be accepted here, and was **deleted**
+    2026-08-09 rather than given the emitter it never had.
+
+    It was a *consumer* reporting that it met an obligation. A provider cannot
+    verify such a report — the obligations this platform declares (notify on
+    access, anonymise before use, retention) are ones no third party can attest —
+    so the record's only content would have been that somebody said so.
+    `L-15` says an event type with no emitter does not exist; this asserts the
+    schema now agrees, which is also the guard against it being re-added as a
+    write-only surface.
+    """
+    response = await client.post(
+        "/prov/events",
+        json={
+            "event_type": "UsageObligationFulfilled",
+            "occurred_at": "2026-01-01T00:00:00Z",
+            "agreement_id": "agr-1",
+            "consumer_did": "did:web:third-party.dataspaces.localhost",
+            "obligation_type": "odrl:delete",
+        },
+    )
+    assert response.status_code == 422
 
 
 @pytest.mark.asyncio

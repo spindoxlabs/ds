@@ -39,7 +39,6 @@ RULEBOOK_EVENT_TYPES = frozenset({
     "TransferStarted",
     "DataTransferCompleted",
     "QueryExecuted",
-    "UsageObligationFulfilled",
     "AccessRevoked",
     "ConsentGranted",
     "ConsentRevoked",
@@ -47,14 +46,18 @@ RULEBOOK_EVENT_TYPES = frozenset({
     "DataDisclosed",
 })
 
-# The one the connector does not produce, and why. Listed rather than silently
-# tolerated, so that closing it is a deliberate edit here.
-NOT_EMITTED_BY_THIS_CONNECTOR = {
-    # Produced by nobody, anywhere — a real `L-1`/`L-15` gap, recorded in
-    # `docs/rulebook/provenance-and-logging.md`. It is a *consumer reporting* an
-    # obligation it met, so closing it needs an inbound guarded route.
-    "UsageObligationFulfilled",
-}
+# **Empty, and that is the point.** Every event type the rulebook names is
+# emitted by this connector.
+#
+# `UsageObligationFulfilled` was the last entry, and it was **deleted rather
+# than implemented** (2026-08-09). It is a *consumer* reporting that it met an
+# obligation, and a provider cannot verify such a report: the obligations this
+# platform declares — notify-on-access, anonymise-before-use, retention — are
+# ones no third party can attest. Recording "the consumer says it complied" as
+# provenance is a record whose only content is that somebody said so, which is
+# `PROV-01`'s mistake with a hash. `L-15` already says an event type with no
+# emitter does not exist; deleting the schema makes the code agree.
+NOT_EMITTED_BY_THIS_CONNECTOR: set[str] = set()
 
 # `DataDisclosed` was in that set, as "produced out of repo by the onboarding
 # service after a CSV export". It is emitted here now, through

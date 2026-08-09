@@ -29,7 +29,7 @@ forwarded by the connector.
 |---|---|
 | Discovery | `CataloguePublished`, `CatalogViewed` |
 | Contracting | `AccessRequested`, `NegotiationStarted`, `NegotiationFinalized`, `NegotiationTerminated`, `ContractAgreementSigned` |
-| Exchange | `TransferStarted`, `DataTransferCompleted`, `QueryExecuted`, `AccessRevoked`, `UsageObligationFulfilled` |
+| Exchange | `TransferStarted`, `DataTransferCompleted`, `QueryExecuted`, `AccessRevoked` |
 | Personal data | `ConsentGranted`, `ConsentRevoked`, `DataIngested`, `DataDisclosed` |
 
 **Materialises each into a graph.** One handler per event type creates or updates the nodes

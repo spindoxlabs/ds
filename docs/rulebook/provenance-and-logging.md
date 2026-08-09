@@ -14,7 +14,7 @@ sharply and that difference is the headline of this page.
 | Capability | Meaning | Status |
 |---|---|---|
 | **Provenance** — backward-looking: where did the data come from | PROV-O graph of entities, activities and agents | **Implemented.** The defects that stopped it rendering are closed (`L-5`, `L-7`, `L-8`, `L-12`) |
-| **Traceability** — the whole path: how was the data handled and by whom | The same graph, plus the domain-event record | **Implemented.** `L-2` is closed and `DataDisclosed` has an in-repo emitter; the one remaining gap is `UsageObligationFulfilled` (`L-1`), not the graph |
+| **Traceability** — the whole path: how was the data handled and by whom | The same graph, plus the domain-event record | **Implemented.** `L-2` is closed, `DataDisclosed` has an in-repo emitter, and since 2026-08-09 every event type this rulebook names has one — see `L-1` |
 | **Observability** — monitoring and troubleshooting | — | **Absent.** No metrics pipeline, no tracing, no OpenTelemetry. `/metrics` endpoints exist on all five services and are scraped by nothing. They are unauthenticated *by design* — reachability is a NetworkPolicy question, not an application one (§5 step 1) |
 
 Note that **CEEDS drops Observability entirely** — its building block is named "Provenance
@@ -44,7 +44,6 @@ evidence.
 | `TransferStarted` | a transfer process starts | control |
 | `DataTransferCompleted` | it completes | control |
 | `QueryExecuted` | the data plane serves rows | **data** |
-| `UsageObligationFulfilled` | a consumer reports meeting an obligation | control |
 | `AccessRevoked` | access is withdrawn | control |
 | `ConsentGranted` | a subject grants | control |
 | `ConsentRevoked` | a subject revokes | control |
@@ -66,7 +65,8 @@ evidence.
 
 | # | Rule | Status |
 |---|---|---|
-| L-1 | Every participant records all sixteen types. Recording is not optional and not per-dataset (`PTO-40`, `-41`) | **Partly enforced.** Fifteen of the sixteen have a reachable emitter in the connector, asserted by `services/connector/tests/test_prov_bridge_emitters.py`. `DataDisclosed` gained one: `POST /admin/disclosure`, the outbound counterpart to `/admin/ingestion`. It was previously emitted **out of this repository** by the onboarding service posting to `POST /prov/events`, which no deployment without that service recorded — and which could not satisfy `L-2` either, since the hash that rule requires is computable only from the connector's own consent DB. `UsageObligationFulfilled` is still emitted by **nothing, anywhere**: it is a consumer *reporting* an obligation it met, and no inbound route exists to receive that report. That is a cross-participant write and needs an authorisation model before it needs code |
+| L-1 | Every participant records all **fifteen** types. Recording is not optional and not per-dataset (`PTO-40`, `-41`) | **Enforced** since 2026-08-09, and the count changed because a type was **removed**. All fifteen have a reachable emitter in the connector, asserted by `services/connector/tests/test_prov_bridge_emitters.py`, whose `NOT_EMITTED_BY_THIS_CONNECTOR` set is now empty. `DataDisclosed` gained `POST /admin/disclosure` — previously emitted **out of this repository** by the onboarding service, which no deployment without that service recorded, and which could not satisfy `L-2` either since the hash it requires is computable only from the connector's own consent DB. **`UsageObligationFulfilled` was deleted rather than implemented**, and the reasoning is under `L-1a` |
+| L-1a | A consumer's *self-report* that it met an obligation is not provenance, and this platform records none | **Enforced**, as a deliberate absence — decided 2026-08-09. `UsageObligationFulfilled` had a schema and a materialiser and no emitter anywhere; it is deleted. A provider cannot verify such a report — the obligations this platform declares (`notify_on_access`, `anonymize_before_use`, retention) are ones no third party can attest — so the record's only content would be that somebody said so, which is what `PROV-01` was with a hash. **Checked before deleting:** DSP has 11 messages and none is a post-agreement report in this direction, and EDC's policy monitor evaluates the *provider's own* view of the policy and accepts nothing from a counterparty — so no standard shape was declined. If a deployment ever has an obligation with a real attestor, the way back is a presented credential over the fulfilment, not a self-asserted event |
 | L-2 | A `DataDisclosed` event carries a `consent_snapshot_hash` — a recomputable SHA-256 over the authorising consent tuples — proving *which* consent state backed the handover | **Enforced.** `consent_snapshot_hash` and `dataset_id` are both **required** on `DataDisclosed`, and the hash is pattern-checked as a bare lowercase SHA-256 digest — `"unknown"` and `"pending"` satisfy "the field is present" and prove nothing. The two are one requirement: a digest with no dataset id is a number nobody can recompute, and the dataset was not on the event at all. `POST /admin/disclosure` computes the hash from `consent_service.dataset_consent_snapshot` — the same function `DataIngested` uses — so the ordinary path cannot omit it, and a caller could not honestly supply one anyway. `services/provenance/tests/test_events_consent.py`, `services/connector/tests/test_provenance_events.py` |
 | L-3 | Provenance records carry codes, pseudonymous DIDs and hashes only, never PII | **Enforced** — see [Personal data](personal-data.md) D-2 |
 | L-4 | An event is recorded once. Re-posting the same event is a no-op, not a duplicate | **Enforced.** An event without an `event_id` now gets a key derived from its own canonical payload (`sha256:<hex>`, `occurred_at` included), so the idempotency check matches on a retry. Emission is non-fatal and therefore retried, which made a duplicate the ordinary outcome of a timeout rather than an edge case. `services/provenance/tests/test_event_idempotency.py` |
@@ -289,11 +289,34 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    business latencies that no per-request histogram can express — they needed step 3, which
    now exists: each is the span of a trace filtered by `ds.dsp.agreement_id`.
 
-   What is left is not instrumentation but **decision**: an SLI is a chosen numerator and
-   denominator, and an SLO is a target somebody commits to. Deriving them from traces is
-   mechanical; agreeing what counts as a failed negotiation, and at what percentile, is not.
-   Do not close this by writing four queries — the numbers have to be ones an operator will
-   be held to.
+   **Decided 2026-08-09: adopt provisional targets, then measure reality against them.**
+   The alternative — measure first, commit later — sounds more rigorous and is how a platform
+   ends up with four dashboards and no obligation. A number somebody can be wrong about is
+   what makes the measurement worth reading.
+
+   | SLI | Measured from | Provisional SLO |
+   |---|---|---|
+   | Catalogue fetch | `ds_http_request_duration_seconds{path="/consumer/catalog"}` | p95 < **2s** |
+   | Negotiation → agreement | trace span set for one `ds.dsp.agreement_id`, request → FINALIZED | p95 < **30s** |
+   | Transfer → first row | trace, transfer-start → first `/internal/dataplane/authorize` | p95 < **10s** |
+   | Consent decision → negotiation resume | trace, consent write → negotiation leaves `pending` | p95 < **90s** |
+
+   **These are provisional and labelled as such.** They are engineering judgement, not
+   measurement: nothing has been observed against them yet, and the point of writing them down
+   is that the first month's data will move them.
+
+   **One of them is bounded below by the platform, and that is not negotiable by an SLO.**
+   `DS_ACCESS_SCOPE_CACHE_TTL_SECONDS` is 60s, and `fail-closed` measures the consequence: a
+   decision the EDC has cached is reused for up to that long, so *consent decision → resume*
+   cannot beat 60s by construction. A target under it would be unachievable however well the
+   platform performed — the same class of error as an SLO on a path whose retry budget exceeds
+   it. Tightening that one means shortening the cache first, and the cache is also the window
+   in which the platform cannot fail closed.
+
+   **Not yet decided, and it changes where these belong:** whether these are internal health
+   indicators or something a participant is promised. If the latter they are a rulebook
+   obligation with a counterparty; if the former they are an operations concern and this table
+   is documentation. They are recorded here as the former until somebody commits them.
 
 ## 6. Governance of these rules
 
@@ -314,7 +337,7 @@ and maintained by a defined process.
 
 | # | Rule | Status |
 |---|---|---|
-| L-15 | An event type has a schema, a materialiser and an emitter, or it does not exist | **Partly enforced** — `POST /webhooks/transfer-process` now has a producer (`TransferEventPublisher` in `services/edc-extensions`), so `TransferStarted` and `DataTransferCompleted` are reachable on the provider side, and `DataDisclosed` has one in `POST /admin/disclosure`. `UsageObligationFulfilled` has a schema and a materialiser and **no emitter in any component**, which by this rule means it does not exist; see `L-1`. Two schema-accepted relation types still have no materialiser. Defect **P3-4** |
+| L-15 | An event type has a schema, a materialiser and an emitter, or it does not exist | **Enforced** since 2026-08-09. `POST /webhooks/transfer-process` has a producer (`TransferEventPublisher` in `services/edc-extensions`), so `TransferStarted` and `DataTransferCompleted` are reachable on the provider side, and `DataDisclosed` has one in `POST /admin/disclosure`. `UsageObligationFulfilled` was the one type this rule said did not exist while the schema still accepted it — **the schema is gone**, and `services/provenance/tests/test_events.py` asserts the event type is now refused, which is also the guard against it returning as a write-only surface. Two schema-accepted relation types still have no materialiser (defect **P3-4**) |
 | L-16 | Provenance is retained for the life of the deployment and survives a participant's departure | **Declared** |
 
 ## Blueprint rows
@@ -327,7 +350,7 @@ and maintained by a defined process.
 (declared, unmeasured). `DSSC-PTO-79` is **closed** — defect `P1-4` is fixed and `L-12` now
 records how.
 
-**Listed as closed above with a caveat:** `-40` and `-41` are claimed on the strength of
-fifteen of sixteen event types (`L-1`). `UsageObligationFulfilled` has no emitter anywhere —
-it is a *consumer* reporting an obligation it met, so it is a cross-participant write and
-wants an authorisation model before it wants code.
+**Closed, and without the caveat this paragraph used to carry.** `-40` and `-41` are claimed on
+all fifteen event types having a reachable emitter (`L-1`). The sixteenth,
+`UsageObligationFulfilled`, was **deleted** rather than implemented (`L-1a`): a consumer's
+unverifiable self-report is not provenance, and neither DSP nor EDC models one.

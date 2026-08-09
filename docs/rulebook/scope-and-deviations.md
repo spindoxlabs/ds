@@ -209,13 +209,27 @@ does not already deliver, and it would break every consumer of the index — the
 catalogue pages and `ds-e2e` both read `dcat:dataset` — in exchange for one extra round
 trip per entry.
 
-**What a deployment must accept:** a strict `PUB-45` reader that asserts the *absence* of
-inlined metadata will not see conformance here. Nothing in DCAT-3 forbids both properties
-on one `dcat:Catalog`, and a consumer that only follows `dcat:record` is unaffected.
+**And DSP requires the inlining, which settles it** — checked 2026-08-09 against
+`eclipse-edc/DataspaceProtocol`. `specifications/catalog/catalog.protocol.md` states *"A
+Catalog **MUST** have zero to many Datasets"*, and a DSP catalogue response is exactly what a
+counterparty fetches over the protocol. So for that surface `PUB-45`'s *"rather than"* cannot be
+satisfied without breaking a **MUST** in the protocol this platform is built on. The spec says
+nothing about `dcat:record` at all.
 
-**How to close it properly, if wanted:** serve records by default and inline datasets only
-under an explicit `?inline=true`, then migrate the portal and `ds-e2e` to the record path.
-That is a breaking change to a published surface and wants its own decision.
+That reframes this row: it is not an unfinished item, it is **two normative sources
+disagreeing**, and for a DSP catalogue response DSP wins. Emitting both is the only reading
+that conforms to both as far as either can be conformed to.
+
+**What a deployment must accept:** a strict `PUB-45` reader that asserts the *absence* of
+inlined metadata will not see conformance here — and could not, against any DSP-conformant
+connector.
+
+**Decided 2026-08-09: not to be closed.** The earlier note here proposed serving records by
+default behind an `?inline=true` flag; that would make the DSP surface non-conformant to reach
+a blueprint row, which is the wrong trade. The one place `PUB-45`'s form *is* achievable is
+ds's own federated index, which is not a DSP response — but the index exists to be read by the
+portal and `ds-e2e`, so changing it buys conformance with nobody's reader in exchange for
+breaking two of our own.
 
 ## 4. Known non-conformances
 
@@ -237,12 +251,10 @@ declared list rather than left as a way to opt out.
 
 | Row | Rule stated in | What is missing |
 |---|---|---|
-| `DSSC-AUP-06` | [Policies](policies.md) A-9 | A policy's validity window is declared, reported by the `declared-not-enforced` check, and **not emitted** — because emitting a term nothing enforces is what this very row forbids. Closing it means binding a date operand in `services/edc-extensions` first; until then this is a stated incapacity, not a silent one |
-| `DSSC-PTO-40`, `-41` | [Provenance and logging](provenance-and-logging.md) L-1, L-2 | `UsageObligationFulfilled` has **no emitter in any component and no inbound route** to receive one, so by `L-15` it does not exist. It is a *consumer* reporting an obligation it met — a cross-participant write — so it wants an authorisation model before it wants code. `L-2` is closed: `DataDisclosed` now has an in-repo emitter (`POST /admin/disclosure`) and carries a required, recomputable `consent_snapshot_hash` |
-| `DSSC-DSO-12` | [Catalogue and metadata](catalogue-and-metadata.md) C-13 | **Partly.** The prerequisite is built — the rulebook is projected to `rules.json` and this table is now checked against it, which is what caught its next drift. What remains is the direction the row is actually about: no metadata check consults a rule in that projection. `ds-governance validate` checks DCAT-AP and the ODRL profile, neither of which is *this rulebook* |
+| `DSSC-AUP-06` | [Policies](policies.md) `A-9` | A policy's validity window is declared, reported by the `declared-not-enforced` check, and **not emitted** — because emitting a term nothing enforces is what this very row forbids. **Decided 2026-08-09: it stays declared.** Closing it means binding a date operand in `services/edc-extensions` first, and until something asks for date-bounded policies that is a Java change bought for a term no deployment uses. This is a stated incapacity, not a silent one |
 | `DSSC-DSO-14`, `-15` | [Catalogue and metadata](catalogue-and-metadata.md) §4 | Metadata versioning is not implemented: a consumer cannot ask what an offering said when they negotiated. Blocked on a design decision — version the offering, or snapshot it into the agreement |
 | `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` | [Provenance and logging](provenance-and-logging.md) §5 | Observability. Listed in §2 so it is not mistaken for a declared exclusion, and here because it is a rule the code does not keep. Steps 1 and 2 are done — reachability is gated per deployment, all four service charts emit a `ServiceMonitor` under the same flag, and the metric set is a table in the rulebook. **No tracing**: `OpenTelemetry` spans correlated by `dsp_agreement_id` are not started, and three of the four SLIs need them |
-| `DSSC-DEX-38` | [Data exchange](data-exchange.md) X-13 | Partly enforced, and **not** a defect. The protocol's own capability description *is* served; what is absent is an OpenAPI document for EDC's Management API, which needs a module not in the BOMs. A capability decision, and the surface is private |
+| `DSSC-DEX-38` | [Data exchange](data-exchange.md) `X-13` | No OpenAPI document for EDC's Management API. **Decided 2026-08-09: none will be published.** It needs a module outside the BOMs, and the surface is private to the deployment — a document describing an admin API nobody outside the deployment may call is documentation of an attack surface, not of an interface. The APIs a counterparty uses are DSP and DCP, and both are specified elsewhere |
 
 **Closed since this table was last accurate.** Listed so a reader who remembers them does not
 go looking, and because four of the five were closed by work that never updated this page:
@@ -255,6 +267,8 @@ go looking, and because four of the five were closed by work that never updated 
 | `DSSC-DSO-11` | metadata is not checked against DCAT-AP | the `dcat-ap` check runs in `task compliance:validate`, splitting DCAT-AP's own obligation levels: mandatory → error, recommended → warning |
 | `DSSC-DEX-09` | `ds-edc` synthesises `state="TIMEOUT"` into the namespace of real EDC states, and reports a failed termination as success | `EdcPollTimeout` carries the last state observed and the connector answers **504**; every terminate path raises, the one tolerated `409` being on an entity that *reads back* as `TERMINATED` |
 | `DSSC-TRF-02`, `-03`, `-04` | two of three built; suspension was a slower revocation — one shared body under two labels, with no transition out of either | suspension is a state a verifier can read (`/status/2`, `statusPurpose: suspension`) and `reinstate` lifts it on the credential the holder already has. [Participation](participation.md) `P-25`, `P-26` |
+| `DSSC-DSO-12` | the rulebook was machine-readable and no metadata check consulted it — every check carried its own private copy of the rule it came from | findings **cite rule ids**, from one map (`compliance/rulebook.py`), with every id asserted to resolve in the projection. The gap was attribution rather than coverage: most metadata rules already had a named check. [Catalogue and metadata](catalogue-and-metadata.md) `C-13` |
+| `DSSC-PTO-40`, `-41` | fifteen of sixteen event types had an emitter; the sixteenth, `UsageObligationFulfilled`, had a schema and a materialiser and no producer anywhere | **all fifteen have one, and the sixteenth was deleted** rather than implemented. A consumer's unverifiable self-report that it met an obligation is not provenance — and neither DSP (11 messages, none a post-agreement report in that direction) nor EDC's policy monitor models one. [Provenance and logging](provenance-and-logging.md) `L-1`, `L-1a`, `L-15` |
 | `DSSC-AUP-45`, `-46` | the gate ran on one producer, skipped its participant checks in silence, and its two live-registry checks had never executed anywhere | both CI and `task compliance:validate:runtime` iterate every producer; a named-but-unreadable participants path or registry is a hard failure; the runtime task carries a credential, which it never did; and `controller_role` moved off the runtime path because comparing it to a participant's DSP roles was unsatisfiable. [Policies](policies.md) `A-4`, [Personal data](personal-data.md) `D-11a` |
 
 Earlier closures, from before that: **P0-1** (unguarded catalogue route — C-19, X-4), **P0-2**

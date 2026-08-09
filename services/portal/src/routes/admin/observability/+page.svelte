@@ -10,7 +10,7 @@
     'CataloguePublished', 'CatalogViewed', 'AccessRequested',
     'NegotiationStarted', 'NegotiationFinalized', 'NegotiationTerminated',
     'ContractAgreementSigned', 'TransferStarted', 'DataTransferCompleted',
-    'QueryExecuted', 'UsageObligationFulfilled', 'AccessRevoked',
+    'QueryExecuted', 'AccessRevoked',
     'ConsentGranted', 'ConsentRevoked', 'DataIngested', 'DataDisclosed',
   ];
 
