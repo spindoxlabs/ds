@@ -27,7 +27,6 @@ from .compliance import (
     write_artifacts,
 )
 from .compliance.checks import OwnerLookup, ValidationResult, load_exposed
-from .compliance.rulebook import cite
 from .mapper import GovernanceMapper
 from .models import load_odrl_profile
 from .owners import load_owners_yaml
@@ -156,12 +155,7 @@ def _emit(result: ValidationResult, output_format: str) -> None:
         typer.echo(f"\n{label}:")
         for finding in findings:
             dataset = f" {finding.dataset}:" if finding.dataset else ""
-            # **The rule ids go in the text output, not only the JSON** (`C-13`).
-            # They were in `asdict()` alone at first, which meant the format
-            # every operator and every task actually reads carried no citation —
-            # the rulebook would have been load-bearing for machines and
-            # decorative for people, which is most of the way back to the gap.
-            typer.echo(f"- [{cite(finding.check)}]{dataset} {finding.message}")
+            typer.echo(f"- [{finding.check}]{dataset} {finding.message}")
 
 
 @app.command()

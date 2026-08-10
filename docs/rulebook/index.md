@@ -47,38 +47,33 @@ known gap into an unknown one. Where the platform does not currently keep a rule
 recorded here rather than in a separate place a reader might not reach. The open items are
 tracked in `.agents/defects.md`.
 
-## The rulebook is machine-readable
+## This record is hand-maintained, and says so
 
-`DSSC-DSO-12` asks that metadata be checked against this rulebook, and for a long time
-nothing could be: the rulebook was nine markdown pages maintained by hand, and **nothing read
-the document**. [`rules.json`](rules.json) is the projection of it — every rule with its id,
-page, status and the files it cites as evidence, plus the open non-conformances of
-[Scope and deviations](scope-and-deviations.md) §4. The site serves it, so a check does not
-have to parse markdown to ask what this dataspace decided.
+Every status on these pages is **an assertion by whoever wrote it**. Some cite a test or a file;
+most do not. Read it as a record of decisions and of what the platform's authors believe it
+does — not as measurement.
 
-The markdown stays the source; the JSON is generated from it by `task rulebook:generate`, and
-a test fails if the two disagree.
+**There was a machine-readable projection of this rulebook, and it was removed on 2026-08-09.**
+`rules.json` parsed all nine pages into ids, statuses and cited evidence, and the site served
+it. It was deleted because of what measuring it showed: **79% of the rules marked *Enforced*
+cited no evidence at all** — 90 of 113 — and of the 28 citations that did exist, resolving one
+proved only that a file exists, never that it tests the rule it is cited for.
 
-**Why the markdown is the source, and not a YAML file this is generated from.** The obvious
-objection to parsing prose is that a parser can quietly stop matching — and it did: the first
-version of this one read 128 of 137 rules, because nine are lettered (`P-8a`, `D-22b`, `X-6b`)
-and the pattern ended at the digits. Nothing failed; the record just said less than it did.
+So the projection turned hand-written claims into counted, published, machine-readable
+hand-written claims. The counts in particular (*113 enforced*) read as measurement and were
+not. It also cost more than it returned: most of its churn was the tooling discovering its own
+defects — nine lettered rules never counted, four of nine blueprint rows in §4 not actually
+ids, a guard whose floor failed when work was *completed*.
 
-The fix is not to move authorship into YAML. It is that **the parse is total**: a
-`| # | Rule | Status |` header is what makes a table a rule table, *every* row beneath one must
-parse or the build fails naming the page and line, and a rule-shaped row outside such a table
-is reported too. A silent drop is unrepresentable in either direction, which is the guarantee a
-schema would have bought — without making the most-read, most-argued document in the repository
-a generated artifact nobody may edit. A status here is a paragraph of reasoning with links and
-citations, not a field; it is written where it reads best.
+**What went with it**, so nobody looks for it: `rules.json`, `task rulebook:generate`, the
+parser and its guards, and the check that cited rule ids in `ds-governance validate` findings.
 
-**It is also what keeps this section honest.** A compliance record drifts in the direction
-nobody checks for — the code gets better and the pages do not move — and that had already
-happened to ten rows at once. Every CI run now re-asks: is every status one of the four
-markers, is every rule id unique and stated by the page its prefix names, does every file
-cited as evidence still exist, and does every open non-conformance still cite a rule that is
-not enforced. What it cannot yet do is the direction `C-13` is really about: no metadata check
-consults a rule in the projection.
+**What that costs, stated rather than hidden.** `DSSC-DSO-12` — *metadata is checked for
+compliance with this rulebook* — is open again, and `C-13` returns to *partly enforced*. The
+consistency checks that caught two real drifts are gone too. The judgement was that a record
+which is honest about being prose beats one that is mechanically consistent about claims nobody
+verified. If this is revisited, the thing to build is not a parser: it is a rule that **may not
+say *Enforced* without citing evidence that runs**.
 
 ## Contents
 

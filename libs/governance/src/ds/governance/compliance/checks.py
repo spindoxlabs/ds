@@ -72,24 +72,8 @@ class Finding:
     message: str
     dataset: str | None = None
 
-    @property
-    def rules(self) -> tuple[str, ...]:
-        """The rulebook rule ids this check enforces — `C-13`.
-
-        Derived from the check name rather than passed in at each `result.error`
-        call site: 28 call sites each naming its own rule is 28 places for the
-        citation to go stale, which is the shape `E2E-03` and `E2E-14` both had
-        to undo. One map, in `compliance/rulebook.py`, and a test that every id
-        in it resolves in the projection.
-        """
-        from .rulebook import rules_for
-
-        return rules_for(self.check)
-
-    def asdict(self) -> dict[str, Any]:
-        data: dict[str, Any] = {"check": self.check, "message": self.message}
-        if self.rules:
-            data["rules"] = list(self.rules)
+    def asdict(self) -> dict[str, str]:
+        data = {"check": self.check, "message": self.message}
         if self.dataset:
             data["dataset"] = self.dataset
         return data
