@@ -444,3 +444,91 @@ def test_recovery_gives_up_after_the_cache_window(settings, monkeypatch):
     assert resumed.status == "FAIL"
     # It stopped, rather than retrying until the suite timed out.
     assert flow._start_exchange.call_count < 20
+
+
+# ── The per-query gate (`E2E-16`, `X-6`'s other half) ─────────────────────────
+#
+# The live property needs a real control plane to go away. What is pinned here is
+# what decides whether the live observation counts — that a refusal is
+# **attributable to the PDP**, which is `E2E-05`'s lesson and not a hypothetical
+# here: with the connector down, the EDC's policy monitor cannot evaluate consent
+# either, so a terminated transfer would stop the query too and would look
+# identical from outside.
+
+
+def test_a_plane_that_serves_rows_fails_the_step(settings):
+    """The failure the whole phase exists to detect."""
+    http = MagicMock()
+    http.post_raw.return_value = (200, {"count": 3, "items": [{}, {}, {}]})
+    flow, result = _flow(settings, http), FlowResult(flow_name="t")
+
+    flow._assert_per_query_refusals(result, {})
+
+    assert [s.status for s in result.steps] == ["FAIL"]
+    assert "served" in result.steps[0].detail
+
+
+def test_the_measured_refusal_passes(settings):
+    """`502 ds-connector unreachable`, which is what both planes actually answer."""
+    http = MagicMock()
+    http.post_raw.return_value = (502, {"detail": "ds-connector unreachable"})
+    flow, result = _flow(settings, http), FlowResult(flow_name="t")
+
+    flow._assert_per_query_refusals(result, {})
+
+    assert [s.status for s in result.steps] == ["PASS"]
+
+
+def test_a_refusal_for_another_reason_does_not_count(settings):
+    """A 403 is also what an unrelated policy denial produces — and with the PDP
+    down, a transfer the policy monitor terminated produces one too. Accepting any
+    non-200 would let this pass without observing the gate at all."""
+    http = MagicMock()
+    http.post_raw.return_value = (403, {"detail": "no consent for this subject"})
+    flow, result = _flow(settings, http), FlowResult(flow_name="t")
+
+    flow._assert_per_query_refusals(result, {})
+
+    assert [s.status for s in result.steps] == ["FAIL"]
+    assert "not for want of the PDP" in result.steps[0].detail
+
+
+def test_a_named_connector_failure_counts_whatever_the_status(settings):
+    """A data plane may legitimately answer 403 for an undecidable request; what
+    it may not do is refuse for a reason this flow cannot attribute."""
+    http = MagicMock()
+    http.post_raw.return_value = (403, {"detail": "ds-connector unreachable, denying"})
+    flow, result = _flow(settings, http), FlowResult(flow_name="t")
+
+    flow._assert_per_query_refusals(result, {})
+
+    assert [s.status for s in result.steps] == ["PASS"]
+
+
+def test_every_configured_data_plane_is_queried(settings):
+    """`E2E-16` was blocked on `T-1` precisely because asserting this against one
+    implementation is evidence about that implementation."""
+    http = MagicMock()
+    http.post_raw.return_value = (502, {"detail": "ds-connector unreachable"})
+    _flow(settings, http)._assert_per_query_refusals(FlowResult(flow_name="t"), {})
+
+    queried = {call[0][0] for call in http.post_raw.call_args_list}
+    assert len(queried) == len(settings.data_planes) >= 2
+
+
+def test_the_per_query_phase_runs_before_the_cache_wait():
+    """Ordering is the evidence that the two gates are on different clocks.
+
+    The negotiation gate reuses a decision for the access-scope TTL, so its
+    assertion waits 75s. The data plane asks per query and caches nothing, so it
+    must refuse at once — asserting it after the wait would prove nothing about
+    which clock applied.
+    """
+    import inspect
+
+    from ds_e2e.flows.fail_closed import FailClosedFlow
+
+    source = inspect.getsource(FailClosedFlow._assert_refusals_while_down)
+    assert source.index("_assert_per_query_refusals") < source.index(
+        "_wait_out_decision_cache"
+    )

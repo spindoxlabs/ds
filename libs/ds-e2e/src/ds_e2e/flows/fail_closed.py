@@ -222,12 +222,35 @@ class Attempt:
         return self.outcome in PROVIDER_REFUSALS
 
 
+#: Statuses that name the PDP's absence rather than a policy outcome. `502` is
+#: what both data planes answer with — a bad gateway *is* the honest code for a
+#: dependency that did not respond.
+_PDP_UNREACHABLE_STATUS = frozenset({502, 503, 504})
+
+
+def _names_the_pdp(detail: str) -> bool:
+    """Does the refusal say the connector was the thing missing?
+
+    Accepted alongside the status because a data plane is entitled to answer
+    `403` for an undecidable request; what it may not do is refuse for a reason
+    this flow cannot distinguish from an unrelated denial.
+    """
+    lowered = detail.lower()
+    return "connector" in lowered and (
+        "unreachable" in lowered or "unavailable" in lowered or "timeout" in lowered
+    )
+
+
 class FailClosedFlow(BaseFlow):
     name = "fail-closed"
     description = (
         "The policy decision point is unreachable: the negotiation gate "
         "refuses, and service resumes when it returns"
     )
+
+    #: Set when the per-query baseline granted consent, so `cleanup` withdraws
+    #: exactly what this flow added and nothing it inherited.
+    _granted_consent = False
 
     def __init__(self, settings, http):
         super().__init__(settings, http)
@@ -307,6 +330,30 @@ class FailClosedFlow(BaseFlow):
             self._start_pdp()
             self._wait_healthy()
 
+        # And withdraw the consent the per-query baseline granted (`E2E-16`).
+        # **Only if this flow granted it** — the subject may hold a standing
+        # grant from `smoke` or the fixtures, and withdrawing that would leave
+        # every later run starting from a state this flow invented. Ordered after
+        # the PDP restart because the connector has to be up to accept it.
+        if self._granted_consent:
+            s = self.settings
+            try:
+                self.http.acquire_service_token()
+                svc = self.http.bearer_headers()
+                self.http.post(
+                    f"{s.connector_url}/consent/my/shares",
+                    {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did,
+                     "enabled": False},
+                    headers={
+                        "X-Subject-Id": s.data_subject_id,
+                        "X-User-VC": self._resolve_user_vc(s.data_subject_email, svc),
+                    },
+                )
+            except Exception:  # noqa: BLE001 - must not mask the flow's verdict
+                log.warning("fail-closed: could not withdraw the consent it granted")
+            finally:
+                self._granted_consent = False
+
     # ── the flow ─────────────────────────────────────────────────────────────
 
     def execute(self) -> FlowResult:
@@ -344,8 +391,15 @@ class FailClosedFlow(BaseFlow):
         if not self._establish_baseline(result, headers):
             return result
 
+        # `E2E-16`: a live transfer on the consent-gated asset, established while
+        # the PDP is up, so the per-query gate has something to refuse during the
+        # outage. `None` fails a step of its own and stops the flow.
+        query_headers = self._establish_query_baseline(result, headers)
+        if query_headers is None:
+            return result
+
         try:
-            self._assert_refusals_while_down(result, headers)
+            self._assert_refusals_while_down(result, headers, query_headers)
         finally:
             self._restore(result)
 
@@ -355,7 +409,7 @@ class FailClosedFlow(BaseFlow):
     # ── access-request lifecycle ─────────────────────────────────────────────
 
     def _clear_access_requests(
-        self, headers: dict[str, str]
+        self, headers: dict[str, str], asset_id: str | None = None
     ) -> tuple[list[str], str | None]:
         """Revoke every live access request this consumer holds for the asset.
 
@@ -384,7 +438,7 @@ class FailClosedFlow(BaseFlow):
         for item in requests:
             if not isinstance(item, dict):
                 continue
-            if item.get("asset_id") != s.fail_closed_asset_id:
+            if item.get("asset_id") != (asset_id or s.fail_closed_asset_id):
                 continue
             if not item.get("can_revoke"):
                 continue
@@ -482,7 +536,9 @@ class FailClosedFlow(BaseFlow):
         )
         return True
 
-    def _offer(self, headers: dict[str, str]) -> dict[str, Any] | None:
+    def _offer(
+        self, headers: dict[str, str], asset_id: str | None = None
+    ) -> dict[str, Any] | None:
         """The offer **the provider published**, read from its catalogue.
 
         The id is not `asset_id`. The connector re-resolves the policy from the
@@ -509,7 +565,7 @@ class FailClosedFlow(BaseFlow):
         for d in datasets:
             if not isinstance(d, dict):
                 continue
-            if str(d.get("@id") or d.get("id")) != s.fail_closed_asset_id:
+            if str(d.get("@id") or d.get("id")) != (asset_id or s.fail_closed_asset_id):
                 continue
             policies = d.get("hasPolicy") or d.get("odrl:hasPolicy") or []
             if isinstance(policies, dict):
@@ -564,7 +620,9 @@ class FailClosedFlow(BaseFlow):
         )
         return True
 
-    def _start_exchange(self, headers: dict[str, str]) -> Attempt:
+    def _start_exchange(
+        self, headers: dict[str, str], asset_id: str | None = None
+    ) -> Attempt:
         """Ask for a *new* contract, and report **who** decided the answer.
 
         `/consumer/negotiate`, not `/consumer/flow`: the negotiation **is** the
@@ -573,7 +631,8 @@ class FailClosedFlow(BaseFlow):
         same way.
         """
         s = self.settings
-        offer = self._offer(headers)
+        asset = asset_id or s.fail_closed_asset_id
+        offer = self._offer(headers, asset)
         offer_id = str((offer or {}).get("@id") or "")
         if not offer_id:
             # With the PDP down the provider's catalogue answer is itself a
@@ -586,7 +645,7 @@ class FailClosedFlow(BaseFlow):
             {
                 "counter_party_address": s.counter_party_address,
                 "offer_id": offer_id,
-                "asset_id": s.fail_closed_asset_id,
+                "asset_id": asset,
                 "assigner": s.provider_did,
             },
             headers=headers,
@@ -630,6 +689,199 @@ class FailClosedFlow(BaseFlow):
             return Attempt("terminated", 200, state=observed)
         return Attempt("unsettled", 200, state=observed, detail=state or None)
 
+
+    # ── the per-query gate (`E2E-16`, `X-6`'s other half) ────────────────────
+    #
+    # `X-6` has two enforcement points and this flow used to assert one. The
+    # **negotiation** gate refuses a contract while the PDP is unreachable, which
+    # everything above covers. The **per-query** gate is the data plane asking
+    # `/internal/dataplane/authorize` for every query and denying when the answer
+    # cannot be had — and nothing asserted it live, because the PEP in this
+    # topology used to be the mock alone, so a green refusal would have been
+    # evidence about the mock (`E2E-16` said exactly this, and it was right).
+    #
+    # `T-1` removed that objection: **one EDR is accepted by both data planes**,
+    # measured, so this asserts the refusal on each and names which.
+    #
+    # **It needs the consent-gated asset, not this flow's usual one.** Two
+    # measurements decided that: `datasets.gold.om_weather_features` does not
+    # exist on the real celine `dataset-api` (`400 unknown dataset`), and on the
+    # mock it is served by `_plain_query` — the deliberate no-dataspace path for
+    # data with no subject behind it — which never calls `authorize` at all. A
+    # refusal there would prove nothing about the gate. `datasets.silver.meters_15m`
+    # is consent-gated, exists on both, and both refuse it without a credential.
+
+    def _query(self, url: str, headers: dict[str, str]) -> tuple[int, Any]:
+        return self.http.post_raw(
+            f"{url}/query",
+            {"sql": f"SELECT * FROM {self.settings.asset_id}", "limit": 10},
+            headers=headers,
+        )
+
+    def _establish_query_baseline(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> dict[str, str] | None:
+        """A live transfer serving rows from every data plane, before the outage.
+
+        Returns the query headers, or `None` having failed a step. Without rows
+        flowing first, "refused during the outage" is satisfiable by a transfer
+        that never worked — the same hole `consent-withdrawal` had to close.
+        """
+        s = self.settings
+        svc = self.http.bearer_headers()
+        subject_vc = self._resolve_user_vc(s.data_subject_email, svc)
+        subject = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
+        try:
+            self.http.post(
+                f"{s.connector_url}/consent/my/shares",
+                {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did,
+                 "enabled": True},
+                headers=subject,
+            )
+        except Exception as exc:
+            result.fail_step("query baseline", f"could not grant consent: {exc}")
+            return None
+        self._granted_consent = True
+
+        # **Clear this asset's requests first, or the negotiation is answered by
+        # a 409 dedup** — which `_start_exchange` reports as *not agreed*, i.e.
+        # exactly like the refusal this flow exists to detect. `E2E-06` paid for
+        # that once already; the clearing above it filters on
+        # `fail_closed_asset_id`, so the consent-gated asset needed its own pass.
+        #
+        # Found by the suite, not standalone: `smoke` and `consent-withdrawal`
+        # both negotiate this asset and run before this flow, so a leftover
+        # request is the normal case in a full run and absent in a solo one.
+        self._clear_access_requests(headers, asset_id=s.asset_id)
+
+        exchange = self._start_exchange(headers, asset_id=s.asset_id)
+        if not exchange.agreed or not exchange.agreement_id:
+            result.fail_step(
+                "query baseline",
+                "no agreement for the consent-gated asset, so there is no EDR to "
+                "present during the outage",
+                outcome=exchange.outcome,
+                state=exchange.state,
+            )
+            return None
+
+        try:
+            transfer = self.http.post(
+                f"{s.consumer_connector_url}/consumer/transfer",
+                {"contract_agreement_id": exchange.agreement_id,
+                 "counter_party_address": s.counter_party_address,
+                 "asset_id": s.asset_id, "connector_id": s.provider_did},
+                headers=headers,
+            ) or {}
+            transfer_id = transfer["transfer_id"]
+            self.http.poll_until(
+                f"{s.consumer_connector_url}/consumer/transfers/"
+                f"{urllib.parse.quote(transfer_id, safe='')}",
+                lambda p: p.get("state") == "STARTED",
+                headers=headers,
+            )
+            edr = self.http.get(
+                f"{s.consumer_connector_url}/consumer/edr/"
+                f"{urllib.parse.quote(transfer_id, safe='')}",
+                headers=headers,
+            ) or {}
+        except Exception as exc:
+            result.fail_step("query baseline", f"no EDR-gated transfer: {exc}")
+            return None
+
+        token = str(edr.get("authorization") or "")
+        if not token:
+            result.fail_step("query baseline", "the EDR carries no authorization token")
+            return None
+        query_headers = {
+            "Authorization": token,
+            # The **shared** DSP agreement id, which the provider knows; the
+            # negotiation's `contractAgreementId` is this side's local one and is
+            # refused as unknown (`EDCL-06`).
+            "Edc-Contract-Agreement-Id": str(edr.get("agreement_id") or ""),
+            "Edc-Transfer-Process-Id": transfer_id,
+            "Edc-Purpose": s.consented_purpose,
+        }
+
+        for label, url in s.data_planes:
+            status, payload = self._query(url, query_headers)
+            rows = payload.get("count", 0) if isinstance(payload, dict) else 0
+            if status != 200 or rows < 1:
+                result.fail_step(
+                    "query baseline",
+                    f"{label} served no rows while the PDP was up, so a refusal "
+                    "during the outage would prove nothing",
+                    status_code=status,
+                    data_plane=label,
+                )
+                return None
+        result.pass_step(
+            "query baseline",
+            "a live transfer serves rows from every data plane while the PDP is up",
+            data_planes=[label for label, _ in s.data_planes],
+            transfer_id=transfer_id,
+        )
+        return query_headers
+
+    def _assert_per_query_refusals(
+        self, result: FlowResult, query_headers: dict[str, str]
+    ) -> None:
+        """Every data plane refuses while the PDP is unreachable — `E2E-16`.
+
+        **No cache to wait out here, and that is the point of asserting it
+        separately.** The negotiation gate reuses a decision for
+        `ds.access.scope.cache.ttl.seconds`, which is why the step above this one
+        waits 75s. The data plane asks per query and caches nothing, so the
+        refusal is immediate — two enforcement points, two clocks, and conflating
+        them is how `X-6` looked like one property.
+        """
+        served, unattributed, observed = [], [], []
+        for label, url in self.settings.data_planes:
+            status, payload = self._query(url, query_headers)
+            rows = payload.get("count", 0) if isinstance(payload, dict) else 0
+            body = payload.get("detail") if isinstance(payload, dict) else payload
+            detail = str(body)
+            short = label.split(" at ")[0]
+            observed.append(f"{short}: {status} {detail[:70]}")
+            if status == 200 and rows > 0:
+                served.append(f"{short} served {rows} rows (HTTP {status})")
+            elif not (status in _PDP_UNREACHABLE_STATUS or _names_the_pdp(detail)):
+                # **A refusal has to be the gate's.** `E2E-05` is the same lesson:
+                # a 403 is also what an unrelated policy denial produces, and here
+                # the confound is real — with the PDP down, the EDC's policy
+                # monitor cannot evaluate consent either, so a terminated transfer
+                # would also stop the query and would look exactly like this.
+                # Measured: both planes answer `502 ds-connector unreachable`.
+                unattributed.append(f"{short}: HTTP {status} {detail[:60]}")
+        log.info("per-query gate during the outage: %s", " | ".join(observed))
+        if served:
+            result.fail_step(
+                "per-query gate fails closed",
+                "a data plane served rows while the policy decision point was "
+                "unreachable — it cannot have asked, and it answered anyway: "
+                + "; ".join(served),
+                observed=observed,
+            )
+            return
+        if unattributed:
+            result.fail_step(
+                "per-query gate fails closed",
+                "a data plane refused, but not for want of the PDP — so this run "
+                "did not observe the gate. The likeliest other cause is the "
+                "transfer having been terminated by the policy monitor, which "
+                "also cannot reach consent while the connector is down: "
+                + "; ".join(unattributed),
+                observed=observed,
+            )
+            return
+        result.pass_step(
+            "per-query gate fails closed",
+            "every data plane refused the query while ds-connector was down — "
+            "asserted on the real celine dataset-api and on the mock, not "
+            "inferred from one of them, and with no cache to wait out",
+            observed=observed,
+        )
+
     # ── 2. the outage ────────────────────────────────────────────────────────
 
     def _wait_out_decision_cache(self, result: FlowResult) -> None:
@@ -658,7 +910,10 @@ class FailClosedFlow(BaseFlow):
         )
 
     def _assert_refusals_while_down(
-        self, result: FlowResult, headers: dict[str, str]
+        self,
+        result: FlowResult,
+        headers: dict[str, str],
+        query_headers: dict[str, str] | None = None,
     ) -> None:
         # Clear the baseline's own request **before** stopping the PDP: revoking
         # is a consumer-side operation, but the flow should not depend on that
@@ -685,6 +940,13 @@ class FailClosedFlow(BaseFlow):
             f"{s.pdp_container} is down and {s.connector_url} has stopped "
             "answering",
         )
+
+        # **The per-query gate first, before the cache wait** (`E2E-16`). It
+        # caches nothing, so it must refuse immediately — and asserting it before
+        # the 75s wait is what shows the two gates are on different clocks rather
+        # than one property observed twice.
+        if query_headers is not None:
+            self._assert_per_query_refusals(result, query_headers)
 
         self._wait_out_decision_cache(result)
 
