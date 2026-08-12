@@ -68,12 +68,14 @@ async def test_health_no_auth(client):
     assert r.status_code == 200
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_without_token_returns_401(client):
     r = await client.get("/catalog")
     assert r.status_code == 401
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_wrong_scope_returns_403(client):
     r = await client.get(
@@ -107,6 +109,7 @@ async def test_catalog_context_is_public(client):
     assert "dcat" in r.json()["@context"]
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_meta_still_requires_auth(client):
     """The sibling route is unaffected — only `/context` left the guard."""
@@ -114,6 +117,7 @@ async def test_catalog_meta_still_requires_auth(client):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_search_requires_auth(client):
     r = await client.post("/catalog/search", json={"q": "test"})

@@ -43,6 +43,7 @@ class TwoProvidersFlow(BaseFlow):
         "A second provider with no members: separate governance, separate "
         "catalogue, and a negotiation that names which counterparty it is with"
     )
+    rules = ("C-7", "X-1")
 
     def execute(self) -> FlowResult:
         s = self.settings

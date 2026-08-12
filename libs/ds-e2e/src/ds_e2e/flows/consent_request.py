@@ -43,6 +43,7 @@ class ConsentRequestFlow(BaseFlow):
         "Interactive consent: an ask lands pending, the subject sees it, "
         "rejects/approves/revokes, with enforcement asserted at each transition"
     )
+    rules = ("D-18", "D-19")
 
     def execute(self) -> FlowResult:
         s = self.settings

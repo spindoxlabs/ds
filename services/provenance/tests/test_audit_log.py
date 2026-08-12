@@ -27,6 +27,7 @@ QUERY_EVENT = {
 }
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_a_query_event_writes_a_compliance_row(client):
     assert (await client.post("/prov/events", json=QUERY_EVENT)).status_code == 201
@@ -42,6 +43,7 @@ async def test_a_query_event_writes_a_compliance_row(client):
     assert entry["subject_ids"] == ["did:example:alice", "did:example:bob"]
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_the_summary_counts_real_queries(client):
     await client.post("/prov/events", json=QUERY_EVENT)
@@ -56,6 +58,7 @@ async def test_the_summary_counts_real_queries(client):
     assert summary["unique_subjects"] == 2
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_subject_id_narrows_the_log(client):
     """Declared since the route was written and never applied — so "every query

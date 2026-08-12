@@ -215,6 +215,7 @@ async def test_ingestion_records_snapshot_and_emits(engine, prov_client):
     assert ingested[0]["record_count"] == 99
 
 
+@pytest.mark.rule("L-13")
 @pytest.mark.asyncio
 async def test_ingestion_requires_scope(prov_client):
     client, _ = prov_client
@@ -243,6 +244,7 @@ async def test_ingestion_unknown_dataset_422(prov_client):
 # consent DB. The rule was addressed to the one component unable to comply.
 
 
+@pytest.mark.rule("L-2")
 @pytest.mark.asyncio
 async def test_disclosure_computes_the_snapshot_the_caller_cannot(engine, prov_client):
     """The caller does not send a hash and could not honestly produce one."""
@@ -278,6 +280,7 @@ async def test_disclosure_computes_the_snapshot_the_caller_cannot(engine, prov_c
     assert disclosed[0]["consent_snapshot_hash"] == expected
 
 
+@pytest.mark.rule("L-2")
 @pytest.mark.asyncio
 async def test_a_disclosure_that_cannot_be_recorded_does_not_proceed(engine, monkeypatch):
     """`L-1`'s failure policy is chosen by position. A transfer that already
@@ -310,6 +313,7 @@ async def test_a_disclosure_that_cannot_be_recorded_does_not_proceed(engine, mon
     assert r.status_code == 502, r.text
 
 
+@pytest.mark.rule("L-13")
 @pytest.mark.asyncio
 async def test_disclosure_requires_its_own_scope(prov_client):
     """Not `connector.ingestion.record`. The two are opposite directions across
@@ -352,6 +356,7 @@ def _row(**overrides) -> ConsentRequestORM:
     return ConsentRequestORM(**base)
 
 
+@pytest.mark.rule("L-2")
 def test_snapshot_hash_is_stable_and_order_independent():
     a = _row(subject_id="did:web:a")
     b = _row(subject_id="did:web:b")
@@ -359,12 +364,14 @@ def test_snapshot_hash_is_stable_and_order_independent():
     assert len(consent_snapshot_hash([a])) == 64
 
 
+@pytest.mark.rule("L-2")
 def test_snapshot_hash_reacts_to_purpose_and_version():
     base = consent_snapshot_hash([_row()])
     assert consent_snapshot_hash([_row(purpose=["IncentiveCalculation"])]) != base
     assert consent_snapshot_hash([_row(legal_basis={"consent_text_version": "2.0"})]) != base
 
 
+@pytest.mark.rule("L-2")
 @pytest.mark.asyncio
 async def test_dataset_snapshot_counts_only_granted(engine):
     await _seed(engine, subject_id="did:web:a", status="granted")

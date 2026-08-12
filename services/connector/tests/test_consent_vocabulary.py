@@ -66,6 +66,7 @@ class TestWriteValidation:
                     dataset_id="datasets.silver.ghost",
                 )
 
+    @pytest.mark.rule("D-10")
     @pytest.mark.asyncio
     async def test_out_of_taxonomy_purpose_is_rejected(self, engine):
         factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -80,6 +81,7 @@ class TestWriteValidation:
                     purpose=["WhateverWeFeelLike"],
                 )
 
+    @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_purposes_are_stored_as_slugs(self, engine):
         """A full IRI and a slug denote the same concept and must not both persist."""
@@ -99,6 +101,7 @@ class TestWriteValidation:
                 )
         assert consent.purpose == ["FlexibilityResearch"]
 
+    @pytest.mark.rule("D-10")
     @pytest.mark.asyncio
     async def test_api_returns_422_for_unknown_dataset(self, client):
         r = await client.post(
@@ -108,6 +111,7 @@ class TestWriteValidation:
         )
         assert r.status_code == 422
 
+    @pytest.mark.rule("D-10")
     @pytest.mark.asyncio
     async def test_api_returns_422_for_unknown_purpose(self, client):
         r = await client.post(
@@ -131,6 +135,7 @@ class TestWriteValidation:
 
 
 class TestPurposeEnforcement:
+    @pytest.mark.rule("A-1", "D-8")
     @pytest.mark.asyncio
     async def test_narrower_purpose_is_allowed(self, engine):
         """Consent to the parent covers a narrower request (odrl:isA)."""
@@ -142,6 +147,7 @@ class TestPurposeEnforcement:
             )
         assert active
 
+    @pytest.mark.rule("A-2", "D-8", "D-9")
     @pytest.mark.asyncio
     async def test_broader_purpose_is_denied(self, engine):
         """Consent to a child does not cover its parent — that would widen it."""
@@ -154,6 +160,7 @@ class TestPurposeEnforcement:
         assert not active
         assert "not covered" in reason
 
+    @pytest.mark.rule("A-1", "D-8")
     @pytest.mark.asyncio
     async def test_sibling_purpose_is_denied(self, engine):
         await _grant(engine, purpose=["FlexibilityResearch"])
@@ -164,6 +171,7 @@ class TestPurposeEnforcement:
             )
         assert not active
 
+    @pytest.mark.rule("C-11", "D-7")
     @pytest.mark.asyncio
     async def test_empty_requested_purpose_is_denied_for_pii(self, engine):
         """An absent purpose means the caller never said why it wants the data."""
@@ -174,6 +182,7 @@ class TestPurposeEnforcement:
         assert not active
         assert "no purpose declared" in reason
 
+    @pytest.mark.rule("C-11", "D-7")
     @pytest.mark.asyncio
     async def test_empty_consented_purpose_is_denied_for_pii(self, engine):
         """Empty is never 'unrestricted': the person was never told the use."""
@@ -186,6 +195,7 @@ class TestPurposeEnforcement:
         assert not active
         assert "records no purpose" in reason
 
+    @pytest.mark.rule("D-7")
     @pytest.mark.asyncio
     async def test_open_dataset_needs_no_purpose(self, engine):
         """No data subject, so the question does not arise."""
@@ -195,6 +205,7 @@ class TestPurposeEnforcement:
             active, _ = await check_consent(session, "sub-001", OPEN, "consumer")
         assert active
 
+    @pytest.mark.rule("D-10")
     @pytest.mark.asyncio
     async def test_unknown_dataset_fails_closed(self, engine):
         await _grant(engine, dataset_id="datasets.silver.ghost", purpose=[])
@@ -207,6 +218,7 @@ class TestPurposeEnforcement:
 
 
 class TestControllerRoleEnforcement:
+    @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_matching_role_is_allowed(self, engine):
         await _grant(engine, controller="example-org", controller_role="community-operator")
@@ -222,6 +234,7 @@ class TestControllerRoleEnforcement:
             )
         assert active
 
+    @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_different_role_is_denied(self, engine):
         """Controller ≠ legal entity: two roles of one company are two controllers."""
@@ -241,6 +254,7 @@ class TestControllerRoleEnforcement:
 
 
 class TestRowFiltering:
+    @pytest.mark.rule("D-8")
     @pytest.mark.asyncio
     async def test_row_filter_excludes_subjects_who_consented_to_another_purpose(self, engine):
         await _grant(engine, subject_id="sub-consented", purpose=["FlexibilityResearch"])
@@ -254,6 +268,7 @@ class TestRowFiltering:
             )
         assert granted == ["sub-consented"]
 
+    @pytest.mark.rule("D-15")
     @pytest.mark.asyncio
     async def test_revoked_row_never_appears(self, engine):
         await _grant(engine, subject_id="sub-consented")
@@ -273,6 +288,7 @@ class TestRowFiltering:
 
 
 class TestInternalCheckEndpoint:
+    @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_purpose_reaches_the_check(self, engine, client):
         await _grant(engine, purpose=["FlexibilityResearch"])
@@ -316,6 +332,7 @@ class TestInternalCheckEndpoint:
         )
         assert r.json()["subject_ids"] == ["sub-001"]
 
+    @pytest.mark.rule("D-10")
     @pytest.mark.asyncio
     async def test_unknown_purpose_is_422(self, client):
         r = await client.get(
@@ -325,6 +342,7 @@ class TestInternalCheckEndpoint:
         )
         assert r.status_code == 422
 
+    @pytest.mark.rule("D-7")
     @pytest.mark.asyncio
     async def test_pii_without_purpose_returns_no_subjects(self, engine, client):
         await _grant(engine, purpose=["FlexibilityResearch"])
@@ -369,6 +387,7 @@ class TestSharingOffersEndpoint:
         assert offer["fallback_text_en"]["purpose_label"]
         assert offer["user_visible_hash"]
 
+    @pytest.mark.rule("D-4", "D-5")
     @pytest.mark.asyncio
     async def test_contract_based_offer_is_flagged_as_disclosure(self, client):
         body = (await client.get("/ns/sharing-offers")).json()
@@ -377,6 +396,7 @@ class TestSharingOffersEndpoint:
 
 
 class TestOfferDrivenShares:
+    @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_offer_expands_to_rows_with_purpose_and_controller(self, client):
         r = await client.post(
@@ -392,6 +412,7 @@ class TestOfferDrivenShares:
         assert rows[0]["controller"] == "example-org"
         assert rows[0]["offer_id"] == "test-flexibility"
 
+    @pytest.mark.rule("D-4")
     @pytest.mark.asyncio
     async def test_contract_based_offer_cannot_be_toggled(self, client):
         """Offering a control the legal basis does not support invalidates consent."""

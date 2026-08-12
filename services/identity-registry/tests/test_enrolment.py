@@ -133,6 +133,7 @@ async def issue_code(client, alias="rec") -> str:
 # ── The happy path ────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-20")
 @pytest.mark.asyncio
 async def test_enrolment_registers_the_did_the_key_and_the_endpoints(
     client, db_session, resolver
@@ -166,6 +167,7 @@ async def test_enrolment_registers_the_did_the_key_and_the_endpoints(
     assert participant.sts_client_secret is None
 
 
+@pytest.mark.rule("P-7", "P-20")
 @pytest.mark.asyncio
 async def test_the_anchor_stores_the_public_key_and_no_private_key(
     client, db_session, resolver
@@ -191,6 +193,7 @@ async def test_the_anchor_stores_the_public_key_and_no_private_key(
     assert "d" not in key.public_jwk
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_the_owner_is_bound_to_the_did_that_enrolled(
     client, db_session, resolver
@@ -232,6 +235,7 @@ async def test_the_code_is_spent_and_records_which_did_used_it(
     assert token.redeemed_did == org.did
 
 
+@pytest.mark.rule("P-21", "P-22")
 @pytest.mark.asyncio
 async def test_endpoints_come_from_the_did_document_not_the_request(
     client, db_session, resolver
@@ -259,6 +263,7 @@ async def test_endpoints_come_from_the_did_document_not_the_request(
 # ── Neither factor is sufficient alone ────────────────────────────
 
 
+@pytest.mark.rule("P-20")
 @pytest.mark.asyncio
 async def test_a_valid_code_without_a_matching_signature_enrols_nothing(
     client, db_session, resolver
@@ -286,6 +291,7 @@ async def test_a_valid_code_without_a_matching_signature_enrols_nothing(
     assert (await db_session.execute(select(Participant))).scalar_one_or_none() is None
 
 
+@pytest.mark.rule("P-20")
 @pytest.mark.asyncio
 async def test_a_valid_signature_without_a_code_enrols_nothing(
     client, db_session, resolver
@@ -352,6 +358,7 @@ async def test_an_expired_code_is_refused(client, db_session, resolver):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-20", "P-21")
 @pytest.mark.asyncio
 async def test_an_unresolvable_did_is_refused(client, db_session, resolver):
     """No local shortcut: the key comes from did:web or the request fails."""
@@ -429,6 +436,7 @@ async def test_a_missing_bearer_is_refused(client, db_session):
 # ── Rebinding, retries and idempotence ────────────────────────────
 
 
+@pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_re_enrolling_the_same_did_is_idempotent(client, db_session, resolver):
     """A retry after a network failure must not need an operator."""
@@ -453,6 +461,7 @@ async def test_re_enrolling_the_same_did_is_idempotent(client, db_session, resol
     assert len(participants) == 1
 
 
+@pytest.mark.rule("P-20")
 @pytest.mark.asyncio
 async def test_a_second_did_cannot_take_over_an_enrolled_owner(
     client, db_session, resolver
@@ -484,6 +493,7 @@ async def test_a_second_did_cannot_take_over_an_enrolled_owner(
     assert owner.did == first.did
 
 
+@pytest.mark.rule("P-7", "P-20")
 @pytest.mark.asyncio
 async def test_a_locally_held_did_cannot_be_enrolled(client, db_session, resolver):
     """A DID this registry generated is not re-bindable by presenting a key.
@@ -594,6 +604,7 @@ async def test_a_wrong_message_type_is_a_400(client, db_session, resolver):
     assert r.status_code == 400
 
 
+@pytest.mark.rule("P-22")
 @pytest.mark.asyncio
 async def test_issuer_metadata_is_public_and_names_the_anchor(client):
     r = await client.get("/issuer/metadata")
@@ -715,6 +726,7 @@ async def test_the_request_is_recorded(client, db_session, resolver):
 # ── Issuance and delivery (CIP steps 7-8) ─────────────────────────
 
 
+@pytest.mark.rule("P-3", "P-20", "P-21")
 @pytest.mark.asyncio
 async def test_enrolment_issues_and_delivers_a_membership_credential(
     client, db_session, resolver, credential_store
@@ -781,6 +793,7 @@ async def test_the_anchor_keeps_its_own_issuance_record(
     assert rows[0].status_list_index is not None
 
 
+@pytest.mark.rule("P-21")
 @pytest.mark.asyncio
 async def test_delivery_correlates_with_the_request(
     client, db_session, resolver, credential_store
@@ -844,6 +857,7 @@ async def test_a_delivery_failure_is_reported_not_swallowed(
     assert "could not deliver" in (request.detail or "")
 
 
+@pytest.mark.rule("P-21")
 @pytest.mark.asyncio
 async def test_a_participant_publishing_no_credential_service_is_reported(
     client, db_session, resolver, credential_store
@@ -864,6 +878,7 @@ async def test_a_participant_publishing_no_credential_service_is_reported(
     assert "CredentialService" in (request.detail or "")
 
 
+@pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_re_enrolment_redelivers_and_does_not_re_mint(
     client, db_session, resolver, credential_store

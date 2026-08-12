@@ -11,6 +11,7 @@ from provenance.db.models import ProvNodeORM
 from provenance.services.prov_service import upsert_node
 
 
+@pytest.mark.rule("L-8")
 @pytest.mark.asyncio
 async def test_node_type_follows_the_latest_statement(db_session):
     """The first event to mention an IRI used to fix its type permanently.
@@ -54,6 +55,7 @@ async def test_external_meta_accumulates_rather_than_replacing(db_session):
     }
 
 
+@pytest.mark.rule("L-8")
 @pytest.mark.asyncio
 async def test_an_unknown_value_does_not_erase_a_known_one(db_session):
     """`None` on the incoming side means *this event does not know*, never

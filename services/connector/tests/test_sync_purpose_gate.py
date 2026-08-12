@@ -82,6 +82,7 @@ async def _sync(edc) -> object:
     return await sync_governance("unused.yaml", edc, _mapper(), _NullProv())
 
 
+@pytest.mark.rule("C-10", "D-10")
 @pytest.mark.asyncio
 async def test_unresolvable_purpose_is_not_published(datasets):
     datasets({"datasets.gold.typo": _rule(["energy-monitoring"])})
@@ -96,6 +97,7 @@ async def test_unresolvable_purpose_is_not_published(datasets):
     assert result.synced == []
 
 
+@pytest.mark.rule("C-11", "D-7")
 @pytest.mark.asyncio
 async def test_empty_purpose_is_not_published(datasets):
     """The silent case: no entries to iterate, so every earlier check passed."""
@@ -121,6 +123,7 @@ async def test_a_valid_dataset_still_publishes(datasets):
     assert result.errors == []
 
 
+@pytest.mark.rule("C-9")
 @pytest.mark.asyncio
 async def test_every_offender_is_reported_in_one_pass(datasets):
     """A producer revising an ingest needs the whole list, not the first failure.
@@ -161,6 +164,7 @@ async def test_one_bad_dataset_does_not_block_the_good_ones(datasets):
     assert [e["dataset"] for e in result.errors] == ["datasets.gold.bad"]
 
 
+@pytest.mark.rule("M-7")
 @pytest.mark.asyncio
 async def test_absolute_iri_from_another_vocabulary_is_accepted(datasets):
     """A deployment may cite a purpose this profile does not carry."""
@@ -183,6 +187,7 @@ def fixture_governance() -> str:
     return str(Path(__file__).parent / "fixtures" / "governance.yaml")
 
 
+@pytest.mark.rule("C-10")
 @pytest.mark.asyncio
 async def test_unresolvable_offer_id_is_not_published(datasets, fixture_governance):
     """"No sharing offer" and "not shared" are the same statement.
@@ -200,6 +205,7 @@ async def test_unresolvable_offer_id_is_not_published(datasets, fixture_governan
     assert "no-such-offer" in result.errors[0]["error"]
 
 
+@pytest.mark.rule("C-10")
 @pytest.mark.asyncio
 async def test_a_resolvable_offer_id_publishes(datasets, fixture_governance):
     datasets({"datasets.gold.ok": _rule(["FlexibilityResearch"], ["test-flexibility"])})

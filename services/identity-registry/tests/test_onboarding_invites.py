@@ -69,6 +69,7 @@ async def test_valid_code_files_an_application(client):
     assert [a["alias"] for a in queue.json()] == ["acme-energy"]
 
 
+@pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_a_code_works_exactly_once(client):
     code = await issue(client)
@@ -114,6 +115,7 @@ async def test_expired_code_is_refused(client, db_session):
     assert (await client.post("/onboarding/applications", json=application(code))).status_code == 403
 
 
+@pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_duplicate_alias_is_refused(client):
     first, second = await issue(client), await issue(client)
@@ -123,6 +125,7 @@ async def test_duplicate_alias_is_refused(client):
     assert clash.status_code == 409
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_application_is_pending_and_grants_nothing(client):
     """Filing an application must not create an owner or a participant."""

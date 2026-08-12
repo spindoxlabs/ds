@@ -10,6 +10,7 @@ from connector.db.models import ConsentRequestORM
 HEADERS = make_headers(scope="connector.admin")
 
 
+@pytest.mark.rule("D-19")
 @pytest.mark.asyncio
 async def test_authorizations_empty(client):
     r = await client.get("/provider/authorizations", headers=HEADERS)
@@ -17,6 +18,7 @@ async def test_authorizations_empty(client):
     assert r.json() == {"datasets": []}
 
 
+@pytest.mark.rule("D-19")
 @pytest.mark.asyncio
 async def test_authorizations_returns_granted(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -58,6 +60,7 @@ async def test_authorizations_returns_granted(engine, client):
     assert "updated_at" in ds
 
 
+@pytest.mark.rule("D-19")
 @pytest.mark.asyncio
 async def test_authorizations_excludes_revoked(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -92,6 +95,7 @@ async def test_authorizations_excludes_revoked(engine, client):
     assert r.json() == {"datasets": []}
 
 
+@pytest.mark.rule("D-19")
 @pytest.mark.asyncio
 async def test_authorizations_multiple_datasets(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -129,6 +133,7 @@ async def test_authorizations_multiple_datasets(engine, client):
     assert "datasets.silver.meters_15m" in ids
 
 
+@pytest.mark.rule("D-2", "D-19")
 @pytest.mark.asyncio
 async def test_authorizations_no_private_data(engine, client):
     """Ensure the response contains no private data (consumer IDs, purposes, messages)."""

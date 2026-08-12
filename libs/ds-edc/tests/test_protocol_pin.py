@@ -69,11 +69,13 @@ def _rel(path: Path) -> str:
     return str(path.relative_to(REPO))
 
 
+@pytest.mark.rule("X-2")
 def test_the_version_is_derived_from_the_pin_and_not_written_twice():
     assert DATASPACE_PROTOCOL == f"dataspace-protocol-http:{DSP_VERSION}"
     assert DSP_PATH_SEGMENT == f"/protocol/{DSP_VERSION}"
 
 
+@pytest.mark.rule("X-2")
 def test_the_pin_occurs_once_in_the_tree():
     """§6 rule 2. A second copy is how the two come to disagree."""
     holders = [
@@ -86,6 +88,7 @@ def test_the_pin_occurs_once_in_the_tree():
     )
 
 
+@pytest.mark.rule("X-1", "X-2")
 def test_every_configured_dsp_address_carries_the_pinned_version():
     """X-2, as a check rather than as a claim.
 
@@ -110,6 +113,7 @@ def test_every_configured_dsp_address_carries_the_pinned_version():
     )
 
 
+@pytest.mark.rule("X-2")
 def test_no_protocol_url_names_a_different_version():
     """The other direction: a URL that *has* a version segment, and it is stale.
 
@@ -135,6 +139,7 @@ def test_no_protocol_url_names_a_different_version():
 @pytest.mark.parametrize("body", [
     {"counter_party_address": "http://172.17.0.1:19194/protocol/2025-1"},
 ])
+@pytest.mark.rule("X-2")
 def test_the_search_actually_reaches_the_tree(body):
     """A guard on this file, not on the platform.
 

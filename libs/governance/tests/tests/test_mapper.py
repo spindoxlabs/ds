@@ -67,6 +67,7 @@ def _left_op(constraint: dict) -> str:
 
 # ── ODRL Offer ────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("C-5")
 def test_odrl_offer_basic_structure():
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
@@ -79,6 +80,7 @@ def test_odrl_offer_basic_structure():
     assert "odrl:obligation" in offer
 
 
+@pytest.mark.rule("C-5", "M-3")
 def test_odrl_context_uses_profile_prefix():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green")
@@ -89,6 +91,7 @@ def test_odrl_context_uses_profile_prefix():
     assert "odrl" in ctx
 
 
+@pytest.mark.rule("A-10")
 def test_open_level_permits_transfer():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green")
@@ -99,6 +102,7 @@ def test_open_level_permits_transfer():
     assert _P.term(_P.query_action) in actions
 
 
+@pytest.mark.rule("A-10")
 def test_restricted_level_only_query():
     mapper = _mapper()
     rule = _rule(access_level="restricted", classification="green")
@@ -108,6 +112,7 @@ def test_restricted_level_only_query():
     assert actions == [_P.term(_P.query_action)]
 
 
+@pytest.mark.rule("A-6")
 def test_secret_level_no_permissions():
     mapper = _mapper()
     rule = _rule(access_level="secret", classification="green")
@@ -115,6 +120,7 @@ def test_secret_level_no_permissions():
     assert offer["odrl:permission"] == []
 
 
+@pytest.mark.rule("A-7", "A-10")
 def test_pii_prohibits_transfer_and_sublicense():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="pii")
@@ -151,6 +157,7 @@ def _purpose_iris(offer) -> list[str]:
     return iris
 
 
+@pytest.mark.rule("C-6")
 def test_purpose_comes_from_policy_declaration():
     mapper = _mapper(profile=_ENERGY_PROFILE)
     rule = _rule(
@@ -175,6 +182,7 @@ def test_purpose_uses_profile_namespace():
     assert all(iri.startswith(_P.namespace) for iri in iris)
 
 
+@pytest.mark.rule("C-6")
 def test_tags_alone_produce_no_purpose_constraint():
     """`tags` are DCAT-AP keywords — a topic is not a reason for processing."""
     mapper = _mapper(profile=_ENERGY_PROFILE)
@@ -183,6 +191,7 @@ def test_tags_alone_produce_no_purpose_constraint():
     assert _purpose_iris(offer) == []
 
 
+@pytest.mark.rule("D-10")
 def test_unknown_declared_purpose_is_dropped():
     """A typo must not become an unconstrained offer — it is dropped and flagged
     by the `purpose-declared` compliance check, never silently widened."""
@@ -239,6 +248,7 @@ def test_consent_constraint_added_when_user_filter_column_set():
         assert consent_constraints[0]["odrl:rightOperand"]["@value"] == "active"
 
 
+@pytest.mark.rule("A-8")
 def test_retention_days_adds_delete_obligation_with_delay_period():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green", retention_days=30)
@@ -255,6 +265,7 @@ def test_retention_days_adds_delete_obligation_with_delay_period():
     assert refinement["odrl:rightOperand"]["@type"] == "xsd:duration"
 
 
+@pytest.mark.rule("A-8")
 def test_attribution_obligation_uses_attribute_to():
     mapper = _mapper()
     rule = _rule(
@@ -274,6 +285,7 @@ def test_attribution_obligation_uses_attribute_to():
 
 # ── access_requirements → constraints ────────────────────────────────────────
 
+@pytest.mark.rule("C-21")
 def test_access_requirements_all_no_membership_constraint():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green", access_requirements="all")
@@ -286,6 +298,7 @@ def test_access_requirements_all_no_membership_constraint():
         assert len(membership) == 0
 
 
+@pytest.mark.rule("C-21")
 def test_access_requirements_partner_adds_membership_constraint():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green", access_requirements="partner")
@@ -344,6 +357,7 @@ def test_access_requirements_contract_does_not_emit_odrl_industry():
     assert "odrl:industry" not in operands
 
 
+@pytest.mark.rule("C-21")
 def test_internal_access_level_adds_membership_even_without_access_requirements():
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
@@ -400,6 +414,7 @@ def _membership_scope_values(offer: dict) -> list[str]:
     return values
 
 
+@pytest.mark.rule("C-21")
 def test_owner_scope_member_when_internal():
     mapper = _mapper()
     rule = _rule(
@@ -413,6 +428,7 @@ def test_owner_scope_member_when_internal():
     assert all(v == "owner:example-org:member" for v in values)
 
 
+@pytest.mark.rule("C-21")
 def test_owner_scope_partner_when_partner_requirements():
     mapper = _mapper()
     rule = _rule(
@@ -480,6 +496,7 @@ def test_custom_profile_namespace_in_odrl():
                 assert lo.startswith("https://w3id.org/catenax/policy/")
 
 
+@pytest.mark.rule("M-3")
 def test_profile_iri_included_in_context():
     profile = OdrlProfile(profile_iri="dsp-policy:profile2025")
     mapper = _mapper(profile=profile)
@@ -553,6 +570,7 @@ def test_contract_definition_structure():
 
 # ── Purpose derivation ────────────────────────────────────────────────────────
 
+@pytest.mark.rule("A-10")
 def test_several_purposes_stay_one_multi_valued_isanyof():
     """Do not replace this with a disjunction of scalar `isA` constraints.
 
@@ -614,6 +632,7 @@ def test_multiple_declared_purposes_are_deduplicated():
     assert len(_purpose_constraints(offer)) == len(offer["odrl:permission"])
 
 
+@pytest.mark.rule("A-1")
 def test_single_declared_purpose_uses_is_a():
     mapper = _mapper(profile=_ENERGY_PROFILE)
     rule = _rule(
@@ -627,6 +646,7 @@ def test_single_declared_purpose_uses_is_a():
         assert constraint["odrl:rightOperand"] == {"@id": _P.purpose_iri("GridMonitoring")}
 
 
+@pytest.mark.rule("C-6")
 def test_tags_never_become_purposes(_p=_ENERGY_PROFILE):
     """`GOV-15` — the tag→purpose helper is gone, and the rule it broke is not.
 
@@ -654,6 +674,7 @@ def test_tags_never_become_purposes(_p=_ENERGY_PROFILE):
     assert _purpose_constraints(offer) == []
 
 
+@pytest.mark.rule("M-2")
 def test_medallion_inference():
     mapper = _mapper()
     for key, expected in [
@@ -762,6 +783,7 @@ def _rule_with_conforms_to(iri):
     return GovernanceRuleV2(title="Meters", dcat=DcatSpec(conforms_to=iri))
 
 
+@pytest.mark.rule("M-4")
 def test_asset_carries_the_declared_semantic_model():
     mapper = GovernanceMapper(participant_id="p", base_url="https://p.example.org")
     asset = mapper.to_asset_create(
@@ -795,6 +817,7 @@ def test_the_dct_prefix_is_absent_when_nothing_uses_it():
     assert asset["properties"]["dct:conformsTo"] is None
 
 
+@pytest.mark.rule("M-4")
 def test_the_semantic_model_is_not_respelled_under_the_profile_prefix():
     """`dct:conformsTo` is a DCAT-AP term, not a local one.
 
@@ -818,6 +841,7 @@ def test_the_semantic_model_is_not_respelled_under_the_profile_prefix():
 
 # ── GOV-10 · the emitted @context declares what the document uses ────────────
 
+@pytest.mark.rule("A-8")
 def test_rdf_is_declared_when_an_obligation_uses_it():
     """A delete obligation carries `rdf:value`, so `rdf:` must be defined.
 
@@ -832,6 +856,7 @@ def test_rdf_is_declared_when_an_obligation_uses_it():
     assert offer["@context"]["rdf"] == "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 
 
+@pytest.mark.rule("A-8")
 def test_rdf_is_not_declared_when_nothing_uses_it():
     """Same rule as `dct` on the asset: a prefix a document never references is
     a claim about vocabularies it does not speak."""

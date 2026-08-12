@@ -28,6 +28,7 @@ async def test_agreement_status_not_found(client):
     assert r.status_code == 404
 
 
+@pytest.mark.rule("X-10")
 @pytest.mark.asyncio
 @respx.mock
 async def test_agreement_status_unreachable_edc_is_not_a_404(client):
@@ -47,6 +48,7 @@ async def test_agreement_status_unreachable_edc_is_not_a_404(client):
     assert "unreachable" in r.json()["detail"].lower()
 
 
+@pytest.mark.rule("X-10")
 @pytest.mark.asyncio
 @respx.mock
 async def test_agreement_status_edc_5xx_is_not_a_404(client):
@@ -60,6 +62,7 @@ async def test_agreement_status_edc_5xx_is_not_a_404(client):
     assert r.status_code == 503
 
 
+@pytest.mark.rule("X-6", "X-10")
 @pytest.mark.asyncio
 @respx.mock
 async def test_transfer_status_unreachable_edc_denies_and_says_so(client):
@@ -79,6 +82,7 @@ async def test_transfer_status_unreachable_edc_denies_and_says_so(client):
     assert body["reason"] == "edc_unreachable"
 
 
+@pytest.mark.rule("X-10")
 @pytest.mark.asyncio
 @respx.mock
 async def test_transfer_status_empty_result_is_not_found(client):
@@ -117,6 +121,7 @@ async def test_agreement_status_found(engine, client):
     assert body["consumer_id"] == "consumer"
 
 
+@pytest.mark.rule("X-6b")
 @pytest.mark.asyncio
 async def test_consent_check_no_consent(client):
     r = await client.get("/internal/consent/check", params={
@@ -129,6 +134,7 @@ async def test_consent_check_no_consent(client):
     assert body["consent_active"] is False
 
 
+@pytest.mark.rule("D-15")
 @pytest.mark.asyncio
 async def test_consent_check_uses_latest_status(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)

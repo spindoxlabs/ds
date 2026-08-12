@@ -90,6 +90,7 @@ def _has_call_site(method: str) -> bool:
     return any(pattern.search(p.read_text()) for p in _src_files_except_bridge())
 
 
+@pytest.mark.rule("L-1", "L-15")
 def test_the_scan_finds_the_emitters():
     """Guards the scan. A regex that matches nothing passes everything below."""
     emitters = _emitter_methods()
@@ -97,6 +98,7 @@ def test_the_scan_finds_the_emitters():
     assert emitters["consent_granted"] == "ConsentGranted"
 
 
+@pytest.mark.rule("L-1", "L-15")
 @pytest.mark.parametrize("method", sorted(_emitter_methods()))
 def test_every_emitter_has_a_call_site(method: str):
     assert _has_call_site(method), (
@@ -108,6 +110,7 @@ def test_every_emitter_has_a_call_site(method: str):
     )
 
 
+@pytest.mark.rule("L-1")
 def test_every_emitted_type_is_a_rulebook_type():
     emitted = set(_emitter_methods().values())
     invented = sorted(emitted - RULEBOOK_EVENT_TYPES)
@@ -117,6 +120,7 @@ def test_every_emitted_type_is_a_rulebook_type():
     )
 
 
+@pytest.mark.rule("L-1", "L-1a")
 def test_the_unemitted_types_are_exactly_the_declared_ones():
     """The gap is stated, so it cannot widen quietly.
 

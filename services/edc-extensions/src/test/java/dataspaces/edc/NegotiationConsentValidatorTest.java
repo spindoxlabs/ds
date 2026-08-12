@@ -11,6 +11,7 @@ import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.policy.model.Policy;
 import org.eclipse.edc.spi.monitor.Monitor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -107,6 +108,7 @@ class NegotiationConsentValidatorTest {
 
     // ── the defect ───────────────────────────────────────────────────────────
 
+    @Tag("rule:A-11") @Tag("rule:A-12")
     @Test
     void deniesWhenNobodyConsents() {
         // The negotiation this platform has never once refused: a consent-gated
@@ -115,6 +117,7 @@ class NegotiationConsentValidatorTest {
         assertFalse(validator.apply(gatedPolicy(DATASET), context()));
     }
 
+    @Tag("rule:A-12")
     @Test
     void allowsWhenAtLeastOneSubjectConsents() {
         var validator = validator(
@@ -148,6 +151,7 @@ class NegotiationConsentValidatorTest {
 
     // ── failing closed ───────────────────────────────────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void deniesWhenTheConnectorCannotAnswer() {
         // `ConsentApi.check` documents null as denied. Unlike the policy
@@ -155,6 +159,7 @@ class NegotiationConsentValidatorTest {
         assertFalse(validator(null).apply(gatedPolicy(DATASET), context()));
     }
 
+    @Tag("rule:A-11")
     @Test
     void deniesWhenThePolicyCarriesNoTarget() {
         // The branch whose predecessor accepted. A consent-gated policy whose

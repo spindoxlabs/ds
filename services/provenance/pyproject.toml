@@ -34,13 +34,16 @@ ds-obs = { path = "../../libs/ds-obs", editable = true }
 packages = ["src/provenance"]
 
 [tool.pytest.ini_options]
+# `rule` names the rulebook rule a test is evidence for. `ds-conformance`
+# collects it to derive each rule's enforcement status, so the status column
+# in `docs/rulebook/` is measured rather than asserted. Registered here so a
+# typo warns instead of silently evidencing nothing.
 asyncio_mode = "auto"
 # `tests/integration` needs a real Postgres, so it is never collected by
 # `task test` — the unit suite stays fast and dependency-free.
 # `task test:integration` names the directory explicitly.
 norecursedirs = ["tests/integration"]
-markers = ["integration: needs a real PostgreSQL on 172.17.0.1:35432"]
-
+markers = ["integration: needs a real PostgreSQL on 172.17.0.1:35432", "rule: names the rulebook rule id this test is evidence for"]
 [dependency-groups]
 dev = [
     "debugpy>=1.8.21",

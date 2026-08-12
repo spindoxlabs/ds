@@ -16,6 +16,8 @@ that the other two do not carry. A comment cannot fail; this can.
 """
 from __future__ import annotations
 
+import pytest
+
 import re
 from pathlib import Path
 
@@ -33,6 +35,7 @@ def written_relation_types() -> set[str]:
     return set(re.findall(r'_edge\(\s*session,\s*"([A-Za-z]+)"', source))
 
 
+@pytest.mark.rule("L-15")
 def test_the_sweep_finds_the_materialisers():
     """Guard the guard: a regex that matches nothing would pass every test below."""
     written = written_relation_types()
@@ -41,6 +44,7 @@ def test_the_sweep_finds_the_materialisers():
     assert len(written) >= 6
 
 
+@pytest.mark.rule("L-7")
 def test_every_written_relation_is_accepted_by_the_relations_route():
     missing = written_relation_types() - set(RELATION_TYPES)
     assert not missing, (
@@ -50,6 +54,7 @@ def test_every_written_relation_is_accepted_by_the_relations_route():
     )
 
 
+@pytest.mark.rule("L-7")
 def test_every_written_relation_is_defined_in_the_context():
     missing = written_relation_types() - set(PROV_CONTEXT)
     assert not missing, (
@@ -59,12 +64,14 @@ def test_every_written_relation_is_defined_in_the_context():
     )
 
 
+@pytest.mark.rule("L-7")
 def test_every_accepted_relation_is_defined_in_the_context():
     """The manual door must not admit a term the published graph cannot express."""
     missing = set(RELATION_TYPES) - set(PROV_CONTEXT)
     assert not missing, f"{sorted(missing)} accepted by the API, undefined in PROV_CONTEXT"
 
 
+@pytest.mark.rule("L-7")
 def test_invalidated_is_the_term_that_was_missing():
     """Pins the specific defect, so a future tidy-up that drops it fails here."""
     assert "invalidated" in RELATION_TYPES

@@ -41,6 +41,7 @@ class AuthzPerimeterFlow(BaseFlow):
         "Cross-subject isolation, role confusion and enumeration resistance on "
         "the credential-authenticated API"
     )
+    rules = ("C-17", "C-20", "D-20", "L-10")
 
     def execute(self) -> FlowResult:
         s = self.settings

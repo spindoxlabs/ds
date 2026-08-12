@@ -25,6 +25,7 @@ async def _admitted(kind: str = "credential_type", value: str = TYPE) -> bool:
     return await _check_constraint(kind, value, SUBJECT, REGISTRY)
 
 
+@pytest.mark.rule("D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_it_asks_the_narrow_check_not_the_roster():
@@ -45,6 +46,7 @@ async def test_it_asks_the_narrow_check_not_the_roster():
     assert not roster.called
 
 
+@pytest.mark.rule("D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_the_credential_type_reaches_the_registry():
@@ -64,6 +66,7 @@ async def test_the_credential_type_reaches_the_registry():
     assert captured == {"subject_did": SUBJECT, "type": TYPE}
 
 
+@pytest.mark.rule("D-14", "D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_a_negative_answer_does_not_admit():
@@ -81,6 +84,7 @@ async def test_a_negative_answer_does_not_admit():
     assert await _admitted() is False
 
 
+@pytest.mark.rule("D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_a_body_that_does_not_say_holds_does_not_admit():
@@ -95,6 +99,7 @@ async def test_a_body_that_does_not_say_holds_does_not_admit():
     assert await _admitted() is False
 
 
+@pytest.mark.rule("D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_a_refusal_does_not_admit():
@@ -102,6 +107,7 @@ async def test_a_refusal_does_not_admit():
     assert await _admitted() is False
 
 
+@pytest.mark.rule("D-14", "D-21")
 @pytest.mark.asyncio
 @respx.mock
 async def test_an_unreachable_registry_does_not_admit():
@@ -112,6 +118,7 @@ async def test_an_unreachable_registry_does_not_admit():
     assert await _admitted() is False
 
 
+@pytest.mark.rule("D-14")
 @pytest.mark.asyncio
 @respx.mock
 async def test_an_unknown_constraint_kind_admits_nobody():

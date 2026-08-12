@@ -45,6 +45,7 @@ class CatalogDiscoveryFlow(BaseFlow):
         "Federated catalogue: crawl freshness, DCAT-AP shape, dataset resolution, "
         "search narrowing and paging"
     )
+    rules = ("C-1", "C-3", "C-18", "C-19")
 
     def execute(self) -> FlowResult:
         s = self.settings

@@ -70,11 +70,13 @@ def codes(findings) -> set[str]:
 
 
 class TestGovernanceFile:
+    @pytest.mark.rule("C-9")
     def test_missing_file_is_an_error(self, tmp_path: Path):
         result = run(tmp_path / "absent.yaml")
         assert not result.passed
         assert codes(result.errors) == {"governance-file"}
 
+    @pytest.mark.rule("C-9")
     def test_no_sources_is_an_error(self, tmp_path: Path):
         path = write_governance(tmp_path, {"defaults": {"access_level": "open"}})
         result = run(path)
@@ -90,6 +92,7 @@ class TestGovernanceFile:
         assert result.datasets_checked == 0
         assert codes(result.warnings) == {"governance-file"}
 
+    @pytest.mark.rule("A-6")
     def test_secret_datasets_are_not_exposed(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -98,6 +101,7 @@ class TestGovernanceFile:
         result = run(path)
         assert result.datasets_checked == 0
 
+    @pytest.mark.rule("C-9", "C-14")
     def test_valid_file_passes_cleanly(self, tmp_path: Path):
         path = write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
         result = run(path)
@@ -107,6 +111,7 @@ class TestGovernanceFile:
 
 
 class TestEnums:
+    @pytest.mark.rule("C-9")
     def test_unknown_access_level_is_an_error(self, tmp_path: Path):
         path = write_governance(
             tmp_path, {"sources": {"a": exposed_dataset(access_level="public")}}
@@ -132,6 +137,7 @@ class TestEnums:
 
 
 class TestIdentifierCollisions:
+    @pytest.mark.rule("A-5")
     def test_keys_differing_only_by_separator_collide(self, tmp_path: Path):
         """'a.b' and 'a-b' both derive the policy id 'a-b' — an import would clobber."""
         path = write_governance(
@@ -142,6 +148,7 @@ class TestIdentifierCollisions:
         assert not result.passed
         assert "policy-id-collision" in codes(result.errors)
 
+    @pytest.mark.rule("A-5")
     def test_explicit_duplicate_asset_ids_collide(self, tmp_path: Path):
         dataset = exposed_dataset()
         dataset["dataspace"]["asset"] = {"id": "urn:asset:shared"}
@@ -152,6 +159,7 @@ class TestIdentifierCollisions:
         assert not result.passed
         assert "asset-id-collision" in codes(result.errors)
 
+    @pytest.mark.rule("A-5")
     def test_distinct_keys_do_not_collide(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -161,6 +169,7 @@ class TestIdentifierCollisions:
         assert "asset-id-collision" not in codes(result.errors)
         assert "policy-id-collision" not in codes(result.errors)
 
+    @pytest.mark.rule("A-5")
     def test_collision_message_names_every_offending_key(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -179,6 +188,7 @@ class TestIdentifierCollisions:
 
 
 class TestDataAddress:
+    @pytest.mark.rule("C-9")
     def test_empty_base_url_is_an_error(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -197,12 +207,14 @@ class TestDataAddress:
         result = run(path)
         assert "data-address" in codes(result.errors)
 
+    @pytest.mark.rule("C-9")
     def test_relative_url_is_an_error(self, tmp_path: Path):
         dataset = exposed_dataset()
         dataset["dataspace"]["data_address"]["base_url"] = "/datasets/foo"
         path = write_governance(tmp_path, {"sources": {"a": dataset}})
         assert "data-address" in codes(run(path).errors)
 
+    @pytest.mark.rule("C-9")
     def test_non_http_scheme_is_an_error(self, tmp_path: Path):
         dataset = exposed_dataset()
         dataset["dataspace"]["data_address"]["base_url"] = "ftp://files.example.org"
@@ -217,6 +229,7 @@ class TestDataAddress:
 
 
 class TestConsentCoherence:
+    @pytest.mark.rule("C-10")
     def test_consent_required_without_filter_warns(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -238,6 +251,7 @@ class TestConsentCoherence:
         assert result.passed
         assert "consent-coherence" in codes(result.warnings)
 
+    @pytest.mark.rule("C-10")
     def test_consent_required_with_filter_column_is_clean(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -252,12 +266,14 @@ class TestConsentCoherence:
         )
         assert "consent-coherence" not in codes(run(path).warnings)
 
+    @pytest.mark.rule("C-10")
     def test_pii_without_row_filtering_warns(self, tmp_path: Path):
         path = write_governance(
             tmp_path, {"sources": {"a": exposed_dataset(classification="pii")}}
         )
         assert "consent-coherence" in codes(run(path).warnings)
 
+    @pytest.mark.rule("C-9")
     def test_empty_row_filter_column_is_an_error(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
@@ -341,6 +357,7 @@ class TestOwners:
             ]
         )
 
+    @pytest.mark.rule("C-10")
     def test_unresolvable_alias_is_an_error(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
@@ -350,6 +367,7 @@ class TestOwners:
         assert not result.passed
         assert "owner-resolvable" in codes(result.errors)
 
+    @pytest.mark.rule("C-10")
     def test_resolvable_alias_passes(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
@@ -378,6 +396,7 @@ class TestOwners:
         result = run(path, owners=registry)
         assert "owner-declared" in codes(result.warnings)
 
+    @pytest.mark.rule("A-4")
     def test_owner_did_not_a_participant_warns(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
@@ -386,6 +405,7 @@ class TestOwners:
         result = run(path, owners=registry, participant_dids={"did:web:other.test"})
         assert "owner-participant" in codes(result.warnings)
 
+    @pytest.mark.rule("A-4")
     def test_an_empty_participant_set_is_not_nothing_to_compare(
         self, tmp_path: Path, registry
     ):
@@ -413,6 +433,7 @@ class TestOwners:
         result = run(path, owners=registry, participant_dids=None)
         assert "owner-participant" not in codes(result.warnings)
 
+    @pytest.mark.rule("A-4")
     def test_owner_did_registered_as_participant_is_clean(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
@@ -423,6 +444,7 @@ class TestOwners:
         )
         assert "owner-participant" not in codes(result.warnings)
 
+    @pytest.mark.rule("C-10")
     def test_each_alias_reported_once(self, tmp_path: Path, registry):
         path = write_governance(
             tmp_path,
@@ -632,15 +654,18 @@ class TestSemanticModel:
         check_semantic_model(result, [item], registry)
         return result
 
+    @pytest.mark.rule("M-7")
     def test_a_bare_name_is_an_error(self):
         """`M-7` — 'saref4ener' names nothing a consumer can dereference."""
         result = self._run("saref4ener")
         assert [f.check for f in result.errors] == ["semantic-model"]
         assert "not an absolute" in result.errors[0].message
 
+    @pytest.mark.rule("M-7")
     def test_a_urn_is_an_error(self):
         assert self._run("urn:iso:std:iec:61970").errors
 
+    @pytest.mark.rule("M-7")
     def test_an_absolute_iri_with_no_registry_passes_silently(self):
         """`None` registry means 'do not check registration', not 'nothing registered'.
 
@@ -650,6 +675,7 @@ class TestSemanticModel:
         result = self._run("https://saref.etsi.org/saref4ener/")
         assert not result.errors and not result.warnings
 
+    @pytest.mark.rule("M-7")
     def test_an_unregistered_iri_warns_but_does_not_fail(self):
         """Refusing here would make a deployment mirror SAREF before naming it."""
         from ds.governance.vocabularies import VocabularyRegistry
@@ -658,6 +684,7 @@ class TestSemanticModel:
         assert not result.errors
         assert [f.check for f in result.warnings] == ["semantic-model"]
 
+    @pytest.mark.rule("M-7")
     def test_a_registered_iri_is_clean(self):
         from ds.governance.vocabularies import Vocabulary, VocabularyRegistry
 
@@ -673,6 +700,7 @@ class TestSemanticModel:
         result = self._run("https://saref.etsi.org/saref4ener/", registry)
         assert not result.errors and not result.warnings
 
+    @pytest.mark.rule("M-6")
     def test_declaring_no_model_is_not_a_finding(self):
         """`M-6` — the platform ships no payload model and imposes none.
 

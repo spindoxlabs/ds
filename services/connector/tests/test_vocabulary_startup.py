@@ -105,6 +105,7 @@ def test_an_already_cached_vocabulary_is_not_refetched(configured):
     assert json.loads((cache_dir / "saref4ener.jsonld").read_text()) == DOCUMENT
 
 
+@pytest.mark.rule("M-8")
 def test_an_unobtainable_vocabulary_stops_startup(configured):
     """**The decision this feature turns on.**
 
@@ -300,6 +301,7 @@ def test_the_registry_is_not_under_data():
     assert default is None, "the registry resolves beside governance.yaml, not in data/"
 
 
+@pytest.mark.rule("M-6", "M-8")
 def test_no_shipped_vocabulary_needs_the_network_at_boot():
     """`V-5`, asserted rather than trusted.
 
@@ -331,6 +333,7 @@ def test_no_shipped_vocabulary_needs_the_network_at_boot():
             )
 
 
+@pytest.mark.rule("M-6")
 def test_no_shipped_vocabulary_imposes_a_real_world_model():
     """`M-6` — the platform mandates no payload model.
 

@@ -40,6 +40,7 @@ def test_governance_files_were_found():
     assert GOVERNANCE_FILES, "no governance.yaml found — the glob is wrong"
 
 
+@pytest.mark.rule("M-9")
 @pytest.mark.parametrize("path", GOVERNANCE_FILES, ids=lambda p: p.name)
 def test_conforms_to_the_canonical_schema(path: Path):
     doc = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -51,6 +52,7 @@ def test_conforms_to_the_canonical_schema(path: Path):
     )
 
 
+@pytest.mark.rule("M-9")
 @pytest.mark.parametrize("path", GOVERNANCE_FILES, ids=lambda p: p.name)
 def test_purpose_and_consent_live_where_the_schema_puts_them(path: Path):
     """Schema-valid is not enough — `policy:` passes as an extra property.

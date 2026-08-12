@@ -1,0 +1,30 @@
+version: "3"
+
+tasks:
+  setup:
+    desc: Install library in editable mode (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+
+  test:
+    deps: [setup]
+    desc: Run the ds-conformance test suite
+    cmds:
+      - uv run pytest tests/ -q
+
+  lint:
+    deps: [setup]
+    cmds:
+      - uv run ruff check src/ tests/
+      - uv run mypy src/
+
+  format:
+    cmds:
+      - uv run ruff format src/ tests/
+
+  status:
+    deps: [setup]
+    desc: Regenerate docs/rulebook/status.md (prefer `task rulebook:status` from the root)
+    cmds:
+      - uv run ds-conformance status --repo ../..

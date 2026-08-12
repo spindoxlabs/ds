@@ -185,6 +185,7 @@ async def test_registering_a_participant_records_a_keyless_did(client, db_sessio
 
 
 
+@pytest.mark.rule("P-12")
 @pytest.mark.asyncio
 async def test_list_participants(client, db_session):
     await seed_did(db_session)
@@ -242,6 +243,7 @@ async def test_delete_participant(client, db_session):
     assert r.status_code == 204
 
 
+@pytest.mark.rule("P-12")
 @pytest.mark.asyncio
 async def test_list_participants_read_scope_active_only(client, db_session):
     await seed_did(db_session)
@@ -327,6 +329,7 @@ async def test_participant_check_denied(client, db_session):
     assert r.json()["allowed"] is False
 
 
+@pytest.mark.rule("P-3")
 @pytest.mark.asyncio
 async def test_issue_membership_credential(client, db_session):
     # Bootstrap trust anchor first
@@ -451,6 +454,7 @@ async def test_list_credentials(client, db_session):
     assert len(r.json()) == 1
 
 
+@pytest.mark.rule("P-16")
 @pytest.mark.asyncio
 async def test_revoke_credential(client, db_session):
     await client.post(

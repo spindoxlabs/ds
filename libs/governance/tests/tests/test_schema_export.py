@@ -21,11 +21,13 @@ REPO = Path(__file__).resolve().parents[4]
 SCHEMAS = REPO / "schemas"
 
 
+@pytest.mark.rule("M-9")
 def test_schemas_directory_exists():
     """A wrong path would make every parametrised test below vacuous."""
     assert SCHEMAS.is_dir(), f"no schemas directory at {SCHEMAS}"
 
 
+@pytest.mark.rule("M-9")
 @pytest.mark.parametrize("name", sorted(generated_schemas()))
 def test_published_copy_matches_regeneration(name: str):
     """Regenerating must produce no diff.
@@ -39,6 +41,7 @@ def test_published_copy_matches_regeneration(name: str):
     )
 
 
+@pytest.mark.rule("M-9")
 @pytest.mark.parametrize("name", sorted(generated_schemas()))
 def test_generated_schema_is_a_valid_schema(name: str):
     """A malformed schema silently validates nothing."""
@@ -71,6 +74,7 @@ def test_the_bundled_profile_validates_against_its_schema():
     Draft202012Validator(schema).validate(profile)
 
 
+@pytest.mark.rule("M-10")
 def test_purpose_vocabulary_lists_exactly_the_active_profile():
     """The enum is the point — a stale one would pass a purpose sync refuses."""
     profile = load_odrl_profile()
@@ -79,6 +83,7 @@ def test_purpose_vocabulary_lists_exactly_the_active_profile():
     assert set(vocab["enum"]) == set(profile.purpose_index)
 
 
+@pytest.mark.rule("M-10")
 def test_purpose_vocabulary_rejects_a_placeholder_term():
     """The regression this whole workstream came from."""
     vocab = json.loads((SCHEMAS / "purpose-vocabulary.json").read_text(encoding="utf-8"))

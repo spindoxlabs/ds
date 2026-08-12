@@ -91,6 +91,7 @@ async def consumer_app(monkeypatch):
 BODY = {"counter_party_address": "http://provider.test/protocol/2025-1"}
 
 
+@pytest.mark.rule("C-19", "D-20")
 @pytest.mark.asyncio
 async def test_catalog_without_any_credential_is_refused(consumer_app):
     """The defect itself: this returned 200 and a full catalogue."""
@@ -99,6 +100,7 @@ async def test_catalog_without_any_credential_is_refused(consumer_app):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("D-16", "D-20")
 @pytest.mark.asyncio
 async def test_catalog_rejects_a_bare_subject_header(consumer_app):
     """A header alone is not an identity — it is what `D-16` rules out.
@@ -114,6 +116,7 @@ async def test_catalog_rejects_a_bare_subject_header(consumer_app):
     assert svc._prov.calls == []
 
 
+@pytest.mark.rule("C-19", "D-20")
 @pytest.mark.asyncio
 async def test_catalog_refuses_a_service_token_without_the_scope(consumer_app):
     client, _ = consumer_app
@@ -123,6 +126,7 @@ async def test_catalog_refuses_a_service_token_without_the_scope(consumer_app):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_refuses_a_user_holding_no_consumer_credential(consumer_app):
     """A group-authenticated human is not a consumer user.
@@ -137,6 +141,7 @@ async def test_catalog_refuses_a_user_holding_no_consumer_credential(consumer_ap
     assert r.status_code == 403
 
 
+@pytest.mark.rule("C-4", "C-19")
 @pytest.mark.asyncio
 async def test_catalog_accepts_the_crawler_and_names_no_person(consumer_app):
     """The federated catalogue's path.
@@ -158,6 +163,7 @@ async def test_catalog_accepts_the_crawler_and_names_no_person(consumer_app):
     assert event["consumer_id"] == CONSUMER_DID
 
 
+@pytest.mark.rule("C-19", "D-16")
 @pytest.mark.asyncio
 async def test_catalog_accepts_a_consumer_user_and_attributes_to_them(consumer_app):
     client, svc = consumer_app
@@ -179,6 +185,7 @@ async def test_catalog_accepts_a_consumer_user_and_attributes_to_them(consumer_a
     assert SUBJECT_DID in event["event_id"]
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 async def test_catalog_refuses_a_subject_credential(consumer_app):
     """VC roles are additive but not interchangeable — `DataSubject` is not it."""
@@ -195,6 +202,7 @@ async def test_catalog_refuses_a_subject_credential(consumer_app):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("C-19", "C-20")
 @pytest.mark.asyncio
 async def test_catalog_refuses_a_credential_linked_to_another_participant(consumer_app):
     client, _ = consumer_app

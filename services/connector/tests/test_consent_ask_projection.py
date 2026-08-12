@@ -59,6 +59,7 @@ async def _check(client, **params):
     return response.json()
 
 
+@pytest.mark.rule("D-7")
 @pytest.mark.asyncio
 async def test_open_dataset_is_never_a_question(client):
     """No consent gate means no data subject, so there is nobody to ask."""
@@ -67,12 +68,14 @@ async def test_open_dataset_is_never_a_question(client):
     assert body["pending_request_id"] is None
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_consent_gated_dataset_asks_when_capacity_is_unprovable(client):
     body = await _check(client, dataset_id=CONSENTED_DATASET, purpose=PURPOSE)
     assert body["should_ask"] is True
 
 
+@pytest.mark.rule("D-5")
 @pytest.mark.asyncio
 async def test_covered_processor_is_disclosed_not_asked(client, monkeypatch):
     """A processor of the offer's controller acts under a DPA (Art. 28).
@@ -109,6 +112,7 @@ async def test_should_ask_does_not_depend_on_consent_being_absent(client):
     assert body["should_ask"] is True
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_pending_ask_is_reported_so_a_retry_reattaches(client, session_factory):
     async with session_factory() as session:
@@ -131,6 +135,7 @@ async def test_pending_ask_is_reported_so_a_retry_reattaches(client, session_fac
     assert body["should_ask"] is True
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_a_settled_ask_is_not_reported_as_pending(client, session_factory):
     """Only ``pending`` reattaches. A rejected ask is a decision, not a queue."""
@@ -153,6 +158,7 @@ async def test_a_settled_ask_is_not_reported_as_pending(client, session_factory)
     assert body["pending_request_id"] is None
 
 
+@pytest.mark.rule("D-11")
 @pytest.mark.asyncio
 async def test_pending_ask_for_another_purpose_does_not_match(client, session_factory):
     """Purpose matching is ``odrl:isA``, in the same direction consent uses.

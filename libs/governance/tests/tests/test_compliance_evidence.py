@@ -489,6 +489,7 @@ class TestDcatBlock:
             == DSP_PROTOCOL_IRI
         )
 
+    @pytest.mark.rule("M-1", "C-12")
     def test_every_dcat_field_is_emitted(self, sample_with_dcat):
         dataset = _dataset(*sample_with_dcat)
         assert dataset["dcat:theme"] == [{"@id": THEME_ENER}]
@@ -515,6 +516,7 @@ class TestDcatBlock:
             "@id": "https://example.test/org/grid-operator"
         }
 
+    @pytest.mark.rule("M-1")
     def test_no_dcat_block_emits_no_empty_nodes(self, sample):
         """Absent is absent — not an empty list or a bare typed node.
 

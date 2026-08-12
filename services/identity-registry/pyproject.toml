@@ -40,13 +40,16 @@ ir-cli = "identity_registry.cli.main:run"
 packages = ["src/identity_registry"]
 
 [tool.pytest.ini_options]
+# `rule` names the rulebook rule a test is evidence for. `ds-conformance`
+# collects it to derive each rule's enforcement status, so the status column
+# in `docs/rulebook/` is measured rather than asserted. Registered here so a
+# typo warns instead of silently evidencing nothing.
 asyncio_mode = "auto"
 # `tests/integration` needs a real Postgres and starts real processes, so it is
 # never collected by `task test`. `task test:integration` names it explicitly.
 testpaths = ["tests"]
 norecursedirs = ["tests/integration"]
-markers = ["integration: needs a real Postgres and starts real registry processes"]
-
+markers = ["integration: needs a real Postgres and starts real registry processes", "rule: names the rulebook rule id this test is evidence for"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 

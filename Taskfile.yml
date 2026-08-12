@@ -1682,6 +1682,42 @@ tasks:
       # `tests/`, not `tests/tests/` — see the note in libs/governance/Taskfile.yml.
       - cd libs/governance && uv run pytest tests/ -q
 
+  rulebook:status:
+    desc: Regenerate docs/rulebook/status.md from the blueprints, the rulebook and the tests
+    cmds:
+      # Static: reads markdown and source, never runs a suite and never needs a
+      # stack — so the answer is a function of the checked-out tree and two
+      # people on one commit get the same bytes. `status.md` is committed for
+      # exactly that reason: drift shows up as a diff.
+      - cd libs/ds-conformance && uv run ds-conformance status --repo ../..
+
+  rulebook:check:
+    desc: Fail if docs/rulebook/status.md is stale, or if the rulebook has a structural defect
+    cmds:
+      - cd libs/ds-conformance && uv run ds-conformance status --repo ../.. --check
+
+  rulebook:summary:
+    desc: Print the conformance counts without rewriting docs/rulebook/status.md
+    cmds:
+      # The exit criteria in .agents/plans/remaining-v2.md are fields of this
+      # output, so a workstream is finished when a number here says so.
+      - cd libs/ds-conformance && uv run ds-conformance summary --repo ../..
+
+  rulebook:unevidenced:
+    desc: List the rulebook rules that claim enforcement and no test names
+    cmds:
+      - cd libs/ds-conformance && uv run ds-conformance unevidenced --repo ../..
+
+  rulebook:rule:
+    desc: "Show one rule and every test that evidences it (RULE=A-11)"
+    cmds:
+      - cd libs/ds-conformance && uv run ds-conformance rule {{.RULE}} --repo ../..
+
+  rulebook:test:
+    desc: Run the ds-conformance test suite
+    cmds:
+      - task -d libs/ds-conformance test
+
   auth:test:
     desc: Run the ds-auth test suite (role bundles, permissions, JWT verification)
     cmds:

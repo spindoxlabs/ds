@@ -45,6 +45,7 @@ async def test_ingest_catalogue_published(client):
     assert body["prov_node_id"] is not None
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_ingest_duplicate_is_idempotent(client):
     r1 = await client.post("/prov/events", json=CATALOGUE_EVENT)
@@ -54,6 +55,7 @@ async def test_ingest_duplicate_is_idempotent(client):
     assert r2.json()["status"] == "duplicate"
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_catalogue_materialises_entity_and_activity(client):
     await client.post("/prov/events", json=CATALOGUE_EVENT)
@@ -82,6 +84,7 @@ async def test_ingest_data_transfer(client):
     assert response.json()["status"] == "created"
 
 
+@pytest.mark.rule("L-15")
 @pytest.mark.asyncio
 async def test_an_unknown_event_type_is_refused(client):
     """`UsageObligationFulfilled` used to be accepted here, and was **deleted**

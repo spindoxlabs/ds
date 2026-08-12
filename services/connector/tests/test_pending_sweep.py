@@ -76,6 +76,7 @@ def test_parse_duration(value, expected):
     assert parse_duration(value) == expected
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.parametrize("value", ["P1Y", "P6M", "30", "", "PT"])
 def test_ambiguous_or_malformed_durations_are_refused(value):
     """Years and months have no fixed length.
@@ -90,6 +91,7 @@ def test_ambiguous_or_malformed_durations_are_refused(value):
 
 # ── Expiry ───────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_unanswered_ask_expires_and_kills_the_negotiation(session_factory):
     await _seed(session_factory, _ask("sub-quiet", age_days=31))
@@ -101,6 +103,7 @@ async def test_unanswered_ask_expires_and_kills_the_negotiation(session_factory)
     assert await _statuses(session_factory) == {"sub-quiet": EXPIRED}
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_expiry_is_not_a_refusal(session_factory):
     """``expired`` and ``rejected`` are different facts.
@@ -116,6 +119,7 @@ async def test_expiry_is_not_a_refusal(session_factory):
     assert (await _statuses(session_factory))["sub-quiet"] == EXPIRED
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_ask_within_the_ttl_is_left_alone(session_factory):
     await _seed(session_factory, _ask("sub-thinking", age_days=29))
@@ -127,6 +131,7 @@ async def test_ask_within_the_ttl_is_left_alone(session_factory):
     assert (await _statuses(session_factory))["sub-thinking"] == "pending"
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_a_grant_keeps_the_negotiation_alive(session_factory):
     """One silent subject must not cancel what another already granted.
@@ -150,6 +155,7 @@ async def test_a_grant_keeps_the_negotiation_alive(session_factory):
     assert statuses["sub-granted"] == "granted"
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_a_still_pending_ask_keeps_the_negotiation_alive(session_factory):
     """Subjects answer at their own pace; the deadline is per ask, not per pool."""
@@ -197,6 +203,7 @@ class _RecordingEdc:
         self.terminated.append((negotiation_id, reason))
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_sweep_terminates_the_dead_negotiation(session_factory):
     await _seed(session_factory, _ask("sub-quiet", age_days=31))
@@ -208,6 +215,7 @@ async def test_sweep_terminates_the_dead_negotiation(session_factory):
     assert edc.terminated[0][0] == NEGOTIATION
 
 
+@pytest.mark.rule("X-11")
 @pytest.mark.asyncio
 async def test_a_failed_termination_leaves_the_negotiation_for_the_next_pass(
     session_factory,
@@ -227,6 +235,7 @@ async def test_a_failed_termination_leaves_the_negotiation_for_the_next_pass(
     assert edc.terminated[0][0] == NEGOTIATION
 
 
+@pytest.mark.rule("D-18")
 @pytest.mark.asyncio
 async def test_a_terminated_negotiation_is_not_swept_again(session_factory):
     """Once dealt with, it stays dealt with.

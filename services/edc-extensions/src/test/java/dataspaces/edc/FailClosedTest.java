@@ -14,6 +14,7 @@ import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.policy.model.Policy;
 import org.eclipse.edc.spi.monitor.Monitor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -119,6 +120,7 @@ class FailClosedTest {
 
     // ── EDC-01: bounded tolerance, then deny (policy.monitor) ────────────────
 
+    @Tag("rule:A-11")
     @Test
     void aSingleUnanswerablePassDoesNotTerminate() {
         // Failing closed on one blip would let a momentary outage destroy live
@@ -127,6 +129,7 @@ class FailClosedTest {
         assertTrue(evaluate(inFlight((String) null)));
     }
 
+    @Tag("rule:A-11") @Tag("rule:A-12")
     @Test
     void sustainedSilenceTerminates() {
         // The half that was missing. "The other enforcement point will catch it"
@@ -138,6 +141,7 @@ class FailClosedTest {
         assertFalse(evaluate(function), "third consecutive unanswerable pass must terminate");
     }
 
+    @Tag("rule:A-11")
     @Test
     void aDefiniteAnswerClearsTheStreak() {
         // Otherwise a connector that flaps would accumulate failures across
@@ -155,6 +159,7 @@ class FailClosedTest {
         assertTrue(evaluate(function));   // 2 failures — still under the threshold
     }
 
+    @Tag("rule:A-11") @Tag("rule:A-12")
     @Test
     void aDefiniteNoStillTerminatesImmediately() {
         // The tolerance is for *silence*, never for a denial. A revoked consent
@@ -162,6 +167,7 @@ class FailClosedTest {
         assertFalse(evaluate(inFlight("{\"consent_active\": false, \"subject_ids\": []}")));
     }
 
+    @Tag("rule:A-11") @Tag("rule:A-12")
     @Test
     void anAgreementWithNoAssetTerminates() {
         var function = inFlight("{\"consent_active\": true, \"subject_ids\": [\"s\"]}");
@@ -174,6 +180,7 @@ class FailClosedTest {
 
     // ── EDC-16: the pre-start gate (transfer.process) ────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void thePreStartGateDeniesOnTheFirstUnanswerableCheck() {
         // No tolerance here, and the asymmetry is the point: refusing to start a
@@ -184,6 +191,7 @@ class FailClosedTest {
         assertFalse(function.evaluate(Operator.EQ, "granted", gatedPermission(), transferContext()));
     }
 
+    @Tag("rule:A-12")
     @Test
     void thePreStartGateAllowsWhenAnybodyConsents() {
         var function = AgreementConsentFunction.<TransferProcessPolicyContext>preStart(
@@ -192,6 +200,7 @@ class FailClosedTest {
         assertTrue(function.evaluate(Operator.EQ, "granted", gatedPermission(), transferContext()));
     }
 
+    @Tag("rule:A-12")
     @Test
     void thePreStartGateDeniesWhenConsentWasWithdrawnAfterSigning() {
         // The window EDC-16 is about: the agreement is signed and valid, and the
@@ -206,6 +215,7 @@ class FailClosedTest {
 
     // ── EDC-08: the operand has to be read before it can be compared ─────────
 
+    @Tag("rule:A-11")
     @Test
     void anExpandedOperandIsUnwrappedRatherThanStringified() {
         // A policy that reached the store through EDC's JSON-LD expansion carries
@@ -218,6 +228,7 @@ class FailClosedTest {
             Operator.EQ, Map.of("@value", "granted"), gatedPermission(), monitorContext()));
     }
 
+    @Tag("rule:A-11")
     @Test
     void anUnreadableOperandDenies() {
         var function = inFlight("{\"consent_active\": true, \"subject_ids\": [\"s\"]}");
@@ -228,6 +239,7 @@ class FailClosedTest {
 
     // ── EDC-04: never send unauthenticated ───────────────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void authorizeReportsWhetherItCouldAuthenticate() {
         // It used to return void having added no header, so the caller could not
@@ -238,6 +250,7 @@ class FailClosedTest {
         assertTrue(granting.authorize(new Request.Builder().url("http://ds/x")));
     }
 
+    @Tag("rule:A-11")
     @Test
     void aClientThatCannotAuthenticateReturnsNullWithoutSending() {
         // The first link in the chain. If this sends, the connector answers 401,

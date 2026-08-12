@@ -54,6 +54,7 @@ class ConsentPurposeFlow(BaseFlow):
         "Purpose taxonomy, sharing offers, validated consent writes and "
         "purpose-scoped enforcement"
     )
+    rules = ("A-1", "A-2", "D-8", "D-9", "D-10")
 
     def execute(self) -> FlowResult:
         s = self.settings

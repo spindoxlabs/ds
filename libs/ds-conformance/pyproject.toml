@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ds-conformance"
+version = "0.1.0"
+description = "Measures the rulebook against the blueprints and against the tests that actually exist"
+requires-python = ">=3.12"
+# **Static analysis only, and that is the whole design.** This tool reads
+# markdown and source files. It never imports a service, never runs pytest,
+# never needs a stack and never needs the other units' virtualenvs — so its
+# answer is a function of the checked-out tree and nothing else. Two people on
+# two machines get byte-identical output from the same commit, which is the
+# property the deleted `rules.json` projection did not have and the reason it
+# could not be trusted as measurement.
+#
+# The cost is stated rather than hidden: a `@pytest.mark.rule` reached only
+# through a runtime-generated decorator is invisible here, and a marker on a
+# test that is skipped or broken still counts as evidence that a node exists.
+# This measures *linkage*, not green-ness. Whether the node passes is the test
+# runner's answer, not this tool's.
+dependencies = [
+    "pyyaml>=6.0",
+    "typer>=0.12",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+    "mypy>=1.11",
+    "types-PyYAML>=6.0",
+]
+
+[project.scripts]
+ds-conformance = "ds_conformance.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ds_conformance"]
+
+[tool.pytest.ini_options]
+markers = ["rule: names the rulebook rule id this test is evidence for"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+strict = true

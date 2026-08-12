@@ -40,3 +40,10 @@ select = ["E", "F", "I", "UP"]
 
 [tool.mypy]
 strict = true
+
+[tool.pytest.ini_options]
+# `rule` names the rulebook rule a test is evidence for. `ds-conformance`
+# collects it to derive each rule's enforcement status, so the status column
+# in `docs/rulebook/` is measured rather than asserted. Registered here so a
+# typo warns instead of silently evidencing nothing.
+markers = ["rule: names the rulebook rule id this test is evidence for"]

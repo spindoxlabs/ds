@@ -10,6 +10,7 @@ import org.eclipse.edc.policy.model.LiteralExpression;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -76,6 +77,7 @@ class NegotiationScopeFunctionsTest {
 
     // ── ConsentStatusFunction ────────────────────────────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void withNoDatasetItDefersInsteadOfDeciding() {
         // The ordinary case, and it is every negotiation: nothing sets
@@ -106,6 +108,7 @@ class NegotiationScopeFunctionsTest {
             "an unanswerable check is not a licence to proceed");
     }
 
+    @Tag("rule:A-11")
     @Test
     void anUnreadableStatusOperandDeniesRatherThanDeferring() {
         // The distinction this file is about. Deferring is right when the
@@ -126,6 +129,7 @@ class NegotiationScopeFunctionsTest {
             Operator.EQ, Map.of("@value", "active"), gatedPermission(), context(Map.of())));
     }
 
+    @Tag("rule:A-11")
     @Test
     void aStatusItDoesNotUnderstandDenies() {
         var calls = new AtomicInteger();
@@ -133,6 +137,7 @@ class NegotiationScopeFunctionsTest {
             Operator.EQ, "revoked", gatedPermission(), context(Map.of())));
     }
 
+    @Tag("rule:A-11")
     @Test
     void anOperatorOtherThanEqualsDenies() {
         var calls = new AtomicInteger();
@@ -151,6 +156,7 @@ class NegotiationScopeFunctionsTest {
         }
     }
 
+    @Tag("rule:A-11")
     @Test
     void purposeDeniesAnOperatorItCannotInterpret() {
         var function = new PurposeFunction<ContractNegotiationPolicyContext>(new NoopMonitor());
@@ -158,6 +164,7 @@ class NegotiationScopeFunctionsTest {
             Operator.GT, "FlexibilityResearch", gatedPermission(), context(Map.of())));
     }
 
+    @Tag("rule:A-11")
     @Test
     void purposeDeniesWhenTheConstraintNamesNothing() {
         // An empty purpose is not "any purpose": the connector denies a

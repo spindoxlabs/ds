@@ -212,6 +212,7 @@ async def test_issue_credential_gate_needs_agreement(client):
     assert r.status_code == 409
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_promote_gate_needs_credential(client, db_session):
     await _bootstrap_ta(client)
@@ -288,6 +289,7 @@ async def test_agreement_acceptance_unknown_locale(client, db_session):
 # ── Full happy path + suspend ─────────────────────────────────────
 
 
+@pytest.mark.rule("P-1", "P-2", "P-25")
 @pytest.mark.asyncio
 async def test_full_lifecycle_and_suspend(client, db_session):
     await _bootstrap_ta(client)

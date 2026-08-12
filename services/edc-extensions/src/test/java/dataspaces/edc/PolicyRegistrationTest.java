@@ -16,6 +16,7 @@ import org.eclipse.edc.policy.model.Rule;
 import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.result.Result;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
@@ -204,6 +205,7 @@ class PolicyRegistrationTest {
 
     // ── binding invariants ───────────────────────────────────────────────────
 
+    @Tag("rule:A-12") @Tag("rule:A-14")
     @Test
     void consentStaysBoundInEveryScope() {
         // An unbound operand is *removed* by ScopeFilter, and a permission whose
@@ -217,6 +219,7 @@ class PolicyRegistrationTest {
         }
     }
 
+    @Tag("rule:A-12") @Tag("rule:A-14")
     @Test
     void consentHasAFunctionForBothOperandFormsInEveryScope() {
         // A bound operand with no registered function fails evaluation outright,
@@ -236,6 +239,7 @@ class PolicyRegistrationTest {
         }
     }
 
+    @Tag("rule:A-14")
     @Test
     void everyBoundOperandHasAFunctionSomewhere() {
         // The general form of the two rows above, and the one that catches the
@@ -257,6 +261,7 @@ class PolicyRegistrationTest {
         }
     }
 
+    @Tag("rule:A-14")
     @Test
     void negotiationOnlyOperandsAreNotBoundElsewhere() {
         // Membership and contractRequired are conditions on *entering* an
@@ -269,6 +274,7 @@ class PolicyRegistrationTest {
         }
     }
 
+    @Tag("rule:A-14")
     @Test
     void accessScopeIsNotBound() {
         // It was bound in the negotiation scope with no function and no producer
@@ -277,6 +283,7 @@ class PolicyRegistrationTest {
         assertFalse(bindings.operandsIn(NEGOTIATION).contains("ds:accessScope"));
     }
 
+    @Tag("rule:A-14")
     @Test
     void purposeIsBoundInEveryScope() {
         // Not because a purpose can change mid-transfer, but because the consent
@@ -289,6 +296,7 @@ class PolicyRegistrationTest {
         }
     }
 
+    @Tag("rule:A-14")
     @Test
     void everyActionIsBoundInEveryScope() {
         // An unbound *action* strips the whole permission, consent constraint
@@ -305,6 +313,7 @@ class PolicyRegistrationTest {
 
     // ── EDC-16: the transfer scope, and why it cannot just inherit ───────────
 
+    @Tag("rule:A-12")
     @Test
     void theTransferScopeHasTheAgreementBackedConsentCheck() {
         // `ContractValidationServiceImpl.validateAgreement` evaluates here,

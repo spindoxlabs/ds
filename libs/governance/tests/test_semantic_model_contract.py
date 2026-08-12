@@ -71,6 +71,7 @@ def test_there_are_producers_to_check():
     )
 
 
+@pytest.mark.rule("M-4")
 @pytest.mark.parametrize("governance", PRODUCERS, ids=lambda p: p.parent.name)
 def test_at_least_one_dataset_declares_its_payload_model(governance: Path):
     """`M-6` means ds mandates no model — it does not mean no fixture uses the
@@ -83,6 +84,7 @@ def test_at_least_one_dataset_declares_its_payload_model(governance: Path):
     )
 
 
+@pytest.mark.rule("M-4", "M-8")
 @pytest.mark.parametrize("governance", PRODUCERS, ids=lambda p: p.parent.name)
 def test_every_declared_model_is_served_by_this_participant(governance: Path):
     """A declared IRI a consumer cannot dereference is what `M-7` is about.
@@ -107,6 +109,7 @@ def test_every_declared_model_is_served_by_this_participant(governance: Path):
         )
 
 
+@pytest.mark.rule("M-8")
 @pytest.mark.parametrize("governance", PRODUCERS, ids=lambda p: p.parent.name)
 def test_a_participants_own_vocabulary_needs_no_network(governance: Path):
     """`V-5` at deployment scale.
@@ -166,6 +169,7 @@ def _evidence(key: str, rule):
     )
 
 
+@pytest.mark.rule("M-4")
 def test_ds_publishes_the_model_as_a_node_reference_not_a_string():
     """`{"@id": …}`, not a bare string.
 
@@ -187,6 +191,7 @@ def test_ds_publishes_the_model_as_a_node_reference_not_a_string():
     assert dataset["dct:conformsTo"] == {"@id": CANONICAL}
 
 
+@pytest.mark.rule("M-4")
 def test_ds_omits_the_model_rather_than_nulling_it_when_undeclared():
     """A dataset that states no model and a dataset that states "no model" are
     different claims, and only the first is what silence means. A `null` would
@@ -204,6 +209,7 @@ def test_ds_omits_the_model_rather_than_nulling_it_when_undeclared():
     assert "dct:conformsTo" not in dataset
 
 
+@pytest.mark.rule("M-4")
 def test_the_model_and_the_protocol_stay_on_different_nodes():
     """Two `dct:conformsTo` claims exist and they answer different questions.
 
@@ -226,6 +232,7 @@ def test_the_model_and_the_protocol_stay_on_different_nodes():
     assert distribution["dct:conformsTo"] != dataset["dct:conformsTo"]
 
 
+@pytest.mark.rule("M-4", "M-7")
 def test_the_declaration_is_the_canonical_iri_and_is_shared_across_datasets():
     """The correction that matters most in this design.
 

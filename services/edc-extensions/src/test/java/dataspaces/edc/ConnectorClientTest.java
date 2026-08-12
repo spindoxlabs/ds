@@ -7,6 +7,7 @@ import org.eclipse.edc.iam.oauth2.spi.client.Oauth2CredentialsRequest;
 import org.eclipse.edc.spi.iam.TokenRepresentation;
 import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.spi.result.Result;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.Map;
@@ -47,6 +48,7 @@ class ConnectorClientTest {
         assertEquals(4, attempts.get(), "one attempt plus the three backoff steps");
     }
 
+    @Tag("rule:A-11")
     @Test
     void aRequestThatCannotBeSignedIsNotSent() {
         // The first link in the chain. Sending it bare earns a 401, and a 401 is
@@ -63,6 +65,7 @@ class ConnectorClientTest {
         assertEquals(4, attempts.get());
     }
 
+    @Tag("rule:A-11")
     @Test
     void postingAlsoRefusesToSendUnsigned() {
         var client = new ConnectorClient("http://127.0.0.1:1", b -> false, new NoopMonitor());
@@ -112,6 +115,7 @@ class ConnectorClientTest {
             client, "http://172.17.0.1:9080/token", "svc-edc", "svc-edc", new NoopMonitor());
     }
 
+    @Tag("rule:A-11")
     @Test
     void aFailedTokenRequestRefusesRatherThanSendingBare() {
         var client = new ScriptedOauth2Client(false, 300L);
@@ -161,6 +165,7 @@ class ConnectorClientTest {
 
     // ── the fail-closed contract, stated once ────────────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void consentApiTurnsAnUnanswerableCallIntoNull() {
         // ConsentApi.check documents that null means denied. Every caller keys

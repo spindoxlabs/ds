@@ -33,6 +33,7 @@ def _negotiation(**kwargs) -> dict:
     ).to_edc()
 
 
+@pytest.mark.rule("X-1")
 def test_negotiation_names_the_counterparty():
     assert _negotiation()["counterPartyId"] == PROVIDER
 
@@ -42,6 +43,7 @@ def test_negotiation_counterparty_can_be_stated_explicitly():
     assert _negotiation(counter_party_id=other)["counterPartyId"] == other
 
 
+@pytest.mark.rule("X-1")
 def test_negotiation_falls_back_to_the_assigner_never_to_nothing():
     """The assigner *is* the counterparty for a contract request.
 
@@ -53,6 +55,7 @@ def test_negotiation_falls_back_to_the_assigner_never_to_nothing():
     assert body["counterPartyId"] != ""
 
 
+@pytest.mark.rule("X-1")
 def test_catalog_request_names_the_counterparty():
     body = CatalogRequest(
         counter_party_address=ADDRESS, counter_party_id=PROVIDER

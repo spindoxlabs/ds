@@ -671,6 +671,7 @@ async def test_an_unsigned_delivery_is_refused(holder, participant_db):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-11")
 @pytest.mark.asyncio
 async def test_a_forged_issuer_signature_is_refused(
     holder, participant_db, participant_resolver

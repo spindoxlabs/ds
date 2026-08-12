@@ -53,6 +53,7 @@ async def client():
         yield ac
 
 
+@pytest.mark.rule("C-7")
 @pytest.mark.asyncio
 async def test_catalogue_names_a_data_service_per_source(client):
     body = (await client.get("/catalog", headers=make_headers())).json()
@@ -65,6 +66,7 @@ async def test_catalogue_names_a_data_service_per_source(client):
         assert service["@type"] == "dcat:DataService"
 
 
+@pytest.mark.rule("C-7", "X-1")
 @pytest.mark.asyncio
 async def test_a_dsp_source_declares_the_protocol_it_speaks(client):
     """`dct:conformsTo` separates "negotiate here" from "just fetch this".
@@ -82,6 +84,7 @@ async def test_a_dsp_source_declares_the_protocol_it_speaks(client):
     assert "dct:conformsTo" not in by_endpoint[EXTERNAL]
 
 
+@pytest.mark.rule("C-7")
 @pytest.mark.asyncio
 async def test_a_service_lists_only_its_own_datasets(client):
     body = (await client.get("/catalog", headers=make_headers())).json()
@@ -95,6 +98,7 @@ async def test_a_service_lists_only_its_own_datasets(client):
     ]
 
 
+@pytest.mark.rule("C-8")
 @pytest.mark.asyncio
 async def test_every_entry_carries_a_catalogue_record(client):
     body = (await client.get("/catalog", headers=make_headers())).json()
@@ -110,6 +114,7 @@ async def test_every_entry_carries_a_catalogue_record(client):
         assert record["@type"] == "dcat:CatalogRecord"
 
 
+@pytest.mark.rule("C-8")
 @pytest.mark.asyncio
 async def test_a_record_attributes_the_entry_and_dates_the_crawl(client):
     """What a record says that the dataset cannot.
@@ -129,6 +134,7 @@ async def test_a_record_attributes_the_entry_and_dates_the_crawl(client):
     assert record["dct:modified"] == client._transport.app.state.cache.last_crawl_iso
 
 
+@pytest.mark.rule("C-8")
 @pytest.mark.asyncio
 async def test_search_results_carry_records_for_the_page_only(client):
     body = (
@@ -145,6 +151,7 @@ async def test_search_results_carry_records_for_the_page_only(client):
     }
 
 
+@pytest.mark.rule("C-8")
 @pytest.mark.asyncio
 async def test_the_context_defines_the_terms_the_documents_use(client):
     """A term emitted and not defined is not JSON-LD, it is JSON.

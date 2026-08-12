@@ -33,6 +33,7 @@ TRANSFER_EVENT = {
 }
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_lineage_returns_the_root_its_depth_and_a_populated_graph(client):
     await client.post("/prov/events", json=CATALOGUE_EVENT)
@@ -73,6 +74,7 @@ async def test_the_query_parameters_are_bounded(client):
     assert (await client.get(f"/prov/lineage/{iri}?direction=sideways")).status_code == 422
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_relation_types_narrow_the_walk(client):
     await client.post("/prov/events", json=CATALOGUE_EVENT)

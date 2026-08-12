@@ -1,3 +1,4 @@
+import pytest
 import json
 
 import jwt
@@ -40,6 +41,7 @@ def test_membership_credential_structure():
     assert vc["id"].startswith("urn:uuid:")
 
 
+@pytest.mark.rule("P-25")
 def test_data_subject_credential_names_only_the_revocation_register():
     """A natural person's credential is revoked or it is not.
 

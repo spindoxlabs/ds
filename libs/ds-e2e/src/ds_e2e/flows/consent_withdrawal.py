@@ -89,6 +89,7 @@ class ConsentWithdrawalFlow(BaseFlow):
         "A data subject withdraws consent while a transfer is running: data stops "
         "at once and the provider's transfer process reaches a terminal state"
     )
+    rules = ("A-12", "D-17", "P-18")
 
     # ── EDC reads ────────────────────────────────────────────────────────────
 

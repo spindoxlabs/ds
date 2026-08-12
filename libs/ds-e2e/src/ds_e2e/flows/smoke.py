@@ -30,6 +30,7 @@ REQUIRED_PROVENANCE_EVENTS = {
 class SmokeFlow(BaseFlow):
     name = "smoke"
     description = "Full DSP consumer-pull flow: catalog, negotiate, transfer, query, revoke"
+    rules = ("C-1", "X-1", "X-3", "X-4", "X-5")
 
     def execute(self) -> FlowResult:
         s = self.settings

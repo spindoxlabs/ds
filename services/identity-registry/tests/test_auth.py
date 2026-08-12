@@ -18,12 +18,14 @@ async def test_admin_with_wrong_scope_returns_403(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_public_did_without_auth(client):
     r = await client.get("/dids/did:web:nonexistent/did.json")
     assert r.status_code == 404
 
 
+@pytest.mark.rule("P-13")
 @pytest.mark.asyncio
 async def test_public_status_without_auth(client):
     r = await client.get("/status/1")
@@ -56,6 +58,7 @@ async def test_participant_check_with_admin_scope(client):
     assert r.json()["allowed"] is False
 
 
+@pytest.mark.rule("P-12")
 @pytest.mark.asyncio
 async def test_participant_list_requires_auth(client):
     r = await client.get("/admin/participants")
@@ -71,6 +74,7 @@ async def test_participant_list_with_read_scope(client):
     assert r.status_code == 200
 
 
+@pytest.mark.rule("P-12")
 @pytest.mark.asyncio
 async def test_participant_list_read_scope_returns_active_only(client, db_session):
     """Read scope always filters to active participants only."""

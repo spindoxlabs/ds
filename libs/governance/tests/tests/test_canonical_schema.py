@@ -13,6 +13,8 @@ returns a row.
 """
 from __future__ import annotations
 
+import pytest
+
 import yaml
 
 from ds.governance.resolver import GovernanceResolver
@@ -54,6 +56,7 @@ CANONICAL = {
 }
 
 
+@pytest.mark.rule("C-6")
 def test_purpose_is_read_from_the_canonical_location():
     rule = _resolve(CANONICAL, "datasets.raw.meters_data")
     assert rule.policy.purpose == ["EnergyCommunityOperation"]
@@ -139,6 +142,7 @@ DCAT_BLOCK = {
 }
 
 
+@pytest.mark.rule("M-1")
 def test_the_whole_dcat_block_survives_the_load():
     """Every field, because the failure mode was losing all of them at once."""
     rule = _resolve({"sources": {"d": {"dcat": DCAT_BLOCK}}}, "d")
@@ -153,6 +157,7 @@ def test_the_whole_dcat_block_survives_the_load():
     assert rule.dcat.temporal.end == "2026-01-01"
 
 
+@pytest.mark.rule("M-4")
 def test_conforms_to_is_read_from_the_canonical_location():
     """`M-4` — the payload semantic model, the field the whole CEEDS layer needs.
 

@@ -309,6 +309,7 @@ class ApiContractFlow(BaseFlow):
         "API surface contract: public perimeter, anonymous refusal, wrong-scope "
         "refusal, input validation and error-leak checks across all services"
     )
+    rules = ("C-17", "X-13")
 
     #: Built by `_check_route_inventory`, which runs before anything reads it.
     _inventory: list[Route] | None = None

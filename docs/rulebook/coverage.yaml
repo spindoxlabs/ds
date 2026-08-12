@@ -1,0 +1,861 @@
+# Coverage of the blueprint requirement rows.
+#
+# **This file holds only what no other file states.** Which rulebook rule
+# answers a blueprint row is read off the rule's own text where the rulebook
+# writes it (`attribution.py`); the tests that evidence a rule are read off the
+# tests. What is left — and it is genuinely a judgement, so it is written down —
+# is whether a row this data space is bound by is answered here, deliberately
+# declined, or accepted and not yet met.
+#
+# A row absent from this file is `unassessed`: nobody has looked at it. That is
+# a state, not a silence, and `docs/rulebook/status.md` counts it.
+#
+# States:
+#   covered       answered here. Name `rules:` where the specific rule is known,
+#                 or `pages:` where only the topic is known. A page-level answer
+#                 carries no evidence and never reads as done.
+#   open          binding, accepted, not met. `note:` says what is missing.
+#   out-of-scope  deliberately not done. `note:` says why, and it belongs in
+#                 scope-and-deviations.md as well.
+#
+# `must` and `should` rows are the ones that must appear here eventually;
+# `may` and `recommended` are tracked and never demanded.
+#
+# Bootstrapped 2026-08-10 by transcribing the "Blueprint rows" section of each
+# rulebook page and §1/§2 of scope-and-deviations.md. Every page-level entry is
+# exactly as precise as the prose it came from — no more.
+
+version: 1
+
+dispositions:
+
+  # ── Deliberately declined (89 rows) ───────────────────────────────────
+
+  CEEDS-ARC-08:
+    state: out-of-scope
+    note: "A marketplace or clearing house: Out of scope — follows from §1"
+  CEEDS-CON-31:
+    state: out-of-scope
+    note: "HEMRM role model: Not adopted. The platform's role model is a platform role model; a deployment needing HEMRM must map onto it"
+  CEEDS-INT-11:
+    state: out-of-scope
+    note: "A marketplace or clearing house: Out of scope — follows from §1"
+  CEEDS-INT-27:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-INT-34:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-INT-36:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-INT-42:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-INT-43:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-INT-49:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-STD-04:
+    state: out-of-scope
+    note: "HEMRM role model: Not adopted. The platform's role model is a platform role model; a deployment needing HEMRM must map onto it"
+  CEEDS-STD-07:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-STD-11:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-STD-12:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-STD-23:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  CEEDS-STD-25:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-STD-26:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  CEEDS-STD-28:
+    state: out-of-scope
+    note: "SGAM, and the proposed 6th layer: Not referenced. These are architectural framing rather than implementable obligations"
+  DSSC-DEX-06:
+    state: out-of-scope
+    note: "Push and streaming transfers: Out of scope. HTTP pull, finite datasets, one agreement per transfer"
+  DSSC-DEX-07:
+    state: out-of-scope
+    note: "Push and streaming transfers: Out of scope. HTTP pull, finite datasets, one agreement per transfer"
+  DSSC-DEX-50:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-DEX-51:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-DEX-52:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-DEX-64:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-DEX-65:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-DMO-27:
+    state: out-of-scope
+    note: "Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap**"
+  DSSC-VCS-01:
+    state: out-of-scope
+    note: "no value creation services (§1)"
+  DSSC-VCS-04:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-05:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-06:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-07:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-09:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-10:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-12:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-13:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-14:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-15:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-19:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-20:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-22:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-23:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-24:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-25:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-26:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-27:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-28:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-29:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-30:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-31:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-32:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-33:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-34:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-35:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-36:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-37:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-38:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-41:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-43:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-44:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-45:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-46:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-47:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-48:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-49:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-50:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-51:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-52:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-53:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-54:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-56:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-57:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-58:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-59:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-60:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-61:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-62:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-63:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-64:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-65:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-66:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-67:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-68:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-70:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-73:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-VCS-75:
+    state: out-of-scope
+    note: "no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies"
+  DSSC-XCT-27:
+    state: out-of-scope
+    note: "Anonymisation capability: Out of scope. A deployment needing intermediated sharing of anonymised data must anonymise before ingest; this platform cannot prove effective anonymisation"
+  DSSC-XCT-30:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-XCT-31:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-XCT-41:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+  DSSC-XCT-43:
+    state: out-of-scope
+    note: "Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent"
+
+  # ── Accepted and not yet met (36 rows) ────────────────────────────────
+
+  DSSC-AUP-06:
+    state: open
+    note: "recorded open by docs/rulebook/policies.md"
+  DSSC-AUP-45:
+    state: open
+    note: "recorded open by docs/rulebook/policies.md"
+  DSSC-AUP-46:
+    state: open
+    note: "recorded open by docs/rulebook/policies.md"
+  DSSC-DEX-38:
+    state: open
+    note: "recorded open by docs/rulebook/data-exchange.md"
+  DSSC-DMO-08:
+    state: open
+    note: "recorded open by docs/rulebook/data-models.md"
+  DSSC-DMO-17:
+    state: open
+    note: "recorded open by docs/rulebook/data-models.md"
+  DSSC-DMO-19:
+    state: open
+    note: "recorded open by docs/rulebook/data-models.md"
+  DSSC-DMO-23:
+    state: open
+    note: "recorded open by docs/rulebook/data-models.md"
+  DSSC-DSO-11:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-DSO-12:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-DSO-14:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-DSO-15:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-DSO-41:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-IAM-06:
+    state: open
+    note: "recorded open by docs/rulebook/participation.md"
+  DSSC-IAM-07:
+    state: open
+    note: "recorded open by docs/rulebook/participation.md"
+  DSSC-IAM-29:
+    state: open
+    note: "recorded open by docs/rulebook/participation.md"
+  DSSC-PTO-03:
+    state: open
+    note: "Observability: **Not a scope decision — an unfilled gap.** Recorded in [Provenance and logging](provenance-and-logging.md) §5 with a minimum-viable close. Listed here so it is not mistaken for a declared exclusion"
+  DSSC-PTO-42:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-43:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-44:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-45:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-46:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-57:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-58:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-59:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-60:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-61:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-62:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-63:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-79:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PTO-83:
+    state: open
+    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+  DSSC-PUB-03:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-PUB-41:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-PUB-45:
+    state: open
+    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+  DSSC-SVD-30:
+    state: open
+    note: "recorded open by docs/rulebook/participation.md"
+  DSSC-TRF-41:
+    state: open
+    note: "recorded open by docs/rulebook/participation.md"
+
+  # ── Answered by the rulebook (149 rows) ───────────────────────────────
+
+  CEEDS-INT-23:
+    state: covered
+    pages: [data-exchange]
+  CEEDS-INT-25:
+    state: covered
+    pages: [data-exchange]
+  CEEDS-INT-26:
+    state: covered
+    pages: [data-exchange]
+  CEEDS-STD-10:
+    state: covered
+    pages: [catalogue-and-metadata]
+  CEEDS-STD-13:
+    state: covered
+    pages: [catalogue-and-metadata]
+  CEEDS-STD-14:
+    state: covered
+    pages: [catalogue-and-metadata]
+  CEEDS-STD-19:
+    state: covered
+    pages: [data-exchange]
+  DSSC-AUP-01:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-02:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-03:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-04:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-05:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-07:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-08:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-09:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-10:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-11:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-12:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-13:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-16:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-17:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-39:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-44:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-50:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-51:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-52:
+    state: covered
+    pages: [policies]
+  DSSC-AUP-53:
+    state: covered
+    pages: [policies]
+  DSSC-DEX-01:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-02:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DEX-08:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-09:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-18:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-19:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-20:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-22:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-25:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-26:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-31:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-32:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-33:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-34:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-36:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-37:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-39:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-55:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-56:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-57:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-58:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-60:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DEX-61:
+    state: covered
+    pages: [data-exchange]
+  DSSC-DMO-01:
+    state: covered
+    pages: [data-models]
+  DSSC-DMO-16:
+    state: covered
+    pages: [data-models]
+  DSSC-DMO-35:
+    state: covered
+    pages: [data-models]
+  DSSC-DMO-37:
+    state: covered
+    pages: [data-models]
+  DSSC-DMO-38:
+    state: covered
+    pages: [data-models]
+  DSSC-DMO-39:
+    state: covered
+    pages: [data-models]
+  DSSC-DSO-10:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-13:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-16:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-17:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-18:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-19:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-21:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-DSO-36:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-IAM-04:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-05:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-08:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-13:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-14:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-26:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-27:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-28:
+    state: covered
+    pages: [participation]
+  DSSC-IAM-30:
+    state: covered
+    pages: [participation]
+  DSSC-PTO-01:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-02:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-05:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-06:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-07:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-08:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-09:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-10:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-11:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-12:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-13:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-14:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-15:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-16:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-17:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-19:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-20:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-21:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-40:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-41:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-75:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-81:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PTO-84:
+    state: covered
+    pages: [provenance-and-logging]
+  DSSC-PUB-01:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-02:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-05:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-06:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-08:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-12:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-13:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-14:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-15:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-16:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-19:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-20:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-21:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-22:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-23:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-24:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-25:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-26:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-27:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-28:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-29:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-30:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-31:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-32:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-34:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-36:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-37:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-38:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-39:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-42:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-PUB-44:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-SVD-34:
+    state: covered
+    pages: [data-exchange]
+  DSSC-SVD-35:
+    state: covered
+    pages: [catalogue-and-metadata]
+  DSSC-SVD-38:
+    state: covered
+    pages: [policies]
+  DSSC-SVD-41:
+    state: covered
+    pages: [data-exchange]
+  DSSC-TRF-01:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-02:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-03:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-04:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-05:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-08:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-12:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-13:
+    state: covered
+    pages: [participation]
+  DSSC-TRF-14:
+    state: covered
+    pages: [participation]
+  DSSC-XCT-02:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-04:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-05:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-06:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-07:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-08:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-09:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-17:
+    state: covered
+    pages: [personal-data]
+  DSSC-XCT-26:
+    state: covered
+    pages: [personal-data]

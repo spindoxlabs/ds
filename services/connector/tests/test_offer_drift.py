@@ -31,17 +31,20 @@ def _offer(version: str = "1.0") -> SharingOffer:
     )
 
 
+@pytest.mark.rule("D-13")
 def test_no_recorded_consent_is_never_drift():
     """A brand-new offer has nothing to contradict."""
     assert drift_failure(_offer(), "hash-a", None) is None
     assert drift_failure(_offer(), "hash-a", set()) is None
 
 
+@pytest.mark.rule("D-13")
 def test_unchanged_text_passes():
     recorded = {("1.0", "hash-a")}
     assert drift_failure(_offer(), "hash-a", recorded) is None
 
 
+@pytest.mark.rule("D-13")
 def test_changed_text_at_the_same_version_is_refused():
     """Same version, different words — an edit pretending nothing happened."""
     recorded = {("1.0", "hash-a")}
@@ -50,24 +53,28 @@ def test_changed_text_at_the_same_version_is_refused():
     assert "consent_text_version" in failure
 
 
+@pytest.mark.rule("D-13")
 def test_changed_text_with_a_version_bump_passes():
     """A deliberate revision. Rows under the old version keep their meaning."""
     recorded = {("1.0", "hash-a")}
     assert drift_failure(_offer("2.0"), "hash-b", recorded) is None
 
 
+@pytest.mark.rule("D-13")
 def test_older_versions_coexisting_do_not_trip_the_check():
     """People re-consent at their own pace, so several versions are normal."""
     recorded = {("1.0", "hash-a"), ("2.0", "hash-b")}
     assert drift_failure(_offer("2.0"), "hash-b", recorded) is None
 
 
+@pytest.mark.rule("D-13")
 def test_a_revision_that_reuses_an_old_version_number_is_refused():
     recorded = {("1.0", "hash-a"), ("2.0", "hash-b")}
     failure = drift_failure(_offer("1.0"), "hash-c", recorded)
     assert failure is not None
 
 
+@pytest.mark.rule("D-13")
 def test_the_message_says_how_many_rows_disagree():
     recorded = {("1.0", "hash-a"), ("1.0", "hash-b")}
     failure = drift_failure(_offer("1.0"), "hash-c", recorded)
@@ -76,6 +83,7 @@ def test_the_message_says_how_many_rows_disagree():
 
 # ── The sync consequence ─────────────────────────────────────────────────────
 
+@pytest.mark.rule("D-13")
 def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
     """Refusing the offer alone would not help: the dataset is what gets
     published, and republishing it leaves stored consent attesting to text
@@ -115,6 +123,7 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
     assert "wording changed" in result.errors[0]["error"]
 
 
+@pytest.mark.rule("D-13")
 def test_an_unaffected_dataset_still_publishes_when_another_offer_drifted():
     """Drift is per offer — one bad edit must not empty the catalogue."""
     from connector.services.governance import ConnectorGovernanceMapper

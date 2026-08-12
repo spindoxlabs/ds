@@ -46,6 +46,7 @@ class LineageFlow(BaseFlow):
         "Provenance graph connectivity, ingestion recording, event idempotency "
         "and audit-log consistency"
     )
+    rules = ("L-5", "L-12")
 
     def execute(self) -> FlowResult:
         s = self.settings

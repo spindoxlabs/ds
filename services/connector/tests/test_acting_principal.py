@@ -42,6 +42,7 @@ def _human(**extra) -> Principal:
     return Principal.from_claims(claims)
 
 
+@pytest.mark.rule("D-2", "L-3")
 def test_the_act_names_a_human_pseudonymously():
     acted = acting_principal(_human())
     assert acted["subject"] == "00000000-0000-4000-a000-000000000003"
@@ -49,6 +50,7 @@ def test_the_act_names_a_human_pseudonymously():
     assert acted["is_service"] is False
 
 
+@pytest.mark.rule("D-2", "L-3")
 def test_no_personal_data_reaches_the_record():
     """The constraint that keeps this compatible with the rest of the provenance
     model: codes, pseudonymous identifiers and hashes only.
@@ -60,6 +62,7 @@ def test_no_personal_data_reaches_the_record():
         assert pii not in rendered, f"{pii!r} leaked into the provenance record"
 
 
+@pytest.mark.rule("D-2")
 def test_a_sub_is_recorded_with_its_issuer():
     """A realm-scoped identifier means nothing without the realm that minted it —
     and an operator resolving it back to a person needs realm access, which is the
@@ -83,6 +86,7 @@ def test_a_service_is_recorded_as_a_service():
     assert acting_principal(service)["is_service"] is True
 
 
+@pytest.mark.rule("D-16")
 def test_the_owner_acted_for_is_recorded():
     """"Acting for whom" is the question an owner-scoped act has to answer."""
     acted = acting_principal(_human(), on_behalf_of="example-org")
@@ -112,6 +116,7 @@ def _user_headers(sub: str) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.mark.rule("D-16")
 @pytest.mark.asyncio
 async def test_ingestion_attributes_the_verified_caller_not_the_body(prov_client):
     """The actor comes from the **verified token**, never from the request — so a

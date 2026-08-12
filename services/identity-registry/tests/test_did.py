@@ -5,6 +5,7 @@ from identity_registry.services.crypto import generate_key_pair
 from identity_registry.services.did import build_did_document
 
 
+@pytest.mark.rule("P-6")
 def test_participant_did_document():
     kp = generate_key_pair("did:web:rec.dataspaces.localhost")
     doc = build_did_document(
@@ -28,6 +29,7 @@ def test_participant_did_document():
     assert len(doc["service"]) == 2
 
 
+@pytest.mark.rule("P-6")
 def test_trust_anchor_did_document():
     kp = generate_key_pair("did:web:trust-anchor.dataspaces.localhost")
     doc = build_did_document(
@@ -40,6 +42,8 @@ def test_trust_anchor_did_document():
     assert "service" not in doc
 
 
+@pytest.mark.rule("D-22")
+@pytest.mark.rule("P-6")
 def test_user_did_document_no_auth():
     kp = generate_key_pair("did:web:rec.dataspaces.localhost:users:email-abc123")
     doc = build_did_document(
@@ -93,6 +97,7 @@ async def test_well_known_percent_encodes_a_port(client, db_session):
     assert r.json()["id"] == "did:web:127.0.0.1%3A8080"
 
 
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_well_known_is_404_for_an_unknown_host(client):
     r = await client.get(
@@ -101,6 +106,7 @@ async def test_well_known_is_404_for_an_unknown_host(client):
     assert r.status_code == 404
 
 
+@pytest.mark.rule("D-22")
 @pytest.mark.asyncio
 async def test_the_did_path_route_does_not_shadow_dids(client, db_session):
     """`/{did_path}/did.json` is a catch-all and is registered last.
@@ -116,6 +122,8 @@ async def test_the_did_path_route_does_not_shadow_dids(client, db_session):
     assert r.json()["id"] == did
 
 
+@pytest.mark.rule("D-22", "D-22a")
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_path_form_resolves_a_user_did(client, db_session):
     """`did:web:<participant>:users:<id>` → `/users/<id>/did.json`, served here.

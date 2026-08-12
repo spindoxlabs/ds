@@ -187,6 +187,7 @@ async def _issue_organization(client, db_session):
 # ── Allocation: distinct indices ──────────────────────────────────
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_two_membership_credentials_get_distinct_indices(client, db_session):
     """The core defect. Both issuances read the first unset bit and neither set
@@ -202,6 +203,7 @@ async def test_two_membership_credentials_get_distinct_indices(client, db_sessio
     assert len(set(indices)) == 2, f"indices collided: {indices}"
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_indices_do_not_collide_across_credential_types(client, db_session):
     """Allocation is a property of the register, not of one route. A membership
@@ -217,6 +219,7 @@ async def test_indices_do_not_collide_across_credential_types(client, db_session
     assert len(set(indices)) == 3, f"indices collided across types: {indices}"
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_many_issuances_are_all_distinct(client, db_session):
     """Ten in a row. A fix that merely advances by one per *route* rather than
@@ -233,6 +236,7 @@ async def test_many_issuances_are_all_distinct(client, db_session):
 # ── The register holds revocations only ───────────────────────────
 
 
+@pytest.mark.rule("P-10", "P-16")
 @pytest.mark.asyncio
 async def test_issuance_leaves_the_revocation_bit_clear(client, db_session):
     """The second defect, at the organisation path: the bit was set in the same
@@ -244,6 +248,7 @@ async def test_issuance_leaves_the_revocation_bit_clear(client, db_session):
     assert bits == [], f"issuance set revocation bits {bits} for {cred['credentialId']}"
 
 
+@pytest.mark.rule("P-10")
 @pytest.mark.asyncio
 async def test_the_register_is_empty_until_something_is_revoked(client, db_session):
     """Stated as a whole-register property so it holds no matter which paths
@@ -258,6 +263,7 @@ async def test_the_register_is_empty_until_something_is_revoked(client, db_sessi
 # ── Revocation: one credential, one bit ───────────────────────────
 
 
+@pytest.mark.rule("P-10", "P-16")
 @pytest.mark.asyncio
 async def test_revoking_one_credential_does_not_revoke_the_other(client, db_session):
     """The consequence a colliding index produces, asserted from the outside:
@@ -294,6 +300,7 @@ async def test_revoking_one_credential_does_not_revoke_the_other(client, db_sess
     assert not get_bit(bitstring, survivor_index)
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_session):
     """Suspension is the enforcement point rulebook §5.6 relies on, and it runs
@@ -336,6 +343,7 @@ async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_sessi
 # ── The counter is monotonic, not first-unset ─────────────────────
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_a_revoked_index_is_never_reissued(client, db_session):
     """A pin on the allocator's shape rather than a reproduction of the defect.
@@ -376,6 +384,7 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
     )
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_the_counter_survives_deleting_the_highest_credential(
     client, db_session
@@ -417,6 +426,7 @@ async def test_the_counter_survives_deleting_the_highest_credential(
 # ── The report for damage already issued ──────────────────────────
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_no_duplicates_are_reported_on_a_healthy_register(client, db_session):
     """The report must be quiet when there is nothing to say, or an operator
@@ -429,6 +439,7 @@ async def test_no_duplicates_are_reported_on_a_healthy_register(client, db_sessi
     assert await find_duplicate_indices(db_session) == []
 
 
+@pytest.mark.rule("P-9")
 @pytest.mark.asyncio
 async def test_duplicates_are_reported_with_every_affected_subject(
     client, db_session

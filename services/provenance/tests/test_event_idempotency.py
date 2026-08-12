@@ -21,6 +21,7 @@ ANONYMOUS_EVENT = {
 }
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_an_event_without_an_id_is_stored_once(client):
     first = await client.post("/prov/events", json=ANONYMOUS_EVENT)
@@ -36,6 +37,7 @@ async def test_an_event_without_an_id_is_stored_once(client):
     assert listed["hydra:totalItems"] == 1
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_the_derived_key_is_visibly_derived(client):
     """A `sha256:` prefix separates a key this service computed from one a caller
@@ -44,6 +46,7 @@ async def test_the_derived_key_is_visibly_derived(client):
     assert response.json()["event_id"].startswith("sha256:")
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_two_events_that_differ_are_two_events(client):
     later = dict(ANONYMOUS_EVENT, occurred_at="2026-02-01T11:00:00Z")
@@ -54,6 +57,7 @@ async def test_two_events_that_differ_are_two_events(client):
     assert listed["hydra:totalItems"] == 2
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_a_caller_supplied_id_still_wins(client):
     """The derived key is a fallback, not a replacement: a caller that manages its
@@ -66,6 +70,7 @@ async def test_a_caller_supplied_id_still_wins(client):
     assert listed["@graph"][0]["@id"]  # stored under the caller's key, not a hash
 
 
+@pytest.mark.rule("L-4")
 def test_the_key_ignores_event_id_itself():
     """Otherwise the same event posted with and without an id would hash apart,
     and the fallback would not deduplicate against a named post of the same fact."""
@@ -74,6 +79,7 @@ def test_the_key_ignores_event_id_itself():
     assert content_event_id(without) == content_event_id(with_id)
 
 
+@pytest.mark.rule("L-4")
 def test_the_key_is_stable_across_key_order():
     """Canonical JSON, not `str(dict)` — otherwise the key depends on field order
     and a model reshuffle silently re-admits every past event."""

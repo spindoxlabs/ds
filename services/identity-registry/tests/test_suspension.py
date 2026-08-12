@@ -141,6 +141,7 @@ async def _participant(db_session) -> Participant:
 # ── The register layer ────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_the_suspension_register_is_published_as_a_suspension_register(
     db_session,
@@ -157,6 +158,7 @@ async def test_the_suspension_register_is_published_as_a_suspension_register(
     assert revocation.purpose == "revocation"
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_a_register_whose_stored_purpose_disagrees_is_refused(db_session):
     db_session.add(
@@ -173,6 +175,7 @@ async def test_a_register_whose_stored_purpose_disagrees_is_refused(db_session):
         await get_or_create_status_list(db_session, SUSPENSION_LIST_ID)
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_a_suspension_bit_is_the_only_bit_that_can_be_cleared(db_session):
     await suspend_status_list_index(db_session, 9)
@@ -189,6 +192,7 @@ async def test_a_suspension_bit_is_the_only_bit_that_can_be_cleared(db_session):
     assert get_bit(await _bits(db_session, SUSPENSION_LIST_ID), 9)
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_clearing_a_bit_cannot_reach_the_revocation_register(db_session):
     """The failure this forbids is silent and unrecoverable: a cleared
@@ -201,6 +205,7 @@ async def test_clearing_a_bit_cannot_reach_the_revocation_register(db_session):
     assert get_bit(await _bits(db_session, REVOCATION_LIST_ID), 3)
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_a_revocation_cannot_be_written_to_the_suspension_register(db_session):
     with pytest.raises(StatusListPurposeMismatch):
@@ -210,10 +215,12 @@ async def test_a_revocation_cannot_be_written_to_the_suspension_register(db_sess
 # ── Reading a credential's suspension index ───────────────────────
 
 
+@pytest.mark.rule("P-25")
 def test_suspension_index_reads_the_entry_by_purpose():
     assert suspension_index(_credential_json(11)) == 11
 
 
+@pytest.mark.rule("P-25")
 def test_a_credential_naming_one_register_has_no_suspension_index():
     assert suspension_index(_credential_json(11, suspendable=False)) is None
     assert suspension_index({}) is None
@@ -223,6 +230,7 @@ def test_a_credential_naming_one_register_has_no_suspension_index():
 # ── Suspend → reinstate, and the credential in between ────────────
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_suspension_holds_the_credential_and_reinstatement_returns_it(
     db_session,
@@ -249,6 +257,7 @@ async def test_suspension_holds_the_credential_and_reinstatement_returns_it(
     assert participant.deactivated_at is None
 
 
+@pytest.mark.rule("P-16", "P-25")
 @pytest.mark.asyncio
 async def test_suspension_covers_the_membership_credential_too(db_session):
     """An organisation whose `OrganizationCredential` is held while its
@@ -267,6 +276,7 @@ async def test_suspension_covers_the_membership_credential_too(db_session):
     assert get_bit(await _bits(db_session, SUSPENSION_LIST_ID), 6)
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_a_credential_no_verifier_would_see_suspended_is_refused(db_session):
     """Setting a bit on a register the credential does not name reports a
@@ -286,6 +296,7 @@ async def test_a_credential_no_verifier_would_see_suspended_is_refused(db_sessio
 # ── Revocation stays terminal ─────────────────────────────────────
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_revocation_is_reachable_from_suspension(db_session):
     owner = await _seed_owner(db_session)
@@ -300,6 +311,7 @@ async def test_revocation_is_reachable_from_suspension(db_session):
     assert get_bit(await _bits(db_session, REVOCATION_LIST_ID), 4)
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_a_revoked_organisation_cannot_be_reinstated(db_session):
     owner = await _seed_owner(db_session)
@@ -313,6 +325,7 @@ async def test_a_revoked_organisation_cannot_be_reinstated(db_session):
     assert owner.status == "revoked"
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_reinstating_something_that_is_not_suspended_is_an_error(db_session):
     owner = await _seed_owner(db_session)
@@ -326,6 +339,7 @@ async def test_reinstating_something_that_is_not_suspended_is_an_error(db_sessio
 # ── The path that used to lift a suspension by accident ───────────
 
 
+@pytest.mark.rule("P-26")
 @pytest.mark.asyncio
 async def test_re_applying_a_seed_cannot_lift_a_suspension(db_session):
     """`upsert_owner_from_application` wrote `status = "verified"`
@@ -365,6 +379,7 @@ async def test_re_applying_a_seed_cannot_lift_a_suspension(db_session):
 # ── What a verifier fetches ───────────────────────────────────────
 
 
+@pytest.mark.rule("P-25")
 @pytest.mark.asyncio
 async def test_the_suspension_register_is_served_with_its_own_purpose(
     client, db_session

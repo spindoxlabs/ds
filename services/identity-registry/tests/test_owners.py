@@ -45,6 +45,7 @@ class TestOwnerCRUD:
         assert data["status"] == "pending"
         assert data["verified_by"] is None
 
+    @pytest.mark.rule("P-1")
     @pytest.mark.asyncio
     async def test_create_verified_requires_evidence(self, client, admin_headers):
         resp = await client.post(
@@ -54,6 +55,7 @@ class TestOwnerCRUD:
         )
         assert resp.status_code == 422
 
+    @pytest.mark.rule("P-1")
     @pytest.mark.asyncio
     async def test_create_verified_with_evidence(self, client, admin_headers):
         resp = await client.post(
@@ -83,6 +85,7 @@ class TestOwnerCRUD:
         )
         assert resp.status_code == 422
 
+    @pytest.mark.rule("P-4")
     @pytest.mark.asyncio
     async def test_create_duplicate_owner(self, client, admin_headers):
         await client.post(

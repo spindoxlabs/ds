@@ -54,12 +54,14 @@ async def test_health_no_auth(auth_client):
 
 # ── Internal endpoints require connector.internal ────────────────
 
+@pytest.mark.rule("C-17", "X-4")
 @pytest.mark.asyncio
 async def test_internal_without_token_returns_401(auth_client):
     r = await auth_client.get("/internal/agreements/test/status")
     assert r.status_code == 401
 
 
+@pytest.mark.rule("C-17", "X-4")
 @pytest.mark.asyncio
 async def test_internal_wrong_scope_returns_403(auth_client):
     r = await auth_client.get(
@@ -93,6 +95,7 @@ async def test_internal_with_correct_scope(auth_client):
     assert r.status_code == 404
 
 
+@pytest.mark.rule("D-20")
 @pytest.mark.asyncio
 async def test_consent_check_requires_scope(auth_client):
     r = await auth_client.get("/internal/consent/check", params={
@@ -113,12 +116,14 @@ async def test_audit_query_requires_scope(auth_client):
 # a superset, so asserting only with an admin token left the requirement the
 # route actually declares — the weaker one — untested.
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_admin_without_token_returns_401(auth_client):
     r = await auth_client.get("/admin/participants")
     assert r.status_code == 401
 
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_admin_wrong_scope_returns_403(auth_client):
     r = await auth_client.get(
@@ -164,6 +169,7 @@ async def test_metrics_is_deliberately_open(auth_client):
 
 # ── Webhook endpoints require connector.webhook ──────────────────
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_webhook_without_token_returns_401(auth_client):
     r = await auth_client.post("/webhooks/transfer-process", json={

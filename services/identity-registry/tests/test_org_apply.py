@@ -273,6 +273,7 @@ async def test_verified_by_is_required(db_session, tmp_path):
     assert (await db_session.execute(select(Owner))).scalars().first() is None
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_promotion_without_an_agreement_is_refused_before_any_write(
     db_session, tmp_path

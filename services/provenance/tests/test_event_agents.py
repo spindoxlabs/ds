@@ -54,6 +54,7 @@ async def _lineage(client, iri: str) -> list[dict]:
     return response.json()["@graph"]
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_access_revoked_names_the_subject_as_an_agent(client):
     assert (await client.post("/prov/events", json=REVOKED_EVENT)).status_code == 201
@@ -61,6 +62,7 @@ async def test_access_revoked_names_the_subject_as_an_agent(client):
     assert SUBJECT in await _agents(client)
 
 
+@pytest.mark.rule("L-3", "L-5")
 @pytest.mark.asyncio
 async def test_the_subject_edge_is_distinguishable_from_the_two_parties(client):
     """Provider, consumer and subject are all `wasAssociatedWith` the revocation,
@@ -82,6 +84,7 @@ async def test_the_subject_edge_is_distinguishable_from_the_two_parties(client):
     assert party_edges and "prov:role" not in party_edges[0]
 
 
+@pytest.mark.rule("L-3", "L-5")
 @pytest.mark.asyncio
 async def test_acted_by_becomes_a_pseudonymous_agent(client):
     assert (await client.post("/prov/events", json=PUBLISHED_BY_A_PERSON)).status_code == 201
@@ -98,6 +101,7 @@ async def test_acted_by_becomes_a_pseudonymous_agent(client):
     assert "@example" not in str(actor)
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_acted_on_behalf_of_is_an_edge_not_a_string(client):
     """"Acting for whom" is the second half of the Art. 5(2) question, and it is
@@ -110,6 +114,7 @@ async def test_acted_on_behalf_of_is_an_edge_not_a_string(client):
     assert delegation[0]["ds:target"] == "urn:ds:owner:example-org"
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_an_automated_publish_is_recorded_as_one(client):
     """`is_service` exists so an automated publish is not read as a person's
@@ -130,6 +135,7 @@ async def test_an_automated_publish_is_recorded_as_one(client):
     assert edge[0]["prov:role"] == "service"
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_data_ingested_records_who_decided_to(client):
     event = {
@@ -146,6 +152,7 @@ async def test_data_ingested_records_who_decided_to(client):
     assert "urn:ds:principal:operator-sub" in await _agents(client)
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_an_event_without_a_principal_adds_no_agent(client):
     """`acted_by` is optional so a deployment that predates it keeps validating.

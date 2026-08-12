@@ -13,6 +13,8 @@ is the side that knows it must not republish a removed participant.
 """
 from __future__ import annotations
 
+import pytest
+
 import httpx
 import respx
 
@@ -31,6 +33,7 @@ def _participant(did: str, *, active: bool = True, roles=("provider",)) -> dict:
     }
 
 
+@pytest.mark.rule("C-3", "P-12")
 @respx.mock
 def test_a_deactivated_participant_is_not_crawled():
     respx.get(PARTICIPANTS).mock(
@@ -46,6 +49,7 @@ def test_a_deactivated_participant_is_not_crawled():
     assert [p.id for p in providers] == ["did:web:a"]
 
 
+@pytest.mark.rule("C-3", "P-12")
 @respx.mock
 def test_the_request_asks_the_registry_to_filter_too():
     route = respx.get(PARTICIPANTS).mock(
@@ -55,6 +59,7 @@ def test_the_request_asks_the_registry_to_filter_too():
     assert route.calls.last.request.url.params["active_only"] == "true"
 
 
+@pytest.mark.rule("C-3")
 @respx.mock
 def test_a_payload_that_does_not_say_is_treated_as_not_active():
     """Absent is not "probably fine".
@@ -70,6 +75,7 @@ def test_a_payload_that_does_not_say_is_treated_as_not_active():
     assert load_providers_from_registry(REGISTRY) == []
 
 
+@pytest.mark.rule("C-3")
 @respx.mock
 def test_a_consumer_only_participant_is_still_skipped():
     respx.get(PARTICIPANTS).mock(

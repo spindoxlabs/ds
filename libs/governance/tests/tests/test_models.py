@@ -78,6 +78,7 @@ def test_load_default_profile():
     }
 
 
+@pytest.mark.rule("A-2", "M-13")
 def test_default_profile_roots_are_not_mutually_reachable():
     """The five roots must stay siblings — `is_a` must not cross between them.
 
@@ -108,6 +109,7 @@ def test_default_profile_roots_are_not_mutually_reachable():
             )
 
 
+@pytest.mark.rule("A-1", "M-13")
 def test_default_profile_children_are_covered_by_their_root():
     """Consent to a root covers a narrower request, never the reverse."""
     profile = load_odrl_profile()
@@ -121,6 +123,7 @@ def test_default_profile_children_are_covered_by_their_root():
         assert not profile.is_a(root, child)
 
 
+@pytest.mark.rule("M-13")
 def test_default_profile_dpv_mappings_are_dpv_iris():
     """Every concept declares an alignment, and it points at DPV.
 
@@ -175,6 +178,7 @@ def test_configured_but_missing_profile_path_warns(caplog):
     assert any("falling back to the bundled energy profile" in r.message for r in caplog.records)
 
 
+@pytest.mark.rule("M-13")
 def test_default_profile_load_does_not_warn(caplog):
     """Using the bundled profile is the documented default, not a misconfiguration."""
     with caplog.at_level(logging.WARNING, logger="ds.governance.models"):

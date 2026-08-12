@@ -91,6 +91,7 @@ def owned_by(client):
 ASSET = "datasets.silver.meters_15m"
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_operator_of_the_owning_org_may_delete(client, owned_by):
     edc = owned_by("example-org")
@@ -105,6 +106,7 @@ async def test_operator_of_the_owning_org_may_delete(client, owned_by):
     assert edc.deleted == [ASSET]
 
 
+@pytest.mark.rule("C-16", "C-17")
 @pytest.mark.asyncio
 async def test_operator_of_another_org_is_refused(client, owned_by):
     """The whole point: a valid `connector.provider.write` holder, refused because
@@ -142,6 +144,7 @@ async def test_holder_with_no_organisations_is_allowed_by_default(client, owned_
     assert edc.deleted == [ASSET]
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_strict_mode_refuses_a_holder_with_no_organisations(
     client, owned_by, monkeypatch
@@ -170,6 +173,7 @@ async def test_strict_mode_refuses_a_holder_with_no_organisations(
 # ── Authority, not membership (the fail-open case) ───────────────────────────
 
 
+@pytest.mark.rule("C-16", "C-17")
 @pytest.mark.asyncio
 async def test_viewer_in_the_owning_org_is_refused(client, owned_by):
     """The defect this closes.
@@ -264,6 +268,7 @@ async def test_an_alias_of_the_owner_is_the_owner(client, owned_by):
     assert "example" in registry.calls and "example-org" in registry.calls
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_an_unrelated_owner_is_still_refused_after_resolution(client, owned_by):
     """Resolution must not become a way to match anything: an alias the registry
@@ -395,6 +400,7 @@ async def test_a_foreign_organisation_name_maps_onto_a_ds_owner(
     assert edc.deleted == [ASSET]
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_an_unmapped_foreign_organisation_is_still_refused(
     client, owned_by, owner_aliases
@@ -414,6 +420,7 @@ async def test_an_unmapped_foreign_organisation_is_still_refused(
     assert edc.deleted == []
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_a_malformed_owner_map_does_not_open_the_perimeter(
     client, owned_by, owner_aliases
@@ -467,6 +474,7 @@ POLICY = "datasets-silver-meters_15m-policy"
 CONTRACT = "datasets-silver-meters_15m-contract"
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_policy_delete_is_owner_scoped(client, governed):
     governed({POLICY: "example-org"})
@@ -479,6 +487,7 @@ async def test_policy_delete_is_owner_scoped(client, governed):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
 async def test_contract_delete_is_owner_scoped(client, governed):
     governed({CONTRACT: "example-org"})
@@ -611,6 +620,7 @@ def _grid_operator() -> dict:
     ],
     ids=["unreachable", "timeout", "edc-500", "edc-401"],
 )
+@pytest.mark.rule("C-16", "C-17")
 async def test_a_failed_owner_lookup_refuses_the_write(
     client, lookup_fails, error, why
 ):
@@ -628,6 +638,7 @@ async def test_a_failed_owner_lookup_refuses_the_write(
     assert edc.deleted == [], "the write reached the handler despite the refusal"
 
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_the_refusal_says_the_owner_could_not_be_determined(client, lookup_fails):
     """An unattributable 403 during an outage is an alarm that gets dismissed.
@@ -654,6 +665,7 @@ async def test_a_404_from_the_edc_is_an_answer_not_a_failure(client, lookup_fail
     assert r.status_code != 403
 
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_an_unreadable_governance_file_refuses_a_policy_delete(
     client, monkeypatch, owned_by

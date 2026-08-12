@@ -166,6 +166,7 @@ def test_every_credential_object_carries_all_optional_properties():
         assert set(obj) == CREDENTIAL_OBJECT_ALL, obj["id"]
 
 
+@pytest.mark.rule("P-22")
 @pytest.mark.asyncio
 async def test_issuer_metadata_is_conformant(client):
     body = (await client.get("/issuer/metadata")).json()
@@ -178,6 +179,7 @@ async def test_issuer_metadata_is_conformant(client):
 # ── What this service sends and accepts ───────────────────────────
 
 
+@pytest.mark.rule("P-21")
 @pytest.mark.asyncio
 async def test_the_acknowledgement_is_a_conformant_credential_status(
     client, db_session, resolver, anchor_identity, credential_store
@@ -200,6 +202,7 @@ async def test_the_acknowledgement_is_a_conformant_credential_status(
     assert body["status"] in CREDENTIAL_STATUS_VALUES
 
 
+@pytest.mark.rule("P-21")
 @pytest.mark.asyncio
 async def test_the_delivered_message_is_a_conformant_credential_message(
     client, db_session, resolver, anchor_identity, credential_store
@@ -258,6 +261,7 @@ async def test_the_pids_are_request_ids_not_dids(
 # ── Discovery ─────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-22")
 @pytest.mark.asyncio
 async def test_the_anchor_publishes_an_issuer_service_entry(client, db_session):
     """CIP discovery: the Issuer Service is a `service` entry of type
@@ -292,6 +296,7 @@ async def test_the_anchor_publishes_an_issuer_service_entry(client, db_session):
     assert not entry["serviceEndpoint"].endswith("/credentials")
 
 
+@pytest.mark.rule("P-4", "P-22")
 @pytest.mark.asyncio
 async def test_bootstrapping_again_republishes_the_service_entry(
     client, db_session, anchor_identity

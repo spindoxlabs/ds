@@ -123,6 +123,7 @@ async def _authorize(client, **body):
 # ── the binding checks ───────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-9", "C-20")
 @pytest.mark.asyncio
 async def test_another_consumers_agreement_is_refused(engine, client):
     """The header says `agr-1`; the token says who is asking. They must agree."""
@@ -133,6 +134,7 @@ async def test_another_consumers_agreement_is_refused(engine, client):
     assert r.json()["reason"] == "not_your_agreement"
 
 
+@pytest.mark.rule("C-20")
 @pytest.mark.asyncio
 async def test_refusal_does_not_disclose_the_owner(engine, client):
     """A refusal must not become an oracle for who holds which agreement."""
@@ -141,6 +143,7 @@ async def test_refusal_does_not_disclose_the_owner(engine, client):
     assert "someone-else" not in str(body)
 
 
+@pytest.mark.rule("X-9")
 @pytest.mark.asyncio
 async def test_agreement_does_not_unlock_another_dataset(engine, client):
     await _agreement(engine, "agr-1", OPEN)
@@ -148,12 +151,14 @@ async def test_agreement_does_not_unlock_another_dataset(engine, client):
     assert r.json()["reason"] == "dataset_not_in_agreement"
 
 
+@pytest.mark.rule("X-6c", "X-9")
 @pytest.mark.asyncio
 async def test_unknown_agreement_is_refused(client):
     r = await _authorize(client)
     assert r.json()["reason"] == "agreement_unknown"
 
 
+@pytest.mark.rule("X-6c", "X-9")
 @pytest.mark.asyncio
 async def test_terminated_agreement_is_refused(engine, client):
     await _agreement(engine, "agr-1", GATED)
@@ -168,6 +173,7 @@ async def test_terminated_agreement_is_refused(engine, client):
 # ── purpose ──────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-9", "D-8")
 @pytest.mark.asyncio
 async def test_purpose_outside_the_agreement_is_refused(engine, client):
     """The agreed policy is the authority, not today's governance file."""
@@ -176,6 +182,7 @@ async def test_purpose_outside_the_agreement_is_refused(engine, client):
     assert r.json()["reason"] == "purpose_not_agreed"
 
 
+@pytest.mark.rule("X-6c", "D-10")
 @pytest.mark.asyncio
 async def test_unknown_purpose_is_refused(engine, client):
     await _agreement(engine, "agr-1", GATED)
@@ -183,6 +190,7 @@ async def test_unknown_purpose_is_refused(engine, client):
     assert r.json()["reason"] == "purpose_unknown"
 
 
+@pytest.mark.rule("D-7")
 @pytest.mark.asyncio
 async def test_consent_gated_dataset_needs_a_stated_purpose(engine, client):
     """No stated reason, no rows — the same rule `/internal/consent/check` applies."""
@@ -194,6 +202,7 @@ async def test_consent_gated_dataset_needs_a_stated_purpose(engine, client):
 # ── consent and the row filter ───────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-6", "X-6c", "D-7")
 @pytest.mark.asyncio
 async def test_no_consent_yields_a_refusal_not_an_empty_filter(engine, client):
     await _agreement(engine, "agr-1", GATED)
@@ -201,6 +210,7 @@ async def test_no_consent_yields_a_refusal_not_an_empty_filter(engine, client):
     assert r.json()["datasets"][0]["reason"] == "no_consent"
 
 
+@pytest.mark.rule("D-15", "X-5")
 @pytest.mark.asyncio
 async def test_consent_becomes_a_row_filter_spec(engine, client):
     """The decision carries the filter **as governance declared it**.
@@ -222,6 +232,7 @@ async def test_consent_becomes_a_row_filter_spec(engine, client):
     assert SUBJECT not in str(row_filter)
 
 
+@pytest.mark.rule("X-6", "X-6c")
 @pytest.mark.asyncio
 async def test_unresolvable_subjects_deny(engine, client, monkeypatch):
     """Consent exists, but nobody can be named to the system holding the data.
@@ -239,6 +250,7 @@ async def test_unresolvable_subjects_deny(engine, client, monkeypatch):
     assert (await _authorize(client)).json()["reason"] == "subjects_unresolvable"
 
 
+@pytest.mark.rule("D-8", "D-11")
 @pytest.mark.asyncio
 async def test_consent_for_another_purpose_does_not_authorise_this_one(engine, client):
     """Purpose limitation, at the data plane."""
@@ -248,6 +260,7 @@ async def test_consent_for_another_purpose_does_not_authorise_this_one(engine, c
     assert r.json()["datasets"][0]["reason"] == "no_consent"
 
 
+@pytest.mark.rule("X-5")
 @pytest.mark.asyncio
 async def test_open_dataset_needs_no_filter(engine, client):
     await _agreement(engine, "agr-open", OPEN, purposes=("GridMonitoring",))
@@ -262,6 +275,7 @@ async def test_open_dataset_needs_no_filter(engine, client):
 # ── the joined query ─────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-9")
 @pytest.mark.asyncio
 async def test_a_join_is_as_strict_as_its_strictest_dataset(engine, client):
     """One statement, several datasets: the overall answer is the strictest."""
@@ -277,6 +291,7 @@ async def test_a_join_is_as_strict_as_its_strictest_dataset(engine, client):
 # ── the endpoint is not open ─────────────────────────────────────────────────
 
 
+@pytest.mark.rule("X-4")
 @pytest.mark.asyncio
 async def test_requires_the_internal_grant(client):
     r = await client.post(
@@ -287,6 +302,7 @@ async def test_requires_the_internal_grant(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("X-5")
 @pytest.mark.asyncio
 async def test_the_ttl_is_published(engine, client):
     """The data plane may cache an allow for exactly as long as ds says."""
@@ -298,6 +314,7 @@ async def test_the_ttl_is_published(engine, client):
 # ── the answer is the shared shape, not this service's own ───────────────────
 
 
+@pytest.mark.rule("X-5")
 @pytest.mark.asyncio
 async def test_every_answer_parses_as_the_published_decision(engine, client):
     """The response is `ds.governance.DataplaneDecision`, on both branches.
@@ -322,6 +339,7 @@ async def test_every_answer_parses_as_the_published_decision(engine, client):
     assert refused.reason == "agreement_unknown"
 
 
+@pytest.mark.rule("X-5")
 @pytest.mark.asyncio
 async def test_a_refusal_carries_the_same_keys_as_an_allow(engine, client):
     """A PEP must not branch on the envelope to know which fields it may read.
@@ -337,6 +355,7 @@ async def test_a_refusal_carries_the_same_keys_as_an_allow(engine, client):
     assert set(allowed) == set(refused)
 
 
+@pytest.mark.rule("X-5", "D-15")
 @pytest.mark.asyncio
 async def test_the_filter_reaches_the_wire_with_the_handlers_own_arguments(
     engine, client, monkeypatch

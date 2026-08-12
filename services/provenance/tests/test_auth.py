@@ -50,6 +50,7 @@ async def test_context_no_auth(raw_client):
     assert r.status_code == 200
 
 
+@pytest.mark.rule("L-10", "L-13")
 @pytest.mark.asyncio
 async def test_write_without_token_returns_401(raw_client):
     r = await raw_client.post("/prov/events", json={
@@ -60,18 +61,21 @@ async def test_write_without_token_returns_401(raw_client):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("L-10", "L-13")
 @pytest.mark.asyncio
 async def test_read_without_token_returns_401(raw_client):
     r = await raw_client.get("/prov/lineage/urn:test")
     assert r.status_code == 401
 
 
+@pytest.mark.rule("L-10", "L-13")
 @pytest.mark.asyncio
 async def test_audit_without_token_returns_401(raw_client):
     r = await raw_client.get("/audit/log")
     assert r.status_code == 401
 
 
+@pytest.mark.rule("L-10", "L-13")
 @pytest.mark.asyncio
 async def test_write_with_read_scope_returns_403(raw_client):
     r = await raw_client.post(
@@ -82,6 +86,7 @@ async def test_write_with_read_scope_returns_403(raw_client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("L-13")
 @pytest.mark.asyncio
 async def test_read_with_read_scope_ok(raw_client):
     r = await raw_client.get(
@@ -91,6 +96,7 @@ async def test_read_with_read_scope_ok(raw_client):
     assert r.status_code == 200
 
 
+@pytest.mark.rule("L-13")
 @pytest.mark.asyncio
 async def test_write_with_write_scope_ok(raw_client):
     r = await raw_client.post(

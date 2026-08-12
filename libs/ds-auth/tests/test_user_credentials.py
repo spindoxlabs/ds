@@ -175,6 +175,7 @@ def verify(token, resolver, **kwargs):
 # ── the key comes from the document ───────────────────────────────
 
 
+@pytest.mark.rule("P-8c")
 def test_a_credential_verifies_against_the_published_key(anchor, resolver):
     credential = verify(anchor.credential(), resolver)
     assert credential.did == SUBJECT
@@ -182,6 +183,7 @@ def test_a_credential_verifies_against_the_published_key(anchor, resolver):
     assert resolver.fetches == [ANCHOR]
 
 
+@pytest.mark.rule("P-8c", "P-11")
 def test_a_signature_from_another_key_is_refused(anchor, resolver):
     impostor = Issuer()  # same DID, different key — a stolen or stale key
     with pytest.raises(HTTPException) as exc:
@@ -202,6 +204,7 @@ def test_the_kid_selects_the_key(anchor, resolver):
     assert "kid" in exc.value.detail
 
 
+@pytest.mark.rule("P-8c")
 def test_an_unreachable_issuer_fails_closed(anchor):
     empty = FakeResolver({}, active_listing())
     with pytest.raises(HTTPException) as exc:
@@ -212,6 +215,7 @@ def test_an_unreachable_issuer_fails_closed(anchor):
 # ── what happens before the document is fetched ───────────────────
 
 
+@pytest.mark.rule("P-8c")
 def test_an_untrusted_issuer_is_refused_without_resolving_anything(resolver):
     """The check that keeps this from being a request-forgery primitive.
 
@@ -243,6 +247,7 @@ def test_a_credential_naming_the_anchor_but_signed_by_a_stranger_is_refused(
 # ── authority, not authorship: the trust list ─────────────────────
 
 
+@pytest.mark.rule("P-8c")
 def test_a_revoked_issuer_is_refused(anchor, resolver):
     """The event the trust list exists to publish.
 
@@ -261,6 +266,7 @@ def test_a_revoked_issuer_is_refused(anchor, resolver):
     assert "key compromise" in exc.value.detail
 
 
+@pytest.mark.rule("P-8c")
 def test_an_unlisted_issuer_is_refused(anchor, resolver):
     resolver.listing = {"issuers": []}
     with pytest.raises(HTTPException) as exc:
@@ -326,6 +332,7 @@ def test_a_rotated_key_is_picked_up_after_invalidation(anchor, resolver):
 # ── configuration ─────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-11")
 def test_no_issuer_and_no_insecure_flag_is_a_503(anchor, resolver):
     with pytest.raises(HTTPException) as exc:
         verify(anchor.credential(), resolver, issuer_did=None)
@@ -345,6 +352,7 @@ def test_insecure_dev_skips_verification(anchor, resolver):
     assert resolver.fetches == []
 
 
+@pytest.mark.rule("P-8c")
 def test_a_document_served_for_the_wrong_did_is_refused(anchor):
     """A host that answers with somebody else's document resolves nothing."""
 
@@ -373,10 +381,12 @@ def test_did_web_urls(did, url):
     assert did_web_url(did) == url
 
 
+@pytest.mark.rule("P-8c")
 def test_did_web_over_http_is_explicit():
     assert did_web_url("did:web:x.test", use_https=False).startswith("http://")
 
 
+@pytest.mark.rule("P-8c")
 def test_only_did_web_is_supported():
     with pytest.raises(DidResolutionError):
         did_web_url("did:key:z6Mk")

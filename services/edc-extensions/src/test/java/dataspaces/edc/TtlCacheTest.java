@@ -7,6 +7,7 @@ import org.eclipse.edc.participant.spi.ParticipantAgent;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.time.Duration;
@@ -126,6 +127,7 @@ class TtlCacheTest {
         assertEquals(1, calls.get());
     }
 
+    @Tag("rule:A-11")
     @Test
     void anUnreachableConnectorDeniesMembership() {
         var calls = new AtomicInteger();
@@ -144,6 +146,7 @@ class TtlCacheTest {
         assertEquals(1, calls.get(), "the connector must actually be asked, with the unwrapped scope");
     }
 
+    @Tag("rule:A-11")
     @Test
     void anUnreadableScopeOperandDenies() {
         var calls = new AtomicInteger();

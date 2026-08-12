@@ -215,6 +215,7 @@ class TestSyncOrganizations:
         assert len(fake.group_members) == 2
         await kc.aclose()
 
+    @pytest.mark.rule("P-4")
     @pytest.mark.asyncio
     async def test_is_idempotent(self):
         """Re-running against the same realm creates nothing new."""
@@ -246,6 +247,7 @@ class TestSyncOrganizations:
         assert report.members_added == ["example-org/provider@example.test"]
         await kc.aclose()
 
+    @pytest.mark.rule("P-4")
     @pytest.mark.asyncio
     async def test_existing_org_is_reused_not_duplicated(self):
         fake = FakeKeycloak(USERS)

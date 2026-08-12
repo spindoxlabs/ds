@@ -9,6 +9,8 @@ one place and not the other.
 """
 from __future__ import annotations
 
+import pytest
+
 from ds.governance.dcat import (
     CATALOG_CONTEXT,
     DSP_PROTOCOL_IRI,
@@ -18,6 +20,7 @@ from ds.governance.dcat import (
 
 
 class TestDataService:
+    @pytest.mark.rule("C-9")
     def test_minimum_shape(self):
         service = to_data_service(
             service_id="urn:svc:1",
@@ -27,6 +30,7 @@ class TestDataService:
         assert service["@type"] == "dcat:DataService"
         assert service["dcat:endpointURL"] == {"@id": "http://edc:19194/protocol"}
 
+    @pytest.mark.rule("C-7")
     def test_serves_dataset_is_emitted_as_references(self):
         service = to_data_service(
             service_id="urn:svc:1",
@@ -49,6 +53,7 @@ class TestDataService:
         )
         assert "dcat:servesDataset" not in service
 
+    @pytest.mark.rule("C-7", "M-4")
     def test_conforms_to_distinguishes_a_negotiable_endpoint(self):
         dsp = to_data_service(
             service_id="urn:svc:1", title="t", endpoint_url="http://e",
@@ -62,6 +67,7 @@ class TestDataService:
 
 
 class TestCatalogRecord:
+    @pytest.mark.rule("C-8")
     def test_points_at_its_dataset_via_primary_topic(self):
         record = to_catalog_record(dataset_id="urn:a", record_id="urn:rec:a")
         assert record["@type"] == "dcat:CatalogRecord"
@@ -83,6 +89,7 @@ class TestCatalogRecord:
         assert "dct:source" not in record
 
 
+@pytest.mark.rule("C-8")
 def test_the_context_defines_foaf():
     """`foaf:primaryTopic` arrives with `dcat:record` and needs its prefix.
 

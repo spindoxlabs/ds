@@ -46,6 +46,7 @@ def _ask(holder, token: str, body: dict | None = None) -> httpx.Response:
 # ── Publication and resolution are two halves of one thing ──────────────────
 
 
+@pytest.mark.rule("P-6")
 def test_each_registry_publishes_its_did_at_the_well_known_path(holder, verifier):
     for registry in (holder, verifier):
         response = httpx.get(f"{registry.url}/.well-known/did.json", timeout=10)
@@ -53,6 +54,7 @@ def test_each_registry_publishes_its_did_at_the_well_known_path(holder, verifier
         assert response.json()["id"] == registry.did
 
 
+@pytest.mark.rule("P-6")
 def test_the_published_document_carries_a_usable_key(holder):
     document = httpx.get(f"{holder.url}/.well-known/did.json", timeout=10).json()
     method = document["verificationMethod"][0]
@@ -63,6 +65,7 @@ def test_the_published_document_carries_a_usable_key(holder):
 # ── The exchange ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-8")
 def test_a_verifier_with_a_grant_is_served(holder, verifier, dcp_exchange):
     """The call that used to 401 every time, now across two processes."""
     response = _ask(holder, dcp_exchange())
@@ -70,6 +73,7 @@ def test_a_verifier_with_a_grant_is_served(holder, verifier, dcp_exchange):
     assert response.json()["@type"] == "dcp:PresentationResponseMessage"
 
 
+@pytest.mark.rule("P-3")
 def test_the_presentation_carries_the_membership_credential(
     holder, verifier, dcp_exchange
 ):
@@ -88,6 +92,7 @@ def test_the_presentation_carries_the_membership_credential(
     assert "MembershipCredential" in _claims(credentials[0])["vc"]["type"]
 
 
+@pytest.mark.rule("P-2")
 def test_the_credential_is_signed_by_the_trust_anchor(holder, anchor, dcp_exchange):
     """Not merely *some other* DID — the anchor's, from a database the holder
     cannot read.
@@ -119,6 +124,7 @@ def _status_list_url(holder, dcp_exchange) -> str:
     return _status_list_urls(holder, dcp_exchange)["revocation"]
 
 
+@pytest.mark.rule("P-25")
 def test_a_presented_credential_names_both_registers(holder, dcp_exchange):
     """Suspension is only a state if a verifier can read it.
 
@@ -131,6 +137,7 @@ def test_a_presented_credential_names_both_registers(holder, dcp_exchange):
     assert set(urls) == {"revocation", "suspension"}
 
 
+@pytest.mark.rule("P-13")
 def test_every_named_status_list_url_is_fetchable(holder, dcp_exchange):
     """A revocation check that cannot fetch the list fails closed.
 
@@ -150,6 +157,7 @@ def test_every_named_status_list_url_is_fetchable(holder, dcp_exchange):
         assert response.status_code == 200, f"{purpose}: {url} → {response.status_code}"
 
 
+@pytest.mark.rule("P-8b")
 def test_the_status_list_is_served_signed_by_default(holder, dcp_exchange):
     """The default body is a **VC-JWT**, not JSON-LD.
 
@@ -184,6 +192,7 @@ def test_the_status_list_is_json_only_when_asked_for_exactly_that(holder, dcp_ex
 # ── Refusals, across the process boundary ───────────────────────────────────
 
 
+@pytest.mark.rule("P-8")
 def test_a_self_issued_token_without_a_grant_is_refused(holder, verifier):
     """Proving control of your own DID says who you are, not what you may see."""
     token = verifier.sts_token(audience=holder.did)["access_token"]
@@ -196,6 +205,7 @@ def test_a_grant_addressed_to_a_third_party_is_refused(holder, verifier, dcp_exc
     assert _ask(holder, token).status_code == 401
 
 
+@pytest.mark.rule("P-8a")
 def test_an_unreachable_did_document_is_refused(holder, ephemeral_verifier):
     """A verifier whose DID stops resolving is refused, not trusted on its token.
 

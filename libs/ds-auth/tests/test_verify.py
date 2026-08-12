@@ -48,30 +48,35 @@ def signed_config(monkeypatch, ec_key):
     return OidcConfig(issuer_url=ISSUER, audience=AUD)
 
 
+@pytest.mark.rule("P-11")
 def test_verifies_valid_token(signed_config, ec_key):
     token = _sign(ec_key, _base_claims())
     claims = verify_token(token, signed_config)
     assert claims["scope"] == "connector.admin"
 
 
+@pytest.mark.rule("P-11")
 def test_rejects_bad_audience(signed_config, ec_key):
     token = _sign(ec_key, _base_claims(aud="someone-else"))
     with pytest.raises(TokenInvalid):
         verify_token(token, signed_config)
 
 
+@pytest.mark.rule("P-11")
 def test_rejects_bad_issuer(signed_config, ec_key):
     token = _sign(ec_key, _base_claims(iss="http://evil/realms/x"))
     with pytest.raises(TokenInvalid):
         verify_token(token, signed_config)
 
 
+@pytest.mark.rule("P-11")
 def test_rejects_expired(signed_config, ec_key):
     token = _sign(ec_key, _base_claims(exp=int(time.time()) - 3600))
     with pytest.raises(TokenInvalid):
         verify_token(token, signed_config)
 
 
+@pytest.mark.rule("P-11")
 def test_fail_closed_without_issuer():
     cfg = OidcConfig(issuer_url=None, insecure_dev=False)
     token = _sign(
@@ -96,6 +101,7 @@ def test_insecure_dev_accepts_unverified():
 # regressing.
 
 
+@pytest.mark.rule("P-11")
 def test_insecure_dev_rejects_expired():
     cfg = OidcConfig(issuer_url=None, insecure_dev=True)
     token = _sign(
@@ -106,6 +112,7 @@ def test_insecure_dev_rejects_expired():
         verify_token(token, cfg)
 
 
+@pytest.mark.rule("P-11")
 def test_insecure_dev_rejects_not_yet_valid():
     cfg = OidcConfig(issuer_url=None, insecure_dev=True)
     token = _sign(
@@ -116,6 +123,7 @@ def test_insecure_dev_rejects_not_yet_valid():
         verify_token(token, cfg)
 
 
+@pytest.mark.rule("P-11")
 def test_insecure_dev_requires_exp():
     """A token with no `exp` cannot expire, so accepting one re-opens the hole."""
     cfg = OidcConfig(issuer_url=None, insecure_dev=True)

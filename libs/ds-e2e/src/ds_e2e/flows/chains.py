@@ -169,6 +169,7 @@ class ChainCommunityFlow(_ChainFlow):
         "Community-mediated consent: a member consents for their own data, and "
         "the community's subject pool bounds who can be asked"
     )
+    rules = ("D-11", "D-14")
 
     def execute(self) -> FlowResult:
         s = self.settings
@@ -342,6 +343,7 @@ class ChainPartnerFlow(_ChainFlow):
         "Capacity decides the consent boundary: a processor of the controller is "
         "disclosed, an independent controller must be asked"
     )
+    rules = ("D-5", "D-14")
 
     def execute(self) -> FlowResult:
         s = self.settings
@@ -509,6 +511,7 @@ class ChainUnbundlingFlow(_ChainFlow):
         "One legal entity, two controllers: a consent naming the operations role "
         "must not authorise the metering role"
     )
+    rules = ("D-5", "D-11", "D-11a")
 
     def execute(self) -> FlowResult:
         s = self.settings

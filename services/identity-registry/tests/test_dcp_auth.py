@@ -127,6 +127,7 @@ def _query(scope: str = MEMBERSHIP_SCOPE) -> dict:
 # ── The conformant exchange ─────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_verifier_with_a_valid_grant_is_served(
     client, db_session, resolver, two_participants
@@ -169,12 +170,14 @@ async def test_presentation_is_addressed_to_the_verifier(
 # ── Refusals ────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_query_without_a_token_is_rejected(client, two_participants):
     r = await client.post(f"/credentials/{HOLDER}/presentations/query", json=_query())
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_si_token_without_a_grant_is_rejected(
     client, db_session, resolver, two_participants
@@ -195,6 +198,7 @@ async def test_si_token_without_a_grant_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_grant_issued_to_another_verifier_cannot_be_replayed(
     client, db_session, resolver, two_participants
@@ -214,6 +218,7 @@ async def test_grant_issued_to_another_verifier_cannot_be_replayed(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_grant_for_another_participant_is_rejected(
     client, db_session, resolver, two_participants
@@ -232,6 +237,7 @@ async def test_grant_for_another_participant_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8a")
 @pytest.mark.asyncio
 async def test_unpublished_verifier_is_rejected(
     client, db_session, resolver, two_participants
@@ -249,6 +255,7 @@ async def test_unpublished_verifier_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8a")
 @pytest.mark.asyncio
 async def test_signature_checked_against_the_published_key(
     client, db_session, resolver, two_participants
@@ -272,6 +279,7 @@ async def test_signature_checked_against_the_published_key(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_audience_must_name_the_participant_queried(
     client, db_session, resolver, two_participants
@@ -310,6 +318,7 @@ async def test_issuer_and_subject_must_match(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_expired_si_token_is_rejected(
     client, db_session, resolver, two_participants
@@ -329,6 +338,7 @@ async def test_expired_si_token_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_expired_grant_is_rejected(
     client, db_session, resolver, two_participants
@@ -350,6 +360,7 @@ async def test_expired_grant_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8a")
 @pytest.mark.asyncio
 async def test_grant_signed_by_a_foreign_key_is_rejected(
     client, db_session, resolver, two_participants
@@ -380,6 +391,7 @@ async def test_grant_signed_by_a_foreign_key_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_grant_without_scope_is_rejected(
     client, db_session, resolver, two_participants
@@ -407,6 +419,7 @@ async def test_grant_without_scope_is_rejected(
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-8a", "P-11")
 @pytest.mark.asyncio
 async def test_unsigned_token_is_rejected(client, two_participants):
     def b64(d: dict) -> str:
@@ -458,6 +471,7 @@ async def test_query_with_neither_is_a_400(
 # ── STS issuance ────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-8")
 @pytest.mark.asyncio
 async def test_the_anchor_cannot_mint_a_token_for_a_participant_it_enrolled(
     client, db_session

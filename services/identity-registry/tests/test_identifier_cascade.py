@@ -45,6 +45,7 @@ async def _seed(db_session, **overrides) -> None:
     await db_session.commit()
 
 
+@pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
 async def test_the_continuity_key_wins_over_a_changed_email(client, db_session):
     """The scenario that used to mint a duplicate: same person, new address."""
@@ -78,6 +79,7 @@ async def test_email_still_resolves_for_callers_that_have_only_that(client, db_s
     assert r.json()["did"] == DID
 
 
+@pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
 async def test_a_recycled_identifier_is_quarantined(client, db_session):
     """A weaker identifier matching a row with a *different* stronger one.
@@ -97,6 +99,7 @@ async def test_a_recycled_identifier_is_quarantined(client, db_session):
     assert "operator" in r.json()["detail"]
 
 
+@pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
 async def test_derivation_happens_only_when_every_rung_misses(client, db_session):
     """Deriving on an *email* miss is what minted duplicates. It may only happen
@@ -130,6 +133,7 @@ async def test_resolve_needs_some_identifier(client):
 # ── Binding ──────────────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
 async def test_a_keycloak_user_cannot_be_bound_to_a_second_did(client, db_session):
     """The write-side half. Two DIDs for one person is the state the cascade
@@ -154,6 +158,7 @@ async def test_a_keycloak_user_cannot_be_bound_to_a_second_did(client, db_sessio
     assert DID in r.json()["detail"], "the operator needs to be told which DID holds it"
 
 
+@pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
 async def test_rebinding_the_same_did_updates_its_identifiers(client, db_session):
     """The ordinary case must stay ordinary: an email or username change updates

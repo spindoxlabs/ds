@@ -93,6 +93,7 @@ async def test_org_read_cannot_write(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_org_write_cannot_promote(client):
     """Marking an application verified is reviewable clerical work; promotion turns
@@ -203,6 +204,7 @@ async def test_credentials_write_reaches_data_subject_issuance(client, scope):
     assert r.status_code != 403, r.text
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_credentials_write_cannot_register_a_participant(client):
     """Issuing a person's credential is not authority to admit a DSP counterparty."""

@@ -70,6 +70,7 @@ async def test_new_event_ingests(client, event):
     assert body["prov_node_id"] is not None
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_consent_granted_materialises_subject_and_dataset(client):
     await client.post("/prov/events", json=CONSENT_GRANTED)
@@ -87,6 +88,7 @@ async def test_consent_granted_materialises_subject_and_dataset(client):
     assert any("Consent Granted" in lbl for lbl in labels)
 
 
+@pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_data_disclosed_materialises_recipient_agent(client):
     await client.post("/prov/events", json=DATA_DISCLOSED)
@@ -104,6 +106,7 @@ async def test_data_disclosed_materialises_recipient_agent(client):
 @pytest.mark.parametrize(
     "missing", ["consent_snapshot_hash", "dataset_id"], ids=["no-hash", "no-dataset"]
 )
+@pytest.mark.rule("L-2")
 async def test_a_disclosure_without_its_consent_evidence_is_refused(client, missing):
     """`L-2` asks a `DataDisclosed` to prove *which* consent state backed the
     handover. Both fields were optional, so an event omitting them was accepted
@@ -126,6 +129,7 @@ async def test_a_disclosure_without_its_consent_evidence_is_refused(client, miss
     "value", ["", "unknown", "pending", "B" * 64, "b" * 63, "sha256:" + "b" * 64],
     ids=["empty", "unknown", "pending", "uppercase", "too-short", "prefixed"],
 )
+@pytest.mark.rule("L-2")
 async def test_a_consent_hash_that_cannot_be_a_digest_is_refused(client, value):
     """Required is not enough on its own. A field typed `str` accepts
     `"unknown"` and `"pending"`, each of which satisfies "the field is present"
@@ -141,6 +145,7 @@ async def test_a_consent_hash_that_cannot_be_a_digest_is_refused(client, value):
     assert response.status_code == 422, response.text
 
 
+@pytest.mark.rule("L-2")
 @pytest.mark.asyncio
 async def test_a_disclosure_is_linked_to_the_dataset_its_hash_is_over(client):
     """Otherwise the disclosure hangs off the recipient alone, and the lineage
@@ -162,6 +167,7 @@ async def test_data_ingested_generates_dataset_entity(client):
     assert DATA_INGESTED["dataset_id"] in entity_ids
 
 
+@pytest.mark.rule("L-4")
 @pytest.mark.asyncio
 async def test_consent_granted_is_idempotent(client):
     r1 = await client.post("/prov/events", json=CONSENT_GRANTED)

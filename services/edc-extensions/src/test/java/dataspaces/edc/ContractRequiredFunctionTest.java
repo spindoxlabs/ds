@@ -7,6 +7,7 @@ import org.eclipse.edc.participant.spi.ParticipantAgent;
 import org.eclipse.edc.policy.model.Operator;
 import org.eclipse.edc.policy.model.Permission;
 import org.eclipse.edc.spi.monitor.Monitor;
+import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -81,6 +82,7 @@ class ContractRequiredFunctionTest {
 
     // ── what it must now refuse ──────────────────────────────────────────────
 
+    @Tag("rule:A-11")
     @Test
     void denyingOperandsAreNotSilentlySatisfied() {
         // `contractRequired neq true` says a contract must NOT be required. At
@@ -89,6 +91,7 @@ class ContractRequiredFunctionTest {
         assertFalse(evaluate(Operator.NEQ, "true"));
     }
 
+    @Tag("rule:A-11")
     @Test
     void anOperatorThatIsNotMeaningfulOverABooleanDenies() {
         for (Operator operator : List.of(Operator.GT, Operator.LT, Operator.IN, Operator.IS_ANY_OF)) {
@@ -96,6 +99,7 @@ class ContractRequiredFunctionTest {
         }
     }
 
+    @Tag("rule:A-11")
     @Test
     void anUnparseableOperandDenies() {
         // A policy author's typo. It used to pass, which is the worst outcome:
@@ -105,11 +109,13 @@ class ContractRequiredFunctionTest {
         }
     }
 
+    @Tag("rule:A-11")
     @Test
     void aNullOperandDenies() {
         assertFalse(evaluate(Operator.EQ, null));
     }
 
+    @Tag("rule:A-11")
     @Test
     void anAmbiguousCollectionDenies() {
         // Two values do not reduce to one boolean, so there is nothing to compare.

@@ -4,4 +4,5 @@ nav:
   - compose-topology.md
   - configuration.md
   - testing.md
+  - conformance.md
   - releasing.md

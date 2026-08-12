@@ -44,6 +44,7 @@ def _agreement(**overrides) -> ContractAgreementORM:
     return ContractAgreementORM(**base)
 
 
+@pytest.mark.rule("C-15")
 @pytest.mark.asyncio
 async def test_provider_read_alone_can_list_agreements(client, session_factory):
     """A producer reading contracts over their own datasets is reading provider
@@ -63,6 +64,7 @@ async def test_provider_read_alone_can_list_agreements(client, session_factory):
     assert "terminated_at" in rows[0]
 
 
+@pytest.mark.rule("C-16", "C-20")
 @pytest.mark.asyncio
 async def test_another_participants_agreements_are_not_listed(client, session_factory):
     """Scoped to this participant as provider, so a shared database never leaks
@@ -100,12 +102,14 @@ async def test_active_only_excludes_terminated(client, session_factory):
     assert [row["agreement_id"] for row in active] == ["live"]
 
 
+@pytest.mark.rule("C-15", "C-17")
 @pytest.mark.asyncio
 async def test_an_anonymous_caller_is_refused(client):
     r = await client.get("/provider/agreements")
     assert r.status_code in (401, 403)
 
 
+@pytest.mark.rule("C-15", "C-17")
 @pytest.mark.asyncio
 async def test_an_unrelated_scope_is_refused(client):
     """Authentication is not authorisation: a valid token without the provider
@@ -116,6 +120,7 @@ async def test_an_unrelated_scope_is_refused(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("M-10")
 @pytest.mark.asyncio
 async def test_sync_drops_the_cached_consent_vocabulary(engine, monkeypatch):
     """The vocabulary gates consent *writes*, not just what is displayed.

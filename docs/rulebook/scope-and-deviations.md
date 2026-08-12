@@ -241,13 +241,17 @@ already closed — the code moved and this page did not, which for a compliance 
 failure mode that matters most: it is the page an assessor reads, and it understated the
 platform in every one of the five. They are listed at the bottom rather than deleted.
 
-**A re-verification by hand is a re-verification that happens once.** Every row below that
-cites rule ids is now checked against the status of those rules on every CI run: if all of
-them read `Enforced`, the row is closed and the build says so
-(`libs/ds-e2e/tests/test_rulebook_projection.py`, `C-13`). It caught this table's next drift
-the day it was written — `DSSC-TRF-02`/`-03`/`-04` had been closed and was still listed. A row
-citing only a *section* names nothing that check can look up, so those are pinned to a
-declared list rather than left as a way to opt out.
+**A re-verification by hand is a re-verification that happens once.** The check that used to
+close a row automatically went with the `rules.json` projection on 2026-08-09, and it is not
+coming back in that form — it compared one hand-written claim against another. What replaced it
+is narrower and worth more: [Conformance status](status.md) shows, for every rule this table
+cites, whether any test names it. A row here whose rules are all `Enforced` **and** evidenced is
+a row to re-verify; a row whose rules are `unevidenced` was never closable by a status
+comparison in the first place.
+
+That still leaves the re-verification itself manual, and this paragraph should not pretend
+otherwise — it is why five of the ten rows this table carried had silently closed. Re-read it
+whenever `status.md` moves a cited rule.
 
 | Row | Rule stated in | What is missing |
 |---|---|---|

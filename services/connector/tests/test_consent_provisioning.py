@@ -70,6 +70,7 @@ def _row(**overrides) -> ConsentRequestORM:
 
 # ── §3.2 admin/shares ─────────────────────────────────────────────────────────
 
+@pytest.mark.rule("D-14")
 @pytest.mark.asyncio
 async def test_admin_shares_expands_offer_to_wildcard_rows(client):
     r = await client.post(
@@ -143,6 +144,7 @@ async def test_admin_shares_unknown_offer_422(client):
     assert r.status_code == 422
 
 
+@pytest.mark.rule("D-20")
 @pytest.mark.asyncio
 async def test_admin_shares_requires_provision_scope(client):
     r = await client.post(
@@ -158,6 +160,7 @@ async def test_admin_shares_requires_provision_scope(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("D-20")
 @pytest.mark.asyncio
 async def test_admin_shares_refuses_an_anonymous_caller(client):
     """The perimeter, asserted from outside it.
@@ -181,6 +184,7 @@ async def test_admin_shares_refuses_an_anonymous_caller(client):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_admin_shares_is_idempotent(engine, client):
     body = {
@@ -202,6 +206,7 @@ async def test_admin_shares_is_idempotent(engine, client):
 
 # ── §3.1 scoped wildcard ──────────────────────────────────────────────────────
 
+@pytest.mark.rule("D-14")
 @pytest.mark.asyncio
 async def test_wildcard_authorises_any_consumer(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -220,6 +225,7 @@ async def test_wildcard_authorises_any_consumer(engine):
         assert granted_other == [SUBJECT]
 
 
+@pytest.mark.rule("D-15", "A-10")
 @pytest.mark.asyncio
 async def test_specific_revoke_overrides_wildcard(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -247,6 +253,7 @@ async def test_specific_revoke_overrides_wildcard(engine):
         assert granted_other == [SUBJECT]
 
 
+@pytest.mark.rule("D-15")
 @pytest.mark.asyncio
 async def test_specific_grant_authorises_without_wildcard(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -260,6 +267,7 @@ async def test_specific_grant_authorises_without_wildcard(engine):
         assert allowed is True
 
 
+@pytest.mark.rule("D-14")
 @pytest.mark.asyncio
 async def test_wildcard_purpose_must_match(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -274,6 +282,7 @@ async def test_wildcard_purpose_must_match(engine):
         assert granted == []
 
 
+@pytest.mark.rule("D-11", "D-14")
 @pytest.mark.asyncio
 async def test_wildcard_controller_role_must_match(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -294,6 +303,7 @@ async def test_wildcard_controller_role_must_match(engine):
 
 # ── §3.3 legal-basis evidence surfaces on the read path ───────────────────────
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_legal_basis_surfaces_in_internal_check(client):
     await client.post(
@@ -332,6 +342,7 @@ async def test_legal_basis_surfaces_in_internal_check(client):
 
 # ── the subject's own decision carries the same evidence ─────────────────────
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_subject_offer_share_records_legal_basis(client):
     """A decision made in the portal is no less in need of proof than one made in
@@ -367,6 +378,7 @@ async def test_subject_offer_share_records_legal_basis(client):
 
 # ── §7 the external-application write contract ────────────────────────────────
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_granting_without_evidence_is_refused(client):
     """A service asserting that someone consented, with no record of what they
@@ -380,6 +392,7 @@ async def test_granting_without_evidence_is_refused(client):
     assert "legal_basis is required" in r.text
 
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("missing", ["source", "consent_text_version", "rendered_text_sha256"])
 async def test_partial_evidence_is_refused(client, missing):
@@ -400,6 +413,7 @@ async def test_partial_evidence_is_refused(client, missing):
     assert r.status_code == 422
 
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_withdrawal_needs_no_evidence(client):
     """A person may always stop. Requiring proof to stop would be the wrong way
@@ -422,6 +436,7 @@ async def test_withdrawal_needs_no_evidence(client):
     assert r.status_code == 200
 
 
+@pytest.mark.rule("D-2", "D-12")
 @pytest.mark.asyncio
 async def test_an_email_in_an_opaque_reference_is_refused(client):
     """These fields are opaque references by contract. An address here would put a
@@ -484,6 +499,7 @@ async def test_granting_a_second_offer_on_the_same_dataset_is_recorded(client):
     assert by_offer[OFFER_B]["controller"] == "grid-operator"
 
 
+@pytest.mark.rule("D-15")
 @pytest.mark.asyncio
 async def test_withdrawing_one_offer_leaves_the_other_granted(client):
     """The dangerous direction: withdrawal must not revoke a different purpose."""
@@ -515,6 +531,7 @@ async def test_withdrawing_one_offer_leaves_the_other_granted(client):
 # ── T29 — an evidence record rejects what it cannot record ────────
 
 
+@pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_admin_shares_rejects_unknown_evidence_field(client):
     """Pydantic's default would accept, drop and answer 200.

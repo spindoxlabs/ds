@@ -38,6 +38,7 @@ class OrgOnboardingFlow(BaseFlow):
         "Organisation onboarding lifecycle: register → verify → agreement → "
         "credential → promote, with gate and readiness assertions"
     )
+    rules = ("P-1", "P-2", "P-4", "P-25", "P-26")
 
     def execute(self) -> FlowResult:
         s = self.settings

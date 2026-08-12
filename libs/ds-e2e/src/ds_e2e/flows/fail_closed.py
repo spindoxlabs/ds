@@ -247,6 +247,7 @@ class FailClosedFlow(BaseFlow):
         "The policy decision point is unreachable: the negotiation gate "
         "refuses, and service resumes when it returns"
     )
+    rules = ("A-11", "X-6", "X-6b", "X-6c")
 
     #: Set when the per-query baseline granted consent, so `cleanup` withdraws
     #: exactly what this flow added and nothing it inherited.

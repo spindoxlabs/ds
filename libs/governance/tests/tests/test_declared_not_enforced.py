@@ -93,6 +93,7 @@ def test_the_contract_definition_id_can_still_be_named():
     assert contract["@id"] == "meters-offer"
 
 
+@pytest.mark.rule("A-5")
 def test_a_collision_reintroduced_by_configuration_fails_the_gate(tmp_path: Path):
     """The check the row asked for: configuration can still collide them.
 
@@ -230,6 +231,7 @@ def test_dct_is_not_declared_when_nothing_uses_it():
 
 # ── GOV-07 · DCAT-AP conformance, rulebook C-12 / DSSC-DSO-11 ────────────────
 
+@pytest.mark.rule("C-12", "C-14")
 def test_a_dataset_missing_a_mandatory_dcat_property_fails(tmp_path: Path):
     """The gap the rulebook recorded: `validate` checked internal coherence and
     referential integrity, and never the standard the catalogue is judged as.
@@ -258,6 +260,7 @@ def test_a_dataset_missing_a_mandatory_dcat_property_fails(tmp_path: Path):
     assert not result.passed
 
 
+@pytest.mark.rule("C-12", "C-14")
 def test_a_complete_dataset_raises_no_dcat_ap_error(tmp_path: Path):
     write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
     result = run(tmp_path / "governance.yaml")

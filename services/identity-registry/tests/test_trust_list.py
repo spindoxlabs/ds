@@ -38,6 +38,7 @@ async def seed_anchor(db_session):
 # ── Published, and readable by a stranger ─────────────────────────
 
 
+@pytest.mark.rule("P-12a")
 @pytest.mark.asyncio
 async def test_the_list_is_public(client, db_session):
     """`P-13`'s reasoning, applied to trust rather than revocation.
@@ -67,6 +68,7 @@ async def test_the_list_says_what_it_conforms_to(client, db_session):
     assert body["dataspace"]
 
 
+@pytest.mark.rule("P-12a")
 @pytest.mark.asyncio
 async def test_every_entry_names_where_its_key_resolves(client, db_session):
     """So a verifier checks a signature against the issuer's **DID document**.
@@ -79,6 +81,7 @@ async def test_every_entry_names_where_its_key_resolves(client, db_session):
     assert entry["didDocument"].endswith(f"/dids/{ANCHOR}/did.json")
 
 
+@pytest.mark.rule("P-12a")
 @pytest.mark.asyncio
 async def test_the_anchor_lists_itself_after_bootstrap(db_session):
     """A dataspace that does not accredit its own anchor publishes an empty list.
@@ -97,6 +100,7 @@ async def test_the_anchor_lists_itself_after_bootstrap(db_session):
 # ── `TRF-19`: a scope is required, and empty is not a wildcard ─────
 
 
+@pytest.mark.rule("P-12b")
 @pytest.mark.asyncio
 async def test_an_entry_with_no_scope_is_refused(client, db_session):
     """The single most dangerous thing this list could allow by omission.
@@ -120,6 +124,7 @@ async def test_an_entry_with_no_scope_is_refused(client, db_session):
     assert r.status_code == 422
 
 
+@pytest.mark.rule("P-12b")
 @pytest.mark.asyncio
 async def test_a_trust_service_provider_must_name_its_authority(client, db_session):
     """`DSSC-TRF-21` — a designated issuer *deriving authority from* an anchor."""
@@ -138,6 +143,7 @@ async def test_a_trust_service_provider_must_name_its_authority(client, db_sessi
     assert "authority" in r.text
 
 
+@pytest.mark.rule("P-12b")
 @pytest.mark.asyncio
 async def test_a_provider_derives_authority_and_says_so(client, db_session):
     await seed_anchor(db_session)
@@ -164,6 +170,7 @@ async def test_a_provider_derives_authority_and_says_so(client, db_session):
 # ── `TRF-05`: revoked entries stay listed ─────────────────────────
 
 
+@pytest.mark.rule("P-12a", "P-12c")
 @pytest.mark.asyncio
 async def test_a_revoked_issuer_stays_in_the_list(client, db_session):
     """The requirement says *including revoked ones*, and the reason matters.
@@ -198,6 +205,7 @@ async def test_a_revoked_issuer_stays_in_the_list(client, db_session):
     assert issuers[CAB]["revokedAt"]
 
 
+@pytest.mark.rule("P-12c")
 @pytest.mark.asyncio
 async def test_revocation_requires_a_reason(client, db_session):
     """*"Removed, no reason given"* answers nothing for a verifier holding
@@ -224,6 +232,7 @@ async def test_revoking_twice_is_idempotent(client, db_session):
 # ── Authorisation ─────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-12a")
 @pytest.mark.asyncio
 async def test_accrediting_needs_promote_not_write(client, db_session):
     """Saying "this dataspace stands behind that entity" is at least as
@@ -243,6 +252,7 @@ async def test_accrediting_needs_promote_not_write(client, db_session):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("P-12c")
 @pytest.mark.asyncio
 async def test_an_unknown_issuer_cannot_be_revoked(client, db_session):
     await seed_anchor(db_session)

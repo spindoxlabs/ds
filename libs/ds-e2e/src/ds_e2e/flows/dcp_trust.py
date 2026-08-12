@@ -76,6 +76,7 @@ class DcpTrustFlow(BaseFlow):
         "DCP identity chain: STS issuance and refusal, presentation-query token "
         "binding, did:web resolution and StatusList publication"
     )
+    rules = ("P-3", "P-8", "P-8a", "P-22")
 
     def execute(self) -> FlowResult:
         s = self.settings

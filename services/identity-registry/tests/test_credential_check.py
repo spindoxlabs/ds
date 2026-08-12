@@ -95,6 +95,7 @@ async def test_the_type_is_applied(client, headers, issue):
     ).json()["holds"] is True
 
 
+@pytest.mark.rule("P-16")
 @pytest.mark.asyncio
 async def test_a_revoked_credential_is_not_held(client, headers, issue):
     """Failure (3): `CredentialSummary` carries a `status`, never a `revoked`
@@ -104,6 +105,7 @@ async def test_a_revoked_credential_is_not_held(client, headers, issue):
     assert (await _check(client, headers)).json()["holds"] is False
 
 
+@pytest.mark.rule("P-14")
 @pytest.mark.asyncio
 async def test_an_expired_credential_is_not_held(client, headers, issue):
     await issue(expires_at=datetime.now(UTC) - timedelta(days=1))
@@ -123,6 +125,7 @@ async def test_one_valid_among_several_is_enough(client, headers, issue):
     assert (await _check(client, headers)).json()["holds"] is True
 
 
+@pytest.mark.rule("P-14")
 @pytest.mark.asyncio
 async def test_another_subjects_credential_is_not_this_subjects(client, headers, issue):
     await issue(subject=OTHER)

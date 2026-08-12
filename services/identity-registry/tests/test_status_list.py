@@ -55,6 +55,7 @@ def test_the_module_exposes_no_bitstring_scanning_allocator():
     assert not hasattr(sl, "next_available_index")
 
 
+@pytest.mark.rule("P-8b")
 def test_build_status_list_credential():
     bs = create_bitstring()
     encoded = encode_bitstring(bs)
@@ -71,6 +72,7 @@ def test_build_status_list_credential():
 # ── The encoding a verifier actually reads ──────────────────────────────────
 
 
+@pytest.mark.rule("P-8b")
 def test_encoded_list_is_gzip_not_zlib():
     """StatusList2021 says GZIP, and EDC's `BitString` uses `GZIPInputStream`.
 
@@ -92,6 +94,7 @@ def test_encoded_list_is_gzip_not_zlib():
     assert gzip.decompress(raw) == bytes(64)
 
 
+@pytest.mark.rule("P-8b")
 def test_decode_still_reads_a_legacy_zlib_list():
     """Lists published before the fix are already named by issued credentials."""
     import base64
@@ -106,6 +109,7 @@ def test_decode_still_reads_a_legacy_zlib_list():
 # ── How it is served ────────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-8b")
 @pytest.mark.asyncio
 async def test_status_list_is_served_signed_by_default(client, db_session):
     """A verifier sends `Accept: */*` and reads the body as a VC-JWT.

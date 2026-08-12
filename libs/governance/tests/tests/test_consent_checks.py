@@ -6,6 +6,8 @@ between the purpose taxonomy, the datasets and the offers.
 """
 from __future__ import annotations
 
+import pytest
+
 from pathlib import Path
 
 import yaml
@@ -139,6 +141,7 @@ class TestPurposeTaxonomy:
         assert "purpose-hierarchy" not in codes(result.errors)
         assert "purpose-mapping" not in codes(result.errors)
 
+    @pytest.mark.rule("A-1", "M-13")
     def test_unresolvable_broader_is_an_error(self, tmp_path: Path):
         profile = OdrlProfile(purposes=[
             PurposeConcept(slug="A", label="A", definition="a", broader="Ghost"),
@@ -146,6 +149,7 @@ class TestPurposeTaxonomy:
         result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
         assert "purpose-hierarchy" in codes(result.errors)
 
+    @pytest.mark.rule("A-1", "M-13")
     def test_broader_cycle_is_an_error(self, tmp_path: Path):
         profile = OdrlProfile(purposes=[
             PurposeConcept(slug="A", label="A", definition="a", broader="B"),
@@ -154,6 +158,7 @@ class TestPurposeTaxonomy:
         result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
         assert "purpose-hierarchy" in codes(result.errors)
 
+    @pytest.mark.rule("M-13")
     def test_unknown_skos_relation_is_an_error(self, tmp_path: Path):
         profile = OdrlProfile(purposes=[
             PurposeConcept(
@@ -164,6 +169,7 @@ class TestPurposeTaxonomy:
         result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
         assert "purpose-mapping" in codes(result.errors)
 
+    @pytest.mark.rule("M-13")
     def test_non_iri_mapping_is_an_error(self, tmp_path: Path):
         profile = OdrlProfile(purposes=[
             PurposeConcept(
@@ -188,10 +194,12 @@ class TestPurposeTaxonomy:
 
 
 class TestDatasetPurposes:
+    @pytest.mark.rule("D-10")
     def test_unknown_declared_purpose_is_an_error(self, tmp_path: Path):
         result = run(tmp_path, sources={"d": dataset(policy={"purpose": ["NotAPurpose"]})})
         assert "purpose-declared" in codes(result.errors)
 
+    @pytest.mark.rule("D-10")
     def test_full_iri_declaration_is_accepted(self, tmp_path: Path):
         result = run(
             tmp_path,
@@ -199,6 +207,7 @@ class TestDatasetPurposes:
         )
         assert "purpose-declared" not in codes(result.errors)
 
+    @pytest.mark.rule("C-11", "D-7")
     def test_empty_purpose_is_an_error(self, tmp_path: Path):
         """The case that used to pass: no entries, so nothing to iterate.
 
@@ -209,11 +218,13 @@ class TestDatasetPurposes:
         result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})})
         assert "purpose-declared" in codes(result.errors)
 
+    @pytest.mark.rule("C-11", "D-7")
     def test_absent_purpose_block_is_an_error(self, tmp_path: Path):
         """Omitting `policy` entirely must fail the same way as declaring it empty."""
         result = run(tmp_path, sources={"d": dataset(policy={})})
         assert "purpose-declared" in codes(result.errors)
 
+    @pytest.mark.rule("C-10")
     def test_error_names_every_unresolvable_entry(self, tmp_path: Path):
         """A producer revising a file needs the whole list, not the first item."""
         result = run(
@@ -237,6 +248,7 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[offer(purpose="NotAPurpose")])
         assert "offer-purpose" in codes(result.errors)
 
+    @pytest.mark.rule("C-10")
     def test_dataset_referencing_an_unknown_offer_is_an_error(self, tmp_path: Path):
         """"No sharing offer" and "not shared" are the same statement.
 
@@ -258,12 +270,14 @@ class TestSharingOffers:
         )
         assert "offer-datasets" in codes(result.errors)
 
+    @pytest.mark.rule("C-10")
     def test_duplicate_offer_id_is_an_error(self, tmp_path: Path):
         """Reported, not raised: "which file do I fix" needs an answer."""
         result = run(tmp_path, offers=[offer(), offer()])
         assert "offer-duplicate" in codes(result.errors)
         assert not result.passed
 
+    @pytest.mark.rule("D-11")
     def test_a_conflicting_unbundling_is_reported_as_a_controller_finding(
         self, tmp_path: Path
     ):
@@ -310,6 +324,7 @@ class TestSharingOffers:
         )
         assert "offer-consent-required" not in codes(result.errors)
 
+    @pytest.mark.rule("C-10")
     def test_dataset_must_declare_the_offer_purpose(self, tmp_path: Path):
         """Otherwise the negotiated offer denies the very use the person agreed to."""
         result = run(
@@ -319,6 +334,7 @@ class TestSharingOffers:
         )
         assert "offer-dataset-purpose" in codes(result.errors)
 
+    @pytest.mark.rule("A-2", "D-9")
     def test_broader_declaration_does_not_satisfy_a_narrower_offer(self, tmp_path: Path):
         """policy.purpose[] is matched exactly — a dataset offered for the parent
         purpose has not been declared for this specific child."""
@@ -339,6 +355,7 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[broken])
         assert "offer-controller" in codes(result.errors)
 
+    @pytest.mark.rule("D-11a")
     def test_a_controller_role_with_no_declared_vocabulary_is_an_error(self, tmp_path: Path):
         """The state the whole repository was in until 2026-08-08.
 
@@ -352,6 +369,7 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[broken])
         assert "offer-controller" in codes(result.errors)
 
+    @pytest.mark.rule("D-11a")
     def test_a_controller_role_outside_the_declared_vocabulary_is_an_error(
         self, tmp_path: Path
     ):
@@ -364,6 +382,7 @@ class TestSharingOffers:
         )
         assert "offer-controller" in codes(result.errors)
 
+    @pytest.mark.rule("D-11a")
     def test_declared_controller_role_passes(self, tmp_path: Path):
         ok = offer()
         ok["recipients"] = {**ok["recipients"], "controller_role": "community-operator"}
@@ -374,6 +393,7 @@ class TestSharingOffers:
         )
         assert "offer-controller" not in codes(result.errors)
 
+    @pytest.mark.rule("D-11a", "D-11")
     def test_an_unbundled_controller_must_be_named_by_role(self, tmp_path: Path):
         """`D-11`: the consent key is (subject, purpose, controller-role).
 
@@ -388,6 +408,7 @@ class TestSharingOffers:
         )
         assert "offer-controller" in codes(result.errors)
 
+    @pytest.mark.rule("D-5")
     def test_a_controller_that_is_not_unbundled_needs_no_role(self, tmp_path: Path):
         """Most controllers are one controller. Requiring a role from all of them
         would make the ordinary case declare a distinction it does not have."""
@@ -399,6 +420,7 @@ class TestSharingOffers:
         assert "offer-controller" not in codes(result.errors)
         assert "offer-controller" in codes(result.warnings)
 
+    @pytest.mark.rule("D-11a")
     def test_the_role_vocabulary_is_still_checked_without_a_registry(self, tmp_path: Path):
         """The two halves are independent, and this is the point of splitting them.
 
@@ -457,6 +479,7 @@ class TestSharingOffers:
         result = run(tmp_path, offers=[loose])
         assert "offer-codes" in codes(result.warnings)
 
+    @pytest.mark.rule("D-12", "D-13")
     def test_missing_consent_text_version_is_an_error(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer(consent_text_version="")])
         assert "offer-codes" in codes(result.errors)

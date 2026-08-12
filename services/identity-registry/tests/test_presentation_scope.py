@@ -144,6 +144,7 @@ async def test_the_grant_bounds_an_unrestricted_request(
     assert _presented(r) == ["jws-for-MembershipCredential"]
 
 
+@pytest.mark.rule("P-16", "P-14")
 @pytest.mark.asyncio
 async def test_a_revoked_credential_is_never_presented(
     client, db_session, resolver, holder_with_two_credentials

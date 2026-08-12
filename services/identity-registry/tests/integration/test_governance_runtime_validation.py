@@ -114,6 +114,7 @@ def test_shipped_governance_validates_against_a_live_registry(
     )
 
 
+@pytest.mark.rule("A-4")
 def test_the_owner_participant_check_has_something_to_compare(dataspace_registry):
     """Asserted against the registry, because a silent pass and a real pass look
     identical from outside the validator.
@@ -137,6 +138,7 @@ def test_the_owner_participant_check_has_something_to_compare(dataspace_registry
     )
 
 
+@pytest.mark.rule("A-4")
 def test_an_unreadable_registry_is_refused_not_skipped(dataspace_registry):
     """The negative case, and the reason to trust the positive ones.
 

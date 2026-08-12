@@ -74,6 +74,7 @@ def _method(kid, jwk=None):
     }
 
 
+@pytest.mark.rule("P-8a")
 def test_kid_selects_the_matching_method():
     doc = _document(
         _method("did:web:example.com#key-1"),
@@ -84,6 +85,7 @@ def test_kid_selects_the_matching_method():
     ][1]["publicKeyJwk"]
 
 
+@pytest.mark.rule("P-8a")
 def test_unmatched_kid_is_a_refusal_not_a_fallback():
     """The single most important rule here.
 
@@ -118,6 +120,7 @@ def test_no_kid_and_no_capability_invocation_is_refused():
         verification_key(_document(_method("did:web:example.com#key-1")), None)
 
 
+@pytest.mark.rule("P-8a")
 def test_method_without_a_jwk_is_refused():
     doc = _document(
         {"id": "did:web:example.com#key-1", "type": "Ed25519VerificationKey2018"}
@@ -126,6 +129,7 @@ def test_method_without_a_jwk_is_refused():
         verification_key(doc, "did:web:example.com#key-1")
 
 
+@pytest.mark.rule("P-8a")
 def test_document_without_verification_methods_is_refused():
     with pytest.raises(DidResolutionError):
         verification_key({"id": "did:web:example.com"}, None)
@@ -158,6 +162,7 @@ def stub_http(monkeypatch):
     return install
 
 
+@pytest.mark.rule("P-8a")
 @pytest.mark.asyncio
 async def test_document_answering_for_another_did_is_refused(stub_http):
     """A host serving several DIDs must not let one answer for another."""
@@ -184,6 +189,7 @@ async def test_non_json_is_refused(stub_http):
         await DidResolver().resolve("did:web:example.com")
 
 
+@pytest.mark.rule("P-8a")
 @pytest.mark.asyncio
 async def test_transport_failure_is_refused_not_raised_raw(stub_http):
     def boom(request):

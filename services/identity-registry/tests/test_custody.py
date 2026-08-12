@@ -56,6 +56,7 @@ async def _hold_private_key(db, did: str, did_type: str = "participant"):
 # ── Clean custody ─────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_an_anchor_holding_only_its_own_key_is_clean(db_session):
     await _hold_private_key(db_session, ANCHOR)
@@ -66,6 +67,7 @@ async def test_an_anchor_holding_only_its_own_key_is_clean(db_session):
     assert report.foreign == []
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_an_enrolled_participants_public_key_is_not_custody(db_session):
     """The row enrolment leaves: a key this instance knows and cannot use."""
@@ -77,6 +79,7 @@ async def test_an_enrolled_participants_public_key_is_not_custody(db_session):
     assert [k.did for k in report.foreign] == []
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_participant_instance_holds_its_own(db_session):
     """The same invariant from the other side."""
@@ -91,6 +94,7 @@ async def test_a_participant_instance_holds_its_own(db_session):
 # ── A planted violation ───────────────────────────────────────────
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_foreign_private_key_is_caught(db_session):
     """The case the sweep exists for: this instance can sign as somebody else."""
@@ -105,6 +109,7 @@ async def test_a_foreign_private_key_is_caught(db_session):
     assert any(OTHER in line and "can sign as" in line for line in lines)
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_rotated_out_key_still_counts(db_session):
     """`active` is not the question.
@@ -122,6 +127,7 @@ async def test_a_rotated_out_key_still_counts(db_session):
     assert [k.did for k in report.foreign] == [OTHER]
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_participant_instance_holding_the_anchors_key_is_caught(db_session):
     """Symmetry: a participant that could sign as the trust anchor is worse."""
@@ -137,6 +143,7 @@ async def test_a_participant_instance_holding_the_anchors_key_is_caught(db_sessi
 # ── The declared exception, reported rather than hidden ───────────
 
 
+@pytest.mark.rule("P-6", "P-7")
 @pytest.mark.asyncio
 async def test_a_data_subject_key_is_a_named_deviation_not_a_violation(db_session):
     """`D-49`/`DID-11` — deferred, and therefore *reported* every start.
@@ -160,6 +167,7 @@ async def test_a_data_subject_key_is_a_named_deviation_not_a_violation(db_sessio
 # ── It reads SQL, and that is load-bearing ────────────────────────
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_json_null_private_key_does_not_read_as_held(db_session):
     """The `none_as_null` defect, pinned where it actually mattered.
@@ -185,6 +193,7 @@ async def test_a_json_null_private_key_does_not_read_as_held(db_session):
     assert report.ok
 
 
+@pytest.mark.rule("P-7")
 @pytest.mark.asyncio
 async def test_a_key_with_no_did_row_is_still_foreign(db_session):
     """Fail closed on a row the join cannot classify.
@@ -232,6 +241,7 @@ async def test_the_holder_fixture_is_clean_on_its_own_instance(db_session):
 # ── `D-49` step 1: a subject has no key to hold ───────────────────
 
 
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_issuing_to_a_data_subject_creates_no_key(client, db_session):
     """The deviation the sweep used to report, removed at source.
@@ -270,6 +280,7 @@ async def test_issuing_to_a_data_subject_creates_no_key(client, db_session):
     assert report.subjects == [], "no subject key means no deviation to report"
 
 
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_a_subject_did_still_resolves(client, db_session):
     """`personal-data.md` `D-22`. The DID is what consent and provenance point at.
@@ -300,6 +311,7 @@ async def test_a_subject_did_still_resolves(client, db_session):
     assert "authentication" not in doc
 
 
+@pytest.mark.rule("D-22a")
 @pytest.mark.asyncio
 async def test_the_credential_records_who_attested_the_person(client, db_session):
     """`D-53` — assurance is delegated, so it is *recorded* rather than claimed."""
@@ -327,6 +339,7 @@ async def test_the_credential_records_who_attested_the_person(client, db_session
     assert subject["verificationMethod"] == "phone-otp"
 
 
+@pytest.mark.rule("P-6")
 @pytest.mark.asyncio
 async def test_a_participant_did_with_no_key_still_does_not_resolve(client, db_session):
     """The exception is for **users**, and only users.

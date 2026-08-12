@@ -118,6 +118,7 @@ def test_no_declaration_is_allowed():
     assert _validated_declaration(_request()) == []
 
 
+@pytest.mark.rule("D-8")
 def test_declared_purpose_within_the_offer_is_accepted():
     req = _request(
         declared_purpose=[f"{IRI}FlexibilityResearch"],
@@ -132,6 +133,7 @@ def test_declared_purpose_within_the_offer_is_accepted():
     assert _validated_declaration(req) == ["FlexibilityResearch"]
 
 
+@pytest.mark.rule("A-1", "D-8")
 def test_narrower_purpose_than_the_offer_names_is_accepted():
     """``odrl:isA`` over the local ``broader`` chain.
 
@@ -148,6 +150,7 @@ def test_narrower_purpose_than_the_offer_names_is_accepted():
     assert _validated_declaration(req) == ["FlexibilityResearch"]
 
 
+@pytest.mark.rule("A-2", "D-9")
 def test_broader_purpose_than_the_offer_permits_is_refused():
     req = _request(
         declared_purpose=["EnergyCommunityOperation"],
@@ -159,6 +162,7 @@ def test_broader_purpose_than_the_offer_permits_is_refused():
     assert "not permitted by this offer" in exc.value.detail
 
 
+@pytest.mark.rule("D-10")
 def test_unknown_purpose_is_refused():
     req = _request(
         declared_purpose=["SellingItOn"],
@@ -183,10 +187,12 @@ def test_declaration_without_a_policy_is_refused():
     assert "requires odrl_policy" in exc.value.detail
 
 
+@pytest.mark.rule("D-2")
 def test_justification_ref_rejects_an_email():
     with pytest.raises(ValidationError):
         _request(justification_ref="analyst@example.test")
 
 
+@pytest.mark.rule("D-2")
 def test_justification_ref_accepts_an_opaque_reference():
     assert _request(justification_ref="TICKET-4417").justification_ref == "TICKET-4417"

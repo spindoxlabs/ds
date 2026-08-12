@@ -44,6 +44,7 @@ async def _graph(client, path: str = "/prov/events", **params) -> list[dict]:
 
 # ── projection ───────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_projects_the_events_own_fields(client):
     """A field an event declares is published — not just the four shared columns."""
@@ -88,6 +89,7 @@ async def test_omits_empty_fields(client):
 
 # ── filters ──────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_filters_by_subject_and_dataset(client):
     await _post(client, _consent_granted("filt-1"))
@@ -115,6 +117,7 @@ async def test_event_type_filter_is_repeatable(client):
     assert {e["@type"] for e in both} == {"ds:ConsentGranted", "ds:ConsentRevoked"}
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_time_window_narrows(client):
     """`occurred_after` used to be accepted and ignored — a filter that appears to
@@ -135,6 +138,7 @@ async def test_time_window_narrows(client):
 
 # ── paging ───────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_paging_reports_the_total(client):
     for i in range(5):
@@ -161,6 +165,7 @@ async def test_limit_is_bounded(client):
 
 # ── the subject's own view ───────────────────────────────────────────────────
 
+@pytest.mark.rule("L-11")
 @pytest.mark.asyncio
 async def test_my_events_needs_a_credential(client):
     """No scope grants access here — the route authenticates a person."""
@@ -168,6 +173,7 @@ async def test_my_events_needs_a_credential(client):
     assert r.status_code == 401
 
 
+@pytest.mark.rule("L-11")
 @pytest.mark.asyncio
 async def test_my_events_rejects_a_read_scope_alone(client):
     """A `provenance.read` token is not a data subject.

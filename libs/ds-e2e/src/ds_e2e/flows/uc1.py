@@ -14,6 +14,7 @@ class UC1Flow(BaseFlow):
 
     name = "uc1"
     description = "Verify subject-pool preconditions: in-org and out-of-org subjects"
+    rules = ("D-5", "D-14", "D-21")
 
     def execute(self) -> FlowResult:
         s = self.settings

@@ -13,6 +13,7 @@ class UC3Flow(BaseFlow):
 
     name = "uc3"
     description = "Verify open-data owner resolution — no membership constraint applies"
+    rules = ("A-10", "C-5")
 
     def execute(self) -> FlowResult:
         s = self.settings

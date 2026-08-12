@@ -132,6 +132,7 @@ async def assess(db, criteria_file, **kw) -> conformity.Assessment:
 # ── the criteria are data, and unreadable criteria are an error ───
 
 
+@pytest.mark.rule("P-23")
 def test_criteria_are_read_from_a_file(criteria_file):
     rules = conformity.load_criteria(criteria_file)
     assert [r.name for r in rules] == ["every participant", "provider"]
@@ -139,6 +140,7 @@ def test_criteria_are_read_from_a_file(criteria_file):
     assert rules[1].require_dsp_address is True
 
 
+@pytest.mark.rule("P-23")
 def test_a_missing_criteria_file_is_an_error(tmp_path):
     """Not an empty rule set. A conformity report generated without criteria
     would say every participant conforms to nothing in particular — the one
@@ -148,6 +150,7 @@ def test_a_missing_criteria_file_is_an_error(tmp_path):
     assert "no conformity criteria" in str(exc.value)
 
 
+@pytest.mark.rule("P-23")
 def test_an_empty_criteria_file_is_an_error(tmp_path):
     p = tmp_path / "empty.yaml"
     p.write_text("criteria: []\n")
@@ -158,6 +161,7 @@ def test_an_empty_criteria_file_is_an_error(tmp_path):
 # ── the drifts ────────────────────────────────────────────────────
 
 
+@pytest.mark.rule("P-23")
 @pytest.mark.asyncio
 async def test_a_participant_meeting_every_rule_is_conformant(db_session, criteria_file):
     report = await assess(db_session, criteria_file)
@@ -165,6 +169,7 @@ async def test_a_participant_meeting_every_rule_is_conformant(db_session, criter
     assert report.failures == []
 
 
+@pytest.mark.rule("P-14")
 @pytest.mark.asyncio
 async def test_an_expired_credential_is_not_a_held_credential(db_session, criteria_file):
     """The commonest drift, and invisible to anything that checks existence.
@@ -178,6 +183,7 @@ async def test_an_expired_credential_is_not_a_held_credential(db_session, criter
     assert failure.detail == "expired"
 
 
+@pytest.mark.rule("P-14", "P-23")
 @pytest.mark.asyncio
 async def test_a_superseded_agreement_version_is_non_conformant(
     db_session, criteria_file
@@ -192,6 +198,7 @@ async def test_a_superseded_agreement_version_is_non_conformant(
     assert "accepted ['0.9'], required 1.0" in failure.detail
 
 
+@pytest.mark.rule("P-14")
 @pytest.mark.asyncio
 async def test_never_accepting_the_agreement_is_reported_differently(
     db_session, criteria_file
@@ -203,6 +210,7 @@ async def test_never_accepting_the_agreement_is_reported_differently(
     assert failure.detail == "never accepted"
 
 
+@pytest.mark.rule("P-14")
 @pytest.mark.asyncio
 async def test_a_provider_with_no_dsp_address_is_non_conformant(
     db_session, criteria_file
@@ -222,6 +230,7 @@ async def test_a_consumer_is_not_asked_for_a_dsp_address(db_session, criteria_fi
     assert report.status == conformity.CONFORMANT
 
 
+@pytest.mark.rule("P-14", "P-23")
 @pytest.mark.asyncio
 async def test_an_unverified_owner_is_non_conformant(db_session, criteria_file):
     report = await assess(db_session, criteria_file, owner_status="suspended")
@@ -229,6 +238,7 @@ async def test_an_unverified_owner_is_non_conformant(db_session, criteria_file):
     assert "suspended" in failure.detail
 
 
+@pytest.mark.rule("P-24")
 @pytest.mark.asyncio
 async def test_a_deactivated_participant_is_reported_not_skipped(
     db_session, criteria_file
@@ -244,6 +254,7 @@ async def test_a_deactivated_participant_is_reported_not_skipped(
     assert any(f.rule == "active" for f in reports[0].failures)
 
 
+@pytest.mark.rule("P-24")
 @pytest.mark.asyncio
 async def test_a_participant_no_criterion_covers_is_a_finding(db_session, tmp_path):
     """Silence would be the wrong answer.
@@ -264,6 +275,7 @@ async def test_a_participant_no_criterion_covers_is_a_finding(db_session, tmp_pa
 # ── the report, and the route ─────────────────────────────────────
 
 
+@pytest.mark.rule("P-23")
 @pytest.mark.asyncio
 async def test_the_report_says_what_it_answers(db_session, criteria_file):
     rules = conformity.load_criteria(criteria_file)
@@ -301,6 +313,7 @@ async def test_the_route_serves_the_report(client, db_session, criteria_file):
     assert body["participants"][0]["did"] == PROVIDER_DID
 
 
+@pytest.mark.rule("P-23")
 @pytest.mark.asyncio
 async def test_the_route_refuses_when_the_criteria_cannot_be_read(client, db_session):
     """**503, not an empty pass.** A report with no criteria behind it would be
@@ -320,6 +333,7 @@ async def test_the_route_needs_a_scope(client):
     assert r.status_code == 403
 
 
+@pytest.mark.rule("P-23")
 @pytest.mark.asyncio
 async def test_assessment_changes_nothing(db_session, criteria_file):
     """Suspension is a decision. One an automated check makes for you is a

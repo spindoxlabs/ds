@@ -14,6 +14,7 @@ class UC2Flow(BaseFlow):
 
     name = "uc2"
     description = "Verify owner-scoped governance sync — assigner and scope from ownership"
+    rules = ("C-16", "D-11")
 
     def execute(self) -> FlowResult:
         s = self.settings

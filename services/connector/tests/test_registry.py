@@ -49,6 +49,7 @@ def test_validate_known_participant(tmp_path):
     assert participant.id == "consumer"
 
 
+@pytest.mark.rule("C-19")
 def test_validate_unknown_raises(tmp_path):
     registry = ParticipantRegistry.from_file(tmp_path / "missing.yaml")
     with pytest.raises(UnknownParticipantError):
@@ -175,6 +176,7 @@ async def test_http_registry_check_scope():
         await registry.close()
 
 
+@pytest.mark.rule("C-19")
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_registry_check_scope_denied():
@@ -191,6 +193,7 @@ async def test_http_registry_check_scope_denied():
         await registry.close()
 
 
+@pytest.mark.rule("X-6b")
 @pytest.mark.asyncio
 @respx.mock
 async def test_http_registry_check_scope_error_returns_false():

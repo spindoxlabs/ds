@@ -93,6 +93,7 @@ async def test_the_catch_all_does_not_shadow_the_siblings(ns_client):
 
 # ── Browse ────────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("M-11")
 @pytest.mark.asyncio
 async def test_the_index_lists_every_surface(ns_client):
     client, _ = ns_client
@@ -102,6 +103,7 @@ async def test_the_index_lists_every_surface(ns_client):
     assert {v["slug"] for v in body["vocabularies"]} == {"saref4ener", "cim"}
 
 
+@pytest.mark.rule("M-11")
 @pytest.mark.asyncio
 async def test_the_index_reports_which_copies_are_missing(ns_client):
     """An uncached entry is shown, not hidden.
@@ -115,6 +117,7 @@ async def test_the_index_reports_which_copies_are_missing(ns_client):
     assert cached == {"saref4ener": True, "cim": False}
 
 
+@pytest.mark.rule("M-8", "M-11")
 @pytest.mark.asyncio
 async def test_the_registry_projection_carries_the_iri(ns_client):
     """The IRI is the identity — it is what a `dcat.conforms_to` names."""
@@ -126,6 +129,7 @@ async def test_the_registry_projection_carries_the_iri(ns_client):
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("M-8", "M-11")
 @pytest.mark.asyncio
 async def test_a_cached_vocabulary_is_served_as_jsonld(ns_client):
     client, _ = ns_client
@@ -135,6 +139,7 @@ async def test_a_cached_vocabulary_is_served_as_jsonld(ns_client):
     assert response.json() == DOCUMENT
 
 
+@pytest.mark.rule("M-8")
 @pytest.mark.asyncio
 async def test_an_uncached_vocabulary_404s_with_its_canonical_iri(ns_client):
     """Not a 500, and not silence.
@@ -148,6 +153,7 @@ async def test_an_uncached_vocabulary_404s_with_its_canonical_iri(ns_client):
     assert response.json()["detail"]["iri"] == "https://cim.ucaiug.io/ns#"
 
 
+@pytest.mark.rule("M-8")
 @pytest.mark.asyncio
 async def test_an_unregistered_slug_404s(ns_client):
     client, _ = ns_client
@@ -168,6 +174,7 @@ async def test_a_corrupt_cached_copy_is_a_500_not_a_404(ns_client):
 
 # ── Perimeter ─────────────────────────────────────────────────────────────────
 
+@pytest.mark.rule("M-8", "M-11")
 @pytest.mark.asyncio
 async def test_every_surface_is_public(ns_client):
     """`M-8`: vocabularies are published unauthenticated.

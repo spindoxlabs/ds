@@ -134,6 +134,7 @@ async def test_unknown_participant_is_not_found(client):
     assert r.status_code == 404
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 async def test_owner_without_an_accepted_agreement_is_not_found(client, db_session):
     """No agreement means no provable capacity — never a null one."""
@@ -145,6 +146,7 @@ async def test_owner_without_an_accepted_agreement_is_not_found(client, db_sessi
     assert r.status_code == 404
 
 
+@pytest.mark.rule("P-1")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["pending", "suspended", "revoked"])
 async def test_owner_not_verified_is_not_found(client, db_session, status):

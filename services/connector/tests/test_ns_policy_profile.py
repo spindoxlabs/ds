@@ -70,6 +70,7 @@ async def test_ns_policy_reads_the_profile_settings_names(
     assert purposes == ["https://example.test/custom-policy/purpose/WidgetTelemetry"]
 
 
+@pytest.mark.rule("M-3", "M-10")
 async def test_ns_policy_follows_a_profile_change_after_reset_caches(
     client, monkeypatch, custom_profile
 ):
@@ -88,6 +89,7 @@ async def test_ns_policy_follows_a_profile_change_after_reset_caches(
     assert after["@context"]["@vocab"] == "https://example.test/custom-policy/"
 
 
+@pytest.mark.rule("M-3", "M-8")
 async def test_ns_policy_and_the_sync_agree_on_one_profile(
     client, monkeypatch, custom_profile
 ):

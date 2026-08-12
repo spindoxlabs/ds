@@ -57,6 +57,7 @@ class UserAuthorityFlow(BaseFlow):
         "A human's role bundles authorise exactly their seat: positive reach, "
         "bounded refusal, and no path to a machine identity"
     )
+    rules = ("C-15", "C-16")
 
     def execute(self) -> FlowResult:  # noqa: C901 — a table of assertions
         s = self.settings

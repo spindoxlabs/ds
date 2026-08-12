@@ -16,6 +16,8 @@ This pins both so the two ends cannot drift apart again.
 """
 from __future__ import annotations
 
+import pytest
+
 from types import SimpleNamespace
 
 from provenance.services.jsonld_service import relation_to_jsonld
@@ -49,6 +51,7 @@ def test_direction_is_published_on_every_edge():
     assert "object" not in out
 
 
+@pytest.mark.rule("L-8")
 def test_endpoints_are_keyed_by_the_nodes_own_type():
     dataset = _node("n1", "urn:dataset:meters", "Entity")
     activity = _node("n2", "urn:activity:ingest", "Activity")
@@ -59,6 +62,7 @@ def test_endpoints_are_keyed_by_the_nodes_own_type():
     assert out["prov:activity"] == "urn:activity:ingest"
 
 
+@pytest.mark.rule("L-8")
 def test_an_agent_endpoint_is_an_agent_not_an_activity():
     """The whole defect, in one edge.
 
@@ -76,6 +80,7 @@ def test_an_agent_endpoint_is_an_agent_not_an_activity():
     assert "prov:entity" not in out
 
 
+@pytest.mark.rule("L-8")
 def test_a_same_type_edge_keeps_both_ends_and_stays_directional():
     """`wasDerivedFrom` joins two Entities, so the typed key cannot carry both
     ends separately. It carries both as a list — still true — and direction is
