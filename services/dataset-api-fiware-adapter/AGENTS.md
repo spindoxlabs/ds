@@ -7,8 +7,8 @@ The host supplies authentication, the catalogue and governance enforcement; this
 backend.
 
 > **Nothing in this repository builds, installs, imports or runs it.** Before working on it,
-> settle whether it is being adopted or removed — see `.agents/ledger.md`. Work
-> on an unwired unit is unverifiable by construction.
+> settle whether it is being adopted or removed — the question is an open issue
+> (ADR-0012). Work on an unwired unit is unverifiable by construction.
 
 ## References
 

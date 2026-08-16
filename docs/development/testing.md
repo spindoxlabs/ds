@@ -57,7 +57,7 @@ runs. But it leaves two hazards, and both are live:
 
 **Both backends must be run, and each run must name the backend it used.** Until that is
 wired, a change to either data plane needs its own check — see
-`.agents/knowledge/services/dataset-api-mock.md`.
+[`docs/services/dataset-api-mock.md`](../services/dataset-api-mock.md).
 
 ## Integration tests: the gap between unit and e2e
 

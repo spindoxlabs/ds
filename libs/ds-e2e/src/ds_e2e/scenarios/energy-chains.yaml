@@ -14,8 +14,8 @@
 # `ir-cli agreement import`, because their text hashes must come from files.
 # `apply` verifies they are present and tells you the command if they are not.
 #
-# Names are generic on purpose (AGENTS.md): community / partner / grid operator
-# are roles, not organisations.
+# Names are generic on purpose — this repository is public and names no real
+# organisation: community / partner / grid operator are roles, not organisations.
 
 name: energy-chains
 description: >

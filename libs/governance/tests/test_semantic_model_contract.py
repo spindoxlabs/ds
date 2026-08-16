@@ -8,8 +8,8 @@ says. **Two holders of one fact, and until both existed nothing could compare
 them** — a producer could declare any model and return anything.
 
 The other holder is the data plane. The real one is the celine `dataset-api`,
-out of this repository; its expected interface is fixed in
-`.agents/plans/semantic-model-seam.md`:
+out of this repository. The interface it must present, pinned by the tests
+below:
 
     GET /catalogue/{id}            → `dct:conformsTo` = the model's canonical IRI
     GET /catalogue/{id}/vocabulary → 200 JSON-LD, or 302 to where it is published

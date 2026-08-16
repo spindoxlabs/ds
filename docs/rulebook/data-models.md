@@ -45,8 +45,8 @@ offerings using a standardised model agreed within the data space.
 **Decision, and it is a deliberate one: this platform is domain-agnostic and mandates no
 payload data model. A deployment must choose one and record it.**
 
-The reasoning is in `AGENTS.md`: the approach should generalise across use cases, and
-domain specialisation belongs in modules and extensions rather than in the platform. The
+The reasoning is that this is a platform and not a deployment: it must generalise across
+use cases, so domain specialisation belongs in modules and extensions. The
 cost of that choice is that `DSSC-DMO-27` and every CEEDS semantic row are unmet **by the
 platform** and can only be met **by a deployment**.
 

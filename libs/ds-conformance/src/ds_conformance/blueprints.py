@@ -1,7 +1,7 @@
 """Parse the blueprint requirement tables into the requirement universe.
 
-`docs/blueprints/` is the requirements source for the whole platform
-(`AGENTS.md`). Its requirement tables are uniform — 38 of them, every one
+`docs/blueprints/` is the requirements source for the whole platform. Its
+requirement tables are uniform — 38 of them, every one
 `| ID | Requirement | Force | Source |` — which is why this side of the
 measurement needs no manifest and no judgement: the universe is whatever the
 blueprints say it is.

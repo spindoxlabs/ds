@@ -110,8 +110,8 @@ def test_the_cli_does_not_use_get_event_loop():
 
 
 def test_the_unit_has_no_local_data_directory():
-    """Root `AGENTS.md`: anything a process writes, downloads or caches goes
-    under `./data/<concern>/` at the repo root **and nowhere else**.
+    """ADR-0008: anything a process writes, downloads or caches goes under
+    `./data/<concern>/` at the repo root **and nowhere else**.
 
     This unit carried a stale local `data/` holding only a `.gitkeep`. It was
     *not* tracked — `.gitignore`'s `data` rule matches this path too, so a fresh

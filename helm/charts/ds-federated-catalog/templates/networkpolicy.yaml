@@ -7,7 +7,8 @@
     (dict "namespace" .Release.Namespace "name" "ds-portal"))) }}
 ---
 {{- if ((.Values.global).monitoring).serviceMonitor }}
-# /metrics is unauthenticated (root AGENTS.md) — Prometheus only.
+# /metrics is unauthenticated by decision (docs/rulebook/provenance-and-logging.md
+# step 1) — Prometheus only.
 {{ include "ds.networkPolicy.metricsFromPrometheus" (dict "ctx" . "port" .Values.service.port) }}
 ---
 {{- end }}

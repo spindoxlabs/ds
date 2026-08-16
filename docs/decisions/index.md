@@ -11,10 +11,10 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | ADR | Decision |
 |---|---|
 | [ADR-0001](ADR-0001-conformance-stays-with-the-rulebook.md) | Traceability stays with the rulebook and `ds-conformance` |
-| [ADR-0002](ADR-0002-agents-directory-is-committed.md) | `.agents/` is committed; only `work/` is not |
-| [ADR-0003](ADR-0003-plans-hold-intent-work-holds-progress.md) | Plans hold intent, `work/` holds progress |
+| [ADR-0002](ADR-0002-agent-material-is-not-committed.md) | Agent working material is not committed |
+| [ADR-0003](ADR-0003-plans-hold-intent-work-holds-progress.md) | ~~Plans hold intent, work holds progress~~ — superseded by ADR-0002 |
 | [ADR-0004](ADR-0004-decisions-versus-rulebook.md) | What is an ADR and what is a rulebook rule |
-| [ADR-0005](ADR-0005-knowledge-mirrors-the-tree.md) | Knowledge mirrors the repository tree |
+| [ADR-0005](ADR-0005-knowledge-mirrors-the-tree.md) | ~~Knowledge mirrors the repository tree~~ — superseded by ADR-0002 |
 | [ADR-0006](ADR-0006-defect-ledger-owns-its-namespace.md) | ~~The defect ledger owns its identifier namespace~~ — superseded by ADR-0012 |
 | [ADR-0007](ADR-0007-host-gateway-binding.md) | Backend URLs use the Docker host gateway |
 | [ADR-0008](ADR-0008-data-is-the-only-writable-root.md) | `data/` is the only writable root |
@@ -23,6 +23,6 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0011](ADR-0011-ci-provisions-a-real-realm.md) | CI provisions a real Keycloak realm rather than mocking it |
 | [ADR-0012](ADR-0012-defects-are-issues.md) | Defects are issues, not a repository artifact |
 
-ADR-0007 and ADR-0008 were extracted from prose in `AGENTS.md`; ADR-0009 to ADR-0011 from
-comment blocks in `Taskfile.yml` and `.github/workflows/`. In each case the rule stays
-where it was and only the reasoning moves here.
+ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
+ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule
+has a place that enforces it, it stays there and only the reasoning moves here.

@@ -1704,8 +1704,8 @@ tasks:
   rulebook:summary:
     desc: Print the conformance counts without rewriting docs/rulebook/status.md
     cmds:
-      # The exit criteria in .agents/plans/conformance-closeout.md are fields of this
-      # output, so a workstream is finished when a number here says so.
+      # Conformance workstreams state their exit criteria as fields of this output,
+      # so a workstream is finished when a number here says so — never by hand.
       - cd libs/ds-conformance && uv run ds-conformance summary --repo ../..
 
   rulebook:unevidenced:

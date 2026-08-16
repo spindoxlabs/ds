@@ -1,7 +1,7 @@
 """The declared payload model and the rendered one, compared against a running stack.
 
-`T-3`'s live half, and the assertion the semantic-model seam exists for
-(`.agents/plans/semantic-model-seam.md`). A producer declares `dcat.conforms_to`
+`T-3`'s live half, and the assertion the semantic-model seam exists for. A
+producer declares `dcat.conforms_to`
 in `governance.yaml`; ds validates it, publishes it into the DSP catalogue as
 `dct:conformsTo` and serves a local copy at `/ns/{slug}`. **None of that
 establishes that the rows a consumer receives mean what the IRI says** — a

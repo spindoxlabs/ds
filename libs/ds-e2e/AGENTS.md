@@ -149,5 +149,5 @@ purpose chain is enforced rather than merely declared.
 - **Restore in `cleanup()`, not only on the happy path.** Everything after a flow that leaves
   a container down fails for reasons of its own.
 
-Sync httpx — no async needed for a sequential runner. Known gaps are in
-`.agents/ledger.md`.
+Sync httpx — no async needed for a sequential runner. Known gaps are issues
+(ADR-0012) — `gh issue list`.

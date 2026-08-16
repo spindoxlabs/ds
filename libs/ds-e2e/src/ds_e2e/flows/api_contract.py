@@ -52,8 +52,8 @@ from ds_e2e.route_inventory import (
 log = logging.getLogger(__name__)
 
 # The services whose whole published surface is swept. `dataset-api` is not one:
-# the real data plane is celine's and is not a ds service (root `AGENTS.md`), so
-# only its health probe appears below.
+# the real data plane is celine's and is not a ds service, so only its health
+# probe appears below.
 SWEPT_SERVICES = (
     "connector",
     "consumer-connector",
@@ -629,8 +629,8 @@ class ApiContractFlow(BaseFlow):
         check everywhere.
 
         **Which routes that client legitimately holds is derived, not listed.**
-        The exceptions used to be eight hardcoded paths, and `AGENTS.md`
-        recorded them as wrong: the realm had moved and three routes were being
+        The exceptions used to be eight hardcoded paths, and they were wrong:
+        the realm had moved and three routes were being
         excluded from the sweep that exists to test them. The token's own
         `scope` claim is intersected with the permissions each route publishes,
         so the answer comes from the realm that issued it.

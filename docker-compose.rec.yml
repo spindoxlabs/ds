@@ -200,7 +200,7 @@ services:
       CONNECTOR_GOVERNANCE_YAML_PATH: /governance/governance.yaml
       # The registry is committed configuration and rides the read-only
       # `/governance` mount. The fetched copies are cache, so they live under
-      # `./data/` (root AGENTS.md) on a second, writable mount — the connector
+      # `./data/` (ADR-0008) on a second, writable mount — the connector
       # must never be able to rewrite governance.yaml.
       CONNECTOR_VOCABULARIES_PATH: /governance/vocabularies.yaml
       CONNECTOR_VOCABULARY_CACHE_DIR: /data/vocabularies

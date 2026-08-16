@@ -211,7 +211,7 @@ http://keycloak.dataspaces.localhost {
 # ── Trace UI — Jaeger, dev only ──────────────────────────────────────────────
 #
 # Named rather than left on a host port, because the user's rule for anything
-# browser-facing here is a Caddy domain (root AGENTS.md's host-binding table).
+# browser-facing here is a Caddy domain (ADR-0007's host-binding table).
 # The published :36686 stays as well: `task dev:*` runs services as host
 # processes outside this network, and a developer reading traces then is not
 # necessarily going through the gateway.
@@ -428,8 +428,8 @@ http://portal.dataspaces.localhost {
 		# restricted to the monitoring namespace by NetworkPolicy. Unauthenticated
 		# is the decision, not the gap — a scraper holds no Keycloak token — see
 		# `docs/rulebook/provenance-and-logging.md` step 1. This comment used to
-		# cite root `AGENTS.md` as recording a "known gap"; that page has never
-		# mentioned `/metrics` (`ENV-07`).
+		# cite the root agent guide as recording a "known gap"; it never
+		# mentioned `/metrics`.
 		handle /metrics* {
 			reverse_proxy 172.17.0.1:30004
 		}

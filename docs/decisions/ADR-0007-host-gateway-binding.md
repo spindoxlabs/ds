@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 **Status:** accepted
-**Extracted from:** the *Host binding* section of `AGENTS.md`, which keeps the rule.
+**Extracted from:** the root agent guide. This ADR states both the rule and the reason.
 
 ## Context
 
@@ -39,8 +39,8 @@ resolves identically from the host and from inside a container.
 - `ds-e2e` and the Playwright journeys address `172.17.0.1` and the Caddy domains, so they
   neither know nor care whether a given service is a container or a host process. One
   suite covers both layers.
-- The rule is checkable by grep, which is why it is item 4 of the security checklist in
-  `AGENTS.md` rather than a convention.
+- The rule is checkable by grep, which is why it is an item on the per-change security
+  checklist rather than a convention.
 - It is Linux-specific: `172.17.0.1` is the default `docker0` bridge gateway. A machine
   with a non-default bridge, or Docker Desktop's `host.docker.internal`, needs the address
   overridden in `.env` rather than the rule relaxed.

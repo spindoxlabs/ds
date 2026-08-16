@@ -16,8 +16,7 @@ tie its availability to a third party's uptime.
 **It is not a converter.** ``format: jsonld`` is the only accepted value. ds
 ships no RDF toolchain, so a Turtle source is refused by name rather than
 half-parsed. A deployment needing SAREF's Turtle converts it once, out of band,
-and registers the result. See `.agents/plans/semantic-vocabulary.md` decision
-`V-3`.
+and registers the result.
 
 **It is not authority over the vocabulary.** The IRI is. A registry entry is a
 local convenience — a cached copy and an address to serve it from — and deleting

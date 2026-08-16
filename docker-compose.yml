@@ -115,7 +115,7 @@ services:
     ports:
       # OTLP/HTTP in. `172.17.0.1:34318` resolves identically from the host and
       # from a container, which is what lets a service be moved between `dev:*`
-      # and `docker:*` without changing the endpoint (root AGENTS.md).
+      # and `docker:*` without changing the endpoint (ADR-0007).
       - "34318:4318"
       # The UI. Proxied at http://tracing.dataspaces.localhost by Caddy as well;
       # the host port stays because `task dev:*` runs services outside the network.
@@ -152,7 +152,7 @@ services:
       # `./data` wholesale, uniquely and only here: this service exists to
       # prepare the directories and reads nothing. Every other service mounts the
       # specific subdirectory it needs, because `./data` also holds credentials
-      # and keys (root AGENTS.md).
+      # and keys (ADR-0008).
       - ./data:/data
     networks: [dataspaces]
 

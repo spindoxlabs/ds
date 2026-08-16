@@ -48,9 +48,9 @@ edited to say something else.
 
 - `docs/rulebook/status.md` stays a report about obligations, and its counts stay
   comparable across time.
-- The rationale currently embedded in `AGENTS.md` prose, in `Taskfile.yml` comments and in
-  the header blocks of `.github/workflows/*.yml` has a home that is neither a guide nor a
-  rule. `AGENTS.md` keeps the constraint and points at the ADR.
+- The rationale scattered through `Taskfile.yml` comments and the header blocks of
+  `.github/workflows/*.yml` has a home that is neither a guide nor a rule. The place that
+  enforces a constraint keeps it and points at the ADR.
 - A borderline case will arrive — a decision with a blueprint referent that no test can
   reach. It goes in the rulebook, claiming *not enforced*, which is a fact the conformance
   report is designed to carry. An ADR would hide it.

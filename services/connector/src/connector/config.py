@@ -126,14 +126,14 @@ class Settings(BaseSettings):
     # The registry names which vocabularies this deployment serves a local copy
     # of; the cache holds the copies. Both default to nothing registered, so a
     # zero-config dev stack never reaches the network at boot — a deployment
-    # opts into that by registering entries. See `.agents/plans/semantic-vocabulary.md`.
+    # opts into that by registering entries.
     vocabularies_path: str | None = Field(
         default=None,
         description="Path to vocabularies.yaml. Defaults to the file next to "
         "governance.yaml when present.",
     )
     vocabularies_overlay_name: str | None = None
-    # Under `data/`, per the root AGENTS.md rule: generated and fetched material
+    # Under `data/`, per ADR-0008: generated and fetched material
     # lives there and nowhere else. The *registry* is committed configuration and
     # stays beside governance.yaml; only the fetched copies are cache.
     vocabulary_cache_dir: str = "data/vocabularies"

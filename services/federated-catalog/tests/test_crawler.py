@@ -20,7 +20,7 @@ def _yaml_only_settings(participants_yaml, catalogues_yaml) -> Settings:
     Two defaults made these tests unrunnable and neither is visible from the
     test body. `identity_registry_url` defaults to a **non-empty** URL, so
     leaving it alone sent `crawl_all` down the registry branch and straight into
-    an unmocked HTTP call — the trap `AGENTS.md` warns about. And `connector_url`
+    an unmocked HTTP call, which is the trap. And `connector_url`
     defaults to `172.17.0.1:31001` while the mock below answers on
     `ds-connector:30001`, so the one test that reaches a provider missed it too.
     """

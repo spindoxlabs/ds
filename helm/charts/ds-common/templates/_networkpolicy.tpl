@@ -132,8 +132,8 @@ endpoint is in no chart's Ingress, the default-deny baseline applies, and this
 rule opens the port to the monitoring namespace alone.
 
 See docs/rulebook/provenance-and-logging.md step 1, which settled it. This
-comment used to cite root AGENTS.md as recording "a known gap"; that page has
-never mentioned /metrics, and "gap" is the wrong word for a decision (ENV-07).
+comment used to cite the root agent guide as recording "a known gap"; it never
+mentioned /metrics, and "gap" is the wrong word for a decision.
 
 Args: dict "ctx" $ "port" <int>
 */}}

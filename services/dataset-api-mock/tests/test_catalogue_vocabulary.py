@@ -1,7 +1,10 @@
 """`GET /catalogue/{id}/vocabulary` — what the columns mean, from the plane that renders them.
 
-The stand-in half of the semantic-model seam (`.agents/plans/semantic-model-seam.md`,
-`T-3`). The real celine `dataset-api` implements this route by deriving a JSON-LD
+The stand-in half of the semantic-model seam (`T-3`). Its contract-test half is
+`libs/governance/tests/test_semantic_model_contract.py`, which pins the shape
+both ends must agree on.
+
+The real celine `dataset-api` implements this route by deriving a JSON-LD
 context from the dataset's mapping spec; this mock must answer the same shape, or
 an e2e run against the default stack exercises a contract only the other backend
 has.

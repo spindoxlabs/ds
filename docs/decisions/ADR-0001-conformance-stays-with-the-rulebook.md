@@ -7,9 +7,9 @@
 
 Adopting an agent harness normally brings a traceability stack with it: a
 `docs/specifications/` directory declaring `REQ-####` requirements, a `@verifies REQ-####`
-tag on the tests, and a `.agents/trace/matrix.md` generated from the two. The rules that
-enforce it — every requirement traced, every requirement verified, no stale entries — are
-the core of what such a harness checks.
+tag on the tests, and a trace matrix generated from the two. The rules that enforce it —
+every requirement traced, every requirement verified, no stale entries — are the core of
+what such a harness checks.
 
 This repository already answers the same question, at a scale the imported stack has never
 been run at:
@@ -24,7 +24,7 @@ been run at:
 | the measurement | `libs/ds-conformance` — reads files only; same commit, same answer, any machine |
 
 Running an imported checker against this repository reports every one of its traceability
-requirements as *not applicable*: no `docs/specifications/`, no `.agents/trace/`. The
+requirements as *not applicable*: no `docs/specifications/`, no trace matrix. The
 temptation is to read that as a gap and close it.
 
 It is not a gap. Closing it would mean a **fourth identifier namespace** beside the
@@ -36,7 +36,7 @@ and its own answer when the two matrices disagree.
 
 **Traceability is delegated to the rulebook and `ds-conformance`.** Specifically:
 
-- `.agents/trace/` is not created. `docs/rulebook/status.md` is the trace.
+- No trace matrix is generated. `docs/rulebook/status.md` is the trace.
 - `docs/specifications/` is not created. `docs/blueprints/` is the requirement source.
 - No `@verifies` tag is introduced. Evidence is declared with the existing markers.
 - No `REQ-####` namespace is allocated.
@@ -49,13 +49,13 @@ must not report them as absent.
 
 ## Consequences
 
-- The harness contributes structure — plans, work, knowledge, playbooks, ADRs — and
-  contributes nothing to traceability. That is the whole of what it adds.
+- The harness contributes working structure and the ADRs, and contributes nothing to
+  traceability. That is the whole of what it adds.
 - The one number that matters stays the one the rulebook already produces: binding
   blueprint rows with no disposition, and rules claiming enforcement that no test names.
 - This decision is revisited only if something needs tracing that has **no blueprint
   referent at all** — a purely internal engineering obligation. The answer then is still
   not a second matrix: it is a rulebook page for internal rules, so one tool keeps
   measuring one thing.
-- A reader arriving from another repository will look for `.agents/trace/` and not find
-  it. `.agents/README.md` says so explicitly, in the place they will look.
+- A reader arriving from another repository will look for a trace matrix and not find
+  one. This ADR is the answer, and `docs/rulebook/status.md` is the artifact they wanted.

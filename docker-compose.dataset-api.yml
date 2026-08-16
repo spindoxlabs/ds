@@ -5,7 +5,7 @@
 # is evidence about an API nobody runs. This compose runs the real one — built
 # from the sibling checkout at `DATASET_API_PATH` — in the mock's place, so
 # `ds-e2e` and the Playwright journeys exercise the service production uses,
-# unchanged. The default assumes the layout documented in the root `AGENTS.md`;
+# unchanged. The default assumes sibling checkouts under one workspace root;
 # every path below is an env override, so a different checkout needs no edit here.
 #
 # rec-registry comes with it because it is not optional: every consent-gated

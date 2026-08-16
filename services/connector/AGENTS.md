@@ -22,7 +22,7 @@ Python control plane beside an EDC runtime. One codebase, **two instances** —
 | `/consent/*` | The consent registry |
 | `/consumer/*` | Drives the consumer side of DSP: catalogue → negotiate → transfer → EDR |
 | `/webhooks/*` | Records EDC negotiation and transfer lifecycle |
-| `/ns/*` | Public vocabularies — the ODRL profile and sharing offers (**policy**), plus cached SAREF/CIM-style definitions (**semantic**). Two layers; see `.agents/knowledge/services/connector.md` |
+| `/ns/*` | Public vocabularies — the ODRL profile and sharing offers (**policy**), plus cached SAREF/CIM-style definitions (**semantic**). Two layers; see [docs/services/connector.md](../../docs/services/connector.md) |
 
 Every act emits a PROV-O event through `services/prov_bridge.py`.
 
@@ -30,7 +30,7 @@ Every act emits a PROV-O event through `services/prov_bridge.py`.
 
 | Task | Start at |
 |---|---|
-| New endpoint | `api/v1/<group>.py`, register in `main.py`, guard per root AGENTS.md |
+| New endpoint | `api/v1/<group>.py`, register in `main.py`, guard with `require_permission` |
 | Auth guard / per-owner scoping | `dependencies.py` — read [the owner perimeter](#the-owner-perimeter) first |
 | Consent behaviour | `services/consent_service.py` |
 | What a consent write may say | `services/consent_vocabulary.py` — the single validation point; raises 422 |
@@ -108,4 +108,4 @@ than the dev catalogue. `tests/__init__.py` provides `make_headers` (service tok
 `make_user_headers` (groups) and `make_vc_headers` (the `X-Subject-Id` + `X-User-VC`
 mechanism the `/consent/*` routes actually use).
 
-Known-failing tests are tracked in `.agents/ledger.md`, not here.
+Known-failing tests are tracked as issues (ADR-0012), not here.

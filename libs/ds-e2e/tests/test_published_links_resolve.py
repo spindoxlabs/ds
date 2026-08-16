@@ -43,7 +43,7 @@ SCHEMA_PREFIX = "schemas/"
 
 #: Markdown outside `docs/` — the files a reader meets on GitHub.
 def _markdown_files() -> list[Path]:
-    skip = {"node_modules", ".venv", "site", "data", ".git", ".agents"}
+    skip = {"node_modules", ".venv", "site", "data", ".git"}
     return [
         p
         for p in ROOT.rglob("*.md")

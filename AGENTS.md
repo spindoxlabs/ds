@@ -1,372 +1,94 @@
-# ds — Agent Guide
+<!-- harness-standard v4 — issued by the agent harness. Do not edit; replace it with `python -m harness upgrade <target>`. -->
 
-Root guide. Load this plus the `AGENTS.md` of whatever you are working on
-(`services/<name>/`, `libs/<name>/`, `helm/`), and `.agents/README.md` before creating or
-moving any repository knowledge.
+# Agent Guide
 
-This file is **navigation and constraints**. It states where things are and what you may
-not do. It does not explain how the system works (`docs/`), why a decision was taken
-(`docs/decisions/`, `docs/rulebook/`), or how a procedure is performed
-(`.agents/playbooks/`).
+This file is the entry point, and the only agent material in this repository. It is
+**navigation and constraints**: where things are, and what you may not do.
+
+It says nothing about this repository in particular. **It is standard — byte-identical in
+every repository carrying this harness** — so having read it once you have read it
+everywhere.
+
+## The guidance is not in this repository
+
+Everything an agent needs in order to work here, and everything it produces while
+working — the rulebook, durable knowledge, repeatable procedures, plans and execution
+state — lives in this repository's **companion**: a directory outside this tree.
+
+**The companion is the only source of truth.** Nothing in it is copied back here, and a
+copy that appears here is a defect rather than a convenience.
+
+Its location differs on every machine, so it is never committed. Ask for it, or read it
+from whatever uncommitted pointer this checkout already carries.
+
+**Read the companion's `README.md` first** — it is the rulebook, and it states how work
+is recorded here. Then list its `knowledge/` and read what the task needs.
+
+**If you cannot find the companion, ask.** Do not write agent material into this
+repository instead: a trap recorded in a docstring, a README or a code comment because
+the companion was not to hand is the failure this arrangement exists to prevent, and it
+is how the arrangement quietly undoes itself.
 
 ## Read in this order
 
 1. This file.
-2. `.agents/README.md` — the rulebook. Where work is recorded, and how.
-3. The `AGENTS.md` of the unit you are changing. It states only what differs from here.
-4. `.agents/knowledge/<same path as the unit>` — the traps that are true of the code and
-   not visible in it. `.agents/knowledge/facts.md` for anything crossing units.
-5. `docs/`, on demand. Never speculatively.
+2. The companion's `README.md` — the rulebook: where work is recorded, and how.
+3. The companion's `knowledge/` — what is true of this repository and not visible in its
+   code. List the directory; read what the task needs.
+4. `docs/`, on demand. Never speculatively.
 
-## What this repository is
+Having read this file at one root, do not read it again in a repository nested inside it
+— read that repository's companion instead, because that is the part which differs.
+**Each repository has its own companion**; a nested repository does not share the outer
+one's.
 
-A DSSC-Blueprint-aligned dataspace platform, specialised for energy communities via
-CEEDS. It implements the consumer-pull exchange end to end: catalogue discovery, ODRL
-contract negotiation, EDR-gated transfer, consent-based row filtering, and PROV-O
-provenance.
-
-**It is a platform, not a deployment.** Keep it generalisable — domain specifics belong
-in extension points (the ODRL profile, governance overlays, Keycloak client overlays),
-never in platform code.
-
-### Publishing boundary — this repo is open source
-
-Do not commit, in code, docs, tests, fixtures, dev defaults **or `.agents/`**:
-
-- names of real organisations, people, sites or customers
-- real dataset names, table names or identifiers from a deployment
-- private project or repository references beyond the integration facts in
-  [Relation to celine](#relation-to-celine)
-
-Dev fixtures use `example-org`, `grid-operator`, `*@example.test`,
-`*.dataspaces.localhost`. Keep it that way. When a real deployment needs a real binding,
-it goes in a gitignored overlay (`*.local.yaml`, `.env`, `taskfile.local.yaml`,
-`.agents/references.local.md`).
-
-`.agents/` is committed (ADR-0002), so this rule now applies there too. **Never write a
-`~/…` or `/home/…` path in a committed file.** External things are named in
-`.agents/references.md` by public URL or by a path relative to the repository root; the
-machine-specific binding goes in `.agents/references.local.md`, which is gitignored.
+**If a copy of this file differs from the issued text, the divergence is the finding.**
+Report it; do not follow it and do not quietly reconcile it.
 
 ## Where things are
 
 | Looking for | Go to |
 |---|---|
-| **what a dataspace must implement** | `docs/blueprints/` — DSSC v3.0 and CEEDS v3.0 as citable requirements. **The requirements source for the whole platform** |
-| what this dataspace has decided | `docs/rulebook/` — the rules, each with an enforcement status |
-| **what is done and what is missing** | `docs/rulebook/status.md` — generated by `task rulebook:status`. Regenerate it, do not reason about it |
-| why a *technical* choice was made | `docs/decisions/` — ADRs. The boundary against the rulebook is in ADR-0004 |
-| what the code currently does | `docs/services/*` — one page per unit: role, behaviour, configuration reference |
-| how it is built and run | `docs/development/*` |
-| how it is deployed | `docs/deployment/*` |
-| how to perform a repeated procedure | `.agents/playbooks/` |
-| a trap that is true of the code and not obvious from it | `.agents/knowledge/` |
-| what is being worked on, and how far it has got | `.agents/plans/`, `.agents/work/` |
-| what is broken | the issue tracker — `gh issue list`. Not a file in this repository (ADR-0012) |
-| what an identifier cited in a comment means | `.agents/knowledge/identifier-namespaces.md` — four namespaces, two of which collide |
-| where an upstream repository, a sibling checkout or a published schema lives | `.agents/references.md`. Machine-specific bindings: `.agents/references.local.md`, gitignored |
+| what this repository is and does | its `README.md`, then `docs/` |
+| how work is recorded here | the companion's `README.md` |
+| what is true of the code and not obvious from reading it | the companion's `knowledge/` |
+| how a repeated procedure is performed | the companion's `playbooks/` |
+| what is being worked on, and how far it has got | the companion's `plans/`, `work/` |
+| why a technical choice was made | `docs/decisions/` |
+| what the product must do | the specifications in `docs/` |
+| what is broken | the issue tracker. Never a file in this repository |
+| how the parts are composed, built and run | the build and composition files at the root |
 
-**Requirements come from the blueprints.** Every unit's `AGENTS.md` opens with a
-`## References` block naming the building block it implements. Read the building block
-before changing behaviour in the unit that implements it.
+This table is fixed because the structure is fixed. What varies between repositories is
+what those directories hold — found by listing them, never by an index maintained here. An
+index here would be a second copy of a fact, and the copy is what goes stale.
 
 ## Behavioural settings
 
-- **Answer conformance by running it.** `task rulebook:summary` says what is enforced,
-  evidenced and unassessed. Reading `docs/rulebook/` is not an answer, and neither is
-  reading `status.md` without regenerating it.
-- **Write the plan first** for anything non-trivial, and create `.agents/work/<slug>/`
-  before the first change. `.agents/README.md` states what belongs in each.
-- **Propose deviations; do not take them.** If the code must depart from a blueprint
-  requirement, a rulebook rule, or a constraint in this file, say so, state the reason
-  and the alternative, and get agreement first. Record what was agreed in
-  `docs/rulebook/scope-and-deviations.md`. An undeclared deviation is indistinguishable
-  from a defect.
-- **Report faithfully.** Name which test layers ran, which did not, and what was skipped.
-  A green run is only evidence about the thing that actually ran.
+The switches, not the rules. What each one serves is stated in the rulebook.
 
-## Relation to celine
+- **Ask rather than decide** when a request needs a requirement that does not exist yet.
+  Ask directly, and do not proceed on an inferred requirement.
+- **Write the plan first** for anything non-trivial, and create its work directory before
+  the first change of any phase.
+- **Establish the baseline before changing anything**, so a pre-existing failure is never
+  attributed to your change.
+- **Report faithfully.** Name what ran, what did not, and what was skipped.
+- **Check whether the change crosses a seam** — an interface another component depends on.
+  A change that crosses one is not local, however local it compiles. Which seams exist
+  here is recorded in the companion's `knowledge/`.
+- **Change the component that owns the behaviour**, not the place that consumes it. A
+  workaround written at the consumer is a defect left in the owner.
 
-`ds` is the dataspace layer; **celine** is the domain platform deployed with it. Four
-integration points, and no others:
+## Maintaining this file
 
-| Point | What crosses |
-|---|---|
-| **Data plane** | celine `dataset-api` is the real data-plane interface. `ds` addresses it as an HTTP endpoint and calls it back at `POST /internal/dataplane/authorize` |
-| **Realm sync** | `celine-policies` CLI applies `services/keycloak/clients.effective.yaml` to a Keycloak realm |
-| **Governance schemas** | `governance.yaml` and `owners.yaml` are shared shapes. `ds` publishes the ones it defines under `schemas/`; `governance.schema.json` is defined on the celine side and cached here |
-| **Dev workspace** | `docker-compose.dataset-api.yml` builds sibling checkouts. Paths are `.env` overrides (`DATASET_API_PATH`, `REC_REGISTRY_PATH`, `CELINE_SDK_PATH`); no layout is baked in |
+**Read only.** It is not this repository's document.
 
-celine services read their OIDC client from `CELINE_OIDC_*`, not `OIDC_*`.
+A change lands by changing the harness that issues it, after which every repository
+receives the same text — `python -m harness upgrade <target>`. Editing one copy creates
+the drift the standard exists to remove, and the next reader cannot tell an improvement
+from an accident. REQ-0012 reports a copy that has been altered.
 
-## Repository structure
-
-```
-services/     deployable units — Dockerfile + port. One AGENTS.md each
-libs/         importable Python packages — no Dockerfile, no port. Editable path deps
-helm/         Kubernetes charts + helmfile. See helm/AGENTS.md
-schemas/      JSON Schema for YAML shapes that cross a repo boundary (generated)
-docs/         mkdocs site — blueprints, rulebook, services, development, deployment, decisions
-data/         everything generated, fetched or scratch. Gitignored in full
-.agents/      the knowledge contract, plans, playbooks and knowledge.
-              Committed, except .agents/work/
-```
-
-**Anything a process writes, downloads or caches goes under `./data/<concern>/`, and
-nowhere else** — including a setting that names a writable path, which also gets an
-`.env.example` entry in the same change. Committed configuration is not cache and stays
-with its unit. Compose mounts the specific subdirectory, never `./data` wholesale. A
-bind-mounted subdirectory a container writes needs an entry in `data-dirs-init`.
-Rationale and the failure modes: ADR-0008.
-
-| Unit | Role |
-|---|---|
-| `services/connector` | Control plane beside the EDC: governance sync, consent registry, `/internal/*` PDP, consumer-side DSP driver |
-| `services/identity-registry` | Trust anchor: DIDs, VCs, STS, DCP credential service, participant/owner/membership registries, org onboarding |
-| `services/portal` | SvelteKit UI for every role. SSR only, not an OIDC client |
-| `services/provenance` | PROV-O graph and lineage, one instance per participant |
-| `services/federated-catalog` | Crawls participants, republishes the union as one DCAT catalogue. Advisory index, never authority |
-| `services/edc-extensions` | Java: ODRL constraint functions, pending guard, negotiation resume, event publisher |
-| `services/edc-connector` | Gradle fat-JAR build of the EDC runtime. No source of its own |
-| `services/dataset-api-mock` | Stand-in for the celine dataset-api. See [The data plane](#the-data-plane) |
-| `services/dataset-api-fiware-adapter` | FIWARE/QuantumLeap plugin for the host dataset-api. Currently unwired |
-| `services/caddy` | Dev edge: DID resolution, `/api/*` fan-out, the auth wall |
-| `services/keycloak` | Realm contract: permission vocabulary, clients, organizations, realm imports |
-| `services/oauth2-proxy` | Browser session holder. Caddy `forward_auth` target |
-| `libs/governance` | `ds-governance` — governance/offer models, ODRL mapper, validation CLI |
-| `libs/ds-auth` | `ds_auth` — JWT verification, principals, role bundles, `require_permission` |
-| `libs/ds-obs` | `ds_obs` — logging configuration and HTTP metrics, shared by every service |
-| `libs/ds-edc` | `ds_edc` — EDC Management API v3 client and models |
-| `libs/ds-e2e` | `ds-e2e` CLI — live end-to-end flows against a running stack |
-| `libs/ds-conformance` | `ds-conformance` CLI — measures the rulebook against the blueprints and against the tests that name each rule |
-
-New shared code goes in `libs/`, never under `services/`. Wiring a new unit in:
-`.agents/playbooks/adding-a-unit.md`.
-
-## How the services talk
-
-```
-Portal ──▶ connector (provider 30001 / consumer 31001) ──▶ EDC Management API
-                    ├──▶ provenance (30000 / 31000)
-                    └──▶ federated-catalog (30003)
-
-EDC provider ◀──DSP──▶ EDC consumer
-  ├──▶ identity-registry   STS tokens, DCP presentation queries, did:web
-  └──▶ connector /internal/*   ODRL constraint evaluation
-
-dataset-api ──▶ connector /internal/dataplane/authorize   per-query decision + row filter
-connector, federated-catalog ──▶ identity-registry   participants, owners, memberships
-```
-
-### Ports
-
-| Port | Unit | | Port | Unit |
-|---|---|---|---|---|
-| 30000 / 31000 | provenance (provider / consumer) | | 9080 | Keycloak |
-| 30001 / 31001 | connector (provider / consumer) | | 80 | Caddy gateway (all hosts) |
-| 30002 | dataset-api (real, or the mock) | | 19xxx / 29xxx | EDC provider / consumer |
-| 30003 | federated-catalog | | 35432 | PostgreSQL (one DB per service) |
-| 30004 | portal | | 30022 | dataset-api mock, when the real one holds 30002 |
-| 30005 | identity-registry | | 309xx / 319xx | debugpy |
-| 34318 | Jaeger OTLP/HTTP in (dev collector) | | 36686 | Jaeger UI — `tracing.dataspaces.localhost` |
-
-### Host binding
-
-| Direction | Address |
-|---|---|
-| Browser-facing, OIDC issuer, `ORIGIN`, callbacks | `*.dataspaces.localhost` through Caddy on `:80` — portless, split by Host header |
-| Any backend call, host↔container in either direction | `172.17.0.1:<port>` |
-| Container-to-container inside one compose stack | Docker DNS service name |
-
-**Never `localhost:<port>` for a service URL.** Why this rule exists, and what it buys:
-ADR-0007.
-
-## The data plane
-
-**The real data plane is the celine `dataset-api`.** It owns the query surface
-(`POST /query` with `{sql, limit, offset, skip_count}`) and it is the policy enforcement
-point: it verifies the EDR bearer, calls `POST /internal/dataplane/authorize`, applies the
-returned row filter, and emits a query-audit event.
-
-`services/dataset-api-mock` is a **stand-in**:
-
-- **Exclude it from assessments.** It is not a deployed component. Its defects matter
-  only where they reveal a contract mismatch.
-- **Keep it aligned anyway.** When the connector's `/internal/*` contract changes, the
-  mock changes in the same commit.
-
-`./services/dataset-api-mock/fixtures/seed.sh` swaps the real dataset-api onto 30002 and
-moves the mock to 30022. Which backend a run actually exercised is not visible in its
-output — see `.agents/playbooks/testing.md`.
-
-## Environment
-
-| File | Role |
-|---|---|
-| `.env.example` | **The reference.** Every variable the platform reads, with purpose and blast radius. Not a working config |
-| `.env.local` | Committed zero-config dev defaults. Makes `task start` work with no setup. Deliberately weak and public |
-| `.env` | Per-machine overrides. Gitignored |
-
-Adding a setting means adding it to `.env.example` in the same commit. A variable that
-exists in code and not there is invisible to anyone configuring a deployment.
-
-Dev is zero-config on purpose; the safety net is `DS_ENV`. Every Python service builds a
-`ProductionGuard` (`libs/ds-auth/src/ds_auth/production.py`) and registers its dangerous
-defaults — under `DS_ENV=production` it logs all violations and refuses to start.
-**Register a new dev default with the guard in the same change**, or the chart cannot see
-it.
-
-## Running it
-
-```bash
-task start                 # infra → identity bootstrap → provider → consumer
-task docker:restart        # everything in containers
-task dev:restart           # containers up, then hot-reload services in a tmux session `ds`
-task status                # running containers
-```
-
-**Ask which mode before restarting**, and read `.agents/playbooks/running-the-stack.md`
-before assuming a `dev:*` run verified anything about a Dockerfile, a compose env block or
-a dependency change. It did not.
-
-### Dev users
-
-All passwords equal the username. Realm `dataspaces`.
-
-| User | Bundle / role | For |
-|---|---|---|
-| `admin@example.test` | `ds-admin` | platform admin |
-| `provider@example.test` | `ds-participant-admin`, realm **and** org-scoped | dataset provider; exercises both provisioning paths |
-| `consumer@example.test` | `ds-member` + `ConsumerUser` VC | data consumer |
-| `subject@example.test` | `ds-member` + `DataSubject` VC | consent management |
-| `dual@example.test` | both VC roles | proves roles are additive, not exclusive |
-| `gridops@example.test` | `ds-participant-admin` **org-scoped only** (`grid-operator`) | proves a cross-owner write is refused |
-| `onboarding@example.test` | `ds-onboarding-operator`, realm-scoped | the operator console: reviews organisation applications without holding admin |
-| `viewer@example.test` | `ds-participant-viewer` **org-scoped only** (`example-org`) | proves a read-only seat cannot write |
-
-Service accounts are in `services/keycloak/clients.yaml`; the dev secret equals the
-client id.
-
-## Testing
-
-Five layers, each proving something the others cannot.
-
-| Layer | Command | Proves |
-|---|---|---|
-| **Unit** | `task -d <unit> test` | logic, in isolation. Mandatory for every change |
-| **Integration** | `task -d <unit> test:integration` | the unit against its real dependencies. Exists for `services/connector`, `services/identity-registry`, `services/provenance`, `libs/ds-auth` |
-| **Local stack** | `task dev:restart` | the code works against real dependencies, with hot reload |
-| **Docker e2e** | `task docker:restart` then `task e2e:all` | the images, compose env and startup order work — **this must pass before e2e means anything** |
-| **Portal UI** | `task -d services/portal test:ui` | Playwright journeys against the running stack |
-
-**A test that proves a rulebook rule says so, on itself** — `@pytest.mark.rule("D-15")`,
-JUnit `@Tag("rule:A-11")`, a flow's `rules = (...)`, or `@rule:C-3` in a Playwright title.
-`task rulebook:status` collects them, so enforcement is *derived* from the tests that
-exist. This is the only traceability mechanism in this repository (ADR-0001).
-
-Procedure, and what each layer is worth: `.agents/playbooks/testing.md` and
-[docs/development/testing.md](docs/development/testing.md).
-
-## Taskfile
-
-`Taskfile.yml` at the root is the only entry point a person should need. Namespaces:
-`infra:*`, `provider:*`, `consumer:*`, `db:*`, `edc:*`, `e2e:*`, `keycloak:*`,
-`secrets:*`, `compliance:*`, `rulebook:*`, `docs:*`, plus the `docker:*` / `dev:*`
-lifecycle pairs. Per-unit Taskfiles (`task -d <unit> <task>`) carry `setup`, `run`,
-`test`, `lint`, and `db:revision` where the unit owns migrations.
-
-**Keep it aligned as commands change.** A task is the documented way to do a thing; a
-command in a doc that is not a task will be wrong within a month. When you change how
-something is run, change the task — do not add a second way.
-
-`taskfile.local.yaml` is included when present (`optional: true`, `flatten: true`) and is
-gitignored. `taskfile.local.example.yaml` is the committed template.
-
-## Code style
-
-**Every change carries unit tests and passes lint.** Not negotiable and not "later".
-
-### Python (3.12)
-
-- FastAPI, async throughout. `httpx.AsyncClient`, never `requests`
-- `pydantic-settings` for config; defaults work for local dev, overridden by env
-- Layout: `src/<pkg>/{main,config,dependencies}.py` + `api/`, `services/`, `clients/`,
-  `db/`, `schemas/`
-- Async SQLAlchemy. **Sessions auto-begin** — never call `session.begin()` inside
-  `async with factory() as session:`; do the work and `await session.commit()`
-- Alembic: `task -d <unit> db:revision MESSAGE=...`, then `task db:migrate`
-- `uv` for dependencies. Services install as packages (`uv pip install .`) so console
-  scripts exist in the image
-- `ruff`, `mypy`, `pytest` + `pytest-asyncio`, `respx` for HTTP mocking
-
-### TypeScript / Svelte
-
-- SvelteKit 2, Svelte 5 runes (`$state`, `$derived`, `$effect`) — not Svelte 4 stores
-- SSR: upstream calls in `+page.server.ts`, never from a browser component
-- Mobile-first Tailwind
-- Route guards in `src/lib/server/auth.ts`. **A `+server.ts` endpoint does not run
-  `+layout.server.ts`** — guard it itself
-- Playwright journey for any new user-facing flow
-
-### Java (21)
-
-- EDC SPI interfaces; `Monitor` for logging
-- Gradle + Shadow. `task edc:build`, `task edc:restart`
-- A constraint function must **deny on error**. Returning `true` when an input is missing
-  or a call fails is the defect class this codebase has the most of
-
-### Security, on every change
-
-1. Every new or changed endpoint carries
-   `Depends(require_permission("service.resource.action"))`
-2. The permission exists in `services/keycloak/clients.yaml` and in a bundle in
-   `libs/ds-auth/src/ds_auth/bundles.py`. Procedure:
-   `.agents/playbooks/adding-a-permission.md`
-3. Never a machine-identity permission in a human bundle
-4. New URLs use `172.17.0.1` or a Caddy domain, never raw `localhost`
-5. Bootstrap and provisioning stay idempotent
-6. No hardcoded secrets outside dev defaults registered with `ProductionGuard`
-
-There are **two** authentication mechanisms and using the wrong one is the commonest
-mistake here: `require_permission` (JWT → scope for services, expanded groups for users)
-everywhere, and VC-JWT headers (`X-Subject-Id` + `X-User-VC`) on the subject-facing routes
-(`/consent/my/*`, `/consent/status`, `/consumer/*` on the connector). The seam between
-them, and the one route that accepts both: `.agents/knowledge/facts.md`.
-
-## Maintaining these files
-
-An `AGENTS.md` gets an agent to the right file quickly and stops it making a wrong edit.
-It is not a design document, and it is not the place for a rationale.
-
-**Every unit guide opens with a `## References` block** naming the blueprint building
-block it implements, the rulebook page that states its rules, and its `docs/services`
-page. Keep it accurate and short.
-
-**Include:** the unit's role and boundary · where things live · which files to touch for
-common tasks · constraints not visible from the code.
-
-**Exclude, and where it goes instead:**
-
-| Not here | There |
-|---|---|
-| full source-tree listings | the tree is the tree |
-| route and env inventories | `docs/services/*`, `.env.example` |
-| how the code behaves, and why it was designed that way | `docs/` |
-| why a technical choice was made | `docs/decisions/` |
-| why a dataspace rule exists | `docs/rulebook/` |
-| a repeatable procedure | `.agents/playbooks/` |
-| a trap that is true of the code and not obvious from it | `.agents/knowledge/` |
-| what is broken, and its state | an issue — `gh issue create` |
-| anything already asserted by a test | the test |
-
-**Rules:**
-
-- One fact, one home. If it belongs elsewhere, link to it — a duplicated fact becomes two
-  contradicting facts.
-- Prefer a pointer to a prose explanation.
-- Do not restate the root guide in a sub-guide.
-- Delete on sight. A stale instruction is worse than a missing one, because it is
-  followed.
-- Update the guide in the same commit as the change that dates it.
-
-Every unit under `services/` and `libs/` should have one. If one is missing, say so.
+Anything you were about to add here has a home: a trap goes to the companion's
+`knowledge/`, a procedure to its `playbooks/`, a rationale to `docs/decisions/`, a
+description of the system to `docs/`, and a defect to the issue tracker.

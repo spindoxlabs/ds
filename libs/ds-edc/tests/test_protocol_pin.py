@@ -144,8 +144,7 @@ def test_the_search_actually_reaches_the_tree(body):
     """A guard on this file, not on the platform.
 
     A glob that matches nothing makes the three tests above pass by finding
-    nothing to check — the exact failure mode `.agents/ledger.md` closes with:
-    *a green check is not a check that ran.*
+    nothing to check: *a green check is not a check that ran.*
     """
     files = list(_files())
     assert len(files) > 20, f"only {len(files)} files searched"

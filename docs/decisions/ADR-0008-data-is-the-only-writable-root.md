@@ -2,7 +2,7 @@
 
 **Date:** 2026-08-12
 **Status:** accepted
-**Extracted from:** the `data/` section of `AGENTS.md`, which keeps the rule.
+**Extracted from:** the root agent guide. This ADR states both the rule and the reason.
 
 ## Context
 
