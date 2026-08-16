@@ -127,3 +127,77 @@ def test_load_exposed_datasets(tmp_path):
     assert "datasets.gold.exposed" in result
     assert "datasets.gold.hidden" not in result
     assert "datasets.gold.secret" not in result
+
+
+# ── What the sync actually publishes ─────────────────────────────────────────
+#
+# `GOV-…`/`M-4`: this class held a **second copy** of the property dict, and the
+# copies disagreed — the library mapper emitted `dct:conformsTo` and this one did
+# not, while this one is what `provider_service` calls. Every test asserting the
+# property was emitted asserted it against the library, so all of them passed
+# while nothing reached EDC. These assert the object the sync hands to the EDC
+# client, which is the artefact that was wrong.
+
+
+def _dcat_rule(**dcat) -> GovernanceRuleV2:
+    from ds.governance.models import DcatSpec
+
+    return _rule(
+        title="Meter readings",
+        access_level="restricted",
+        classification="pii",
+        dataspace=DataspaceSpec(expose=True),
+        dcat=DcatSpec(**dcat),
+    )
+
+
+@pytest.mark.rule("M-4")
+def test_the_published_asset_carries_the_declared_payload_model():
+    """`M-4`. A consumer discovers the model at browse time or not at all — after
+    negotiating is too late to decide whether it can parse the rows."""
+    mapper = _mapper()
+    iri = "https://rec.dataspaces.localhost/ns/meter-readings"
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters_15m", _dcat_rule(conforms_to=iri)
+    )
+    assert asset.properties["dct:conformsTo"] == iri
+
+
+@pytest.mark.rule("M-4")
+def test_the_context_declares_dct_so_the_curie_expands():
+    """Without the declaration EDC keeps `dct:conformsTo` as an opaque string key
+    and the CURIE expands to nothing — a property that looks like a DCAT-AP term
+    and is a private one."""
+    mapper = _mapper()
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters_15m",
+        _dcat_rule(conforms_to="https://rec.dataspaces.localhost/ns/meter-readings"),
+    )
+    assert asset.context and asset.context.get("dct") == "http://purl.org/dc/terms/"
+    assert asset.to_edc()["@context"]["dct"] == "http://purl.org/dc/terms/"
+
+
+@pytest.mark.rule("M-4")
+def test_a_dataset_declaring_no_model_publishes_no_key_rather_than_a_null():
+    """A dataset that states no model and one that states "no model" are
+    different claims, and only the first is what silence means."""
+    mapper = _mapper()
+    asset = mapper.to_asset_create("datasets.gold.test", _dcat_rule())
+    assert "dct:conformsTo" not in asset.to_edc()["properties"]
+    assert "dct" not in asset.to_edc()["@context"]
+
+
+def test_the_owner_the_connector_resolves_survives_the_delegation():
+    """The two properties only the connector knows. Delegating the rest must not
+    drop them — they are what `dependencies._asset_owner` matches on."""
+    mapper = _mapper(owner_did_resolver=lambda alias: f"did:web:{alias}.test")
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        ownership=[GovernanceOwner(name="example-org", type="Organization")],
+        dataspace=DataspaceSpec(expose=True),
+    )
+    asset = mapper.to_asset_create("datasets.gold.test", rule)
+    pfx = mapper.profile.prefix
+    assert asset.properties[f"{pfx}:owner"] == "example-org"
+    assert asset.properties[f"{pfx}:ownerDid"] == "did:web:example-org.test"

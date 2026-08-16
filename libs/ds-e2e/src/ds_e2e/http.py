@@ -64,6 +64,32 @@ class HttpClient:
     ) -> tuple[int, Any]:
         return self._request_raw("POST", url, body=body, headers=headers)
 
+    def get_document(
+        self, url: str, *, headers: dict[str, str] | None = None
+    ) -> tuple[int, str, Any]:
+        """``(status, content type, body)``, following redirects.
+
+        For the surfaces whose **media type is part of the contract**, which
+        `get_raw` cannot report: a vocabulary served as `application/json`
+        rather than `application/ld+json` is skipped by a consumer negotiating
+        for linked data, so a correct document under the wrong type is not a
+        cosmetic difference — it is not found at all.
+
+        Redirects are followed because the contract permits answering a
+        vocabulary request with a 302 to wherever the model is canonically
+        published, and the connector's own fetcher follows one too. What the
+        caller then asserts on is the document at the end of the chain, which is
+        what a consumer gets.
+        """
+        resp = self._client.request("GET", url, headers=headers, follow_redirects=True)
+        media_type = resp.headers.get("content-type", "").split(";")[0].strip()
+        if not resp.text:
+            return resp.status_code, media_type, None
+        try:
+            return resp.status_code, media_type, resp.json()
+        except Exception:
+            return resp.status_code, media_type, resp.text
+
     def raw(
         self,
         method: str,

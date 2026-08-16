@@ -82,13 +82,31 @@ class AssetCreate(BaseModel):
     id: str
     properties: dict[str, Any] = {}
     data_address: DataAddress
+    #: The asset's own JSON-LD context, when it carries a property outside the
+    #: EDC vocabulary.
+    #:
+    #: `dct:conformsTo` is the case that forced this: a property whose prefix the
+    #: context does not declare is stored as an opaque string key, so a consumer
+    #: reading the DSP catalogue gets `"dct:conformsTo"` with nothing saying what
+    #: `dct` is — a CURIE that looks standard and expands to nothing. Declaring
+    #: the prefix is what makes it a DCAT-AP term rather than a private one that
+    #: resembles it.
+    #:
+    #: Only what an asset actually uses: a context prefix nothing references is a
+    #: claim about vocabularies this asset speaks.
+    context: dict[str, Any] | None = None
 
     def to_edc(self) -> dict[str, Any]:
         return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": self.context or {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "Asset",
             "@id": self.id,
-            "properties": self.properties,
+            # **Null-valued properties are dropped, not sent.** An undeclared
+            # model and one declared as "nothing" are different claims, and only
+            # the first is what silence means — the same rule the DCAT emitter
+            # follows for `dct:conformsTo`. Sending `null` would also put the key
+            # in the catalogue for a consumer to read as present-and-empty.
+            "properties": {k: v for k, v in self.properties.items() if v is not None},
             "dataAddress": self.data_address.to_edc(),
         }
 

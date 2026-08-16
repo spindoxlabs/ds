@@ -25,8 +25,68 @@ datasets:
     backend_type: postgres
     backend_config:
       table: ds_e2e.meters_15m
+    # **Two exposures, two questions** — and one boolean used to answer both.
+    # `expose` puts the dataset in the catalogue and lets `/query` serve it;
+    # `dataspace_expose` says it is on offer *into the dataspace*, and the real
+    # dataset-api checks it before it asks ds anything, because "does this
+    # consumer hold an agreement" and "is this dataset offered to anyone" are
+    # different refusals.
+    #
+    # Both are needed here: ds negotiates a contract for this dataset and
+    # presents an EDR, so a fixture with `dataspace_expose` unset is refused with
+    # *"Dataset not offered in the dataspace"* — a 403 that looks like a consent
+    # failure and is not one. It defaults to false, so an EDR-gated fixture must
+    # say so.
     expose: true
+    dataspace_expose: true
     ontology_path: null
+    # **The semantic-model seam, on the real plane** (`M-4`, `T-3`).
+    #
+    # `ds_e2e_rec` governance declares `dcat.conforms_to` for this dataset and ds
+    # publishes it into the DSP catalogue; without these two keys the real
+    # dataset-api answers *"declares no semantic model"* for the very dataset ds
+    # advertises a model for — the drift the seam exists to make visible, and it
+    # was here until `ds-e2e --flow semantic-model` compared the two ends.
+    #
+    # `ontology_mapping` inline rather than `ontology_path`: in a deployment the
+    # exporter resolves `ontology.spec` / `ontology.spec_file` from
+    # celine-ontologies or the pipelines checkout, and neither exists in the ds
+    # workspace. This is the resolved form those produce, which is what the
+    # catalogue stores either way.
+    #
+    # Domain-neutral by construction: the terms are the REC's own fixture
+    # vocabulary, served by its own connector at `/ns/meter-readings`, so a cold
+    # `task start` reaches no network. A deployment maps onto CELINE or SAREF
+    # instead and nothing about the mechanism changes.
+    #
+    # A **valid MappingSpec**, not just a field list. `/vocabulary` only walks
+    # `fields` and accepted a shorter document; `POST /conformance` loads it
+    # through `MappingSpecLoader` and answered 503 *"stored mapping is not a
+    # valid mapping spec — 'version' is a required property"*. Two readers, one
+    # document, and only the stricter one is the whole grammar.
+    #
+    # No `profile:` pin. A pin asserts *these shapes validate this mapping*, and
+    # this fixture's terms are the REC's own — see the note in `M-15` and the
+    # vacuity caveat below. The check still runs and its report names whichever
+    # profile version it used, so an unpinned mapping stays distinguishable from
+    # a pinned one.
+    ontology_mapping:
+      version: "1"
+      target_type: https://rec.dataspaces.localhost/ns/meter-readings
+      id_template: https://rec.dataspaces.localhost/obs/{device_id}/{timestamp}
+      fields:
+        # `source` is the **column** `/query` returns; `target` is what it means.
+        # They differ (`device_id` → `deviceId`), which is the reason a consumer
+        # cannot infer the mapping from the payload or from the JSON Schema.
+        - source: timestamp
+          target: https://rec.dataspaces.localhost/ns/meter-readings#timestamp
+          datatype: xsd:dateTime
+        - source: device_id
+          target: https://rec.dataspaces.localhost/ns/meter-readings#deviceId
+          datatype: xsd:string
+        - source: kwh
+          target: https://rec.dataspaces.localhost/ns/meter-readings#kwh
+          datatype: xsd:decimal
     schema_override_path: null
     tags:
       keywords:
@@ -34,6 +94,10 @@ datasets:
         - type:table
         - classification:pii
       accessRights: restricted
+      # What `export_governance` writes from `dcat.conforms_to`, and what
+      # `dcat_formatter` reads to emit `dct:conformsTo` on the catalogue entry.
+      # The same IRI ds publishes — two holders of one fact, which is the point.
+      conformsTo: https://rec.dataspaces.localhost/ns/meter-readings
     lineage:
       namespace: datasets.silver
       name: datasets.silver.meters_15m

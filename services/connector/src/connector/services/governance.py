@@ -49,9 +49,26 @@ class ConnectorGovernanceMapper:
         return self._mapper.profile
 
     def to_asset_create(self, dataset_key: str, rule: GovernanceRuleV2) -> AssetCreate:
+        """The published asset, built by `GovernanceMapper` and typed here.
+
+        **The properties come from the library mapper, not from a second copy.**
+        This method used to spell the whole dict out again, and the copies
+        disagreed in the way a second copy always eventually does: the library's
+        knew `dct:conformsTo` and `dct:references`, this one did not, and *this
+        one is the one the sync calls*. So a producer declaring
+        `dcat.conforms_to` had it validated, published into the DCAT evidence and
+        served at `/ns/{slug}` — and it never reached the DSP catalogue at all,
+        which is the one place a consumer discovers it before negotiating.
+
+        Nothing noticed for the reason a second copy is dangerous: every test
+        asserting the property is emitted asserted it against the *library*
+        mapper's output, which was correct throughout. `ds-e2e --flow
+        semantic-model` reads the asset EDC actually holds, and is what found it.
+
+        What stays here is what only the connector knows: the owner alias and its
+        resolved DID.
+        """
         ds = rule.dataspace
-        asset_id = ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
-        medallion = ds.medallion or self._infer_medallion(dataset_key)
         pfx = self._mapper.profile.prefix
 
         extra: dict[str, str] = {}
@@ -63,27 +80,19 @@ class ConnectorGovernanceMapper:
         if owner_alias and self._mapper.owner_did_resolver:
             owner_did = self._mapper.owner_did_resolver(owner_alias) or ""
 
+        published = self._mapper.to_asset_create(dataset_key, rule)
+
         return AssetCreate(
-            id=asset_id,
+            id=published["@id"],
             properties={
-                "name": rule.title or dataset_key,
-                "description": rule.description or "",
-                "contenttype": ds.asset.content_type,
-                f"{pfx}:medallion": medallion,
-                f"{pfx}:classification": rule.classification or "",
-                f"{pfx}:sourceSystem": rule.source_system or "",
-                f"{pfx}:tags": ",".join(rule.tags),
+                **published["properties"],
                 f"{pfx}:owner": owner_alias,
                 f"{pfx}:ownerDid": owner_did,
-                f"{pfx}:userFilterColumn": (
-                    rule.row_filters[0].args.column if rule.row_filters
-                    else rule.user_filter_column or ""
-                ),
-                f"{pfx}:rowFilters": [
-                    {"handler": f.handler, "column": f.args.column}
-                    for f in rule.row_filters
-                ] or None,
             },
+            # Carried through, so a `dct:` property arrives with `dct` declared.
+            # Without it EDC keeps the key as an opaque string and the CURIE
+            # expands to nothing for whoever reads the catalogue.
+            context=published.get("@context"),
             data_address=DataAddress(
                 type=ds.data_address.type,
                 base_url=ds.data_address.base_url,
@@ -128,12 +137,9 @@ class ConnectorGovernanceMapper:
             }],
         )
 
-    @staticmethod
-    def _infer_medallion(dataset_key: str) -> str:
-        for level in ("gold", "silver", "bronze", "raw", "staging"):
-            if level in dataset_key:
-                return level
-        return "unknown"
+    # `_infer_medallion` lived here too, character for character identical to
+    # `GovernanceMapper`'s. It went with the property dict it served: two copies
+    # of one rule stay equal only until one of them is edited.
 
     @classmethod
     def _to_edc_policy(cls, value):

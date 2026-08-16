@@ -146,8 +146,8 @@ overridable, so every function can be driven from canned JSON.
 > The gradle cache is held by the continuous build, so a parallel `task edc:build` fails on a
 > journal-cache lock. Let the watch build do it.
 
-**Check EDC signatures against the packaged jars, not the source checkout.**
-`~/git/github.com/eclipse-edc/Connector` is ahead of the 0.16.0 we build against — it carries
-`StateEntityStore.breakLease`, which 0.16.0 does not — so the source answers *why* and the
-jars answer *what*. `javap` inside the Gradle image reads the jars; see
-`.agents/facts/services/edc-extensions.md`.
+**Check EDC signatures against the packaged jars, not the source checkout.** The EDC
+`Connector` source (`.agents/references.md`) is ahead of the 0.16.0 we build against — it
+carries `StateEntityStore.breakLease`, which 0.16.0 does not — so the source answers *why*
+and the jars answer *what*. `javap` inside the Gradle image reads the jars; see
+`.agents/knowledge/services/edc-extensions.md`.

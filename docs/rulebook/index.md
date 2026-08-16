@@ -46,7 +46,7 @@ synonym is caught rather than quietly bucketed into the nearest allowed marker.
 A rulebook that overstates enforcement is worse than no rulebook, because it converts a
 known gap into an unknown one. Where the platform does not currently keep a rule, that is
 recorded here rather than in a separate place a reader might not reach. The open items are
-tracked in `.agents/defects.md`.
+tracked in `.agents/ledger.md`.
 
 ## The statuses on these pages are claims, and they are measured
 

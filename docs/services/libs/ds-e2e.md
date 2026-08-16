@@ -46,6 +46,7 @@ pair, the dataset API, both provenance instances and the identity registry.
 | `org-onboarding` | the five onboarding gates end to end, up to a resolvable participant DID |
 | `chain-community` / `chain-partner` / `chain-unbundling` | the disclosure chains — who may receive data as a processor, a partner, or an independent controller |
 | `uc1` / `uc2` / `uc3` | the three business use cases |
+| `semantic-model` | the payload model a producer publishes is the one every data plane states and serves a vocabulary for — read-only, and it names which backend answered |
 | `catalog-discovery` | catalogue freshness, shape, resolution, search and paging |
 | `lineage` | ingestion → provenance events → lineage traversal → audit log |
 | `two-providers` | that a second provider with no members keeps its own catalogue, governance and counterparty |

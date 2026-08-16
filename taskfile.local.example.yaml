@@ -17,11 +17,13 @@ tasks:
       # sharing-offers.yaml beside its governance.yaml — this task collects them
       # into services/connector/governance-rec/sharing-offers.d/<app>.yaml where the
       # connector's load_sharing_offers() picks them up at startup.
-      PIPELINE_DIRS: ../celine-pipelines/apps ../../../demo3/pipelines/apps
+      # Space-separated, relative to this repository's root. A deployment
+      # points them at its own pipeline and deployment checkouts.
+      PIPELINE_DIRS: ../<pipelines-checkout>/apps
       # Per-app deployment overlays. A file named sharing-offers.<app>.yaml in
       # this directory is staged beside the app's base file and merged at
       # collection time (replace-by-offer-id, same as the runtime overlay).
-      OFFERS_OVERRIDES: ../../../demo3.deployment/recs/governance
+      OFFERS_OVERRIDES: ../<deployment-checkout>/governance
     cmds:
       - |
         set -eu

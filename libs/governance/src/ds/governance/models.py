@@ -188,7 +188,7 @@ class DcatSpec(BaseModel):
     schema says (*"URI of a standard or specification the dataset conforms to"*).
     A dataset conforming to several models is a real case and a real limitation;
     widening it to a list is a celine-utils change, not a divergence to ship
-    here. See `.agents/semantic-vocabulary.plan.md` decision `V-1`.
+    here. See `.agents/plans/semantic-vocabulary.md` decision `V-1`.
     """
 
     publisher_uri: str | None = None

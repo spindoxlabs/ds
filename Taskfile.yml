@@ -1277,6 +1277,11 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow catalog-discovery
 
+  e2e:semantic-model:
+    desc: "E2E: the declared payload model and the one every data plane renders agree"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow semantic-model
+
   e2e:lineage:
     desc: "E2E: provenance graph connectivity, idempotency and audit log"
     cmds:
@@ -1699,7 +1704,7 @@ tasks:
   rulebook:summary:
     desc: Print the conformance counts without rewriting docs/rulebook/status.md
     cmds:
-      # The exit criteria in .agents/plans/remaining-v2.md are fields of this
+      # The exit criteria in .agents/plans/conformance-closeout.md are fields of this
       # output, so a workstream is finished when a number here says so.
       - cd libs/ds-conformance && uv run ds-conformance summary --repo ../..
 

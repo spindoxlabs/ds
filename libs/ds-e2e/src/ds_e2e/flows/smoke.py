@@ -4,6 +4,7 @@ import logging
 import time
 import urllib.parse
 from typing import Any
+from urllib.parse import quote
 
 from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
@@ -389,6 +390,17 @@ class SmokeFlow(BaseFlow):
                 data_plane=label,
             )
 
+            # 11a. **Do those rows mean what the catalogue says they mean?**
+            #      Here because this is where the credential is: the endpoint is
+            #      authorised exactly as `/query`, so it is unreachable from a
+            #      flow that has not negotiated.
+            self._conformance(result, label, url, asset_id, {
+                "Authorization": edr_token,
+                "Edc-Contract-Agreement-Id": shared_agreement_id,
+                "Edc-Transfer-Process-Id": transfer_id,
+                "Edc-Purpose": s.consented_purpose,
+            })
+
         # 11b. The purpose is binding, not decorative. The same agreement and
         #      the same active transfer must yield nothing for a purpose this
         #      subject never agreed to — ds refuses the request outright rather
@@ -509,3 +521,123 @@ class SmokeFlow(BaseFlow):
         result.pass_step("provenance complete", "required lifecycle events present", observed=sorted(event_types))
 
         return result
+
+    # ── Conformance of the rows that were just served ────────────────────────
+
+    def _conformance(
+        self,
+        result: FlowResult,
+        label: str,
+        base: str,
+        asset_id: str,
+        edr_headers: dict[str, str],
+    ) -> None:
+        """`POST /catalogue/{id}/conformance` — `M-15`, where the data plane has it.
+
+        **Capability-detected, not assumed.** The endpoint is off by default
+        (`CONFORMANCE_ENABLED`), and when off the route is not registered at all
+        — so its presence is read from the plane's own OpenAPI document rather
+        than inferred from a 404, which would be indistinguishable from a wrong
+        path. `services/dataset-api-mock` does not implement it and is not
+        expected to: it is a stand-in for the query surface, and mapping rows
+        into RDF is not part of that surface.
+
+        **Absence is reported, never silently passed.** A run that validated
+        nothing says so in its own step. `E2E_REQUIRE_CONFORMANCE=true` turns
+        absence into a failure, which is what a deployment that has turned the
+        feature on should set — otherwise disabling it by accident would show up
+        as a green suite, and *a green check is not a check that ran*.
+
+        What is asserted when it is there: the check runs (200 — a non-conforming
+        dataset is a **successful** request, so a 4xx here is the endpoint
+        failing, not the data), it validated a non-empty sample, it names the
+        profile version that ran, and the rows conform.
+
+        **What this cannot yet assert, and it matters.** `conforms: true` does
+        not distinguish *"every shape that applied was satisfied"* from *"no
+        shape applied"*. Measured on CELINE v0.10 (2026-08-14): the profile
+        targets 19 classes, `sosa:Observation` is not one of them — it appears
+        only as an `sh:class` constraint *value* — so an observation mapping,
+        which is what the shipped `obs_*` specs produce, validates an
+        unconstrained graph and reports `conforms: true` over it. The report has
+        no field that would reveal this; `sample_size` guards the empty-rows case
+        and there is no equivalent for the empty-shapes case. Until the report
+        says how much was actually checked, a green here means *the check ran and
+        found nothing wrong*, which is weaker than it looks.
+        """
+        s = self.settings
+        path = "/catalogue/{dataset_id}/conformance"
+        schema = self.http.get(f"{base}/openapi.json", raise_for_status=False) or {}
+        available = path in (schema.get("paths") or {})
+
+        if not available:
+            if s.require_conformance:
+                result.fail_step(
+                    "rows conform to the declared model",
+                    f"{label} exposes no conformance endpoint, and "
+                    "E2E_REQUIRE_CONFORMANCE is set — this run validated nothing "
+                    "about what the served rows mean",
+                    data_plane=label,
+                )
+                return
+            result.pass_step(
+                "rows conform to the declared model",
+                f"{label} exposes no conformance endpoint (CONFORMANCE_ENABLED "
+                "off, or not implemented) — nothing was validated on this plane",
+                data_plane=label,
+                validated=False,
+            )
+            return
+
+        status, report = self.http.post_raw(
+            f"{base}/catalogue/{quote(asset_id, safe='')}/conformance",
+            {},
+            headers=edr_headers,
+        )
+        if status != 200 or not isinstance(report, dict):
+            result.fail_step(
+                "rows conform to the declared model",
+                f"the conformance check did not run on {label}: {status}. A "
+                "non-conforming dataset answers 200 with conforms=false, so this "
+                "is the endpoint failing rather than the data",
+                data_plane=label,
+                body=str(report)[:300],
+            )
+            return
+
+        if not report.get("sample_size"):
+            result.fail_step(
+                "rows conform to the declared model",
+                f"{label} validated an empty sample — conforming over zero rows "
+                "is not evidence about any row",
+                data_plane=label,
+                report=report,
+            )
+            return
+        if not report.get("profile_version"):
+            result.fail_step(
+                "rows conform to the declared model",
+                f"{label} reported no profile version; conforming to v0.8 and to "
+                "v0.10 are different claims about the same rows",
+                data_plane=label,
+                report=report,
+            )
+            return
+        if not report.get("conforms"):
+            result.fail_step(
+                "rows conform to the declared model",
+                f"{label} served rows that do not satisfy the shapes of the model "
+                f"the catalogue advertises for {asset_id}",
+                data_plane=label,
+                violations=(report.get("violations") or [])[:5],
+                profile_version=report.get("profile_version"),
+            )
+            return
+
+        result.pass_step(
+            "rows conform to the declared model",
+            f"{report['sample_size']} row(s) from {label} satisfy "
+            f"{report.get('profile_name') or 'the'} {report['profile_version']} shapes",
+            data_plane=label,
+            profile_pinned=report.get("profile_pinned"),
+        )

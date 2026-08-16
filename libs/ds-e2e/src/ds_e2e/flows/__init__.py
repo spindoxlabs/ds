@@ -16,6 +16,7 @@ from ds_e2e.flows.dcp_trust import DcpTrustFlow
 from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
+from ds_e2e.flows.semantic_model import SemanticModelFlow
 from ds_e2e.flows.smoke import SmokeFlow
 from ds_e2e.flows.two_providers import TwoProvidersFlow
 from ds_e2e.flows.uc1 import UC1Flow
@@ -40,6 +41,10 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "chain-community": ChainCommunityFlow,
     "chain-partner": ChainPartnerFlow,
     "chain-unbundling": ChainUnbundlingFlow,
+    # Beside `catalog-discovery`: both read what the provider has already
+    # published rather than negotiating for it, and both need the provider sync
+    # to have run. This one is read-only on every service it touches.
+    "semantic-model": SemanticModelFlow,
     "catalog-discovery": CatalogDiscoveryFlow,
     "lineage": LineageFlow,
     "two-providers": TwoProvidersFlow,

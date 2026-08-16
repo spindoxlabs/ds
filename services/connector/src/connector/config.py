@@ -126,7 +126,7 @@ class Settings(BaseSettings):
     # The registry names which vocabularies this deployment serves a local copy
     # of; the cache holds the copies. Both default to nothing registered, so a
     # zero-config dev stack never reaches the network at boot — a deployment
-    # opts into that by registering entries. See `.agents/semantic-vocabulary.plan.md`.
+    # opts into that by registering entries. See `.agents/plans/semantic-vocabulary.md`.
     vocabularies_path: str | None = Field(
         default=None,
         description="Path to vocabularies.yaml. Defaults to the file next to "

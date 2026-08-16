@@ -96,9 +96,12 @@ the **semantic model** (what the columns mean). They are on separate nodes delib
 test pins that they stay there.
 
 **ds does not map, transform or validate payloads.** A dataset declaring SAREF4ENER is a
-statement by its producer; making the served rows conform to it is the data plane's job. This
-is a boundary, not a gap — but it means CEEDS' *"validation of data against specific
-vocabularies"* is somebody else's function, and is listed as unmet in §4.
+statement by its producer; making the served rows conform to it is the data plane's job. The
+data plane now offers it: the celine `dataset-api` exposes
+`POST /catalogue/{id}/conformance`, which maps a bounded sample of a dataset's rows through
+its declared mapping and validates the resulting graph against the SHACL shapes of the
+ontology version that mapping pins (`M-15`). This is a boundary, not a gap: the function
+exists, it is owned, and it is owned by the party that holds the rows.
 
 **Still to do for a CEEDS-aligned deployment:** choose the models (§2), register them, and bind
 at least one dataset. The platform ships an empty registry and mandates nothing (`M-6`).
@@ -140,17 +143,26 @@ and **a registered vocabulary with no local copy is a startup failure**, because
 **What still does not exist:** editing through the surface. Changing a vocabulary remains a
 commit and a sync — which is not a shortfall but §5.1 applied consistently: the registry is a
 file in this repository like every other vocabulary here, so `M-12` (a change states the
-consents it would widen) keeps working unchanged. Also absent, and all CEEDS Vocabulary Hub
-functions: **validating data against a vocabulary** (the data plane's job — see the boundary in
-§3), **documenting non-standardised data at ingestion**, and **version history** — the registry
-carries one `version` per entry, not a record of how a vocabulary changed.
+consents it would widen) keeps working unchanged. Also absent: **documenting non-standardised
+data at ingestion**, and **version history** — the registry carries one `version` per entry,
+not a record of how a vocabulary changed.
+
+*(This paragraph used to list **validating data against a vocabulary** here too, as a third
+absent "Vocabulary Hub function". Both halves of that were wrong. It is not a hub function —
+`DSSC-DMO-19` asks for a tool for **publishing, editing, browsing and maintaining**
+vocabularies, and validation appears in DSSC only as an example Value-Creation Service, the
+SEMIC SHACL Validator. And it is no longer absent: it belongs to the data plane and the data
+plane implements it, `M-15`. Measuring this platform against a requirement no blueprint makes
+is the failure mode a citable requirements source exists to prevent, so it is corrected here
+rather than quietly dropped.)*
 
 | # | Rule | Status |
 |---|---|---|
 | M-8 | Vocabularies are published in a machine-readable form, resolvable and unauthenticated | **Enforced** |
 | M-9 | `schemas/` publishes every shape that crosses a repository boundary, generated from the models and never hand-edited, with a no-diff test | **Enforced** |
 | M-10 | `schemas/purpose-vocabulary.json` is regenerated whenever the ODRL profile changes — it carries the slug `enum` the *active profile* accepts, which no static schema can | **Enforced, untested** at the drift level; the regeneration is a task, not a hook |
-| M-11 | A vocabulary hub supporting editing and browsing exists (`DMO-19`) | **Partly enforced.** Browsing exists: `GET /ns` indexes every published vocabulary, `/ns/vocabularies` lists the semantic registry, `/ns/{slug}` serves a cached definition as JSON-LD. Editing is a code change, deliberately — see §5.1, and the note above on why that is consistency rather than a shortfall. The functions listed above as absent are the remainder of `DMO-19` |
+| M-11 | A vocabulary hub supporting editing and browsing exists (`DMO-19`) | **Partly enforced.** Browsing exists: `GET /ns` indexes every published vocabulary, `/ns/vocabularies` lists the semantic registry, `/ns/{slug}` serves a cached definition as JSON-LD. Editing is a code change, deliberately — see §5.1, and the note above on why that is consistency rather than a shortfall. The two functions listed above as absent are the remainder of `DMO-19` |
+| M-15 | Checking that served rows satisfy the model a dataset declares is the **data plane's** function, offered on demand rather than run on every exchange | **Declared** — and implemented outside this repository. The celine `dataset-api` exposes `POST /catalogue/{id}/conformance`; ds neither implements nor calls it. Three properties make it the right shape, and each is a decision rather than a detail: it is **on demand**, so nothing on the exchange path pays for it and no query result depends on it; it is **authorised exactly as `/query`** — same parser, same governance checks, same `/internal/dataplane/authorize` call, same row filters — because it reads real rows and quotes their values back, so a laxer gate would be a row-level leak wearing a metadata endpoint's clothes; and it validates against the ontology version the **mapping pins**, so an ontology release cannot decide overnight that a dataset stopped conforming. What a green result asserts is **structural only**: that the graph the mapping produces satisfies the shapes. It does not say the columns mean what the mapping claims — a spec naming the wrong observed property yields a conformant graph of wrong statements — so this closes the checkable half of `dct:conformsTo` and the semantic half stays the producer's assertion (`M-4`) |
 
 ## 5. The management process
 
@@ -195,7 +207,7 @@ medallion values, the PROV-O domain profile:
 **Closed by this page:** `DSSC-DMO-01`, `-16`, `-35`, `-37`, `-38`, `-39`.
 
 **Partly closed:** `DSSC-DMO-19` (vocabulary hub — publishing, browsing and maintaining, §4;
-editing stays a code change, and three hub functions are absent). `DSSC-DMO-23` (an API through
+editing stays a code change, and two hub functions are absent). `DSSC-DMO-23` (an API through
 which data models can be retrieved — `GET /ns/{slug}`).
 
 **Open:** `DSSC-DMO-17` (standards-body collaboration — none). `DSSC-DMO-27` (semantic
@@ -207,7 +219,18 @@ discovery of data models across data spaces) — not applicable while federation
 registering SAREF/SAREF4ENER or CIM and binding a dataset is now configuration, not
 development. `CEEDS-STD-23` / `INT-36` (*"approaches based on data ontology are a requirement
 in order to avoid silos"*, **must**) are substantially addressed: a dataset can name its
-ontology, the reference travels in the catalogue, and the definition is served.
+ontology, the reference travels in the catalogue, the definition is served, and — since
+`M-15` — the claim can be checked against the rows rather than only asserted. That last step
+is what moves these from *"a producer says so"* to *"a consumer can find out"*, which is the
+difference an anti-silo requirement is actually about.
+
+`CEEDS-STD-22` (CGMES conformity assessment, **informative**) is the nearest blueprint anchor
+for `M-15`, and it is worth being precise that it is only an anchor: **no blueprint requirement
+mandates validating data against a vocabulary.** `DMO-19` asks for publishing, editing,
+browsing and maintaining; `DMO-32` says data schemas *should* be used during exchange; DSSC
+lists the SEMIC SHACL Validator as an example Value-Creation Service. So `M-15` is this
+deployment going beyond what it is required to do, and is recorded as **Declared** rather than
+as closing a row.
 
 **None of them is closed by the platform**, and that is `M-6` working as intended rather than a
 gap: ds ships no payload model and imposes none. §3 says what a deployment does next.

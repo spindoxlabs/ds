@@ -7,7 +7,7 @@ The host supplies authentication, the catalogue and governance enforcement; this
 backend.
 
 > **Nothing in this repository builds, installs, imports or runs it.** Before working on it,
-> settle whether it is being adopted or removed — see `.agents/defect-per-service.md`. Work
+> settle whether it is being adopted or removed — see `.agents/ledger.md`. Work
 > on an unwired unit is unverifiable by construction.
 
 ## References

@@ -9,7 +9,7 @@ them** — a producer could declare any model and return anything.
 
 The other holder is the data plane. The real one is the celine `dataset-api`,
 out of this repository; its expected interface is fixed in
-`.agents/semantic-model-seam.plan.md`:
+`.agents/plans/semantic-model-seam.md`:
 
     GET /catalogue/{id}            → `dct:conformsTo` = the model's canonical IRI
     GET /catalogue/{id}/vocabulary → 200 JSON-LD, or 302 to where it is published

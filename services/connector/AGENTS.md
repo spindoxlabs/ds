@@ -22,7 +22,7 @@ Python control plane beside an EDC runtime. One codebase, **two instances** —
 | `/consent/*` | The consent registry |
 | `/consumer/*` | Drives the consumer side of DSP: catalogue → negotiate → transfer → EDR |
 | `/webhooks/*` | Records EDC negotiation and transfer lifecycle |
-| `/ns/*` | Public vocabularies — the ODRL profile and sharing offers (**policy**), plus cached SAREF/CIM-style definitions (**semantic**). Two layers; see `.agents/facts/services/connector.md` |
+| `/ns/*` | Public vocabularies — the ODRL profile and sharing offers (**policy**), plus cached SAREF/CIM-style definitions (**semantic**). Two layers; see `.agents/knowledge/services/connector.md` |
 
 Every act emits a PROV-O event through `services/prov_bridge.py`.
 
@@ -108,4 +108,4 @@ than the dev catalogue. `tests/__init__.py` provides `make_headers` (service tok
 `make_user_headers` (groups) and `make_vc_headers` (the `X-Subject-Id` + `X-User-VC`
 mechanism the `/consent/*` routes actually use).
 
-Known-failing tests are tracked in `.agents/defect-per-service.md`, not here.
+Known-failing tests are tracked in `.agents/ledger.md`, not here.

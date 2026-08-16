@@ -16,7 +16,7 @@ from ds.governance import (
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel, ValidationError
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -169,6 +169,37 @@ DATASETS: dict[str, dict[str, Any]] = {
         # SAREF4ENER or CIM registers that IRI here instead — the mechanism does
         # not care which, and `M-6` is why ds must not.
         "conforms_to": "https://rec.dataspaces.localhost/ns/meter-readings",
+        # **What each column means**, in the shape the real plane derives
+        # `/vocabulary` from — a mapping spec, `source` naming the column this
+        # fixture actually returns and `target` the term it carries. The real
+        # dataset-api resolves this from `governance.yaml`'s `ontology.spec` or
+        # `ontology.spec_file` at export; there is no exporter here, so the
+        # resolved form is what the fixture holds.
+        #
+        # Note `device_id` → `deviceId`. The column and the term are *not* the
+        # same string, and that is the whole reason the route exists: a consumer
+        # reading rows cannot guess the mapping from the payload, and a JSON
+        # Schema of the columns would not tell it either.
+        "ontology": {
+            "target_type": "https://rec.dataspaces.localhost/ns/meter-readings",
+            "fields": [
+                {
+                    "source": "timestamp",
+                    "target": "https://rec.dataspaces.localhost/ns/meter-readings#timestamp",
+                    "datatype": "xsd:dateTime",
+                },
+                {
+                    "source": "device_id",
+                    "target": "https://rec.dataspaces.localhost/ns/meter-readings#deviceId",
+                    "datatype": "xsd:string",
+                },
+                {
+                    "source": "kwh",
+                    "target": "https://rec.dataspaces.localhost/ns/meter-readings#kwh",
+                    "datatype": "xsd:decimal",
+                },
+            ],
+        },
         "row_filters": [{"handler": REC_REGISTRY, "args": {"column": "device_id"}}],
         "rows": [
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0001", "kwh": 0.42},
@@ -195,6 +226,31 @@ DATASETS: dict[str, dict[str, Any]] = {
         # dataset and per producer, and two producers in one dataspace declaring
         # different models is the normal case, not a conflict to resolve.
         "conforms_to": "https://grid-operator.dataspaces.localhost/ns/grid-capacity",
+        "ontology": {
+            "target_type": "https://grid-operator.dataspaces.localhost/ns/grid-capacity",
+            "fields": [
+                {
+                    "source": "timestamp",
+                    "target": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#timestamp",
+                    "datatype": "xsd:dateTime",
+                },
+                {
+                    "source": "substation",
+                    "target": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#substation",
+                    "datatype": "xsd:string",
+                },
+                {
+                    "source": "headroom_kw",
+                    "target": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#headroomKw",
+                    "datatype": "xsd:decimal",
+                },
+                {
+                    "source": "load_kw",
+                    "target": "https://grid-operator.dataspaces.localhost/ns/grid-capacity#loadKw",
+                    "datatype": "xsd:decimal",
+                },
+            ],
+        },
         "rows": [
             {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-014",
              "headroom_kw": 320.5, "load_kw": 179.5},
@@ -250,6 +306,25 @@ def _validate_dataset(name: str, spec: dict[str, Any]) -> None:
             raise RuntimeError(f"External dataset {name!r} declares no `external_sql`")
     elif not isinstance(spec.get("rows"), list):
         raise RuntimeError(f"Dataset {name!r} declares no `rows`")
+    # A mapping is optional — a dataset stating no semantic model is a legitimate
+    # claim. A *malformed* one is not: every field is read by attribute below, so
+    # it would surface as a 500 out of `/vocabulary`, which is unauthenticated
+    # and reads to a consumer as the participant's fault rather than the
+    # fixture's. Same argument as `rows` and `requires_consent` above.
+    ontology = spec.get("ontology")
+    if ontology is not None:
+        fields = ontology.get("fields") if isinstance(ontology, dict) else None
+        if not isinstance(fields, list) or not fields:
+            raise RuntimeError(
+                f"Dataset {name!r} declares an `ontology` with no `fields`; a mapping "
+                "that maps no column describes nothing."
+            )
+        for field in fields:
+            if not isinstance(field, dict) or not field.get("source") or not field.get("target"):
+                raise RuntimeError(
+                    f"Dataset {name!r} has an ontology field without both `source` "
+                    f"(the column) and `target` (the term it carries): {field!r}"
+                )
     if spec["requires_consent"] and not _row_filter_spec(spec):
         raise RuntimeError(
             f"Dataset {name!r} requires consent but declares no row filter. ds narrows "
@@ -334,6 +409,60 @@ def _catalogue_entry(name: str, spec: dict[str, Any]) -> dict[str, Any]:
             ],
         },
     }
+
+
+# The prefixes a fixture mapping may use in a `datatype`. The real plane resolves
+# these through the `celine-ontologies` registry, which knows every vocabulary in
+# the ecosystem; a stand-in serving three fixture datasets needs the two its own
+# documents can contain, and an unknown one is refused rather than emitted (see
+# `_vocabulary_document`) — an unexpandable CURIE in a context is not a smaller
+# failure than a missing one, it is the same failure found by the consumer.
+_PREFIXES = {
+    "dct": "http://purl.org/dc/terms/",
+    "xsd": "http://www.w3.org/2001/XMLSchema#",
+}
+
+
+def _vocabulary_document(spec: dict[str, Any]) -> dict[str, Any]:
+    """The JSON-LD document `/catalogue/{id}/vocabulary` serves for one dataset.
+
+    Derived from the dataset's mapping, never written beside it. That is the
+    load-bearing property of the seam rather than an implementation preference:
+    a hand-maintained response would be a third holder of one fact, next to the
+    mapping and the rows, and this whole route exists because two holders with
+    nothing comparing them had already drifted.
+
+    Keyed by **source column**, so the context lines up with what `/query`
+    actually returns — a consumer applies it to a row unchanged.
+    """
+    mapping = spec["ontology"]
+    context: dict[str, Any] = {}
+    used: set[str] = set()
+
+    for field in mapping.get("fields") or []:
+        term: dict[str, str] = {"@id": field["target"]}
+        if datatype := field.get("datatype"):
+            term["@type"] = datatype
+            if ":" in datatype and "://" not in datatype:
+                used.add(datatype.partition(":")[0])
+        context[field["source"]] = term
+
+    document: dict[str, Any] = {"@context": context}
+    if target_type := mapping.get("target_type"):
+        document["@type"] = target_type
+    if conforms_to := spec.get("conforms_to"):
+        # The same IRI the catalogue entry carries. A dataset cannot advertise
+        # one model here and another there — which is the thing the contract
+        # check compares, so the two must come from one field.
+        used.add("dct")
+        document["dct:conformsTo"] = {"@id": conforms_to}
+
+    if unknown := used - set(_PREFIXES):
+        raise HTTPException(500, f"Mapping uses undeclared prefixes: {sorted(unknown)}")
+    # Prefixes first, and only the ones in play: a document using none of Dublin
+    # Core should not declare it.
+    return {"@context": {**{p: _PREFIXES[p] for p in sorted(used)}, **context},
+            **{k: v for k, v in document.items() if k != "@context"}}
 
 
 def _dataset_enabled(spec: dict[str, Any]) -> bool:
@@ -435,6 +564,39 @@ def _handler_values(handler: str, principals: list[str]) -> set[str]:
 @app.get("/catalogue")
 async def catalogue() -> dict[str, list[dict[str, Any]]]:
     return {"datasets": [_catalogue_entry(name, spec) for name, spec in _enabled_datasets().items()]}
+
+
+@app.get("/catalogue/{asset_id:path}/vocabulary")
+async def catalogue_vocabulary(asset_id: str) -> Response:
+    """What this dataset's columns mean — the semantic sibling of `/schema`.
+
+    **Declared before `/catalogue/{asset_id:path}`, and that is not cosmetic.**
+    FastAPI matches in declaration order and the sibling route's `:path`
+    converter is greedy, so with the order reversed this path is swallowed as an
+    asset id ending in `/vocabulary` and answers 404 — which reads as "this
+    dataset declares no model" and is the one wrong answer this route can give.
+
+    Unauthenticated, like `/catalogue`: a consumer decides whether it *can* use a
+    dataset before it negotiates for it, so gating the vocabulary would gate
+    discovery. It describes the shape of the data, not the data.
+
+    404 means the dataset is unknown **or** declares no mapping. That is not the
+    same claim as "this dataset has no semantic model"; the catalogue entry's
+    `dct:conformsTo` is where a declared model is stated, and its absence there
+    is what silence means.
+    """
+    for name, spec in _enabled_datasets().items():
+        if asset_id in {name, spec["asset_id"]}:
+            if not spec.get("ontology"):
+                raise HTTPException(404, f"Dataset {asset_id!r} declares no semantic model")
+            # `application/ld+json` explicitly: FastAPI would serve
+            # `application/json` for a returned dict, and a consumer
+            # content-negotiating for JSON-LD would skip it.
+            return Response(
+                content=json.dumps(_vocabulary_document(spec), ensure_ascii=False),
+                media_type="application/ld+json",
+            )
+    raise HTTPException(404, f"Unknown asset {asset_id!r}")
 
 
 @app.get("/catalogue/{asset_id:path}")

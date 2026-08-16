@@ -65,6 +65,21 @@ class E2ESettings(BaseSettings):
     #: Comma-separated data-plane URLs the query flows exercise (`T-1`). Both by
     #: default: the mock on :30022 and the real celine `dataset-api` on :30002.
     #: Set to one URL to run against one, and the output still names which.
+    #: Whether a data plane is *expected* to expose `POST
+    #: /catalogue/{id}/conformance` (`M-15`).
+    #:
+    #: False by default, matching the dataset-api's own `CONFORMANCE_ENABLED`:
+    #: the check is off unless a deployment turns it on, and the mock does not
+    #: implement it at all. `smoke` detects the endpoint from the plane's OpenAPI
+    #: document and exercises it wherever it is present, so the default still
+    #: verifies conformance on a plane that has it.
+    #:
+    #: **Set this true once a deployment has turned the feature on.** Otherwise
+    #: switching it off by accident reads as a green suite — the endpoint simply
+    #: stops being probed — and *a green check is not a check that ran*.
+    require_conformance: bool = Field(
+        False, validation_alias="E2E_REQUIRE_CONFORMANCE"
+    )
     e2e_data_planes: str = Field(
         "http://172.17.0.1:30022,http://172.17.0.1:30002",
         validation_alias="E2E_DATA_PLANES",

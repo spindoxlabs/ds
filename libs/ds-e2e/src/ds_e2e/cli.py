@@ -40,6 +40,7 @@ class FlowName(str, Enum):
     chain_community = "chain-community"
     chain_partner = "chain-partner"
     chain_unbundling = "chain-unbundling"
+    semantic_model = "semantic-model"
     catalog_discovery = "catalog-discovery"
     lineage = "lineage"
     two_providers = "two-providers"

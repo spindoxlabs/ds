@@ -83,6 +83,9 @@ secrets/
 reports/
 **/reports/
 
+.harness
+.harness.*
+.agents.*
 .agents
 
 # MkDocs build output

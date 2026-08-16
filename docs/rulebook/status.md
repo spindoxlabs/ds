@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-08-10 from `4e7bb62-dirty`.
+Generated 2026-08-13 from `819c35a-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 27 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
-| Rulebook rules | 145 |
+| Rulebook rules | 146 |
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 117 |
 | …of those, **evidenced by a test that names them** | 116 |
 | …of those, **unevidenced** | 1 |
-| Test nodes declaring a rule | 739 |
+| Test nodes declaring a rule | 745 |
 | Structural problems | 0 |
 
 **99% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -90,17 +90,18 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | `M-1` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_canonical_schema.py::test_the_whole_dcat_block_survives_the_load`, `libs/governance/tests/tests/test_compliance_evidence.py::TestDcatBlock::test_every_dcat_field_is_emitted`, `libs/governance/tests/tests/test_compliance_evidence.py::TestDcatBlock::test_no_dcat_block_emits_no_empty_nodes` |
 | `M-2` | Enforced | ✅ evidenced | unit×1 | `libs/governance/tests/tests/test_mapper.py::test_medallion_inference` |
 | `M-3` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_mapper.py::test_odrl_context_uses_profile_prefix`, `libs/governance/tests/tests/test_mapper.py::test_profile_iri_included_in_context`, `services/connector/tests/test_ns_policy_profile.py::test_ns_policy_follows_a_profile_change_after_reset_caches` +1 more |
-| `M-4` | Partly enforced | ✅ evidenced | unit×10 | `libs/governance/tests/test_semantic_model_contract.py::test_at_least_one_dataset_declares_its_payload_model`, `libs/governance/tests/test_semantic_model_contract.py::test_every_declared_model_is_served_by_this_participant`, `libs/governance/tests/test_semantic_model_contract.py::test_ds_publishes_the_model_as_a_node_reference_not_a_string` +7 more |
+| `M-4` | Partly enforced | ✅ evidenced | e2e×1, unit×13 | `semantic-model`, `libs/governance/tests/test_semantic_model_contract.py::test_at_least_one_dataset_declares_its_payload_model`, `libs/governance/tests/test_semantic_model_contract.py::test_every_declared_model_is_served_by_this_participant` +11 more |
 | `M-5` | Declared | · consistent | — | — |
 | `M-6` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_declaring_no_model_is_not_a_finding`, `services/connector/tests/test_vocabulary_startup.py::test_no_shipped_vocabulary_needs_the_network_at_boot`, `services/connector/tests/test_vocabulary_startup.py::test_no_shipped_vocabulary_imposes_a_real_world_model` |
-| `M-7` | Enforced | ✅ evidenced | unit×7 | `libs/governance/tests/test_semantic_model_contract.py::test_the_declaration_is_the_canonical_iri_and_is_shared_across_datasets`, `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_a_bare_name_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_a_urn_is_an_error` +4 more |
-| `M-8` | Enforced | ✅ evidenced | unit×10 | `libs/governance/tests/test_semantic_model_contract.py::test_every_declared_model_is_served_by_this_participant`, `libs/governance/tests/test_semantic_model_contract.py::test_a_participants_own_vocabulary_needs_no_network`, `services/connector/tests/test_ns_policy_profile.py::test_ns_policy_and_the_sync_agree_on_one_profile` +7 more |
+| `M-7` | Enforced | ✅ evidenced | e2e×1, unit×7 | `semantic-model`, `libs/governance/tests/test_semantic_model_contract.py::test_the_declaration_is_the_canonical_iri_and_is_shared_across_datasets`, `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_a_bare_name_is_an_error` +5 more |
+| `M-8` | Enforced | ✅ evidenced | e2e×1, unit×10 | `semantic-model`, `libs/governance/tests/test_semantic_model_contract.py::test_every_declared_model_is_served_by_this_participant`, `libs/governance/tests/test_semantic_model_contract.py::test_a_participants_own_vocabulary_needs_no_network` +8 more |
 | `M-9` | Enforced | ✅ evidenced | unit×5 | `libs/governance/tests/tests/test_schema_conformance.py::test_conforms_to_the_canonical_schema`, `libs/governance/tests/tests/test_schema_conformance.py::test_purpose_and_consent_live_where_the_schema_puts_them`, `libs/governance/tests/tests/test_schema_export.py::test_schemas_directory_exists` +2 more |
 | `M-10` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_schema_export.py::test_purpose_vocabulary_lists_exactly_the_active_profile`, `libs/governance/tests/tests/test_schema_export.py::test_purpose_vocabulary_rejects_a_placeholder_term`, `services/connector/tests/test_ns_policy_profile.py::test_ns_policy_follows_a_profile_change_after_reset_caches` +1 more |
 | `M-11` | Partly enforced | ✅ evidenced | unit×5 | `services/connector/tests/test_ns_vocabularies.py::test_the_index_lists_every_surface`, `services/connector/tests/test_ns_vocabularies.py::test_the_index_reports_which_copies_are_missing`, `services/connector/tests/test_ns_vocabularies.py::test_the_registry_projection_carries_the_iri` +2 more |
 | `M-12` | Declared | · consistent | — | — |
 | `M-13` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_consent_checks.py::TestPurposeTaxonomy::test_unresolvable_broader_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestPurposeTaxonomy::test_broader_cycle_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestPurposeTaxonomy::test_unknown_skos_relation_is_an_error` +5 more |
 | `M-14` | Declared | · consistent | — | — |
+| `M-15` | Declared | · consistent | — | — |
 
 ### `participation.md`
 

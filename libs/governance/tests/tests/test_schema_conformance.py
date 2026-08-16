@@ -30,7 +30,15 @@ SCHEMA = json.loads(
     (REPO / "schemas/governance.schema.json").read_text(encoding="utf-8")
 )
 
-GOVERNANCE_FILES = sorted(REPO.glob("services/*/governance/governance.yaml")) + sorted(
+# The producer fixtures the stack actually syncs. **Kept separate and guarded
+# separately**, because they were unchecked here for as long as this test has
+# existed: the glob read `services/*/governance/governance.yaml`, no such path
+# was ever laid out, and the one test fixture matched by the second glob was
+# enough to satisfy a `assert GOVERNANCE_FILES` written to catch exactly this.
+# A guard over the union of two globs cannot see a dead one.
+PRODUCER_FILES = sorted(REPO.glob("services/connector/governance-*/governance.yaml"))
+
+GOVERNANCE_FILES = PRODUCER_FILES + sorted(
     REPO.glob("services/*/tests/fixtures/governance.yaml")
 )
 
@@ -38,6 +46,19 @@ GOVERNANCE_FILES = sorted(REPO.glob("services/*/governance/governance.yaml")) + 
 def test_governance_files_were_found():
     """A glob that matches nothing would make every test below vacuously pass."""
     assert GOVERNANCE_FILES, "no governance.yaml found — the glob is wrong"
+
+
+def test_the_producer_fixtures_are_among_them():
+    """The files that carry `dcat.conforms_to` are the ones worth validating.
+
+    A cached canonical schema earns its keep by being run against the files a
+    producer would author in the same shape — and those are the per-participant
+    governance directories, not the connector's unit-test fixture.
+    """
+    assert len(PRODUCER_FILES) >= 2, (
+        f"only {len(PRODUCER_FILES)} producer governance files found under "
+        "services/connector/ — the glob is probably broken"
+    )
 
 
 @pytest.mark.rule("M-9")

@@ -150,4 +150,4 @@ purpose chain is enforced rather than merely declared.
   a container down fails for reasons of its own.
 
 Sync httpx — no async needed for a sequential runner. Known gaps are in
-`.agents/defect-per-service.md`.
+`.agents/ledger.md`.

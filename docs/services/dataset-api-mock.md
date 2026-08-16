@@ -44,8 +44,15 @@ Dataspace context arrives in headers:
 | `Edc-Purpose` | comma-separated declared purposes |
 
 The rest of the surface is a catalogue: `GET /catalogue`, `GET /catalogue/{asset_id}`,
-`GET /datasets`, and `GET /subjects/{subject_id}/datasets` — which tells a person which
-datasets contain rows about them, without granting any access to them.
+`GET /catalogue/{asset_id}/vocabulary`, `GET /datasets`, and
+`GET /subjects/{subject_id}/datasets` — which tells a person which datasets contain rows
+about them, without granting any access to them.
+
+`/vocabulary` is the semantic-model seam's data-plane end, mirroring the real dataset-api:
+it serves a JSON-LD context derived from the dataset's mapping, keyed by the columns
+`/query` returns, and states the same `dct:conformsTo` the catalogue entry carries. It is
+unauthenticated, because a consumer decides whether it *can* use a dataset before it
+negotiates for one. `ds-e2e --flow semantic-model` asserts both ends agree.
 
 ## How it works
 

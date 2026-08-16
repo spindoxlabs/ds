@@ -166,6 +166,25 @@ services:
       # celine service authenticating into the ds realm.
       CELINE_OIDC_CLIENT_SECRET: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
 
+      # `M-15` — `POST /catalogue/{id}/conformance`. **Left off, and it cannot be
+      # turned on from here alone.**
+      #
+      #   CONFORMANCE_ENABLED: "true"
+      #
+      # The service refuses to start with that set unless its image carries the
+      # `conformance` extra (`celine-ontologies[mapper]`, which brings pyshacl),
+      # and this repo's compose builds the sibling checkout's Dockerfile, which
+      # installs no extras (`uv sync --frozen --no-install-project --no-dev`).
+      # Failing at startup is the service's own deliberate design — an operator
+      # who turns the feature on learns it is unusable while looking at the
+      # deploy — so the pair has to move together: `--extra conformance` in the
+      # dataset-api Dockerfile, then this line.
+      #
+      # `smoke` reads the plane's OpenAPI document and exercises the endpoint
+      # wherever it is present, so no harness change is needed when it lands.
+      # Set `E2E_REQUIRE_CONFORMANCE=true` at that point to make its *absence* a
+      # failure rather than a probe nobody notices stopping.
+
       POLICIES_CHECK_ENABLED: "false"
       LOG_LEVEL: DEBUG
       # TEMPORARY (e2e bring-up) — pairs with the `src` mounts below.
