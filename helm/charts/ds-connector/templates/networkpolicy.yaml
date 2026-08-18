@@ -4,7 +4,7 @@
 # Ingress: the portal (UX/API calls) and this participant's EDC (/internal +
 # /webhooks) reach the connector, in this namespace only. No public path — a
 # truly external dataset API needs connectivity arranged separately (see
-# helm/AGENTS.md → dataset API).
+# docs/deployment/exposure.md).
 {{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
     (dict "namespace" .Release.Namespace "name" "ds-portal")
     (dict "namespace" .Release.Namespace "name" "ds-edc"))) }}

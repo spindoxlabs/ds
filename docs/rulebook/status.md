@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-08-13 from `819c35a-dirty`.
+Generated 2026-08-16 from `e72d8b8-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -13,25 +13,21 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | Blueprint requirement rows | 1623 |
 | …of which binding (`must` + `should`) | 783 |
 | …carrying a disposition | 252 |
-| …answered by a **named rule** | 27 |
-| …answered **at page level only** | 120 |
+| …answered by a **named rule** | 37 |
+| …answered **at page level only** | 121 |
 | …**unassessed** | 531 |
 | Rulebook rules | 146 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 117 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 116 |
 | …of those, **evidenced by a test that names them** | 116 |
-| …of those, **unevidenced** | 1 |
+| …of those, **unevidenced** | 0 |
 | Test nodes declaring a rule | 745 |
 | Structural problems | 0 |
 
-**99% of the rules that claim enforcement can name a test.** That number is the one to move.
+**100% of the rules that claim enforcement can name a test.** That number is the one to move.
 
 ## Rules claiming enforcement with no test naming them
 
-1 rules. Each says the code refuses a violating case and no test declares itself as the check. Either a marker is missing from a test that already exists, or the check does.
-
-| Rule | Page | Claim | Statement |
-|---|---|---|---|
-| `X-8` | data-exchange | Enforced | A query result is bounded. A provider may cap `limit` and must not be obliged to return a… |
+None. Every rule claiming enforcement names at least one test node.
 
 ## Every rule, by page
 
@@ -74,7 +70,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | `X-6b` | Enforced | ✅ evidenced | e2e×1, unit×2 | `fail-closed`, `services/connector/tests/test_internal_api.py::test_consent_check_no_consent`, `services/connector/tests/test_registry.py::test_http_registry_check_scope_error_returns_false` |
 | `X-6c` | Enforced | ✅ evidenced | e2e×1, unit×5 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_unknown_agreement_is_refused`, `services/connector/tests/test_dataplane_authorize.py::test_terminated_agreement_is_refused` +3 more |
 | `X-7` | Declared | · consistent | — | — |
-| `X-8` | Enforced | ❌ **unevidenced** | — | — |
+| `X-8` | Declared | · consistent | — | — |
 | `X-9` | Enforced | ✅ evidenced | unit×6 | `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused`, `services/connector/tests/test_dataplane_authorize.py::test_agreement_does_not_unlock_another_dataset`, `services/connector/tests/test_dataplane_authorize.py::test_unknown_agreement_is_refused` +3 more |
 | `X-10` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_internal_api.py::test_agreement_status_unreachable_edc_is_not_a_404`, `services/connector/tests/test_internal_api.py::test_agreement_status_edc_5xx_is_not_a_404`, `services/connector/tests/test_internal_api.py::test_transfer_status_unreachable_edc_denies_and_says_so` +1 more |
 | `X-11` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_pending_sweep.py::test_a_failed_termination_leaves_the_negotiation_for_the_next_pass` |
@@ -233,14 +229,14 @@ Every binding blueprint row and what answers it. `may` and `recommended` rows ar
 | `DSSC-BIZ` | 314 | 1 | 0 | 0 | 313 |
 | `DSSC-CDP` | 1 | 0 | 0 | 0 | 1 |
 | `DSSC-DEX` | 47 | 23 | 1 | 7 | 16 |
-| `DSSC-DMO` | 25 | 6 | 3 | 1 | 15 |
-| `DSSC-DSO` | 25 | 8 | 5 | 0 | 12 |
+| `DSSC-DMO` | 25 | 7 | 2 | 1 | 15 |
+| `DSSC-DSO` | 25 | 9 | 3 | 1 | 12 |
 | `DSSC-FND` | 7 | 0 | 0 | 0 | 7 |
-| `DSSC-IAM` | 12 | 9 | 3 | 0 | 0 |
-| `DSSC-PTO` | 39 | 23 | 12 | 0 | 4 |
-| `DSSC-PUB` | 36 | 31 | 3 | 0 | 2 |
-| `DSSC-SVD` | 14 | 4 | 1 | 0 | 9 |
-| `DSSC-TRF` | 15 | 10 | 1 | 0 | 4 |
+| `DSSC-IAM` | 12 | 12 | 0 | 0 | 0 |
+| `DSSC-PTO` | 39 | 26 | 9 | 0 | 4 |
+| `DSSC-PUB` | 36 | 32 | 2 | 0 | 2 |
+| `DSSC-SVD` | 14 | 5 | 0 | 0 | 9 |
+| `DSSC-TRF` | 15 | 11 | 0 | 0 | 4 |
 | `DSSC-VCS` | 58 | 0 | 0 | 58 | 0 |
 | `DSSC-XCT` | 38 | 9 | 0 | 5 | 24 |
 
@@ -258,12 +254,19 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-AUP-53` | must | `CR-2` | manifest | n/a — declared |
 | `DSSC-BIZ-143` | must | `P-12a` | rule text | yes |
 | `DSSC-DEX-36` | must | `X-4` | manifest | yes |
+| `DSSC-DMO-23` | should | `M-11` | manifest | yes |
+| `DSSC-DSO-11` | must | `C-12` | manifest | yes |
 | `DSSC-DSO-13` | must | `C-14` | manifest | yes |
+| `DSSC-IAM-06` | must | `P-6`, `P-7`, `P-8`, `P-21` | manifest | yes |
+| `DSSC-IAM-07` | must | `P-8`, `P-8a`, `P-21` | manifest | yes |
 | `DSSC-IAM-08` | must | `P-3` | manifest | yes |
 | `DSSC-IAM-13` | must | `P-20`, `P-8` | manifest | yes |
 | `DSSC-IAM-14` | must | `P-5` | manifest | n/a — declared |
+| `DSSC-IAM-29` | must | `P-6`, `P-7`, `P-20`, `P-21` | manifest | yes |
 | `DSSC-PTO-40` | must | `L-1` | manifest | yes |
 | `DSSC-PTO-41` | must | `L-1` | manifest | yes |
+| `DSSC-PTO-59` | must | `L-9` | manifest | n/a — declared |
+| `DSSC-PTO-79` | must | `L-12` | manifest | yes |
 | `DSSC-PUB-05` | must | `C-1` | manifest | yes |
 | `DSSC-PUB-13` | must | `C-15` | manifest | yes |
 | `DSSC-PUB-14` | must | `C-16` | manifest | yes |
@@ -274,17 +277,20 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-PUB-27` | must | `C-19` | manifest | yes |
 | `DSSC-PUB-32` | must | `C-20` | manifest | yes |
 | `DSSC-PUB-38` | must | `C-5` | manifest | yes |
+| `DSSC-PUB-41` | must | `C-7` | manifest | yes |
+| `DSSC-SVD-30` | must | `P-8`, `P-20`, `P-21`, `P-22` | manifest | yes |
 | `DSSC-TRF-02` | must | `P-23` | manifest | yes |
 | `DSSC-TRF-04` | must | `P-25` | manifest | yes |
 | `DSSC-TRF-05` | must | `P-12`, `P-12a` | manifest | yes |
 | `DSSC-TRF-19` | informative | `P-12b` | rule text | yes |
 | `DSSC-TRF-21` | informative | `P-12b` | rule text | yes |
 | `DSSC-TRF-38` | must | `P-14` | rule text | yes |
+| `DSSC-TRF-41` | must | `P-6`, `P-7`, `P-8`, `P-21` | manifest | yes |
 | `DSSC-XCT-07` | must | `D-6` | manifest | n/a — declared |
 
 ### Rows answered only at page level
 
-124 rows. A rulebook page addresses the topic and nobody has said which rule answers the row, so no evidence attaches and none of these can read as done. This is the granularity the rulebook's own *Blueprint rows* sections have; sharpening one to a named rule is the work.
+125 rows. A rulebook page addresses the topic and nobody has said which rule answers the row, so no evidence attaches and none of these can read as done. This is the granularity the rulebook's own *Blueprint rows* sections have; sharpening one to a named rule is the work.
 
 | Requirement | Force | Page | Requirement text |
 |---|---|---|---|
@@ -370,6 +376,7 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-PTO-19` | must | [provenance-and-logging](provenance-and-logging.md) | The data space must answer how the agreements on provenance, traceability and observabili… |
 | `DSSC-PTO-20` | must | [provenance-and-logging](provenance-and-logging.md) | The data space must record the mandatory events, the chosen data models, the storage arch… |
 | `DSSC-PTO-21` | must | [provenance-and-logging](provenance-and-logging.md) | The data space must define a process for maintaining and updating these rules as part of… |
+| `DSSC-PTO-58` | must | [provenance-and-logging](provenance-and-logging.md) | Information collected about observability, provenance, and traceability must be captured… |
 | `DSSC-PTO-75` | must | [provenance-and-logging](provenance-and-logging.md) | It needs to be defined which entity stores which part of the P&T data, which might also i… |
 | `DSSC-PTO-81` | must | [provenance-and-logging](provenance-and-logging.md) | The trust between a third party observer and all other parties must always be ensured for… |
 | `DSSC-PTO-84` | must | [provenance-and-logging](provenance-and-logging.md) | An appropriate data model for each type of P&T data storage must be chosen that is capabl… |
@@ -417,42 +424,29 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 
 | Requirement | Force | What is missing |
 |---|---|---|
-| `DSSC-AUP-06` | must | recorded open by docs/rulebook/policies.md |
-| `DSSC-AUP-45` | must | recorded open by docs/rulebook/policies.md |
-| `DSSC-AUP-46` | must | recorded open by docs/rulebook/policies.md |
-| `DSSC-DEX-38` | must | recorded open by docs/rulebook/data-exchange.md |
-| `DSSC-DMO-08` | may | recorded open by docs/rulebook/data-models.md |
-| `DSSC-DMO-17` | must | recorded open by docs/rulebook/data-models.md |
-| `DSSC-DMO-19` | must | recorded open by docs/rulebook/data-models.md |
-| `DSSC-DMO-23` | should | recorded open by docs/rulebook/data-models.md |
-| `DSSC-DSO-11` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-DSO-12` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-DSO-14` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-DSO-15` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-DSO-41` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-IAM-06` | must | recorded open by docs/rulebook/participation.md |
-| `DSSC-IAM-07` | must | recorded open by docs/rulebook/participation.md |
-| `DSSC-IAM-29` | must | recorded open by docs/rulebook/participation.md |
-| `DSSC-PTO-03` | must | Observability: **Not a scope decision — an unfilled gap.** Recorded in [Provenance and logging](provenance-and-logging.md) §5 with a minimum-viable close. Listed here so it is not mistaken for a declared exclusion |
-| `DSSC-PTO-42` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-43` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-44` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-45` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-46` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-57` | informative | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-58` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-59` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-60` | should | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-61` | should | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-62` | informative | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-63` | recommended | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-79` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PTO-83` | must | recorded open by docs/rulebook/provenance-and-logging.md |
-| `DSSC-PUB-03` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-PUB-41` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-PUB-45` | must | recorded open by docs/rulebook/catalogue-and-metadata.md |
-| `DSSC-SVD-30` | must | recorded open by docs/rulebook/participation.md |
-| `DSSC-TRF-41` | must | recorded open by docs/rulebook/participation.md |
+| `DSSC-AUP-06` | must | Only the policy validity window is missing: `valid_from` / `valid_until` are declared in governance and reported by the `declared-not-enforced` check, and never emitted as an ODRL constraint (`A-9`). Closing it needs a date operand bound in the EDC, not a mapper change |
+| `DSSC-AUP-45` | must | The conflict-resolution and validation gate runs, but not over everything it claims: the two participant checks need a live identity-registry and so run outside CI, and CI validates one producer's governance rather than every producer's (`A-4`) |
+| `DSSC-AUP-46` | must | Same gap as `DSSC-AUP-45`: the required/optional distinction is checked, and the checking is not complete — the participant checks need a live registry and CI covers one producer's governance (`A-4`) |
+| `DSSC-DEX-38` | must | Each ds service publishes its own OpenAPI document (`X-13`), and **the DSP surface publishes no machine-readable capability description** — the protocol version, bindings and endpoints a counterparty would read before interacting. Serving one is a capability decision rather than a defect fix |
+| `DSSC-DMO-17` | must | No collaboration with a standards development organisation exists, and none can be code: this is an obligation on a deployment's governance authority, which the platform can neither discharge nor evidence |
+| `DSSC-DMO-19` | must | Publishing, browsing and maintaining are served (§4); three functions are not. Editing through the surface is deliberately a commit and a sync (§5.1 applied consistently, `M-11`), and the two genuinely absent ones are **documenting non-standardised data at ingestion** and **version history** — the registry carries one `version` per entry, not a record of how a vocabulary changed |
+| `DSSC-DSO-12` | must | `C-13` reads *Not enforced*: there is no machine-readable projection of this rulebook for a check to consult. One existed and was removed the same day as the rule-id citations, because the record it checked against was 79% unevidenced assertion. Closing it honestly needs the rulebook's statuses backed by evidence that runs — the same prerequisite as Participation §5 |
+| `DSSC-DSO-14` | must | Metadata versioning is not implemented. `governance.yaml` is versioned in git, which is version control of the *file*, not of an offering's metadata across the data product's lifetime — a consumer cannot ask what a description said when they negotiated. §5 puts it second and notes it needs a design decision first: version the offering, or snapshot it into the agreement |
+| `DSSC-DSO-15` | must | Same gap as `DSSC-DSO-14`, and the same blocked design decision: there is no metadata version history at all, only git history of the file that declares it |
+| `DSSC-PTO-03` | must | Observability: **not a scope decision — an unfilled gap**, and a narrowing one. Traces now span the services and the DSP hop, correlated by `ds.dsp.agreement_id`, and all five services serve `/metrics` (§5, steps 1-3). Step 4 is what is left: no collection or visualisation, no real-time monitoring, and SLIs derivable but not built. Listed here so it is not mistaken for a declared exclusion |
+| `DSSC-PTO-42` | must | Nothing states, let alone satisfies, horizontal (cross-sector) observability requirements — §5 records this pair as flatly absent, and the requirements themselves have not been written down for this platform |
+| `DSSC-PTO-43` | must | Same as `DSSC-PTO-42` for vertical (energy-sector) requirements: absent, and not yet stated |
+| `DSSC-PTO-44` | must | Security controls **for the observability data itself**: `/metrics` exposure is answered by the chart (default-deny, Prometheus namespace only) and nothing else is. There is no access control or retention rule for traces, and no collector to apply one in |
+| `DSSC-PTO-45` | must | Audit trail: partial. The compliance access log is materialised from `QueryExecuted` (`L-12`), which covers data access; the *observability* plane has no audit trail — who read a trace or a metric series is unrecorded |
+| `DSSC-PTO-46` | must | No compliance documentation is produced for observability. `task compliance:evidence` emits DCAT-AP and ODRL evidence for governance, and there is no equivalent artifact describing what is monitored, retained or reported |
+| `DSSC-PTO-57` | informative | The row is the blueprint saying its event table is a starting point rather than a closed set. What is missing here is the *decision*: this rulebook fixes sixteen event types (`L-1`) and nowhere records which of the blueprint's remaining suggestions were considered and declined, so a reader cannot tell a deliberate omission from an oversight. Informative, so nothing demands it |
+| `DSSC-PTO-60` | should | Reuse of existing standards is done where data is stored (PROV-O) and **undecided where it is not**: the observability plane has no chosen standard because it has no model at all. The row cannot close while `DSSC-PTO-42`-`-46` are open |
+| `DSSC-PTO-61` | should | Extend-or-create is the same decision as `DSSC-PTO-60`, unmade for the same reason: nothing has reached the point of choosing between reusing an observability model and defining one |
+| `DSSC-PTO-62` | informative | The blueprint's own statement that no single semantic standard fits. What is missing is this rulebook's answer to it for telemetry — for provenance the answer is PROV-O and is recorded. Informative, so nothing demands it |
+| `DSSC-PTO-63` | recommended | PROV-O **is** adopted, for provenance and traceability, and is the whole of the provenance service's model. PAV is not used, and the observability half aligns with no standard yet. The row stays open for that remainder rather than for the recommendation it names. Recommended, so nothing demands it |
+| `DSSC-PTO-83` | must | Declared and **unmeasured**: no load test, no latency budget and no measurement of what the provenance write and the per-query authorize call cost the exchange. Nothing suggests a problem; nothing rules one out either, which is the gap |
+| `DSSC-PUB-03` | must | Visibility is enforced at **negotiation, not at discovery** (`C-21`, *Partly enforced* and accepted as such on 2026-08-09): a participant outside an offering's audience can still see that the offering exists, and is refused when it tries to contract. What is missing is audience filtering in the catalogue response itself |
+| `DSSC-PUB-45` | must | A catalogue response **embeds** each entry's metadata rather than returning `dcat:record` identifiers for a consumer to dereference. `C-8` emits a `dcat:CatalogRecord` per entry, so the records exist; what is missing is the by-reference response shape this row asks for |
 
 ### Binding rows deliberately declined
 
@@ -484,7 +478,9 @@ Each belongs in [Scope and deviations](scope-and-deviations.md) as well; this ta
 | `DSSC-DEX-52` | must | Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent |
 | `DSSC-DEX-64` | must | Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent |
 | `DSSC-DEX-65` | must | Cross-data-space federation: Out of scope. The federated catalogue federates *participants within one data space*. A participant joining a second data space runs a second participant agent |
+| `DSSC-DMO-08` | may | Standardised discovery of data models *across data spaces*: not applicable while federation is out of scope — follows §1, the same exclusion that carries `DSSC-DEX-50`-`-52`. Also a `may` row |
 | `DSSC-DMO-27` | must | Payload semantic models: Deferred to the deployment, not to nobody. See [Data models](data-models.md) §2. **This is the largest CEEDS gap** |
+| `DSSC-DSO-41` | must | DCAT-AP-HVD binds only datasets the EU designates as high-value. Not applicable until a deployment designates one, and then it is that deployment's stricter metadata obligation — the same 'deferred to the deployment, not to nobody' pattern as the payload semantic models in §2 |
 | `DSSC-VCS-01` | may | no value creation services (§1) |
 | `DSSC-VCS-04` | must | no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies |
 | `DSSC-VCS-05` | must | no value creation services (scope-and-deviations.md §1). DSSC-VCS-01 states the capability is not mandatory; the remaining rows are conditional on including such services and none applies |

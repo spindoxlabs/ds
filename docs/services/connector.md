@@ -169,7 +169,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CONNECTOR_GOVERNANCE_YAML_PATH` | `governance/governance.yaml` | the dataset catalogue |
+| `CONNECTOR_GOVERNANCE_YAML_PATH` | `<workdir>/governance/governance.yaml` | the dataset catalogue |
 | `CONNECTOR_GOVERNANCE_OVERLAY_NAME` | — | merges `governance.<name>.yaml` on top |
 | `CONNECTOR_SHARING_OFFERS_PATH` | *(beside the governance file)* | the sharing-offer catalogue |
 | `CONNECTOR_SHARING_OFFERS_OVERLAY_NAME` | — | same, for offers |

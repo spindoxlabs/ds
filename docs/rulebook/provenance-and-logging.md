@@ -263,7 +263,7 @@ What `DSSC-PTO-03`, `-42`–`-46`, `-57`–`-63` ask for and what exists:
    | Client spans | every outbound `httpx` call, in all four Python services |
    | EDC spans | the Java agent's, including the DSP hop, named per participant via `OTEL_SERVICE_NAME` |
    | Correlation | `ds.dsp.agreement_id` on every span in scope |
-   | Not covered | database spans — see `libs/ds-obs/AGENTS.md` for why they are deferred rather than half-installed |
+   | Not covered | database spans. Deferred rather than half-installed: the instrumentation hooks engine *creation*, and `connector.db.engine` builds its engine at import, before any app factory runs — installing it yields a working import, no spans, and nothing saying so |
 
    **The two mechanisms are complementary, and it is worth knowing which does what.** The
    attribute is on ds's own spans; the EDCs' spans are the Java agent's and carry no ds

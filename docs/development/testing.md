@@ -40,7 +40,7 @@ services can be behind it**:
 | celine `dataset-api` | the real, participant-operated data plane. What a deployment runs |
 | `services/dataset-api-mock` | a stand-in, and the **reference implementation** of the PEP contract |
 
-`fixtures/seed.sh` puts the real one on `:30002` and moves the mock to `:30022`
+`services/dataset-api-mock/fixtures/seed.sh` puts the real one on `:30002` and moves the mock to `:30022`
 (`DATASET_API_MOCK_PORT`, a committed default). `ds-e2e` reads
 `CONNECTOR_DATASET_API_URL`, default `http://172.17.0.1:30002`.
 
@@ -82,7 +82,7 @@ the mock, so nothing compared them.
 The first two exist because of a gap worth naming: **every Python service builds its unit-test
 schema with `Base.metadata.create_all` on SQLite in memory.** So the migrations run in no unit
 test, and no model is ever exercised against PostgreSQL. A model changed without a revision
-keeps all 319 connector tests green and is found by a deployment. `db/engine.py`'s startup guard
+keeps all 319 connector tests green and is found by a deployment. `services/connector/src/connector/db/engine.py`'s startup guard
 does not catch it — it compares the recorded revision *stamp* against head, so a database that
 is at head and shaped wrong passes.
 

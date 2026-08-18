@@ -133,8 +133,8 @@ task --list             # every command
    └───────────────────────────────────┘         federated-catalog · portal
 ```
 
-Each unit has a page in [the docs](https://spindoxlabs.github.io/ds/services/connector/),
-and each directory an `AGENTS.md` describing its boundaries and constraints.
+Each unit has a page in [the docs](https://spindoxlabs.github.io/ds/services/connector/)
+describing what it does, its interfaces and its constraints.
 
 | | |
 |---|---|
@@ -160,9 +160,9 @@ and each directory an `AGENTS.md` describing its boundaries and constraints.
 | Deploying it | [Deployment](https://spindoxlabs.github.io/ds/deployment/) |
 | Shared file formats | [Schemas](https://spindoxlabs.github.io/ds/schemas/) |
 
-Concepts are explained on the documentation site. This README and the per-unit `AGENTS.md`
-files are entry points — what a unit is, how to run it, what constrains it — and link out
-rather than duplicate, so that each mechanism has a single description.
+Concepts are explained on the documentation site. This README and the per-unit `README.md`
+files are entry points — what a unit is and how to run it — and link out rather than
+duplicate, so that each mechanism has a single description.
 
 ---
 

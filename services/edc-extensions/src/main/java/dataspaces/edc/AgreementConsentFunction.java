@@ -54,8 +54,8 @@ import java.util.concurrent.ConcurrentHashMap;
  * one momentary outage destroy live agreements, and it would buy nothing while
  * it lasted: the dataset-api PEP asks the same question on every query and fails
  * closed on its own, so no rows move meanwhile. But never failing closed is
- * worse — root {@code AGENTS.md} requires a constraint function to deny on
- * error, and "the other enforcement point will catch it" stops being a reason
+ * worse — rulebook {@code CR-4} requires an undecidable constraint to deny,
+ * and "the other enforcement point will catch it" stops being a reason
  * once the outage is the steady state. A consent revoked during a sustained
  * outage would never be seen here at all.
  *
@@ -220,8 +220,8 @@ public class AgreementConsentFunction<C extends AgreementPolicyContext>
             return true;
         }
         // Sustained, not transient — or, at PRE_START, the first and only
-        // question we were going to ask. Root AGENTS.md: a constraint function
-        // must deny on error, and "the other enforcement point will catch it"
+        // question we were going to ask. Rulebook CR-4: an undecidable
+        // constraint denies, and "the other enforcement point will catch it"
         // stops being a reason once the outage is the steady state, which is
         // precisely when a revocation could have been issued and never seen.
         // Forget the agreement so a recovered connector starts from zero rather

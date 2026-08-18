@@ -51,7 +51,7 @@ They do not substitute for one another. A platform admin is **not** a data subje
 reach `/my-data`; a data subject with no Keycloak group cannot reach `/provider`. That is
 deliberate: consent belongs to the person, not to an administrator.
 
-Groups are expanded into capabilities through `src/lib/server/bundles.generated.ts`, which is
+Groups are expanded into capabilities through `services/portal/src/lib/server/bundles.generated.ts`, which is
 generated from [`libs/ds-auth`](libs/ds-auth.md)'s role-bundle table by
 `task auth:bundles:generate`. Do not hand-edit it — a test asserts it matches a fresh render.
 
@@ -116,7 +116,7 @@ dependencies in the image are `cytoscape` and `cytoscape-dagre`, for the lineage
 Conventions worth keeping:
 
 - upstream calls live in `+page.server.ts` and `src/lib/server/*`, never in a component;
-- route guards live in `src/lib/server/auth.ts`;
+- route guards live in `services/portal/src/lib/server/auth.ts`;
 - a `+server.ts` endpoint guards itself;
 - any new user-facing flow gets a Playwright journey.
 

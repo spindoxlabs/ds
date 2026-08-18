@@ -75,7 +75,7 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 | P-8a | The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold | **Enforced** |
 | P-8b | The revocation list is served signed, by the trust anchor, GZIP-encoded as StatusList2021 requires | **Enforced** |
 | P-8c | **The same rule applies to a credential's issuer.** A service verifying a user Verifiable Credential resolves the issuer's DID document and reads the key out of it — never a key it was handed or mounted — and refuses an issuer the dataspace trust list does not carry as **active** | **Enforced** — `ds_auth.did_web`, used by the connector and ds-provenance. It was a mounted `*.public.jwk.json` until `DID-17`, which made rotating the anchor's key a lockstep redeploy of every service holding a copy. Resolution proves *who signed*; the list proves the dataspace still stands behind them, and one without the other answers half the question |
-| P-9 | Every issued credential is allocated a distinct StatusList index | **Enforced** — a database allocator, not a scan of the register (migration `0011`, `tests/test_status_list_allocation.py`). Measured on the dev registry: 16 credentials, 16 distinct indices |
+| P-9 | Every issued credential is allocated a distinct StatusList index | **Enforced** — a database allocator, not a scan of the register (migration `0011`, `services/identity-registry/tests/test_status_list_allocation.py`). Measured on the dev registry: 16 credentials, 16 distinct indices |
 | P-10 | A credential's status bit is set **only** on revocation, never at issuance | **Enforced** — measured on the dev registry: the only set bits are the indices of the credentials whose status is `revoked` |
 | P-11 | Signature verification is never skipped, in any environment | **Enforced.** The EDC's demo identity fallback — which accepted a self-issued token without checking its signature and minted a `MembershipCredential` for the signer — **is deleted**, so there is no longer a switch to get wrong. `task secrets:check` fails on `DS_DEMO_IDENTITY_ENABLED` to stop it returning. Python services keep their `ProductionGuard` checks |
 
@@ -129,13 +129,13 @@ onboarding.
 
 | Step | State |
 |---|---|
-| A machine-readable projection of the rules on this page | **Done** — `seed/conformity.dev.yaml`, read by `services/conformity.py`. Which credentials, which agreement version, whether a DSP address is required, and `applies_to` so a rule can bind to a role. A *deployment's* file, not a baseline: admitting observers on different terms from providers is a normal dataspace |
+| A machine-readable projection of the rules on this page | **Done** — `services/identity-registry/seed/conformity.dev.yaml`, read by `services/identity-registry/src/identity_registry/services/conformity.py`. Which credentials, which agreement version, whether a DSP address is required, and `applies_to` so a rule can bind to a role. A *deployment's* file, not a baseline: admitting observers on different terms from providers is a normal dataspace |
 | A periodic check run by the trust anchor against every registered participant | **Done** — `GET /admin/conformity` and `ir-cli conformity check`, which **exits non-zero when anybody is non-conformant**. A check that always exits 0 is a check nothing watches. `task compliance:conformity` |
 | Suspension as a state distinct from deactivation, enforced through the StatusList bit | **Done** — two registers, `/status/1` (`revocation`) and `/status/2` (`suspension`), and `ir-cli org reinstate`. See `P-25` |
 
 **The assessment changes nothing.** Suspension is a decision, and a decision an automated check
 makes for you is a decision nobody made — what this produces is the evidence for it. The
-operator acts on that evidence with `ir-cli org suspend`; `services/conformity.py` still writes
+operator acts on that evidence with `ir-cli org suspend`; `services/identity-registry/src/identity_registry/services/conformity.py` still writes
 no state at all.
 
 **What made suspension distinct.** It was previously the same operation as revocation with a
@@ -181,6 +181,13 @@ see P-16 — so none of the three is blocked any longer.
 **Closed by §5:** `DSSC-TRF-02`, `-03`, `-04` — the projection, the periodic check, and
 suspension as a state distinct from deactivation.
 
-**Open:** `DSSC-IAM-06`, `-07`, `-29`, `DSSC-TRF-41`,
-`DSSC-SVD-30` — participant-controlled credential stores; deviation recorded in
-[Scope and deviations](scope-and-deviations.md) §3.
+**Closed by §3, and by the per-participant registry:** `DSSC-IAM-06`, `-07`, `-29`,
+`DSSC-TRF-41`, `DSSC-SVD-30` — participant-controlled credential stores. Each participant runs
+its own identity-registry instance holding its own key, proves control of it at enrolment
+(`P-20`), and answers presentation queries itself (`P-8`); issuing and sharing both use DCP's
+own protocols (`P-21`, `P-22`). What remains is narrower and declared, not open: the custody of
+**natural persons'** credentials — [Scope and deviations](scope-and-deviations.md) §3.1.2.
+
+This list read **Open** until 2026-08-17 while §3.1 of that page and §3 of this one both
+recorded the same rows as satisfied. `DSSC-SVD-30` was in the open list and claimed by neither,
+so it was assessed rather than reconciled.

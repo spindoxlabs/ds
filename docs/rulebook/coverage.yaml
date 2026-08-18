@@ -303,112 +303,123 @@ dispositions:
 
   DSSC-AUP-06:
     state: open
-    note: "recorded open by docs/rulebook/policies.md"
+    note: "Only the policy validity window is missing: `valid_from` / `valid_until` are declared in governance and reported by the `declared-not-enforced` check, and never emitted as an ODRL constraint (`A-9`). Closing it needs a date operand bound in the EDC, not a mapper change"
   DSSC-AUP-45:
     state: open
-    note: "recorded open by docs/rulebook/policies.md"
+    note: "The conflict-resolution and validation gate runs, but not over everything it claims: the two participant checks need a live identity-registry and so run outside CI, and CI validates one producer's governance rather than every producer's (`A-4`)"
   DSSC-AUP-46:
     state: open
-    note: "recorded open by docs/rulebook/policies.md"
+    note: "Same gap as `DSSC-AUP-45`: the required/optional distinction is checked, and the checking is not complete — the participant checks need a live registry and CI covers one producer's governance (`A-4`)"
   DSSC-DEX-38:
     state: open
-    note: "recorded open by docs/rulebook/data-exchange.md"
+    note: "Each ds service publishes its own OpenAPI document (`X-13`), and **the DSP surface publishes no machine-readable capability description** — the protocol version, bindings and endpoints a counterparty would read before interacting. Serving one is a capability decision rather than a defect fix"
   DSSC-DMO-08:
-    state: open
-    note: "recorded open by docs/rulebook/data-models.md"
+    state: out-of-scope
+    note: "Standardised discovery of data models *across data spaces*: not applicable while federation is out of scope — follows §1, the same exclusion that carries `DSSC-DEX-50`-`-52`. Also a `may` row"
   DSSC-DMO-17:
     state: open
-    note: "recorded open by docs/rulebook/data-models.md"
+    note: "No collaboration with a standards development organisation exists, and none can be code: this is an obligation on a deployment's governance authority, which the platform can neither discharge nor evidence"
   DSSC-DMO-19:
     state: open
-    note: "recorded open by docs/rulebook/data-models.md"
+    note: "Publishing, browsing and maintaining are served (§4); three functions are not. Editing through the surface is deliberately a commit and a sync (§5.1 applied consistently, `M-11`), and the two genuinely absent ones are **documenting non-standardised data at ingestion** and **version history** — the registry carries one `version` per entry, not a record of how a vocabulary changed"
   DSSC-DMO-23:
-    state: open
-    note: "recorded open by docs/rulebook/data-models.md"
+    state: covered
+    rules: [M-11]
+    note: "The retrieval API this row asks for exists: `GET /ns/{slug}` serves a registered model as JSON-LD and `/ns/vocabularies` indexes the registry. `M-11` is *Partly enforced* because of `DSSC-DMO-19`'s editing and history gaps, not because retrieval is missing; the row inherits that verdict, which is the honest reading"
   DSSC-DSO-11:
-    state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    state: covered
+    rules: [C-12]
+    note: "The `dcat-ap` check in `ds-governance validate` splits DCAT-AP's own obligation levels — mandatory properties error, recommended ones warn. It checks the governance **input**, not the emitted record, and both mandatory properties have an emitter fallback, so a file declaring neither still publishes a structurally valid document that says nothing. That residual is stated in `C-12` and in §5, which records this row as done"
   DSSC-DSO-12:
     state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    note: "`C-13` reads *Not enforced*: there is no machine-readable projection of this rulebook for a check to consult. One existed and was removed the same day as the rule-id citations, because the record it checked against was 79% unevidenced assertion. Closing it honestly needs the rulebook's statuses backed by evidence that runs — the same prerequisite as Participation §5"
   DSSC-DSO-14:
     state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    note: "Metadata versioning is not implemented. `governance.yaml` is versioned in git, which is version control of the *file*, not of an offering's metadata across the data product's lifetime — a consumer cannot ask what a description said when they negotiated. §5 puts it second and notes it needs a design decision first: version the offering, or snapshot it into the agreement"
   DSSC-DSO-15:
     state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    note: "Same gap as `DSSC-DSO-14`, and the same blocked design decision: there is no metadata version history at all, only git history of the file that declares it"
   DSSC-DSO-41:
-    state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    state: out-of-scope
+    note: "DCAT-AP-HVD binds only datasets the EU designates as high-value. Not applicable until a deployment designates one, and then it is that deployment's stricter metadata obligation — the same 'deferred to the deployment, not to nobody' pattern as the payload semantic models in §2"
   DSSC-IAM-06:
-    state: open
-    note: "recorded open by docs/rulebook/participation.md"
+    state: covered
+    rules: [P-6, P-7, P-8, P-21]
+    note: "Participant-controlled credential store: one identity-registry instance per participant, holding its own key. Closed 2026-08-17 — scope-and-deviations.md §3.1 and participation.md §3 both record it as satisfied and P-7 checks it at startup"
   DSSC-IAM-07:
-    state: open
-    note: "recorded open by docs/rulebook/participation.md"
+    state: covered
+    rules: [P-8, P-8a, P-21]
+    note: "Credential exchange across participants: DCP presentation queries, verifier resolved over did:web. Closed 2026-08-17 with DSSC-IAM-06"
   DSSC-IAM-29:
-    state: open
-    note: "recorded open by docs/rulebook/participation.md"
+    state: covered
+    rules: [P-6, P-7, P-20, P-21]
+    note: "Credential store per participant agent, under its own control. Closed 2026-08-17 with DSSC-IAM-06. One narrower deviation remains and is declared: a natural person is a data rights holder rather than a participant, holds no key, and their credential is held by the organisation that onboarded them — scope-and-deviations.md §3.1.2"
   DSSC-PTO-03:
     state: open
-    note: "Observability: **Not a scope decision — an unfilled gap.** Recorded in [Provenance and logging](provenance-and-logging.md) §5 with a minimum-viable close. Listed here so it is not mistaken for a declared exclusion"
+    note: "Observability: **not a scope decision — an unfilled gap**, and a narrowing one. Traces now span the services and the DSP hop, correlated by `ds.dsp.agreement_id`, and all five services serve `/metrics` (§5, steps 1-3). Step 4 is what is left: no collection or visualisation, no real-time monitoring, and SLIs derivable but not built. Listed here so it is not mistaken for a declared exclusion"
   DSSC-PTO-42:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Nothing states, let alone satisfies, horizontal (cross-sector) observability requirements — §5 records this pair as flatly absent, and the requirements themselves have not been written down for this platform"
   DSSC-PTO-43:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Same as `DSSC-PTO-42` for vertical (energy-sector) requirements: absent, and not yet stated"
   DSSC-PTO-44:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Security controls **for the observability data itself**: `/metrics` exposure is answered by the chart (default-deny, Prometheus namespace only) and nothing else is. There is no access control or retention rule for traces, and no collector to apply one in"
   DSSC-PTO-45:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Audit trail: partial. The compliance access log is materialised from `QueryExecuted` (`L-12`), which covers data access; the *observability* plane has no audit trail — who read a trace or a metric series is unrecorded"
   DSSC-PTO-46:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "No compliance documentation is produced for observability. `task compliance:evidence` emits DCAT-AP and ODRL evidence for governance, and there is no equivalent artifact describing what is monitored, retained or reported"
   DSSC-PTO-57:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "The row is the blueprint saying its event table is a starting point rather than a closed set. What is missing here is the *decision*: this rulebook fixes sixteen event types (`L-1`) and nowhere records which of the blueprint's remaining suggestions were considered and declined, so a reader cannot tell a deliberate omission from an oversight. Informative, so nothing demands it"
   DSSC-PTO-58:
-    state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    state: covered
+    pages: [provenance-and-logging]
+    note: "Structured, standardised data model — **closed for provenance and traceability**: PROV-O nodes and relations plus a verbatim `domain_events` row, served as JSON-LD. It appears in this page's *closed* list; it also appeared in its *open* list as part of the observability grouping, where what is genuinely unmodelled is metrics and traces. Recorded as covered for the data this platform actually stores; the observability half is `DSSC-PTO-42`-`-46`"
   DSSC-PTO-59:
-    state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    state: covered
+    pages: [provenance-and-logging]
+    note: "The Data Models building block's principles applied to provenance data — closed on the same footing as `DSSC-PTO-58`, and listed in this page's *closed* list. The observability telemetry half is tracked by `DSSC-PTO-42`-`-46` rather than here"
   DSSC-PTO-60:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Reuse of existing standards is done where data is stored (PROV-O) and **undecided where it is not**: the observability plane has no chosen standard because it has no model at all. The row cannot close while `DSSC-PTO-42`-`-46` are open"
   DSSC-PTO-61:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Extend-or-create is the same decision as `DSSC-PTO-60`, unmade for the same reason: nothing has reached the point of choosing between reusing an observability model and defining one"
   DSSC-PTO-62:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "The blueprint's own statement that no single semantic standard fits. What is missing is this rulebook's answer to it for telemetry — for provenance the answer is PROV-O and is recorded. Informative, so nothing demands it"
   DSSC-PTO-63:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "PROV-O **is** adopted, for provenance and traceability, and is the whole of the provenance service's model. PAV is not used, and the observability half aligns with no standard yet. The row stays open for that remainder rather than for the recommendation it names. Recommended, so nothing demands it"
   DSSC-PTO-79:
-    state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    state: covered
+    rules: [L-12]
+    note: "Mandatory provenance and traceability data can be accessed and presented on demand — this page's *open* list called it closed in the next sentence: defect `P1-4` is fixed and `L-12` records how the compliance access log is materialised from `QueryExecuted`. Corrected in the manifest 2026-08-17"
   DSSC-PTO-83:
     state: open
-    note: "recorded open by docs/rulebook/provenance-and-logging.md"
+    note: "Declared and **unmeasured**: no load test, no latency budget and no measurement of what the provenance write and the per-query authorize call cost the exchange. Nothing suggests a problem; nothing rules one out either, which is the gap"
   DSSC-PUB-03:
     state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    note: "Visibility is enforced at **negotiation, not at discovery** (`C-21`, *Partly enforced* and accepted as such on 2026-08-09): a participant outside an offering's audience can still see that the offering exists, and is refused when it tries to contract. What is missing is audience filtering in the catalogue response itself"
   DSSC-PUB-41:
-    state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    state: covered
+    rules: [C-7]
+    note: "`C-7` is *Enforced* and names this row in its own text: the shape lives in `ds.governance.dcat` and both catalogues this platform publishes emit it, with the federated index naming **each crawled source's** endpoint rather than its own. It had been carried open in the manifest while the rule claimed it; corrected 2026-08-17"
   DSSC-PUB-45:
     state: open
-    note: "recorded open by docs/rulebook/catalogue-and-metadata.md"
+    note: "A catalogue response **embeds** each entry's metadata rather than returning `dcat:record` identifiers for a consumer to dereference. `C-8` emits a `dcat:CatalogRecord` per entry, so the records exist; what is missing is the by-reference response shape this row asks for"
   DSSC-SVD-30:
-    state: open
-    note: "recorded open by docs/rulebook/participation.md"
+    state: covered
+    rules: [P-8, P-20, P-21, P-22]
+    note: "The credential store uses protocols for issuing and sharing: DCP's Credential Issuance Protocol for issuing — message bodies checked against the DCP repository's own JSON schemas, scope-and-deviations.md §3.1.1 — and DCP presentation queries for sharing. Assessed 2026-08-17; it had been carried in participation.md's open list while being claimed by neither page"
   DSSC-TRF-41:
-    state: open
-    note: "recorded open by docs/rulebook/participation.md"
+    state: covered
+    rules: [P-6, P-7, P-8, P-21]
+    note: "Credential store as part of the participant agent, used for issuing, storage, sharing and verification. Closed 2026-08-17 with DSSC-IAM-06"
 
   # ── Answered by the rulebook (149 rows) ───────────────────────────────
 

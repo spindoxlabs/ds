@@ -14,7 +14,6 @@ Built with SvelteKit, targeting the latest stable release. Mobile-first componen
 > published at **<https://spindoxlabs.github.io/ds/>** — start with
 > [the overview](https://spindoxlabs.github.io/ds/) and
 > [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/).
-> Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
 
@@ -34,7 +33,8 @@ The portal makes the dataspace accessible without direct API interaction. It pro
 
 Two independent axes decide what a person sees: **Keycloak groups** grant service
 permissions, **verifiable credentials** decide the person-facing roles. They are
-additive — one human can hold several at once. See `AGENTS.md` for the model.
+additive — one human can hold several at once. See [the portal's
+page](https://spindoxlabs.github.io/ds/services/portal/) for the model.
 
 ### Public
 
@@ -154,7 +154,7 @@ task run            # SvelteKit dev server on :30004
 task debug          # same, with the Node inspector on :30904
 task check          # svelte-check
 task lint           # eslint
-npm run build       # ALSO run this — see AGENTS.md
+npm run build       # ALSO run this: `check` does not enforce the server boundary
 task test:ui:setup  # once per machine — installs the Playwright browser
 task test:ui        # UI journeys against a running stack
 ```

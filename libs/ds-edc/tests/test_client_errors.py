@@ -172,7 +172,12 @@ async def test_list_calls_send_a_json_ld_query_spec(edc_client, name):
 
 
 async def test_api_key_becomes_the_edc_management_header():
-    """EDC's own Management API key, and only here — see the unit's AGENTS.md."""
+    """EDC's own Management API key, and correct in this one place only.
+
+    Not the key that once fronted ds-connector's ``/internal/*``: that was the
+    same value spanning two trust boundaries, and it is now per-caller Keycloak
+    credentials. Do not reuse this one anywhere else.
+    """
     client = EdcManagementClient("http://edc.test", api_key="edc-key")
     assert client._http.headers["X-Api-Key"] == "edc-key"
     await client.close()

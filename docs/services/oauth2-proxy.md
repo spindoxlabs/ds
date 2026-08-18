@@ -47,7 +47,7 @@ All under `proxy_prefix = /oauth2`.
 | `/oauth2/sign_in` | Caddy's 401 handler, and the portal's own sign-in redirect |
 | `/oauth2/start` | the nginx `auth-signin` annotation |
 | `/oauth2/callback` | the browser, after Keycloak. Registered as the realm client's redirect URI |
-| `/oauth2/sign_out` | **Keycloak, as `post_logout_redirect_uri` — not the portal directly.** The portal sends the browser to the realm's `end_session` endpoint first and asks to be returned here, so both sessions end (`REV-04`, `portal/src/lib/server/signout.ts`). Reaching this path without the Keycloak hop clears the cookie and leaves the SSO session able to re-authenticate silently |
+| `/oauth2/sign_out` | **Keycloak, as `post_logout_redirect_uri` — not the portal directly.** The portal sends the browser to the realm's `end_session` endpoint first and asks to be returned here, so both sessions end (`REV-04`, `services/portal/src/lib/server/signout.ts`). Reaching this path without the Keycloak hop clears the cookie and leaves the SSO session able to re-authenticate silently |
 | `/ping` | Kubernetes liveness and readiness probes |
 
 ## What it puts on the request

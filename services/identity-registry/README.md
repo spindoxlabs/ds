@@ -10,7 +10,6 @@ DSSC alignment: BB02 (Identity & Attestation) — participant identity managemen
 > point: what runs, which endpoints exist, how to configure and start it. The
 > reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with [this service's page](https://spindoxlabs.github.io/ds/services/identity-registry/) and
 > [Participation and trust](https://spindoxlabs.github.io/ds/rulebook/participation/).
-> Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
 
@@ -136,7 +135,8 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 
 ## Internals
 
-The module-by-module walkthrough that used to sit here is in `AGENTS.md`, beside
+The module-by-module walkthrough that used to sit here is on [this service's
+page](https://spindoxlabs.github.io/ds/services/identity-registry/), beside
 the source it describes — it is a map for someone editing the code, not something
 an operator or integrator needs. The security model (trust tiers, key management,
 credential lifecycle, network posture) is published at

@@ -55,7 +55,7 @@ def test_the_unit_has_no_local_chart():
 
 
 def test_the_unit_has_no_local_data_or_config_directory():
-    """Root `AGENTS.md`: anything a process writes, downloads or caches goes under
+    """ADR-0008: anything a process writes, downloads or caches goes under
     `./data/<concern>/` at the repo root **and nowhere else**.
 
     This unit carried both a `data/` (untracked, `.gitignore`'s `data` rule

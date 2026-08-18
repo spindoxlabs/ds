@@ -265,7 +265,7 @@ def test_the_cache_is_not_inside_the_read_only_mount(compose_file, service):
 
 @pytest.mark.parametrize("compose_file,service", COMPOSE)
 def test_the_cache_lives_under_data(compose_file, service):
-    """Root `AGENTS.md`: fetched and generated material lives under `./data/`.
+    """ADR-0008: fetched and generated material lives under `./data/`.
 
     This shipped as `services/connector/governance-rec/vocab-cache`, which was wrong
     twice over: it put fetched state inside a directory of committed

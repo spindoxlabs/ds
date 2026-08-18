@@ -84,7 +84,7 @@ The chain, end to end:
 | Step | Where |
 |---|---|
 | A dataset declares a model | `governance.yaml` → `dcat.conforms_to` |
-| ds reads it | `DcatSpec` in `libs/governance/models.py` |
+| ds reads it | `DcatSpec` in `libs/governance/src/ds/governance/models.py` |
 | It is checked | the `semantic-model` validation check — `M-7` above |
 | It reaches the DSP catalogue | `dct:conformsTo` in the EDC asset properties |
 | It reaches the audit evidence | `dct:conformsTo` on the DCAT dataset node |

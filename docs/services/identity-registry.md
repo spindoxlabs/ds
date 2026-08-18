@@ -26,7 +26,7 @@ about that is wrong. It is not the authority on *who a participant is* — that 
 participant's own key, held by its own instance.
 
 A `participant` mounts no registry, issuance or onboarding route at all, and this is checked
-at startup rather than asserted in documentation: `src/identity_registry/roles.py` classifies
+at startup rather than asserted in documentation: `services/identity-registry/src/identity_registry/roles.py` classifies
 every path twice — once by which router mounts it, once by an independent path table — and the
 service refuses to start if the two disagree. Adding a route without classifying it is a
 startup failure, which is the point.
@@ -156,7 +156,7 @@ not a local invention: `POST /issuer/credentials` is its Credential Request API,
 `GET /issuer/metadata` its Issuer Metadata API, `GET /issuer/requests/{id}` its Credential
 Request Status API, and `pre-authorized_code` is the claim the specification names for exactly
 this purpose. The message bodies are checked against the protocol's own JSON schemas
-(`tests/test_cip_conformance.py`), not against a reading of its prose.
+(`services/identity-registry/tests/test_cip_conformance.py`), not against a reading of its prose.
 
 **How an organisation finds this endpoint.** It is given the anchor's DID and nothing else. The
 anchor's DID document publishes an `IssuerService` entry whose `serviceEndpoint` is the base

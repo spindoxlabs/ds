@@ -66,8 +66,11 @@ own key. An organisation generates its own keypair, publishes its own DID docume
 control of it at enrolment; the anchor records the **public** half. Its STS and its credential
 service are its own.
 
-`DSSC-IAM-06`, `-07`, `-29` and `TRF-41` are satisfied. This section is kept rather than deleted
-because two narrower deviations remain, and because the history is the point — see below.
+`DSSC-IAM-06`, `-07`, `-29`, `TRF-41` and `DSSC-SVD-30` are satisfied, and `coverage.yaml`
+records them as covered with the rules that hold them (since 2026-08-17 — it had inherited an
+"open" reading from a stale list in [Participation and trust](participation.md)). This section is
+kept rather than deleted because two narrower deviations remain, and because the history is the
+point — see below.
 
 **What this deviation used to be, and why it is worth remembering.** It claimed twice as much as
 it delivered, twice:
@@ -96,7 +99,7 @@ unrecoverable loss **for that instance**. The blast radius is one participant, n
 a holder-initiated `CredentialRequestMessage` authenticated by a self-issued token and validated
 by resolving the requester's DID, then an asynchronous `CredentialMessage` pushed to the holder's
 Credential Service — and the message bodies are now checked against **the DCP repository's own
-JSON schemas** rather than against a reading of its prose (`tests/test_cip_conformance.py`). The
+JSON schemas** rather than against a reading of its prose (`services/identity-registry/tests/test_cip_conformance.py`). The
 anchor's DID document publishes its Issuer Service, so an organisation holding nothing but the
 anchor's DID can find where to enrol.
 
@@ -210,7 +213,7 @@ catalogue pages and `ds-e2e` both read `dcat:dataset` — in exchange for one ex
 trip per entry.
 
 **And DSP requires the inlining, which settles it** — checked 2026-08-09 against
-`eclipse-edc/DataspaceProtocol`. `specifications/catalog/catalog.protocol.md` states *"A
+`eclipse-edc/DataspaceProtocol`. its catalog protocol specification states *"A
 Catalog **MUST** have zero to many Datasets"*, and a DSP catalogue response is exactly what a
 counterparty fetches over the protocol. So for that surface `PUB-45`'s *"rather than"* cannot be
 satisfied without breaking a **MUST** in the protocol this platform is built on. The spec says

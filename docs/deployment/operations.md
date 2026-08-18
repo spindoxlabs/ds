@@ -269,13 +269,13 @@ Two things to arrange outside the charts:
 ## Adding a service chart
 
 1. `charts/ds-<svc>/` with a `Chart.yaml` depending on `ds-common` (`file://../ds-common`).
-2. A `templates/_env.tpl` mapping the service's settings prefix onto values.
+2. A `helm/charts/<chart>/templates/_env.tpl` mapping the service's settings prefix onto values.
 3. The standard object set: deployment, service, serviceaccount, secret, externalsecret,
    networkpolicy, pdb — and an Ingress **only if** [Exposure](exposure.md) lists it.
 4. A `global:` fallback block in the chart's own `values.yaml` so it renders standalone under
    `helm lint`; real values arrive from `helm/values.yaml` via helmfile.
 5. A release entry in `helmfile.yaml.gotmpl`, participant-scoped, needing the authority registry.
-6. Update this section and the checklist in `helm/AGENTS.md`.
+6. Update this section, and [Exposure](exposure.md) if the unit gets a public path.
 
 All boilerplate belongs in `ds-common` — naming, labels, image composition, security contexts,
 the `DS_ENV` injection, secret-mode switching, database URL assembly, ingress TLS, probes,

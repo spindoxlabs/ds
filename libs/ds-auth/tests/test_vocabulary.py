@@ -179,7 +179,7 @@ def _held_in_dev() -> set[str]:
 
     Both are real and they differ in latency and scope — a realm group is
     deployment-wide and applied only at first startup; an org group is scoped to
-    one owner and applied live (`services/keycloak/AGENTS.md`). A seat provisioned
+    one owner and applied live (`docs/services/keycloak.md`). A seat provisioned
     by either one counts as held.
     """
     held = {

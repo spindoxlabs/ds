@@ -11,7 +11,6 @@ URL: `http://portal.dataspaces.localhost/api/connector/`
 > matrix is published at **<https://spindoxlabs.github.io/ds/>** — start with
 > [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) and
 > [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/).
-> Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
 

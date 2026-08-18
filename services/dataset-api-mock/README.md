@@ -10,7 +10,7 @@ decides which rows actually leave.
 
 
 > Concepts are published at **<https://spindoxlabs.github.io/ds/>** — see [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) for the consent rules, and [the connector](https://spindoxlabs.github.io/ds/services/connector/) for subject identity and the `/internal/*` contract this mock implements. This README covers the
-> local surface only. Working on the code? Read `AGENTS.md` in this directory.
+> local surface only.
 
 ## Run
 
@@ -71,5 +71,5 @@ Environment variables use the `DATASET_API_` prefix.
 
 ## See also
 
-- [`AGENTS.md`](AGENTS.md) — enforcement chain, adding datasets, integration points
+- [dataset-api-mock](https://spindoxlabs.github.io/ds/services/dataset-api-mock/) — the enforcement chain and the `/internal/*` contract
 - [Consent & Sovereignty](../../docs/consent-and-sovereignty.md) — the purpose chain and enforcement matrix

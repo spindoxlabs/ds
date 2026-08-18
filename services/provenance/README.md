@@ -17,7 +17,6 @@ Consumers of the API can reconstruct the full lineage of any data product: who g
 > point: what runs, which endpoints exist, how to configure and start it. The
 > reasoning is published at **<https://spindoxlabs.github.io/ds/>** — start with
 > [Provenance and logging](https://spindoxlabs.github.io/ds/rulebook/provenance-and-logging/).
-> Working on the code? Read `AGENTS.md` in this directory first.
 
 ---
 

@@ -67,7 +67,7 @@ trustAnchor:
 # on the classpath**, so "run migrations out-of-band" means applying those same
 # resources yourself, with whatever tool the deployment uses.
 #
-# The contract (helm/AGENTS.md) prefers false. It is left configurable and
+# The security contract prefers false. It is left configurable and
 # defaults to true here BECAUSE each EDC connects as a least-privilege role that
 # owns ONLY its own database (docs/cnpg-cluster.example.yaml) — the real risk the
 # contract flags is superuser DDL, which this avoids.

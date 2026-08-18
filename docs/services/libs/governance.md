@@ -121,7 +121,7 @@ The last condition also attaches an `odrl:obtainConsent` duty.
 
 ## Purposes are a taxonomy, not a list
 
-The ODRL profile (`profiles/energy.yaml` by default) declares the purpose vocabulary: a slug, a
+The ODRL profile (`libs/governance/src/ds/governance/profiles/energy.yaml` by default) declares the purpose vocabulary: a slug, a
 label, a definition, an optional `broader` parent, and an optional DPV alignment.
 
 The bundled energy profile has nine concepts, five of them roots:

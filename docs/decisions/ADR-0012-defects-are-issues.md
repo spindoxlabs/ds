@@ -33,7 +33,7 @@ mapped to one plan; a themed plan cited dozens of rows and drew from the ledger 
 ## Decision
 
 **Defects are issues, in the project's issue tracker.** Nothing models them as a file —
-not this repository, and not the companion (ADR-0002).
+not this repository, and not the store (ADR-0002).
 
 The ledger is retired. Its content goes three ways:
 
@@ -41,7 +41,7 @@ The ledger is retired. Its content goes three ways:
 |---|---|
 | A row still open | an issue |
 | A row that violates a rulebook rule | an issue **and** the rulebook — `coverage.yaml` `open`, or the rule reading *Not enforced*. The issue is the work; the rulebook row is the measurement (ADR-0001) |
-| A lesson — "the wrong turn, recorded because the next reader will take it too" | the companion's knowledge |
+| A lesson — "the wrong turn, recorded because the next reader will take it too" | the store's knowledge |
 | A closed row, and the session journal | deleted. An issue that is closed is closed |
 
 A plan cites the issues it closes; its work record names which ones a phase actually

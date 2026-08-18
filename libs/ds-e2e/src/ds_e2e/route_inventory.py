@@ -138,8 +138,8 @@ def token_scopes(access_token: str) -> frozenset[str]:
     with it — it is asking *what did the realm actually grant this client*, so
     that the wrong-scope battery can tell a route the client legitimately holds
     from one it must be refused. Reading the claim is the only way to ask the
-    realm rather than a comment; `libs/ds-e2e/AGENTS.md` recorded the hardcoded
-    answer as wrong.
+    realm rather than a comment: the hardcoded answer that preceded it drifted
+    from what the realm granted, and nothing said so.
 
     An unreadable token yields an empty set, which is the safe direction: no
     route is excused, so the battery over-probes rather than under-probes.

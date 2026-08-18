@@ -36,7 +36,7 @@ forwarded by the connector.
 and edges the event implies, in a single transaction with the stored payload. Seven PROV-O
 relations are produced across all sixteen: `wasGeneratedBy`, `wasAttributedTo`,
 `wasDerivedFrom`, `wasAssociatedWith`, `used`, `invalidated`, `actedOnBehalfOf`.
-`tests/test_relation_vocabulary.py` sweeps the materialisers and fails on any term the
+`services/provenance/tests/test_relation_vocabulary.py` sweeps the materialisers and fails on any term the
 relations schema or the JSON-LD context does not also carry.
 
 **Answers three kinds of question.**

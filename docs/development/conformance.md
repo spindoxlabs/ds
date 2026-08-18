@@ -166,8 +166,9 @@ marker, or the manifest — the same discipline
   decorator is invisible. A test file that will not parse is *reported* rather
   than skipped — an earlier version swallowed the error and returned nothing,
   which read identically to "this file evidences no rule".
-- **`services/dataset-api-mock` is deliberately not evidence.** The root guide
-  excludes it from assessments: it is a stand-in, not a deployed component. This
+- **`services/dataset-api-mock` is deliberately not evidence**, and this page is
+  where that exclusion is recorded: it is a stand-in, not a deployed component,
+  and the real data plane is the celine `dataset-api`. This
   is why `X-8` — *a query result is bounded* — reads `unevidenced`: it is
   enforced by the celine `dataset-api`, which lives outside this repository. The
   report says so rather than borrowing the mock's tests to look complete.

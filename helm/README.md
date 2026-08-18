@@ -17,8 +17,6 @@ site** and lives in [`docs/deployment/`](../docs/deployment/):
 
 In this folder:
 
-- **Security contract & agent guide:** [`AGENTS.md`](./AGENTS.md)
-- **Design & rationale:** [`AGENTS.md`](./AGENTS.md) — same file; it is self-contained
 - **CNPG reference manifest:** [`docs/cnpg-cluster.example.yaml`](./docs/cnpg-cluster.example.yaml)
 
 ## What deploys
@@ -42,7 +40,7 @@ excluded.
 > is no longer an OIDC client, so without it the human-facing host has no login
 > in front of it and the identity headers it reads are client-controlled. The full `helmfile.yaml.gotmpl` composes an authority plus any
 > number of participants and renders end-to-end through SOPS. Remaining work is
-> hardening and CI gates — see the checklist in [`AGENTS.md`](./AGENTS.md).
+> hardening and CI gates.
 
 ## Install
 
@@ -95,8 +93,8 @@ reference: [Secrets](../docs/deployment/secrets.md).
   dropped, read-only root filesystem, seccomp `RuntimeDefault`.
 - Default-deny NetworkPolicies; only the ingress controller and named peers get
   through. `/metrics` reachable only from the Prometheus namespace.
-- Public surface is minimal and path-scoped — see [`AGENTS.md`](./AGENTS.md)
-  §Exposure and [Exposure and network policy](../docs/deployment/exposure.md).
+- Public surface is minimal and path-scoped — see
+  [Exposure and network policy](../docs/deployment/exposure.md).
 
 ## Local validation
 

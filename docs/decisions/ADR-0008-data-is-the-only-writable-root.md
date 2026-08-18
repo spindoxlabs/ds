@@ -7,7 +7,8 @@
 ## Context
 
 Generated, fetched and cached material was accumulating beside the thing that produced it
-— `services/connector/governance-rec/vocab-cache` being the case that forced the decision.
+— a `vocab-cache` written inside `services/connector/governance-rec/` being the case
+that forced the decision.
 Two problems, and the second is the one that compounds:
 
 1. It mixed fetched state into a directory of committed configuration, where a `git status`

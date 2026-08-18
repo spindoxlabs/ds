@@ -70,7 +70,7 @@ consumer data plane ──HTTP + EDR bearer──▶ provider data plane (partic
 
 | # | Rule | Status |
 |---|---|---|
-| X-8 | A query result is bounded. A provider may cap `limit` and must not be obliged to return an unbounded set | **Enforced** by the dataset API |
+| X-8 | A query result is bounded. A provider may cap `limit` and must not be obliged to return an unbounded set | **Declared** — enforced by the data plane, which is the celine `dataset-api` and lives outside this repository. Nothing here can evidence it: `services/dataset-api-mock` is a stand-in and deliberately not evidence (`docs/development/conformance.md`), so borrowing its tests would convert an honest gap into a false green. A deployment's own data plane owes this check |
 | X-9 | The query surface is dataset-scoped: a query naming a dataset the agreement does not cover is refused | **Enforced, untested** — and the dataset is currently selected by plain substring match against the SQL, so a comment or alias containing a dataset key selects it (defect P3-5 cluster) |
 
 ## 4. Quality of service

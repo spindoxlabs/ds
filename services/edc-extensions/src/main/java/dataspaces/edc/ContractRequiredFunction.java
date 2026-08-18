@@ -16,8 +16,8 @@ import org.eclipse.edc.spi.monitor.Monitor;
  * was that nothing looked. {@code ds:contractRequired neq true},
  * {@code ds:contractRequired eq "yes"} and {@code ds:contractRequired gt 5} all
  * passed identically, so a policy author's typo produced a constraint that could
- * never fail and said nothing about it. Root {@code AGENTS.md}: a constraint
- * function must deny on error.
+ * never fail and said nothing about it. Rulebook {@code CR-4}: an undecidable
+ * constraint is a denial, never a permission.
  *
  * <p>What it now checks:
  *

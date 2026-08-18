@@ -8,8 +8,7 @@
 # Secrets do NOT live here — see secrets.example.yaml → secrets.sops.yaml.
 #
 # Anything absent from this file has a safe default inside the charts.
-# See helm/AGENTS.md for the design and the security contract, and
-# docs/deployment/ for the operator documentation — prerequisites, the full
+# See docs/deployment/ for the operator documentation — prerequisites, the full
 # key-by-key reference for this file, secrets, exposure and day-2 ops.
 # ==============================================================================
 

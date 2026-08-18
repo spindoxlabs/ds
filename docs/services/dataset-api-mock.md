@@ -150,7 +150,7 @@ the fixture test checks against, which is stronger than a shared constant becaus
 file the connector actually reads.
 
 `direct_user_match` is the exception, and imported from `ds.governance` for a reason that does
-not generalise: `celine-utils/schema/governance.schema.json` names it, and it is what the
+not generalise: the `governance.schema.json` that celine-utils defines names it, and it is what the
 legacy `user_filter_column` spelling migrates to on both sides — so it is part of the shape
 rather than a handler choice.
 
@@ -202,11 +202,11 @@ re-identifies the subject to whoever later holds them.
 Resolving a member to their meters needs two registries the real data plane has behind it and
 a stand-in does not, so `REC_MEMBERS` collapses both hops into one fixture — the
 identity-registry's DID↔username bridge and the REC registry's member↔device map. Its members
-and sensor ids are `fixtures/ds_e2e_rec.yaml`'s, so a query answers the same whichever backend
+and sensor ids are `services/dataset-api-mock/fixtures/ds_e2e_rec.yaml`'s, so a query answers the same whichever backend
 holds `:30002`.
 
 `fixtures/` is not read by the mock at all — it seeds the **real** dataset-api and REC
-registry stack for end-to-end runs. `fixtures/seed.sh` brings that stack up, creates a
+registry stack for end-to-end runs. `services/dataset-api-mock/fixtures/seed.sh` brings that stack up, creates a
 physical table, imports a catalogue entry and a community fixture, and deliberately includes
 one meter that belongs to nobody as a negative control for the row filter. The mock's own
 fixture carries the same unowned meter, for the same reason.

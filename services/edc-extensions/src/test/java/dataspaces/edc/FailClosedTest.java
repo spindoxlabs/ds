@@ -27,9 +27,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 /**
  * What the policy layer does when a dependency will not answer.
  *
- * <p>Root {@code AGENTS.md}: <i>a constraint function must deny on error;
- * returning true when an input is missing or a call fails is the defect class
- * this codebase has the most of.</i> Two paths here contradicted it, each with a
+ * <p>Rulebook {@code CR-4}: <i>an undecidable constraint — an unreachable
+ * evaluation endpoint, a missing attribute, an unbound operand — is a denial,
+ * never a permission.</i> Returning true when an input is missing or a call
+ * fails is the defect class this codebase has the most of. Two paths here contradicted it, each with a
  * reasoned defence in the source and neither recorded as a deviation — and they
  * composed into one chain:
  *

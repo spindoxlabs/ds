@@ -6,7 +6,7 @@
 ## Context
 
 Adopting an agent harness normally brings a traceability stack with it: a
-`docs/specifications/` directory declaring `REQ-####` requirements, a `@verifies REQ-####`
+a specifications directory under `docs/` declaring `REQ-####` requirements, a `@verifies REQ-####`
 tag on the tests, and a trace matrix generated from the two. The rules that enforce it —
 every requirement traced, every requirement verified, no stale entries — are the core of
 what such a harness checks.
@@ -24,7 +24,7 @@ been run at:
 | the measurement | `libs/ds-conformance` — reads files only; same commit, same answer, any machine |
 
 Running an imported checker against this repository reports every one of its traceability
-requirements as *not applicable*: no `docs/specifications/`, no trace matrix. The
+requirements as *not applicable*: no specifications directory, no trace matrix. The
 temptation is to read that as a gap and close it.
 
 It is not a gap. Closing it would mean a **fourth identifier namespace** beside the
@@ -37,7 +37,7 @@ and its own answer when the two matrices disagree.
 **Traceability is delegated to the rulebook and `ds-conformance`.** Specifically:
 
 - No trace matrix is generated. `docs/rulebook/status.md` is the trace.
-- `docs/specifications/` is not created. `docs/blueprints/` is the requirement source.
+- No specifications directory is created. `docs/blueprints/` is the requirement source.
 - No `@verifies` tag is introduced. Evidence is declared with the existing markers.
 - No `REQ-####` namespace is allocated.
 - "Is this done?" is answered by running `task rulebook:summary`, never by reading a
