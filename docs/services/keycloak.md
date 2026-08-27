@@ -187,7 +187,14 @@ its own client id.
 
 ## Dev users
 
-All passwords equal the username. Realm `dataspaces`.
+All passwords equal the username. Realm `dataspaces`. The portal is at
+<http://portal.dataspaces.localhost>; [Signing in](../development/running-the-stack.md#signing-in)
+covers which seat to reach for.
+
+`Authority` below is a *permission* statement, not a list of screens. A seat's Keycloak groups
+and its verifiable credentials are two independent axes, and neither substitutes for the other:
+`ds-member` plus a credential is what makes a data subject, which is why an operator seat —
+`ds-admin` included — cannot open a consent screen.
 
 | User | Authority | Exercises |
 |---|---|---|
@@ -199,8 +206,18 @@ All passwords equal the username. Realm `dataspaces`.
 | `gridops@example.test` | `ds-participant-admin` **org-scoped only** | that a cross-owner write is refused |
 | `onboarding@example.test` | `ds-onboarding-operator`, realm-scoped | reviewing organisation applications without holding admin |
 | `viewer@example.test` | `ds-participant-viewer` **org-scoped only** | that a read-only seat cannot write |
+| `legacy@example.test` | `legacy-provider-admin` — **not a bundle**; `ds-participant-admin` only where an alias map translates it | that a foreign IdP's group name is translated, and that the translation is bounded |
 
 Every bundle the realm declares as a group is held by one of these, and
 `libs/ds-auth/tests/test_vocabulary.py` fails if that stops being true. A bundle
 with no holder is a seat nobody sits in: it is expanded, unit-tested and never
 exercised against a running realm, and nothing fails to say so.
+
+`legacy@example.test` is the one seat that is not about the bundle table. Its group is
+deliberately foreign-looking, is not ds vocabulary, and expands to nothing on its own — it
+carries authority only where a deployment's [Layer B](libs/ds-auth.md#the-role-bundle-table)
+alias map translates it, which dev sets on the connector and the identity registry (`*_OIDC_GROUP_ALIASES` in `.env.local`)
+and deliberately nowhere else. That makes it an assertion about the wiring rather than about
+the vocabulary, and `ds-e2e --flow user-authority` pairs it with its bound: the translated seat
+must still be refused what `ds-participant-admin` does not contain, because a translation that
+granted more than the bundle would be a permission table living in deployment config.

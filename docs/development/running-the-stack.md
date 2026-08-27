@@ -79,6 +79,49 @@ empty.
 The provider and consumer compose files declare the `dataspaces` network as **external**, so
 `infra:start` must run first and the root `down` is what removes it.
 
+## Signing in
+
+The way in is the portal: **<http://portal.dataspaces.localhost>**.
+
+Navigating *is* the sign-in. Caddy answers an unauthenticated request with a redirect to
+oauth2-proxy, which hands off to the Keycloak `dataspaces` realm; the portal renders nothing
+until you come back with a session. The realm uses identity-first login, so the email and the
+password are two separate pages.
+
+!!! warning "Not `localhost:30004`"
+    The port in [Single-service modes](#single-service-modes) is the portal's own listener.
+    Reached directly it bypasses the auth wall and the `/api/*` proxy, so there is no session
+    to render from and the links that carry that prefix do not resolve. Use the Caddy host for
+    anything you intend to look at.
+
+Every dev password equals its username; the seeded seats and what each one exists to prove are
+in [the realm reference](../services/keycloak.md#dev-users).
+
+Which seat to pick depends on what you want to see, because **two independent axes** decide
+what the portal renders, and neither substitutes for the other:
+
+- **Keycloak groups** answer *may this operator act?* — `admin`, `provider`, `onboarding`,
+  `viewer`, `gridops` and `legacy` carry these.
+- **Verifiable credentials**, resolved per session against the identity registry by email,
+  answer *is this person a data subject or a consumer?* — `subject`, `consumer` and `dual`
+  carry these.
+
+So `admin@example.test` is a platform administrator and still cannot open `/my-data`: consent
+belongs to the person, not to an administrator. `subject@example.test` cannot open `/provider`.
+Seeing the whole surface means signing in as several seats in turn — oauth2-proxy holds the
+session cookie, so a second browser profile is the quickest way to hold two at once.
+[The portal's own page](../services/portal.md) maps every route to the seat that reaches it.
+
+A tour that follows one dataset end to end: `provider@example.test` publishes and inspects
+assets, `subject@example.test` sees the resulting ask land in `/consent`,
+`consumer@example.test` negotiates for it from `/consumer`, and `admin@example.test` watches
+the whole thing from the operator console.
+
+The credentials the second axis needs are delivered by `identity:users`, the last step of
+[Startup order](#startup-order). A seat that should hold one but is refused `/my-data` or
+`/consumer` is the symptom of that step having run early or failed; re-running it repairs the
+delivery.
+
 ## Destructive operations
 
 !!! danger "`docker:stop`, `dev:stop` and both `restart` tasks delete all database state"

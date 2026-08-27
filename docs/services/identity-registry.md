@@ -190,7 +190,7 @@ This is the part most easily misread. The API has five tiers and they are not in
 | Issuer | a self-issued JWT proving control of the client's **own** DID, carrying a `pre-authorized_code` | `POST /issuer/credentials`, `GET /issuer/requests/{id}` |
 | STS | the participant's own STS client secret, PBKDF2-verified | `POST /sts/{did}/token` |
 | DCP | a self-issued JWT signed by the requested DID's registered key | `POST /credentials/{did}/presentations/query` |
-| Internal | OIDC scope (`identity-registry.read`, `.resolve`, `.membership.read`, `.credentials.read`) | `/users/*`, `/memberships/check`, `/credentials/check`, `/owners/resolve`, participant reads |
+| Internal | OIDC scope (`identity-registry.read`, `.resolve`, `.membership.read`, `.credentials.read`, `.organizations.read`, `.agreements.read`) | `/users/*`, `/memberships/check`, `/credentials/check`, `/owners/resolve`, `/agreements/current`, participant reads |
 | Admin | OIDC scope, narrow grant preferred over `.admin` | `/admin/*` |
 
 The admin tier is deliberately split into eight narrow permissions
@@ -198,6 +198,13 @@ The admin tier is deliberately split into eight narrow permissions
 `memberships.write`, `agreements.read`, `keycloak.sync`) rather than one. An onboarding
 operator can verify an application and issue a credential without being able to enumerate an
 organisation's roster or register a participant.
+
+**A guard names the operation, not the tier it grew up in.** `GET /owners/resolve` and
+`GET /agreements/current` are internal reads, so both accept `identity-registry.read`; both
+*also* accept the narrow grant that describes what they do — `organizations.read` for the
+first, `agreements.read` for the second. Until 2026-08-27 neither did, which meant a service
+holding exactly the grant its realm entry named for the operation was refused it, and the
+only way to admit it was to hand it the broad read as well.
 
 **Enumerating and checking are different disclosures.** `/admin/memberships` and
 `/admin/credentials` list what a person has and stay on `.admin`; `/memberships/check` and
