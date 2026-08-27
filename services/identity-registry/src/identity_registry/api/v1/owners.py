@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...db.models import Owner
 from ...dependencies import (
     get_db,
-    require_admin_or_read_scope,
     require_org_read,
     require_org_write,
+    require_owner_resolve,
 )
 from ...schemas.requests import CreateOwnerRequest, UpdateOwnerRequest
 from ...schemas.responses import OwnerResponse
@@ -175,11 +175,21 @@ async def delete_owner(
 async def resolve_owner(
     alias: str = Query(...),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_or_read_scope),
+    _claims: dict = Depends(require_owner_resolve),
 ):
     # The same id-then-alias fallback the onboarding service resolves by. It
     # was inlined here, so a change to how an alias matches would have had to
     # be made in two places to hold.
+    #
+    # The guard used to be `require_admin_or_read_scope`, which refused the
+    # caller this route was written for: `svc-ds-onboarding` holds
+    # `identity-registry.organizations.read` — annotated in `clients.yaml` as
+    # "resolve the bound community's organisation at boot" — and deliberately
+    # holds neither `admin` nor `read`. So the realm entry named the operation,
+    # the endpoint implemented it, and the guard refused it; the onboarding
+    # service fell back to `GET /admin/owners/{alias}`, which matches on
+    # `Owner.id` and 404s on an alias — read on that side as *no such
+    # organisation*, a startup-refusing error for a correct deployment.
     owner = await ops_resolve_owner(db, alias)
 
     if not owner:

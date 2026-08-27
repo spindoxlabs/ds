@@ -44,6 +44,7 @@ pair, the dataset API, both provenance instances and the identity registry.
 | `consent-purpose` | that a purpose outside the consented set is refused, and a narrower one inside it is allowed |
 | `consent-request` | the full consent lifecycle: request → pending → reject → re-request → approve → revoke, with provenance |
 | `org-onboarding` | the five onboarding gates end to end, up to a resolvable participant DID |
+| `onboarding-seam` | the seam an **external** onboarding service crosses to admit a person to a REC — owner resolution by alias, offer-scoped consent provisioning, offer-scoped disclosure — driven under `svc-ds-onboarding`'s own client and its own eight scopes, not the harness client's superset. Its neighbour by name only: `org-onboarding` admits an **organisation** to the dataspace |
 | `chain-community` / `chain-partner` / `chain-unbundling` | the disclosure chains — who may receive data as a processor, a partner, or an independent controller |
 | `uc1` / `uc2` / `uc3` | the three business use cases |
 | `semantic-model` | the payload model a producer publishes is the one every data plane states and serves a vocabulary for — read-only, and it names which backend answered |

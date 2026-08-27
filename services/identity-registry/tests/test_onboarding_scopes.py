@@ -236,3 +236,109 @@ async def test_keycloak_sync_cannot_issue_a_credential(client):
         json={"subject_id": "someone", "role": "DataSubject"},
     )
     assert r.status_code == 403
+
+
+# ── `GET /owners/resolve` — the operation the realm entry already names ───────
+#
+# `svc-ds-onboarding` is granted `identity-registry.organizations.read` with the
+# annotation *"Resolve the bound community's organisation at boot"*, and the route
+# that resolves an owner by alias refused it: the guard was
+# `require_admin_or_read_scope`, from before these grants existed. The caller fell
+# back to `GET /admin/owners/{alias}`, which matches on `Owner.id` and 404s on an
+# alias — indistinguishable, on that side, from *no such organisation*.
+#
+# The fix is on the endpoint, not on the client. Adding `identity-registry.read`
+# to the onboarding client would undo the split P6 made deliberately, because that
+# scope also reaches the participant registry and the presentation queries. So the
+# assertions come in pairs: the resolve works, and the participant registry stays
+# shut to the same token.
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [ORG_READ, "identity-registry.read", ADMIN])
+async def test_owner_resolve_by_id(client, scope):
+    """Three grants reach it, and each has a caller: the onboarding service by
+    `organizations.read`, the connector's owner-alias registry by `read`, and
+    `ir-cli` by `admin`."""
+    await client.post(
+        "/admin/owners",
+        headers=h(ADMIN),
+        json={"id": "example-org", "name": "Example", "aliases": ["example"]},
+    )
+    r = await client.get("/owners/resolve", params={"alias": "example-org"}, headers=h(scope))
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == "example-org"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [ORG_READ, "identity-registry.read", ADMIN])
+async def test_owner_resolve_by_alias(client, scope):
+    """The half `GET /admin/owners/{owner_id}` cannot do, and the reason this
+    route exists: an alias is not an id, and 404 on an alias reads as *no such
+    organisation* to a caller that only holds the alias."""
+    await client.post(
+        "/admin/owners",
+        headers=h(ADMIN),
+        json={"id": "example-org", "name": "Example", "aliases": ["example"]},
+    )
+    r = await client.get("/owners/resolve", params={"alias": "example"}, headers=h(scope))
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == "example-org"
+
+
+@pytest.mark.asyncio
+async def test_owner_resolve_is_not_a_participant_registry_read(client):
+    """The control for the two tests above.
+
+    A permission fix that quietly widens is the failure this one is avoiding:
+    resolving an organisation the caller was configured with is not authority to
+    enumerate who else is in the dataspace, nor to touch the DID surface.
+    """
+    for path in ("/admin/participants", "/admin/participants/check"):
+        r = await client.get(path, headers=h(ORG_READ))
+        assert r.status_code == 403, f"{path} answered {r.status_code}, not 403"
+
+    r = await client.post(
+        "/admin/dids",
+        headers=h(ORG_READ),
+        json={"did": "did:web:x.example.test", "did_type": "participant"},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_unrelated_scope_cannot_resolve_an_owner(client):
+    r = await client.get(
+        "/owners/resolve", params={"alias": "example"}, headers=h("some.other.scope")
+    )
+    assert r.status_code == 403
+
+
+# ── `GET /agreements/current` — the same reading, applied to the neighbour ────
+#
+# The connector's circle check. It carried `require_admin_or_read_scope` while the
+# two routes beside it carry `require_agreements_read`, so a grant whose whole
+# description is *"read service agreements and their acceptances"* could read the
+# agreement list and not the one a participant currently holds.
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("scope", [AGREEMENTS_READ, "identity-registry.read", ADMIN])
+async def test_agreements_current_accepts_the_agreements_grant(client, scope):
+    """404 (no such participant) proves the guard let the request through — a 403
+    would not distinguish *refused* from *no agreement*, and this route answers 404
+    for both of its own not-found cases by design."""
+    r = await client.get(
+        "/agreements/current",
+        params={"participant_did": "did:web:nobody.example.test"},
+        headers=h(scope),
+    )
+    assert r.status_code != 403, r.text
+
+
+@pytest.mark.asyncio
+async def test_agreements_current_refuses_an_unrelated_grant(client):
+    r = await client.get(
+        "/agreements/current",
+        params={"participant_did": "did:web:nobody.example.test"},
+        headers=h(ORG_READ),
+    )
+    assert r.status_code == 403

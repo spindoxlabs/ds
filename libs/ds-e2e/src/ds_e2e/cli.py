@@ -34,6 +34,7 @@ class FlowName(str, Enum):
     consent_purpose = "consent-purpose"
     consent_request = "consent-request"
     org_onboarding = "org-onboarding"
+    onboarding_seam = "onboarding-seam"
     uc1 = "uc1"
     uc2 = "uc2"
     uc3 = "uc3"

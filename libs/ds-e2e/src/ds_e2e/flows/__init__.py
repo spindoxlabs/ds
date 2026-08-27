@@ -15,6 +15,7 @@ from ds_e2e.flows.consent_withdrawal import ConsentWithdrawalFlow
 from ds_e2e.flows.dcp_trust import DcpTrustFlow
 from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
+from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
 from ds_e2e.flows.smoke import SmokeFlow
@@ -35,6 +36,12 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "consent-purpose": ConsentPurposeFlow,
     "consent-request": ConsentRequestFlow,
     "org-onboarding": OrgOnboardingFlow,
+    # Beside `org-onboarding` because the two are neighbours by name and by
+    # nothing else: that one admits an **organisation** to the dataspace, this one
+    # is the seam a service crosses to admit a **person** to a REC. Conflating
+    # them would be a large mistake made quietly, so they run next to each other
+    # where the difference is visible.
+    "onboarding-seam": OnboardingSeamFlow,
     "uc1": UC1Flow,
     "uc2": UC2Flow,
     "uc3": UC3Flow,
@@ -89,6 +96,10 @@ FAST_FLOWS: tuple[str, ...] = (
     "consent-purpose",
     "consent-request",
     "org-onboarding",
+    # Needs no EDC and no completed exchange — it asserts a control-plane seam.
+    # It does write a consent row and provenance events, and withdraws the row in
+    # `cleanup()`.
+    "onboarding-seam",
     *CHAIN_FLOWS,
 )
 

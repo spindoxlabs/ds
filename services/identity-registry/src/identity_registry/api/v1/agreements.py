@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Agreement, AgreementAcceptance, Owner, Participant
-from ...dependencies import get_db, require_admin_or_read_scope, require_agreements_read
+from ...dependencies import get_db, require_agreements_read
 from ...schemas.responses import (
     AgreementAcceptanceResponse,
     AgreementResponse,
@@ -67,9 +67,17 @@ async def list_agreements(
 async def get_current_agreement(
     participant_did: str = Query(..., description="DSP participant DID"),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_admin_or_read_scope),
+    _claims: dict = Depends(require_agreements_read),
 ):
     """The agreement a participant currently holds, and the capacity it declares.
+
+    Guarded like the two routes beside it rather than by
+    `require_admin_or_read_scope`, which it carried from before
+    `identity-registry.agreements.read` existed. A grant that names *read
+    service agreements and their acceptances* and cannot read the one agreement
+    a participant currently holds is a guard describing the wrong thing;
+    `identity-registry.read` and `admin` still satisfy it, so the connector's
+    circle check below is unaffected.
 
     This is the connector's circle check (`services/connector/.../circle.py`):
     it decides whether a requesting party is a **processor** of an offer's

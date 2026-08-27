@@ -6,6 +6,7 @@ with a recorder and assert the right event fires with the right fields.
 """
 from __future__ import annotations
 
+import pathlib
 from datetime import datetime, timezone
 
 import pytest
@@ -17,6 +18,7 @@ from connector.db.models import ConsentRequestORM
 from connector.dependencies import get_db, get_notifier, get_prov
 from connector.main import create_app
 from connector.services import consent_service
+from connector.services import consent_vocabulary
 from connector.services.consent_service import (
     WILDCARD_CONSUMER,
     consent_snapshot_hash,
@@ -337,6 +339,219 @@ async def test_disclosure_unknown_dataset_422(prov_client):
         headers=DISCLOSE,
         json={"dataset_id": "datasets.no.such", "recipient_ref": "dso-org"},
     )
+    assert r.status_code == 422
+
+
+# ── disclosure by offer ───────────────────────────────────────────────────────
+#
+# The caller `POST /admin/disclosure` was built for holds an **offer**, never a
+# dataset: an onboarding service's POD-list export selects the supply points whose
+# owners consented to one sharing offer, and `D-13` keeps dataset keys out of the
+# public projection deliberately, so it has no way to learn them. The route asked
+# for the one argument the caller could not produce.
+#
+# `vocab.datasets_for_offer` is the authoritative mapping and
+# `POST /consent/admin/shares` already expands an offer with it. These assert the
+# other side of the same seam takes the same argument for the same reason — and
+# that `L-2` is untouched: the hash stays dataset-scoped, one event per dataset.
+
+
+def _two_datasets_for_one_offer(tmp_path, monkeypatch) -> tuple[str, str]:
+    """A governance file where two datasets declare the same offer.
+
+    The shipped fixture resolves every offer to exactly one dataset, because one
+    dataset declares all three — which is precisely the state in which a caller
+    reading `datasets_for_offer(...)[0]` is correct and stays correct until it
+    isn't. Asserting the expansion needs a fixture where the list is genuinely a
+    list, and it has to be the **real** mapping rather than a stubbed one, or the
+    test proves the loop and not the wiring.
+    """
+    import yaml
+    from connector.config import get_settings
+
+    src = pathlib.Path(__file__).parent / "fixtures" / "governance.yaml"
+    doc = yaml.safe_load(src.read_text())
+    second = {
+        **doc["sources"]["datasets.silver.meters"],
+        "title": "Smart Meter Readings, second table (test)",
+    }
+    second["dataspace"] = {
+        **second["dataspace"],
+        "sharing_offers": ["test-flexibility"],
+        "asset": {"id": "datasets.silver.meters_daily"},
+    }
+    doc["sources"]["datasets.silver.meters_daily"] = second
+
+    path = tmp_path / "governance.yaml"
+    path.write_text(yaml.safe_dump(doc), encoding="utf-8")
+    monkeypatch.setattr(get_settings(), "governance_yaml_path", str(path))
+    consent_vocabulary.reset_caches()
+    return DATASET, "datasets.silver.meters_daily"
+
+
+@pytest.mark.rule("L-2")
+@pytest.mark.asyncio
+async def test_disclosure_by_offer_emits_one_event_per_dataset(
+    engine, prov_client, tmp_path, monkeypatch
+):
+    """One `DataDisclosed` per dataset the offer resolves to, each with that
+    dataset's own hash — so the route and the mapping cannot drift apart."""
+    client, fake = prov_client
+    first, second = _two_datasets_for_one_offer(tmp_path, monkeypatch)
+    await _seed(engine)  # a granted wildcard row on `first` only
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={
+            "offer_id": "test-flexibility",
+            "recipient_ref": "dso-org",
+            "purpose": ["FlexibilityResearch"],
+            "columns": ["pod_code", "consumption"],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["offer_id"] == "test-flexibility"
+    assert [d["dataset_id"] for d in body["disclosures"]] == list(
+        consent_vocabulary.datasets_for_offer("test-flexibility")
+    )
+    assert {first, second} == {d["dataset_id"] for d in body["disclosures"]}
+
+    disclosed = fake.of("data_disclosed")
+    assert len(disclosed) == 2
+    assert {e["dataset_id"] for e in disclosed} == {first, second}
+
+    # Each event carries the hash of *its own* dataset's consent state, and the
+    # two states differ here — one dataset has a granted row and the other has
+    # none — so a single hash reused across both would be visible.
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        for event in disclosed:
+            expected, count = await dataset_consent_snapshot(session, event["dataset_id"])
+            assert event["consent_snapshot_hash"] == expected
+            reported = next(
+                d for d in body["disclosures"] if d["dataset_id"] == event["dataset_id"]
+            )
+            assert reported["consent_snapshot_hash"] == expected
+            assert reported["granted_party_count"] == count
+    assert len({e["consent_snapshot_hash"] for e in disclosed}) == 2
+
+
+@pytest.mark.rule("L-2")
+@pytest.mark.asyncio
+async def test_disclosure_by_offer_does_not_flatten_to_one_dataset(
+    engine, prov_client, tmp_path, monkeypatch
+):
+    """The response shape follows the **argument**, not the resolution count.
+
+    A caller that reads `dataset_id` off an offer-scoped response would be reading
+    one of several and would work on today's fixture. There is no such key.
+    """
+    client, _ = prov_client
+    _two_datasets_for_one_offer(tmp_path, monkeypatch)
+    await _seed(engine)
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={"offer_id": "test-flexibility", "recipient_ref": "dso-org"},
+    )
+    assert r.status_code == 200, r.text
+    assert "dataset_id" not in r.json()
+    assert "consent_snapshot_hash" not in r.json()
+
+
+@pytest.mark.rule("L-4")
+@pytest.mark.asyncio
+async def test_disclosure_by_offer_keys_each_event_distinctly(
+    engine, prov_client, tmp_path, monkeypatch
+):
+    """The provenance service dedupes on `event_id`. Reusing the caller's id for
+    every dataset would record the first event and discard the rest as duplicates
+    — a 200 saying two, and one event in the graph."""
+    client, fake = prov_client
+    _two_datasets_for_one_offer(tmp_path, monkeypatch)
+    await _seed(engine)
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={
+            "offer_id": "test-flexibility",
+            "recipient_ref": "dso-org",
+            "event_id": "export-42",
+        },
+    )
+    assert r.status_code == 200, r.text
+    ids = [e["event_id"] for e in fake.of("data_disclosed")]
+    assert len(set(ids)) == 2, ids
+    assert all(i.startswith("export-42:") for i in ids), ids
+
+
+@pytest.mark.asyncio
+async def test_disclosure_by_offer_keeps_the_dataset_form_unchanged(engine, prov_client):
+    """An alternative argument, not a replacement: the `dataset_id` form still
+    answers with the three keys it always did."""
+    client, _ = prov_client
+    await _seed(engine)
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={"dataset_id": DATASET, "recipient_ref": "dso-org", "event_id": "export-7"},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["dataset_id"] == DATASET
+    assert len(body["consent_snapshot_hash"]) == 64
+    assert body["granted_party_count"] == 1
+    assert body["disclosures"][0]["dataset_id"] == DATASET
+    assert "offer_id" not in body
+
+
+@pytest.mark.asyncio
+async def test_disclosure_by_offer_accepts_a_contract_based_offer(engine, prov_client):
+    """Unlike `POST /consent/admin/shares`, which refuses one because provisioning
+    consent for a contractual basis manufactures a choice that does not exist. A
+    disclosure records a handover that happened, whatever authorised it."""
+    client, fake = prov_client
+    await _seed(engine)
+
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={"offer_id": "test-incentives", "recipient_ref": "dso-org"},
+    )
+    assert r.status_code == 200, r.text
+    assert len(fake.of("data_disclosed")) == 1
+
+
+@pytest.mark.asyncio
+async def test_disclosure_unknown_offer_422(prov_client):
+    client, _ = prov_client
+    r = await client.post(
+        "/admin/disclosure",
+        headers=DISCLOSE,
+        json={"offer_id": "no-such-offer", "recipient_ref": "dso-org"},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"recipient_ref": "dso-org"},
+        {"recipient_ref": "dso-org", "dataset_id": DATASET, "offer_id": "test-flexibility"},
+    ],
+    ids=["neither", "both"],
+)
+async def test_disclosure_needs_exactly_one_target(prov_client, body):
+    """Naming both is two answers to one question; naming neither discloses
+    nothing."""
+    client, _ = prov_client
+    r = await client.post("/admin/disclosure", headers=DISCLOSE, json=body)
     assert r.status_code == 422
 
 

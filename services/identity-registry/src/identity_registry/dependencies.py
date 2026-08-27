@@ -72,6 +72,27 @@ require_org_write = require_permission(
 require_org_promote = require_permission(
     "identity-registry.admin", "identity-registry.organizations.promote"
 )
+
+# `GET /owners/resolve` — the alias-aware read beside `GET /admin/owners/{id}`.
+#
+# Three grants reach it, and each is here for a caller that exists. `admin` by the
+# superset rule. `identity-registry.read` because the **connector** resolves an owner
+# alias on every governance scoping decision (`ds.governance.owners.HttpOwnersRegistry`,
+# wired in `connector/main.py`) and holds nothing narrower. `organizations.read` because
+# an onboarding service resolves its bound community's organisation at boot — the exact
+# words `services/keycloak/clients.yaml` uses to justify granting it — and P6 removed the
+# admin grant from that client on purpose.
+#
+# It is deliberately **not** `require_org_read`. That guard is the one the endpoint had
+# by habit inverted: admitting `organizations.read` while dropping `identity-registry.read`
+# would fix the onboarding caller by breaking the connector. Widening the *client* instead
+# is the other wrong move — `identity-registry.read` reaches the participant registry and
+# the presentation queries, and an onboarding funnel has no business in either.
+require_owner_resolve = require_permission(
+    "identity-registry.admin",
+    "identity-registry.read",
+    "identity-registry.organizations.read",
+)
 require_agreements_read = require_permission(
     "identity-registry.admin",
     "identity-registry.read",

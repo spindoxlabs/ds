@@ -4,7 +4,7 @@ from __future__ import annotations
 import inspect
 
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -143,9 +143,19 @@ class DisclosureRecord(BaseModel):
     a discloser could honestly provide: it is a fingerprint of *this* connector's
     consent DB at the moment of the handover, and a caller passing one would be
     asserting a consent state it cannot read.
+
+    **Name a dataset or an offer, and exactly one.** A dataset is what the record
+    is about, so `L-2`'s hash stays dataset-scoped either way. An offer is what
+    the *caller* has: an export scoped to one sharing offer selects the supply
+    points whose owners consented to that offer, and it never learns which
+    datasets back it — `D-13` keeps those keys out of the public projection, so
+    the mapping is not something a caller can be expected to hold. Naming both
+    would be two answers to one question, and naming neither is not a disclosure
+    of anything.
     """
 
-    dataset_id: str
+    dataset_id: str | None = None
+    offer_id: str | None = None
     recipient_ref: str
     purpose: list[str] = []
     columns: list[str] = []
@@ -154,6 +164,39 @@ class DisclosureRecord(BaseModel):
     disclosed_by: str | None = None
     agreement_ref: str | None = None
     event_id: str | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> "DisclosureRecord":
+        if bool(self.dataset_id) == bool(self.offer_id):
+            raise ValueError(
+                "Name exactly one of 'dataset_id' or 'offer_id'"
+            )
+        return self
+
+
+def _event_id_for(
+    caller_event_id: str | None, dataset_id: str, offer_scoped: bool
+) -> str | None:
+    """The idempotency key for one dataset's `DataDisclosed`.
+
+    The provenance service dedupes on ``event_id`` (`L-4`), so emitting several
+    events under one caller-supplied id records the first and discards the rest as
+    duplicates — an offer expanding to three datasets would leave one event and a
+    200 saying three. The offer form therefore derives a per-dataset key from the
+    caller's, which keeps a retry idempotent while keeping the datasets distinct.
+
+    Derived on the **offer form as such**, not on "more than one dataset resolved".
+    Keying on the count would silently change every key the day a second dataset
+    declares an offer, so a retry of a disclosure recorded before that day would
+    record a second copy.
+
+    A caller that supplies no id gets ``None`` and the provenance service derives
+    one from the event's own payload — which contains ``dataset_id``, so the
+    datasets already differ.
+    """
+    if caller_event_id is None:
+        return None
+    return f"{caller_event_id}:{dataset_id}" if offer_scoped else caller_event_id
 
 
 @router.post("/disclosure")
@@ -185,15 +228,64 @@ async def record_disclosure(
     through this route has not happened yet — the caller is about to hand the
     data over — so a 502 means no disclosure, and that is the answer that leaves
     no unrecorded handover.
+
+    **`offer_id` is an alternative argument, not a replacement.** It is here
+    because the caller this route was built for — an onboarding service exporting
+    a POD list — is scoped to one sharing offer and cannot reach a dataset key:
+    `D-13` keeps those out of the public projection deliberately, and
+    `libs/ds-e2e`'s `consent_purpose` flow fails when they leak. So the route
+    resolves the offer through ``vocab.datasets_for_offer`` — the same authority
+    ``POST /consent/admin/shares`` expands an offer with, on the other side of the
+    same seam — and emits **one `DataDisclosed` per resolved dataset**, each
+    carrying that dataset's own hash. `L-2` is untouched: the hash stays
+    dataset-scoped and stays recomputable.
+
+    **The expansion belongs here rather than in the caller.**
+    ``datasets_for_offer`` returns a list. Today's fixture resolves every offer to
+    a single dataset only because one dataset declares all three, so a caller that
+    read the first element would be correct until a second dataset declared the
+    same offer and then silently wrong — a disclosure recorded against one dataset
+    and made from two. Expanded server-side, that day produces a second event
+    instead of a caller bug.
+
+    **The response names the datasets, and that is not a `D-13` leak.** `D-13`
+    keeps dataset keys out of the *public projection* — the surface an onboarding
+    wizard renders before anyone has an identity. This is an authenticated
+    response to the party that just recorded the handover, and it is the same
+    reason the hash is returned: a discloser needs both to reconcile its own audit
+    trail against the events in the graph.
+
+    **A contract-based offer is accepted.** Unlike ``POST /consent/admin/shares``,
+    which refuses one because provisioning consent for it would manufacture a
+    choice that does not exist, a disclosure is a record of a handover that
+    happened whatever its legal basis. The snapshot over a dataset nobody has
+    consented to is the hash of an empty set, and that is a true statement about
+    the consent state, not a missing one.
+
+    **Partial emission is possible on the offer form and is reported.** The
+    datasets are emitted in turn and a failure part-way refuses the whole request
+    with a 502 naming what was already recorded. That leaves events describing a
+    handover the caller was then told not to make — an over-record — which is the
+    tolerable direction: the alternative is a handover with no record, which is
+    the one `L-1` positions this route to prevent.
     """
     try:
-        vocab.resolve_dataset(body.dataset_id)
+        if body.offer_id:
+            # Resolve the offer first, so an unknown offer id is a 422 about the
+            # offer rather than an empty dataset list read as "reaches nothing".
+            vocab.resolve_offer(body.offer_id)
+            dataset_ids = vocab.datasets_for_offer(body.offer_id)
+            if not dataset_ids:
+                raise HTTPException(
+                    422,
+                    f"Offer '{body.offer_id}' resolves to no dataset — nothing "
+                    "was disclosed under it and there is nothing to record",
+                )
+        else:
+            vocab.resolve_dataset(body.dataset_id)
+            dataset_ids = [body.dataset_id]
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
-
-    snapshot_hash, granted_count = await consent_service.dataset_consent_snapshot(
-        db, body.dataset_id
-    )
 
     if prov is None:
         raise HTTPException(
@@ -202,27 +294,50 @@ async def record_disclosure(
             "so must not proceed (rulebook L-1).",
         )
 
-    try:
-        await prov.data_disclosed(
-            dataset_id=body.dataset_id,
-            consent_snapshot_hash=snapshot_hash,
-            recipient_ref=body.recipient_ref,
-            purpose=body.purpose,
-            columns=body.columns,
-            subject_count=body.subject_count,
-            source_ref=body.source_ref,
-            disclosed_by=body.disclosed_by or settings.participant_id,
-            agreement_ref=body.agreement_ref,
-            event_id=body.event_id,
+    recorded: list[dict] = []
+    for dataset_id in dataset_ids:
+        snapshot_hash, granted_count = await consent_service.dataset_consent_snapshot(
+            db, dataset_id
         )
-    except Exception as exc:  # noqa: BLE001 — the reason is the caller's to see
-        raise HTTPException(
-            502, f"Disclosure not recorded, so it must not proceed: {exc}"
-        ) from exc
+        try:
+            await prov.data_disclosed(
+                dataset_id=dataset_id,
+                consent_snapshot_hash=snapshot_hash,
+                recipient_ref=body.recipient_ref,
+                purpose=body.purpose,
+                columns=body.columns,
+                subject_count=body.subject_count,
+                source_ref=body.source_ref,
+                disclosed_by=body.disclosed_by or settings.participant_id,
+                agreement_ref=body.agreement_ref,
+                event_id=_event_id_for(body.event_id, dataset_id, bool(body.offer_id)),
+            )
+        except Exception as exc:  # noqa: BLE001 — the reason is the caller's to see
+            raise HTTPException(
+                502,
+                f"Disclosure not recorded for '{dataset_id}', so it must not "
+                f"proceed: {exc}"
+                + (
+                    f" (already recorded: {[r['dataset_id'] for r in recorded]})"
+                    if recorded
+                    else ""
+                ),
+            ) from exc
+        recorded.append({
+            "dataset_id": dataset_id,
+            "consent_snapshot_hash": snapshot_hash,
+            "granted_party_count": granted_count,
+        })
 
-    return {
-        "status": "recorded",
-        "dataset_id": body.dataset_id,
-        "consent_snapshot_hash": snapshot_hash,
-        "granted_party_count": granted_count,
-    }
+    response: dict = {"status": "recorded", "disclosures": recorded}
+    if body.offer_id:
+        # Deliberately **not** also flattened to the single-dataset keys, even
+        # when the offer happens to resolve to one dataset. The response shape
+        # follows the argument, not the resolution count — otherwise a caller
+        # reading `dataset_id` works on today's fixture and silently reads one of
+        # several the day a second dataset declares the offer, which is the trap
+        # this route expands server-side to avoid.
+        response["offer_id"] = body.offer_id
+    else:
+        response.update(recorded[0])
+    return response

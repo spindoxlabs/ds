@@ -1272,6 +1272,11 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow org-onboarding
 
+  e2e:onboarding-seam:
+    desc: "E2E: the seam an external onboarding service calls, under its own client"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow onboarding-seam
+
   e2e:catalog:
     desc: "E2E: federated catalogue crawl freshness, discovery and search"
     cmds:

@@ -177,6 +177,19 @@ class E2ESettings(BaseSettings):
     low_priv_client_secret: str = Field(
         "svc-ds-federated-catalog", validation_alias="SVC_DS_FEDERATED_CATALOG_SECRET"
     )
+    # The onboarding service's own client, and the `onboarding-seam` flow uses it
+    # rather than `svc-ds-e2e` **on purpose**. The service is out of this
+    # repository, so what ds can assert about the seam is that the eight scopes
+    # `services/keycloak/clients.yaml` grants this client are sufficient for the
+    # calls that seam makes — which is only an assertion if the flow authenticates
+    # as the client and not as a harness identity that holds more. Both halves of
+    # `plans/onboarding-seam.md` were 403s and 404s reachable no other way.
+    onboarding_client_id: str = Field(
+        "svc-ds-onboarding", validation_alias="SVC_DS_ONBOARDING_ID"
+    )
+    onboarding_client_secret: str = Field(
+        "svc-ds-onboarding", validation_alias="SVC_DS_ONBOARDING_SECRET"
+    )
 
     # Identity.
     #
@@ -248,6 +261,12 @@ class E2ESettings(BaseSettings):
     # not. The perimeter compares canonical `Owner.id`s, so both must be real
     # owners in the registry.
     owning_org: str = "example-org"
+    # `owning_org`'s **alias**, which is not its id. The distinction is the whole
+    # of Phase 1: `GET /admin/owners/{owner_id}` matches on `Owner.id` and 404s on
+    # an alias, which a caller holding only the alias reads as *no such
+    # organisation* — a startup-refusing error for a correctly configured
+    # deployment. `GET /owners/resolve` is the route that answers both.
+    owning_org_alias: str = "example"
     other_org: str = "grid-operator"
     consumer_password: str = "consumer"
     data_subject_password: str = "subject"
