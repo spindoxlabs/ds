@@ -6,7 +6,7 @@ import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,6 +18,7 @@ from ...dependencies import (
     get_participant_registry,
     get_prov,
     get_settings_dep,
+    require_consent_audience,
     require_consent_provision,
     require_consent_read,
     require_internal_scope,
@@ -796,6 +797,155 @@ async def admin_provision_share(
         raise HTTPException(422, str(exc)) from exc
     await _emit_consent_events(prov, consents)
     return [ConsentResponse.model_validate(c) for c in consents]
+
+
+class OfferAudienceDataset(BaseModel):
+    """The subjects one resolved dataset authorises, for one consumer."""
+
+    dataset_id: str
+    subject_ids: list[str]
+    subject_count: int
+
+
+class OfferAudience(BaseModel):
+    """Who currently consents to an offer, for the consumer it is disclosed to.
+
+    ``purpose`` and ``controller_role`` are echoed because they were *stamped*
+    rather than supplied: a caller reconciling its own audit trail needs to see
+    which question the connector actually answered.
+    """
+
+    offer_id: str
+    consumer_id: str
+    purpose: list[str]
+    controller_role: str | None
+    datasets: list[OfferAudienceDataset]
+
+
+@router.get("/admin/shares", response_model=OfferAudience)
+async def admin_read_offer_audience(
+    offer_id: str = Query(..., min_length=1),
+    consumer_id: str = Query(..., min_length=1),
+    _claims: dict = Depends(require_consent_audience),
+    db: AsyncSession = Depends(get_db),
+):
+    """Who currently consents to this offer, for this consumer.
+
+    The read counterpart to ``POST /consent/admin/shares``, and the reason it
+    exists: onboarding holds ``connector.consent.provision`` and can write a
+    standing consent, and until this route there was no way to read one back
+    before exporting against it. A supply-point export needs exactly one fact —
+    *who currently consents to this offer* — and the asymmetry, not a permission
+    width, was the gap.
+
+    **The caller supplies no ``purpose`` and no ``controller_role``, and that is
+    the point.** They are stamped from the offer through ``resolve_offer``,
+    exactly as ``POST /consent/admin/shares`` and ``POST /admin/disclosure``
+    already stamp them. ``GET /internal/consent/check`` answers
+    ``{"subject_ids": []}`` with a 200 when a caller omits ``purpose`` on a
+    consent-required dataset — a caller-supplied under-specification silently
+    returning "nobody". Here that is unreachable by construction: a caller that
+    cannot supply a purpose cannot omit one.
+
+    **``consumer_id`` is required and is a participant DID**, the same key the
+    consent rows are written with. It is deliberately *not* the ``recipient_ref``
+    a discloser passes to ``POST /admin/disclosure``: that is an opaque handle —
+    an org alias, a slug, a DPA reference — and no alias-to-consumer-DID mapping
+    exists in this codebase to resolve it with. Guessing one here would be
+    undetectable from the response, which returns a plausible list either way.
+
+    **Why it must not be optional, and must not be ``*``.**
+    ``get_granted_subject_ids`` evaluates ``{consumer_id, WILDCARD_CONSUMER}``
+    together through ``resolve_decision``, where a per-party opt-out beats the
+    standing wildcard ``admin/shares`` writes. A call that omitted the consumer,
+    or passed the wildcard itself, would load *only* wildcard rows — the specific
+    opt-out rows would never be read — and would return people who have
+    specifically opted out of that recipient. That is a disclosure against a
+    withdrawn consent: the exact defect this route exists to prevent,
+    reintroduced by a default. So the parameter is required and the wildcard is
+    refused rather than treated as "any consumer".
+
+    **Offer in, datasets out, server-side.** An offer does not name its datasets;
+    datasets name the offer, and ``datasets_for_offer`` resolves them. The export
+    has an ``offer_id`` and cannot have a dataset key — `D-13` keeps those out of
+    the public projection deliberately, which is why ``POST /admin/disclosure``
+    was given an ``offer_id`` for this same caller in the first place.
+
+    **One subject set per dataset, never flattened.** Today's fixtures resolve
+    each offer to a single dataset, so a caller reading the first element would
+    be correct until a second dataset declared the same offer and then silently
+    wrong — an export made against one dataset's audience and drawn from two.
+
+    An unknown offer is a 422 and a contract-based offer is a 409 — the same two
+    answers ``POST /consent/admin/shares`` gives, for the same reasons. An offer
+    resolving to no dataset is a 422 as well, matching ``POST /admin/disclosure``:
+    an empty ``datasets`` list reads as "nobody consents" when the truth is
+    "nothing was asked".
+    """
+    if consumer_id == consent_service.WILDCARD_CONSUMER:
+        raise HTTPException(
+            422,
+            f"consumer_id '{consent_service.WILDCARD_CONSUMER}' is the standing "
+            "wildcard, not a consumer — reading it directly would skip the "
+            "per-party opt-outs that override it. Name the consumer the "
+            "disclosure is for.",
+        )
+
+    try:
+        offer = vocab.resolve_offer(offer_id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    if not offer.requires_consent:
+        raise HTTPException(
+            409,
+            f"Offer '{offer.id}' is not consent-based (legal basis "
+            f"{offer.legal_basis}) — it is disclosed, not consented",
+        )
+
+    try:
+        dataset_ids = vocab.datasets_for_offer(offer.id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not dataset_ids:
+        raise HTTPException(
+            422,
+            f"Offer '{offer.id}' resolves to no dataset — there is no audience "
+            "to report, and an empty answer would read as 'nobody consents'",
+        )
+
+    datasets = []
+    for dataset_id in dataset_ids:
+        # `consent_required=True` is asserted rather than re-derived per dataset.
+        # The offer is consent-based — a 409 above if it were not — and passing
+        # `None` would let a dataset whose governance does not gate on consent
+        # short-circuit `consent_satisfies` to "allow" for *any* granted row,
+        # including one recorded for a different offer's purpose. This is the
+        # same assertion `_authorize_dataset` makes on the data plane.
+        subject_ids = await consent_service.get_granted_subject_ids(
+            db,
+            dataset_id,
+            consumer_id,
+            purpose=[offer.purpose],
+            controller_role=offer.recipients.controller_role,
+            consent_required=True,
+        )
+        subject_ids = sorted(subject_ids)
+        datasets.append(
+            OfferAudienceDataset(
+                dataset_id=dataset_id,
+                subject_ids=subject_ids,
+                subject_count=len(subject_ids),
+            )
+        )
+
+    return OfferAudience(
+        offer_id=offer.id,
+        consumer_id=consumer_id,
+        purpose=[offer.purpose],
+        controller_role=offer.recipients.controller_role,
+        datasets=datasets,
+    )
 
 
 @router.get("/my/{consent_id}")

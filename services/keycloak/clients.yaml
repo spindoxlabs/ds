@@ -115,6 +115,8 @@ scopes:
   # one short line each. The rationale lives in dependencies.py.
   - name: connector.consent.read
     description: Is a negotiation awaiting a consent decision (GET /consent/pending)
+  - name: connector.consent.audience
+    description: Who consents to a sharing offer (GET /consent/admin/shares)
   - name: connector.ingestion.record
     description: Record a DSO/offline data handover (POST /admin/ingestion)
   - name: connector.disclosure.record
@@ -192,6 +194,11 @@ clients:
       # Provision a subject's standing sharing decision on the connector after
       # onboarding approval (POST /consent/admin/shares).
       - connector.consent.provision
+      # Read that decision back before exporting against it: who currently
+      # consents to this offer (GET /consent/admin/shares). Separate from
+      # `.provision` because that one is in the `ds-participant-admin` bundle,
+      # and a write grant must not carry bulk subject enumeration with it.
+      - connector.consent.audience
       # Record a CSV export as a disclosure (Block C). This is the route to use:
       # `POST /admin/disclosure` on the connector computes the authorising
       # `consent_snapshot_hash` from the consent DB, which this service cannot
@@ -264,6 +271,7 @@ clients:
       - connector.provider.write
       - connector.history.read
       - connector.consent.provision
+      - connector.consent.audience
       - connector.ingestion.record
       - connector.disclosure.record
       # Machine-identity permissions: granted by name because they are exempt

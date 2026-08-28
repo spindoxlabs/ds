@@ -114,6 +114,9 @@ class OnboardingSeamFlow(BaseFlow):
         if not self._provision_the_decision(result, onboarding, offer):
             return result
 
+        if not self._read_the_audience(result, onboarding, offer):
+            return result
+
         disclosures = self._record_the_handover(result, onboarding, offer)
         if disclosures is None:
             return result
@@ -309,6 +312,108 @@ class OnboardingSeamFlow(BaseFlow):
             "the offer expanded into one consent row per dataset it reaches",
             subject=s.data_subject_id,
             rows=len(payload),
+        )
+        return True
+
+    # ── The read back, before the export ─────────────────────────────────────
+
+    def _read_the_audience(
+        self, result: FlowResult, headers: dict, offer: dict
+    ) -> bool:
+        """Who consents to this offer — the fact the export is built on.
+
+        Provisioning and disclosing were reachable before this route existed and
+        the read between them was not, so an export ran against a consent state
+        the exporting service could not see. This step asserts the seam in the
+        order the production caller uses it: provision, read the audience, then
+        record the handover.
+
+        Run on the **onboarding client's own token**, like every step in this
+        flow. Borrowing the harness client would prove the route works and not
+        that the service that needs it can reach it, which is the only question
+        a new scope raises.
+        """
+        s = self.settings
+        params = urllib.parse.urlencode(
+            {"offer_id": offer["id"], "consumer_id": s.consumer_did}
+        )
+        status, payload = self.http.raw(
+            "GET",
+            f"{s.connector_url}/consent/admin/shares?{params}",
+            headers=headers,
+        )
+        if status != 200 or not isinstance(payload, dict):
+            result.fail_step(
+                "read the audience",
+                "the audience read was refused. A 403 here is the realm missing "
+                "`connector.consent.audience` on the onboarding client — the "
+                "scope is deliberately not `connector.consent.provision`, so "
+                "holding the write grant does not carry it.",
+                status_code=status,
+                response=payload,
+            )
+            return False
+
+        datasets = payload.get("datasets")
+        if not isinstance(datasets, list) or len(datasets) != offer["dataset_count"]:
+            result.fail_step(
+                "read the audience",
+                "the audience reports a different number of datasets than the "
+                "published projection — a caller reading the first set would "
+                "export against one dataset's consent and draw from another.",
+                sets=len(datasets) if isinstance(datasets, list) else None,
+                dataset_count=offer["dataset_count"],
+            )
+            return False
+
+        if payload.get("purpose") != [s.consented_purpose]:
+            result.fail_step(
+                "read the audience",
+                "the purpose was not stamped from the offer. The caller supplies "
+                "none precisely so it cannot under-specify its way to an empty "
+                "answer, so a mismatch means the route answered a different "
+                "question than the one the offer asks.",
+                purpose=payload.get("purpose"),
+                expected=[s.consented_purpose],
+            )
+            return False
+
+        if not all(s.data_subject_id in d.get("subject_ids", []) for d in datasets):
+            result.fail_step(
+                "read the audience",
+                "the subject provisioned one step ago is absent from the "
+                "audience, so the export would omit someone who consented.",
+                subject=s.data_subject_id,
+                datasets=datasets,
+            )
+            return False
+
+        # The parameter that must not default. Omitting it would leave the
+        # connector reading wildcard rows alone, so every per-party opt-out
+        # would be invisible and the answer would name people who had withdrawn.
+        refused, _ = self.http.raw(
+            "GET",
+            f"{s.connector_url}/consent/admin/shares"
+            f"?offer_id={urllib.parse.quote(offer['id'])}",
+            headers=headers,
+        )
+        if refused != 422:
+            result.fail_step(
+                "read the audience",
+                "the route answered without a consumer instead of refusing. A "
+                "default consumer sees only the standing wildcard, so it "
+                "discloses to recipients a subject has specifically withdrawn "
+                "from — the defect this route exists to prevent.",
+                status_code=refused,
+            )
+            return False
+
+        result.pass_step(
+            "read the audience",
+            "the offer's consenting subjects came back per dataset, purpose "
+            "stamped from the offer, and a call without a consumer was refused",
+            subject=s.data_subject_id,
+            sets=len(datasets),
         )
         return True
 

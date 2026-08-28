@@ -569,3 +569,233 @@ async def test_admin_shares_rejects_a_server_owned_field(client):
         },
     )
     assert r.status_code == 422, r.text
+
+
+# ── §3.2 admin/shares, read side ──────────────────────────────────────────────
+#
+# `GET /consent/admin/shares` — who currently consents to an offer, for the
+# consumer a disclosure is for. The read counterpart to the provisioning POST
+# above, and the pair is the point: onboarding could write a standing consent
+# and could not read one back, so an export ran against a decision it could not
+# see. Guarded by `connector.consent.audience`, a scope distinct from the
+# `.provision` write beside it.
+
+AUDIENCE = make_headers(scope="connector.consent.audience")
+ADMIN = make_headers(scope="connector.admin")
+
+
+async def _provision(client, subject_id: str = SUBJECT, offer: str = "test-flexibility"):
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": subject_id,
+            "offer_id": offer,
+            "enabled": True,
+            "legal_basis": EVIDENCE,
+        },
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_audience_returns_the_provisioned_subjects_per_dataset(client):
+    """The round trip the route exists for: provision, then read back.
+
+    The subject sets are keyed per resolved dataset and never flattened. The
+    fixture offer resolves to one dataset today, so a caller reading the first
+    element would be right until a second dataset declared the same offer — the
+    shape is asserted here so that day changes the answer rather than the caller.
+    """
+    await _provision(client)
+
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["offer_id"] == "test-flexibility"
+    assert body["consumer_id"] == CONSUMER
+    # Stamped from the offer, never supplied by the caller.
+    assert body["purpose"] == ["FlexibilityResearch"]
+    assert body["controller_role"] is None
+    assert body["datasets"] == [
+        {"dataset_id": DATASET, "subject_ids": [SUBJECT], "subject_count": 1}
+    ]
+
+
+@pytest.mark.rule("D-15", "A-10")
+@pytest.mark.asyncio
+async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, client):
+    """The defect this route exists to prevent, asserted end to end.
+
+    A per-party opt-out beats the standing wildcard (§3.1). A caller that could
+    only see the wildcard set would disclose to a recipient this person has
+    specifically withdrawn from — so the opted-out subject must be **absent**
+    for that consumer while the wildcard still authorises every other one.
+    """
+    await _provision(client)
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(
+                _row(
+                    consumer_id=CONSUMER,
+                    status="revoked",
+                    requested_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                    revoked_at=datetime(2026, 2, 1, 1, tzinfo=timezone.utc),
+                )
+            )
+
+    opted_out = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert opted_out.status_code == 200
+    assert opted_out.json()["datasets"][0]["subject_ids"] == []
+
+    still_granted = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility", "consumer_id": OTHER_CONSUMER},
+    )
+    assert still_granted.status_code == 200
+    assert still_granted.json()["datasets"][0]["subject_ids"] == [SUBJECT]
+
+
+@pytest.mark.asyncio
+async def test_audience_requires_a_consumer(client):
+    """No default, because the default would be wrong.
+
+    Omitting the consumer would leave `get_granted_subject_ids` loading only
+    wildcard rows, so every per-party opt-out would be invisible and the answer
+    would name people who had withdrawn. Refused rather than defaulted.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility"},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_audience_refuses_the_wildcard_as_a_consumer(client):
+    """`*` is the standing row, not a recipient.
+
+    Passing it would read the wildcard set alone — the same blind spot as
+    omitting the parameter, reached through a value the schema would otherwise
+    accept.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility", "consumer_id": WILDCARD_CONSUMER},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_audience_unknown_offer_is_422_not_an_empty_200(client):
+    """The footgun on `GET /internal/consent/check`, closed here.
+
+    That route answers `{"subject_ids": []}` with a 200 when it cannot resolve
+    the question, and "nobody consents" is indistinguishable from "you asked
+    wrong". A mis-keyed offer must refuse.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "no-such-offer", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_audience_rejects_contract_offer(client):
+    """A contract-based offer is disclosed, not consented — 409, as on the POST.
+
+    Returning an audience for it would imply a consent decision that nobody was
+    ever asked to make.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-incentives", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 409
+
+
+@pytest.mark.rule("D-20")
+@pytest.mark.asyncio
+async def test_audience_reachable_by_connector_admin(client):
+    """Administrative authority over this participant's own consent records.
+
+    `require_permission`, not `require_exact_permission` — the same superset
+    `require_consent_provision` beside it allows.
+    """
+    await _provision(client)
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=ADMIN,
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 200
+    assert r.json()["datasets"][0]["subject_ids"] == [SUBJECT]
+
+
+@pytest.mark.rule("D-20")
+@pytest.mark.asyncio
+async def test_provision_scope_alone_does_not_reach_the_audience(client):
+    """The whole reason `.audience` is a new scope rather than a reuse.
+
+    `connector.consent.provision` is in the `ds-participant-admin` bundle, so
+    reusing it would hand every participant operator bulk subject enumeration as
+    a side effect of holding a *write* grant. If this test ever goes green by
+    accident, that disclosure has been made by nobody on purpose.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 403
+
+
+@pytest.mark.rule("D-20")
+@pytest.mark.asyncio
+async def test_audience_refuses_an_anonymous_caller(client):
+    """The perimeter, from outside it.
+
+    A cross-subject read is a distinct capability in this codebase — even an
+    authenticated data subject is refused another subject's decisions by
+    `GET /consent/status`. Unauthenticated must not reach a list of all of them.
+    """
+    r = await client.get(
+        "/consent/admin/shares",
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 401
+
+
+@pytest.mark.rule("D-20", "E2E-03")
+@pytest.mark.asyncio
+async def test_audience_refuses_a_weak_token_before_validating_the_query(client):
+    """403 before 422, which `api_contract`'s sweep depends on.
+
+    That sweep derives the guarded routes from the app's own OpenAPI document
+    and replays an under-privileged token at each with no query string. Were
+    FastAPI to validate the required parameters first, this route would answer
+    422 and the sweep would read a *validation* error as a refusal — a route
+    whose guard had been removed entirely would still look like it held.
+    """
+    r = await client.get(
+        "/consent/admin/shares", headers=make_headers(scope="connector.webhook")
+    )
+    assert r.status_code == 403

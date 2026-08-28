@@ -151,6 +151,16 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # `identity-registry.admin`. Listed so the coverage test does not report
         # it as unreachable.
         "identity-registry.organizations.promote",
+        # "Who consents to this offer" — the cross-subject read behind
+        # `GET /consent/admin/shares`. Held by onboarding, and reachable by a
+        # human, but only through `connector.admin` in `ds-admin` — deliberately
+        # *not* in `ds-participant-admin`, so a participant operator does not
+        # acquire bulk subject enumeration as a side effect of holding the
+        # `connector.consent.provision` write grant beside it. Listed here for
+        # the same reason as the promote scope above: reachable only through an
+        # admin superset, so the coverage test would otherwise report it as a
+        # permission nobody can be granted.
+        "connector.consent.audience",
         # Not ds endpoints — `dataset.*` belongs to the data-plane service, and is
         # here only because ds service clients call it.
         #

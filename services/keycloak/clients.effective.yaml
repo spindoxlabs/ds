@@ -70,6 +70,8 @@ scopes:
   description: Provision a subject's standing sharing decision (POST /consent/admin/shares)
 - name: connector.consent.read
   description: Is a negotiation awaiting a consent decision (GET /consent/pending)
+- name: connector.consent.audience
+  description: Who consents to a sharing offer (GET /consent/admin/shares)
 - name: connector.ingestion.record
   description: Record a DSO/offline data handover (POST /admin/ingestion)
 - name: connector.disclosure.record
@@ -109,6 +111,7 @@ clients:
   - identity-registry.memberships.write
   - identity-registry.keycloak.sync
   - connector.consent.provision
+  - connector.consent.audience
   - connector.disclosure.record
   - provenance.write
   extra_audiences:
@@ -139,6 +142,7 @@ clients:
   - connector.provider.write
   - connector.history.read
   - connector.consent.provision
+  - connector.consent.audience
   - connector.ingestion.record
   - connector.disclosure.record
   - connector.internal

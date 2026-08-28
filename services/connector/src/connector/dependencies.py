@@ -400,6 +400,33 @@ require_consent_provision = require_permission(
 require_consent_read = require_permission(
     "connector.consent.read", "connector.admin"
 )
+# "Who consents to this offer" — the cross-subject read, and the counterpart to
+# `connector.consent.provision` beside it: onboarding can write a standing
+# consent and needs to read one back before it exports against it.
+#
+# **A separate permission, and not a reuse of `.provision`.** Reuse costs nothing
+# in either realm, which is why it was considered; it was rejected because
+# `.provision` is in the `ds-participant-admin` bundle, so every participant
+# operator would acquire bulk subject enumeration as a side effect of holding a
+# *write* grant. `GET /consent/status` already refuses that capability to an
+# authenticated subject — "without this check any authenticated holder could
+# enumerate another subject's consent decisions" — and granting it wholesale by
+# accident is worse than granting it on purpose.
+#
+# `require_permission`, not `require_exact_permission`: this is administrative
+# authority over this participant's own consent records, not a machine identity,
+# so `connector.admin` is a superset exactly as it is for `.provision`.
+#
+# **Not to be merged with `connector.internal`.** `GET /internal/consent/check`
+# answers a nearly identical question and stays where it is: it is the machine
+# identity for the data plane and the EDC, exempt from the admin superset,
+# dataset-keyed, and it fails closed to an empty list when the caller declares no
+# purpose. This one is offer-keyed on the published plane and reachable by a
+# `ds-admin` human. Merging them would put the internal surface behind an
+# admin-reachable grant.
+require_consent_audience = require_permission(
+    "connector.consent.audience", "connector.admin"
+)
 # An operator records a DSO/offline data handover as they perform it (the DSO
 # leg is manual in phase A), so the ingestion event has a human trigger rather
 # than an automatic one. connector.admin is a superset.
