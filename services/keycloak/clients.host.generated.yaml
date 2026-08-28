@@ -12,12 +12,6 @@
 # should not hold a superset over every permission of a service.
 
 scopes:
-- name: dataset.query
-  description: Execute dataset queries
-- name: dataset.read
-  description: Read dataset metadata and schema
-- name: dataset.write
-  description: Write dataset data
 - name: identity-registry.read
   description: Read participant registry and request credential presentations
 - name: identity-registry.resolve

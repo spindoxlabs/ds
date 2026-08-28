@@ -72,13 +72,27 @@ def _dev_secret(client_id: str) -> str:
 def declared_clients() -> list[dict]:
     """Service clients `clients.yaml` declares scopes for.
 
-    Read from `clients.yaml` alone, **not** the overlays passed beside it: a
-    deployment's domain overlay adds clients and grants of its own, and what
-    this suite asserts is the contract *ds* declares. A realm granting more than
-    ds asks for is a deployment's business; granting less is the defect.
+    Read from ds's own two files — `clients.yaml` and `clients.dataspaces.yaml` —
+    and **not** from the domain overlay passed beside them: a deployment's overlay
+    adds clients and grants of its own, and what this suite asserts is the
+    contract *ds* declares. A realm granting more than ds asks for is a
+    deployment's business; granting less is the defect.
+
+    Both files, because the realm this runs against is one ds owns, and the
+    harness the suite most wants covered — `svc-ds-e2e` — is declared in the
+    second. Grants are merged per client, as the sync merges them.
     """
-    document = yaml.safe_load(CLIENTS_YAML.read_text(encoding="utf-8"))
-    return [c for c in document.get("clients", []) if c.get("default_scopes")]
+    merged: dict[str, dict] = {}
+    for path in (CLIENTS_YAML, CLIENTS_YAML.with_name("clients.dataspaces.yaml")):
+        if not path.is_file():
+            continue
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        for client in document.get("clients", []) or []:
+            entry = merged.setdefault(
+                client["client_id"], {"client_id": client["client_id"], "default_scopes": []}
+            )
+            entry["default_scopes"] += client.get("default_scopes") or []
+    return [c for c in merged.values() if c["default_scopes"]]
 
 
 def fetch_token(client_id: str) -> str:
@@ -103,8 +117,8 @@ def fetch_token(client_id: str) -> str:
         raise AssertionError(
             f"{client_id} could not obtain a token ({response.status_code}): "
             f"{response.text.strip()[:200]}\n"
-            f"`clients.yaml` declares it. Run `task keycloak:merge` then "
-            f"`task keycloak:mirror`, and check the realm was synced."
+            f"ds's declaration names it. Check the realm was synced with every "
+            f"file that declares it — see `keycloak-sync` in docker-compose.yml."
         )
     return response.json()["access_token"]
 

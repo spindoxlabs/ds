@@ -120,10 +120,10 @@ global:
       # `celine-policies keycloak sync`**, so there was never anything to mount
       # the clients file into. It read as a supported way to provision the realm
       # from Helm, and there is none — the realm is provisioned out-of-band from
-      # `clients.yaml` plus every overlay, passed to one `keycloak sync` with a
-      # repeatable `--overlay` (never the core alone: the syncer recomputes
-      # every client's grants from what it is given, so the core by itself
-      # strips whatever an overlay granted).
+      # every file that declares the realm — `clients.dataspaces.yaml` as the
+      # base plus `clients.yaml` and each domain overlay with `--overlay` (never
+      # a subset: the syncer recomputes every client's grants from what it is
+      # given, so a missing file strips whatever it granted).
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
 
     # ── Layer B — the foreign realm's vocabulary, translated ──────────────────

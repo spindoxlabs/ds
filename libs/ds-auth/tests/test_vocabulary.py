@@ -35,20 +35,36 @@ def _declared_scopes(path: Path) -> set[str]:
     return {s["name"] for s in document.get("scopes") or [] if s.get("name")}
 
 
+#: ds's own declaration, split across two files by *which realm applies them*,
+#: not by whose vocabulary they are. `clients.yaml` is what ds needs from any
+#: realm and is mounted into a host's; `clients.dataspaces.yaml` is what a realm
+#: ds owns adds — the harness, the admin supersets, the data plane's family.
+#: Both are ds's, so both are "core" to every assertion below: a `ds-admin`
+#: bundle granting `connector.admin` is ds describing ds, wherever the scope is
+#: written down.
+_DS_FILES = ("clients.yaml", "clients.dataspaces.yaml")
+
+
 def _core_scopes() -> set[str]:
-    return _declared_scopes(KEYCLOAK / "clients.yaml")
+    scopes: set[str] = set()
+    for name in _DS_FILES:
+        scopes |= _declared_scopes(KEYCLOAK / name)
+    return scopes
 
 
 #: Generated artefacts that sit beside the overlays and match the same glob.
-#: Excluded deliberately: `clients.effective.yaml` is core + every overlay, so
-#: counting it as a source would make every assertion below tautological — a
-#: permission declared nowhere would still appear "declared".
-_GENERATED = {"clients.effective.yaml", "clients.host.generated.yaml"}
+#: Excluded deliberately: counting one as a source would make every assertion
+#: below tautological — a permission declared nowhere would still appear
+#: "declared", since the mirror is rendered *from* the files above.
+_GENERATED = {"clients.host.generated.yaml"}
 
 
 def _overlay_paths() -> list[Path]:
+    """Domain overlays only — a backend deployed *beside* ds, never ds itself."""
     return sorted(
-        p for p in KEYCLOAK.glob("clients.*.yaml") if p.name not in _GENERATED
+        p
+        for p in KEYCLOAK.glob("clients.*.yaml")
+        if p.name not in _GENERATED and p.name not in _DS_FILES
     )
 
 
@@ -56,8 +72,8 @@ def _all_scopes() -> set[str]:
     """Core plus every domain overlay (`clients.<domain>.yaml`).
 
     Domain scopes are lifted out of the core file (R1), so a permission may
-    legitimately live in an overlay. The union is what a realm actually gets — it
-    is what `ir-cli keycloak merge` hands the sync.
+    legitimately live in an overlay. The union is what a realm actually gets —
+    the sync is handed every one of these files and merges them itself.
     """
     scopes = _core_scopes()
     for path in _overlay_paths():

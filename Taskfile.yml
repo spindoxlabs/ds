@@ -1603,17 +1603,19 @@ tasks:
         # each client as `secret: ${VAR:-<dev default>}`, so it covers every
         # client the realm is synced from and cannot go stale when one is added.
         #
-        # **Every declaring file, not just the core.** This read the generated
-        # effective file until 2026-08-28; the sync now takes the core plus each
-        # overlay (`docker-compose.yml`'s `keycloak-sync`), and grepping the core
-        # alone would stop covering `SVC_REC_REGISTRY_SECRET`, which only
-        # `clients.energy.yaml` declares — silently, since a check that finds
-        # fewer clients still passes. The glob is what keeps the sentence above
-        # true: a new overlay is covered by existing, not by editing this.
+        # **Every declaring file**, which is every file the sync is handed —
+        # `docker-compose.yml`'s `keycloak-sync`. Grepping one of them alone would
+        # stop covering `SVC_REC_REGISTRY_SECRET`, which only `clients.energy.yaml`
+        # declares, silently: a check that finds fewer clients still passes.
+        #
+        # A glob, so a new overlay is covered by existing rather than by editing
+        # this. `clients.host.generated.yaml` is rendered *from* these files and
+        # would only ever contribute duplicates, so it is skipped — it is the last
+        # generated artefact, and this line goes with it.
         clients_files=""
         for f in services/keycloak/clients.yaml services/keycloak/clients.*.yaml; do
           case "$f" in
-            *.effective.yaml|*.generated.yaml) continue ;;
+            *.generated.yaml) continue ;;
           esac
           [ -f "$f" ] && clients_files="$clients_files $f"
         done
@@ -1867,13 +1869,6 @@ tasks:
     desc: Regenerate the portal's copy of the role-bundle table from ds_auth.bundles
     cmds:
       - task -d libs/ds-auth bundles:generate
-
-  keycloak:merge:
-    desc: "Regenerate the effective clients.yaml the sync applies (OVERLAYS=energy)"
-    vars:
-      OVERLAYS: '{{.OVERLAYS | default "energy"}}'
-    cmds:
-      - cd services/identity-registry && uv run ir-cli keycloak merge {{range $o := splitList "," .OVERLAYS}}--overlay {{$o}} {{end}}
 
   vocab:fetch:
     desc: "Cache the registered semantic vocabularies the connector serves at /ns/{slug}"

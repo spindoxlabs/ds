@@ -24,14 +24,18 @@ A client whose grants are *entirely* admin still crosses, with an empty
 `default_scopes`: provisioned-but-unused is harmless, missing is a 403 at the worst
 possible moment.
 
-**The domain overlay does not cross either, and it is excluded by construction:**
-this generator reads the *core* `clients.yaml`, never the merged effective file
-(`keycloak_merge.py`). In a host realm `rec-registry.*` and `svc-rec-registry` are
-the host's own services — declared by the host, on the host's terms — so a mirror
-that asked for them would be ds claiming authority over another project's
-vocabulary. Reading the core file is therefore the correctness property, not a
-shortcut: the two generators consume the same source and split on a boundary that
-is written down in one place.
+**Neither the domain overlay nor ds's own realm-owner file crosses, and both are
+excluded by construction:** this generator reads `clients.yaml` and nothing else.
+In a host realm `rec-registry.*` and `svc-rec-registry` are the host's own
+services — declared by the host, on the host's terms — so a mirror that asked for
+them would be ds claiming authority over another project's vocabulary. The same
+is true of `clients.dataspaces.yaml`: a realm ds does not own does not take ds's
+harness or ds's admin supersets.
+
+Reading exactly the file that crosses is therefore the correctness property, not
+a shortcut — and since the 2026-08-28 split it is nearly the whole of the job.
+The carve-outs above are now file boundaries too, which is why this generator has
+little left to do and is due to go with Phase 3.
 
     ir-cli keycloak mirror                 # write the fragment
     ir-cli keycloak mirror --check         # fail if it is stale

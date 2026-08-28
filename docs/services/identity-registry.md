@@ -315,12 +315,14 @@ database-touching command verifies the schema revision first, and every command 
 | `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `reinstate`, `revoke`, `bundle`, `enrolment-token` |
 | `key` | `rotate`, `custody-check` |
 | `status` | `export`, `check-indices` |
-| `keycloak` | `org-sync`, `merge`, `mirror`, `map-user` |
+| `keycloak` | `org-sync`, `mirror`, `map-user` |
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
-reports each entry's outcome, rolling back only the failures. `ir-cli keycloak merge` and
-`mirror` do not touch the database at all — they generate the two projections of
-[`services/keycloak/clients.yaml`](keycloak.md).
+reports each entry's outcome, rolling back only the failures. `ir-cli keycloak mirror` does
+not touch the database at all — it generates the ds section a *host* realm's own declaration
+must carry, from [`services/keycloak/clients.yaml`](keycloak.md). The merge that used to sit
+beside it is gone: `celine-policies keycloak sync` takes every file that declares the realm
+and merges them itself.
 
 `ir-cli keycloak map-user` writes a Keycloak-user-to-DID mapping row and **does not contact
 Keycloak** — it was called `sync`, which is also the name of a command that really does apply
@@ -380,7 +382,7 @@ refuse to run against a schema that is not at head.
 | `task identity-registry:run` | uvicorn on `:30005` with reload |
 | `task identity-registry:debug` | same under debugpy on `:30905` |
 | `task db:migrate:identity-registry` | `alembic upgrade head` |
-| `task keycloak:merge` / `keycloak:mirror` | regenerate the two client projections — nothing applies the merge's output any more |
+| `task keycloak:mirror` | regenerate the ds section a host realm's `clients.yaml` must carry |
 | `task identity:bootstrap` | the dev seed's first half: trust anchor, owners, agreements, one enrolment code per participant |
 | `task identity:users` | its second half — the dev users' credentials, **after** the participants have enrolled, because that is who they are delivered to |
 

@@ -104,7 +104,7 @@ Externally managed; see [Keycloak requirements](keycloak.md).
 | `global.keycloak.tokenUrl` | — | **Required.** `ds-edc` declares it required and its render fails without it |
 | `global.keycloak.adminUrl` | — | used only by the optional sync init containers |
 | `global.keycloak.sync.enabled` | `false` | opt-in provisioning of clients and organisations into the external realm |
-| `global.keycloak.sync.clientsConfigMap` | `""` | a ConfigMap holding **`clients.yaml` and every overlay** — never the core file alone |
+| `global.keycloak.sync.clientsConfigMap` | `""` | a ConfigMap holding **every file that declares the realm** — `clients.dataspaces.yaml`, `clients.yaml` and each domain overlay; never a subset |
 | `global.keycloak.sync.organizationsConfigMap` | `""` | a ConfigMap holding `organizations.yaml` |
 | `global.keycloak.mutate` | `false` | may the registry write to the realm at *runtime* — creating a per-participant client at promotion and handing over its secret. Distinct from `sync` |
 | `global.keycloak.aliases.groups` | `{}` | foreign group name → ds **bundle** name. Never a raw capability |

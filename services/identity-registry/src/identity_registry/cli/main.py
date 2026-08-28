@@ -907,59 +907,6 @@ def keycloak_org_sync(
         raise typer.Exit(1)
 
 
-@keycloak_app.command("merge")
-def keycloak_merge(
-    overlay: list[str] = typer.Option(
-        None,
-        "--overlay",
-        help="Domain overlay to apply (clients.<name>.yaml). Repeatable.",
-    ),
-    check: bool = typer.Option(
-        False, "--check", help="Fail if the effective file is stale"
-    ),
-    to_stdout: bool = typer.Option(
-        False, "--stdout", help="Write to stdout instead of the effective file"
-    ),
-):
-    """Merge the core declaration with its domain overlays.
-
-    `clients.yaml` says what **ds** needs from a realm; `clients.<domain>.yaml`
-    says what the domain backend deployed alongside it needs. The sync takes one
-    file and recomputes each client's grants from it, so the two must be merged
-    *before* it runs — syncing the core alone would silently strip an overlay's
-    grants off a client the core also declares.
-
-    A named overlay that does not exist is an error, not a thinner realm.
-    """
-    from ..services import keycloak_merge as merge
-
-    names = list(overlay or [])
-    try:
-        rendered = merge.build(names)
-    except merge.MergeError as exc:
-        typer.echo(str(exc), err=True)
-        raise typer.Exit(1) from exc
-
-    if to_stdout:
-        typer.echo(rendered)
-        return
-
-    if check:
-        current = (
-            merge.TARGET.read_text(encoding="utf-8") if merge.TARGET.exists() else ""
-        )
-        if current != rendered:
-            typer.echo(
-                "effective clients file is stale — run `task keycloak:merge`", err=True
-            )
-            raise typer.Exit(1)
-        typer.echo("effective clients file is current")
-        return
-
-    merge.TARGET.write_text(rendered, encoding="utf-8")
-    typer.echo(str(merge.TARGET))
-
-
 @keycloak_app.command("mirror")
 def keycloak_mirror(
     check: bool = typer.Option(

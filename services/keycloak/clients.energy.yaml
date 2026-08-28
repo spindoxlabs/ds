@@ -13,15 +13,15 @@
 # Dev only looks like the sole consumer because dev *is* a posture-A deployment
 # that happens to have an energy-domain backend.
 #
-# Merged with the core by `ir-cli keycloak merge --overlay energy`, which is what
-# `keycloak-sync` applies. It is never synced on its own: an overlay may add a
-# grant to a core client, and the sync recomputes a client's grants from whatever
-# single file it is given.
+# Passed to `celine-policies keycloak sync` as `--overlay`, alongside the other
+# declarations — the merge happens in the syncer's loader. It is never synced on
+# its own: an overlay adds grants to clients another file owns, and the sync
+# recomputes a client's grants from whatever it is given.
 #
-# An overlay may **add** scopes, add clients, and widen an existing client's
-# `default_scopes` / `extra_audiences`. It may not redefine a core client's
-# identity (`secret`, `scopes_prefix`, `name`) or the realm-level keys — see
-# `identity_registry/services/keycloak_merge.py`.
+# An overlay may **add** scopes, add clients, and widen a client another file
+# owns by naming `client_id` plus grant keys and nothing else. Restating that
+# client's identity (`name`, `secret`, `scopes_prefix`) is an ownership conflict
+# and is refused, as is disagreeing with another file about a realm-level key.
 
 overlay: energy
 

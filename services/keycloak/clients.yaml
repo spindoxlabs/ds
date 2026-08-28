@@ -1,48 +1,47 @@
-# What **ds** needs from a Keycloak realm. Where ds owns the realm this is
-# applied; where ds is a guest the host's own file must carry the same entries
-# (`task keycloak:mirror` generates that section).
+# What **ds** needs from a Keycloak realm — *any* realm, including one it does not
+# own. This file is mounted unchanged into the celine realm, so everything in it
+# has to be true there too.
 #
-# **This file names no domain system.** A deployment's backend — the energy/REC
-# registry in dev — declares its own scopes and clients in a domain overlay,
-# `clients.<domain>.yaml`, and `ir-cli keycloak merge` combines them into the
-# effective file the sync applies. The two are separate because which one applies
-# is a deployment question: the overlay is precisely what must *not* cross into a
-# host realm, where those are the host's services and not ds's to declare.
+# **It names no domain system, and no realm.** A deployment's backend — the
+# energy/REC registry in dev — declares its own scopes and clients in a domain
+# overlay, `clients.<domain>.yaml`. What a realm ds *owns* adds on top — the
+# realm's identity, the e2e harness, the admin supersets, the data plane's
+# vocabulary — is in `clients.dataspaces.yaml`. All of it is passed to one sync:
 #
-# Local dev realm. In production, ds clients are in the celine realm
-# via celine-policies/clients.yaml.
-realm: dataspaces
+#   posture A (ds owns the realm)
+#     celine-policies keycloak sync clients.dataspaces.yaml \
+#         --overlay clients.yaml --overlay clients.energy.yaml
+#
+#   posture B (ds is a guest)
+#     celine-policies keycloak sync <host clients.yaml> --overlay <ds clients.yaml>
+#
+# The split is a deployment question, not a preference: a file that names a realm
+# cannot be mounted into a realm that names itself differently, and the sync
+# refuses two files that disagree about a top-level key.
+#
+# **No `requires:` here, deliberately.** It would be evaluated inside whichever
+# realm mounts this file, and the celine realm does not supply `dataspaces` — the
+# guard lives in `clients.dataspaces.yaml`, which is the positional base where ds
+# owns the realm. Measured; see that file's header.
 
-# The Keycloak client humans log in through, in front of which oauth2-proxy holds
-# the browser session. Naming it here makes `celine-policies keycloak sync` attach
-# a hardcoded-audience mapper for **every** client carrying a `scopes_prefix`, so
-# a user's token passes audience validation at each service instead of each
-# service having to relax its `aud` check.
-#
-# The client itself is declared in the realm import (`realm-*.json`), not created
-# by the sync — the sync only adds mappers to it. A client with no
-# `scopes_prefix` gets no mapper generated and must list the proxy in its own
-# `extra_audiences` if a user token needs to reach it.
-oauth2_proxy_client: oauth2_proxy
+# The name posture A's base file asks for with `requires: [ds]`. A statement about
+# the split rather than about the realm, dropped from the merged document.
+overlay: ds
 
 # =============================================================================
 # SCOPES
 # =============================================================================
 
 scopes:
-  # Dataset
-  - name: dataset.admin
-    description: Full access to Dataset service (includes restricted datasets)
-  - name: dataset.query
-    description: Execute dataset queries
-  - name: dataset.read
-    description: Read dataset metadata and schema
-  - name: dataset.write
-    description: Write dataset data
+  # `dataset.*` is declared in `clients.dataspaces.yaml`, not here. It is the data
+  # plane's vocabulary rather than ds's, and the realm ds is a guest in owns that
+  # family with its own `svc-dataset-api` — two clients may not claim one
+  # `scopes_prefix`, and two files may not describe one scope differently (#14).
 
   # Dataspace Identity Registry
-  - name: identity-registry.admin
-    description: Admin access to dataspace identity-registry API
+  #
+  # `identity-registry.admin` is in `clients.dataspaces.yaml`: admin is an
+  # operator grant and a realm ds is a guest in is not ds's to widen.
   - name: identity-registry.read
     description: Read participant registry and request credential presentations
   - name: identity-registry.resolve
@@ -84,8 +83,8 @@ scopes:
     description: Bind a Keycloak user to a dataspace DID
 
   # Connector
-  - name: connector.admin
-    description: Provider management (sync, assets, policies, contracts)
+  #
+  # `connector.admin` is in `clients.dataspaces.yaml`, with the other supersets.
   - name: connector.provider.read
     description: Read provider assets, policies, contracts, transfers, authorizations
   - name: connector.provider.write
@@ -142,7 +141,8 @@ clients:
     secret: ${SVC_DS_IDENTITY_REGISTRY_SECRET:-svc-ds-identity-registry}
     scopes_prefix: identity-registry
     default_scopes:
-      - identity-registry.admin
+      # `identity-registry.admin` is granted in `clients.dataspaces.yaml`, where
+      # ds owns the realm. It is not carried into a realm ds is a guest in.
       # Promoting a participant changes who is in the registry; the connector
       # caches that list, so it is told rather than left to a 60s timer.
       - connector.registry.invalidate
@@ -251,40 +251,11 @@ clients:
     extra_audiences:
       - svc-ds-identity-registry
 
-  # The e2e harness drives endpoints that belong to several different callers —
-  # the provider console, the onboarding service, the dataset-api. It gets its
-  # own client so those grants are visible as a test identity instead of being
-  # smuggled into a production one, and so revoking it cannot break a service.
-  # Never enable this client outside a dev or CI realm.
-  - client_id: svc-ds-e2e
-    name: Dataspace E2E Harness (dev/CI only)
-    secret: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}
-    service_account_enabled: true
-    scopes_prefix: null
-    default_scopes:
-      - dataset.query
-      - dataset.read
-      - identity-registry.resolve
-      - identity-registry.read
-      - identity-registry.membership.read
-      - connector.provider.read
-      - connector.provider.write
-      - connector.history.read
-      - connector.consent.provision
-      - connector.consent.audience
-      - connector.ingestion.record
-      - connector.disclosure.record
-      # Machine-identity permissions: granted by name because they are exempt
-      # from the admin superset (ds_auth.require_exact_permission).
-      - connector.internal
-      - provenance.read
-      - provenance.write
-      - catalog.read
-    extra_audiences:
-      - svc-ds-identity-registry
-      - svc-ds-connector
-      - svc-ds-provenance
-      - svc-ds-federated-catalog
+  # `svc-ds-e2e` is declared in `clients.dataspaces.yaml`. It is dev/CI only and
+  # deliberately over-granted, and a test identity in a realm ds does not own is a
+  # permanent credential nobody audits — so it lives in the file posture B never
+  # mounts. That was a rule inside `keycloak_mirror.py` until 2026-08-28; it is a
+  # file boundary now, which is why the generator could go.
 
   - client_id: svc-ds-connector
     name: Dataspace Connector

@@ -1,0 +1,140 @@
+# What a realm **ds itself owns** carries, on top of what ds needs from any realm.
+#
+# `clients.yaml` declares what ds needs from a realm *it may be a guest in*, and
+# it is mounted into the celine realm unchanged. This file is the rest: the
+# realm's own identity, the test harness, and the vocabulary that belongs to
+# whoever owns the realm rather than to ds. None of it crosses.
+#
+#   posture A (ds owns the realm)
+#     celine-policies keycloak sync clients.dataspaces.yaml \
+#         --overlay clients.yaml --overlay clients.energy.yaml
+#
+#   posture B (ds is a guest)
+#     celine-policies keycloak sync <host clients.yaml> --overlay <ds clients.yaml>
+#
+# **This file is the positional base in posture A, and that is load-bearing.**
+# The sync recomputes every client's grants from what it is handed, so a sync
+# missing a file does not under-provision — it strips whatever that file granted,
+# silently and with no flag involved. `requires: [ds]` below makes forgetting
+# `clients.yaml` a refusal before anything is authenticated; nothing can make
+# forgetting *this* file a refusal, because a guard travels in the file that is
+# missing. A positional argument cannot be omitted, which is why the file that
+# does not cross is the base rather than the overlay. Putting `requires:` in
+# `clients.yaml` instead was measured and does not work: it is evaluated inside
+# the celine realm, which does not supply `dataspaces` and never will.
+
+realm: dataspaces
+
+# The Keycloak client humans log in through, in front of which oauth2-proxy holds
+# the browser session. Naming it makes the sync attach a hardcoded-audience
+# mapper for **every** client carrying a `scopes_prefix`, so a user's token
+# passes audience validation at each service instead of each service having to
+# relax its `aud` check.
+#
+# The client itself is declared in the realm import (`realm-*.json`), not created
+# by the sync — the sync only adds mappers to it. A client with no
+# `scopes_prefix` gets no mapper generated and must list the proxy in its own
+# `extra_audiences` if a user token needs to reach it.
+#
+# Here rather than in `clients.yaml` because two files may not disagree about a
+# realm-level key, and a host realm names its own proxy client.
+oauth2_proxy_client: oauth2_proxy
+
+# `clients.yaml` identifies itself as `overlay: ds`. Syncing this file without it
+# would provision a realm holding the harness and the admin vocabulary and none
+# of the services they exist to exercise.
+requires:
+  - ds
+
+# =============================================================================
+# SCOPES
+# =============================================================================
+
+scopes:
+  # ── The data plane's vocabulary, which is not ds's ────────────────────────
+  #
+  # `dataset.*` belongs to the data-plane service — `libs/ds-auth/bundles.py`
+  # says so, and it is here only because ds service clients call it. In a realm
+  # ds is a guest in, that deployment declares this family and owns it with its
+  # own `svc-dataset-api`; ds declaring it there too would be a second copy of
+  # another project's vocabulary, drifting by description (#14).
+  #
+  # In *this* realm the only client granted any of it is `svc-ds-e2e` below, so
+  # the family travels with the harness. Nothing here is granted to a ds service:
+  # the data plane is reached with an EDR token plus `Edc-Contract-Agreement-Id`,
+  # or with no token at all on the plain path.
+  - name: dataset.admin
+    description: Full access to Dataset service (includes restricted datasets)
+  - name: dataset.query
+    description: Execute dataset queries
+  - name: dataset.read
+    description: Read dataset metadata and schema
+  - name: dataset.write
+    description: Write dataset data
+
+  # ── The admin supersets ───────────────────────────────────────────────────
+  #
+  # Admin is an *operator* grant — a superset satisfying every `{service}.*` —
+  # and a long-lived process should not hold one. ds applies that rule to its own
+  # service clients, and it is why `identity-registry.admin` is granted here
+  # rather than in the file that crosses: a realm ds owns may hand its operator
+  # the superset, a realm ds is a guest in is not ds's to widen. This replaces
+  # the transformation `keycloak_mirror.py` used to perform on the way across.
+  - name: identity-registry.admin
+    description: Admin access to dataspace identity-registry API
+  - name: connector.admin
+    description: Provider management (sync, assets, policies, contracts)
+
+# =============================================================================
+# CLIENTS
+# =============================================================================
+
+clients:
+  # The e2e harness drives endpoints that belong to several different callers —
+  # the provider console, the onboarding service, the dataset-api. It gets its
+  # own client so those grants are visible as a test identity instead of being
+  # smuggled into a production one, and so revoking it cannot break a service.
+  # Never enable this client outside a dev or CI realm — which is now enforced by
+  # where it is declared rather than by a rule in a generator: posture B does not
+  # mount this file, so the harness cannot reach a host realm.
+  - client_id: svc-ds-e2e
+    name: Dataspace E2E Harness (dev/CI only)
+    secret: ${SVC_DS_E2E_SECRET:-svc-ds-e2e}
+    service_account_enabled: true
+    scopes_prefix: null
+    default_scopes:
+      - dataset.query
+      - dataset.read
+      - identity-registry.resolve
+      - identity-registry.read
+      - identity-registry.membership.read
+      - connector.provider.read
+      - connector.provider.write
+      - connector.history.read
+      - connector.consent.provision
+      - connector.consent.audience
+      - connector.ingestion.record
+      - connector.disclosure.record
+      # Machine-identity permissions: granted by name because they are exempt
+      # from the admin superset (ds_auth.require_exact_permission).
+      - connector.internal
+      - provenance.read
+      - provenance.write
+      - catalog.read
+    extra_audiences:
+      - svc-ds-identity-registry
+      - svc-ds-connector
+      - svc-ds-provenance
+      - svc-ds-federated-catalog
+
+  # ── Grants this file adds to clients `clients.yaml` owns ──────────────────
+  #
+  # `client_id` plus grant keys and nothing else: this widens a client it does
+  # not own. The identity — name, secret, prefix — stays in the file that
+  # declares it, and stating any of it here would be an ownership conflict.
+
+  # The registry administers itself in a realm ds owns. It does not carry this
+  # into a host realm; see the admin note above.
+  - client_id: svc-ds-identity-registry
+    default_scopes:
+      - identity-registry.admin

@@ -201,6 +201,7 @@ jobs:
             -e SVC_DS_DATASET_API_SECRET=svc-ds-dataset-api \
             -e SVC_EDC_SECRET=svc-edc \
             -e SVC_REC_REGISTRY_SECRET=svc-rec-registry \
+            -v "$PWD/services/keycloak/clients.dataspaces.yaml:/app/clients.dataspaces.yaml:ro" \
             -v "$PWD/services/keycloak/clients.yaml:/app/clients.yaml:ro" \
             -v "$PWD/services/keycloak/clients.energy.yaml:/app/clients.energy.yaml:ro" \
             --entrypoint /bin/sh \
@@ -208,7 +209,8 @@ jobs:
             'celine-policies keycloak bootstrap \
                --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
                --admin-password "$KEYCLOAK_ADMIN_PASSWORD" &&
-             celine-policies keycloak sync /app/clients.yaml \
+             celine-policies keycloak sync /app/clients.dataspaces.yaml \
+               --overlay /app/clients.yaml \
                --overlay /app/clients.energy.yaml \
                --secrets-file /tmp/.secrets.yaml'
 

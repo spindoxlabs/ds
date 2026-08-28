@@ -528,16 +528,20 @@ services:
       keycloak:
         condition: service_healthy
     volumes:
-      # **Every file that declares this realm**, passed to one sync. The reason
-      # is unchanged from when a pre-merged file was mounted here instead: the
-      # sync recomputes every client's grants from what it is given, so syncing
-      # the core alone would strip the overlay's grants (`rec-registry.lookup`
-      # off `svc-ds-dataset-api`) with no flag involved, and a row filter would
-      # silently resolve nobody. Only the mechanism moved — `--overlay` merges
-      # them in the loader, so ds no longer generates a third file to say what
-      # these two already say.
+      # **Every file that declares this realm**, passed to one sync. The sync
+      # recomputes every client's grants from what it is given, so handing it a
+      # subset does not under-provision — it strips whatever the missing file
+      # granted (`rec-registry.lookup` off `svc-ds-dataset-api`), with no flag
+      # involved, and a row filter then resolves nobody.
+      #
+      # `clients.dataspaces.yaml` is the **base**, not an overlay, and that is
+      # deliberate: it declares `requires: [ds]`, so forgetting `clients.yaml` is
+      # a refusal rather than a silent narrowing, and a positional argument
+      # cannot itself be forgotten. Its header explains why the guard cannot live
+      # in the file that crosses into a host realm.
       #
       # Adding a domain overlay means adding a mount *and* an `--overlay` below.
+      - ./services/keycloak/clients.dataspaces.yaml:/app/clients.dataspaces.yaml:ro
       - ./services/keycloak/clients.yaml:/app/clients.yaml:ro
       - ./services/keycloak/clients.energy.yaml:/app/clients.energy.yaml:ro
     environment:
@@ -590,7 +594,8 @@ services:
         celine-policies keycloak bootstrap \
           --admin-user "$$KEYCLOAK_ADMIN_USERNAME" \
           --admin-password "$$KEYCLOAK_ADMIN_PASSWORD" &&
-        celine-policies keycloak sync /app/clients.yaml \
+        celine-policies keycloak sync /app/clients.dataspaces.yaml \
+          --overlay /app/clients.yaml \
           --overlay /app/clients.energy.yaml \
           --secrets-file /tmp/.secrets.yaml
     networks: [dataspaces]
