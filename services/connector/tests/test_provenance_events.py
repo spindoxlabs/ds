@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from connector.db.models import ConsentRequestORM
@@ -595,4 +596,138 @@ async def test_dataset_snapshot_counts_only_granted(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         _hash, count = await dataset_consent_snapshot(session, DATASET)
+    assert count == 1
+
+
+# ── the snapshot collapse (#12) ───────────────────────────────────────────────
+#
+# `latest_granted_rows_for_dataset` collapsed on `(subject_id, consumer_id)` and
+# ignored `offer_id`, so a decline of one offer erased a grant on another and the
+# hash came out **narrower than the disclosure it authorised** — the one direction
+# `L-2` cannot tolerate. Keyed per offer now, matching the enforcement path.
+
+
+async def _decide(session, offer: str, status: str, **overrides):
+    """A settled wildcard decision about one offer, written straight to the DB."""
+    async with session.begin():
+        session.add(
+            _row(
+                offer_id=offer,
+                status=status,
+                purpose=[
+                    "FlexibilityResearch"
+                    if offer == "test-flexibility"
+                    else "EnergyCommunityOperation"
+                ],
+                requested_at=overrides.pop("at", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+                **overrides,
+            )
+        )
+
+
+@pytest.mark.rule("L-2", "D-14", "D-15")
+@pytest.mark.asyncio
+async def test_the_snapshot_keeps_a_grant_when_another_offer_is_declined(engine):
+    """The defect: the hash must not be narrower than what it authorises.
+
+    One subject, two offers over one dataset, granting the first and declining
+    the second. The decline was simply the more recent row, so the collapse kept
+    only that and then discarded it as not `granted` — the subject vanished from
+    the evidence while their data still left under the offer they granted.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await _decide(session, "test-flexibility", "granted")
+        await _decide(
+            session,
+            "test-grid-planning",
+            "revoked",
+            at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            revoked_at=datetime(2026, 2, 1, 1, tzinfo=timezone.utc),
+        )
+
+        rows = await consent_service.latest_granted_rows_for_dataset(session, DATASET)
+        _hash, count = await dataset_consent_snapshot(session, DATASET)
+
+    assert [r.offer_id for r in rows] == ["test-flexibility"]
+    assert count == 1
+
+
+@pytest.mark.rule("L-2")
+@pytest.mark.asyncio
+async def test_the_snapshot_does_not_depend_on_decision_order(engine):
+    """The same consent state must fingerprint the same however it was reached.
+
+    Order-dependence is what made this a defect rather than an imprecision:
+    evidence that disagrees with itself is not evidence. Both orderings below
+    describe one state — granted to flexibility, declined grid-planning — so both
+    must hash to the same digest and count the same grant. Recorded in one order,
+    cleared, then recorded in the other, because the "order" is the decision
+    timestamps rather than the insertion sequence.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    early = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    late = datetime(2026, 2, 1, tzinfo=timezone.utc)
+
+    async def snapshot_for(grant_at, decline_at):
+        async with factory() as session:
+            async with session.begin():
+                await session.execute(delete(ConsentRequestORM))
+            await _decide(session, "test-flexibility", "granted", at=grant_at)
+            await _decide(
+                session,
+                "test-grid-planning",
+                "revoked",
+                at=decline_at,
+                revoked_at=decline_at,
+            )
+            return await dataset_consent_snapshot(session, DATASET)
+
+    granted_first = await snapshot_for(early, late)
+    declined_first = await snapshot_for(late, early)
+
+    assert granted_first == declined_first
+    assert granted_first[1] == 1
+
+
+@pytest.mark.rule("L-2", "D-11")
+@pytest.mark.asyncio
+async def test_two_grants_by_one_subject_are_two_grants_in_the_count(engine):
+    """`granted_party_count` counts grants, not parties, now the rows are keyed
+    per offer — one subject consenting to two offers contributes both.
+
+    The tuple itself is untouched: `D-11` makes the consent key
+    `(subject, purpose, controller-role)`, so the two offers are distinguished by
+    what they are *for* rather than by an offer id added to the evidence.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await _decide(session, "test-flexibility", "granted")
+        await _decide(
+            session,
+            "test-grid-planning",
+            "granted",
+            at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+        )
+        _hash, count = await dataset_consent_snapshot(session, DATASET)
+
+    assert count == 2
+
+
+@pytest.mark.rule("L-2")
+@pytest.mark.asyncio
+async def test_a_redecided_offer_still_collapses_to_its_latest(engine):
+    """Per-offer keying must not turn a change of mind into two rows.
+
+    The collapse is still a collapse — it is only keyed on more. A subject who
+    granted, withdrew and granted the same offer again counts once.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        await _decide(session, "test-flexibility", "revoked",
+                      revoked_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc))
+        await _decide(session, "test-flexibility", "granted",
+                      at=datetime(2026, 2, 1, tzinfo=timezone.utc))
+        _hash, count = await dataset_consent_snapshot(session, DATASET)
+
     assert count == 1

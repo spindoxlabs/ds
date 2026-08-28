@@ -758,11 +758,42 @@ def consent_snapshot_hash(rows: Iterable[ConsentRequestORM]) -> str:
 async def latest_granted_rows_for_dataset(
     session: AsyncSession, dataset_id: str
 ) -> list[ConsentRequestORM]:
-    """The effective granted consent rows for a dataset — latest per party.
+    """The effective granted consent rows for a dataset — latest per decision.
 
-    One row per ``(subject_id, consumer_id)`` — the most recent — kept only when
-    it is currently ``granted``.  This is the state a :class:`DataIngested` or
-    ``DataDisclosed` snapshot hashes over.
+    One row per ``(subject_id, consumer_id, offer_id)`` — the most recent — kept
+    only when it is currently ``granted``.  This is the state a
+    :class:`DataIngested` or ``DataDisclosed`` snapshot hashes over.
+
+    **Keyed on the offer, because a decision is.** This collapsed on
+    ``(subject_id, consumer_id)`` alone and kept only the most recent row, so a
+    subject whose latest decision was a *decline* of one offer vanished from the
+    snapshot entirely — including the grant they still held on another offer over
+    the same dataset. The hash was then **narrower than the disclosure it
+    authorised**: the data left under an offer the person had granted, and the
+    fingerprint that is supposed to prove which consent state backed the handover
+    did not contain them. Narrower is the one direction `L-2` cannot tolerate,
+    and the result was order-dependent — the same two decisions in the opposite
+    order produced different evidence.
+
+    The same collapse was fixed on the enforcement path first
+    (:func:`decide_for_subject`); this is the evidence path catching up, and the
+    two now agree about what a decision is keyed by.
+
+    **The hash tuple itself is unchanged, and deliberately.** `D-11` declares the
+    consent key to be ``(subject, purpose, controller-role)``, which is what
+    :func:`consent_snapshot_hash` already hashes, plus the dataset it is scoped
+    to and the version of the text the person was shown. An offer *carries* a
+    consent key rather than adding a dimension to one: two offers that differ
+    already produce different tuples, and two that agree on purpose, role and
+    text version are the same consent key by `D-11`, so hashing them identically
+    is correct rather than lossy. A negotiated ask (`D-16`) frequently carries no
+    ``offer_id`` at all, so keying the *tuple* on the offer would be degenerate
+    for exactly the model that needs coordinated granting. Whether the hash
+    should become offer-scoped is a rulebook question and is not this fix.
+
+    `L-2` stays true as written — "a recomputable SHA-256 over the authorising
+    consent tuples" — and becomes true in fact, which it was not while granted
+    rows were being dropped.
     """
     result = await session.execute(
         select(ConsentRequestORM)
@@ -770,21 +801,29 @@ async def latest_granted_rows_for_dataset(
         .order_by(
             ConsentRequestORM.subject_id.asc(),
             ConsentRequestORM.consumer_id.asc(),
+            ConsentRequestORM.offer_id.asc(),
             ConsentRequestORM.requested_at.desc(),
             ConsentRequestORM.revoked_at.desc(),
             ConsentRequestORM.decided_at.desc(),
         )
     )
-    latest: dict[tuple[str, str], ConsentRequestORM] = {}
+    latest: dict[tuple[str, str, str | None], ConsentRequestORM] = {}
     for row in result.scalars().all():
-        latest.setdefault((row.subject_id, row.consumer_id), row)
+        latest.setdefault((row.subject_id, row.consumer_id, row.offer_id), row)
     return [row for row in latest.values() if row.status == "granted"]
 
 
 async def dataset_consent_snapshot(
     session: AsyncSession, dataset_id: str
 ) -> tuple[str, int]:
-    """``(consent_snapshot_hash, granted_party_count)`` for a dataset."""
+    """``(consent_snapshot_hash, granted_party_count)`` for a dataset.
+
+    The count is **grants, not parties**, since the rows became keyed per offer:
+    one subject holding standing consent to two offers over this dataset counts
+    twice. It is diagnostic and never reaches the event graph — it is returned to
+    the discloser alongside the hash so an opaque digest can be sanity-checked
+    against the size of the export it authorises. `L-2`'s evidence is the hash.
+    """
     rows = await latest_granted_rows_for_dataset(session, dataset_id)
     return consent_snapshot_hash(rows), len(rows)
 
