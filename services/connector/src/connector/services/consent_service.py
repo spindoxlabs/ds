@@ -548,6 +548,125 @@ def resolve_decision(
     return False, "no consent record", None
 
 
+async def _consent_rows_for(
+    session: AsyncSession,
+    dataset_id: str,
+    consumer_ids: set[str],
+    subject_id: str | None = None,
+) -> list[ConsentRequestORM]:
+    """A dataset's consent rows for these consumer keys, latest first.
+
+    One loader for both readers below, ordered once, so "latest" cannot mean two
+    different things on the two paths.
+    """
+    stmt = select(ConsentRequestORM).where(
+        ConsentRequestORM.dataset_id == dataset_id,
+        ConsentRequestORM.consumer_id.in_(consumer_ids),
+    )
+    if subject_id is not None:
+        stmt = stmt.where(ConsentRequestORM.subject_id == subject_id)
+    result = await session.execute(
+        stmt.order_by(
+            ConsentRequestORM.subject_id.asc(),
+            ConsentRequestORM.requested_at.desc(),
+            ConsentRequestORM.revoked_at.desc(),
+            ConsentRequestORM.decided_at.desc(),
+        )
+    )
+    return list(result.scalars().all())
+
+
+def decide_for_subject(
+    rows: Iterable[ConsentRequestORM],
+    purpose: list[str] | None,
+    controller_role: str | None,
+    consent_required: bool,
+    offer_id: str | None = None,
+) -> tuple[bool, str, ConsentRequestORM | None]:
+    """One subject's verdict over their rows for a dataset, keyed **per offer**.
+
+    ``rows`` are that subject's rows for one dataset, latest first, already
+    narrowed to the consumer being asked about and the wildcard.
+
+    **The single decision procedure**, and it is shared deliberately.
+    :func:`check_consent_detail` and :func:`get_granted_subject_ids` answer the
+    same question about one subject and about every subject, and
+    ``GET /internal/consent/check`` calls *both* — the first when the caller
+    names a ``subject_id``, the second when it does not. They were separate
+    implementations of the same rules, and they drifted: keyed per offer on one
+    path and per subject on the other, the route contradicted itself, denying a
+    named subject while listing that same subject as granted a branch away.
+    Sharing the procedure is what makes the docstring promise that they agree
+    something the code enforces rather than something it asserts.
+
+    **Decisions collapse per offer, not per subject.** The write side already
+    keys on the offer — ``set_subject_data_sharing`` reads back through
+    :func:`get_latest_offer_consent` whenever one is named, because "two offers
+    may name the same dataset for different purposes and controllers; treating
+    them as one row makes granting the second a silent no-op and makes
+    withdrawing it revoke the first". Collapsing on the subject alone kept only
+    the most recent row, which made the answer depend on the **order** two
+    unrelated decisions were made in:
+
+        grant flexibility, then decline grid-planning  → denied
+        decline grid-planning, then grant flexibility  → allowed
+
+    The decline of an unrelated offer erased a grant, so the row filter withheld
+    rows the person had consented to share. Keyed per offer, each decision
+    answers only for its own offer.
+
+    ``offer_id`` narrows the question to one offer, for a caller that has one.
+    Without it the subject is authorised when **any** of their offers authorises,
+    which is what a data-plane row filter asks: is this row disclosable for the
+    declared purpose, under whichever offer allows it. With it, a subject holding
+    no decision about that offer is not in its audience even holding a grant on
+    the dataset itself — answering "who consents to this offer" from a different
+    offer's grant would name people who never saw this offer's text.
+
+    **A withdrawal that names no offer is not scoped to one.** A decision about
+    the bare dataset — ``POST /consent/my/shares`` with a ``dataset_id``, or a
+    subject rejecting a consumer's ask — carries no ``offer_id``, so revoking it
+    is a statement about the dataset rather than about an offer, and it denies
+    whatever any offer-scoped row still says. Fail-closed, and the only direction
+    that can be wrong here without disclosing against a withdrawal.
+    """
+    specific: dict[str | None, ConsentRequestORM] = {}
+    wildcard: dict[str | None, ConsentRequestORM] = {}
+    offers: list[str | None] = []
+    for row in rows:
+        if row.offer_id not in offers:
+            offers.append(row.offer_id)
+        target = wildcard if row.consumer_id == WILDCARD_CONSUMER else specific
+        target.setdefault(row.offer_id, row)
+
+    def decide(offer: str | None):
+        return resolve_decision(
+            specific.get(offer),
+            wildcard.get(offer),
+            purpose,
+            controller_role,
+            consent_required,
+        )
+
+    bare_allowed, bare_reason, bare_row = decide(None)
+    if bare_row is not None and bare_row.status in ("revoked", "rejected"):
+        return (
+            False,
+            f"{bare_reason} — the decision names no offer, so it is not scoped to one",
+            bare_row,
+        )
+
+    if offer_id is not None:
+        return decide(offer_id)
+
+    allowed, reason, row = bare_allowed, bare_reason, bare_row
+    for offer in sorted(o for o in offers if o):
+        if allowed:
+            break
+        allowed, reason, row = decide(offer)
+    return allowed, reason, row
+
+
 async def check_consent(
     session: AsyncSession,
     subject_id: str,
@@ -578,19 +697,25 @@ async def check_consent_detail(
     purpose: list[str] | None = None,
     controller_role: str | None = None,
     consent_required: bool | None = None,
+    offer_id: str | None = None,
 ) -> tuple[bool, str, ConsentRequestORM | None]:
-    """As :func:`check_consent`, also returning the row that decided."""
+    """As :func:`check_consent`, also returning the row that decided.
+
+    One subject's half of :func:`decide_for_subject`; the row-filter half is
+    :func:`get_granted_subject_ids`. Both delegate, so the two branches of
+    ``GET /internal/consent/check`` cannot disagree about the same rows.
+    """
     if consent_required is None:
         consent_required = _dataset_requires_consent(dataset_id)
 
-    specific = None
-    if consumer_id != WILDCARD_CONSUMER:
-        specific = await get_latest_consent(session, subject_id, dataset_id, consumer_id)
-    wildcard = await get_latest_consent(
-        session, subject_id, dataset_id, WILDCARD_CONSUMER
+    rows = await _consent_rows_for(
+        session,
+        dataset_id,
+        {consumer_id, WILDCARD_CONSUMER},
+        subject_id=subject_id,
     )
-    return resolve_decision(
-        specific, wildcard, purpose, controller_role, consent_required
+    return decide_for_subject(
+        rows, purpose, controller_role, consent_required, offer_id
     )
 
 
@@ -678,101 +803,31 @@ async def get_granted_subject_ids(
     This is the row-filter list: a subject who did not consent to the declared
     purpose simply does not appear, so their rows never leave the provider.
 
-    A subject may be authorised by a per-party grant *or* by the scoped wildcard
-    (§3.1); a per-party opt-out overrides the wildcard.  Both are considered here
-    so the row-filter agrees with :func:`check_consent`.
-
-    **Decisions collapse per offer, not per subject.** The write side already
-    keys on the offer — ``set_subject_data_sharing`` reads back through
-    :func:`get_latest_offer_consent` whenever one is named, because "two offers
-    may name the same dataset for different purposes and controllers; treating
-    them as one row makes granting the second a silent no-op and makes
-    withdrawing it revoke the first". The read side collapsed on
-    ``(subject_id, consumer_id)`` alone and kept only the most recent row, so it
-    disagreed with the write side about what a row is keyed by, and the
-    disagreement was **order-dependent**: one subject, two decisions about two
-    different offers over one dataset, and the answer changed when they were made
-    in the opposite order.
-
-        grant flexibility, then decline grid-planning  → filter(Flexibility) = []
-        decline grid-planning, then grant flexibility  → filter(Flexibility) = [alice]
-
-    The decline of an unrelated offer erased a grant, so the filter withheld rows
-    the person had consented to share. Keyed per offer, each decision answers only
-    for its own offer and a subject is authorised when **any** of them does.
-
-    ``offer_id`` narrows the question to one offer, for a caller that has one —
-    ``GET /consent/admin/shares`` asks "who consents to *this* offer", and
-    answering it from a different offer's grant would name people who never saw
-    this offer's text. A subject with no decision about the named offer is
-    therefore absent from its audience, even holding a grant on the dataset
-    itself. The data plane passes nothing and gets the union, which is the
-    question it asks: is this subject's row disclosable for the declared purpose,
-    under whichever offer authorises it.
-
-    **A withdrawal that names no offer is not scoped to one.** A decision made
-    about the bare dataset — ``POST /consent/my/shares`` with a ``dataset_id``,
-    or a subject rejecting a consumer's ask — carries no ``offer_id``, so
-    revoking it is a statement about the dataset rather than about an offer, and
-    it denies whatever any offer-scoped row still says. Fail-closed, and the only
-    direction that can be wrong here without disclosing against a withdrawal.
+    Every-subject half of :func:`decide_for_subject`, which is where the rules
+    live — per-offer keying, the wildcard/per-party precedence of §3.1, and the
+    offer-agnostic withdrawal. :func:`check_consent_detail` is the one-subject
+    half and delegates to the same procedure, so this list and that verdict
+    cannot disagree about the same rows.
     """
     if consent_required is None:
         consent_required = _dataset_requires_consent(dataset_id)
 
-    consumer_ids = {consumer_id, WILDCARD_CONSUMER}
-    result = await session.execute(
-        select(ConsentRequestORM)
-        .where(
-            ConsentRequestORM.dataset_id == dataset_id,
-            ConsentRequestORM.consumer_id.in_(consumer_ids),
-        )
-        .order_by(
-            ConsentRequestORM.subject_id.asc(),
-            ConsentRequestORM.requested_at.desc(),
-            ConsentRequestORM.revoked_at.desc(),
-            ConsentRequestORM.decided_at.desc(),
-        )
+    rows = await _consent_rows_for(
+        session, dataset_id, {consumer_id, WILDCARD_CONSUMER}
     )
-    specific: dict[tuple[str, str | None], ConsentRequestORM] = {}
-    wildcard: dict[tuple[str, str | None], ConsentRequestORM] = {}
-    offers_by_subject: dict[str, set[str | None]] = {}
-    for consent in result.scalars().all():
-        key = (consent.subject_id, consent.offer_id)
-        offers_by_subject.setdefault(consent.subject_id, set()).add(consent.offer_id)
-        if consent.consumer_id == WILDCARD_CONSUMER:
-            wildcard.setdefault(key, consent)
-        else:
-            specific.setdefault(key, consent)
-
-    def decide(key: tuple[str, str | None]):
-        """One offer's verdict, wildcard and per-party row resolved together."""
-        return resolve_decision(
-            specific.get(key), wildcard.get(key), purpose, controller_role, consent_required
-        )
+    by_subject: dict[str, list[ConsentRequestORM]] = {}
+    for row in rows:
+        by_subject.setdefault(row.subject_id, []).append(row)
 
     granted: list[str] = []
-    for subject_id in sorted(offers_by_subject):
-        bare_allowed, bare_reason, bare_row = decide((subject_id, None))
-        if bare_row is not None and bare_row.status in ("revoked", "rejected"):
-            log.debug(
-                "Subject %s excluded from %s row filter: %s (names no offer, so "
-                "it is not scoped to one)",
-                subject_id,
-                dataset_id,
-                bare_reason,
-            )
-            continue
-
-        if offer_id is not None:
-            allowed, reason, _row = decide((subject_id, offer_id))
-        else:
-            allowed, reason = bare_allowed, bare_reason
-            for offer in sorted(o for o in offers_by_subject[subject_id] if o):
-                if allowed:
-                    break
-                allowed, reason, _row = decide((subject_id, offer))
-
+    for subject_id in sorted(by_subject):
+        allowed, reason, _row = decide_for_subject(
+            by_subject[subject_id],
+            purpose,
+            controller_role,
+            consent_required,
+            offer_id,
+        )
         if allowed:
             granted.append(subject_id)
         else:

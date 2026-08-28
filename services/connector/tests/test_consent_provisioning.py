@@ -946,3 +946,66 @@ async def test_the_row_filter_is_fixed_too_not_just_the_audience(engine, client)
             session, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
         )
     assert granted == [SUBJECT]
+
+
+# ── The two readers agree, because they are one reader ────────────────────────
+
+INTERNAL = make_headers(scope="connector.internal")
+
+
+@pytest.mark.rule("D-14", "D-15")
+@pytest.mark.asyncio
+async def test_check_consent_agrees_with_the_row_filter(engine, client):
+    """The promise `get_granted_subject_ids` has always made in its docstring.
+
+    "Both are considered here so the row-filter agrees with `check_consent`" —
+    which held only as long as two separate implementations of the same rules
+    stayed in step, and they did not. Fixing the per-offer collapse on one path
+    alone turned a consistent wrong answer into a contradiction; both now
+    delegate to `decide_for_subject`, so this is enforced rather than asserted.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    await _provision_offer(client, "test-grid-planning", False)
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        allowed, _reason = await check_consent(
+            session, SUBJECT, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
+        )
+        granted = await get_granted_subject_ids(
+            session, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
+        )
+
+    assert allowed is True
+    assert granted == [SUBJECT]
+    assert allowed == (SUBJECT in granted)
+
+
+@pytest.mark.rule("D-14", "D-15", "D-20")
+@pytest.mark.asyncio
+async def test_internal_consent_check_does_not_contradict_itself(client):
+    """One route, two branches, and they used to answer differently.
+
+    `GET /internal/consent/check` calls `check_consent_detail` when the caller
+    names a `subject_id` and `get_granted_subject_ids` when it does not. With a
+    grant on one offer and a decline on another it denied the named subject and
+    listed that same subject as granted one branch away — a data-plane PEP
+    reading either branch would have been correct and they could not both be.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    await _provision_offer(client, "test-grid-planning", False)
+
+    params = {
+        "dataset_id": DATASET,
+        "consumer_id": CONSUMER,
+        "purpose": "FlexibilityResearch",
+    }
+    named = await client.get(
+        "/internal/consent/check", headers=INTERNAL, params={**params, "subject_id": SUBJECT}
+    )
+    listed = await client.get("/internal/consent/check", headers=INTERNAL, params=params)
+    assert named.status_code == listed.status_code == 200
+
+    assert named.json()["consent_active"] is True
+    assert SUBJECT in listed.json()["subject_ids"]
+    assert named.json()["consent_active"] == (SUBJECT in listed.json()["subject_ids"])
