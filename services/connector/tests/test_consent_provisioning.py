@@ -784,10 +784,10 @@ async def test_audience_refuses_an_anonymous_caller(client):
     assert r.status_code == 401
 
 
-@pytest.mark.rule("D-20", "E2E-03")
+@pytest.mark.rule("D-20")
 @pytest.mark.asyncio
 async def test_audience_refuses_a_weak_token_before_validating_the_query(client):
-    """403 before 422, which `api_contract`'s sweep depends on.
+    """403 before 422, which `api_contract`'s sweep depends on (`E2E-03`).
 
     That sweep derives the guarded routes from the app's own OpenAPI document
     and replays an under-privileged token at each with no query string. Were

@@ -101,7 +101,7 @@ into `consumer_id = "*"` rows.
 
 | # | Rule | Status |
 |---|---|---|
-| D-14 | The wildcard admits any party **inside the circle** for that controller and purpose. It never admits a new controller and never a new purpose | **Enforced** |
+| D-14 | The wildcard admits any party **inside the circle** for that controller and purpose. It never admits a new controller and never a new purpose | **Enforced**, and since 2026-08-28 the controller is also in the `L-2` consent fingerprint. It was not: the hash tuple carried `controller_role` alone, so a dimension the wildcard refuses to cross was invisible in the evidence proving which consent state authorised a handover. See `L-2` in [Provenance and logging](provenance-and-logging.md) |
 | D-15 | A per-party row overrides the wildcard. An explicit grant and an explicit **opt-out** both win | **Enforced** |
 
 ## 5. Asking, granting and revoking

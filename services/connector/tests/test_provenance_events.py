@@ -587,6 +587,19 @@ def test_snapshot_hash_reacts_to_purpose_and_version():
     assert consent_snapshot_hash([_row(legal_basis={"consent_text_version": "2.0"})]) != base
 
 
+@pytest.mark.rule("L-2", "D-14")
+def test_snapshot_hash_reacts_to_the_controller():
+    """The controller is a dimension of the evidence (#13).
+
+    `D-14` makes it decisive — the wildcard "never admits a new controller" — so
+    a fingerprint that cannot tell one controller from another cannot prove which
+    consent state authorised a handover. Same subject, same dataset, same purpose,
+    same controller role: only the controller differs, and that has to be enough.
+    """
+    base = consent_snapshot_hash([_row(controller="did:web:dso-a")])
+    assert consent_snapshot_hash([_row(controller="did:web:dso-b")]) != base
+
+
 @pytest.mark.rule("L-2")
 @pytest.mark.asyncio
 async def test_dataset_snapshot_counts_only_granted(engine):
@@ -696,9 +709,10 @@ async def test_two_grants_by_one_subject_are_two_grants_in_the_count(engine):
     """`granted_party_count` counts grants, not parties, now the rows are keyed
     per offer — one subject consenting to two offers contributes both.
 
-    The tuple itself is untouched: `D-11` makes the consent key
-    `(subject, purpose, controller-role)`, so the two offers are distinguished by
-    what they are *for* rather than by an offer id added to the evidence.
+    The tuple is not keyed on the offer: `D-11` makes the consent key
+    `(subject, purpose, controller-role)` — and `D-14` adds the controller — so
+    two offers are distinguished by what they are *for* and *for whom*, rather
+    than by an offer id added to the evidence.
     """
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
@@ -731,3 +745,74 @@ async def test_a_redecided_offer_still_collapses_to_its_latest(engine):
         _hash, count = await dataset_consent_snapshot(session, DATASET)
 
     assert count == 1
+
+
+# ── the controller-blind tuple (#13) ──────────────────────────────────────────
+#
+# `consent_snapshot_hash` hashed `(subject, dataset, purpose, controller_role,
+# consent_text_version)`, so two offers over one dataset agreeing on purpose and
+# controller role but naming **different controllers** produced byte-identical
+# tuples. `D-14` treats the controller as decisive, so `L-2`'s evidence has to.
+
+
+@pytest.mark.rule("L-2", "D-14")
+@pytest.mark.asyncio
+async def test_two_controllers_sharing_a_role_and_purpose_are_distinguishable(engine):
+    """The reachable configuration: two DSOs, both `operations`, one purpose.
+
+    Nothing forbids it — `D-11a` constrains which roles a controller may name and
+    says nothing about two controllers holding the same one — and before this the
+    two states below hashed identically, so the `DataDisclosed` recording a
+    handover to the first was indistinguishable from one recording a handover to
+    the second.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def snapshot_disclosing_to(controller: str):
+        async with factory() as session:
+            async with session.begin():
+                await session.execute(delete(ConsentRequestORM))
+                session.add(
+                    _row(
+                        offer_id="test-grid-planning",
+                        status="granted",
+                        purpose=["EnergyCommunityOperation"],
+                        controller=controller,
+                        controller_role="operations",
+                    )
+                )
+            digest, _count = await dataset_consent_snapshot(session, DATASET)
+            return digest
+
+    to_a = await snapshot_disclosing_to("did:web:dso-a")
+    to_b = await snapshot_disclosing_to("did:web:dso-b")
+    assert to_a != to_b
+
+
+@pytest.mark.rule("L-2")
+@pytest.mark.asyncio
+async def test_the_same_controller_still_fingerprints_the_same(engine):
+    """The added dimension must not make the hash unrecomputable.
+
+    A state re-recorded unchanged has to reproduce its digest, or `L-2`'s
+    "recomputable" claim fails in the other direction.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def snapshot():
+        async with factory() as session:
+            async with session.begin():
+                await session.execute(delete(ConsentRequestORM))
+                session.add(
+                    _row(
+                        offer_id="test-grid-planning",
+                        status="granted",
+                        purpose=["EnergyCommunityOperation"],
+                        controller="did:web:dso-a",
+                        controller_role="operations",
+                    )
+                )
+            digest, _count = await dataset_consent_snapshot(session, DATASET)
+            return digest
+
+    assert await snapshot() == await snapshot()

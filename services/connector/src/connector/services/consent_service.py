@@ -735,17 +735,46 @@ def _dataset_requires_consent(dataset_id: str) -> bool:
 def consent_snapshot_hash(rows: Iterable[ConsentRequestORM]) -> str:
     """A recomputable, non-PII fingerprint of a consent state (§4.1).
 
-    SHA-256 over the sorted ``(subject_did, dataset_id, purpose,
+    SHA-256 over the sorted ``(subject_did, dataset_id, purpose, controller,
     controller_role, consent_text_version)`` tuples.  It proves *which* consent
     state authorised a handover, verifiable by recomputation from the connector
     DB, while holding no name, POD or fiscal code — the subject appears only as
-    its pseudonymous DID, exactly as it does on the consent row itself.
+    its pseudonymous DID, exactly as it does on the consent row itself.  A
+    controller alias is an organisation, not a person, so naming it costs the
+    fingerprint none of that.
+
+    **``controller`` is in the tuple since 2026-08-28, and it was missing.**
+    `D-11` names the consent key ``(subject, purpose, controller-role)`` and
+    says matching on the controller *alone* is insufficient — which makes the
+    role necessary, not the controller irrelevant. `D-14` then makes the
+    controller decisive in as many words: the wildcard "never admits a new
+    controller and never a new purpose". A dimension the wildcard refuses to
+    cross has to be visible in the evidence that proves which consent state
+    authorised the handover. Without it, two offers over one dataset agreeing on
+    purpose and controller role but naming **different controllers** produced
+    byte-identical tuples, so `L-2`'s digest could not tell a disclosure to one
+    from a disclosure to the other. The write path already stored what was
+    needed — ``set_subject_data_sharing`` persists ``controller`` from
+    ``offer.recipients.controller`` — and only the hash omitted it.
+
+    Not reachable on the offers shipped here, whose three purposes separate them
+    on their own; reachable as soon as two controllers share a role and a
+    purpose over one dataset, which nothing forbids — `D-11a` constrains which
+    roles a controller may name and does nothing to separate two controllers
+    holding the same one.
+
+    **Every hash recorded before that date was computed over the old tuple**, so
+    an auditor recomputing an older `DataDisclosed` from today's code will not
+    reproduce it. That is deliberate and not migrated: a stored digest is
+    evidence of what it was computed over, and rewriting the recorded evidence to
+    match new code would destroy exactly the property the record exists for.
     """
     tuples = sorted(
         (
             row.subject_id or "",
             row.dataset_id or "",
             ",".join(sorted(row.purpose or [])),
+            row.controller or "",
             row.controller_role or "",
             (row.legal_basis or {}).get("consent_text_version") or "",
         )
@@ -779,17 +808,20 @@ async def latest_granted_rows_for_dataset(
     (:func:`decide_for_subject`); this is the evidence path catching up, and the
     two now agree about what a decision is keyed by.
 
-    **The hash tuple itself is unchanged, and deliberately.** `D-11` declares the
-    consent key to be ``(subject, purpose, controller-role)``, which is what
-    :func:`consent_snapshot_hash` already hashes, plus the dataset it is scoped
-    to and the version of the text the person was shown. An offer *carries* a
-    consent key rather than adding a dimension to one: two offers that differ
-    already produce different tuples, and two that agree on purpose, role and
-    text version are the same consent key by `D-11`, so hashing them identically
-    is correct rather than lossy. A negotiated ask (`D-16`) frequently carries no
-    ``offer_id`` at all, so keying the *tuple* on the offer would be degenerate
-    for exactly the model that needs coordinated granting. Whether the hash
-    should become offer-scoped is a rulebook question and is not this fix.
+    **This fix changed which rows are hashed, not the tuple.** The tuple did
+    change afterwards — :func:`consent_snapshot_hash` gained ``controller``,
+    because `D-14` makes it decisive and it was absent — but that was a separate
+    question about the tuple's contents, decided separately.
+
+    **The tuple is still not keyed on the offer, and deliberately.** An offer
+    *carries* a consent key rather than adding a dimension to one: two offers
+    that differ in purpose, controller or role already produce different tuples,
+    and two agreeing on all of them plus the text version are the same consent
+    key by `D-11`, so hashing them identically is correct rather than lossy. A
+    negotiated ask (`D-16`) frequently carries no ``offer_id`` at all, so keying
+    the *tuple* on the offer would be degenerate for exactly the model that needs
+    coordinated granting. Whether the hash should become offer-scoped is a
+    rulebook question and was decided by neither change.
 
     `L-2` stays true as written — "a recomputable SHA-256 over the authorising
     consent tuples" — and becomes true in fact, which it was not while granted
