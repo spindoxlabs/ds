@@ -799,3 +799,150 @@ async def test_audience_refuses_a_weak_token_before_validating_the_query(client)
         "/consent/admin/shares", headers=make_headers(scope="connector.webhook")
     )
     assert r.status_code == 403
+
+
+# ── The offer collapse, on the read side ──────────────────────────────────────
+#
+# `set_subject_data_sharing` keys a decision on its offer; `get_granted_subject_ids`
+# collapsed on `(subject_id, consumer_id)` alone. Two consent surfaces disagreeing
+# about what a row is keyed by made the answer depend on the *order* two unrelated
+# decisions were made in — and in one of the two orders it withheld rows the
+# person had consented to share.
+
+async def _provision_offer(client, offer: str, enabled: bool, subject: str = SUBJECT):
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": subject,
+            "offer_id": offer,
+            "enabled": enabled,
+            "legal_basis": EVIDENCE,
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+async def _audience(client, offer: str, consumer: str = CONSUMER) -> list[str]:
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": offer, "consumer_id": consumer},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()["datasets"][0]["subject_ids"]
+
+
+@pytest.mark.rule("D-14", "D-15", "L-2")
+@pytest.mark.asyncio
+async def test_declining_one_offer_does_not_erase_a_grant_on_another(client):
+    """The defect, in the order that used to lose the grant.
+
+    `test-flexibility` and `test-grid-planning` are two consent-based offers over
+    the same fixture dataset. Granting the first and then declining the second
+    used to answer `[]` for the first — the decline was simply the more recent
+    row, and the collapse kept only that. The person's data would have been left
+    out of an export they had consented to.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    await _provision_offer(client, "test-grid-planning", False)
+
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+    assert await _audience(client, "test-grid-planning") == []
+
+
+@pytest.mark.rule("D-14", "D-15")
+@pytest.mark.asyncio
+async def test_the_audience_does_not_depend_on_decision_order(client):
+    """The same two decisions, made the other way round, answer the same.
+
+    Order-dependence was the symptom that proved the collapse was a defect and
+    not an imprecision: nothing about consent should make the answer depend on
+    which of two unrelated questions the person was asked first.
+    """
+    await _provision_offer(client, "test-grid-planning", False)
+    await _provision_offer(client, "test-flexibility", True)
+
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+    assert await _audience(client, "test-grid-planning") == []
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_a_grant_on_one_offer_is_not_an_audience_for_another(client):
+    """Keyed on the offer, not merely filtered by its purpose.
+
+    Purpose very nearly separates the fixture's two consent offers and does not
+    quite — two offers may name one purpose with different controllers, and
+    `test-flexibility` declares no `controller_role` at all. A caller asking who
+    consents to an offer must get people who decided about *that* offer.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+    # Never asked about grid-planning, so not in its audience.
+    assert await _audience(client, "test-grid-planning") == []
+
+
+@pytest.mark.rule("D-15", "A-10")
+@pytest.mark.asyncio
+async def test_withdrawing_the_offer_empties_its_own_audience_only(client):
+    """Withdrawal stays scoped to the offer it was made about."""
+    await _provision_offer(client, "test-flexibility", True)
+    await _provision_offer(client, "test-grid-planning", True)
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+    assert await _audience(client, "test-grid-planning") == [SUBJECT]
+
+    await _provision_offer(client, "test-flexibility", False)
+    assert await _audience(client, "test-flexibility") == []
+    assert await _audience(client, "test-grid-planning") == [SUBJECT]
+
+
+@pytest.mark.rule("D-15", "A-10")
+@pytest.mark.asyncio
+async def test_a_dataset_wide_withdrawal_denies_every_offer(engine, client):
+    """A decision that names no offer is not scoped to one.
+
+    `POST /consent/my/shares` with a bare `dataset_id` — the `/my-data` control —
+    writes a row with no `offer_id`, and revoking it is a statement about the
+    dataset rather than about an offer. Per-offer keying must not let an
+    offer-scoped grant survive it: that would disclose against a withdrawal,
+    which is the one direction this collapse must never get wrong.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(
+                _row(
+                    offer_id=None,
+                    status="revoked",
+                    requested_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
+                    revoked_at=datetime(2026, 3, 1, 1, tzinfo=timezone.utc),
+                )
+            )
+
+    assert await _audience(client, "test-flexibility") == []
+
+
+@pytest.mark.rule("D-14", "D-15")
+@pytest.mark.asyncio
+async def test_the_row_filter_is_fixed_too_not_just_the_audience(engine, client):
+    """The data plane asks without an offer, and it had the same defect.
+
+    `_authorize_dataset` builds its row filter from `get_granted_subject_ids`
+    with no offer to name, so the decline of an unrelated offer used to withhold
+    rows there as well. Passing no offer now unions the per-offer decisions
+    rather than keeping only the most recent one.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    await _provision_offer(client, "test-grid-planning", False)
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        granted = await get_granted_subject_ids(
+            session, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
+        )
+    assert granted == [SUBJECT]

@@ -876,6 +876,15 @@ async def admin_read_offer_audience(
     be correct until a second dataset declared the same offer and then silently
     wrong — an export made against one dataset's audience and drawn from two.
 
+    **The answer is keyed on the offer, not just filtered by its purpose.**
+    ``offer_id`` is passed down to ``get_granted_subject_ids``, so a subject who
+    granted a *different* offer over the same dataset is not in this one's
+    audience even when the two share a purpose and a controller role — and,
+    conversely, declining a different offer no longer erases this one's grant.
+    Purpose alone very nearly separates them and does not quite: two offers may
+    name one purpose with different controllers, and `test-flexibility` in the
+    connector's own fixture declares no ``controller_role`` at all.
+
     An unknown offer is a 422 and a contract-based offer is a 409 — the same two
     answers ``POST /consent/admin/shares`` gives, for the same reasons. An offer
     resolving to no dataset is a 422 as well, matching ``POST /admin/disclosure``:
@@ -929,6 +938,7 @@ async def admin_read_offer_audience(
             purpose=[offer.purpose],
             controller_role=offer.recipients.controller_role,
             consent_required=True,
+            offer_id=offer.id,
         )
         subject_ids = sorted(subject_ids)
         datasets.append(
