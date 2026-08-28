@@ -189,7 +189,7 @@ clients:
 - client_id: svc-ds-dataset-api
   name: Dataspace Dataset API
   secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
-  scopes_prefix: dataset
+  scopes_prefix: null
   default_scopes:
   - connector.internal
   - rec-registry.lookup

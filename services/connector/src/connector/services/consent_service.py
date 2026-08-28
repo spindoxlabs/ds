@@ -5,6 +5,7 @@ import hashlib
 import json
 import logging
 from collections.abc import Iterable
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -860,7 +861,26 @@ async def dataset_consent_snapshot(
     return consent_snapshot_hash(rows), len(rows)
 
 
-async def get_granted_subject_ids(
+@dataclass(frozen=True)
+class GrantedSubject:
+    """One subject in a dataset's audience, and when they decided.
+
+    ``decided_at`` is the timestamp of **the row that authorises this
+    disclosure** — the one :func:`decide_for_subject` selected — not the
+    subject's earliest or latest decision overall. Those differ whenever a
+    standing wildcard is overridden per party, or one offer is re-decided while
+    another stands, and the authorising row is the only one that evidences
+    *this* release.
+
+    It is ``None`` only for a row that was granted without ever being decided,
+    which the schema permits and the write paths do not produce.
+    """
+
+    subject_id: str
+    decided_at: datetime | None
+
+
+async def get_granted_subjects(
     session: AsyncSession,
     dataset_id: str,
     consumer_id: str,
@@ -868,7 +888,7 @@ async def get_granted_subject_ids(
     controller_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
-) -> list[str]:
+) -> list[GrantedSubject]:
     """Subjects whose latest consent authorises this consumer, purpose and role.
 
     This is the row-filter list: a subject who did not consent to the declared
@@ -879,6 +899,10 @@ async def get_granted_subject_ids(
     offer-agnostic withdrawal. :func:`check_consent_detail` is the one-subject
     half and delegates to the same procedure, so this list and that verdict
     cannot disagree about the same rows.
+
+    :func:`get_granted_subject_ids` is the same answer with the timestamps
+    dropped, and delegates here rather than repeating the loop — the same reason
+    the one-subject and every-subject paths share ``decide_for_subject``.
     """
     if consent_required is None:
         consent_required = _dataset_requires_consent(dataset_id)
@@ -890,9 +914,9 @@ async def get_granted_subject_ids(
     for row in rows:
         by_subject.setdefault(row.subject_id, []).append(row)
 
-    granted: list[str] = []
+    granted: list[GrantedSubject] = []
     for subject_id in sorted(by_subject):
-        allowed, reason, _row = decide_for_subject(
+        allowed, reason, row = decide_for_subject(
             by_subject[subject_id],
             purpose,
             controller_role,
@@ -900,9 +924,42 @@ async def get_granted_subject_ids(
             offer_id,
         )
         if allowed:
-            granted.append(subject_id)
+            granted.append(
+                GrantedSubject(
+                    subject_id=subject_id,
+                    decided_at=row.decided_at if row is not None else None,
+                )
+            )
         else:
             log.debug(
                 "Subject %s excluded from %s row filter: %s", subject_id, dataset_id, reason
             )
     return granted
+
+
+async def get_granted_subject_ids(
+    session: AsyncSession,
+    dataset_id: str,
+    consumer_id: str,
+    purpose: list[str] | None = None,
+    controller_role: str | None = None,
+    consent_required: bool | None = None,
+    offer_id: str | None = None,
+) -> list[str]:
+    """The subject DIDs of :func:`get_granted_subjects`, in the same order.
+
+    The row filter every PEP-side caller wants: the identities, without the
+    decision timestamps that only a disclosure audit needs.
+    """
+    return [
+        subject.subject_id
+        for subject in await get_granted_subjects(
+            session,
+            dataset_id,
+            consumer_id,
+            purpose,
+            controller_role,
+            consent_required,
+            offer_id,
+        )
+    ]

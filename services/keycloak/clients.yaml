@@ -339,10 +339,28 @@ clients:
       - svc-ds-identity-registry
       - svc-ds-connector
 
+  # **An outbound identity, and only that.** This is what the dataset API
+  # authenticates *with* to reach the connector's `/internal/*` — which is why it
+  # holds `connector.internal` and names `svc-ds-connector` as an audience.
+  #
+  # **No `scopes_prefix`** (#14). It carried `scopes_prefix: dataset` until
+  # 2026-08-28, which made it the declared owner of the `dataset.*` family and
+  # therefore the audience the sync stamps on every token derived from that
+  # prefix — a name **nothing validates**. The service that does validate one
+  # checks `svc-dataset-api` (`docker-compose.dataset-api.yml`,
+  # `CELINE_OIDC_AUDIENCE`), which is not declared in this realm, and the data
+  # plane is reached with EDR tokens rather than realm-issued ones in any case.
+  # `libs/ds-auth/src/ds_auth/bundles.py` says the same thing about the
+  # vocabulary: `dataset.*` belongs to the data-plane service and is here only
+  # because ds service clients call it.
+  #
+  # It also has to come off for this file to be mountable in a realm ds is a
+  # guest in: `celine-policies` refuses two clients claiming one prefix, and
+  # there `dataset.*` is owned by that deployment's own `svc-dataset-api`.
   - client_id: svc-ds-dataset-api
     name: Dataspace Dataset API
     secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
-    scopes_prefix: dataset
+    scopes_prefix: null
     default_scopes:
       - connector.internal
     extra_audiences:

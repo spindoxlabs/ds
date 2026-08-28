@@ -623,9 +623,65 @@ async def test_audience_returns_the_provisioned_subjects_per_dataset(client):
     # Stamped from the offer, never supplied by the caller.
     assert body["purpose"] == ["FlexibilityResearch"]
     assert body["controller_role"] is None
-    assert body["datasets"] == [
-        {"dataset_id": DATASET, "subject_ids": [SUBJECT], "subject_count": 1}
-    ]
+    assert len(body["datasets"]) == 1
+    dataset = body["datasets"][0]
+    assert dataset["dataset_id"] == DATASET
+    assert dataset["subject_ids"] == [SUBJECT]
+    assert dataset["subject_count"] == 1
+    # `subjects` carries the same audience with the decision timestamps. The two
+    # keys are derived from one list, so asserting both pins that they agree.
+    assert [entry["subject_id"] for entry in dataset["subjects"]] == [SUBJECT]
+    assert dataset["subjects"][0]["decided_at"] is not None
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_decided_at_is_the_authorising_row_not_the_latest_one(engine, client):
+    """`decided_at` evidences *this* release, so it comes from the row that
+    authorises it — not the subject's most recent decision.
+
+    The two are only distinguishable when they disagree, so this fixture makes
+    them: a per-party grant for the consumer decided in **January**, and a
+    standing wildcard grant decided in **June**. §3.1 says the per-party row
+    wins, and it is the older one — a naive "latest decision for this subject"
+    would report June and be wrong by five months about the basis of every
+    supply point in the export.
+    """
+    specific = datetime(2026, 1, 5, 9, tzinfo=timezone.utc)
+    wildcard = datetime(2026, 6, 20, 9, tzinfo=timezone.utc)
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(
+                _row(
+                    consumer_id=WILDCARD_CONSUMER,
+                    offer_id="test-flexibility",
+                    requested_at=wildcard,
+                    decided_at=wildcard,
+                )
+            )
+            session.add(
+                _row(
+                    consumer_id=CONSUMER,
+                    offer_id="test-flexibility",
+                    requested_at=specific,
+                    decided_at=specific,
+                )
+            )
+
+    r = await client.get(
+        "/consent/admin/shares",
+        headers=AUDIENCE,
+        params={"offer_id": "test-flexibility", "consumer_id": CONSUMER},
+    )
+    assert r.status_code == 200, r.text
+    subjects = r.json()["datasets"][0]["subjects"]
+    assert [entry["subject_id"] for entry in subjects] == [SUBJECT]
+    assert subjects[0]["decided_at"].startswith("2026-01-05"), (
+        "reported the standing wildcard's date instead of the per-party row "
+        f"that actually authorises this consumer: {subjects[0]}"
+    )
 
 
 @pytest.mark.rule("D-15", "A-10")

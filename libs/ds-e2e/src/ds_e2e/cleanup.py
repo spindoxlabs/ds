@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 import httpx
 import psycopg
@@ -91,7 +92,7 @@ def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
 
 def _edc_list(
     client: httpx.Client, mgmt_url: str, resource: str, headers: dict[str, str]
-) -> list[dict]:
+) -> list[dict[str, Any]]:
     resp = client.post(
         f"{mgmt_url}/v3/{resource}/request", json=EDC_CONTEXT, headers=headers
     )

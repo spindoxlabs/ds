@@ -63,7 +63,7 @@ class OnboardingSeamFlow(BaseFlow):
     # route had to take an offer.
     rules = ("L-2", "L-4", "D-13")
 
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
         self._provisioned = False
 
@@ -127,7 +127,7 @@ class OnboardingSeamFlow(BaseFlow):
 
     # ── Phase 1: the organisation, by the name the caller holds ──────────────
 
-    def _check_owner_resolution(self, result: FlowResult, headers: dict) -> bool:
+    def _check_owner_resolution(self, result: FlowResult, headers: dict[str, str]) -> bool:
         s = self.settings
         ir = s.identity_registry_url
 
@@ -165,7 +165,7 @@ class OnboardingSeamFlow(BaseFlow):
         )
         return True
 
-    def _check_perimeter_held(self, result: FlowResult, headers: dict) -> bool:
+    def _check_perimeter_held(self, result: FlowResult, headers: dict[str, str]) -> bool:
         """The control, and the reason this flow is not just a happy path.
 
         Admitting the caller by granting it `identity-registry.read` would pass
@@ -265,7 +265,7 @@ class OnboardingSeamFlow(BaseFlow):
     # ── The person's decision, provisioned by the service ────────────────────
 
     def _provision_the_decision(
-        self, result: FlowResult, headers: dict, offer: dict
+        self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
     ) -> bool:
         s = self.settings
         status, payload = self.http.raw(
@@ -318,7 +318,7 @@ class OnboardingSeamFlow(BaseFlow):
     # ── The read back, before the export ─────────────────────────────────────
 
     def _read_the_audience(
-        self, result: FlowResult, headers: dict, offer: dict
+        self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
     ) -> bool:
         """Who consents to this offer — the fact the export is built on.
 
@@ -420,8 +420,8 @@ class OnboardingSeamFlow(BaseFlow):
     # ── The handover, recorded by offer ──────────────────────────────────────
 
     def _record_the_handover(
-        self, result: FlowResult, headers: dict, offer: dict
-    ) -> list[dict] | None:
+        self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
+    ) -> list[dict[str, Any]] | None:
         """`L-2` on the argument the caller actually has.
 
         The POD-list export is scoped to one offer. Posting it by offer must emit
@@ -526,7 +526,7 @@ class OnboardingSeamFlow(BaseFlow):
         )
         return disclosures
 
-    def _check_hashes_recompute(self, result: FlowResult, disclosures: list[dict]) -> None:
+    def _check_hashes_recompute(self, result: FlowResult, disclosures: list[dict[str, Any]]) -> None:
         """`L-2` asks the hash to be *recomputable*, not merely present.
 
         Recomputed through `POST /admin/ingestion`, which fingerprints the same
@@ -579,7 +579,7 @@ class OnboardingSeamFlow(BaseFlow):
         )
 
     def _check_replay_records_nothing_new(
-        self, result: FlowResult, headers: dict, offer: dict
+        self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
     ) -> None:
         """`L-4` — and the failure mode is specific to the offer form.
 

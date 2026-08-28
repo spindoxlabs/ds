@@ -24,8 +24,26 @@ tasks:
       - uv run pytest tests/ -q
 
   lint:
+    # **`mypy` runs here** (`E2E-11`, issue #8). It was configured
+    # `strict = true` in `pyproject.toml` and invoked by no task and no
+    # workflow — coverage that read as real and was not. `libs/ds-edc` is the
+    # counter-example: clean under `--strict` and gating in CI since the day it
+    # got a `tests/` directory.
+    #
+    # **`src/` only, and that is the ratchet.** `src/` is clean under strict as
+    # of 2026-08-28; `tests/` carries 334 errors and `ruff` carries 184 across
+    # both, which is why `tests.yml` still has this unit on `lint: false`.
+    # Widening the path is how the next tranche lands.
+    #
+    # Both checkers run even when the first fails, and the exit code is the
+    # combination — one red checker must not hide the state of the other, the
+    # same reason the root `setup` collects its failures.
     cmds:
-      - uv run ruff check src/ tests/
+      - |
+        status=0
+        uv run mypy src/ || status=1
+        uv run ruff check src/ tests/ || status=1
+        exit $status
 
   format:
     cmds:

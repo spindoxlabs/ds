@@ -82,7 +82,7 @@ and fails with a clear message rather than starting a ten-minute BOM resolution.
 `edcVersion`, bump `EDC_VERSION` in the workflow in the same commit; the workflow asserts the
 two agree.
 
-Locally nothing changes: `task edc:build` and `task edc:docker` still use the `ds-edc-base:0.16.0`
+Locally nothing changes: `task edc:build` and `task edc:restart` still use the `ds-edc-base:0.16.0`
 that `task edc:base` builds. The Dockerfile takes it as `--build-arg EDC_BASE_IMAGE`, defaulting
 to the local name.
 

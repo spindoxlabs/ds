@@ -124,23 +124,29 @@ delivery.
 
 ## Destructive operations
 
-!!! danger "`docker:stop`, `dev:stop` and both `restart` tasks delete all database state"
-    They end with `docker compose down -v` on the root file, and the root file owns the only
+!!! danger "`task docker:reset` deletes all database state"
+    It ends with `docker compose down -v` on the root file, and the root file owns the only
     named volume — `postgres_data`. That volume holds **every** service database:
     `identity_registry`, both connector databases, both provenance databases, both EDC
-    databases, and anything else created in that instance.
+    databases, and anything else created in that instance — **including a co-located stack's**.
+    `docker-compose.dataset-api.yml` declares its own project but shares that volume, so
+    celine's `datasets` and `rec_registry` go with it.
 
-    The next start re-creates and re-migrates them and re-runs the identity bootstrap, so the
-    dev stack recovers. Anything else living in that Postgres does not.
+    The next start re-creates and re-migrates the ds databases and re-runs the identity
+    bootstrap, so the dev stack recovers. Anything else living in that Postgres does not;
+    `./services/dataset-api-mock/fixtures/seed.sh` is what re-seeds celine's, idempotently.
 
-**Use `task stop` when you want to keep the data.** It is three `down` commands with no `-v`,
-no port sweeping and no tmux handling.
+**`docker:stop`, `dev:stop` and both `restart` tasks keep the data.** They pass
+`--remove-orphans` and no `-v`: an orphan *container* holding a dev port is what the sweep is
+for, and the volumes are not. Until 2026-08-28 they passed `-v` too, so a "restart" was a full
+wipe and took the co-located stack's databases with it.
 
 | Task | Destroys | Confirms? |
 |---|---|---|
 | `task stop` | nothing | — |
 | `task infra:stop` / `rec:stop` / `third-party:stop` | nothing | — |
-| `task docker:stop` · `dev:stop` · `docker:restart` · `dev:restart` | **every service database** | no |
+| `task docker:stop` · `dev:stop` · `docker:restart` · `dev:restart` | nothing — containers only | — |
+| `task docker:reset` | **every service database**, including a co-located stack's | no |
 | `task db:reset` | drops and re-creates the seven service databases, then migrates | **yes** |
 | `task reset-demo-state` | truncates the connector, provenance and EDC state, then re-syncs | no |
 | `task e2e:clean` | drops and re-creates both EDC databases | no |
@@ -148,7 +154,8 @@ no port sweeping and no tmux handling.
 
 `docker:stop` is a failsafe sweep: it kills the EDC watch loops by name, sends `C-c` to every
 tmux window and kills the session, kills whatever holds the dev ports, brings all three compose
-stacks down, and waits for the ports to free. It exits `0` whatever happened.
+stacks down, and waits for the ports to free. It exits `0` whatever happened. `docker:reset` is
+the same sweep with `WIPE=true`, which is the only thing that adds `-v`.
 
 ## Single-service modes
 
@@ -173,8 +180,8 @@ The portal needs `task -d services/portal setup` (an `npm ci`) once before its f
 | Task | Effect |
 |---|---|
 | `task edc:build` | build `connector.jar` in a Gradle container |
-| `task edc:docker` | build the EDC image |
-| `task edc:restart` | build, rebuild the image, recreate both EDC containers, wait for health |
+| ~~`task edc:docker`~~ | **gone.** It tagged `ds-edc-connector:local`, which nothing consumed — compose builds the EDC itself and the chart uses the GHCR image — so it looked like the way to get a change into the running containers and was not. `edc:restart` is that path |
+| `task edc:restart` | build, rebuild the image through compose, recreate all three EDC containers, wait for health |
 | `task edc-rec:run` / `edc-third-party:run` | run the JAR on the host |
 | `task edc-rec:watch` / `edc-third-party:watch` | the same JVM under a supervision loop that restarts on JAR change |
 | `task edc:watch-build` | continuous Gradle build — pairs with the two watch tasks |
@@ -200,7 +207,9 @@ checkouts outside this repository. **No task starts it** — run it by hand:
 docker compose -f docker-compose.dataset-api.yml up -d
 ```
 
-It declares its own compose project, so `task docker:stop` does not touch it.
+It declares its own compose project, so `task docker:stop` does not touch its containers.
+**`task docker:reset` does reach its data**, because the named volume it stores into is the
+root file's `postgres_data`.
 
 It binds host **30002**, which is also the mock's default. The committed `.env.local` resolves
 the collision by setting `DATASET_API_MOCK_PORT=30022`, moving the mock out of the way — so in

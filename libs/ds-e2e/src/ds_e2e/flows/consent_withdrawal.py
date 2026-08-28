@@ -225,9 +225,10 @@ class ConsentWithdrawalFlow(BaseFlow):
             result.fail_step("provider sync", str(exc))
             return result
 
-        consumer_vc, subject_vc = self._fetch_credentials(result, svc)
-        if consumer_vc is None:
+        credentials = self._fetch_credentials(result, svc)
+        if credentials is None:
             return result
+        consumer_vc, subject_vc = credentials
         consumer_headers = {
             "X-Subject-Id": s.consumer_subject_id,
             "X-User-VC": consumer_vc,
@@ -654,9 +655,10 @@ class ConsentWithdrawalFlow(BaseFlow):
         try:
             self.http.acquire_service_token()
             svc = self.http.bearer_headers()
-            _, subject_vc = self._fetch_credentials(
+            credentials = self._fetch_credentials(
                 FlowResult(flow_name=self.name), svc
             )
+            subject_vc = credentials[1] if credentials else None
             if not subject_vc:
                 return
             self.http.post(

@@ -66,7 +66,19 @@ class BaseFlow(ABC):
 
     def _fetch_credentials(
         self, result: FlowResult, svc_headers: dict[str, str]
-    ) -> tuple[str | None, str | None]:
+    ) -> tuple[str, str] | None:
+        """Both credentials, or neither — `None` means the step already failed.
+
+        **One fact, not two nullable ones.** This returned
+        `tuple[str | None, str | None]`, and every caller guarded on the
+        *consumer* half alone and then built the subject's headers from the
+        other. That happened to be safe, because `_resolve_user_vc` raises
+        rather than returning `None`, so the pair was only ever both-or-neither
+        — but nothing said so, and a caller reading the signature would have
+        been right to think a missing subject VC reached
+        `X-User-VC: None`. Returning the pair as a unit makes the guard cover
+        what it appears to cover.
+        """
         s = self.settings
         try:
             consumer_vc = self._resolve_user_vc(s.consumer_email, svc_headers)
@@ -74,7 +86,7 @@ class BaseFlow(ABC):
             return consumer_vc, subject_vc
         except Exception as exc:
             result.fail_step("load credentials", str(exc))
-            return None, None
+            return None
 
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
@@ -89,10 +101,12 @@ class BaseFlow(ABC):
         return vc_jws
 
     def _select_dataset(self, catalog: dict[str, Any]) -> dict[str, Any] | None:
-        datasets = catalog.get("dataset") or catalog.get("dcat:dataset") or []
-        if isinstance(datasets, dict):
-            datasets = [datasets]
-        datasets = [item for item in datasets if isinstance(item, dict)]
+        raw = catalog.get("dataset") or catalog.get("dcat:dataset") or []
+        if isinstance(raw, dict):
+            raw = [raw]
+        datasets: list[dict[str, Any]] = [
+            item for item in raw if isinstance(item, dict)
+        ]
 
         for ds in datasets:
             wanted = self.settings.asset_id

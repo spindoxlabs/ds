@@ -799,11 +799,37 @@ async def admin_provision_share(
     return [ConsentResponse.model_validate(c) for c in consents]
 
 
+class OfferAudienceSubject(BaseModel):
+    """One consenting subject, and when the authorising decision was taken.
+
+    ``decided_at`` is the ``decided_at`` of the row that authorises *this*
+    disclosure — the row ``decide_for_subject`` selected — not the subject's
+    earliest or latest decision overall. The two differ whenever a standing
+    wildcard is overridden per party, or one offer is re-decided while another
+    stands.
+    """
+
+    subject_id: str
+    decided_at: datetime | None
+
+
 class OfferAudienceDataset(BaseModel):
-    """The subjects one resolved dataset authorises, for one consumer."""
+    """The subjects one resolved dataset authorises, for one consumer.
+
+    **``subjects`` carries the timestamps; ``subject_ids`` is unchanged.**
+    A DSO processing a released supply point has to evidence the lawful basis
+    *per point* — which POD, and as of when — so a date that attaches only to the
+    export file does not do the job. ``decided_at`` was already loaded and thrown
+    away: the row it comes from is the one this route's own filter selected.
+
+    The two keys are kept side by side rather than ``subject_ids`` being reshaped
+    in place, so the existing key goes on meaning exactly what it says and the
+    caller gains a column rather than a restructure.
+    """
 
     dataset_id: str
     subject_ids: list[str]
+    subjects: list[OfferAudienceSubject]
     subject_count: int
 
 
@@ -931,7 +957,7 @@ async def admin_read_offer_audience(
         # short-circuit `consent_satisfies` to "allow" for *any* granted row,
         # including one recorded for a different offer's purpose. This is the
         # same assertion `_authorize_dataset` makes on the data plane.
-        subject_ids = await consent_service.get_granted_subject_ids(
+        granted = await consent_service.get_granted_subjects(
             db,
             dataset_id,
             consumer_id,
@@ -940,12 +966,21 @@ async def admin_read_offer_audience(
             consent_required=True,
             offer_id=offer.id,
         )
-        subject_ids = sorted(subject_ids)
+        granted = sorted(granted, key=lambda subject: subject.subject_id)
         datasets.append(
             OfferAudienceDataset(
                 dataset_id=dataset_id,
-                subject_ids=subject_ids,
-                subject_count=len(subject_ids),
+                # Derived from the one list, so the two keys cannot disagree
+                # about who is in the audience.
+                subject_ids=[subject.subject_id for subject in granted],
+                subjects=[
+                    OfferAudienceSubject(
+                        subject_id=subject.subject_id,
+                        decided_at=subject.decided_at,
+                    )
+                    for subject in granted
+                ],
+                subject_count=len(granted),
             )
         )
 

@@ -60,9 +60,10 @@ class SmokeFlow(BaseFlow):
             return result
 
         # 4. Load credentials
-        consumer_vc, subject_vc = self._fetch_credentials(result, svc_headers)
-        if consumer_vc is None:
+        credentials = self._fetch_credentials(result, svc_headers)
+        if credentials is None:
             return result
+        consumer_vc, subject_vc = credentials
 
         consumer_headers = {
             "X-Subject-Id": s.consumer_subject_id,

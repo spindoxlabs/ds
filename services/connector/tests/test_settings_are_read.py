@@ -26,6 +26,8 @@ from connector.config import Settings
 from connector.services.consumer_service import ConsumerService
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "connector"
+#: The repository root — `.env.example` and the compose files live there.
+REPO = Path(__file__).resolve().parents[3]
 
 #: Fields whose reader is not a ``settings.<name>`` expression. Each needs a
 #: reason — an entry here is an exemption from the rule above, not a parking
@@ -185,3 +187,81 @@ async def test_the_app_passes_both_intervals_through():
         monkey.undo()
 
     assert captured == {"negotiation": 3.0, "transfer": 7.0}
+
+#: `CONNECTOR_*` names that a deployment file legitimately carries and this
+#: service does not read. Each needs its actual reader, because an entry here is
+#: an exemption from the sweep below rather than somewhere to park a dead name.
+READ_BY_SOMETHING_ELSE = {
+    # Role-suffixed pairs. The Taskfile and compose choose one and pass it as the
+    # unsuffixed variable this service reads:
+    # `CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER`.
+    "CONNECTOR_DATABASE_URL_PROVIDER",
+    "CONNECTOR_DATABASE_URL_CONSUMER",
+    "CONNECTOR_PROVENANCE_URL_PROVIDER",
+    "CONNECTOR_PROVENANCE_URL_CONSUMER",
+    # Read by `ds-e2e`, and by nothing here — the traffic goes the other way,
+    # the dataset API calls `POST /internal/dataplane/authorize`. `.env.example`
+    # says so at the declaration.
+    "CONNECTOR_DATASET_API_URL",
+    # The portal's server-side upstream, and `ds_e2e.config`. Not a setting of
+    # the connector: it is this service's *address*, read by its callers.
+    "CONNECTOR_URL",
+    # Read by celine's dataset-api in `docker-compose.dataset-api.yml` — the
+    # address it calls `/internal/*` on.
+    "CONNECTOR_INTERNAL_URL",
+    # Compose publishes the port and the healthcheck reads it back, so the probe
+    # cannot drift from what the server bound. Uvicorn is told on the command
+    # line, not through Settings.
+    "CONNECTOR_PORT",
+}
+
+
+def _deployment_tokens(prefix: str):
+    """Every `{PREFIX}*` name a deployment file declares, with where it came from.
+
+    A declaration is `NAME=` or `NAME:` — a leading `#` is stripped first, so a
+    commented-out alternative still counts (that is how `.env.example` documents
+    one), but a sentence in prose that happens to open with a variable name does
+    not. The reference implementation split on `=`/`:` without anchoring, and
+    picked up comment text as declarations.
+    """
+    pattern = re.compile(r"^#?\s*([A-Z][A-Z0-9_]*)\s*[:=]")
+    for path in [REPO / ".env.example", *sorted(REPO.glob("docker-compose*.yml"))]:
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = pattern.match(line.strip())
+            if match and match.group(1).startswith(prefix):
+                yield path.name, match.group(1)
+
+
+def test_no_deployment_file_names_a_variable_this_service_does_not_read():
+    """The `.env.example` → code direction (`ENV-01`/`ENV-05`, issue #9).
+
+    `.env.example` opens by claiming it "documents *every* environment variable
+    the platform reads", and until 2026-08-28 one unit checked that claim — the
+    mock, whose sweep swept both ways. Every other unit checked only that a
+    declared `Settings` field is read, which cannot see the opposite rot: a field
+    deleted from `config.py` while `.env.example`, a compose file, a chart value
+    and a Secret key go on advertising it.
+
+    That is how `DATASET_API_ENFORCE_CONSENT` survived — declared, defaulted
+    `true`, set in compose, documented, and consulted by no code anywhere. The
+    dangerous half is the belief, not the dead line: an operator turning it "on"
+    during an incident would have changed nothing and been told so by nobody.
+    """
+    prefix = Settings.model_config.get("env_prefix", "")
+    assert prefix, "this test needs an env_prefix to know what to sweep"
+    declared = {f"{prefix}{name.upper()}" for name in Settings.model_fields}
+
+    stray = sorted(
+        f"{where}: {token}"
+        for where, token in _deployment_tokens(prefix)
+        if token not in declared and token not in READ_BY_SOMETHING_ELSE
+    )
+    assert not stray, (
+        f"deployment files name {prefix}* variables this service does not read: "
+        f"{stray}. Either wire the setting, delete the declaration, or — if "
+        "another component genuinely reads it — name it in "
+        "READ_BY_SOMETHING_ELSE with the reader."
+    )

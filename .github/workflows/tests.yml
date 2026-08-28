@@ -54,7 +54,10 @@ jobs:
           #
           # Measured 2026-08-05, and these are the rows that close each one:
           #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06, now `lint: true`
-          #   libs/ds-e2e              183   E2E-11
+          #   libs/ds-e2e              184   E2E-11 — `mypy --strict` on src/ is
+          #                                    clear (2026-08-28, issue #8) and now
+          #                                    runs in that unit's `lint`; ruff, and
+          #                                    mypy over tests/, are what is left
           #   libs/governance           10   (all in tests/)
           #   services/connector       265
           #   services/federated-catalog 1

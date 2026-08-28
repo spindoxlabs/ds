@@ -141,7 +141,6 @@ clients:
   secret: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
   default_scopes:
   - connector.internal
-  scopes_prefix: dataset
   extra_audiences:
   - svc-ds-connector
 - client_id: svc-edc

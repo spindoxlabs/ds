@@ -100,7 +100,7 @@ class ConsentPurposeFlow(BaseFlow):
 
     # ── 1. Taxonomy ──────────────────────────────────────────────────────────
 
-    def _check_taxonomy(self, result: FlowResult) -> dict[str, dict] | None:
+    def _check_taxonomy(self, result: FlowResult) -> dict[str, dict[str, Any]] | None:
         s = self.settings
         try:
             vocab = self.http.get(f"{s.connector_url}/ns/policy") or {}
@@ -204,7 +204,8 @@ class ConsentPurposeFlow(BaseFlow):
             purpose=offer.get("purpose"),
             purpose_broader=offer.get("purpose_broader"),
         )
-        return offer
+        selected: dict[str, Any] = offer
+        return selected
 
     # ── 3. Write validation ──────────────────────────────────────────────────
 

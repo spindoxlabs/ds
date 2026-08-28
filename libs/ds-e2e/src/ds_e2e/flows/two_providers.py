@@ -76,7 +76,7 @@ class TwoProvidersFlow(BaseFlow):
 
     # ── registration ─────────────────────────────────────────────────────────
 
-    def _check_registered(self, result: FlowResult, headers: dict) -> bool:
+    def _check_registered(self, result: FlowResult, headers: dict[str, str]) -> bool:
         """Two participants that are both providers, each with its own DID.
 
         Read from the **anchor**, because that is where registry questions go
@@ -112,7 +112,7 @@ class TwoProvidersFlow(BaseFlow):
 
     # ── governance separation ────────────────────────────────────────────────
 
-    def _check_governance_is_its_own(self, result: FlowResult, headers: dict) -> None:
+    def _check_governance_is_its_own(self, result: FlowResult, headers: dict[str, str]) -> None:
         """Each provider publishes **its own** datasets and offers.
 
         The failure this catches is not exotic: both connectors are the same
@@ -154,7 +154,7 @@ class TwoProvidersFlow(BaseFlow):
             rec_offers=[o.get("id") for o in rec_offers if isinstance(o, dict)],
         )
 
-    def _check_no_members(self, result: FlowResult, headers: dict) -> None:
+    def _check_no_members(self, result: FlowResult, headers: dict[str, str]) -> None:
         """The DSO's registry holds exactly one subject: itself.
 
         `DID-11` step 2 puts a person's credentials with the organisation that
@@ -338,7 +338,7 @@ class TwoProvidersFlow(BaseFlow):
                 f"{s.identity_registry_url}/users/resolve?email={email}",
                 headers=headers,
             ) or {}
-            vc = body.get("vc_jws")
+            vc: str | None = body.get("vc_jws")
             if not vc:
                 result.fail_step(
                     "consumer credential",

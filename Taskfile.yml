@@ -35,15 +35,41 @@ vars:
 tasks:
   # ── Idempotent workspace setup ────────────────────────────────────────────
   setup:
-    desc: Prepare local dev environment (installs deps in each service)
+    desc: Prepare local dev environment (installs deps in every service and lib)
     cmds:
+      # **`libs/*/` too** (`TASK-07`). This iterated `services/*/` alone, so
+      # `governance`, `ds-auth`, `ds-edc`, `ds-obs`, `ds-e2e` and `ds-conformance`
+      # — each with a `setup` task of its own — were never set up by the task
+      # whose whole job is that. Iterate, never enumerate (ADR-0009): a glob
+      # cannot be forgotten the next time a unit is added.
+      #
+      # **And a failure is visible.** `2>/dev/null || true` meant a unit whose
+      # setup failed reported nothing at all, and the first sign was a missing
+      # dependency in an unrelated task later. Failures are collected rather than
+      # fatal on the spot, so one broken unit does not hide the state of the other
+      # ten, and the exit is non-zero at the end.
       - |
-        for dir in services/*/; do
-          if [ -f "${dir}Taskfile.yml" ]; then
-            echo "→ setup ${dir}"
-            task -d "${dir}" setup 2>/dev/null || true
+        failed=""
+        for dir in services/*/ libs/*/; do
+          [ -f "${dir}Taskfile.yml" ] || continue
+          # `services/edc-connector` and `services/edc-extensions` have a
+          # Taskfile and no `setup` — Gradle resolves its own dependencies. Ask
+          # the unit what it declares rather than assuming, or the loop reports a
+          # "failure" on a tree that is fine. `--list-all` is the authoritative
+          # answer because it resolves includes; grepping the file would not.
+          if ! task -d "${dir}" --list-all 2>/dev/null | grep -qE '^\* setup:'; then
+            echo "· ${dir} declares no setup task — skipping"
+            continue
           fi
+          echo "→ setup ${dir}"
+          task -d "${dir}" setup || failed="${failed} ${dir}"
         done
+        if [ -n "$failed" ]; then
+          echo "" >&2
+          echo "setup failed in:" >&2
+          for dir in $failed; do echo "  - ${dir}" >&2; done
+          exit 1
+        fi
 
   # ── Shared infrastructure ────────────────────────────────────────────────
   keycloak:reload:
@@ -54,6 +80,13 @@ tasks:
 
   build:
     desc: Rebuild all Docker images (shared infra + every participant stack)
+    # The EDC image is `FROM ds-edc-base`, so on a machine that has never run
+    # `task edc:base` this failed partway through with a missing-image error
+    # that named neither the task that builds it nor this one (`TASK-02`).
+    # `rec:start`, `third-party:start` and `grid-operator:start` all declare it
+    # for exactly this reason — each runs `up -d --build`, which is the same
+    # work with the same dependency.
+    deps: [edc:ensure-base]
     cmds:
       - COMPOSE_PROJECT_NAME=dataspaces docker compose build
       # **Iterate the stacks, do not list them.** This task named `rec` and
@@ -139,8 +172,26 @@ tasks:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build
+        # A bounded wait that says what it gave up on (`TASK-03`). This was
+        # `until curl ...; do sleep 2; done` with no deadline, so a connector
+        # that crashed on boot left the task hanging silently: in CI it burned
+        # the job's whole time budget, and locally it read as a slow start.
+        # Printing the container's last lines is the point — a timeout that says
+        # only "timed out" moves the debugging session rather than shortening it.
+        wait_for_health() {
+          url="$1"; container="$2"; deadline=$((SECONDS + ${3:-180}))
+          until curl -fsS "$url" >/dev/null 2>&1; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "Gave up waiting for $url after ${3:-180}s" >&2
+              echo "--- last 40 lines of $container ---" >&2
+              docker logs --tail 40 "$container" 2>&1 >&2 || echo "(no such container)" >&2
+              return 1
+            fi
+            sleep 2
+          done
+        }
         echo "Waiting for provider connector..."
-        until curl -fsS http://localhost:30001/health >/dev/null 2>&1; do sleep 2; done
+        wait_for_health http://localhost:30001/health dataspaces-ds-connector-rec-1
         # `svc-ds-e2e`, not `svc-ds-portal`. Publishing a participant's offers is
         # a *driver's* act, and this used to borrow the portal's client for it —
         # which is precisely why `svc-ds-e2e` exists (see
@@ -221,8 +272,26 @@ tasks:
       - |
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.grid-operator.yml up -d --build
+        # A bounded wait that says what it gave up on (`TASK-03`). This was
+        # `until curl ...; do sleep 2; done` with no deadline, so a connector
+        # that crashed on boot left the task hanging silently: in CI it burned
+        # the job's whole time budget, and locally it read as a slow start.
+        # Printing the container's last lines is the point — a timeout that says
+        # only "timed out" moves the debugging session rather than shortening it.
+        wait_for_health() {
+          url="$1"; container="$2"; deadline=$((SECONDS + ${3:-180}))
+          until curl -fsS "$url" >/dev/null 2>&1; do
+            if [ $SECONDS -ge $deadline ]; then
+              echo "Gave up waiting for $url after ${3:-180}s" >&2
+              echo "--- last 40 lines of $container ---" >&2
+              docker logs --tail 40 "$container" 2>&1 >&2 || echo "(no such container)" >&2
+              return 1
+            fi
+            sleep 2
+          done
+        }
         echo "Waiting for the grid operator's connector..."
-        until curl -fsS http://localhost:32001/health >/dev/null 2>&1; do sleep 2; done
+        wait_for_health http://localhost:32001/health dataspaces-ds-connector-grid-operator-1
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
@@ -308,10 +377,19 @@ tasks:
       - docker stop dataspaces-ds-connector-rec-1 2>/dev/null || true
       - |
         cd services/connector
+        # **`CONNECTOR_EDC_VAULT_FILE` is not optional here** (`TASK-06`).
+        # Without it `settings.edc_vault_file` is `None`, `GET /internal/edr-jwks`
+        # has no key to serve, and the data plane — which verifies every EDR
+        # bearer token against that endpoint — refuses every query. It fails
+        # closed and says so, which is correct and still leaves this task unable
+        # to do the one thing it is for. Same seed file the compose service
+        # mounts at `/edc-config/rec-vault.properties`; `CONNECTOR_EDR_SIGNER_ALIAS`
+        # is defaulted in `config.py` and needs no override.
         CONNECTOR_ROLE=provider \
         CONNECTOR_PARTICIPANT_ID=provider \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
+        CONNECTOR_EDC_VAULT_FILE=config/rec-vault.properties \
         uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   provider:connector:debug:
@@ -320,10 +398,12 @@ tasks:
       - docker stop dataspaces-ds-connector-rec-1 2>/dev/null || true
       - |
         cd services/connector
+        # See `provider:connector:run` for why the vault file is here.
         CONNECTOR_ROLE=provider \
         CONNECTOR_PARTICIPANT_ID=provider \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
+        CONNECTOR_EDC_VAULT_FILE=config/rec-vault.properties \
         uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client \
           -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
@@ -427,6 +507,8 @@ tasks:
 
   docker:stop:
     desc: "Docker: stop everything (failsafe — exits 0 even if nothing is running)"
+    vars:
+      WIPE: '{{.WIPE | default "false"}}'
     cmds:
       - |
         set +e
@@ -485,9 +567,29 @@ tasks:
         kill_port_holders
 
         # 4. Docker compose down on all stacks
-        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.third-party.yml down -v --remove-orphans 2>/dev/null
-        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.rec.yml down -v --remove-orphans 2>/dev/null
-        COMPOSE_PROJECT_NAME=dataspaces docker compose down -v --remove-orphans 2>/dev/null
+        #
+        # **No `-v` unless WIPE=true** (`TASK-01`). This block used to pass `-v`
+        # unconditionally, so `docker:stop` — and `docker:restart`, and
+        # `dev:stop`, which both delegate here — deleted every database volume.
+        # A "restart" was a full data wipe, and `--remove-orphans` in the shared
+        # `dataspaces` project carried it beyond the ds stacks: celine's
+        # `dataset-api` databases, brought up from `docker-compose.dataset-api.yml`
+        # into the same project, are the case that was actually hit.
+        #
+        # `infra:stop` was always the counter-example — a plain `down`, which is
+        # what the name promises. `task docker:reset` is the opt-in that wipes.
+        #
+        # `--remove-orphans` stays on both forms: an orphan *container* holding a
+        # port is exactly the mess this task exists to clear, and only `-v` ever
+        # reached another stack's data.
+        DOWN_VOLUMES=""
+        if [ "{{.WIPE}}" = "true" ]; then
+          DOWN_VOLUMES="-v"
+          echo "WIPE=true — deleting volumes as well as containers"
+        fi
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.third-party.yml down $DOWN_VOLUMES --remove-orphans 2>/dev/null
+        COMPOSE_IGNORE_ORPHANS=true docker compose --env-file .env.local -f docker-compose.rec.yml down $DOWN_VOLUMES --remove-orphans 2>/dev/null
+        COMPOSE_PROJECT_NAME=dataspaces docker compose down $DOWN_VOLUMES --remove-orphans 2>/dev/null
 
         # 5. Final sweep
         kill_port_holders
@@ -513,9 +615,21 @@ tasks:
         fi
       - task: start
 
+  docker:reset:
+    desc: "Docker: stop everything AND delete every volume (DESTRUCTIVE — every database is emptied)"
+    cmds:
+      # The destructive half of `docker:stop`, behind a name that says so. Note
+      # that the shared `dataspaces` project also holds whatever
+      # `docker-compose.dataset-api.yml` brought up, so this empties celine's
+      # databases too when that stack is co-located.
+      - task: docker:stop
+        vars: {WIPE: "true"}
+
   docker:restart:
     desc: "Docker: full restart in containers (BUILD=false to skip the image rebuild)"
     cmds:
+      # Preserves volumes — a restart is a restart. `task docker:reset` then
+      # `task docker:start` is the wipe-and-rebuild path.
       - task: docker:stop
       - task: docker:start
         vars: {BUILD: '{{.BUILD | default "true"}}'}
@@ -655,17 +769,20 @@ tasks:
         gradle:8.12-jdk21
         gradle :edc-connector:shadowJar --no-daemon
 
-  edc:docker:
-    desc: Build EDC connector Docker image (requires the ds-edc-base image)
-    cmds:
-      - docker build -f services/edc-connector/Dockerfile -t ds-edc-connector:local .
-
+  # **There is no `edc:docker`** (`TASK-05`). It built and tagged
+  # `ds-edc-connector:local`, and nothing consumed that tag: the compose stacks
+  # build the EDC from `services/edc-connector/Dockerfile` themselves, and the
+  # chart and the release workflow both use
+  # `ghcr.io/spindoxlabs/ds-edc-connector`. So it produced an artifact nobody
+  # read while *looking* like the way to get a change into the running
+  # containers — someone ran it, saw it succeed, and assumed. `edc:restart`
+  # below is the rebuild path: it already rebuilds and force-recreates, through
+  # compose, which is what actually reaches the containers.
   edc:restart:
     desc: Rebuild EDC fat JAR + Docker image and force-recreate every EDC container
     deps: [edc:ensure-base]
     cmds:
       - task: edc:build
-      - task: edc:docker
       # All three roles. `grid-operator` was added by the participant rename and
       # this task was not updated with it, so a rebuilt JAR reached two of the
       # three EDCs — a stack that is half old code and says nothing about it,

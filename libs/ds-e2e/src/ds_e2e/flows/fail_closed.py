@@ -112,7 +112,9 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
+from ds_e2e.config import E2ESettings
 from ds_e2e.flows.base import BaseFlow
+from ds_e2e.http import HttpClient
 from ds_e2e.models import FlowResult
 
 log = logging.getLogger(__name__)
@@ -253,7 +255,7 @@ class FailClosedFlow(BaseFlow):
     #: exactly what this flow added and nothing it inherited.
     _granted_consent = False
 
-    def __init__(self, settings, http):
+    def __init__(self, settings: E2ESettings, http: HttpClient) -> None:
         super().__init__(settings, http)
         self._stopped = False
 

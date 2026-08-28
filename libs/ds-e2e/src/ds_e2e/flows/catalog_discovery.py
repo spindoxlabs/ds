@@ -108,9 +108,10 @@ class CatalogDiscoveryFlow(BaseFlow):
             # run did not see is what removes the timing dependency; naming the
             # cause is what stops the next reader debugging the crawler when the
             # crawler is fine.
-            datasets, catalog = self._await_a_crawl_of_our_own(result, headers)
-            if datasets is None:
+            retried, catalog = self._await_a_crawl_of_our_own(result, headers)
+            if retried is None:
                 return result
+            datasets = retried
         result.pass_step(
             "catalogue shape",
             "a populated dcat:Catalog is served as JSON-LD",

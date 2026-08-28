@@ -33,7 +33,22 @@ sources:
         content_type: "application/json"
       data_address:
         type: HttpData
-        base_url: "http://dataset-api:30002/query"
+        # **`dataset-api-rec`, the compose service name** (`E2E-15`). This said
+        # `http://dataset-api:30002/query` until 2026-08-28 and no container has
+        # ever answered to that host: the stack's stand-in plane is the
+        # `dataset-api-rec` service on the `dataspaces` network, and the real
+        # celine plane comes up as `dataset-api-real` in a *separate* compose
+        # project that does not join that network at all. The address travels
+        # into the EDC asset and out to the consumer as the transfer's data
+        # address, so it is only dereferenced on the leg the e2e flows reach
+        # through the mock's own port mapping — which is why an unresolvable
+        # host survived. A fixture is what a reader copies when adding a
+        # dataset, so it has to name something that resolves.
+        #
+        # `governance.local.yaml` overrides this to `172.17.0.1:30002` where the
+        # data plane is the real celine service published on the host; that
+        # overlay is the deployment-specific binding and this is the default.
+        base_url: "http://dataset-api-rec:30002/query"
         proxy_path: false
         proxy_query_params: true
 
@@ -96,5 +111,5 @@ sources:
         content_type: "application/json"
       data_address:
         type: HttpData
-        base_url: "http://dataset-api:30002/query"
+        base_url: "http://dataset-api-rec:30002/query"
         proxy_query_params: true

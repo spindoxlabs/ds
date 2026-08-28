@@ -463,9 +463,38 @@ services:
   # compose network, which keeps host 4180 free for another stack's proxy and
   # means the only way in is through Caddy.
   oauth2-proxy:
-    image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0
+    # **`-alpine`, not the default tag** (`O2P-02`). Same v7.11.0 binary; the
+    # default image is distroless, with no shell and no HTTP client, so a compose
+    # healthcheck cannot be expressed against it at all. The alpine variant ships
+    # `wget`, which is the whole reason for the variant here.
+    #
+    # In Kubernetes this does not arise: `helm/charts/ds-oauth2-proxy` probes
+    # `/ping` with `httpGet` from the kubelet, so the chart keeps the distroless
+    # image and is unaffected by this line.
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.11.0-alpine
     restart: unless-stopped
     command: ["--config=/etc/oauth2-proxy/oauth2-proxy.cfg"]
+    # This process fetches the realm's discovery document at startup and serves
+    # errors until it succeeds. With no healthcheck nothing waited for that, and
+    # on a cold `task docker:start` — where Keycloak is still importing its realm
+    # — the window is real: the failure surfaced as a login that 500s or bounces,
+    # several steps from the cause, while `docker ps` called the container up.
+    #
+    # `/ping` is the proxy's own liveness path, and the same one
+    # `helm/charts/ds-oauth2-proxy/values.yaml` sets as `service.healthPath`.
+    #
+    # Nothing here declares `depends_on: oauth2-proxy`. Caddy cannot — the
+    # dependency runs the other way, since discovery goes out through Caddy — and
+    # `ds-portal` lives in `docker-compose.rec.yml`, a separate compose project
+    # that cannot wait on a service in this one. What this buys is an accurate
+    # state: `docker ps` and `docker compose ps` stop reporting a proxy that has
+    # not completed discovery as ready.
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:4180/ping"]
+      interval: 10s
+      timeout: 3s
+      start_period: 20s
+      retries: 6
     environment:
       # The two secrets the config file deliberately does not carry. Same split
       # the chart makes — config in a ConfigMap, these two from a Secret — so

@@ -166,7 +166,8 @@ class HttpClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         resp.raise_for_status()
-        return resp.json()["access_token"]
+        token: str = resp.json()["access_token"]
+        return token
 
     def bearer_headers_for(self, client_id: str, client_secret: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token_for(client_id, client_secret)}"}
@@ -195,7 +196,8 @@ class HttpClient:
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
         resp.raise_for_status()
-        return resp.json()["access_token"]
+        token: str = resp.json()["access_token"]
+        return token
 
     def user_headers(self, username: str, password: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.user_token(username, password)}"}
