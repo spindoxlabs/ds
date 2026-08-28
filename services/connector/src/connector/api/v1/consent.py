@@ -968,7 +968,7 @@ async def revoke_consent(
 
 # ── Internal endpoints ────────────────────────────────────────────────────────
 
-@router.post("/register-transfer", status_code=200, include_in_schema=False)
+@router.post("/register-transfer", status_code=200)
 async def register_transfer(
     body: TransferRegisterRequest,
     db: AsyncSession = Depends(get_db),

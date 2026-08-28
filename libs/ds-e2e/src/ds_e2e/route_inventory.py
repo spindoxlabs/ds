@@ -25,11 +25,13 @@ harness previously had to be told:
   set of exceptions that had gone stale.
 
 **A route absent from the document is absent from the sweep.** That is the one
-weakness of deriving from OpenAPI rather than from the route table itself, and
-it is not hypothetical: `POST /consent/register-transfer` is declared
-``include_in_schema=False``. Such routes are listed in
-`api_contract.HIDDEN_ROUTES` by hand, and `tests/test_route_inventory.py` fails
-when a service adds one that is not.
+weakness of deriving from OpenAPI rather than from the route table itself, so
+the answer is that no service hides one: `tests/test_route_inventory.py` fails
+when any of the four declares ``include_in_schema=False``. There used to be a
+hand-written list of the exceptions and a single entry in it,
+`POST /consent/register-transfer` — the route is published now and the list is
+gone. Hiding a route conceals it from readers of a document whose source is
+public anyway, and turns a documentation decision into a security-sweep one.
 """
 from __future__ import annotations
 

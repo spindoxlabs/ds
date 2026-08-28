@@ -7,8 +7,8 @@ probed — so a longer table was the wrong fix. These tests pin the derivation
 that replaced it, and the three things that derivation cannot see on its own:
 
 * the security-scheme name is a second copy of a string `ds_auth` owns;
-* a route declared `include_in_schema=False` is absent from the document, so it
-  is absent from the sweep unless it is listed by hand;
+* a route declared `include_in_schema=False` is absent from the document and so
+  absent from the sweep — no service may declare one;
 * a route in neither classification table must fail the sweep rather than be
   quietly skipped.
 """
@@ -24,7 +24,6 @@ import pytest
 from ds_e2e.config import E2ESettings
 from ds_e2e.flows.api_contract import (
     ANONYMOUS_ROUTES,
-    HIDDEN_ROUTES,
     PUBLIC_ROUTES,
     REFUSAL_STATUSES,
     SELF_AUTHENTICATED_ROUTES,
@@ -200,17 +199,24 @@ def test_the_scheme_name_agrees_with_ds_auth():
 
 
 @pytest.mark.parametrize("service", sorted(SERVICE_SOURCES))
-def test_a_route_hidden_from_the_openapi_document_is_declared(service: str):
+def test_no_service_hides_a_route_from_its_openapi_document(service: str):
     """`include_in_schema=False` removes a route from the sweep's only source.
 
     That is the one weakness of deriving from OpenAPI rather than from the route
-    table itself, and it is not hypothetical: `POST /consent/register-transfer`
-    is hidden and guarded. Hiding a route is a documentation decision that
-    silently becomes a security-sweep decision, so each one has to be declared —
-    and this test is what makes "each one" true rather than "the ones we knew
-    about".
+    table itself, so the fix is to have nothing to derive around: no route is
+    hidden, and this test is what keeps it that way.
+
+    It used to be a weaker rule — hide what you like, but declare each one in
+    `HIDDEN_ROUTES` — and `POST /consent/register-transfer` was the single
+    entry. The declaration bought nothing. **This is an open-source project and
+    the route table is public**, so hiding a route conceals it from readers of
+    the document and from nobody else, while turning a documentation decision
+    into a security-sweep decision and adding a second place to forget. The
+    route is published now and the list is gone.
+
+    `GET /metrics` does not appear here: it is installed by `ds_obs` rather than
+    declared in a service, so it is outside `SERVICE_SOURCES` by construction.
     """
-    declared = {r.template for r in HIDDEN_ROUTES if r.service == service}
     hidden: set[str] = set()
     for path in SERVICE_SOURCES[service].rglob("*.py"):
         source = path.read_text()
@@ -220,18 +226,11 @@ def test_a_route_hidden_from_the_openapi_document_is_declared(service: str):
             re.S,
         ):
             hidden.add(match.group(2))
-    undeclared = {h for h in hidden if not any(d.endswith(h) for d in declared)}
-    assert not undeclared, (
-        f"{service} hides {sorted(undeclared)} from its OpenAPI document, so the "
-        "api-contract sweep cannot see them. Add each to HIDDEN_ROUTES with the "
-        "permission it requires."
+    assert not hidden, (
+        f"{service} hides {sorted(hidden)} from its OpenAPI document, so the "
+        "api-contract sweep cannot see them. Publish the route: the sweep derives "
+        "from the document, and the source is public either way."
     )
-
-
-def test_the_hidden_routes_are_swept_like_any_other():
-    """Listing one must put it *in* the sweep, not merely record it."""
-    assert HIDDEN_ROUTES, "the declaration is empty — the test above proves nothing"
-    assert all(r.guarded for r in HIDDEN_ROUTES)
 
 
 # ── the inventory step ───────────────────────────────────────────────────────

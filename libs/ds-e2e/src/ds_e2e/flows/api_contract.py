@@ -212,23 +212,18 @@ SELF_AUTHENTICATED_ROUTES: dict[tuple[str, str, str], str] = {
     ("identity-registry", "POST", "/onboarding/applications"): "a valid invite code",
 }
 
-# Declared `include_in_schema=False`, so they are absent from the document this
-# sweep derives from and would otherwise escape it entirely. Listed by hand, and
-# `tests/test_route_inventory.py` fails when a service hides a route that is not
-# here — the one hole deriving from OpenAPI opens, closed from the outside.
+# **No service hides a route from its OpenAPI document**, and
+# `tests/test_route_inventory.py` holds them to it. This sweep derives entirely
+# from that document, so `include_in_schema=False` would be a documentation
+# decision quietly becoming a security-sweep decision: the route would vanish
+# from the inventory and never be probed. There is nothing to gain by it — the
+# source is public — and a hand-maintained list of the exceptions is a second
+# place to forget.
 #
-# `GET /metrics` is hidden too, on all four services. It is installed by
-# `ds_obs`, not by a service, and it answers **200 anonymously** — deliberately
-# left out of this sweep rather than pinned as public, because that is an open
-# rulebook item (Observability, `DSSC-PTO`) and not a decision.
-HIDDEN_ROUTES: tuple[Route, ...] = (
-    Route(
-        service="connector",
-        method="POST",
-        template="/consent/register-transfer",
-        permissions=("connector.internal",),
-    ),
-)
+# `GET /metrics` is the one route absent from the document here. It is installed
+# by `ds_obs`, not by a service, and it answers **200 anonymously** —
+# deliberately left out of this sweep rather than pinned as public, because that
+# is an open rulebook item (Observability, `DSSC-PTO`) and not a decision.
 
 # What a probe has to send for the request to reach the credential check.
 #
@@ -460,7 +455,7 @@ class ApiContractFlow(BaseFlow):
           that the app in fact guards. The declaration would exclude it from the
           wrong-scope battery, so the weaker claim would silently win.
         """
-        inventory: list[Route] = list(HIDDEN_ROUTES)
+        inventory: list[Route] = []
         for service in SWEPT_SERVICES:
             url = self._url(service, "/openapi.json")
             status, spec = self.http.raw("GET", url)
@@ -517,7 +512,6 @@ class ApiContractFlow(BaseFlow):
             guarded=len(guarded),
             anonymous=len(ANONYMOUS_ROUTES),
             self_authenticated=len(SELF_AUTHENTICATED_ROUTES),
-            hidden_from_openapi=len(HIDDEN_ROUTES),
         )
         return True
 
