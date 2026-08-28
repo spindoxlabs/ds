@@ -44,9 +44,9 @@ def test_the_realm_grants_every_scope_the_file_declares(client, keycloak_is_up):
     """`clients.yaml`'s `default_scopes` ⊆ the token's `scope` claim.
 
     Subset, not equality: a deployment's domain overlay
-    (`clients.<domain>.yaml`) is merged into the effective file and legitimately
-    adds more — `svc-ds-e2e` carries `rec-registry.admin` in dev from exactly
-    that. Granting *more* than ds asks for is the deployment's business.
+    (`clients.<domain>.yaml`) is passed to the same sync with `--overlay` and
+    legitimately adds more — `svc-ds-e2e` carries `rec-registry.admin` in dev
+    from exactly that. Granting *more* than ds asks for is the deployment's business.
     Granting less is the defect, and it surfaces as a 403 in a service whose
     own tests all pass.
     """
@@ -57,8 +57,8 @@ def test_the_realm_grants_every_scope_the_file_declares(client, keycloak_is_up):
         f"{client['client_id']} is missing scopes clients.yaml declares:\n"
         + "\n".join(f"  - {s}" for s in sorted(missing))
         + "\n\nThe declaration and the realm have diverged — the sync was not "
-        "run, or ran against a stale clients.effective.yaml. "
-        "`task keycloak:merge` then `task keycloak:mirror`."
+        "run, or ran without the file that declares this grant. Re-run it with "
+        "the core and every overlay: see `keycloak-sync` in docker-compose.yml."
     )
 
 

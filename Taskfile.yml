@@ -1599,15 +1599,28 @@ tasks:
         # This used to be a literal `svc-ds-[a-z-]+` pattern, which missed three
         # of the eleven clients: `svc-edc`, `svc-rec-registry` and — the one the
         # row names — `oauth2_proxy`, the deployment's single human login
-        # surface. The pattern is now derived from
-        # `services/keycloak/clients.effective.yaml`, which declares each client
-        # as `secret: ${VAR:-<dev default>}`, so it covers every client the
-        # realm is synced from and cannot go stale when one is added.
-        clients_file="services/keycloak/clients.effective.yaml"
-        if [ -f "$clients_file" ]; then
-          pairs="$(grep -oE '\$\{[A-Z0-9_]+:-[^}]+\}' "$clients_file" | sort -u || true)"
+        # surface. The pattern is derived instead from the files that declare
+        # each client as `secret: ${VAR:-<dev default>}`, so it covers every
+        # client the realm is synced from and cannot go stale when one is added.
+        #
+        # **Every declaring file, not just the core.** This read the generated
+        # effective file until 2026-08-28; the sync now takes the core plus each
+        # overlay (`docker-compose.yml`'s `keycloak-sync`), and grepping the core
+        # alone would stop covering `SVC_REC_REGISTRY_SECRET`, which only
+        # `clients.energy.yaml` declares — silently, since a check that finds
+        # fewer clients still passes. The glob is what keeps the sentence above
+        # true: a new overlay is covered by existing, not by editing this.
+        clients_files=""
+        for f in services/keycloak/clients.yaml services/keycloak/clients.*.yaml; do
+          case "$f" in
+            *.effective.yaml|*.generated.yaml) continue ;;
+          esac
+          [ -f "$f" ] && clients_files="$clients_files $f"
+        done
+        if [ -n "$clients_files" ]; then
+          pairs="$(grep -hoE '\$\{[A-Z0-9_]+:-[^}]+\}' $clients_files | sort -u || true)"
           if [ -z "$pairs" ]; then
-            echo "✗ no \${VAR:-default} secrets found in $clients_file — this check is not checking anything"; rc=1
+            echo "✗ no \${VAR:-default} secrets found in$clients_files — this check is not checking anything"; rc=1
           fi
           for pair in $pairs; do
             var="${pair#\$\{}"; var="${var%%:-*}"
@@ -1617,7 +1630,7 @@ tasks:
             fi
           done
         else
-          echo "✗ $clients_file not found — run: task keycloak:merge"; rc=1
+          echo "✗ no services/keycloak/clients*.yaml found — this check is not checking anything"; rc=1
         fi
         # oauth2_proxy is declared in the realm import rather than by the syncer,
         # so it has no ${VAR:-default} above and needs naming here.

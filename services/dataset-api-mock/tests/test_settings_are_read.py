@@ -17,6 +17,7 @@ by no one.
 from __future__ import annotations
 
 import pathlib
+import re
 
 from dataset_api_mock.main import Settings
 
@@ -53,6 +54,26 @@ def test_no_scope_name_is_configurable():
     assert not scopeish, f"scope names must not be settings: {scopeish}"
 
 
+def _deployment_tokens(prefix: str):
+    """Every `{PREFIX}*` name a deployment file declares, with where it came from.
+
+    A declaration is `NAME=` or `NAME:` — a leading `#` is stripped first, so a
+    commented-out alternative still counts (that is how `.env.example` documents
+    one), but a sentence in prose that happens to open with a variable name does
+    not. This unit is where the sweep was written, and until issue #17 it split
+    on `=`/`:` without anchoring: the four units ported from it anchored, so the
+    copy named as the reference was the weaker one. This is their parser.
+    """
+    pattern = re.compile(r"^#?\s*([A-Z][A-Z0-9_]*)\s*[:=]")
+    for path in [REPO / ".env.example", *sorted(REPO.glob("docker-compose*.yml"))]:
+        if not path.exists():
+            continue
+        for line in path.read_text(encoding="utf-8").splitlines():
+            match = pattern.match(line.strip())
+            if match and match.group(1).startswith(prefix):
+                yield path.name, match.group(1)
+
+
 def test_no_deployment_file_sets_a_variable_this_service_does_not_read():
     """The other direction, and the one that made the dead setting convincing.
 
@@ -65,20 +86,11 @@ def test_no_deployment_file_sets_a_variable_this_service_does_not_read():
     # Read by compose and the Dockerfile rather than by this service's Settings.
     known_elsewhere = {"DATASET_API_MOCK_PORT", "DATASET_API_PATH", "DATASET_API_URL"}
 
-    stray: list[str] = []
-    for relative in (".env.example", "docker-compose.rec.yml", "docker-compose.yml"):
-        path = REPO / relative
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            token = line.strip().lstrip("#").strip().split(":")[0].split("=")[0].strip()
-            if (
-                token.startswith("DATASET_API_")
-                and token not in declared
-                and token not in known_elsewhere
-            ):
-                stray.append(f"{relative}: {token}")
-
+    stray = sorted(
+        f"{where}: {token}"
+        for where, token in _deployment_tokens("DATASET_API_")
+        if token not in declared and token not in known_elsewhere
+    )
     assert not stray, (
         f"Deployment files name settings this service does not read: {stray}"
     )

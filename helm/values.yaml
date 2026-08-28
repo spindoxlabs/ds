@@ -120,9 +120,10 @@ global:
       # `celine-policies keycloak sync`**, so there was never anything to mount
       # the clients file into. It read as a supported way to provision the realm
       # from Helm, and there is none — the realm is provisioned out-of-band from
-      # `clients.effective.yaml` (`task keycloak:merge` output, never the raw
-      # `clients.yaml`: the syncer recomputes every client's grants from the one
-      # file it is handed, so the core alone strips whatever an overlay granted).
+      # `clients.yaml` plus every overlay, passed to one `keycloak sync` with a
+      # repeatable `--overlay` (never the core alone: the syncer recomputes
+      # every client's grants from what it is given, so the core by itself
+      # strips whatever an overlay granted).
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
 
     # ── Layer B — the foreign realm's vocabulary, translated ──────────────────

@@ -134,7 +134,7 @@ scope the realm does not grant and it fails, naming the scope and the remedy.
 
 **CI runs the real provisioning tool.** `realm-dataspaces-dev.json` carries only `oauth2_proxy`
 and six stock scopes, so a bare Keycloak proves nothing — but the `celine-policies` image is
-public and both inputs it needs (`clients.effective.yaml`, the realm file) are committed, so the
+public and every input it needs (`clients.yaml`, each overlay, the realm file) is committed, so the
 `keycloak` job in `integration.yml` starts Keycloak and syncs it exactly as `docker-compose.yml`
 does, then asserts against the result. That is the point: what is under test is **the sync's
 output**, so a job that skipped the sync would be testing nothing. Measured both ways —

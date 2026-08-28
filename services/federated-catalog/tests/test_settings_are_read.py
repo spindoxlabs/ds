@@ -69,8 +69,9 @@ def _deployment_tokens(prefix: str):
     A declaration is `NAME=` or `NAME:` — a leading `#` is stripped first, so a
     commented-out alternative still counts (that is how `.env.example` documents
     one), but a sentence in prose that happens to open with a variable name does
-    not. The reference implementation split on `=`/`:` without anchoring, and
-    picked up comment text as declarations.
+    not. The `dataset-api-mock` copy this was ported from split on `=`/`:`
+    without anchoring, and picked up comment text as declarations; it was
+    brought in line with this parser in issue #17.
     """
     pattern = re.compile(r"^#?\s*([A-Z][A-Z0-9_]*)\s*[:=]")
     for path in [REPO / ".env.example", *sorted(REPO.glob("docker-compose*.yml"))]:

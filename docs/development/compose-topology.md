@@ -167,7 +167,7 @@ Every other mount is a read-only bind of a file inside this repository:
 |---|---|
 | `services/caddy/Caddyfile` | caddy |
 | `services/keycloak/realm-dataspaces-dev.json` | keycloak, for `--import-realm` |
-| `services/keycloak/clients.effective.yaml` | `keycloak-sync` |
+| `services/keycloak/clients.yaml`, `clients.energy.yaml` | `keycloak-sync` |
 | `services/keycloak/organizations.yaml` | `keycloak-org-sync` |
 | `services/oauth2-proxy/oauth2-proxy.cfg` | oauth2-proxy |
 | `services/identity-registry/seed/` | the bootstrap one-shot |

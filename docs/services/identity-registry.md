@@ -380,7 +380,7 @@ refuse to run against a schema that is not at head.
 | `task identity-registry:run` | uvicorn on `:30005` with reload |
 | `task identity-registry:debug` | same under debugpy on `:30905` |
 | `task db:migrate:identity-registry` | `alembic upgrade head` |
-| `task keycloak:merge` / `keycloak:mirror` | regenerate the two client projections |
+| `task keycloak:merge` / `keycloak:mirror` | regenerate the two client projections — nothing applies the merge's output any more |
 | `task identity:bootstrap` | the dev seed's first half: trust anchor, owners, agreements, one enrolment code per participant |
 | `task identity:users` | its second half — the dev users' credentials, **after** the participants have enrolled, because that is who they are delivered to |
 
