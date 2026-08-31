@@ -22,6 +22,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0010](ADR-0010-integration-layer-exists-for-the-database.md) | The integration layer exists because migrations run in no unit test |
 | [ADR-0011](ADR-0011-ci-provisions-a-real-realm.md) | CI provisions a real Keycloak realm rather than mocking it |
 | [ADR-0012](ADR-0012-defects-are-issues.md) | Defects are issues, not a repository artifact |
+| [ADR-0013](ADR-0013-governance-shape-comes-from-celine-utils.md) | The governance shape comes from `celine.governance`, not a parallel implementation |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule
