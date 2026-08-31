@@ -21,6 +21,7 @@ from identity_registry.config import Settings
 from identity_registry.db.models import (
     AgreementAcceptance,
     Credential,
+    OrganizationApplication,
     Owner,
     Participant,
 )
@@ -463,3 +464,382 @@ async def test_keycloak_role_in_dataspace_roles_is_refused(db_session, tmp_path)
 
     assert not outcome.ok
     assert "organization.role" in outcome.error
+
+
+# ── Selecting which entries are ours ──────────────────────────────
+#
+# A deployment's owners.yaml carries no `dataspace:` block on any entry and its
+# schema forbids one, so the block cannot be the selector there. These cover the
+# two that replace it, and the errors they refuse to report as skips.
+
+
+def _owners() -> list[dict]:
+    """A deployment-shaped owners file: celine fields only, no `dataspace:`."""
+    return [
+        {
+            "id": "set-distribuzione",
+            "name": "SET Distribuzione S.p.A.",
+            "did": "did:web:dso.dataspaces.localhost",
+            "aliases": ["dso"],
+        },
+        {
+            "id": "greenland",
+            "name": "Greenland Soc. Coop.",
+            "did": "did:web:rec.dataspaces.localhost",
+            "aliases": ["rec"],
+        },
+        # Attribution metadata for open data: no connector, no DID, and it must
+        # never be registered as an organisation.
+        {"id": "openstreetmap", "name": "OpenStreetMap"},
+    ]
+
+
+def _governance(tmp_path, body: str, name: str = "governance.yaml"):
+    import textwrap
+
+    path = tmp_path / name
+    path.write_text(textwrap.dedent(body))
+    return path
+
+
+def test_governance_selects_the_owners_it_names_by_alias(tmp_path):
+    """`dso` is a placeholder alias in the open-source pipelines; the file's own
+    id is `set-distribuzione`. The registry's id/alias swap is what joins them,
+    and it is the reason this selector can read a governance file written by
+    somebody who has never seen the deployment's owner registry."""
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.silver.meters_15m:
+            ownership:
+              - name: dso
+            dataspace:
+              expose: true
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert selection.ok
+    assert [e["id"] for e in selection.entries] == ["set-distribuzione"]
+
+
+def test_the_open_data_owners_are_not_selected(tmp_path):
+    """The property the `dataspace:` skip provided, preserved: an owner that is
+    attribution metadata is left alone rather than registered."""
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership:
+              - name: greenland
+            dataspace:
+              expose: true
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert [e["id"] for e in selection.entries] == ["greenland"]
+
+
+def test_two_governance_files_select_the_union_once_each(tmp_path):
+    gov_a = _governance(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership: [{name: dso}]
+            dataspace: {expose: true}
+    """, "a.yaml")
+    gov_b = _governance(tmp_path, """
+        sources:
+          datasets.gold.b:
+            ownership: [{name: dso}]
+            dataspace: {expose: true}
+          datasets.gold.c:
+            ownership: [{name: rec}]
+            dataspace: {expose: true}
+    """, "b.yaml")
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov_a, gov_b])
+
+    assert [e["id"] for e in selection.entries] == ["set-distribuzione", "greenland"]
+
+
+def test_an_owner_governance_names_and_the_file_does_not_declare_is_an_error(tmp_path):
+    """Not a skip. A governance file naming an owner the deployment does not
+    declare is a broken deployment, and reporting it as a skip is how it reaches
+    production — the run would succeed having onboarded nobody for that dataset."""
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership: [{name: nobody-here}]
+            dataspace: {expose: true}
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert not selection.ok
+    assert any("nobody-here" in e for e in selection.errors)
+    assert selection.entries == []
+
+
+def test_a_selected_owner_carrying_no_did_is_an_error(tmp_path):
+    """The whole point of the run is a resolvable owner. An entry with its `did`
+    still commented out — the state every deployment file starts in — must fail
+    review rather than register an organisation nothing can resolve."""
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership: [{name: openstreetmap}]
+            dataspace: {expose: true}
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert not selection.ok
+    assert any("carries no did" in e for e in selection.errors)
+
+
+def test_every_error_is_reported_in_one_pass(tmp_path):
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership: [{name: nobody-here}]
+            dataspace: {expose: true}
+          datasets.gold.b:
+            ownership: [{name: openstreetmap}]
+            dataspace: {expose: true}
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert len(selection.errors) == 2
+
+
+def test_a_governance_file_exposing_nothing_is_an_error_not_an_empty_run(tmp_path):
+    """"Nothing would be onboarded" and "no organisations needed" are different
+    answers, and a silent empty selection returns the first as the second."""
+    gov = _governance(tmp_path, """
+        sources:
+          datasets.bronze.raw:
+            ownership: [{name: dso}]
+            dataspace: {expose: false}
+    """)
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert not selection.ok
+    assert selection.entries == []
+
+
+def test_without_governance_the_selector_is_carrying_a_did():
+    selection = ops.select_entries(_owners(), governance_paths=None)
+
+    assert selection.ok
+    assert [e["id"] for e in selection.entries] == ["set-distribuzione", "greenland"]
+
+
+# ── Per-run evidence ──────────────────────────────────────────────
+
+
+@pytest.mark.rule("P-1")
+@pytest.mark.asyncio
+async def test_run_evidence_onboards_an_entry_with_no_dataspace_block(
+    db_session, tmp_path
+):
+    """Steps 1 and 2 only, and that is the whole requirement of
+    `GET /owners/resolve`: a verified owner holding its `did` and `aliases`."""
+    settings = await _seed(db_session, tmp_path)
+    entry = _owners()[0]
+
+    outcome = await ops.apply_owner_entry(
+        db_session,
+        settings,
+        entry,
+        ops.RunEvidence(
+            verified_by="demo3-deployment", evidence_ref="recs/owners.yaml@abc1234"
+        ),
+    )
+
+    assert outcome.ok and outcome.applied
+    steps = {s.step: s.action for s in outcome.steps}
+    assert steps["application"] == "created"
+    assert steps["verification"] == "created"
+    # A run flag cannot assert an agreement acceptance or a DSP address.
+    assert steps["agreement"] == "skipped"
+    assert steps["credential"] == "skipped"
+    assert steps["participant"] == "skipped"
+
+    owner = (await db_session.execute(select(Owner))).scalars().one()
+    assert owner.id == "set-distribuzione"
+    assert owner.did == "did:web:dso.dataspaces.localhost"
+    assert owner.aliases == ["dso"]
+    assert owner.status == "verified"
+    assert owner.verified_by == "demo3-deployment"
+
+
+@pytest.mark.asyncio
+async def test_run_evidence_never_overwrites_the_entrys_own_evidence(
+    db_session, tmp_path
+):
+    """The trap the flags open, and the guard for it.
+
+    A per-entry block says `ops@example.test / TICKET-42`; a later run passing
+    `--verified-by demo3-deployment` must not rewrite that to the generic string,
+    which would silently downgrade the evidence behind an issued credential.
+    Free verification is the state T30 closed; this is the same hole from the
+    other side.
+    """
+    settings = await _seed(db_session, tmp_path)
+
+    first = await ops.apply_owner_entry(db_session, settings, _entry())
+    assert first.ok
+    await db_session.commit()
+
+    # The same organisation, now reached through a deployment file with no block.
+    plain = {
+        "id": ALIAS,
+        "name": "Example Community",
+        "did": ORG_DID,
+        "aliases": ["example-c"],
+    }
+    second = await ops.apply_owner_entry(
+        db_session,
+        settings,
+        plain,
+        ops.RunEvidence(verified_by="demo3-deployment", evidence_ref="owners.yaml"),
+    )
+    await db_session.commit()
+
+    assert second.ok
+    owner = (await db_session.execute(select(Owner))).scalars().one()
+    assert owner.verified_by == "ops@example.test"
+    app = (
+        await db_session.execute(
+            select(OrganizationApplication).where(
+                OrganizationApplication.alias == ALIAS
+            )
+        )
+    ).scalars().one()
+    assert app.verified_by == "ops@example.test"
+    assert app.evidence_ref == "TICKET-42"
+
+    verification = next(s for s in second.steps if s.step == "verification")
+    assert verification.action == "unchanged"
+    assert "kept existing evidence" in verification.detail
+
+
+@pytest.mark.rule("P-4")
+@pytest.mark.asyncio
+async def test_a_second_run_with_the_same_evidence_is_a_no_op(db_session, tmp_path):
+    """The guard must not turn re-running the deploy-time invocation into a
+    report of a change that did not happen."""
+    settings = await _seed(db_session, tmp_path)
+    entry = _owners()[1]
+    evidence = ops.RunEvidence(verified_by="demo3-deployment", evidence_ref="o.yaml")
+
+    first = await ops.apply_owner_entry(db_session, settings, entry, evidence)
+    await db_session.commit()
+    second = await ops.apply_owner_entry(db_session, settings, entry, evidence)
+    await db_session.commit()
+
+    assert first.changed
+    assert not second.changed
+    assert (
+        await db_session.execute(select(func.count()).select_from(Owner))
+    ).scalar_one() == 1
+
+
+@pytest.mark.asyncio
+async def test_run_evidence_does_not_blank_a_legal_identity_it_cannot_carry(
+    db_session, tmp_path
+):
+    """The second trap the flags open, found by running the first one's test.
+
+    A deployment's owners.yaml has no registration number, no country codes and
+    no participant role. A synthesised block reports them as ``None``, and every
+    one of those was being written — so applying a deployment file over an
+    organisation ds already knew would have blanked its legal identity. In
+    practice it raised `409` instead, because the intake refuses to change a
+    verified application's legal fields, which means the run failed rather than
+    quietly destroying data. Either way it could not be used for what it exists
+    for.
+    """
+    settings = await _seed(db_session, tmp_path)
+    await ops.apply_owner_entry(db_session, settings, _entry())
+    await db_session.commit()
+
+    plain = {"id": ALIAS, "name": "Example Community", "did": ORG_DID}
+    outcome = await ops.apply_owner_entry(
+        db_session,
+        settings,
+        plain,
+        ops.RunEvidence(verified_by="demo3-deployment"),
+    )
+    await db_session.commit()
+
+    assert outcome.ok, outcome.error
+    app = (
+        await db_session.execute(
+            select(OrganizationApplication).where(
+                OrganizationApplication.alias == ALIAS
+            )
+        )
+    ).scalars().one()
+    assert app.registration_number == "IT12345678901"
+    assert app.registration_type == "vatID"
+    assert app.hq_country_code == "IT-TN"
+    assert app.legal_name == "Example Community Cooperative"
+    assert app.roles == ["consumer"]
+
+
+@pytest.mark.asyncio
+async def test_a_first_run_still_writes_a_complete_row(db_session, tmp_path):
+    """Omitting keys must not leave a fresh application half-built: `defaults`
+    applies on create, so the name and role are there even though neither is
+    sent as a field."""
+    settings = await _seed(db_session, tmp_path)
+
+    await ops.apply_owner_entry(
+        db_session,
+        settings,
+        _owners()[1],
+        ops.RunEvidence(verified_by="demo3-deployment"),
+    )
+    await db_session.commit()
+
+    app = (
+        await db_session.execute(
+            select(OrganizationApplication).where(
+                OrganizationApplication.alias == "greenland"
+            )
+        )
+    ).scalars().one()
+    assert app.legal_name == "Greenland Soc. Coop."
+    assert app.roles == ["consumer"]
+    assert app.did == "did:web:rec.dataspaces.localhost"
+
+
+# ── The CLI guard ─────────────────────────────────────────────────
+
+
+def test_governance_without_verified_by_is_refused(tmp_path):
+    """Refused, not ignored.
+
+    `--governance` selects entries that carry no `dataspace:` block, and such an
+    entry without run evidence is skipped. So the two flags apart would select
+    exactly the right organisations, skip every one of them, and report a
+    successful run that onboarded nobody — the silent no-op this whole plan
+    exists because of.
+    """
+    from typer.testing import CliRunner
+
+    from identity_registry.cli.main import app as cli
+
+    owners = tmp_path / "owners.yaml"
+    owners.write_text("owners:\n  - id: dso\n    did: did:web:dso.example\n")
+    gov = tmp_path / "governance.yaml"
+    gov.write_text("sources: {}\n")
+
+    result = CliRunner().invoke(
+        cli, ["org", "apply", "--file", str(owners), "--governance", str(gov)]
+    )
+
+    assert result.exit_code == 2
+    assert "--verified-by" in result.output

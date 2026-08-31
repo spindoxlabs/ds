@@ -22,6 +22,7 @@ it counted the claim rather than the referent.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date
@@ -95,6 +96,37 @@ def judge_all(assessment: Assessment) -> list[RuleVerdict]:
 # --------------------------------------------------------------------------
 
 
+# ── Provenance, which is not measurement ──────────────────────────
+#
+# `status.md` opens with a line naming the commit the page was rendered at. It
+# is the one line on the page that is *about* the page rather than about the
+# tree, and `--check` must not compare it: the page is committed, so the render
+# always happens before the commit that carries it, and the line therefore names
+# the parent commit forever. Writing the page also dirties the tree, so a
+# re-render at the same HEAD says `X-dirty` against the `X` on disk. Comparing
+# it makes `--check` unsatisfiable in both directions — it was red in every
+# commit that has ever carried the page.
+#
+# The regex lives beside `_provenance`, which writes the line, so the writer and
+# the stripper cannot drift into comparing nothing.
+
+#: Matches exactly what `_provenance` emits, and nothing else on the page.
+PROVENANCE_RE = re.compile(r"^Generated \d{4}-\d{2}-\d{2} from `[^`]*`\.$", re.MULTILINE)
+
+
+def _provenance(generated_on: date, commit: str) -> str:
+    return f"Generated {generated_on.isoformat()} from `{commit}`."
+
+
+def measurement_of(page: str) -> str:
+    """`page` with its provenance line blanked — the part `--check` compares.
+
+    Blanked rather than deleted so both sides keep the same line numbering, and
+    so a page that somehow carries no provenance line is still comparable.
+    """
+    return PROVENANCE_RE.sub("", page)
+
+
 def _cite(item: Evidence) -> str:
     return f"`{item.node}`"
 
@@ -136,7 +168,7 @@ def render(assessment: Assessment, *, generated_on: date, commit: str) -> str:
         "sources. It is committed so that drift shows up in a diff."
     )
     w("")
-    w(f"Generated {generated_on.isoformat()} from `{commit}`.")
+    w(_provenance(generated_on, commit))
     w("")
     w(
         "This page measures **linkage**, not correctness. A rule is *evidenced* when a "
@@ -504,4 +536,13 @@ def summarise(assessment: Assessment) -> dict[str, int]:
     }
 
 
-__all__ = ["Verdict", "RuleVerdict", "judge", "judge_all", "render", "summarise", "Layer"]
+__all__ = [
+    "Verdict",
+    "RuleVerdict",
+    "judge",
+    "judge_all",
+    "measurement_of",
+    "render",
+    "summarise",
+    "Layer",
+]

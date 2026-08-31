@@ -4,7 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from ds.governance.resolver import GovernanceConfig, GovernanceResolver
+from ds.governance.resolver import (
+    GovernanceConfig,
+    GovernanceResolver,
+    exposed_owner_aliases,
+)
 from ds.governance.models import GovernanceRuleV2, DataspacePolicy
 
 
@@ -210,3 +214,99 @@ def test_row_filters_override_defaults(tmp_path):
     assert meters.row_filters[0].handler == "rec_registry"
     other = resolver.resolve("datasets.silver.other")
     assert other.row_filters[0].handler == "default_handler"
+
+
+# ── exposed_owner_aliases ─────────────────────────────────────────────────────
+
+def test_ownership_declared_only_in_defaults_is_found(tmp_path):
+    """The shape that makes reading `config.sources` directly wrong.
+
+    `services/connector/governance-rec/governance.yaml` declares `ownership`
+    once, in `defaults:`, and never repeats it per dataset — so a collector that
+    walked the raw sources would find no owner at all and report a governance
+    file with owners as naming none. `resolve()` merges the defaults in, which is
+    also what decides the ODRL assigner.
+    """
+    path = _write_yaml(tmp_path, """
+        defaults:
+          ownership:
+            - name: example-org
+              type: DATA_OWNER
+          dataspace:
+            expose: false
+        sources:
+          datasets.gold.a:
+            dataspace:
+              expose: true
+    """)
+
+    assert exposed_owner_aliases(path) == ["example-org"]
+
+
+def test_an_unexposed_dataset_does_not_onboard_its_owner(tmp_path):
+    """`expose: false` publishes nothing, so its owner owns nothing here."""
+    path = _write_yaml(tmp_path, """
+        sources:
+          datasets.gold.published:
+            ownership:
+              - name: publisher
+            dataspace:
+              expose: true
+          datasets.bronze.internal:
+            ownership:
+              - name: internal-only
+            dataspace:
+              expose: false
+    """)
+
+    assert exposed_owner_aliases(path) == ["publisher"]
+
+
+def test_aliases_are_deduplicated_in_file_order(tmp_path):
+    """Two datasets, one owner, one line — and the order is the file's."""
+    path = _write_yaml(tmp_path, """
+        sources:
+          datasets.gold.a:
+            ownership:
+              - name: second
+              - name: first
+            dataspace:
+              expose: true
+          datasets.gold.b:
+            ownership:
+              - name: first
+            dataspace:
+              expose: true
+    """)
+
+    assert exposed_owner_aliases(path) == ["second", "first"]
+
+
+def test_a_dataset_overriding_the_default_owner_reports_both(tmp_path):
+    """The merge is per dataset, so a default owner survives alongside an override."""
+    path = _write_yaml(tmp_path, """
+        defaults:
+          ownership:
+            - name: house-owner
+          dataspace:
+            expose: true
+        sources:
+          datasets.gold.a: {}
+          datasets.gold.b:
+            ownership:
+              - name: other-owner
+    """)
+
+    assert exposed_owner_aliases(path) == ["house-owner", "other-owner"]
+
+
+def test_a_governance_file_exposing_nothing_names_no_owner(tmp_path):
+    """Empty, and the caller — not this function — decides whether that is an error."""
+    path = _write_yaml(tmp_path, """
+        sources:
+          datasets.bronze.raw:
+            ownership:
+              - name: somebody
+    """)
+
+    assert exposed_owner_aliases(path) == []

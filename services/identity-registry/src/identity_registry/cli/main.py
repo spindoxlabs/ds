@@ -1840,6 +1840,24 @@ def org_enrolment_token(
 @org_app.command("apply")
 def org_apply(
     file: Path = typer.Option(..., help="owners.yaml seed file"),
+    governance: list[Path] = typer.Option(
+        None,
+        "--governance",
+        help="Governance file(s) naming the owners to onboard. Repeatable. "
+        "Requires --verified-by.",
+    ),
+    verified_by: str = typer.Option(
+        None,
+        "--verified-by",
+        help="Verification evidence for entries carrying no dataspace: block — "
+        "who verified them, once for the whole run.",
+    ),
+    evidence_ref: str = typer.Option(
+        None,
+        "--evidence-ref",
+        help="What the run's verification rests on, e.g. the owners file and its "
+        "revision. Requires --verified-by.",
+    ),
     dry_run: bool = typer.Option(
         False, help="Report what would change; roll back instead of committing"
     ),
@@ -1849,6 +1867,19 @@ def org_apply(
     Walks register → verify → agreement → issue-credential → promote for every
     entry carrying a ``dataspace:`` block, and skips the ones that do not — so
     the same file keeps serving its other consumers.
+
+    **A deployment's owners.yaml has no such block on any entry**, and should not:
+    that file is the deployment's own domain registry, and its schema forbids ds
+    fields. Given ``--verified-by``, entries without a block become eligible too,
+    onboarded as far as run-level evidence honestly supports — a verified owner
+    holding its ``did`` and ``aliases``, which is the whole of what
+    ``GET /owners/resolve`` needs. No agreement, no credential, no promotion:
+    those are legal and topological facts a run flag must not assert.
+
+    Which entries, then, is chosen by ``--governance`` where it is given — the
+    owners named by an exposed dataset, so the onboarded set is derived from the
+    data actually published rather than listed a second time — and by carrying a
+    ``did`` where it is not.
 
     Every entry is attempted and **all** failures are reported together, then
     the command exits non-zero: an operator seeding ten organisations should get
@@ -1866,13 +1897,45 @@ def org_apply(
             data = yaml.safe_load(fh) or {}
         entries = data.get("owners") or data.get("organizations") or []
 
+        # Refused here rather than ignored: a --governance run with no evidence
+        # would select the right organisations and then skip every one of them
+        # for want of a `verified_by`, reporting a successful no-op.
+        if (governance or evidence_ref) and not verified_by:
+            flag = "--governance" if governance else "--evidence-ref"
+            typer.echo(
+                f"{flag} requires --verified-by: an entry with no dataspace: "
+                "block cannot be verified without evidence, and would be skipped.",
+                err=True,
+            )
+            raise typer.Exit(2)
+
+        evidence = (
+            ops.RunEvidence(verified_by=verified_by, evidence_ref=evidence_ref)
+            if verified_by
+            else None
+        )
+        selection = ops.select_entries(
+            entries, governance_paths=list(governance or []) or None
+        )
+        for problem in selection.errors:
+            typer.echo(f"ERROR  {problem}", err=True)
+        if not selection.ok:
+            raise typer.Exit(1)
+        # Without run evidence the selection changes nothing: an entry it picks
+        # that carries no `dataspace:` block is skipped exactly as before, so the
+        # flagless invocation every current caller uses behaves identically.
+        selected = {id(e) for e in selection.entries}
+
         settings = get_settings()
         factory = await _ensure_db()
         outcomes: list[ops.ApplyOutcome] = []
         async with factory() as session:
             for entry in entries:
                 outcome = await ops.apply_owner_entry(
-                    session, settings, entry
+                    session,
+                    settings,
+                    entry,
+                    evidence if id(entry) in selected else None,
                 )
                 outcomes.append(outcome)
                 if not outcome.ok:
@@ -1894,7 +1957,7 @@ def org_apply(
         changed = sum(1 for o in applied if o.ok and o.changed)
         typer.echo(
             f"\n{len(applied)} organisation(s) applied, {changed} changed, "
-            f"{len(outcomes) - len(applied)} skipped (no dataspace: block), "
+            f"{len(outcomes) - len(applied)} skipped, "
             f"{len(failed)} failed"
             + (" [dry-run: nothing committed]" if dry_run else "")
         )

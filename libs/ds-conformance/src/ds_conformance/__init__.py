@@ -19,7 +19,7 @@ See `docs/development/conformance.md`.
 
 from .assess import assess
 from .model import Assessment, Evidence, Requirement, Rule
-from .report import Verdict, judge_all, render, summarise
+from .report import Verdict, judge_all, measurement_of, render, summarise
 
 __all__ = [
     "Assessment",
@@ -29,6 +29,7 @@ __all__ = [
     "Verdict",
     "assess",
     "judge_all",
+    "measurement_of",
     "render",
     "summarise",
 ]

@@ -24,6 +24,11 @@ dependencies = [
     "python-multipart>=0.0.20",
     "ds-auth",
     "ds-obs[tracing]",
+    # `org apply --governance` derives which organisations to onboard from the
+    # governance files that name them, and parsing governance is this library's
+    # job, not a second reader's here. Adds nothing transitively: httpx, pydantic,
+    # pyyaml and typer are all already above.
+    "ds-governance",
 ]
 
 [project.optional-dependencies]
@@ -32,6 +37,7 @@ dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6", "mypy>=1.11", "psycopg[
 [tool.uv.sources]
 ds-auth = { path = "../../libs/ds-auth", editable = true }
 ds-obs = { path = "../../libs/ds-obs", editable = true }
+ds-governance = { path = "../../libs/governance", editable = true }
 
 [project.scripts]
 ir-cli = "identity_registry.cli.main:run"

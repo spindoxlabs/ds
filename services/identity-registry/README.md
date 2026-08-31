@@ -127,6 +127,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli status export` | Export StatusList2021 as JSON |
 | `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
 | `ir-cli org apply --file owners.yaml` | Walk that whole lifecycle per `owners.yaml` entry carrying a `dataspace:` block — idempotent, reports every failure in one pass, `--dry-run` available |
+| `ir-cli org apply … --governance g.yaml --verified-by who` | The same command against a **deployment's** owners.yaml, which has no `dataspace:` block on any entry: `--governance` selects the owners an exposed dataset names, `--verified-by`/`--evidence-ref` supply the run's evidence, and the chain stops at a verified owner holding its `did` — no agreement, no credential, no promotion |
 | `ir-cli org list/show/suspend/reinstate/revoke/import` | Manage organisations |
 | `ir-cli agreement import/list` | Import + list service-agreement definitions |
 | `ir-cli org bundle --alias --format` | Render a connection bundle (same renderers as the HTTP endpoint, so the two cannot drift) |

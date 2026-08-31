@@ -47,7 +47,7 @@ from .vocabularies import (
     load_vocabularies,
 )
 from .purposes import purpose_failure, unresolved_purposes
-from .resolver import GovernanceConfig, GovernanceResolver
+from .resolver import GovernanceConfig, GovernanceResolver, exposed_owner_aliases
 from .mapper import GovernanceMapper, requires_consent
 from .owners import (
     HttpOwnersRegistry,
@@ -99,6 +99,7 @@ __all__ = [
     "load_vocabularies",
     "GovernanceConfig",
     "GovernanceResolver",
+    "exposed_owner_aliases",
     "GovernanceMapper",
     "requires_consent",
     "OwnerEntry",
