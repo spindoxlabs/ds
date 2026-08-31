@@ -17,5 +17,8 @@ class ConsentNotifier(ABC):
 
     @abstractmethod
     async def notify_status_changed(self, consent: ConsentRequestORM) -> None:
-        """Notify subject that their consent status changed (granted/rejected/revoked)."""
+        """Notify subject that their consent status changed.
+
+        Granted, rejected or revoked.
+        """
         ...

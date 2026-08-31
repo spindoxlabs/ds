@@ -68,7 +68,7 @@ jobs:
           #                                    runs in that unit's `lint`; ruff, and
           #                                    mypy over tests/, are what is left
           #   libs/governance            0   cleared 2026-08-31, now `lint: true`
-          #   services/connector        61
+          #   services/connector         0   cleared 2026-08-31, now `lint: true`
           #   services/federated-catalog 0   cleared 2026-08-31, now `lint: true`
           #   services/identity-registry 0   cleared 2026-08-31, now `lint: true`
           # Flip a unit to `lint: true` in the same commit that clears it.
@@ -90,7 +90,7 @@ jobs:
           - unit: libs/governance
             lint: true
           - unit: services/connector
-            lint: false
+            lint: true
           - unit: services/dataset-api-mock
             lint: true
           - unit: services/federated-catalog

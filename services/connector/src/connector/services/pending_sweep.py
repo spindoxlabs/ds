@@ -155,7 +155,8 @@ async def sweep_once(
     terminated = 0
     for negotiation_id, consent_ids in dead.items():
         log.info(
-            "Consent TTL expired for negotiation %s (%d unanswered ask(s)) — terminating",
+            "Consent TTL expired for negotiation %s (%d unanswered ask(s)) "
+            "— terminating",
             negotiation_id,
             len(consent_ids),
         )

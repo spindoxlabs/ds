@@ -5,15 +5,12 @@ import logging
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 
-from fastapi import FastAPI
-
-log = logging.getLogger(__name__)
-
 from ds.governance.models import profile_path_is_missing
 from ds.governance.owners import HttpOwnersRegistry
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics, install_tracing
+from fastapi import FastAPI
 
 from .api.v1.admin import router as admin_router
 from .api.v1.consent import router as consent_router
@@ -32,6 +29,8 @@ from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.pending_sweep import parse_duration, run_sweeper
 from .services.prov_bridge import ProvBridge
+
+log = logging.getLogger(__name__)
 
 
 def _load_vocabulary_cache(settings) -> None:

@@ -12,7 +12,10 @@ log = logging.getLogger(__name__)
 
 
 class MultiNotifier(ConsentNotifier):
-    """Calls all configured notifiers concurrently. Individual failures are logged and swallowed."""
+    """Calls all configured notifiers concurrently.
+
+    Individual failures are logged and swallowed.
+    """
 
     def __init__(self, notifiers: list[ConsentNotifier]) -> None:
         self._notifiers = notifiers

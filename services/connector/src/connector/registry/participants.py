@@ -52,7 +52,8 @@ class ParticipantRegistry:
         p = self._by_dsp.get(counter_party_address)
         if p is None:
             raise UnknownParticipantError(
-                f"Participant with DSP address '{counter_party_address}' is not registered"
+                f"Participant with DSP address '{counter_party_address}' "
+                "is not registered"
             )
         return p
 
@@ -133,7 +134,8 @@ class HttpParticipantRegistry:
                 if self._last_success > 0 and staleness > self._max_staleness:
                     raise UnknownParticipantError(
                         f"Identity-registry unreachable for {staleness:.0f}s "
-                        f"(max {self._max_staleness:.0f}s) — refusing stale participant data"
+                        f"(max {self._max_staleness:.0f}s) — refusing stale "
+                        "participant data"
                     ) from exc
                 log.warning(
                     "Serving stale participant cache (age %.0fs, max %.0fs)",

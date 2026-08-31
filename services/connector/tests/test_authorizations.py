@@ -143,7 +143,10 @@ async def test_authorizations_multiple_datasets(engine, client):
 @pytest.mark.rule("D-2", "D-19")
 @pytest.mark.asyncio
 async def test_authorizations_no_private_data(engine, client):
-    """Ensure the response contains no private data (consumer IDs, purposes, messages)."""
+    """Ensure the response contains no private data.
+
+    No consumer IDs, purposes or messages.
+    """
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():

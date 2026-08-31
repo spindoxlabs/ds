@@ -21,7 +21,9 @@ class Settings(BaseSettings):
 
     role: Literal["provider", "consumer"] = Field(
         ...,
-        description="Participant role — determines which EDC client and routers are loaded",
+        description=(
+            "Participant role — determines which EDC client and routers are loaded"
+        ),
     )
 
     participant_id: str = "provider"
@@ -241,7 +243,9 @@ class Settings(BaseSettings):
 
     keycloak_token_url: str = Field(
         default="http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",
-        description="Keycloak token endpoint for service-to-service client-credentials grants",
+        description=(
+            "Keycloak token endpoint for service-to-service client-credentials grants"
+        ),
     )
     service_client_secret: str = Field(
         default="svc-ds-connector",

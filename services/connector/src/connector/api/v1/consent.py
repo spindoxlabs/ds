@@ -326,7 +326,10 @@ async def create_consent_request(
             if not is_member:
                 raise HTTPException(
                     status_code=403,
-                    detail=f"Subject '{subject_id}' is not a member of dataset owner organization '{owner_alias}'",
+                    detail=(
+                        f"Subject '{subject_id}' is not a member of dataset owner "
+                        f"organization '{owner_alias}'"
+                    ),
                 )
 
     await _reject_if_already_covered(request, body, settings)
@@ -641,7 +644,8 @@ async def set_my_data_share(
                 raise HTTPException(
                     409,
                     f"Offer '{offer.id}' is not consent-based "
-                    f"(legal basis {offer.legal_basis}) — it is disclosed, not consented",
+                    f"(legal basis {offer.legal_basis}) — it is disclosed, not "
+                    "consented",
                 )
             # The subject's own decision deserves the same evidence record a
             # service-provisioned one gets. Without it there is no record of

@@ -155,7 +155,8 @@ async def request_catalog(
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
-            f"EDC catalog request failed: {exc}. Check that EDC provider/consumer containers are running.",
+            f"EDC catalog request failed: {exc}. Check that EDC provider/consumer "
+            "containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
@@ -206,7 +207,8 @@ async def start_negotiation(
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
-            f"EDC negotiation failed: {exc}. Check that EDC provider/consumer containers are running.",
+            f"EDC negotiation failed: {exc}. Check that EDC provider/consumer "
+            "containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
@@ -556,7 +558,8 @@ async def start_transfer(
         raise HTTPException(
             409,
             (
-                f"An active transfer for asset {req.asset_id!r} already exists for this user "
+                f"An active transfer for asset {req.asset_id!r} already exists "
+                "for this user "
                 f"(transfer_id={duplicate})."
             ),
         )
@@ -570,7 +573,8 @@ async def start_transfer(
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
-            f"EDC transfer failed: {exc}. Check that EDC provider/consumer containers are running.",
+            f"EDC transfer failed: {exc}. Check that EDC provider/consumer "
+            "containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC transfer failed: {exc.response.text}") from exc
@@ -755,7 +759,8 @@ async def run_flow(
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
-            f"EDC flow failed: {exc}. Check that EDC provider/consumer containers are running.",
+            f"EDC flow failed: {exc}. Check that EDC provider/consumer "
+            "containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC flow failed: {exc.response.text}") from exc

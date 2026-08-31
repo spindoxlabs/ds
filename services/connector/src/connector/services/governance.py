@@ -222,7 +222,8 @@ def load_exposed_datasets(
     governance_yaml_path: str,
     overlay_name: str | None = None,
 ) -> dict[str, GovernanceRuleV2]:
-    """Load governance.yaml (with optional overlay) and return datasets where expose: true and access_level != secret."""
+    """Load governance.yaml (with optional overlay) and return datasets
+    where expose: true and access_level != secret."""
     path = Path(governance_yaml_path)
     resolver = GovernanceResolver.from_file_with_override(
         path, overlay_name=overlay_name

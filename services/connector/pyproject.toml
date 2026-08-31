@@ -61,6 +61,24 @@ markers = ["integration: needs a real PostgreSQL on 172.17.0.1:35432", "rule: na
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
 
+[tool.ruff.lint.per-file-ignores]
+# **The import order is the fixture.** `conftest.py` sets `CONNECTOR_ROLE` and
+# the two governance paths with `os.environ.setdefault` *before* it imports
+# `connector.main`, because settings are read at import time and the suite must
+# resolve dataset ids and purposes against `tests/fixtures/` rather than the dev
+# catalogue. Hoisting those imports to the top — which is all `E402` asks for —
+# reads the real catalogue and the assertions stop meaning anything. The
+# statements above the imports are the setup, not stray code.
+"tests/conftest.py" = ["E402"]
+
+# `prov_client` is a fixture defined in `test_provenance_events.py` and imported
+# here to reuse it; the import already carries `noqa: F401`. `F811` fires at the
+# *use* site instead — the test function's `prov_client` parameter shadows the
+# imported name, which is how pytest fixtures are always consumed. The
+# alternative is moving the fixture into `conftest.py`, which changes resolution
+# for the file that defines it; not worth it for one consumer.
+"tests/test_acting_principal.py" = ["F811"]
+
 [dependency-groups]
 dev = [
     "debugpy>=1.8.21",

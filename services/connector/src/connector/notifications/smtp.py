@@ -21,6 +21,14 @@ _STATUS_LABELS = {
 }
 
 
+#: The call-to-action button, shared by both templates. Split for line length
+#: only — the concatenation is byte-identical to the inline style it replaced.
+_BUTTON_STYLE = (
+    "display:inline-block;background:#1a56db;color:white;padding:10px 20px;"
+    "border-radius:6px;text-decoration:none;font-weight:500"
+)
+
+
 class SmtpNotifier(ConsentNotifier):
     """Sends HTML consent notification emails via SMTP."""
 
@@ -76,6 +84,12 @@ class SmtpNotifier(ConsentNotifier):
 
     def _render_requested(self, consent: ConsentRequestORM, portal_url: str) -> str:
         purpose = ", ".join(consent.purpose or []) or "Not specified"
+        message_row = (
+            f'<tr><td style="padding:8px;color:#6b7280">Message</td>'
+            f'<td style="padding:8px">{consent.message}</td></tr>'
+            if consent.message
+            else ""
+        )
         return f"""
 <html><body style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
 <h2 style="color:#1a56db">New Data Access Request</h2>
@@ -87,9 +101,9 @@ class SmtpNotifier(ConsentNotifier):
       <td style="padding:8px">{consent.consumer_id}</td></tr>
   <tr><td style="padding:8px;color:#6b7280">Purpose</td>
       <td style="padding:8px">{purpose}</td></tr>
-  {f'<tr><td style="padding:8px;color:#6b7280">Message</td><td style="padding:8px">{consent.message}</td></tr>' if consent.message else ""}
+  {message_row}
 </table>
-<a href="{portal_url}" style="display:inline-block;background:#1a56db;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:500">
+<a href="{portal_url}" style="{_BUTTON_STYLE}">
   Review Request
 </a>
 <p style="margin-top:24px;color:#9ca3af;font-size:12px">
@@ -106,6 +120,7 @@ class SmtpNotifier(ConsentNotifier):
             "Rejected": "#dc2626",
             "Revoked": "#d97706",
         }.get(status_label, "#6b7280")
+        status_style = f"padding:8px;font-weight:600;color:{status_color}"
         return f"""
 <html><body style="font-family:sans-serif;max-width:600px;margin:auto;padding:24px">
 <h2 style="color:#111827">Consent Request Update</h2>
@@ -116,9 +131,9 @@ class SmtpNotifier(ConsentNotifier):
   <tr><td style="padding:8px;color:#6b7280">Requester</td>
       <td style="padding:8px">{consent.consumer_id}</td></tr>
   <tr><td style="padding:8px;color:#6b7280">New Status</td>
-      <td style="padding:8px;font-weight:600;color:{status_color}">{status_label}</td></tr>
+      <td style="{status_style}">{status_label}</td></tr>
 </table>
-<a href="{portal_url}" style="display:inline-block;background:#1a56db;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:500">
+<a href="{portal_url}" style="{_BUTTON_STYLE}">
   View Details
 </a>
 <p style="margin-top:24px;color:#9ca3af;font-size:12px">

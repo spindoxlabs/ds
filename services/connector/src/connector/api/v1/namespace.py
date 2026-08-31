@@ -33,13 +33,19 @@ def _build_vocab(profile: OdrlProfile) -> dict:
         {
             "@id": profile.term(profile.membership_operand),
             "@type": "odrl:LeftOperand",
-            "skos:definition": "Whether the consumer holds a valid membership credential for the dataspace.",
+            "skos:definition": (
+                "Whether the consumer holds a valid membership credential "
+                "for the dataspace."
+            ),
             "skos:example": "dataspaces.query",
         },
         {
             "@id": profile.term(profile.consent_operand),
             "@type": "odrl:LeftOperand",
-            "skos:definition": "Whether the data subject has an active consent grant for the requesting consumer.",
+            "skos:definition": (
+                "Whether the data subject has an active consent grant for the "
+                "requesting consumer."
+            ),
             "skos:example": "active",
         },
         # ── ODRL action ────────────────────────────────────────────────
@@ -56,7 +62,10 @@ def _build_vocab(profile: OdrlProfile) -> dict:
         {
             "@id": f"{pfx}:role:DataSubject",
             "@type": "odrl:PartyCollection",
-            "skos:definition": "The set of natural persons whose personal data is contained in the dataset.",
+            "skos:definition": (
+                "The set of natural persons whose personal data is contained "
+                "in the dataset."
+            ),
         },
         {
             "@id": f"{pfx}:role:Provider",
@@ -66,7 +75,9 @@ def _build_vocab(profile: OdrlProfile) -> dict:
         {
             "@id": f"{pfx}:role:Consumer",
             "@type": "odrl:PartyCollection",
-            "skos:definition": "A participant that requests access to datasets in the dataspace.",
+            "skos:definition": (
+                "A participant that requests access to datasets in the dataspace."
+            ),
         },
     ]
 

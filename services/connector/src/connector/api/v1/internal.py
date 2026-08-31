@@ -530,7 +530,8 @@ async def consent_check(
     two chances to diverge.
 
     - With ``subject_id``: returns whether that specific subject has active consent.
-    - Without ``subject_id``: returns all granted subject IDs (used by the Dataset API PEP
+    - Without ``subject_id``: returns all granted subject IDs (used by the
+      Dataset API PEP
       to build a row-level IN-list filter).
 
     ``purpose`` is a comma-separated list of profile purpose slugs or IRIs — the
@@ -711,11 +712,15 @@ async def record_consent_ask(
 
     | ``asked`` | when | the guard should |
     |---|---|---|
-    | true | the question was put to at least one person | park the negotiation |
-    | false, ``not_consent_gated`` | no data subject to ask | let it proceed |
-    | false, ``covered_processor`` | disclosed under Art. 28, not consented (§6.3) | let it proceed |
-    | false, ``no_subjects`` | nobody is enrolled in this dataset | let it proceed — and be refused |
-    | false, ``unknown_dataset``/``unknown_purpose`` | the offer names something we do not have | let it proceed — and be refused |
+    | true | the question was put to at least one person | park |
+    | false, ``not_consent_gated`` | no data subject to ask | proceed |
+    | false, ``covered_processor`` | Art. 28 disclosure, not consent (§6.3) | proceed |
+    | false, ``no_subjects`` | nobody is enrolled in this dataset | proceed† |
+    | false, ``unknown_dataset`` | the offer names a dataset we do not have | proceed† |
+    | false, ``unknown_purpose`` | the offer names a purpose we do not have | proceed† |
+
+    † and then be refused. "Park" is park the negotiation; "proceed" is let it
+    proceed.
 
     "Let it proceed" is not "allow": the ODRL consent constraint still evaluates
     and still denies. It only means *parking would not help*, because no human

@@ -13,7 +13,8 @@ log = logging.getLogger(__name__)
 
 
 class WebhookNotifier(ConsentNotifier):
-    """POSTs a JSON consent event to the notification_url stored on the consent record."""
+    """POSTs a JSON consent event to the notification_url stored on the
+    consent record."""
 
     def __init__(
         self, portal_base_url: str = "https://portal.dataspaces.localhost"

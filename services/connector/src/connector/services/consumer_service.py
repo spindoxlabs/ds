@@ -220,7 +220,8 @@ class ConsumerService:
         # 1. Negotiate
         negotiation_id = await self.negotiate(
             counter_party_address=req.counter_party_address,
-            offer_id=req.asset_id,  # EDC v3 uses offer_id = asset_id until catalog lookup
+            # EDC v3 uses offer_id = asset_id until catalog lookup
+            offer_id=req.asset_id,
             asset_id=req.asset_id,
             assigner=req.assigner,
         )
