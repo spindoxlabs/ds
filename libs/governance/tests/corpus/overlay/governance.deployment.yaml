@@ -1,0 +1,50 @@
+# A deployer overlay, selected as `overlay_name="deployment"`.
+#
+# Not a copy of any deployed file: it is built to exercise **every merge rule the
+# migration must preserve**, over the base beside it. `governance.local.yaml` in
+# `services/connector/governance-rec/` is the shape it follows — one field of a
+# nested block rebound, nothing restated — and the rest is here because a rule
+# nothing exercises is a rule nothing pins.
+#
+# What each block is for:
+
+defaults:
+  # Whole replacement when non-empty. The base names `example-org`; a deployment
+  # binds the generic alias to the organisation it actually onboarded.
+  ownership:
+    - name: deployment-org
+      type: DATA_OWNER
+  # Union with the base's `[]`.
+  tags: [deployment]
+
+sources:
+  datasets.gold.om_weather_features:
+    dataspace:
+      # Field-by-field with `exclude_unset`: `type`, `proxy_path` and
+      # `proxy_query_params` must survive from the base. Restating them here
+      # would stop this fixture proving that.
+      data_address:
+        base_url: "http://172.17.0.1:30002/query"
+      # Union, never replacement — an overlay adds a reason for processing, it
+      # does not retract the base's.
+      purpose: [FlexibilityResearch]
+
+  datasets.silver.meters_15m:
+    # Union with the base's [meters, silver, pii, rec].
+    tags: [deployment-only]
+    dataspace:
+      # **Withdrawal.** `expose` is not OR-ed, so `false` here must win over the
+      # base's `true`. This is the instruction `exclude_defaults` and truthiness
+      # merges could not express, and the reason the merge reads `exclude_unset`.
+      expose: false
+      # OR, and the base already says true — an overlay may tighten, never
+      # loosen. Stating `false` here must NOT un-require consent.
+      consent_required: false
+
+  # A key the base does not declare: added as-is, no merge with defaults' peers.
+  datasets.gold.deployment_only:
+    title: "Declared by the overlay alone"
+    access_level: open
+    dataspace:
+      expose: true
+      purpose: [GridMonitoring]

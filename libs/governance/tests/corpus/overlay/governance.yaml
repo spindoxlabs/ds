@@ -1,0 +1,115 @@
+defaults:
+  access_level: internal
+  classification: green
+  tags: []
+  retention_days: 365
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
+  dataspace:
+    expose: false
+
+sources:
+  # ── Open-Meteo Weather ML features ────────────────────────────────────────
+  datasets.gold.om_weather_features:
+    title: "Open-Meteo Weather ML Features (Gold)"
+    description: "29 ML features for energy consumption forecasting."
+    license: CC-BY-4.0
+    access_level: internal
+    classification: green
+    tags: [weather, gold, features]
+    source_system: Open-Meteo
+
+    # `policy.purpose[]` is the only runtime declaration of which purposes a
+    # dataset may serve. `tags` are DCAT-AP catalogue keywords and carry no
+    # policy meaning.
+    dataspace:
+      expose: true
+      medallion: gold
+      # Canonical placement per celine-utils/schema/governance.schema.json.
+      purpose: [EnergyCommunityOperation, GridMonitoring]
+      asset:
+        id: "datasets.gold.om_weather_features"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        # **`dataset-api-rec`, the compose service name** (`E2E-15`). This said
+        # `http://dataset-api:30002/query` until 2026-08-28 and no container has
+        # ever answered to that host: the stack's stand-in plane is the
+        # `dataset-api-rec` service on the `dataspaces` network, and the real
+        # celine plane comes up as `dataset-api-real` in a *separate* compose
+        # project that does not join that network at all. The address travels
+        # into the EDC asset and out to the consumer as the transfer's data
+        # address, so it is only dereferenced on the leg the e2e flows reach
+        # through the mock's own port mapping — which is why an unresolvable
+        # host survived. A fixture is what a reader copies when adding a
+        # dataset, so it has to name something that resolves.
+        #
+        # `governance.local.yaml` overrides this to `172.17.0.1:30002` where the
+        # data plane is the real celine service published on the host; that
+        # overlay is the deployment-specific binding and this is the default.
+        base_url: "http://dataset-api-rec:30002/query"
+        proxy_path: false
+        proxy_query_params: true
+
+  # ── Smart Meter Readings (silver, PII) ─────────────────────────────────────
+  datasets.silver.meters_15m:
+    title: "Smart Meter Readings 15-minute"
+    description: "Aggregated smart meter readings at 15-minute intervals."
+    license: CC-BY-4.0
+    access_level: restricted
+    classification: pii
+    source_system: Local meter sample adapter
+    row_filters:
+      # `device_id` is what `rec_registry` resolves: a member's meters, not a
+      # subject DID. Every governance.yaml in the producer pipelines names
+      # this column for this handler.
+      - handler: rec_registry
+        args:
+          column: device_id
+    tags: [meters, silver, pii, rec]
+
+    # The payload semantic model these columns conform to (rulebook
+    # `data-models.md` §3, `M-7`). **This is the producer's statement, and this
+    # file is the only place it can be made** — ds mandates no model and supplies
+    # no default (`M-6`).
+    #
+    # The IRI is this participant's own and this participant serves it: the REC
+    # publishes it from its own connector at `/ns/meter-readings`, registered in
+    # `vocabularies.yaml` with no `source`, so nothing here depends on an
+    # external host being up. A deployment aligning these columns to SAREF4ENER
+    # or CIM points `conforms_to` at that IRI instead; the mechanism is the same
+    # and ds does not get a say in which.
+    #
+    # It must agree with what the data plane actually renders. The dataset API
+    # states its own model on `/catalogue`, and `test_semantic_model_contract.py`
+    # compares the two — otherwise this is a claim nobody checks.
+    dcat:
+      conforms_to: https://rec.dataspaces.localhost/ns/meter-readings
+
+    # One meter dataset serves several distinct reasons for processing; the
+    # negotiated purpose decides which consent rows apply.
+    dataspace:
+      expose: true
+      medallion: silver
+      # Canonical placement per celine-utils/schema/governance.schema.json.
+      # One meter dataset serves several distinct reasons for processing; the
+      # negotiated purpose decides which consent rows apply.
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent_required: true
+      # The dataset names its offers, never the reverse: offers are declared by
+      # whoever declares the dataset, so only this file can bind one here. Each
+      # id must resolve — an unresolvable one means the dataset is not shared,
+      # and the sync refuses to publish it rather than advertising a consent
+      # gate that can never open.
+      sharing_offers:
+        - household-energy-flexibility
+        - grid-operations-planning
+        - community-incentive-calculation
+      asset:
+        id: "datasets.silver.meters_15m"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        base_url: "http://dataset-api-rec:30002/query"
+        proxy_query_params: true

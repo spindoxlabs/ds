@@ -27,6 +27,15 @@ dev = [
     # schema (see schema/README.md). A dev dependency, not a runtime one: the
     # library parses governance, the test suite is what asserts the shape.
     "jsonschema>=4.19",
+    # The reference implementation of the governance shape, run as a **second
+    # implementation over the same corpus** by `tests/tests/test_characterisation.py`
+    # (ADR-0013, phase 0). A dev dependency only while the migration is in flight:
+    # phase 1 moves it to `dependencies` and the library imports it for real.
+    #
+    # Core only, no extras. `pipelines` is what used to drag in dbt, Meltano,
+    # Prefect and Keycloak, and is the reason four parsers of one file format
+    # exist.
+    "celine-utils>=2.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]
