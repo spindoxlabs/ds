@@ -99,7 +99,7 @@ def test_poll_until_timeout(client):
 
 def test_acquire_service_token(client):
     token_resp = _mock_response(200, {"access_token": "tok123", "expires_in": 300})
-    with patch.object(client._client, "post", return_value=token_resp) as mock_post:
+    with patch.object(client._client, "post", return_value=token_resp):
         token_resp.raise_for_status = MagicMock()
         token = client.acquire_service_token()
     assert token == "tok123"

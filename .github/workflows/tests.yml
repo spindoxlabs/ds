@@ -47,31 +47,30 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # `lint: true` only where `task lint` is already clean. Lint is a
-          # ratchet here, not a gate: turning it on everywhere today would put
-          # `main` permanently red over pre-existing P3 debt, and a red `main` is
-          # how a workflow stops being read.
+          # **The ratchet is closed: every unit is `lint: true` as of
+          # 2026-08-31.** It was six of eleven that morning. Keep it closed —
+          # a unit added here without a clean `task lint` reopens it, and the
+          # reason it was a ratchet is that a permanently red `main` is how a
+          # workflow stops being read.
           #
-          # **Every unit's `lint` also runs `ruff format --check` as of
-          # 2026-08-31.** The formatter had been wired into nothing, so 331 of
-          # ~380 files had drifted from it — invisible, because no task and no
-          # job ever ran it. Running it closed 316 of the 392 `E501`s on its own:
-          # the formatter wraps a long line, so most line-length debt was never
-          # a judgement call. What a formatter cannot split — a long string, a
-          # URL, a comment — is what is left below.
+          # What closed it was wiring in `ruff format`, which had been run by no
+          # task and no job: 331 of ~380 files had drifted from it, invisibly.
+          # Formatting alone closed 316 of the 392 `E501`s, because a formatter
+          # wraps a long line — most line-length debt was never a judgement
+          # call. The ~110 left were, and were cleared by hand: strings split so
+          # the emitted bytes are unchanged, URL fragments hoisted into locals,
+          # docstrings reflowed, one `E402` fixed by moving a single assignment
+          # below the imports it had been splitting.
           #
-          # Re-measured 2026-08-31, after `ruff format` + `ruff check --fix`:
-          #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06
-          #   libs/ds-conformance        0   clean since it was written
-          #   libs/ds-e2e               40   E2E-11 — `mypy --strict` on src/ is
-          #                                    clear (2026-08-28, issue #8) and now
-          #                                    runs in that unit's `lint`; ruff, and
-          #                                    mypy over tests/, are what is left
-          #   libs/governance            0   cleared 2026-08-31, now `lint: true`
-          #   services/connector         0   cleared 2026-08-31, now `lint: true`
-          #   services/federated-catalog 0   cleared 2026-08-31, now `lint: true`
-          #   services/identity-registry 0   cleared 2026-08-31, now `lint: true`
-          # Flip a unit to `lint: true` in the same commit that clears it.
+          # Two `E402`/`F811` exemptions survive as documented per-file ignores
+          # in `services/connector/pyproject.toml`; both are structural — an
+          # import order that *is* a fixture, and a pytest fixture shadowed by
+          # the parameter that consumes it. Neither is line-length debt.
+          #
+          # **Still owed, and not what this gate measures:** `libs/ds-e2e` runs
+          # `mypy --strict` over `src/` only (`E2E-11`, issue #8). `tests/`
+          # carries ~334 errors and is not in that unit's `lint` path. Widening
+          # it is the next tranche.
           - unit: libs/ds-auth
             lint: true
           # The tool that measures the rulebook, gated by nothing until
@@ -80,7 +79,7 @@ jobs:
           - unit: libs/ds-conformance
             lint: true
           - unit: libs/ds-e2e
-            lint: false
+            lint: true
           # New unit, so no ratchet debt to inherit: `lint` and `mypy --strict`
           # were both clean the day its `tests/` directory was added (EDCL-10).
           - unit: libs/ds-edc

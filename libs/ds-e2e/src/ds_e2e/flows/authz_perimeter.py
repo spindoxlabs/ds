@@ -218,7 +218,8 @@ class AuthzPerimeterFlow(BaseFlow):
             return
         result.pass_step(
             "query-parameter scoping",
-            "a subject_id parameter naming someone else is refused; the caller's own is served",
+            "a subject_id parameter naming someone else is refused; the caller's own "
+            "is served",
             refused_with=status,
         )
 
@@ -303,7 +304,8 @@ class AuthzPerimeterFlow(BaseFlow):
             return
         result.pass_step(
             "role confusion",
-            "subject-only, consumer-only and operator-only endpoints each refuse the other roles",
+            "subject-only, consumer-only and operator-only endpoints each refuse the "
+            "other roles",
             probes=len(subject_only) + len(consumer_only) + 1,
         )
 
@@ -360,15 +362,17 @@ class AuthzPerimeterFlow(BaseFlow):
         if foreign_id is None:
             result.pass_step(
                 "enumeration resistance",
-                "a fabricated consent id is refused (foreign-record comparison skipped — "
+                "a fabricated consent id is refused (foreign-record comparison skipped "
+                "— "
                 "operator provisioning unavailable)",
                 fabricated=status_fabricated,
             )
             return
 
+        foreign_q = urllib.parse.quote(str(foreign_id), safe="")
         status_foreign, _ = self.http.raw(
             "GET",
-            f"{s.connector_url}/consent/my/{urllib.parse.quote(str(foreign_id), safe='')}",
+            f"{s.connector_url}/consent/my/{foreign_q}",
             headers=subject_headers,
         )
         if status_foreign < 400:

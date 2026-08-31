@@ -145,7 +145,8 @@ class ConsentPurposeFlow(BaseFlow):
         if not broader:
             result.fail_step(
                 "purpose taxonomy",
-                "no purpose declares skos:broader — odrl:isA has no hierarchy to follow",
+                "no purpose declares skos:broader — odrl:isA has no hierarchy to "
+                "follow",
             )
             return None
 
@@ -343,7 +344,8 @@ class ConsentPurposeFlow(BaseFlow):
                     "broader purpose",
                     broader,
                     False,
-                    "the parent of the consented purpose is denied — that would widen consent",
+                    "the parent of the consented purpose is denied — that would widen "
+                    "consent",
                 )
             )
 
@@ -355,7 +357,8 @@ class ConsentPurposeFlow(BaseFlow):
             }
             if purpose:
                 params["purpose"] = purpose
-            url = f"{s.connector_url}/internal/consent/check?{urllib.parse.urlencode(params)}"
+            query = urllib.parse.urlencode(params)
+            url = f"{s.connector_url}/internal/consent/check?{query}"
             try:
                 body = self.http.get(url, headers=svc_headers) or {}
             except Exception as exc:

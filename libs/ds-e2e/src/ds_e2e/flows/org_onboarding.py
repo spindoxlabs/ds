@@ -397,9 +397,10 @@ class OrgOnboardingFlow(BaseFlow):
             if suspended.get("status") != "suspended":
                 result.fail_step("suspend", "owner not suspended", body=suspended)
                 return result
+            did_q = urllib.parse.quote(did, safe="")
             creds = (
                 self.http.get(
-                    f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
+                    f"{ir}/admin/credentials?subject_did={did_q}",
                     headers=admin,
                 )
                 or []
@@ -424,10 +425,10 @@ class OrgOnboardingFlow(BaseFlow):
                     creds=org_creds,
                 )
                 return result
+            did_q = urllib.parse.quote(did, safe="")
             check = (
                 self.http.get(
-                    f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
-                    "&scope=dataspaces.query",
+                    f"{ir}/admin/participants/check?did={did_q}&scope=dataspaces.query",
                     headers=admin,
                 )
                 or {}
@@ -460,9 +461,10 @@ class OrgOnboardingFlow(BaseFlow):
             if reinstated.get("status") != "verified":
                 result.fail_step("reinstate", "owner not reinstated", body=reinstated)
                 return result
+            did_q = urllib.parse.quote(did, safe="")
             creds = (
                 self.http.get(
-                    f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
+                    f"{ir}/admin/credentials?subject_did={did_q}",
                     headers=admin,
                 )
                 or []
@@ -484,10 +486,10 @@ class OrgOnboardingFlow(BaseFlow):
                     creds=back,
                 )
                 return result
+            did_q = urllib.parse.quote(did, safe="")
             check = (
                 self.http.get(
-                    f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
-                    "&scope=dataspaces.query",
+                    f"{ir}/admin/participants/check?did={did_q}&scope=dataspaces.query",
                     headers=admin,
                 )
                 or {}

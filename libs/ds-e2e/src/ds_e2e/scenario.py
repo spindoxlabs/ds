@@ -159,7 +159,8 @@ class ScenarioRunner:
             if want.get("capacity") and found.get("capacity") != want["capacity"]:
                 report.problem(
                     f"agreement {key[0]}@{key[1]} declares capacity "
-                    f"{found.get('capacity')!r}, scenario expects {want['capacity']!r} — "
+                    f"{found.get('capacity')!r}, scenario expects {want['capacity']!r} "
+                    "— "
                     "the circle assertions would pass for the wrong reason"
                 )
         if missing:
@@ -188,7 +189,8 @@ class ScenarioRunner:
             if offer is None:
                 report.problem(
                     f"sharing offer {want.get('id')!r} is not published — add it to "
-                    "services/connector/governance-rec/sharing-offers.yaml and reload the connector"
+                    "services/connector/governance-rec/sharing-offers.yaml and reload "
+                    "the connector"
                 )
                 continue
             recipients = offer.get("recipients") or {}
@@ -275,7 +277,8 @@ class ScenarioRunner:
             log.debug("%s already accepted %s", alias, accepts["agreement_id"])
         else:
             report.problem(
-                f"could not record agreement acceptance for {alias}: HTTP {status} {payload}"
+                f"could not record agreement acceptance for {alias}: HTTP {status} "
+                f"{payload}"
             )
 
     def _apply_membership(
@@ -293,7 +296,8 @@ class ScenarioRunner:
             log.debug("membership already present")
         else:
             report.problem(
-                f"could not add membership {user_did}→{organization}: HTTP {status} {payload}"
+                f"could not add membership {user_did}→{organization}: HTTP {status} "
+                f"{payload}"
             )
 
     def _apply_participant(self, spec: dict[str, Any], report: ScenarioReport) -> None:
@@ -342,7 +346,8 @@ class ScenarioRunner:
             report.did(f"reactivated participant {spec['did']}")
         else:
             report.problem(
-                f"could not reactivate participant {spec['did']}: HTTP {status} {payload}"
+                f"could not reactivate participant {spec['did']}: HTTP {status} "
+                f"{payload}"
             )
 
     # ── show ─────────────────────────────────────────────────────────────────
@@ -362,7 +367,8 @@ class ScenarioRunner:
                 continue
             report.did(
                 f"owner {alias}: status={payload.get('status')} "
-                f"agreement={payload.get('agreement_id')}@{payload.get('agreement_version')} "
+                f"agreement={payload.get('agreement_id')}@"
+                f"{payload.get('agreement_version')} "
                 f"capacity={payload.get('agreement_capacity')}"
             )
         for participant in self.scenario.get("participants") or []:

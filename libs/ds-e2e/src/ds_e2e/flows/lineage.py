@@ -291,7 +291,8 @@ class LineageFlow(BaseFlow):
         if not isinstance(nodes, list) or len(nodes) < 2:
             result.fail_step(
                 "lineage graph",
-                "the lineage contains the dataset alone — no producing activity is linked",
+                "the lineage contains the dataset alone — no producing activity is "
+                "linked",
                 nodes=len(nodes) if isinstance(nodes, list) else 0,
             )
             return

@@ -96,7 +96,8 @@ class CatalogDiscoveryFlow(BaseFlow):
         if not catalog.get("@context"):
             result.fail_step(
                 "catalogue shape",
-                "the catalogue is not served as JSON-LD — consumers parse it as linked data",
+                "the catalogue is not served as JSON-LD — consumers parse it as linked "
+                "data",
                 keys=sorted(catalog.keys()),
             )
             return result
@@ -132,7 +133,8 @@ class CatalogDiscoveryFlow(BaseFlow):
         if target is None:
             result.fail_step(
                 "provider dataset discoverable",
-                f"the provider's dataset '{s.asset_id}' is not in the federated catalogue",
+                f"the provider's dataset '{s.asset_id}' is not in the federated "
+                "catalogue",
                 found=[self._iri(d) for d in datasets][:10],
             )
             return result
@@ -147,7 +149,8 @@ class CatalogDiscoveryFlow(BaseFlow):
         if not (target.get("hasPolicy") or target.get("odrl:hasPolicy")):
             result.fail_step(
                 "provider dataset discoverable",
-                "the dataset is listed with no policy — a consumer could not know its terms",
+                "the dataset is listed with no policy — a consumer could not know its "
+                "terms",
                 iri=iri,
             )
             return result
@@ -227,13 +230,15 @@ class CatalogDiscoveryFlow(BaseFlow):
         if not hit_datasets:
             result.fail_step(
                 "search narrows",
-                f"searching for '{term}' found nothing, though the dataset is catalogued",
+                f"searching for '{term}' found nothing, though the dataset is "
+                "catalogued",
                 iri=iri,
             )
             return result
         result.pass_step(
             "search narrows",
-            "search matches the catalogued dataset and rejects a term that matches nothing",
+            "search matches the catalogued dataset and rejects a term that matches "
+            "nothing",
             term=term,
             hits=len(hit_datasets),
         )
@@ -249,7 +254,8 @@ class CatalogDiscoveryFlow(BaseFlow):
         if paged.get("hydra:totalItems") != catalog.get("hydra:totalItems"):
             result.fail_step(
                 "paging",
-                "the total count changed with the page window — clients cannot page reliably",
+                "the total count changed with the page window — clients cannot page "
+                "reliably",
                 unpaged=catalog.get("hydra:totalItems"),
                 paged=paged.get("hydra:totalItems"),
             )

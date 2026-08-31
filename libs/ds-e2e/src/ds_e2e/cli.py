@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from enum import Enum
+from enum import StrEnum
 from typing import Annotated
 
 import typer
@@ -27,7 +27,7 @@ app = typer.Typer(
 console = Console()
 
 
-class FlowName(str, Enum):
+class FlowName(StrEnum):
     api_contract = "api-contract"
     authz_perimeter = "authz-perimeter"
     user_authority = "user-authority"
@@ -56,7 +56,7 @@ class FlowName(str, Enum):
     chains = "chains"
 
 
-class Format(str, Enum):
+class Format(StrEnum):
     text = "text"
     json = "json"
     markdown = "markdown"
@@ -175,7 +175,10 @@ def clean(
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ) -> None:
-    """Reset runtime state: truncate connector/provenance tables and re-sync provider."""
+    """Reset runtime state.
+
+    Truncate connector/provenance tables and re-sync provider.
+    """
     _setup_logging(verbose, quiet)
     settings = E2ESettings()
     http = HttpClient(settings)

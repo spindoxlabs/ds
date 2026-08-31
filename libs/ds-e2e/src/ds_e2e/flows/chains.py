@@ -331,7 +331,8 @@ class ChainCommunityFlow(_ChainFlow):
         if status < 400:
             result.fail_step(
                 "pool is a boundary",
-                "a consent request was accepted for a subject outside the community pool",
+                "a consent request was accepted for a subject outside the community "
+                "pool",
                 status_code=status,
                 response=body,
             )
@@ -433,10 +434,13 @@ class ChainPartnerFlow(_ChainFlow):
 
         # 2. Capacity is read, never inferred. An organisation with no accepted
         #    agreement must not default to the permissive answer.
+        unsigned_q = urllib.parse.quote(
+            "did:web:unsigned.dataspaces.localhost", safe=""
+        )
         status, _ = self.http.raw(
             "GET",
             f"{s.identity_registry_url}/agreements/current?"
-            f"participant_did={urllib.parse.quote('did:web:unsigned.dataspaces.localhost', safe='')}",
+            f"participant_did={unsigned_q}",
             headers=svc,
         )
         if status == 200:
@@ -488,7 +492,8 @@ class ChainPartnerFlow(_ChainFlow):
             return result
         result.pass_step(
             "admitted_by is checkable",
-            "the partner satisfies the offer's processor category and the outsider does not",
+            "the partner satisfies the offer's processor category and the outsider "
+            "does not",
         )
 
         # 4. The consequence. A standing consent naming the community as
@@ -580,7 +585,8 @@ class ChainUnbundlingFlow(_ChainFlow):
             result.fail_step(
                 "role-scoped offer",
                 f"offer {GRID_OFFER!r} is not published — add it to "
-                "services/connector/governance-rec/sharing-offers.yaml and reload the connector",
+                "services/connector/governance-rec/sharing-offers.yaml and reload the "
+                "connector",
                 available=[o.get("id") for o in offers],
             )
             return result

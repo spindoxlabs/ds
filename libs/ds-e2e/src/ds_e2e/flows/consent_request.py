@@ -333,7 +333,8 @@ class ConsentRequestFlow(BaseFlow):
             return result
         result.pass_step(
             "subject revokes",
-            "revocation closes the check and the record retains when it was decided and withdrawn",
+            "revocation closes the check and the record retains when it was decided "
+            "and withdrawn",
             decided_at=after.get("decided_at"),
             revoked_at=after.get("revoked_at"),
         )

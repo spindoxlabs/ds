@@ -243,7 +243,8 @@ class SmokeFlow(BaseFlow):
             return result
         result.pass_step(
             "wildcard consent",
-            "operator-provisioned wildcard authorises any in-circle consumer for the consented purpose",
+            "operator-provisioned wildcard authorises any in-circle consumer for the "
+            "consented purpose",
             wildcard_datasets=[r.get("dataset_id") for r in wildcard_rows],
             novel_consumer=novel_consumer,
         )
@@ -559,9 +560,10 @@ class SmokeFlow(BaseFlow):
             result.fail_step("revoke access", "could not find persisted access request")
             return result
 
+        request_q = urllib.parse.quote(str(request_id), safe="")
         revoke = (
             self.http.post(
-                f"{s.consumer_connector_url}/consumer/requests/{urllib.parse.quote(str(request_id), safe='')}/revoke",
+                f"{s.consumer_connector_url}/consumer/requests/{request_q}/revoke",
                 {"reason": "e2e-verification"},
                 headers=consumer_headers,
             )

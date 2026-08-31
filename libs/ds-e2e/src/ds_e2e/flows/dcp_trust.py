@@ -254,7 +254,8 @@ class DcpTrustFlow(BaseFlow):
         ):
             result.fail_step(
                 "did:web resolution",
-                "the document publishes no verification key — signatures could not be checked",
+                "the document publishes no verification key — signatures could not be "
+                "checked",
                 document=doc,
             )
             return
@@ -273,7 +274,8 @@ class DcpTrustFlow(BaseFlow):
             return
         result.pass_step(
             "did:web resolution",
-            "the DID document resolves, names itself and publishes a key; unknown DIDs 404",
+            "the DID document resolves, names itself and publishes a key; unknown DIDs "
+            "404",
             key_count=len(methods),
         )
 
@@ -357,7 +359,8 @@ class DcpTrustFlow(BaseFlow):
             return None
         result.pass_step(
             "STS refusals",
-            "wrong grant, mismatched client_id, wrong secret and unknown participant are all refused",
+            "wrong grant, mismatched client_id, wrong secret and unknown participant "
+            "are all refused",
             probes=len(refusals),
         )
 
@@ -442,7 +445,8 @@ class DcpTrustFlow(BaseFlow):
             return None
         result.pass_step(
             "STS issuance",
-            "a valid client receives a bounded, self-issued ES256 token naming its own DID",
+            "a valid client receives a bounded, self-issued ES256 token naming its own "
+            "DID",
             audience=claims.get("aud"),
             expires_in=payload.get("expires_in"),
         )
@@ -562,7 +566,8 @@ class DcpTrustFlow(BaseFlow):
         if status == 404:
             result.pass_step(
                 "status list",
-                f"skipped — no status list '{s.status_list_id}' published in this environment",
+                f"skipped — no status list '{s.status_list_id}' published in this "
+                "environment",
             )
             return
         if status != 200 or not body:
