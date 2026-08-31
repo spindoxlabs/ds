@@ -33,8 +33,13 @@ cannot be resolved.
 **Holds the consent registry.** `/consent/*` is where a data subject grants, rejects or
 revokes sharing of their own rows. Subjects authenticate with a Verifiable Credential
 (`X-Subject-Id` + `X-User-VC`), not a bearer token — the credential *is* the identity, and
-no operator sits in between. Operators and the onboarding service have their own provisioning
-routes under the same prefix, guarded by ordinary permissions.
+no operator sits in between. Operators and the onboarding service have their own routes under
+the same prefix, guarded by ordinary permissions: `POST /consent/admin/shares` records a
+subject's standing decision (`connector.consent.provision`), and `GET /consent/admin/shares`
+reads back **who currently consents to one sharing offer**, for one named consumer
+(`connector.consent.audience`). The read is a separate permission on purpose — a write grant
+must not carry bulk subject enumeration with it, which is why `.audience` is in no bundle and
+is reached by a person only through `connector.admin`.
 
 **Answers every policy question.** `/internal/*` is the decision point:
 

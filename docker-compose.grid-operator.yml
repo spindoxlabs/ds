@@ -25,6 +25,10 @@
 # REC's in this fixture, and a second copy would prove nothing. Its datasets are
 # served by the same stand-in backend — the asset id is what routes a query.
 
+# Project name — see docker-compose.yml for why this is declared rather than
+# inherited from the directory name.
+name: dataspaces
+
 networks:
   dataspaces:
     name: dataspaces

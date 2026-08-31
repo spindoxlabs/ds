@@ -3,6 +3,10 @@
 #
 #   task third-party:start
 
+# Project name — see docker-compose.yml for why this is declared rather than
+# inherited from the directory name.
+name: dataspaces
+
 networks:
   dataspaces:
     name: dataspaces

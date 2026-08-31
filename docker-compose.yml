@@ -5,6 +5,16 @@
 #   task rec:start
 #   task third-party:start
 
+# **The project name is declared here, not left to the directory.** Compose falls back to
+# the base name of the working directory, which is `ds` on a conventional checkout — so a
+# bare `docker compose up -d` built a *second* set of containers under project `ds`,
+# starting a second Keycloak that died on the `:9080` bind and leaving `ds-*` containers
+# behind. `COMPOSE_PROJECT_NAME` is set in `Taskfile.yml` and `.env.local`, so every
+# task-driven and `--env-file` invocation was already correct; there is no committed `.env`,
+# so only the bare call was wrong. Precedence is `-p` > `COMPOSE_PROJECT_NAME` > this key >
+# directory name, so the existing settings still win and resolve to the same value.
+name: dataspaces
+
 networks:
   dataspaces:
     name: dataspaces
