@@ -11,11 +11,11 @@ route narrows to active participants for any caller without
 *someone else's* guard and one grant change away from disappearing, and the crawl
 is the side that knows it must not republish a removed participant.
 """
+
 from __future__ import annotations
 
-import pytest
-
 import httpx
+import pytest
 import respx
 
 from federated_catalog.registry import load_providers_from_registry

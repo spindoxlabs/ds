@@ -3,6 +3,7 @@
 Replaces the per-participant ds-sts service. All routes are scoped
 under /sts/ for clear provenance.
 """
+
 from __future__ import annotations
 
 import logging
@@ -129,9 +130,11 @@ async def issue_token(
             else "none"
         ),
     )
-    return JSONResponse({
-        "access_token": jwt_str,
-        "token_type": "bearer",
-        "expires_in": expires_in,
-        "scope": requested_scope or "",
-    })
+    return JSONResponse(
+        {
+            "access_token": jwt_str,
+            "token_type": "bearer",
+            "expires_in": expires_in,
+            "scope": requested_scope or "",
+        }
+    )

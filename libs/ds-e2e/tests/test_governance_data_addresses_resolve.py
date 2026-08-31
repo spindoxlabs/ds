@@ -20,6 +20,7 @@ name to resolve — and rulebook `X-7` is *Declared* precisely because nothing
 checked it. A fixture is what the next person copies when adding a dataset, so a
 name that resolves nowhere propagates.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -56,7 +57,11 @@ def _compose_service_names() -> set[str]:
                 # network, which is the whole point of excluding them.
                 continue
             names.add(name)
-            for alias in (networks.get("dataspaces") or {}).get("aliases", []) if isinstance(networks, dict) else []:
+            for alias in (
+                (networks.get("dataspaces") or {}).get("aliases", [])
+                if isinstance(networks, dict)
+                else []
+            ):
                 names.add(alias)
     return names
 
@@ -67,9 +72,7 @@ def _data_address_urls() -> list[tuple[Path, str, str]]:
     for path in sorted(ROOT.glob("services/connector/governance-*/governance.yaml")):
         document = yaml.safe_load(path.read_text()) or {}
         for key, source in (document.get("sources") or {}).items():
-            address = (
-                ((source or {}).get("dataspace") or {}).get("data_address") or {}
-            )
+            address = ((source or {}).get("dataspace") or {}).get("data_address") or {}
             if base_url := address.get("base_url"):
                 found.append((path, key, base_url))
     return found

@@ -11,6 +11,7 @@ Two claims, and the unit suite can make neither:
    step that applies them is `celine-policies keycloak sync`, and its result was
    checked by nothing.
 """
+
 from __future__ import annotations
 
 import base64

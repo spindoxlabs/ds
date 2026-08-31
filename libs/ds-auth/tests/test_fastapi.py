@@ -38,7 +38,7 @@ def client():
 
     @app.get("/scoped")
     async def scoped(
-        _p=Depends(require_permission("connector.admin", perimeter=_same_participant))
+        _p=Depends(require_permission("connector.admin", perimeter=_same_participant)),
     ):
         return {"ok": True}
 
@@ -101,9 +101,12 @@ def test_unconfigured_app_returns_500():
         return {}
 
     tok = _token(scope="connector.admin", preferred_username="service-account-s")
-    assert TestClient(app, raise_server_exceptions=False).get(
-        "/x", headers=_auth(tok)
-    ).status_code == 500
+    assert (
+        TestClient(app, raise_server_exceptions=False)
+        .get("/x", headers=_auth(tok))
+        .status_code
+        == 500
+    )
 
 
 # ── require_exact_permission — the admin superset must not apply ─────────────

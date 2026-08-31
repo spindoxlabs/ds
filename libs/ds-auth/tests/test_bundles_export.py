@@ -3,6 +3,7 @@
 If this fails, the table changed and the generated copy did not — run
 ``task -d libs/ds-auth bundles:generate`` and commit the result.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

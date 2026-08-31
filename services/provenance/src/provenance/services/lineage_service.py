@@ -1,4 +1,5 @@
 """Async BFS lineage traversal over prov_relations."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,7 +20,7 @@ class LineageGraph:
 async def get_lineage(
     session: AsyncSession,
     root_iri: str,
-    direction: str = "both",   # upstream | downstream | both
+    direction: str = "both",  # upstream | downstream | both
     max_depth: int = 5,
     relation_types: list[str] | None = None,
 ) -> LineageGraph:

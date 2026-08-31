@@ -1,4 +1,5 @@
 """EDC Management API v3 request/response Pydantic models."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -113,6 +114,7 @@ class AssetCreate(BaseModel):
 
 # -- Policies -----------------------------------------------------------------
 
+
 class PolicyCreate(BaseModel):
     id: str
     policy: dict[str, Any]  # ODRL Set
@@ -128,6 +130,7 @@ class PolicyCreate(BaseModel):
 
 # -- Contract Definitions -----------------------------------------------------
 
+
 class ContractDefCreate(BaseModel):
     id: str
     access_policy_id: str
@@ -135,12 +138,14 @@ class ContractDefCreate(BaseModel):
     assets_selector: list[dict[str, Any]] = []
 
     def to_edc(self) -> dict[str, Any]:
-        selector = self.assets_selector or [{
-            "@type": "CriterionDto",
-            "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
-            "operator": "=",
-            "operandRight": "*",
-        }]
+        selector = self.assets_selector or [
+            {
+                "@type": "CriterionDto",
+                "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
+                "operator": "=",
+                "operandRight": "*",
+            }
+        ]
         return {
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "ContractDefinition",
@@ -152,6 +157,7 @@ class ContractDefCreate(BaseModel):
 
 
 # -- Catalog ------------------------------------------------------------------
+
 
 class CatalogRequest(BaseModel):
     counter_party_address: str
@@ -171,6 +177,7 @@ class CatalogRequest(BaseModel):
 
 
 # -- Negotiation --------------------------------------------------------------
+
 
 class NegotiationRequest(BaseModel):
     counter_party_address: str
@@ -255,6 +262,7 @@ class NegotiationState(BaseModel):
 
 # -- Transfer -----------------------------------------------------------------
 
+
 class TransferRequest(BaseModel):
     contract_agreement_id: str
     counter_party_address: str
@@ -283,6 +291,7 @@ class TransferState(BaseModel):
 
 
 # -- EDR ----------------------------------------------------------------------
+
 
 class EdrResponse(BaseModel):
     endpoint: str
@@ -315,6 +324,7 @@ class EdrResponse(BaseModel):
 
 # -- Sync ---------------------------------------------------------------------
 
+
 class SyncResult(BaseModel):
     synced: list[str] = []
     skipped: list[str] = []
@@ -322,6 +332,7 @@ class SyncResult(BaseModel):
 
 
 # -- Flow ---------------------------------------------------------------------
+
 
 class FlowRequest(BaseModel):
     counter_party_address: str

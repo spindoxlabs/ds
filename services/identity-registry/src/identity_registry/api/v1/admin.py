@@ -44,6 +44,7 @@ from ...schemas.responses import (
     ParticipantDetailResponse,
     ParticipantResponse,
 )
+from ...services import conformity
 from ...services.crypto import (
     decrypt_private_jwk,
     encrypt_private_jwk,
@@ -57,7 +58,6 @@ from ...services.did import (
     subject_did_for,
     subject_id_of,
 )
-from ...services import conformity
 from ...services.issuance import IssuanceError, deliver_to_custodian
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import (
@@ -87,8 +87,10 @@ async def _existing_subject_did(db: AsyncSession, subject_id: str) -> str | None
     would need.
     """
     rows = (
-        await db.execute(select(Did.did).where(Did.did_type == "user"))
-    ).scalars().all()
+        (await db.execute(select(Did.did).where(Did.did_type == "user")))
+        .scalars()
+        .all()
+    )
     for did in rows:
         if subject_id_of(did) == subject_id:
             return did
@@ -118,9 +120,7 @@ async def create_participant(
     settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_participants_write),
 ):
-    existing = await db.execute(
-        select(Participant).where(Participant.did == data.did)
-    )
+    existing = await db.execute(select(Participant).where(Participant.did == data.did))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Participant already exists")
 
@@ -503,7 +503,9 @@ async def issue_membership_credential(
         ttl_days=ttl,
     )
 
-    ta_raw_jwk = decrypt_private_jwk(trust_anchor_key.private_jwk, settings.encryption_key)
+    ta_raw_jwk = decrypt_private_jwk(
+        trust_anchor_key.private_jwk, settings.encryption_key
+    )
     signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
     cred = Credential(
@@ -617,7 +619,9 @@ async def issue_data_subject_credential(
         verification_method=data.verification_method,
     )
 
-    ta_raw_jwk = decrypt_private_jwk(trust_anchor_key.private_jwk, settings.encryption_key)
+    ta_raw_jwk = decrypt_private_jwk(
+        trust_anchor_key.private_jwk, settings.encryption_key
+    )
     signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
     cred = Credential(
@@ -925,9 +929,7 @@ async def get_keycloak_mapping_by_did(
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_admin_scope),
 ):
-    result = await db.execute(
-        select(KeycloakMapping).where(KeycloakMapping.did == did)
-    )
+    result = await db.execute(select(KeycloakMapping).where(KeycloakMapping.did == did))
     mapping = result.scalar_one_or_none()
     if not mapping:
         raise HTTPException(status_code=404, detail="Mapping not found")

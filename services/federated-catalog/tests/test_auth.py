@@ -1,5 +1,7 @@
 """Tests for JWT scope enforcement on federated-catalog endpoints."""
+
 import time
+
 import jwt as pyjwt
 import pytest
 import pytest_asyncio

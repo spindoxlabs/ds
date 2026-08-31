@@ -1,9 +1,12 @@
 """Consumer routes: catalog, negotiate, transfer, EDR, flow."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
+from ds_auth.user_credentials import verify_user_vc_jwt
+from ds_edc import EdcPollTimeout
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import desc, select
@@ -26,8 +29,6 @@ from ...services.agreement_service import (
     upsert_agreement,
 )
 from ...services.odrl_reader import extract_purposes
-from ds_auth.user_credentials import verify_user_vc_jwt
-from ds_edc import EdcPollTimeout
 
 router = APIRouter(prefix="/consumer", tags=["consumer"])
 
@@ -127,7 +128,9 @@ async def request_catalog(
     guard verified, never a header the caller chose (rulebook `D-16`).
     """
     try:
-        catalog = await svc.request_catalog(req.counter_party_address, req.counter_party_id)
+        catalog = await svc.request_catalog(
+            req.counter_party_address, req.counter_party_id
+        )
         prov = getattr(svc, "_prov", None)
         if prov:
             await prov.catalog_viewed(
@@ -146,14 +149,18 @@ async def request_catalog(
             )
         return catalog
     except UnknownParticipantError as exc:
-        raise HTTPException(403, f"Unknown dataspace participant: {req.counter_party_address}") from exc
+        raise HTTPException(
+            403, f"Unknown dataspace participant: {req.counter_party_address}"
+        ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
             f"EDC catalog request failed: {exc}. Check that EDC provider/consumer containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC catalog request failed: {exc.response.text}") from exc
+        raise HTTPException(
+            502, f"EDC catalog request failed: {exc.response.text}"
+        ) from exc
 
 
 @router.post("/negotiate")
@@ -169,7 +176,11 @@ async def start_negotiation(
     # Before any EDC call: a refused declaration must not leave a live
     # negotiation behind that the record then fails to describe.
     declared_purpose = _validated_declaration(req)
-    if req.declared_from and req.declared_until and req.declared_from > req.declared_until:
+    if (
+        req.declared_from
+        and req.declared_until
+        and req.declared_from > req.declared_until
+    ):
         raise HTTPException(422, "declared_from is after declared_until")
     duplicate = await _find_blocking_request(db, svc, x_subject_id, req.asset_id)
     if duplicate:
@@ -189,14 +200,18 @@ async def start_negotiation(
             odrl_policy=req.odrl_policy,
         )
     except UnknownParticipantError as exc:
-        raise HTTPException(403, f"Unknown dataspace participant: {req.counter_party_address}") from exc
+        raise HTTPException(
+            403, f"Unknown dataspace participant: {req.counter_party_address}"
+        ) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
             f"EDC negotiation failed: {exc}. Check that EDC provider/consumer containers are running.",
         ) from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC negotiation failed: {exc.response.text}") from exc
+        raise HTTPException(
+            502, f"EDC negotiation failed: {exc.response.text}"
+        ) from exc
     access_request = ConsumerAccessRequestORM(
         subject_id=x_subject_id,
         asset_id=req.asset_id,
@@ -268,14 +283,18 @@ async def list_access_requests(
             try:
                 negotiation = await svc._edc.get_negotiation(request.negotiation_id)
                 negotiation_state = negotiation.get("state")
-                if negotiation_state in {"FINALIZED", "VERIFIED", "AGREED"} and request.status == "negotiating":
+                if (
+                    negotiation_state in {"FINALIZED", "VERIFIED", "AGREED"}
+                    and request.status == "negotiating"
+                ):
                     request.status = "finalized"
                     changed = True
                 elif negotiation_state == "TERMINATED" and request.status != "revoked":
                     request.status = "terminated"
                     changed = True
                 elif negotiation_state == "REQUESTED" and request.status in {
-                    "negotiating", "awaiting_consent"
+                    "negotiating",
+                    "awaiting_consent",
                 }:
                     # REQUESTED is ambiguous on the wire: it means both "the
                     # provider has not looked yet" and "waiting on a person,
@@ -297,32 +316,47 @@ async def list_access_requests(
                 transfer_state = transfer.get("state")
             except (httpx.RequestError, httpx.HTTPStatusError):
                 transfer_state = None
-        items.append({
-            "id": request.id,
-            "subject_id": request.subject_id,
-            "asset_id": request.asset_id,
-            "counter_party_address": request.counter_party_address,
-            "offer_id": request.offer_id,
-            "assigner": request.assigner,
-            "negotiation_id": request.negotiation_id,
-            "contract_agreement_id": request.contract_agreement_id,
-            "negotiation_state": negotiation_state,
-            "transfer_id": request.transfer_id,
-            "transfer_state": transfer_state,
-            "status": request.status,
-            "awaiting_consent_since": awaiting_since,
-            "declared_purpose": request.declared_purpose or [],
-            "declared_from": request.declared_from.isoformat() if request.declared_from else None,
-            "declared_until": (
-                request.declared_until.isoformat() if request.declared_until else None
-            ),
-            "justification_ref": request.justification_ref,
-            "created_at": request.created_at.isoformat() if request.created_at else None,
-            "updated_at": request.updated_at.isoformat() if request.updated_at else None,
-            "can_revoke": request.status in {
-                "negotiating", "awaiting_consent", "finalized", "transferring", "transferred"
-            },
-        })
+        items.append(
+            {
+                "id": request.id,
+                "subject_id": request.subject_id,
+                "asset_id": request.asset_id,
+                "counter_party_address": request.counter_party_address,
+                "offer_id": request.offer_id,
+                "assigner": request.assigner,
+                "negotiation_id": request.negotiation_id,
+                "contract_agreement_id": request.contract_agreement_id,
+                "negotiation_state": negotiation_state,
+                "transfer_id": request.transfer_id,
+                "transfer_state": transfer_state,
+                "status": request.status,
+                "awaiting_consent_since": awaiting_since,
+                "declared_purpose": request.declared_purpose or [],
+                "declared_from": request.declared_from.isoformat()
+                if request.declared_from
+                else None,
+                "declared_until": (
+                    request.declared_until.isoformat()
+                    if request.declared_until
+                    else None
+                ),
+                "justification_ref": request.justification_ref,
+                "created_at": request.created_at.isoformat()
+                if request.created_at
+                else None,
+                "updated_at": request.updated_at.isoformat()
+                if request.updated_at
+                else None,
+                "can_revoke": request.status
+                in {
+                    "negotiating",
+                    "awaiting_consent",
+                    "finalized",
+                    "transferring",
+                    "transferred",
+                },
+            }
+        )
     if changed:
         await db.commit()
     return items
@@ -391,7 +425,9 @@ async def revoke_access_request(
             await svc._edc.terminate_transfer(request.transfer_id, reason)
             transfer_terminated = True
         except httpx.HTTPStatusError as exc:
-            raise HTTPException(502, f"EDC transfer revoke failed: {exc.response.text}") from exc
+            raise HTTPException(
+                502, f"EDC transfer revoke failed: {exc.response.text}"
+            ) from exc
         except httpx.RequestError as exc:
             raise HTTPException(502, f"EDC transfer revoke failed: {exc}") from exc
 
@@ -446,13 +482,11 @@ async def get_negotiation(
         state = data.get("state")
         access_request = await _access_request_for_negotiation(db, negotiation_id)
         if data.get("state") in {"FINALIZED", "VERIFIED", "AGREED"} and agreement_id:
-            asset_id = (
-                data.get("assetId")
-                or (access_request.asset_id if access_request else "")
+            asset_id = data.get("assetId") or (
+                access_request.asset_id if access_request else ""
             )
-            provider_id = (
-                data.get("counterPartyId")
-                or (access_request.assigner if access_request else "provider")
+            provider_id = data.get("counterPartyId") or (
+                access_request.assigner if access_request else "provider"
             )
             await upsert_agreement(
                 session=db,
@@ -461,7 +495,7 @@ async def get_negotiation(
                 consumer_id=settings.consumer_participant_did,
                 provider_id=provider_id,
                 policy_snapshot=data.get("policy") or {},
-                agreed_at=datetime.now(timezone.utc),
+                agreed_at=datetime.now(UTC),
             )
             await _update_access_request_status(
                 db, negotiation_id, "finalized", contract_agreement_id=agreement_id
@@ -501,7 +535,9 @@ async def get_negotiation(
     except httpx.RequestError as exc:
         raise HTTPException(502, f"EDC negotiation status failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC negotiation status failed: {exc.response.text}") from exc
+        raise HTTPException(
+            502, f"EDC negotiation status failed: {exc.response.text}"
+        ) from exc
 
 
 @router.post("/transfer")
@@ -538,13 +574,15 @@ async def start_transfer(
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC transfer failed: {exc.response.text}") from exc
-    db.add(ConsumerTransferORM(
-        transfer_id=transfer_id,
-        subject_id=subject_id,
-        asset_id=req.asset_id,
-        contract_agreement_id=req.contract_agreement_id,
-        consumer_id=settings.consumer_participant_did,
-    ))
+    db.add(
+        ConsumerTransferORM(
+            transfer_id=transfer_id,
+            subject_id=subject_id,
+            asset_id=req.asset_id,
+            contract_agreement_id=req.contract_agreement_id,
+            consumer_id=settings.consumer_participant_did,
+        )
+    )
     latest_request = await _latest_access_request(db, subject_id, req.asset_id)
     if latest_request:
         latest_request.transfer_id = transfer_id
@@ -574,7 +612,9 @@ async def list_transfers(
 ):
     _verify_consumer_user(x_user_vc, x_subject_id, settings)
     owned_result = await db.execute(
-        select(ConsumerTransferORM).where(ConsumerTransferORM.subject_id == x_subject_id)
+        select(ConsumerTransferORM).where(
+            ConsumerTransferORM.subject_id == x_subject_id
+        )
     )
     owned = {row.transfer_id: row for row in owned_result.scalars().all()}
     if not owned:
@@ -585,7 +625,9 @@ async def list_transfers(
     except httpx.RequestError as exc:
         raise HTTPException(502, f"EDC transfer list failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC transfer list failed: {exc.response.text}") from exc
+        raise HTTPException(
+            502, f"EDC transfer list failed: {exc.response.text}"
+        ) from exc
 
     result = []
     for transfer in transfers:
@@ -597,7 +639,9 @@ async def list_transfers(
             **transfer,
             "transfer_id": transfer_id,
             "requested_by": owner.subject_id,
-            "asset_id": transfer.get("assetId") or transfer.get("asset_id") or owner.asset_id,
+            "asset_id": transfer.get("assetId")
+            or transfer.get("asset_id")
+            or owner.asset_id,
             "contract_agreement_id": (
                 transfer.get("contractId")
                 or transfer.get("contract_agreement_id")
@@ -630,7 +674,9 @@ async def get_transfer(
     except httpx.RequestError as exc:
         raise HTTPException(502, f"EDC transfer status failed: {exc}") from exc
     except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC transfer status failed: {exc.response.text}") from exc
+        raise HTTPException(
+            502, f"EDC transfer status failed: {exc.response.text}"
+        ) from exc
 
 
 @router.get("/edr/{transfer_id}")

@@ -32,6 +32,7 @@ as *nothing to compare* and passed — against every registry, for as long as th
 flag has existed. `test_an_unreadable_registry_is_refused_not_skipped` is the
 negative case; without one, none of this proves the check runs.
 """
+
 from __future__ import annotations
 
 import subprocess
@@ -40,6 +41,7 @@ import time
 import jwt as pyjwt
 import pytest
 from conftest import REPO_ROOT
+
 
 #: `/admin/participants` and `/owners/resolve` both require
 #: `identity-registry.admin` or a read scope, so the runtime path needs a token —
@@ -72,10 +74,16 @@ def _validate(governance, registry_url: str, *, extra: list[str] | None = None):
     """Run the real CLI, the way `task compliance:validate:runtime` does."""
     return subprocess.run(
         [
-            "uv", "run", "ds-governance", "validate",
-            "--file", str(governance),
-            "--identity-registry-url", registry_url,
-            "--token", _admin_token(),
+            "uv",
+            "run",
+            "ds-governance",
+            "validate",
+            "--file",
+            str(governance),
+            "--identity-registry-url",
+            registry_url,
+            "--token",
+            _admin_token(),
             *(extra or []),
         ],
         cwd=REPO_ROOT / "libs" / "governance",
@@ -94,9 +102,7 @@ def test_there_are_producers_to_validate():
     )
 
 
-@pytest.mark.parametrize(
-    "governance", GOVERNANCE_FILES, ids=lambda p: p.parent.name
-)
+@pytest.mark.parametrize("governance", GOVERNANCE_FILES, ids=lambda p: p.parent.name)
 def test_shipped_governance_validates_against_a_live_registry(
     governance, dataspace_registry
 ):
@@ -155,9 +161,14 @@ def test_an_unreadable_registry_is_refused_not_skipped(dataspace_registry):
     governance = REPO_ROOT / "services/connector/governance-rec/governance.yaml"
     result = subprocess.run(
         [
-            "uv", "run", "ds-governance", "validate",
-            "--file", str(governance),
-            "--identity-registry-url", dataspace_registry.url,
+            "uv",
+            "run",
+            "ds-governance",
+            "validate",
+            "--file",
+            str(governance),
+            "--identity-registry-url",
+            dataspace_registry.url,
         ],
         cwd=REPO_ROOT / "libs" / "governance",
         capture_output=True,

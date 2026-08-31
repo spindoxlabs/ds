@@ -7,6 +7,7 @@ the federated index in `services/federated-catalog` — and two independent
 readings of the same requirement is how a conformance claim becomes untrue in
 one place and not the other.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -41,14 +42,16 @@ class TestDataService:
         assert service["dcat:servesDataset"] == [{"@id": "urn:a"}, {"@id": "urn:b"}]
 
     def test_an_empty_dataset_list_is_omitted_rather_than_emitted_empty(self):
-        """"Serves nothing" and "we are not saying" are different claims.
+        """ "Serves nothing" and "we are not saying" are different claims.
 
         A live endpoint whose catalogue is momentarily empty is a real state, and
         `"dcat:servesDataset": []` asserts it positively. Omission leaves the
         service description true either way.
         """
         service = to_data_service(
-            service_id="urn:svc:1", title="t", endpoint_url="http://e",
+            service_id="urn:svc:1",
+            title="t",
+            endpoint_url="http://e",
             serves_dataset=[],
         )
         assert "dcat:servesDataset" not in service
@@ -56,11 +59,15 @@ class TestDataService:
     @pytest.mark.rule("C-7", "M-4")
     def test_conforms_to_distinguishes_a_negotiable_endpoint(self):
         dsp = to_data_service(
-            service_id="urn:svc:1", title="t", endpoint_url="http://e",
+            service_id="urn:svc:1",
+            title="t",
+            endpoint_url="http://e",
             conforms_to=DSP_PROTOCOL_IRI,
         )
         plain = to_data_service(
-            service_id="urn:svc:2", title="t", endpoint_url="http://e",
+            service_id="urn:svc:2",
+            title="t",
+            endpoint_url="http://e",
         )
         assert dsp["dct:conformsTo"] == {"@id": DSP_PROTOCOL_IRI}
         assert "dct:conformsTo" not in plain

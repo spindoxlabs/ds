@@ -5,6 +5,7 @@ counterfactual — the input that used to be accepted silently and now must not
 be. The silent acceptance is the defect; a test that only asserts the happy
 path would have passed against the old code too.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -23,6 +24,7 @@ OFFER = "meter-readings-offer"
 
 
 # -- EDCL-08 · DataAddress.extra may not overwrite a typed field ---------------
+
 
 def test_extra_merges_untyped_keys():
     d = DataAddress(
@@ -44,7 +46,9 @@ def test_extra_overwriting_a_typed_field_is_refused(key):
     `baseUrl` went to EDC with the second value — and both were present in the
     model, with nothing comparing them.
     """
-    d = DataAddress(base_url="http://172.17.0.1:30002", extra={key: "http://evil.invalid"})
+    d = DataAddress(
+        base_url="http://172.17.0.1:30002", extra={key: "http://evil.invalid"}
+    )
     with pytest.raises(ValueError, match=key):
         d.to_edc()
 
@@ -62,10 +66,13 @@ def test_asset_create_carries_the_data_address_through():
 
 # -- EDCL-01 · the three fields the normal path used to discard ----------------
 
+
 def test_offer_is_synthesised_when_no_policy_is_supplied():
     req = NegotiationRequest(
         counter_party_address="http://172.17.0.1:19194/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
     )
     policy = req.to_edc()["policy"]
     assert policy["@id"] == OFFER
@@ -89,7 +96,10 @@ def test_a_published_offer_is_sent_back_unchanged():
     }
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID, odrl_policy=published,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
+        odrl_policy=published,
     )
     assert req.to_edc()["policy"] == published
 
@@ -98,7 +108,9 @@ def test_fields_fill_gaps_in_a_partial_policy():
     """The regression: with a policy supplied, all three used to be dropped."""
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
         odrl_policy={"@type": "Offer", "permission": []},
     )
     policy = req.to_edc()["policy"]
@@ -111,7 +123,9 @@ def test_node_reference_and_bare_form_are_the_same_identifier():
     """`{"@id": x}` and `x` are one value expanded two ways, not a conflict."""
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
         odrl_policy={"@id": OFFER, "assigner": {"@id": DID}, "target": {"@id": ASSET}},
     )
     assert req.to_edc()["policy"]["assigner"] == {"@id": DID}
@@ -122,7 +136,9 @@ def test_prefixed_odrl_keys_are_not_duplicated_in_bare_form():
     `odrl:assigner` would put two assigners in one offer."""
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
         odrl_policy={"@id": OFFER, "odrl:assigner": DID, "odrl:target": ASSET},
     )
     policy = req.to_edc()["policy"]
@@ -160,7 +176,9 @@ def test_counter_party_id_defaults_to_the_assigner():
     """The DCP token audience. Omitted, EDC addresses the token to itself."""
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        offer_id=OFFER, asset_id=ASSET, assigner=DID,
+        offer_id=OFFER,
+        asset_id=ASSET,
+        assigner=DID,
     )
     body = req.to_edc()
     assert body["counterPartyId"] == DID
@@ -169,12 +187,15 @@ def test_counter_party_id_defaults_to_the_assigner():
 
 # -- EDCL-05 · an EDR is its endpoint and its bearer ---------------------------
 
+
 def test_edr_is_parsed():
-    edr = EdrResponse.from_edc({
-        "endpoint": "http://172.17.0.1:30002",
-        "authType": "bearer",
-        "authorization": "eyJhbGciOi...",
-    })
+    edr = EdrResponse.from_edc(
+        {
+            "endpoint": "http://172.17.0.1:30002",
+            "authType": "bearer",
+            "authorization": "eyJhbGciOi...",
+        }
+    )
     assert edr.endpoint == "http://172.17.0.1:30002"
     assert edr.authorization == "eyJhbGciOi..."
 
@@ -185,13 +206,16 @@ def test_auth_type_still_defaults():
     assert edr.auth_type == "bearer"
 
 
-@pytest.mark.parametrize("payload", [
-    {"authorization": "t"},                       # endpoint absent
-    {"endpoint": "http://x"},                     # authorization absent
-    {"endpoint": "", "authorization": "t"},       # present and empty
-    {"endpoint": "http://x", "authorization": ""},
-    {},                                           # EDC returned something else entirely
-])
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"authorization": "t"},  # endpoint absent
+        {"endpoint": "http://x"},  # authorization absent
+        {"endpoint": "", "authorization": "t"},  # present and empty
+        {"endpoint": "http://x", "authorization": ""},
+        {},  # EDC returned something else entirely
+    ],
+)
 def test_an_incomplete_edr_is_refused(payload):
     """The counterfactual: these all produced a valid-looking `EdrResponse`.
 

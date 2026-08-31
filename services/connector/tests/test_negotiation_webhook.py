@@ -9,6 +9,7 @@ Scope is deliberately narrow. What is pinned here is the correlation, because
 that is what this change adds; the record-keeping the handler also does is
 covered by `test_transfer_webhook.py` through the agreement it reads back.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -69,7 +70,9 @@ async def _post(client, event_type: str, **payload):
             **payload,
         },
     }
-    return await client.post("/webhooks/contract-negotiation", json=body, headers=WEBHOOK)
+    return await client.post(
+        "/webhooks/contract-negotiation", json=body, headers=WEBHOOK
+    )
 
 
 @pytest.mark.asyncio
@@ -115,8 +118,9 @@ async def test_correlation_happens_before_the_work_not_after(client, correlated)
     the spans anyone would actually look for — unlabelled, while the handler's
     own span looked correctly tagged.
     """
-    from connector.api.v1 import webhooks as module
     import inspect
+
+    from connector.api.v1 import webhooks as module
 
     source = inspect.getsource(module.contract_negotiation_event)
     correlate_at = source.index("correlate_agreement(")

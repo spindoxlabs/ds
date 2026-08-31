@@ -14,6 +14,7 @@ The second is the one that matters in a deployment: a consumer reads the
 purpose taxonomy here before negotiating against policies the sync published
 from a *different* profile.
 """
+
 from __future__ import annotations
 
 import textwrap

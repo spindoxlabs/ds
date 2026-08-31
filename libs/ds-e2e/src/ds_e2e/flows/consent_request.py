@@ -25,6 +25,7 @@ What it proves, in order:
 
 Needs no EDC: connector, identity-registry and Keycloak are enough.
 """
+
 from __future__ import annotations
 
 import logging
@@ -138,9 +139,12 @@ class ConsentRequestFlow(BaseFlow):
         )
 
         # ── 3. The subject sees it, and only its own ─────────────────────────
-        inbox = self.http.get(
-            f"{s.connector_url}/consent/my?status=pending", headers=subject_headers
-        ) or []
+        inbox = (
+            self.http.get(
+                f"{s.connector_url}/consent/my?status=pending", headers=subject_headers
+            )
+            or []
+        )
         mine = [c for c in inbox if c.get("id") == consent_id]
         if not mine:
             result.fail_step(
@@ -174,11 +178,20 @@ class ConsentRequestFlow(BaseFlow):
         )
 
         # ── 4. Rejection is final ────────────────────────────────────────────
-        rejected = self.http.post(
-            f"{s.connector_url}/consent/my/{consent_id}/reject", {}, headers=subject_headers
-        ) or {}
+        rejected = (
+            self.http.post(
+                f"{s.connector_url}/consent/my/{consent_id}/reject",
+                {},
+                headers=subject_headers,
+            )
+            or {}
+        )
         if rejected.get("status") != "rejected":
-            result.fail_step("subject rejects", "reject did not settle the request", response=rejected)
+            result.fail_step(
+                "subject rejects",
+                "reject did not settle the request",
+                response=rejected,
+            )
             return result
 
         check = self._consent_check(svc_headers, purpose=s.consented_purpose)
@@ -218,7 +231,11 @@ class ConsentRequestFlow(BaseFlow):
             body={**request_body, "message": "e2e uc4 — approval path"},
             headers=svc_headers,
         )
-        if status != 201 or not isinstance(payload, dict) or not payload.get("request_ids"):
+        if (
+            status != 201
+            or not isinstance(payload, dict)
+            or not payload.get("request_ids")
+        ):
             result.fail_step(
                 "second request",
                 "could not raise a second consent request after rejection",
@@ -228,11 +245,18 @@ class ConsentRequestFlow(BaseFlow):
             return result
         approve_id = str(payload["request_ids"][0])
 
-        approved = self.http.post(
-            f"{s.connector_url}/consent/my/{approve_id}/approve", {}, headers=subject_headers
-        ) or {}
+        approved = (
+            self.http.post(
+                f"{s.connector_url}/consent/my/{approve_id}/approve",
+                {},
+                headers=subject_headers,
+            )
+            or {}
+        )
         if approved.get("status") != "granted":
-            result.fail_step("subject approves", "approve did not grant", response=approved)
+            result.fail_step(
+                "subject approves", "approve did not grant", response=approved
+            )
             return result
 
         check = self._consent_check(svc_headers, purpose=s.consented_purpose)
@@ -269,11 +293,18 @@ class ConsentRequestFlow(BaseFlow):
         )
 
         # ── 7. Revocation closes it, and the record survives ─────────────────
-        revoked = self.http.post(
-            f"{s.connector_url}/consent/my/{approve_id}/revoke", {}, headers=subject_headers
-        ) or {}
+        revoked = (
+            self.http.post(
+                f"{s.connector_url}/consent/my/{approve_id}/revoke",
+                {},
+                headers=subject_headers,
+            )
+            or {}
+        )
         if revoked.get("status") != "revoked":
-            result.fail_step("subject revokes", "revoke did not settle", response=revoked)
+            result.fail_step(
+                "subject revokes", "revoke did not settle", response=revoked
+            )
             return result
 
         check = self._consent_check(svc_headers, purpose=s.consented_purpose)
@@ -287,9 +318,12 @@ class ConsentRequestFlow(BaseFlow):
 
         # Withdrawal is not erasure: the decision history is the evidence that
         # the processing was once lawful, and that it stopped.
-        after = self.http.get(
-            f"{s.connector_url}/consent/my/{approve_id}", headers=subject_headers
-        ) or {}
+        after = (
+            self.http.get(
+                f"{s.connector_url}/consent/my/{approve_id}", headers=subject_headers
+            )
+            or {}
+        )
         if after.get("status") != "revoked" or not after.get("revoked_at"):
             result.fail_step(
                 "subject revokes",
@@ -310,7 +344,9 @@ class ConsentRequestFlow(BaseFlow):
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
-    def _consent_check(self, headers: dict[str, str], *, purpose: str) -> dict[str, Any]:
+    def _consent_check(
+        self, headers: dict[str, str], *, purpose: str
+    ) -> dict[str, Any]:
         s = self.settings
         query = urllib.parse.urlencode(
             {
@@ -320,9 +356,12 @@ class ConsentRequestFlow(BaseFlow):
                 "purpose": purpose,
             }
         )
-        return self.http.get(
-            f"{s.connector_url}/internal/consent/check?{query}", headers=headers
-        ) or {}
+        return (
+            self.http.get(
+                f"{s.connector_url}/internal/consent/check?{query}", headers=headers
+            )
+            or {}
+        )
 
     def _check_provenance(self, result: FlowResult, headers: dict[str, str]) -> None:
         """The decisions must be reconstructable from the provenance store.
@@ -335,9 +374,12 @@ class ConsentRequestFlow(BaseFlow):
         s = self.settings
         expected = {"ConsentGranted", "ConsentRevoked"}
         try:
-            events = self.http.get(
-                f"{s.provenance_url}/prov/events?limit=200", headers=headers
-            ) or {}
+            events = (
+                self.http.get(
+                    f"{s.provenance_url}/prov/events?limit=200", headers=headers
+                )
+                or {}
+            )
         except Exception as exc:
             result.fail_step("consent provenance", f"provenance unreachable: {exc}")
             return
@@ -364,9 +406,13 @@ class ConsentRequestFlow(BaseFlow):
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
         encoded = urllib.parse.quote(email, safe="")
-        resp = self.http.get(
-            f"{s.identity_registry_url}/users/resolve?email={encoded}", headers=headers
-        ) or {}
+        resp = (
+            self.http.get(
+                f"{s.identity_registry_url}/users/resolve?email={encoded}",
+                headers=headers,
+            )
+            or {}
+        )
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")

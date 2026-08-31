@@ -16,15 +16,15 @@ moved with it — that is a deliberate re-consent, and the platform can tell the
 difference. A changed hash at the *same* version is an edit pretending nothing
 happened, and it is refused.
 """
+
 from __future__ import annotations
 
 import logging
 from collections.abc import Iterable
 
+from ds.governance.sharing import SharingOffer, SharingOfferCatalogue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ds.governance.sharing import SharingOffer, SharingOfferCatalogue
 
 from ..db.models import ConsentRequestORM
 
@@ -99,7 +99,7 @@ def drift_failure(
 async def offers_with_drift(
     session: AsyncSession,
     catalogue: SharingOfferCatalogue,
-    hash_of: "callable[[SharingOffer], str]",
+    hash_of: callable[[SharingOffer], str],
 ) -> dict[str, str]:
     """offer id → failure message, for every offer whose meaning drifted.
 

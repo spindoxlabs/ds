@@ -34,6 +34,7 @@ sweep rather than escaping it.
 Needs no EDC: connector, identity-registry, provenance, federated-catalog and
 Keycloak are enough.
 """
+
 from __future__ import annotations
 
 import logging
@@ -485,11 +486,7 @@ class ApiContractFlow(BaseFlow):
         )
         stale = sorted(f"{svc} {m} {t}" for svc, m, t in declared - published)
         contradicted = sorted(
-            {
-                r.label
-                for r in inventory
-                if r.guarded and self._key(r) in declared
-            }
+            {r.label for r in inventory if r.guarded and self._key(r) in declared}
         )
 
         if unclassified or stale or contradicted:
@@ -744,7 +741,11 @@ class ApiContractFlow(BaseFlow):
         crashed: list[str] = []
         for case_name, headers in cases:
             for method, path in subject_paths:
-                body = {"offer_id": s.sharing_offer_id, "enabled": True} if method == "POST" else None
+                body = (
+                    {"offer_id": s.sharing_offer_id, "enabled": True}
+                    if method == "POST"
+                    else None
+                )
                 status, _ = self.http.raw(
                     method, self._url("connector", path), body=body, headers=headers
                 )
@@ -783,7 +784,9 @@ class ApiContractFlow(BaseFlow):
         s = self.settings
         try:
             svc = self.http.bearer_headers()
-            admin = self.http.bearer_headers_for(s.ir_admin_client_id, s.ir_admin_client_secret)
+            admin = self.http.bearer_headers_for(
+                s.ir_admin_client_id, s.ir_admin_client_secret
+            )
         except Exception as exc:
             result.fail_step("input validation", f"could not obtain tokens: {exc}")
             return

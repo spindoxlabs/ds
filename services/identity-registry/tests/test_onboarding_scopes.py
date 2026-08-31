@@ -11,6 +11,7 @@ Two properties matter and both are easy to break:
 2. `identity-registry.admin` still reaches everything, because `ir-cli` and the
    bootstrap authenticate with it and a regression there breaks deployment.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -32,6 +33,7 @@ def h(scope: str) -> dict:
 
 
 # ── the narrow grants reach their own endpoints ───────────────────────────────
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", [ORG_READ, ADMIN])
@@ -81,6 +83,7 @@ async def test_participants_write_registers_a_participant(client, db_session, sc
 
 
 # ── and reach nothing else ────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_org_read_cannot_write(client):
@@ -253,6 +256,7 @@ async def test_keycloak_sync_cannot_issue_a_credential(client):
 # assertions come in pairs: the resolve works, and the participant registry stays
 # shut to the same token.
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", [ORG_READ, "identity-registry.read", ADMIN])
 async def test_owner_resolve_by_id(client, scope):
@@ -264,7 +268,9 @@ async def test_owner_resolve_by_id(client, scope):
         headers=h(ADMIN),
         json={"id": "example-org", "name": "Example", "aliases": ["example"]},
     )
-    r = await client.get("/owners/resolve", params={"alias": "example-org"}, headers=h(scope))
+    r = await client.get(
+        "/owners/resolve", params={"alias": "example-org"}, headers=h(scope)
+    )
     assert r.status_code == 200, r.text
     assert r.json()["id"] == "example-org"
 
@@ -280,7 +286,9 @@ async def test_owner_resolve_by_alias(client, scope):
         headers=h(ADMIN),
         json={"id": "example-org", "name": "Example", "aliases": ["example"]},
     )
-    r = await client.get("/owners/resolve", params={"alias": "example"}, headers=h(scope))
+    r = await client.get(
+        "/owners/resolve", params={"alias": "example"}, headers=h(scope)
+    )
     assert r.status_code == 200, r.text
     assert r.json()["id"] == "example-org"
 
@@ -319,6 +327,7 @@ async def test_unrelated_scope_cannot_resolve_an_owner(client):
 # two routes beside it carry `require_agreements_read`, so a grant whose whole
 # description is *"read service agreements and their acceptances"* could read the
 # agreement list and not the one a participant currently holds.
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scope", [AGREEMENTS_READ, "identity-registry.read", ADMIN])

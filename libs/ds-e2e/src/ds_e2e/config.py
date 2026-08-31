@@ -77,9 +77,7 @@ class E2ESettings(BaseSettings):
     #: **Set this true once a deployment has turned the feature on.** Otherwise
     #: switching it off by accident reads as a green suite — the endpoint simply
     #: stops being probed — and *a green check is not a check that ran*.
-    require_conformance: bool = Field(
-        False, validation_alias="E2E_REQUIRE_CONFORMANCE"
-    )
+    require_conformance: bool = Field(False, validation_alias="E2E_REQUIRE_CONFORMANCE")
     e2e_data_planes: str = Field(
         "http://172.17.0.1:30022,http://172.17.0.1:30002",
         validation_alias="E2E_DATA_PLANES",
@@ -235,7 +233,9 @@ class E2ESettings(BaseSettings):
     # until it existed nothing proved that a human's groups authorise anything.
     # `directAccessGrantsEnabled` is set on this client in the **dev** realm only,
     # which is how a test obtains a real user token without driving a browser.
-    user_client_id: str = Field("oauth2_proxy", validation_alias="OAUTH2_PROXY_CLIENT_ID")
+    user_client_id: str = Field(
+        "oauth2_proxy", validation_alias="OAUTH2_PROXY_CLIENT_ID"
+    )
     user_client_secret: str = Field(
         "oauth2_proxy", validation_alias="OAUTH2_PROXY_CLIENT_SECRET"
     )
@@ -284,9 +284,7 @@ class E2ESettings(BaseSettings):
     # name — `ASSET_ID` — and the variable the Taskfile exports reached nothing.
     # The readiness gate and the flows could therefore wait for one asset and
     # assert on another, and agree only because both were left at the default.
-    asset_id: str = Field(
-        "datasets.silver.meters_15m", validation_alias="E2E_ASSET_ID"
-    )
+    asset_id: str = Field("datasets.silver.meters_15m", validation_alias="E2E_ASSET_ID")
 
     # Organisation onboarding (Block D). The agreement must be seeded via
     # `ir-cli agreement import` at bootstrap; the flow asserts it exists.
@@ -440,7 +438,9 @@ class E2ESettings(BaseSettings):
     @property
     def data_planes(self) -> tuple[tuple[str, str], ...]:
         raw = (self.e2e_data_planes or "").strip()
-        urls = [u.strip() for u in raw.split(",") if u.strip()] or [self.dataset_api_url]
+        urls = [u.strip() for u in raw.split(",") if u.strip()] or [
+            self.dataset_api_url
+        ]
         # Order-preserving de-duplication: a deployment where the real plane holds
         # :30002 and the mock is absent would otherwise probe one URL twice and
         # report it as two backends.

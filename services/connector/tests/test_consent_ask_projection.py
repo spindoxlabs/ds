@@ -10,9 +10,10 @@ circle rules in Java, so what those fields mean has to be pinned down here:
 - ``pending_request_id`` — an ask already outstanding for the tuple, so a
   re-negotiating consumer reattaches instead of asking the same people twice.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -38,6 +39,7 @@ def _outside_the_circle(monkeypatch):
     and it resolves to *outside the circle* — which asks rather than assumes.
     Tests that want the opposite stub :func:`circle.is_covered_processor`.
     """
+
     async def _capacity(*_args, **_kwargs):
         return None
 
@@ -83,13 +85,17 @@ async def test_covered_processor_is_disclosed_not_asked(client, monkeypatch):
     The controller has not changed and neither has the processing operation, so
     asking again would imply a choice that does not exist.
     """
+
     async def _covered(offers, **_kwargs):
         # Both consent-based offers on this dataset are candidates: `odrl:isA`
         # matching means an offer for a broader purpose covers a narrower
         # request, and `test-grid-planning` names the root purpose that
         # `FlexibilityResearch` sits under. Pinned exactly, because which offers
         # define the circle decides who may be admitted without being asked.
-        assert [offer.id for offer in offers] == ["test-flexibility", "test-grid-planning"]
+        assert [offer.id for offer in offers] == [
+            "test-flexibility",
+            "test-grid-planning",
+        ]
         return True
 
     monkeypatch.setattr("connector.services.circle.is_covered_processor", _covered)
@@ -122,7 +128,7 @@ async def test_pending_ask_is_reported_so_a_retry_reattaches(client, session_fac
             dataset_id=CONSENTED_DATASET,
             purpose=[PURPOSE],
             status="pending",
-            requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+            requested_at=datetime(2026, 1, 1, tzinfo=UTC),
             transfer_ids=[],
         )
         session.add(row)
@@ -147,8 +153,8 @@ async def test_a_settled_ask_is_not_reported_as_pending(client, session_factory)
                 dataset_id=CONSENTED_DATASET,
                 purpose=[PURPOSE],
                 status="rejected",
-                requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                decided_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
+                requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                decided_at=datetime(2026, 1, 2, tzinfo=UTC),
                 transfer_ids=[],
             )
         )
@@ -174,7 +180,7 @@ async def test_pending_ask_for_another_purpose_does_not_match(client, session_fa
                 dataset_id=CONSENTED_DATASET,
                 purpose=["IncentiveCalculation"],
                 status="pending",
-                requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+                requested_at=datetime(2026, 1, 1, tzinfo=UTC),
                 transfer_ids=[],
             )
         )

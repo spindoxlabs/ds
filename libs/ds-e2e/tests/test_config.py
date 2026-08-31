@@ -1,4 +1,5 @@
 """Tests for E2ESettings configuration loading."""
+
 from __future__ import annotations
 
 import os
@@ -40,10 +41,13 @@ def test_env_override():
         settings = E2ESettings(_env_file=None)
         assert settings.connector_url == "http://custom:30001"
         assert settings.consumer_connector_url == "http://custom:31001"
-        assert settings.counter_party_address == "http://custom-edc:19194/protocol/2025-1"
+        assert (
+            settings.counter_party_address == "http://custom-edc:19194/protocol/2025-1"
+        )
 
 
 # ── E2E-13 / T-1 · the run says which data plane it exercised ────────────────
+
 
 def test_the_default_data_plane_is_the_one_the_stack_starts():
     """`task docker:restart` brings up the mock on 30022 and nothing on 30002.

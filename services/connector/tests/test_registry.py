@@ -1,4 +1,5 @@
 """Tests for ParticipantRegistry."""
+
 import textwrap
 from pathlib import Path
 
@@ -8,7 +9,6 @@ import respx
 
 from connector.registry.participants import (
     HttpParticipantRegistry,
-    Participant,
     ParticipantRegistry,
     UnknownParticipantError,
 )
@@ -21,7 +21,9 @@ def _write_yaml(tmp_path: Path, content: str) -> Path:
 
 
 def test_from_file_loads_participants(tmp_path):
-    p = _write_yaml(tmp_path, """
+    p = _write_yaml(
+        tmp_path,
+        """
         participants:
           - id: provider
             dsp_address: http://edc-rec:19194/protocol
@@ -31,19 +33,23 @@ def test_from_file_loads_participants(tmp_path):
             dsp_address: http://edc-third-party:29194/protocol
             allowed_scopes: [dataspaces.query]
             roles: [consumer]
-    """)
+    """,
+    )
     registry = ParticipantRegistry.from_file(p)
     assert len(registry.all()) == 2
 
 
 def test_validate_known_participant(tmp_path):
-    p = _write_yaml(tmp_path, """
+    p = _write_yaml(
+        tmp_path,
+        """
         participants:
           - id: consumer
             dsp_address: http://edc-third-party:29194/protocol
             allowed_scopes: [dataspaces.query]
             roles: [consumer]
-    """)
+    """,
+    )
     registry = ParticipantRegistry.from_file(p)
     participant = registry.validate("http://edc-third-party:29194/protocol")
     assert participant.id == "consumer"
@@ -57,12 +63,15 @@ def test_validate_unknown_raises(tmp_path):
 
 
 def test_get_by_id(tmp_path):
-    p = _write_yaml(tmp_path, """
+    p = _write_yaml(
+        tmp_path,
+        """
         participants:
           - id: provider
             dsp_address: http://edc-rec:19194/protocol
             roles: [provider]
-    """)
+    """,
+    )
     registry = ParticipantRegistry.from_file(p)
     participant = registry.get_by_id("provider")
     assert participant is not None
@@ -170,7 +179,9 @@ async def test_http_registry_check_scope():
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
     try:
-        allowed = await registry.check_scope("did:web:rec.ds.localhost", "dataspaces.query")
+        allowed = await registry.check_scope(
+            "did:web:rec.ds.localhost", "dataspaces.query"
+        )
         assert allowed is True
     finally:
         await registry.close()
@@ -204,7 +215,9 @@ async def test_http_registry_check_scope_error_returns_false():
 
     registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
     try:
-        allowed = await registry.check_scope("did:web:rec.ds.localhost", "dataspaces.query")
+        allowed = await registry.check_scope(
+            "did:web:rec.ds.localhost", "dataspaces.query"
+        )
         assert allowed is False
     finally:
         await registry.close()

@@ -1,4 +1,5 @@
 """Top-level governance validation — the pre-import gate."""
+
 from __future__ import annotations
 
 from pathlib import Path

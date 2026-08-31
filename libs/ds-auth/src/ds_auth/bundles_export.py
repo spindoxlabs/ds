@@ -12,6 +12,7 @@ build artifact rather than a document someone remembers to update.
 
 Regenerate with ``task -d libs/ds-auth bundles:generate``.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

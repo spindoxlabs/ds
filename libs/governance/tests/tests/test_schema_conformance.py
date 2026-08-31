@@ -10,6 +10,7 @@ Reading both shapes (§18) was half the fix. This is the other half: **ds's own
 files are written in the canonical form**, and a test says so, because a
 convention that lives only in a review comment drifts back within a release.
 """
+
 from __future__ import annotations
 
 import json
@@ -87,7 +88,9 @@ def test_purpose_and_consent_live_where_the_schema_puts_them(path: Path):
     blocks = list((doc.get("sources") or {}).items())
     blocks.append(("defaults", doc.get("defaults") or {}))
 
-    offenders = [name for name, block in blocks if isinstance(block, dict) and "policy" in block]
+    offenders = [
+        name for name, block in blocks if isinstance(block, dict) and "policy" in block
+    ]
     assert not offenders, (
         "these blocks still carry a ds-only `policy:` block; move `purpose` to "
         "`dataspace.purpose`, `consent.required` to `dataspace.consent_required` "

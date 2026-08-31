@@ -4,6 +4,7 @@ Lets the same checks run either offline (YAML seeds, for CI and pre-commit) or
 against a deployment (for a pre-import gate in staging/production), by
 satisfying the ``OwnerLookup`` protocol from either source.
 """
+
 from __future__ import annotations
 
 import logging

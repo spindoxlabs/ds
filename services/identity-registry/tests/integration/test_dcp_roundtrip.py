@@ -10,6 +10,7 @@ enrolment handshake that replaced `ir-cli participant add` (`D-51`). Before that
 the "anchor" was the same process as the holder, so the issuer check compared
 two DIDs served by one instance.
 """
+
 from __future__ import annotations
 
 import base64

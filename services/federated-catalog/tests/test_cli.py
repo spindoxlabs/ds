@@ -1,4 +1,5 @@
 """Tests for fc-cli commands."""
+
 from __future__ import annotations
 
 import textwrap
@@ -38,25 +39,34 @@ def test_cli_exposes_no_publication_command():
 
 def test_status_with_sources(tmp_path):
     participants = tmp_path / "participants.yaml"
-    participants.write_text(textwrap.dedent("""\
+    participants.write_text(
+        textwrap.dedent("""\
         participants:
           - id: did:web:rec
             role: provider
             dsp_address: http://edc:19194/protocol
-    """))
+    """)
+    )
 
     catalogues = tmp_path / "catalogues.yaml"
-    catalogues.write_text(textwrap.dedent("""\
+    catalogues.write_text(
+        textwrap.dedent("""\
         catalogues:
           - id: test-api
             url: http://api.test/catalogue
-    """))
+    """)
+    )
 
-    result = runner.invoke(app, [
-        "status",
-        "--participants-yaml", str(participants),
-        "--dcat-sources-yaml", str(catalogues),
-    ])
+    result = runner.invoke(
+        app,
+        [
+            "status",
+            "--participants-yaml",
+            str(participants),
+            "--dcat-sources-yaml",
+            str(catalogues),
+        ],
+    )
     assert result.exit_code == 0
     assert "did:web:rec" in result.output
     assert "test-api" in result.output

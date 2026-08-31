@@ -12,6 +12,7 @@ qualifies.** The two drift apart with nobody acting — a credential expires, an
 agreement version is superseded, a provider stops publishing a DSP address. Every
 test below is one of those drifts, and each one passes an onboarding check.
 """
+
 from __future__ import annotations
 
 import textwrap
@@ -163,7 +164,9 @@ def test_an_empty_criteria_file_is_an_error(tmp_path):
 
 @pytest.mark.rule("P-23")
 @pytest.mark.asyncio
-async def test_a_participant_meeting_every_rule_is_conformant(db_session, criteria_file):
+async def test_a_participant_meeting_every_rule_is_conformant(
+    db_session, criteria_file
+):
     report = await assess(db_session, criteria_file)
     assert report.status == conformity.CONFORMANT
     assert report.failures == []
@@ -171,7 +174,9 @@ async def test_a_participant_meeting_every_rule_is_conformant(db_session, criter
 
 @pytest.mark.rule("P-14")
 @pytest.mark.asyncio
-async def test_an_expired_credential_is_not_a_held_credential(db_session, criteria_file):
+async def test_an_expired_credential_is_not_a_held_credential(
+    db_session, criteria_file
+):
     """The commonest drift, and invisible to anything that checks existence.
 
     The row is still there and still says `active`; it simply stopped being
@@ -179,7 +184,9 @@ async def test_an_expired_credential_is_not_a_held_credential(db_session, criter
     """
     report = await assess(db_session, criteria_file, expires_in_days=-1)
     assert report.status == conformity.NON_CONFORMANT
-    failure = next(f for f in report.failures if f.rule.endswith("MembershipCredential"))
+    failure = next(
+        f for f in report.failures if f.rule.endswith("MembershipCredential")
+    )
     assert failure.detail == "expired"
 
 
@@ -224,7 +231,10 @@ async def test_a_consumer_is_not_asked_for_a_dsp_address(db_session, criteria_fi
     """`applies_to` is why: a consumer initiates and has nothing to be reached
     at, so requiring an address of it would be a rule nobody could satisfy."""
     report = await assess(
-        db_session, criteria_file, roles=("consumer",), dsp=None,
+        db_session,
+        criteria_file,
+        roles=("consumer",),
+        dsp=None,
         did="did:web:third-party.dataspaces.localhost",
     )
     assert report.status == conformity.CONFORMANT

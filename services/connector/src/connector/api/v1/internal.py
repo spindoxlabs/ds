@@ -1,13 +1,21 @@
 """Internal API — used by Dataset API PEP for EDR validation and consent checks."""
+
 from __future__ import annotations
 
 import json
 import logging
 from functools import lru_cache
 from pathlib import Path
-from typing import Optional
 
 import httpx
+from ds.governance import (
+    ALLOW,
+    DENY,
+    DIRECT_USER_MATCH,
+    DataplaneDecision,
+    DataplaneRowFilter,
+    subject_column,
+)
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -25,14 +33,6 @@ from ...dependencies import (
 )
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
-from ds.governance import (
-    ALLOW,
-    DENY,
-    DIRECT_USER_MATCH,
-    DataplaneDecision,
-    DataplaneRowFilter,
-    subject_column,
-)
 
 log = logging.getLogger(__name__)
 
@@ -94,9 +94,7 @@ async def agreement_status(
     except EdcUnreachable as exc:
         # **Not a 404.** "We could not ask" and "there is no such agreement" are
         # different answers, and only one of them is safe to cache as a negative.
-        raise HTTPException(
-            503, f"Cannot determine agreement status: {exc}"
-        ) from exc
+        raise HTTPException(503, f"Cannot determine agreement status: {exc}") from exc
     if edc_status is not None:
         return edc_status
     raise HTTPException(404, f"Agreement {agreement_id!r} not found")
@@ -129,7 +127,9 @@ async def _check_edc_agreement(agreement_id: str) -> dict | None:
     headers = {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{edc_url}/v3/contractagreements/{agreement_id}", headers=headers)
+            resp = await client.get(
+                f"{edc_url}/v3/contractagreements/{agreement_id}", headers=headers
+            )
     except httpx.HTTPError as exc:
         raise EdcUnreachable(f"EDC management API unreachable: {exc}") from exc
     if resp.status_code == 404:
@@ -159,7 +159,9 @@ async def transfer_status(
     transfer via correlationId).
     """
     result = await db.execute(
-        select(ConsumerTransferORM).where(ConsumerTransferORM.transfer_id == transfer_id)
+        select(ConsumerTransferORM).where(
+            ConsumerTransferORM.transfer_id == transfer_id
+        )
     )
     transfer = result.scalar_one_or_none()
     if not transfer:
@@ -203,7 +205,9 @@ async def transfer_status(
     }
 
 
-async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dict | None:
+async def _check_edc_transfer(
+    transfer_id: str, agreement_id: str | None
+) -> dict | None:
     """Check EDC management API for a transfer by correlationId (role-local lookup).
 
     ``None`` means the EDC answered and knows no such transfer. Anything that
@@ -216,12 +220,18 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
         "@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"},
         "@type": "QuerySpec",
         "filterExpression": [
-            {"operandLeft": "correlationId", "operator": "=", "operandRight": transfer_id}
+            {
+                "operandLeft": "correlationId",
+                "operator": "=",
+                "operandRight": transfer_id,
+            }
         ],
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.post(f"{edc_url}/v3/transferprocesses/request", json=query, headers=headers)
+            resp = await client.post(
+                f"{edc_url}/v3/transferprocesses/request", json=query, headers=headers
+            )
     except httpx.HTTPError as exc:
         raise EdcUnreachable(f"EDC management API unreachable: {exc}") from exc
     if resp.status_code != 200:
@@ -241,7 +251,12 @@ async def _check_edc_transfer(transfer_id: str, agreement_id: str | None) -> dic
     tp = results[0]
     state = tp.get("edc:state", tp.get("state", ""))
     active = state in ("STARTED", "COMPLETED")
-    return {"active": active, "transfer_id": transfer_id, "agreement_id": agreement_id, "edc_state": state}
+    return {
+        "active": active,
+        "transfer_id": transfer_id,
+        "agreement_id": agreement_id,
+        "edc_state": state,
+    }
 
 
 @router.post("/dataplane/authorize", response_model=DataplaneDecision)
@@ -386,8 +401,8 @@ async def _authorize_dataset(
     token_provider=None,
 ) -> dict:
     """One dataset's verdict, with the row filter that goes with it."""
-    from ...services.consent_service import get_granted_subject_ids
     from ...services import consent_vocabulary as vocab
+    from ...services.consent_service import get_granted_subject_ids
     from ...services.subject_identities import resolve_usernames
 
     def verdict(decision: str, reason: str | None = None, row_filter=None) -> dict:
@@ -492,9 +507,9 @@ async def consent_check(
     request: Request,
     dataset_id: str,
     consumer_id: str,
-    subject_id: Optional[str] = None,
-    purpose: Optional[str] = None,
-    controller_role: Optional[str] = None,
+    subject_id: str | None = None,
+    purpose: str | None = None,
+    controller_role: str | None = None,
     db: AsyncSession = Depends(get_db),
     settings=Depends(get_settings_dep),
     _claims: dict = Depends(require_internal_scope),
@@ -528,8 +543,11 @@ async def consent_check(
     that predate the purpose chain therefore fail closed rather than silently
     receiving everything.
     """
-    from ...services.consent_service import check_consent_detail, get_granted_subject_ids
     from ...services import consent_vocabulary as vocab
+    from ...services.consent_service import (
+        check_consent_detail,
+        get_granted_subject_ids,
+    )
 
     purposes = [p.strip() for p in (purpose or "").split(",") if p.strip()]
     try:
@@ -752,7 +770,7 @@ async def record_consent_ask(
             dataset_id=body.dataset_id,
             purpose=purposes,
             message="A data consumer has requested access; a contract "
-                    "negotiation is waiting on your decision.",
+            "negotiation is waiting on your decision.",
             notifier=notifier,
             controller=offer.recipients.controller if offer else None,
             controller_role=(
@@ -900,7 +918,9 @@ def _edr_public_jwk_cached(vault_file: str, alias: str) -> dict | None:
             return None
         # Public components only. `d` is the private scalar and must never
         # leave this process, grant or no grant.
-        public = {k: v for k, v in jwk.items() if k not in {"d", "p", "q", "dp", "dq", "qi"}}
+        public = {
+            k: v for k, v in jwk.items() if k not in {"d", "p", "q", "dp", "dq", "qi"}
+        }
         # **`kid` is the vault alias, not whatever the JWK claims.** EDC stamps
         # the alias it signed with into the token header
         # (`participant-private-key`), while the seeded JWK carries its own

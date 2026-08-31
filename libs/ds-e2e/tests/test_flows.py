@@ -1,8 +1,8 @@
 """Tests for flow registry and base flow."""
+
 from __future__ import annotations
 
 from ds_e2e.cli import FlowName
-from ds_e2e.config import E2ESettings
 from ds_e2e.flows import (
     CHAIN_FLOWS,
     FAST_FLOWS,

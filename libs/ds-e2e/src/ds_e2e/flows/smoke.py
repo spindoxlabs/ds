@@ -30,7 +30,9 @@ REQUIRED_PROVENANCE_EVENTS = {
 
 class SmokeFlow(BaseFlow):
     name = "smoke"
-    description = "Full DSP consumer-pull flow: catalog, negotiate, transfer, query, revoke"
+    description = (
+        "Full DSP consumer-pull flow: catalog, negotiate, transfer, query, revoke"
+    )
     rules = ("C-1", "X-1", "X-3", "X-4", "X-5")
 
     def execute(self) -> FlowResult:
@@ -53,8 +55,17 @@ class SmokeFlow(BaseFlow):
 
         # 3. Provider sync
         try:
-            sync = self.http.post(f"{s.connector_url}/provider/sync", {}, headers=svc_headers) or {}
-            result.pass_step("provider sync", "governance published to provider EDC", synced=len(sync.get("synced") or []))
+            sync = (
+                self.http.post(
+                    f"{s.connector_url}/provider/sync", {}, headers=svc_headers
+                )
+                or {}
+            )
+            result.pass_step(
+                "provider sync",
+                "governance published to provider EDC",
+                synced=len(sync.get("synced") or []),
+            )
         except Exception as exc:
             result.fail_step("provider sync", str(exc))
             return result
@@ -80,17 +91,24 @@ class SmokeFlow(BaseFlow):
             "counter_party_id": s.provider_did,
         }
         try:
-            catalog = self.http.post(
-                f"{s.consumer_connector_url}/consumer/catalog",
-                catalog_body,
-                headers=consumer_headers,
-            ) or {}
+            catalog = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/catalog",
+                    catalog_body,
+                    headers=consumer_headers,
+                )
+                or {}
+            )
             dataset = self._select_dataset(catalog)
             if not dataset:
                 result.fail_step("catalog discovery", "catalog has no datasets")
                 return result
             asset_id = str(dataset.get("@id") or dataset.get("id") or s.asset_id)
-            result.pass_step("catalog discovery", "consumer discovered provider catalog", asset_id=asset_id)
+            result.pass_step(
+                "catalog discovery",
+                "consumer discovered provider catalog",
+                asset_id=asset_id,
+            )
         except Exception as exc:
             result.fail_step("catalog discovery", str(exc))
             return result
@@ -136,13 +154,20 @@ class SmokeFlow(BaseFlow):
                 "consumer_id": s.consumer_did,
                 "enabled": True,
             }
-            share = self.http.post(
-                f"{s.connector_url}/consent/my/shares", share_body, headers=subject_headers
-            ) or []
+            share = (
+                self.http.post(
+                    f"{s.connector_url}/consent/my/shares",
+                    share_body,
+                    headers=subject_headers,
+                )
+                or []
+            )
             rows = share if isinstance(share, list) else [share]
             if not rows or any(r.get("purpose") != [s.consented_purpose] for r in rows):
                 result.fail_step(
-                    "consent grant", "offer did not expand to purpose-stamped rows", rows=rows
+                    "consent grant",
+                    "offer did not expand to purpose-stamped rows",
+                    rows=rows,
                 )
                 return result
             result.pass_step(
@@ -162,18 +187,25 @@ class SmokeFlow(BaseFlow):
         #     with no row of its own must be authorised by that wildcard alone,
         #     and never for a purpose the subject did not consent to.
         try:
-            wildcard_rows = self.http.post(
-                f"{s.connector_url}/consent/admin/shares",
-                {
-                    "subject_id": s.data_subject_id,
-                    "offer_id": s.sharing_offer_id,
-                    "enabled": True,
-                    "legal_basis": legal_basis("e2e-verification"),
-                },
-                headers=svc_headers,
-            ) or []
-            wildcard_rows = wildcard_rows if isinstance(wildcard_rows, list) else [wildcard_rows]
-            if not wildcard_rows or any(r.get("consumer_id") != "*" for r in wildcard_rows):
+            wildcard_rows = (
+                self.http.post(
+                    f"{s.connector_url}/consent/admin/shares",
+                    {
+                        "subject_id": s.data_subject_id,
+                        "offer_id": s.sharing_offer_id,
+                        "enabled": True,
+                        "legal_basis": legal_basis("e2e-verification"),
+                    },
+                    headers=svc_headers,
+                )
+                or []
+            )
+            wildcard_rows = (
+                wildcard_rows if isinstance(wildcard_rows, list) else [wildcard_rows]
+            )
+            if not wildcard_rows or any(
+                r.get("consumer_id") != "*" for r in wildcard_rows
+            ):
                 result.fail_step(
                     "wildcard consent",
                     "admin provisioning did not create wildcard-scoped rows",
@@ -181,22 +213,27 @@ class SmokeFlow(BaseFlow):
                 )
                 return result
         except HttpError as exc:
-            result.fail_step("wildcard consent", f"HTTP {exc.status}", response=exc.body)
+            result.fail_step(
+                "wildcard consent", f"HTTP {exc.status}", response=exc.body
+            )
             return result
 
         novel_consumer = "did:web:novel.dataspaces.localhost"
-        wildcard_check = self.http.get(
-            f"{s.connector_url}/internal/consent/check?"
-            + urllib.parse.urlencode(
-                {
-                    "dataset_id": s.asset_id,
-                    "consumer_id": novel_consumer,
-                    "subject_id": s.data_subject_id,
-                    "purpose": s.consented_purpose,
-                }
-            ),
-            headers=svc_headers,
-        ) or {}
+        wildcard_check = (
+            self.http.get(
+                f"{s.connector_url}/internal/consent/check?"
+                + urllib.parse.urlencode(
+                    {
+                        "dataset_id": s.asset_id,
+                        "consumer_id": novel_consumer,
+                        "subject_id": s.data_subject_id,
+                        "purpose": s.consented_purpose,
+                    }
+                ),
+                headers=svc_headers,
+            )
+            or {}
+        )
         if not wildcard_check.get("consent_active"):
             result.fail_step(
                 "wildcard consent",
@@ -235,23 +272,31 @@ class SmokeFlow(BaseFlow):
             "justification_ref": "e2e-smoke",
         }
         try:
-            negotiated = self.http.post(
-                f"{s.consumer_connector_url}/consumer/negotiate",
-                negotiate_body,
-                headers=consumer_headers,
-            ) or {}
+            negotiated = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/negotiate",
+                    negotiate_body,
+                    headers=consumer_headers,
+                )
+                or {}
+            )
             negotiation_id = negotiated["negotiation_id"]
-            result.pass_step("request access", "negotiation started", negotiation_id=negotiation_id)
+            result.pass_step(
+                "request access", "negotiation started", negotiation_id=negotiation_id
+            )
         except Exception as exc:
             result.fail_step("request access", str(exc))
             return result
 
         # The declaration must survive to the record, or it was never evidence.
         if declared_purpose:
-            requests = self.http.get(
-                f"{s.consumer_connector_url}/consumer/requests",
-                headers=consumer_headers,
-            ) or []
+            requests = (
+                self.http.get(
+                    f"{s.consumer_connector_url}/consumer/requests",
+                    headers=consumer_headers,
+                )
+                or []
+            )
             recorded = next(
                 (r for r in requests if r.get("negotiation_id") == negotiation_id), None
             )
@@ -279,7 +324,10 @@ class SmokeFlow(BaseFlow):
         encoded_neg_id = urllib.parse.quote(negotiation_id, safe="")
         negotiation = self.http.poll_until(
             f"{s.consumer_connector_url}/consumer/negotiations/{encoded_neg_id}",
-            lambda p: p.get("state") in FINAL_NEGOTIATION_STATES and bool(p.get("contractAgreementId")),
+            lambda p: (
+                p.get("state") in FINAL_NEGOTIATION_STATES
+                and bool(p.get("contractAgreementId"))
+            ),
             headers=consumer_headers,
         )
         agreement_id = negotiation.get("contractAgreementId")
@@ -290,7 +338,11 @@ class SmokeFlow(BaseFlow):
                 state=negotiation.get("state"),
             )
             return result
-        result.pass_step("negotiation DSP", "contract negotiation finalized", agreement_id=agreement_id)
+        result.pass_step(
+            "negotiation DSP",
+            "contract negotiation finalized",
+            agreement_id=agreement_id,
+        )
 
         # 9. Transfer
         transfer_body = {
@@ -300,11 +352,14 @@ class SmokeFlow(BaseFlow):
             "connector_id": s.provider_did,
         }
         try:
-            transfer = self.http.post(
-                f"{s.consumer_connector_url}/consumer/transfer",
-                transfer_body,
-                headers=consumer_headers,
-            ) or {}
+            transfer = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/transfer",
+                    transfer_body,
+                    headers=consumer_headers,
+                )
+                or {}
+            )
             transfer_id = transfer["transfer_id"]
         except Exception as exc:
             result.fail_step("transfer EDR", str(exc))
@@ -318,9 +373,15 @@ class SmokeFlow(BaseFlow):
             headers=consumer_headers,
         )
         if transfer_state.get("state") not in FINAL_TRANSFER_STATES:
-            result.fail_step("transfer EDR", "transfer did not reach STARTED", transfer_id=transfer_id)
+            result.fail_step(
+                "transfer EDR",
+                "transfer did not reach STARTED",
+                transfer_id=transfer_id,
+            )
             return result
-        result.pass_step("transfer EDR", "EDR-gated transfer started", transfer_id=transfer_id)
+        result.pass_step(
+            "transfer EDR", "EDR-gated transfer started", transfer_id=transfer_id
+        )
 
         # 11. Query the data plane the way a real client does.
         #
@@ -328,10 +389,13 @@ class SmokeFlow(BaseFlow):
         # asking, three `Edc-*` headers name the exchange, and the query itself
         # names the dataset. This is the contract the production dataset-api
         # implements — a probe shaped any other way would validate a mock.
-        edr = self.http.get(
-            f"{s.consumer_connector_url}/consumer/edr/{encoded_transfer_id}",
-            headers=consumer_headers,
-        ) or {}
+        edr = (
+            self.http.get(
+                f"{s.consumer_connector_url}/consumer/edr/{encoded_transfer_id}",
+                headers=consumer_headers,
+            )
+            or {}
+        )
         edr_token = str(edr.get("authorization") or "")
         # The **shared** DSP agreement id, which the connector resolves for us.
         # `contractAgreementId` from the negotiation is this side's *local* id
@@ -395,12 +459,18 @@ class SmokeFlow(BaseFlow):
             #      Here because this is where the credential is: the endpoint is
             #      authorised exactly as `/query`, so it is unreachable from a
             #      flow that has not negotiated.
-            self._conformance(result, label, url, asset_id, {
-                "Authorization": edr_token,
-                "Edc-Contract-Agreement-Id": shared_agreement_id,
-                "Edc-Transfer-Process-Id": transfer_id,
-                "Edc-Purpose": s.consented_purpose,
-            })
+            self._conformance(
+                result,
+                label,
+                url,
+                asset_id,
+                {
+                    "Authorization": edr_token,
+                    "Edc-Contract-Agreement-Id": shared_agreement_id,
+                    "Edc-Transfer-Process-Id": transfer_id,
+                    "Edc-Purpose": s.consented_purpose,
+                },
+            )
 
         # 11b. The purpose is binding, not decorative. The same agreement and
         #      the same active transfer must yield nothing for a purpose this
@@ -470,27 +540,43 @@ class SmokeFlow(BaseFlow):
         )
 
         # 12. Revoke
-        requests_payload = self.http.get(
-            f"{s.consumer_connector_url}/consumer/requests", headers=consumer_headers
-        ) or []
+        requests_payload = (
+            self.http.get(
+                f"{s.consumer_connector_url}/consumer/requests",
+                headers=consumer_headers,
+            )
+            or []
+        )
         request_id = None
         for item in requests_payload:
-            if item.get("negotiation_id") == negotiation_id or item.get("transfer_id") == transfer_id:
+            if (
+                item.get("negotiation_id") == negotiation_id
+                or item.get("transfer_id") == transfer_id
+            ):
                 request_id = item.get("id")
                 break
         if not request_id:
             result.fail_step("revoke access", "could not find persisted access request")
             return result
 
-        revoke = self.http.post(
-            f"{s.consumer_connector_url}/consumer/requests/{urllib.parse.quote(str(request_id), safe='')}/revoke",
-            {"reason": "e2e-verification"},
-            headers=consumer_headers,
-        ) or {}
+        revoke = (
+            self.http.post(
+                f"{s.consumer_connector_url}/consumer/requests/{urllib.parse.quote(str(request_id), safe='')}/revoke",
+                {"reason": "e2e-verification"},
+                headers=consumer_headers,
+            )
+            or {}
+        )
         if revoke.get("status") != "revoked":
-            result.fail_step("revoke access", "revoke did not return revoked", response=revoke)
+            result.fail_step(
+                "revoke access", "revoke did not return revoked", response=revoke
+            )
             return result
-        result.pass_step("revoke access", "consumer access and agreement revoked", request_id=request_id)
+        result.pass_step(
+            "revoke access",
+            "consumer access and agreement revoked",
+            request_id=request_id,
+        )
 
         # 13. Query blocked after revoke (poll — DSP termination propagates async)
         blocked_deadline = time.time() + s.poll_timeout
@@ -501,14 +587,21 @@ class SmokeFlow(BaseFlow):
                 break
             time.sleep(s.poll_interval)
         if blocked_status != 403:
-            result.fail_step("query blocked after revoke", "expected 403", status_code=blocked_status)
+            result.fail_step(
+                "query blocked after revoke", "expected 403", status_code=blocked_status
+            )
             return result
-        result.pass_step("query blocked after revoke", "stale transfer cannot query after revoke")
+        result.pass_step(
+            "query blocked after revoke", "stale transfer cannot query after revoke"
+        )
 
         # 14. Provenance (merge events from provider + consumer instances)
         event_types: set[str] = set()
         for prov_url in (s.provenance_url, s.consumer_provenance_url):
-            events = self.http.get(f"{prov_url}/prov/events?limit=200", headers=svc_headers) or {}
+            events = (
+                self.http.get(f"{prov_url}/prov/events?limit=200", headers=svc_headers)
+                or {}
+            )
             graph = events.get("@graph") or []
             event_types.update(
                 str(item.get("@type", "")).removeprefix("ds:")
@@ -517,9 +610,15 @@ class SmokeFlow(BaseFlow):
             )
         missing = sorted(REQUIRED_PROVENANCE_EVENTS - event_types)
         if missing:
-            result.fail_step("provenance complete", "missing event types", missing=missing)
+            result.fail_step(
+                "provenance complete", "missing event types", missing=missing
+            )
             return result
-        result.pass_step("provenance complete", "required lifecycle events present", observed=sorted(event_types))
+        result.pass_step(
+            "provenance complete",
+            "required lifecycle events present",
+            observed=sorted(event_types),
+        )
 
         return result
 

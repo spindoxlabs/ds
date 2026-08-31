@@ -13,17 +13,18 @@ Everything else here pins a fail-closed default. There is no test asserting that
 a missing gate still returns rows, because there is no such case: every unknown
 is a refusal.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
+from ds.governance import DataplaneDecision
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from connector.services import subject_identities
 from connector.services.agreement_service import terminate_agreement, upsert_agreement
 from connector.services.consent_service import set_subject_data_sharing
-from ds.governance import DataplaneDecision
 from tests import make_headers
 
 HEADERS = make_headers(scope="connector.internal")
@@ -64,8 +65,14 @@ def _policy(*purposes: str) -> dict:
     }
 
 
-async def _agreement(engine, agreement_id: str, asset_id: str, *, consumer=CONSUMER,
-                     purposes=("EnergyCommunityOperation", "FlexibilityResearch")):
+async def _agreement(
+    engine,
+    agreement_id: str,
+    asset_id: str,
+    *,
+    consumer=CONSUMER,
+    purposes=("EnergyCommunityOperation", "FlexibilityResearch"),
+):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
@@ -76,7 +83,7 @@ async def _agreement(engine, agreement_id: str, asset_id: str, *, consumer=CONSU
                 consumer_id=consumer,
                 provider_id=PROVIDER,
                 policy_snapshot=_policy(*purposes),
-                agreed_at=datetime.now(timezone.utc),
+                agreed_at=datetime.now(UTC),
             )
 
 
@@ -102,6 +109,7 @@ def _resolvable_subjects(monkeypatch):
     consented" into something the data plane can key on, so a test that skipped
     it would assert on a decision that could not be enforced.
     """
+
     async def fake(dids, *_args, **_kwargs):
         return {did: f"user-{did.rsplit(':', 1)[-1]}" for did in dids}
 
@@ -117,7 +125,9 @@ async def _authorize(client, **body):
         "purpose": ["FlexibilityResearch"],
         **body,
     }
-    return await client.post("/internal/dataplane/authorize", json=payload, headers=HEADERS)
+    return await client.post(
+        "/internal/dataplane/authorize", json=payload, headers=HEADERS
+    )
 
 
 # ── the binding checks ───────────────────────────────────────────────────────
@@ -241,6 +251,7 @@ async def test_unresolvable_subjects_deny(engine, client, monkeypatch):
     reads as "filter to nothing" to one implementation and "no filter" to
     another, and the second serves everything.
     """
+
     async def resolves_nothing(dids, *_args, **_kwargs):
         return {}
 
@@ -296,7 +307,11 @@ async def test_a_join_is_as_strict_as_its_strictest_dataset(engine, client):
 async def test_requires_the_internal_grant(client):
     r = await client.post(
         "/internal/dataplane/authorize",
-        json={"consumer_did": CONSUMER, "agreement_id": "agr-1", "dataset_ids": [GATED]},
+        json={
+            "consumer_did": CONSUMER,
+            "agreement_id": "agr-1",
+            "dataset_ids": [GATED],
+        },
         headers=make_headers(scope="connector.provider.read"),
     )
     assert r.status_code == 403

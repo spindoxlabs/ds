@@ -11,6 +11,7 @@ Both services verify the *same* credential the subject presents, so they share
 one implementation (``ds_auth.user_credentials``). Duplicating that verification
 per service is how two services end up disagreeing about who someone is.
 """
+
 from __future__ import annotations
 
 from ds_auth.user_credentials import verify_user_vc_jwt

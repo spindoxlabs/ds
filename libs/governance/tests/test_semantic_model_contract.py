@@ -25,6 +25,7 @@ the connector emitted `{handler, args, principals}`, the PEP read
 (`test_dataplane_contract.py`). An unstated contract between two repositories is
 discovered in production.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -149,7 +150,10 @@ def _rule_with(conforms_to: str | None):
         "dataspace": {
             "expose": True,
             "asset": {"id": "datasets.silver.meters_15m"},
-            "data_address": {"type": "HttpData", "base_url": "http://dataset-api/query"},
+            "data_address": {
+                "type": "HttpData",
+                "base_url": "http://dataset-api/query",
+            },
         },
     }
     if conforms_to:

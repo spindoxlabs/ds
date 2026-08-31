@@ -79,9 +79,7 @@ def test_rejects_expired(signed_config, ec_key):
 @pytest.mark.rule("P-11")
 def test_fail_closed_without_issuer():
     cfg = OidcConfig(issuer_url=None, insecure_dev=False)
-    token = _sign(
-        ec.generate_private_key(ec.SECP256R1()), _base_claims(), alg="ES256"
-    )
+    token = _sign(ec.generate_private_key(ec.SECP256R1()), _base_claims(), alg="ES256")
     with pytest.raises(AuthConfigError):
         verify_token(token, cfg)
 

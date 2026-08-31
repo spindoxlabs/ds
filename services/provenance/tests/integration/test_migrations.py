@@ -5,6 +5,7 @@ revision **stamp** against head, so a database that is at head and shaped wrong
 passes it. Only running the migrations against a real Postgres and comparing the
 result to the models can see that, and until now nothing did.
 """
+
 from __future__ import annotations
 
 import os

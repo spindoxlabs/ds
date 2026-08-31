@@ -55,13 +55,15 @@ def test_a_real_keycloak_service_token_is_classified_correctly():
     All three signals present. This is what the four fixtures that made the row
     look real were missing.
     """
-    assert is_service_account({
-        "sub": "b2c3",
-        "scope": "catalog.read",
-        "azp": "svc-ds-federated-catalog",
-        "client_id": "svc-ds-federated-catalog",
-        "preferred_username": "service-account-svc-ds-federated-catalog",
-    })
+    assert is_service_account(
+        {
+            "sub": "b2c3",
+            "scope": "catalog.read",
+            "azp": "svc-ds-federated-catalog",
+            "client_id": "svc-ds-federated-catalog",
+            "preferred_username": "service-account-svc-ds-federated-catalog",
+        }
+    )
 
 
 def test_a_service_token_with_only_azp_is_still_classified_correctly():
@@ -105,9 +107,13 @@ def test_a_token_with_no_indicator_either_way_is_a_user_and_says_so(caplog):
 def test_an_ordinary_user_token_does_not_produce_that_warning(caplog):
     """Or the log fills with it on every request and stops being read."""
     with caplog.at_level(logging.WARNING, logger="ds_auth.jwt"):
-        is_service_account({
-            "sub": "a1b2", "scope": "openid profile", "email": "alice@example.test",
-        })
+        is_service_account(
+            {
+                "sub": "a1b2",
+                "scope": "openid profile",
+                "email": "alice@example.test",
+            }
+        )
     assert caplog.text == ""
 
 

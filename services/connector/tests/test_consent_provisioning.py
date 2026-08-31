@@ -4,9 +4,10 @@ Covers §3.2 (``POST /consent/admin/shares``), §3.1 (the ``consumer_id = "*"``
 wildcard and its precedence rules) and §3.3 (the ``legal_basis`` evidence
 record round-tripping through the write and read paths).
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy import func, select
@@ -43,12 +44,11 @@ def _allow_membership(monkeypatch):
     The membership gate has its own coverage in ``test_membership_check``; here
     we assert the provisioning behaviour, not the network call.
     """
+
     async def _member(*_args, **_kwargs):
         return True
 
-    monkeypatch.setattr(
-        "connector.api.v1.consent.check_subject_membership", _member
-    )
+    monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _member)
 
 
 def _row(**overrides) -> ConsentRequestORM:
@@ -60,8 +60,8 @@ def _row(**overrides) -> ConsentRequestORM:
         purpose=["FlexibilityResearch"],
         controller="example-org",
         controller_role=None,
-        requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
+        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
         transfer_ids=[],
     )
     base.update(overrides)
@@ -69,6 +69,7 @@ def _row(**overrides) -> ConsentRequestORM:
 
 
 # ── §3.2 admin/shares ─────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
@@ -200,11 +201,14 @@ async def test_admin_shares_is_idempotent(engine, client):
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        count = await session.execute(select(func.count()).select_from(ConsentRequestORM))
+        count = await session.execute(
+            select(func.count()).select_from(ConsentRequestORM)
+        )
     assert count.scalar_one() == 1
 
 
 # ── §3.1 scoped wildcard ──────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
@@ -236,8 +240,8 @@ async def test_specific_revoke_overrides_wildcard(engine):
                 _row(
                     consumer_id=CONSUMER,
                     status="revoked",
-                    requested_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-                    revoked_at=datetime(2026, 2, 1, 1, tzinfo=timezone.utc),
+                    requested_at=datetime(2026, 2, 1, tzinfo=UTC),
+                    revoked_at=datetime(2026, 2, 1, 1, tzinfo=UTC),
                 )
             )
 
@@ -303,6 +307,7 @@ async def test_wildcard_controller_role_must_match(engine):
 
 # ── §3.3 legal-basis evidence surfaces on the read path ───────────────────────
 
+
 @pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_legal_basis_surfaces_in_internal_check(client):
@@ -342,6 +347,7 @@ async def test_legal_basis_surfaces_in_internal_check(client):
 
 # ── the subject's own decision carries the same evidence ─────────────────────
 
+
 @pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_subject_offer_share_records_legal_basis(client):
@@ -378,6 +384,7 @@ async def test_subject_offer_share_records_legal_basis(client):
 
 # ── §7 the external-application write contract ────────────────────────────────
 
+
 @pytest.mark.rule("D-12")
 @pytest.mark.asyncio
 async def test_granting_without_evidence_is_refused(client):
@@ -394,7 +401,9 @@ async def test_granting_without_evidence_is_refused(client):
 
 @pytest.mark.rule("D-12")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing", ["source", "consent_text_version", "rendered_text_sha256"])
+@pytest.mark.parametrize(
+    "missing", ["source", "consent_text_version", "rendered_text_sha256"]
+)
 async def test_partial_evidence_is_refused(client, missing):
     """Each of the three carries part of the proof: which system asked, which
     revision, and the exact bytes displayed. Any one missing and the record cannot
@@ -584,7 +593,9 @@ AUDIENCE = make_headers(scope="connector.consent.audience")
 ADMIN = make_headers(scope="connector.admin")
 
 
-async def _provision(client, subject_id: str = SUBJECT, offer: str = "test-flexibility"):
+async def _provision(
+    client, subject_id: str = SUBJECT, offer: str = "test-flexibility"
+):
     r = await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
@@ -647,8 +658,8 @@ async def test_decided_at_is_the_authorising_row_not_the_latest_one(engine, clie
     would report June and be wrong by five months about the basis of every
     supply point in the export.
     """
-    specific = datetime(2026, 1, 5, 9, tzinfo=timezone.utc)
-    wildcard = datetime(2026, 6, 20, 9, tzinfo=timezone.utc)
+    specific = datetime(2026, 1, 5, 9, tzinfo=UTC)
+    wildcard = datetime(2026, 6, 20, 9, tzinfo=UTC)
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
@@ -703,8 +714,8 @@ async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, c
                 _row(
                     consumer_id=CONSUMER,
                     status="revoked",
-                    requested_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-                    revoked_at=datetime(2026, 2, 1, 1, tzinfo=timezone.utc),
+                    requested_at=datetime(2026, 2, 1, tzinfo=UTC),
+                    revoked_at=datetime(2026, 2, 1, 1, tzinfo=UTC),
                 )
             )
 
@@ -865,6 +876,7 @@ async def test_audience_refuses_a_weak_token_before_validating_the_query(client)
 # decisions were made in — and in one of the two orders it withheld rows the
 # person had consented to share.
 
+
 async def _provision_offer(client, offer: str, enabled: bool, subject: str = SUBJECT):
     r = await client.post(
         "/consent/admin/shares",
@@ -975,8 +987,8 @@ async def test_a_dataset_wide_withdrawal_denies_every_offer(engine, client):
                 _row(
                     offer_id=None,
                     status="revoked",
-                    requested_at=datetime(2026, 3, 1, tzinfo=timezone.utc),
-                    revoked_at=datetime(2026, 3, 1, 1, tzinfo=timezone.utc),
+                    requested_at=datetime(2026, 3, 1, tzinfo=UTC),
+                    revoked_at=datetime(2026, 3, 1, 1, tzinfo=UTC),
                 )
             )
 
@@ -1057,9 +1069,13 @@ async def test_internal_consent_check_does_not_contradict_itself(client):
         "purpose": "FlexibilityResearch",
     }
     named = await client.get(
-        "/internal/consent/check", headers=INTERNAL, params={**params, "subject_id": SUBJECT}
+        "/internal/consent/check",
+        headers=INTERNAL,
+        params={**params, "subject_id": SUBJECT},
     )
-    listed = await client.get("/internal/consent/check", headers=INTERNAL, params=params)
+    listed = await client.get(
+        "/internal/consent/check", headers=INTERNAL, params=params
+    )
     assert named.status_code == listed.status_code == 200
 
     assert named.json()["consent_active"] is True

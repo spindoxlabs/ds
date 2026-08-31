@@ -52,7 +52,13 @@ def test_the_filter_carries_its_handler_not_just_a_column():
     matches the subject directly. Same column, different rows.
     """
     decision = DataplaneDecision.model_validate(
-        _allow({"handler": "rec_registry", "args": {"column": "device_id"}, "principals": ["p1"]})
+        _allow(
+            {
+                "handler": "rec_registry",
+                "args": {"column": "device_id"},
+                "principals": ["p1"],
+            }
+        )
     )
     row_filter = decision.datasets[0].row_filter
     assert row_filter is not None
@@ -82,7 +88,10 @@ def test_args_are_opaque_to_the_pdp():
     row_filter = DataplaneRowFilter.model_validate(
         {
             "handler": "rec_registry",
-            "args": {"column": "device_id", "urn_template": "urn:ngsi-ld:Device:{device_id}"},
+            "args": {
+                "column": "device_id",
+                "urn_template": "urn:ngsi-ld:Device:{device_id}",
+            },
             "principals": ["p1"],
         }
     )
@@ -104,8 +113,15 @@ def test_governance_row_filter_args_keep_handler_specific_keys():
 @pytest.mark.parametrize(
     "payload, model",
     [
-        ({"handler": DIRECT_USER_MATCH, "args": {}, "principals": [], "invert": True},
-         DataplaneRowFilter),
+        (
+            {
+                "handler": DIRECT_USER_MATCH,
+                "args": {},
+                "principals": [],
+                "invert": True,
+            },
+            DataplaneRowFilter,
+        ),
         ({"dataset_id": GATED, "decision": ALLOW, "max_rows": 10}, DatasetVerdict),
     ],
 )
@@ -153,6 +169,12 @@ def test_the_envelope_and_the_verdicts_can_disagree_in_one_direction():
 def test_deny_and_allow_carry_the_same_keys():
     """A PEP should not branch on the envelope to know which fields it may read."""
     assert set(DataplaneDecision.model_fields) >= {
-        "decision", "reason", "detail", "agreement_id",
-        "transfer_id", "purpose", "datasets", "cache",
+        "decision",
+        "reason",
+        "detail",
+        "agreement_id",
+        "transfer_id",
+        "purpose",
+        "datasets",
+        "cache",
     }

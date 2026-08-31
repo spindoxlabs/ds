@@ -25,6 +25,7 @@ tasks:
     desc: Lint source and tests
     deps: [setup]
     cmds:
+      - uv run ruff format --check src/ tests/
       - uv run ruff check src/ tests/
 
   format:

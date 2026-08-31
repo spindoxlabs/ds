@@ -12,6 +12,7 @@ the data-plane authorisation path asks for it on every cache miss, so a short TT
 removes a fan-out without letting a stale answer outlive a re-provisioning by
 long.
 """
+
 from __future__ import annotations
 
 import logging

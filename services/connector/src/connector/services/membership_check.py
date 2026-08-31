@@ -1,11 +1,11 @@
 """Check organization membership via identity-registry API."""
+
 from __future__ import annotations
 
 import logging
 from pathlib import Path
 
 import httpx
-
 from ds.governance.resolver import GovernanceResolver
 
 log = logging.getLogger(__name__)
@@ -33,7 +33,9 @@ async def check_subject_membership(
             )
             if resp.status_code == 200:
                 return resp.json().get("member", False)
-            log.warning("Membership check returned %d for %s", resp.status_code, user_did)
+            log.warning(
+                "Membership check returned %d for %s", resp.status_code, user_did
+            )
             return False
     except httpx.HTTPError as exc:
         log.error("Membership check failed for %s: %s", user_did, exc)
@@ -47,7 +49,9 @@ def resolve_dataset_owner(
 ) -> str | None:
     """Resolve the first ownership alias for a dataset from governance config."""
     path = Path(governance_yaml_path)
-    resolver = GovernanceResolver.from_file_with_override(path, overlay_name=overlay_name)
+    resolver = GovernanceResolver.from_file_with_override(
+        path, overlay_name=overlay_name
+    )
     rule = resolver.resolve(dataset_id)
     if rule.ownership:
         return rule.ownership[0].name

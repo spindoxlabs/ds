@@ -13,7 +13,9 @@ class UC2Flow(BaseFlow):
     """GP-2 / UC-2+UC-3: org shares aggregate data — owner-scoped negotiation."""
 
     name = "uc2"
-    description = "Verify owner-scoped governance sync — assigner and scope from ownership"
+    description = (
+        "Verify owner-scoped governance sync — assigner and scope from ownership"
+    )
     rules = ("C-16", "D-11")
 
     def execute(self) -> FlowResult:
@@ -43,18 +45,30 @@ class UC2Flow(BaseFlow):
 
         # Provider sync
         try:
-            sync = self.http.post(f"{s.connector_url}/provider/sync", {}, headers=svc_headers) or {}
-            result.pass_step("provider sync", "governance synced", synced=len(sync.get("synced") or []))
+            sync = (
+                self.http.post(
+                    f"{s.connector_url}/provider/sync", {}, headers=svc_headers
+                )
+                or {}
+            )
+            result.pass_step(
+                "provider sync",
+                "governance synced",
+                synced=len(sync.get("synced") or []),
+            )
         except Exception as exc:
             result.fail_step("provider sync", str(exc))
             return result
 
         # Assigner check — resolve owner DID
         try:
-            owner = self.http.get(
-                f"{s.identity_registry_url}/owners/resolve?alias=example-org",
-                headers=svc_headers,
-            ) or {}
+            owner = (
+                self.http.get(
+                    f"{s.identity_registry_url}/owners/resolve?alias=example-org",
+                    headers=svc_headers,
+                )
+                or {}
+            )
             owner_did = owner.get("canonical_uri") or owner.get("did")
             if owner_did:
                 result.pass_step("assigner check", f"owner DID resolved: {owner_did}")
@@ -68,7 +82,9 @@ class UC2Flow(BaseFlow):
         result.pass_step("uc2 complete", "owner-scoped sync verified")
         return result
 
-    def _check_owner_preconditions(self, result: FlowResult, headers: dict[str, str]) -> bool:
+    def _check_owner_preconditions(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> bool:
         s = self.settings
         owner_alias = "example-org"
         member_did = "did:web:rec.dataspaces.localhost:users:data-subject"
@@ -79,7 +95,9 @@ class UC2Flow(BaseFlow):
                 headers=headers,
             )
             if not owner or not owner.get("id"):
-                result.fail_step("owner precondition", f"owner '{owner_alias}' not found")
+                result.fail_step(
+                    "owner precondition", f"owner '{owner_alias}' not found"
+                )
                 return False
             result.pass_step("owner precondition", f"owner '{owner_alias}' exists")
         except Exception as exc:
@@ -88,14 +106,23 @@ class UC2Flow(BaseFlow):
 
         try:
             encoded = urllib.parse.quote(member_did, safe="")
-            check = self.http.get(
-                f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization={owner_alias}",
-                headers=headers,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization={owner_alias}",
+                    headers=headers,
+                )
+                or {}
+            )
             if not check.get("member"):
-                result.fail_step("membership precondition", f"'{member_did}' is not a member of '{owner_alias}'")
+                result.fail_step(
+                    "membership precondition",
+                    f"'{member_did}' is not a member of '{owner_alias}'",
+                )
                 return False
-            result.pass_step("membership precondition", f"'{member_did}' is a member of '{owner_alias}'")
+            result.pass_step(
+                "membership precondition",
+                f"'{member_did}' is a member of '{owner_alias}'",
+            )
         except Exception as exc:
             result.fail_step("membership precondition", str(exc))
             return False

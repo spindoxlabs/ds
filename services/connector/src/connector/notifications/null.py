@@ -1,4 +1,5 @@
 """No-op notifier — used when no backends are configured."""
+
 from __future__ import annotations
 
 from ..db.models import ConsentRequestORM

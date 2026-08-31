@@ -6,6 +6,7 @@ state names, so "we stopped waiting" was shaped exactly like "the counterparty
 refused" — and `EdcPollTimeout` exists so the two can no longer be confused by a
 caller that forgets to check.
 """
+
 from __future__ import annotations
 
 import time
@@ -25,16 +26,21 @@ def states(*sequence):
         if isinstance(state, dict):
             return json_response(200, state)
         return json_response(200, {"state": state})
+
     return handler
 
 
 # -- Negotiation ---------------------------------------------------------------
 
+
 async def test_finalized_returns_the_agreement(edc_client):
-    client, _ = edc_client(states(
-        "REQUESTING", "REQUESTED",
-        {"state": "FINALIZED", "contractAgreementId": "ag-1"},
-    ))
+    client, _ = edc_client(
+        states(
+            "REQUESTING",
+            "REQUESTED",
+            {"state": "FINALIZED", "contractAgreementId": "ag-1"},
+        )
+    )
     result = await client.poll_negotiation("n", poll_interval=0, timeout=5)
     assert result.state == "FINALIZED"
     assert result.contract_agreement_id == "ag-1"
@@ -54,9 +60,9 @@ async def test_agreed_also_ends_the_poll_and_carries_the_agreement(edc_client):
 
 
 async def test_terminated_returns_the_reason(edc_client):
-    client, _ = edc_client(states(
-        {"state": "TERMINATED", "errorDetail": "policy evaluation failed"}
-    ))
+    client, _ = edc_client(
+        states({"state": "TERMINATED", "errorDetail": "policy evaluation failed"})
+    )
     result = await client.poll_negotiation("n", poll_interval=0, timeout=5)
     assert result.state == "TERMINATED"
     assert result.error_detail == "policy evaluation failed"
@@ -86,6 +92,7 @@ async def test_the_timeout_is_a_timeout_error(edc_client):
 
 # -- Transfer ------------------------------------------------------------------
 
+
 async def test_started_is_the_success_state(edc_client):
     client, _ = edc_client(states("REQUESTED", "STARTED"))
     result = await client.poll_transfer("t", poll_interval=0, timeout=5)
@@ -101,6 +108,7 @@ async def test_a_stalled_transfer_raises(edc_client):
 
 # -- The deadline actually bounds the wait -------------------------------------
 
+
 async def test_a_slow_control_plane_does_not_extend_the_timeout(edc_client):
     """The half of this row that only shows up when it matters.
 
@@ -110,6 +118,7 @@ async def test_a_slow_control_plane_does_not_extend_the_timeout(edc_client):
     costs 40ms against a 100ms budget: by wall clock the third answer is already
     past the deadline, and counting sleeps alone would allow many more.
     """
+
     async def slow(_request):
         time.sleep(0.04)
         return json_response(200, {"state": "REQUESTED"})

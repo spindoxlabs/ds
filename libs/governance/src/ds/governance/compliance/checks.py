@@ -15,6 +15,7 @@ mapper alone:
 Nothing here is specific to a deployment, a domain, or a dataset naming scheme;
 every input is a parameter.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -296,14 +297,26 @@ def check_declared_not_enforced(
 #: cannot omit them and a check on them would test the emitter, not the input —
 #: which is the boundary the module docstring above draws.
 _DCAT_AP_MANDATORY: tuple[tuple[str, str, str], ...] = (
-    ("dct:title", "title", "the dataset key is used as a title, which is an identifier"),
-    ("dct:description", "description", "the dataset is published with an empty description"),
+    (
+        "dct:title",
+        "title",
+        "the dataset key is used as a title, which is an identifier",
+    ),
+    (
+        "dct:description",
+        "description",
+        "the dataset is published with an empty description",
+    ),
 )
 
 _DCAT_AP_RECOMMENDED: tuple[tuple[str, str, str], ...] = (
     ("dcat:theme", "dcat.themes", "the dataset appears under no theme in a harvester"),
     ("dct:license", "license", "a consumer cannot tell what they may do with the data"),
-    ("dct:accrualPeriodicity", "dcat.accrual_periodicity", "how often it updates is unstated"),
+    (
+        "dct:accrualPeriodicity",
+        "dcat.accrual_periodicity",
+        "how often it updates is unstated",
+    ),
     ("dct:spatial", "dcat.spatial_uris", "the geographic coverage is unstated"),
     ("dct:temporal", "dcat.temporal", "the time span covered is unstated"),
 )
@@ -344,12 +357,16 @@ def check_dcat_ap(result: ValidationResult, exposed: list[DatasetEvidence]) -> N
                 )
 
 
-def check_data_address(result: ValidationResult, exposed: list[DatasetEvidence]) -> None:
+def check_data_address(
+    result: ValidationResult, exposed: list[DatasetEvidence]
+) -> None:
     for item in exposed:
         address = item.rule.dataspace.data_address
         base_url = (address.base_url or "").strip()
         if not base_url:
-            result.error("data-address", "Exposed dataset has no data_address.base_url", item.key)
+            result.error(
+                "data-address", "Exposed dataset has no data_address.base_url", item.key
+            )
             continue
         parsed = urlparse(base_url)
         if not parsed.scheme or not parsed.netloc:
@@ -399,7 +416,10 @@ def check_retention(result: ValidationResult, exposed: list[DatasetEvidence]) ->
     for item in exposed:
         for label, value in (
             ("retention_days", item.rule.retention_days),
-            ("policy.obligations.delete_after_days", item.rule.policy.obligations.delete_after_days),
+            (
+                "policy.obligations.delete_after_days",
+                item.rule.policy.obligations.delete_after_days,
+            ),
         ):
             if value is not None and value <= 0:
                 result.error(
@@ -412,7 +432,11 @@ def check_validity_window(
 ) -> None:
     for item in exposed:
         policy = item.rule.policy
-        if policy.valid_from and policy.valid_until and policy.valid_from > policy.valid_until:
+        if (
+            policy.valid_from
+            and policy.valid_until
+            and policy.valid_from > policy.valid_until
+        ):
             result.error(
                 "validity-window",
                 f"policy.valid_from ({policy.valid_from}) is after "

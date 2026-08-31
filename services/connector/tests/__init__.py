@@ -59,18 +59,22 @@ def make_vc_headers(
     and forgetting to override it produces a 403 that looks like a scope problem.
     """
     header = _b64url(json.dumps({"alg": "ES256", "typ": "JWT"}))
-    payload = _b64url(json.dumps({
-        "iss": "did:web:trust-anchor.dataspaces.localhost",
-        "sub": subject_did,
-        "vc": {
-            "issuer": "did:web:trust-anchor.dataspaces.localhost",
-            "credentialSubject": {
-                "id": subject_did,
-                "role": role,
-                "linkedParticipant": linked_participant,
-            },
-        },
-    }))
+    payload = _b64url(
+        json.dumps(
+            {
+                "iss": "did:web:trust-anchor.dataspaces.localhost",
+                "sub": subject_did,
+                "vc": {
+                    "issuer": "did:web:trust-anchor.dataspaces.localhost",
+                    "credentialSubject": {
+                        "id": subject_did,
+                        "role": role,
+                        "linkedParticipant": linked_participant,
+                    },
+                },
+            }
+        )
+    )
     return {
         "X-Subject-Id": subject_did,
         "X-User-VC": f"{header}.{payload}.{_b64url('unverified-in-dev')}",

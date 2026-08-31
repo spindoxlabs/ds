@@ -1,11 +1,9 @@
 """Tests for governance overlay merge (from_file_with_override, _merge_configs, _merge_rule)."""
+
 from __future__ import annotations
 
-from pathlib import Path
 
-import pytest
-
-from ds.governance.resolver import GovernanceConfig, GovernanceResolver
+from ds.governance.resolver import GovernanceResolver
 
 
 BASE_YAML = """\
@@ -110,17 +108,13 @@ class TestMergeRuleSemantics:
         base = GovernanceResolver._parse_rule(
             {"ownership": [{"name": "old-org"}], "tags": ["a"]}
         )
-        override = GovernanceResolver._parse_rule(
-            {"ownership": [{"name": "new-org"}]}
-        )
+        override = GovernanceResolver._parse_rule({"ownership": [{"name": "new-org"}]})
         merged = GovernanceResolver._merge_rule(base, override)
         assert len(merged.ownership) == 1
         assert merged.ownership[0].name == "new-org"
 
     def test_empty_lists_preserve_base(self, tmp_path):
-        base = GovernanceResolver._parse_rule(
-            {"ownership": [{"name": "org-a"}]}
-        )
+        base = GovernanceResolver._parse_rule({"ownership": [{"name": "org-a"}]})
         override = GovernanceResolver._parse_rule({})
         merged = GovernanceResolver._merge_rule(base, override)
         assert len(merged.ownership) == 1

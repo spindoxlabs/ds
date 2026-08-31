@@ -1,4 +1,5 @@
 """Governance YAML → EDC payload service."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -102,9 +103,13 @@ class ConnectorGovernanceMapper:
             ),
         )
 
-    def to_policy_create(self, dataset_key: str, rule: GovernanceRuleV2) -> PolicyCreate:
+    def to_policy_create(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> PolicyCreate:
         ds = rule.dataspace
-        policy_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
+        policy_id = (
+            ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
+        )
 
         odrl_offer = self._mapper.to_odrl_offer(dataset_key, rule)
         odrl_set = self._to_edc_policy({**odrl_offer, "@type": "odrl:Set"})
@@ -124,17 +129,21 @@ class ConnectorGovernanceMapper:
         asset_id: str,
     ) -> ContractDefCreate:
         ds = rule.dataspace
-        contract_id = ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-contract"
+        contract_id = (
+            ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-contract"
+        )
         return ContractDefCreate(
             id=contract_id,
             access_policy_id=ds.contract.access_policy_id or policy_id,
             contract_policy_id=ds.contract.contract_policy_id or policy_id,
-            assets_selector=[{
-                "@type": "CriterionDto",
-                "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
-                "operator": "=",
-                "operandRight": asset_id,
-            }],
+            assets_selector=[
+                {
+                    "@type": "CriterionDto",
+                    "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
+                    "operator": "=",
+                    "operandRight": asset_id,
+                }
+            ],
         )
 
     # `_infer_medallion` lived here too, character for character identical to
@@ -188,7 +197,10 @@ class ConnectorGovernanceMapper:
         """
         if not isinstance(constraint, dict):
             return constraint
-        if constraint.get("odrl:leftOperand") not in ("odrl:purpose", cls.PURPOSE_OPERAND):
+        if constraint.get("odrl:leftOperand") not in (
+            "odrl:purpose",
+            cls.PURPOSE_OPERAND,
+        ):
             return constraint
 
         right = constraint.get("odrl:rightOperand")
@@ -212,7 +224,9 @@ def load_exposed_datasets(
 ) -> dict[str, GovernanceRuleV2]:
     """Load governance.yaml (with optional overlay) and return datasets where expose: true and access_level != secret."""
     path = Path(governance_yaml_path)
-    resolver = GovernanceResolver.from_file_with_override(path, overlay_name=overlay_name)
+    resolver = GovernanceResolver.from_file_with_override(
+        path, overlay_name=overlay_name
+    )
     result: dict[str, GovernanceRuleV2] = {}
     for key in resolver.config.sources:
         rule = resolver.resolve(key)
@@ -249,7 +263,9 @@ def owner_by_edc_id(
             continue
         ds = rule.dataspace
         policy_id = ds.contract.access_policy_id or f"{key.replace('.', '-')}-policy"
-        contract_id = ds.contract.access_policy_id or f"{key.replace('.', '-')}-contract"
+        contract_id = (
+            ds.contract.access_policy_id or f"{key.replace('.', '-')}-contract"
+        )
         for object_id in (policy_id, contract_id, ds.contract.contract_policy_id):
             if object_id:
                 index[object_id] = owner

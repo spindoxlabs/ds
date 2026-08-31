@@ -9,6 +9,7 @@ happened to be newest rather than the one the operation requires.
 The singular `role`/`vc_jws` fields stay because `libs/ds-e2e` and the portal
 read them; they must keep meaning "the newest presentable credential".
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -210,10 +211,12 @@ async def test_derive_returns_subject_id_without_mapping(client):
 @pytest.mark.asyncio
 async def test_derive_is_deterministic(client):
     r1 = await client.get(
-        "/users/resolve?email=new@example.test&derive=true", headers=_headers(),
+        "/users/resolve?email=new@example.test&derive=true",
+        headers=_headers(),
     )
     r2 = await client.get(
-        "/users/resolve?email=New@Example.TEST&derive=true", headers=_headers(),
+        "/users/resolve?email=New@Example.TEST&derive=true",
+        headers=_headers(),
     )
     assert r1.json()["subject_id"] == r2.json()["subject_id"]
 
@@ -222,7 +225,8 @@ async def test_derive_is_deterministic(client):
 async def test_derive_false_still_404s(client):
     """Backwards compat: without derive, unknown email is a 404."""
     r = await client.get(
-        "/users/resolve?email=unknown@example.test", headers=_headers(),
+        "/users/resolve?email=unknown@example.test",
+        headers=_headers(),
     )
     assert r.status_code == 404
 
@@ -234,7 +238,8 @@ async def test_derive_prefers_existing_mapping(client, db_session):
     await _seed_user(db_session)
 
     r = await client.get(
-        f"/users/resolve?email={EMAIL}&derive=true", headers=_headers(),
+        f"/users/resolve?email={EMAIL}&derive=true",
+        headers=_headers(),
     )
     assert r.status_code == 200
     body = r.json()

@@ -1,11 +1,12 @@
 """Tests for GET /provider/authorizations."""
-from datetime import datetime, timezone
+
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from tests import make_headers
 from connector.db.models import ConsentRequestORM
+from tests import make_headers
 
 HEADERS = make_headers(scope="connector.admin")
 
@@ -24,28 +25,30 @@ async def test_authorizations_returns_granted(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
-            session.add_all([
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:alice",
-                    dataset_id="datasets.silver.meters_15m",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:bob",
-                    dataset_id="datasets.silver.meters_15m",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 2, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-            ])
+            session.add_all(
+                [
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:alice",
+                        dataset_id="datasets.silver.meters_15m",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:bob",
+                        dataset_id="datasets.silver.meters_15m",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 2, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 2, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                ]
+            )
 
     r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
@@ -66,29 +69,31 @@ async def test_authorizations_excludes_revoked(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
-            session.add_all([
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:alice",
-                    dataset_id="datasets.silver.meters_15m",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:alice",
-                    dataset_id="datasets.silver.meters_15m",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="revoked",
-                    requested_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 2, 1, tzinfo=timezone.utc),
-                    revoked_at=datetime(2026, 1, 2, 2, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-            ])
+            session.add_all(
+                [
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:alice",
+                        dataset_id="datasets.silver.meters_15m",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:alice",
+                        dataset_id="datasets.silver.meters_15m",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="revoked",
+                        requested_at=datetime(2026, 1, 2, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 2, 1, tzinfo=UTC),
+                        revoked_at=datetime(2026, 1, 2, 2, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                ]
+            )
 
     r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
@@ -101,28 +106,30 @@ async def test_authorizations_multiple_datasets(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
-            session.add_all([
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:alice",
-                    dataset_id="datasets.silver.meters_15m",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-                ConsentRequestORM(
-                    subject_id="did:web:users.ds.localhost:bob",
-                    dataset_id="datasets.gold.energy_community",
-                    consumer_id="did:web:tp.ds.localhost",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-            ])
+            session.add_all(
+                [
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:alice",
+                        dataset_id="datasets.silver.meters_15m",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                    ConsentRequestORM(
+                        subject_id="did:web:users.ds.localhost:bob",
+                        dataset_id="datasets.gold.energy_community",
+                        consumer_id="did:web:tp.ds.localhost",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                ]
+            )
 
     r = await client.get("/provider/authorizations", headers=HEADERS)
     assert r.status_code == 200
@@ -146,8 +153,8 @@ async def test_authorizations_no_private_data(engine, client):
                     dataset_id="datasets.silver.meters_15m",
                     consumer_id="did:web:tp.ds.localhost",
                     status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
+                    requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
                     purpose=["analytics"],
                     message="Please share data",
                     notification_url="http://internal.example/webhook",

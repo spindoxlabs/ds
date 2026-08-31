@@ -13,6 +13,7 @@ The code is the only credential the applicant has, so it is treated like one:
 generated with `secrets`, stored as a SHA-256 hash, single-use, optionally
 expiring, and never readable back.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -79,9 +80,7 @@ async def create_invite(
         label=data.label,
         created_by=getattr(principal, "subject", None) or data.created_by,
         expires_at=(
-            datetime.now(UTC) + timedelta(days=data.ttl_days)
-            if data.ttl_days
-            else None
+            datetime.now(UTC) + timedelta(days=data.ttl_days) if data.ttl_days else None
         ),
     )
     db.add(invite)
@@ -171,7 +170,9 @@ async def list_invites(
     _principal=Depends(require_org_read),
 ):
     """Outstanding and spent invites. Codes are never included."""
-    result = await db.execute(select(OnboardingInvite).order_by(OnboardingInvite.created_at.desc()))
+    result = await db.execute(
+        select(OnboardingInvite).order_by(OnboardingInvite.created_at.desc())
+    )
     return [
         InviteResponse(
             id=i.id,
@@ -186,7 +187,9 @@ async def list_invites(
     ]
 
 
-@public_router.post("/applications", status_code=201, response_model=PublicApplicationResponse)
+@public_router.post(
+    "/applications", status_code=201, response_model=PublicApplicationResponse
+)
 async def submit_application(
     data: PublicOrganizationApplicationRequest,
     db: AsyncSession = Depends(get_db),
@@ -201,10 +204,14 @@ async def submit_application(
     Every rejection answers the same way, so the route cannot be used to probe
     which codes exist.
     """
-    invalid = HTTPException(status_code=403, detail="Invalid or already used invite code")
+    invalid = HTTPException(
+        status_code=403, detail="Invalid or already used invite code"
+    )
 
     result = await db.execute(
-        select(OnboardingInvite).where(OnboardingInvite.code_hash == _hash(data.invite_code))
+        select(OnboardingInvite).where(
+            OnboardingInvite.code_hash == _hash(data.invite_code)
+        )
     )
     invite = result.scalar_one_or_none()
     now = datetime.now(UTC)
@@ -212,10 +219,14 @@ async def submit_application(
         raise invalid
 
     existing = await db.execute(
-        select(OrganizationApplication).where(OrganizationApplication.alias == data.alias)
+        select(OrganizationApplication).where(
+            OrganizationApplication.alias == data.alias
+        )
     )
     if existing.scalar_one_or_none():
-        raise HTTPException(status_code=409, detail=f"Alias '{data.alias}' is already taken")
+        raise HTTPException(
+            status_code=409, detail=f"Alias '{data.alias}' is already taken"
+        )
 
     application = OrganizationApplication(
         alias=data.alias,

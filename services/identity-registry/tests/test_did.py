@@ -13,8 +13,14 @@ def test_participant_did_document():
         public_jwk=kp.public_jwk,
         did_type="participant",
         service_endpoints=[
-            {"type": "DSPEndpoint", "serviceEndpoint": "https://rec.dataspaces.localhost/protocol"},
-            {"type": "CredentialService", "serviceEndpoint": "https://vc-wallet-rec.dataspaces.localhost/api/v1"},
+            {
+                "type": "DSPEndpoint",
+                "serviceEndpoint": "https://rec.dataspaces.localhost/protocol",
+            },
+            {
+                "type": "CredentialService",
+                "serviceEndpoint": "https://vc-wallet-rec.dataspaces.localhost/api/v1",
+            },
         ],
     )
     assert doc["id"] == "did:web:rec.dataspaces.localhost"

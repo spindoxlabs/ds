@@ -1,4 +1,5 @@
 """Data models for parsed JWT claims."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -61,8 +62,7 @@ class Organization:
             raw_attrs = data.get("attributes", {})
             if isinstance(raw_attrs, dict):
                 attributes = {
-                    k: v if isinstance(v, list) else [v]
-                    for k, v in raw_attrs.items()
+                    k: v if isinstance(v, list) else [v] for k, v in raw_attrs.items()
                 }
 
             raw_groups = data.get("groups")

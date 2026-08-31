@@ -328,7 +328,9 @@ class Settings(BaseSettings):
         dev does not serve: a revocation check that cannot fetch the list fails
         closed, so revocation has never been verifiable here.
         """
-        return self.identity_registry_public_url or f"https://{self.trust_anchor_domain}"
+        return (
+            self.identity_registry_public_url or f"https://{self.trust_anchor_domain}"
+        )
 
     def status_list_url(self, list_id: int | str = 1) -> str:
         return f"{self.public_base_url}/status/{list_id}"

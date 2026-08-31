@@ -5,6 +5,7 @@ A service builds an :class:`OidcConfig` from its own settings and stores it on
 dataclass — no environment coupling — so each service keeps its existing
 settings prefix (e.g. ``CONNECTOR_OIDC_ISSUER_URL``) and maps it in.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping

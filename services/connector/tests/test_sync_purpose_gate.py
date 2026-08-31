@@ -6,20 +6,21 @@ typo'd or missing purpose was published **with no purpose limitation** and the
 sync reported success. These tests are the record that it now fails loudly, and
 that it fails for every offending dataset in one pass rather than the first.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
 
 import pytest
-
-from connector.services.governance import ConnectorGovernanceMapper
-from connector.services.provider_service import sync_governance
 from ds.governance.models import (
     DataspacePolicy,
     DataspaceSpec,
     GovernanceRuleV2,
     load_odrl_profile,
 )
+
+from connector.services.governance import ConnectorGovernanceMapper
+from connector.services.provider_service import sync_governance
 
 
 def _mapper() -> ConnectorGovernanceMapper:
@@ -131,11 +132,13 @@ async def test_every_offender_is_reported_in_one_pass(datasets):
     Failing fast would turn one revision into three round trips, which is the
     opposite of blocking early to allow a fix.
     """
-    datasets({
-        "datasets.gold.a": _rule(["energy-monitoring"]),
-        "datasets.gold.b": _rule([]),
-        "datasets.gold.c": _rule(["also-wrong"]),
-    })
+    datasets(
+        {
+            "datasets.gold.a": _rule(["energy-monitoring"]),
+            "datasets.gold.b": _rule([]),
+            "datasets.gold.c": _rule(["also-wrong"]),
+        }
+    )
     edc = _RecordingEdc()
 
     result = await _sync(edc)
@@ -151,10 +154,12 @@ async def test_every_offender_is_reported_in_one_pass(datasets):
 @pytest.mark.asyncio
 async def test_one_bad_dataset_does_not_block_the_good_ones(datasets):
     """Rejection is per dataset — a bad edit must not empty the catalogue."""
-    datasets({
-        "datasets.gold.bad": _rule(["nope"]),
-        "datasets.gold.good": _rule(["EnergyForecasting"]),
-    })
+    datasets(
+        {
+            "datasets.gold.bad": _rule(["nope"]),
+            "datasets.gold.good": _rule(["EnergyForecasting"]),
+        }
+    )
     edc = _RecordingEdc()
 
     result = await _sync(edc)
@@ -182,6 +187,7 @@ async def test_absolute_iri_from_another_vocabulary_is_accepted(datasets):
 # The sync reads offers from beside the governance file it was handed, so these
 # resolve against `tests/fixtures/sharing-offers.yaml`.
 
+
 @pytest.fixture
 def fixture_governance() -> str:
     return str(Path(__file__).parent / "fixtures" / "governance.yaml")
@@ -190,7 +196,7 @@ def fixture_governance() -> str:
 @pytest.mark.rule("C-10")
 @pytest.mark.asyncio
 async def test_unresolvable_offer_id_is_not_published(datasets, fixture_governance):
-    """"No sharing offer" and "not shared" are the same statement.
+    """ "No sharing offer" and "not shared" are the same statement.
 
     Publishing while skipping only the reference would advertise a consent gate
     that can never open — a consumer negotiates for data no grant can unlock.
@@ -230,7 +236,9 @@ async def test_declaring_no_offer_is_not_an_error(datasets, fixture_governance):
 
 
 @pytest.mark.asyncio
-async def test_both_problems_on_one_dataset_are_both_reported(datasets, fixture_governance):
+async def test_both_problems_on_one_dataset_are_both_reported(
+    datasets, fixture_governance
+):
     """One revision, not two round trips."""
     datasets({"datasets.gold.both": _rule(["nope"], ["also-missing"])})
     edc = _RecordingEdc()

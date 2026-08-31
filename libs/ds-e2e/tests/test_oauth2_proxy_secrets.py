@@ -23,6 +23,7 @@ invariant is *per secret-bearing option*: it appears in no config file, and it
 is passed as an environment variable by every mode that runs the image. Adding
 an option to `SECRET_OPTIONS` is therefore all it takes to cover the next one.
 """
+
 from __future__ import annotations
 
 import re

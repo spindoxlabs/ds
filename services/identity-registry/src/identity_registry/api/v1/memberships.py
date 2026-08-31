@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -54,9 +52,7 @@ async def create_membership(
     # clear 404 instead of surfacing an IntegrityError as a 500.
     known_did = await db.execute(select(Did.did).where(Did.did == data.user_did))
     if not known_did.scalar_one_or_none():
-        raise HTTPException(
-            status_code=404, detail=f"Unknown DID: {data.user_did}"
-        )
+        raise HTTPException(status_code=404, detail=f"Unknown DID: {data.user_did}")
 
     membership = OrganizationMembership(
         user_did=data.user_did,
@@ -89,7 +85,9 @@ async def list_memberships(
     return [_to_response(m) for m in result.scalars().all()]
 
 
-@router.delete("/admin/memberships/{user_did:path}/{organization_alias}", status_code=204)
+@router.delete(
+    "/admin/memberships/{user_did:path}/{organization_alias}", status_code=204
+)
 async def delete_membership(
     user_did: str,
     organization_alias: str,

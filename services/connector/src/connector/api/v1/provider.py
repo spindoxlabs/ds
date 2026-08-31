@@ -1,17 +1,15 @@
 """Provider management routes."""
+
 from __future__ import annotations
 
+from ds_auth import Principal
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import ContractAgreementORM
-from ds_auth import Principal
-
-from ...services.prov_bridge import acting_principal
 from ...dependencies import (
     get_db,
     get_provider_edc,
@@ -21,6 +19,7 @@ from ...dependencies import (
     require_provider_write_own,
 )
 from ...services.authorization_service import get_authorized_datasets
+from ...services.prov_bridge import acting_principal
 
 router = APIRouter(prefix="/provider", tags=["provider"])
 
@@ -49,18 +48,20 @@ async def sync(
     from ...services.governance import ConnectorGovernanceMapper, load_exposed_datasets
     from ...services.provider_service import sync_governance
 
-    yaml_path = (req.governance_yaml_path if req else None) or settings.governance_yaml_path
+    yaml_path = (
+        req.governance_yaml_path if req else None
+    ) or settings.governance_yaml_path
     profile = load_odrl_profile(settings.odrl_profile_path)
 
     owner_did_resolver = None
-    owners_registry = getattr(request.app.state, "owners_registry", None) if request else None
+    owners_registry = (
+        getattr(request.app.state, "owners_registry", None) if request else None
+    )
     if owners_registry is not None:
-        datasets = load_exposed_datasets(yaml_path, overlay_name=settings.governance_overlay_name)
-        owner_aliases = {
-            o.name
-            for rule in datasets.values()
-            for o in rule.ownership
-        }
+        datasets = load_exposed_datasets(
+            yaml_path, overlay_name=settings.governance_overlay_name
+        )
+        owner_aliases = {o.name for rule in datasets.values() for o in rule.ownership}
         resolved: dict[str, str | None] = {}
         for alias in owner_aliases:
             resolved[alias] = await owners_registry.canonical_uri(alias)
@@ -134,12 +135,18 @@ async def get_authorizations(
 
 
 @router.get("/assets")
-async def list_assets(edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def list_assets(
+    edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)
+):
     return await edc.list_assets()
 
 
 @router.get("/assets/{asset_id:path}")
-async def get_asset(asset_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def get_asset(
+    asset_id: str,
+    edc=Depends(get_provider_edc),
+    _c: dict = Depends(require_provider_read),
+):
     try:
         return await edc.get_asset(asset_id)
     except Exception:
@@ -158,7 +165,9 @@ async def delete_asset(
 
 
 @router.get("/policies")
-async def list_policies(edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def list_policies(
+    edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)
+):
     return await edc.list_policies()
 
 
@@ -174,7 +183,9 @@ async def delete_policy(
 
 
 @router.get("/contracts")
-async def list_contracts(edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def list_contracts(
+    edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)
+):
     return await edc.list_contract_definitions()
 
 
@@ -223,10 +234,16 @@ async def list_agreements(
 
 
 @router.get("/transfers")
-async def list_transfers(edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def list_transfers(
+    edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)
+):
     return await edc.list_transfers()
 
 
 @router.get("/transfers/{transfer_id}")
-async def get_transfer(transfer_id: str, edc=Depends(get_provider_edc), _c: dict = Depends(require_provider_read)):
+async def get_transfer(
+    transfer_id: str,
+    edc=Depends(get_provider_edc),
+    _c: dict = Depends(require_provider_read),
+):
     return await edc.get_transfer(transfer_id)

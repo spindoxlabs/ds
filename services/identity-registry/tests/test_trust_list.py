@@ -279,9 +279,7 @@ async def test_a_participant_instance_does_not_publish_a_trust_list(monkeypatch)
     monkeypatch.setenv("IDENTITY_REGISTRY_PARTICIPANT_DID", "did:web:rec.example.test")
     get_settings.cache_clear()
     try:
-        paths = set(
-            TestClient(create_app()).get("/openapi.json").json()["paths"]
-        )
+        paths = set(TestClient(create_app()).get("/openapi.json").json()["paths"])
         assert "/trust" not in paths
     finally:
         get_settings.cache_clear()

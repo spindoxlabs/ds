@@ -18,6 +18,7 @@ The tie-break is not ours to invent — `get_row_filter_specs` in the real celin
 agreed with that; the helper did not, which is the opposite of what the defect
 row said.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -62,6 +63,7 @@ def published_column(r: GovernanceRuleV2) -> str | None:
 
 # ── The two spellings, read alone ────────────────────────────────────────────
 
+
 def test_canonical_spelling_alone():
     r = rule(row_filters=[row_filter(CANONICAL)])
     assert subject_column(r) == CANONICAL
@@ -83,6 +85,7 @@ def test_neither_spelling_means_no_subject_column():
 
 
 # ── Both declared: the case that was inconsistent ────────────────────────────
+
 
 def test_canonical_wins_when_both_are_declared():
     """The real dataset-api's order, and now ours.
@@ -131,6 +134,7 @@ def test_the_catalogue_never_describes_a_filter_the_pdp_does_not_apply(kwargs):
 
 
 # ── Shape tolerance, since fixtures build rules by hand ──────────────────────
+
 
 def test_a_row_filter_whose_args_are_a_plain_dict_is_read():
     """Parsed YAML gives a model; a hand-built test fixture gives a dict. A

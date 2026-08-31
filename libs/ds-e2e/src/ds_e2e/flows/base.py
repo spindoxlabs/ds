@@ -91,10 +91,13 @@ class BaseFlow(ABC):
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
         encoded_email = urllib.parse.quote(email, safe="")
-        resp = self.http.get(
-            f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
-            headers=headers,
-        ) or {}
+        resp = (
+            self.http.get(
+                f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
+                headers=headers,
+            )
+            or {}
+        )
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")

@@ -1,4 +1,5 @@
 """The defect being fixed: `log.info` reached nobody, in every service."""
+
 from __future__ import annotations
 
 import json
@@ -23,7 +24,10 @@ def _restore_logging():
 def _access_record(path: str, status: int) -> logging.LogRecord:
     """Shaped like uvicorn's own access record: (host, method, path, http, status)."""
     return logging.LogRecord(
-        "uvicorn.access", logging.INFO, __file__, 1,
+        "uvicorn.access",
+        logging.INFO,
+        __file__,
+        1,
         '%s - "%s %s HTTP/%s" %d',
         ("127.0.0.1:1", "GET", path, "1.1", status),
         None,

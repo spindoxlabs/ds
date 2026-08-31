@@ -41,6 +41,7 @@ So the anchor keeps those routes, and what narrows is the **data** — after
 nothing but itself. `DID-12` is the invariant that asserts it, and it belongs
 there rather than here because it is a fact about custody, not about routing.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

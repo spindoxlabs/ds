@@ -1,4 +1,5 @@
 """Consumer-side service: catalog → negotiate → transfer → EDR."""
+
 from __future__ import annotations
 
 import inspect
@@ -94,7 +95,9 @@ class ConsumerService:
         self._provider_id = provider_id
         self._allow_unknown_participants = allow_unknown_participants
 
-    async def request_catalog(self, counter_party_address: str, counter_party_id: str | None = None) -> dict:
+    async def request_catalog(
+        self, counter_party_address: str, counter_party_id: str | None = None
+    ) -> dict:
         participant = None
         try:
             result = self._registry.validate(counter_party_address)
@@ -102,7 +105,10 @@ class ConsumerService:
         except UnknownParticipantError:
             if not self._allow_unknown_participants:
                 raise
-            log.warning("Counter-party %s not in registry — proceeding anyway", counter_party_address)
+            log.warning(
+                "Counter-party %s not in registry — proceeding anyway",
+                counter_party_address,
+            )
 
         # **The counterparty id is the audience of the DCP token this request is
         # authenticated with**, so naming the wrong participant is not a
@@ -135,9 +141,15 @@ class ConsumerService:
         if catalog_policy:
             odrl_policy = catalog_policy
             offer_id = str(catalog_policy.get("@id") or offer_id)
-            assigner = _id_of(catalog_policy.get("assigner")) or _id_of(catalog_policy.get("odrl:assigner")) or assigner
+            assigner = (
+                _id_of(catalog_policy.get("assigner"))
+                or _id_of(catalog_policy.get("odrl:assigner"))
+                or assigner
+            )
         elif odrl_policy:
-            odrl_policy = self._fallback_policy(odrl_policy, offer_id, asset_id, assigner)
+            odrl_policy = self._fallback_policy(
+                odrl_policy, offer_id, asset_id, assigner
+            )
         req = NegotiationRequest(
             counter_party_address=counter_party_address,
             offer_id=offer_id,
@@ -171,7 +183,9 @@ class ConsumerService:
             return policy
         return None
 
-    def _fallback_policy(self, policy: dict, offer_id: str, asset_id: str, assigner: str) -> dict:
+    def _fallback_policy(
+        self, policy: dict, offer_id: str, asset_id: str, assigner: str
+    ) -> dict:
         normalised = _normalise_odrl(policy)
         if not isinstance(normalised, dict):
             normalised = {}
@@ -206,7 +220,7 @@ class ConsumerService:
         # 1. Negotiate
         negotiation_id = await self.negotiate(
             counter_party_address=req.counter_party_address,
-            offer_id=req.asset_id,   # EDC v3 uses offer_id = asset_id until catalog lookup
+            offer_id=req.asset_id,  # EDC v3 uses offer_id = asset_id until catalog lookup
             asset_id=req.asset_id,
             assigner=req.assigner,
         )
@@ -221,7 +235,10 @@ class ConsumerService:
         # A stall no longer arrives here as `state="TIMEOUT"`: `poll_negotiation`
         # raises `EdcPollTimeout`, which the route turns into a 504. This branch
         # is now only reached for a state EDC actually produced.
-        if neg_state.state not in ("FINALIZED", "VERIFIED", "AGREED") or not neg_state.contract_agreement_id:
+        if (
+            neg_state.state not in ("FINALIZED", "VERIFIED", "AGREED")
+            or not neg_state.contract_agreement_id
+        ):
             raise RuntimeError(
                 f"Negotiation {negotiation_id} failed: state={neg_state.state} "
                 f"error={neg_state.error_detail}"

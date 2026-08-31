@@ -190,8 +190,7 @@ def participant_init(
             )
             for endpoint in identity.service_endpoints:
                 typer.echo(
-                    f"  publishes {endpoint['type']}: "
-                    f"{endpoint['serviceEndpoint']}"
+                    f"  publishes {endpoint['type']}: {endpoint['serviceEndpoint']}"
                 )
 
             if not code:
@@ -303,8 +302,10 @@ def agreement_accept(
             if version:
                 query = query.where(Agreement.version == version)
             rows = (
-                await session.execute(query.order_by(Agreement.version.desc()))
-            ).scalars().all()
+                (await session.execute(query.order_by(Agreement.version.desc())))
+                .scalars()
+                .all()
+            )
             if not rows:
                 typer.echo(
                     f"Agreement not found: {agreement_id}"
@@ -351,7 +352,9 @@ def credential_issue_membership(
             )
             ta_key = ta_key_result.scalar_one_or_none()
             if not ta_key:
-                typer.echo("Trust anchor not bootstrapped. Run: ir-cli bootstrap", err=True)
+                typer.echo(
+                    "Trust anchor not bootstrapped. Run: ir-cli bootstrap", err=True
+                )
                 raise typer.Exit(1)
 
             sl_index = await allocate_suspendable_index(session)
@@ -373,7 +376,9 @@ def credential_issue_membership(
                 credential_id=cred_id,
                 ttl_days=ttl_days,
             )
-            ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+            ta_raw_jwk = decrypt_private_jwk(
+                ta_key.private_jwk, settings.encryption_key
+            )
             signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
             cred = Credential(
@@ -448,8 +453,10 @@ def credential_issue_data_subject(
 
         async with factory() as session:
             existing_did = (
-                await session.execute(select(Did.did).where(Did.did_type == "user"))
-            ).scalars().all()
+                (await session.execute(select(Did.did).where(Did.did_type == "user")))
+                .scalars()
+                .all()
+            )
             for known in existing_did:
                 if subject_id_of(known) == subject_id:
                     subject_did = known
@@ -530,13 +537,18 @@ def credential_issue_data_subject(
                 credential_id=cred_id,
                 ttl_days=ttl_days,
             )
-            ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+            ta_raw_jwk = decrypt_private_jwk(
+                ta_key.private_jwk, settings.encryption_key
+            )
             signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
             cred = Credential(
-                id=cred_id, credential_type="DataSubjectCredential",
-                issuer_did=ta_did, subject_did=subject_did,
-                credential_json=signed_vc, status_list_index=sl_index,
+                id=cred_id,
+                credential_type="DataSubjectCredential",
+                issuer_did=ta_did,
+                subject_did=subject_did,
+                credential_json=signed_vc,
+                status_list_index=sl_index,
                 expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
             )
             session.add(cred)
@@ -716,8 +728,11 @@ def key_rotate(
 
             kp = generate_key_pair(did, key_index=new_index)
             new_key = Key(
-                owner_did=did, kid=kp.kid,
-                private_jwk=encrypt_private_jwk(kp.private_jwk, settings.encryption_key),
+                owner_did=did,
+                kid=kp.kid,
+                private_jwk=encrypt_private_jwk(
+                    kp.private_jwk, settings.encryption_key
+                ),
                 public_jwk=kp.public_jwk,
             )
             session.add(new_key)
@@ -761,7 +776,9 @@ def key_custody_check():
             typer.echo(f"FOREIGN   {key.did}   ({key.did_type}, kid={key.kid})")
 
         if report.ok:
-            typer.echo(f"\nOK — {report.summary()}. This instance signs only as itself.")
+            typer.echo(
+                f"\nOK — {report.summary()}. This instance signs only as itself."
+            )
             return
 
         typer.echo("", err=True)
@@ -854,7 +871,9 @@ def status_check_indices():
 @keycloak_app.command("org-sync")
 def keycloak_org_sync(
     config: Path = typer.Option(..., help="Path to organizations.yaml"),
-    keycloak_url: str = typer.Option("http://172.17.0.1:9080", help="Keycloak base URL"),
+    keycloak_url: str = typer.Option(
+        "http://172.17.0.1:9080", help="Keycloak base URL"
+    ),
     realm: str = typer.Option(None, help="Keycloak realm (default: realm from config)"),
     admin_user: str = typer.Option("admin", help="KC master-realm admin user"),
     admin_password: str = typer.Option("admin", help="KC master-realm admin password"),
@@ -876,7 +895,9 @@ def keycloak_org_sync(
     org_config = load_organizations_config(config)
     target_realm = realm or org_config.realm
     if not target_realm:
-        typer.echo("No realm given — pass --realm or set 'realm' in the config", err=True)
+        typer.echo(
+            "No realm given — pass --realm or set 'realm' in the config", err=True
+        )
         raise typer.Exit(1)
 
     async def _sync():
@@ -937,9 +958,7 @@ def keycloak_map_user(
         from sqlalchemy import select
 
         async with factory() as session:
-            did_result = await session.execute(
-                select(Did).where(Did.did == did)
-            )
+            did_result = await session.execute(select(Did).where(Did.did == did))
             if not did_result.scalar_one_or_none():
                 typer.echo(f"DID not found: {did}", err=True)
                 typer.echo("Issue a credential first to create the DID.", err=True)
@@ -1006,9 +1025,7 @@ def _owner_verification_fields(
         )
         raise typer.Exit(1)
     if resolved == "verified" and not verified_by:
-        typer.echo(
-            f"{context}: status 'verified' requires 'verified_by'", err=True
-        )
+        typer.echo(f"{context}: status 'verified' requires 'verified_by'", err=True)
         raise typer.Exit(1)
     if resolved == "verified" and verified_at is None:
         verified_at = datetime.now(UTC)
@@ -1028,9 +1045,7 @@ def owner_add(
     did: str = typer.Option(None, help="did:web: URI"),
     url: str = typer.Option(None, help="Canonical homepage URI"),
     alias: list[str] = typer.Option([], help="Alternative lookup keys (repeatable)"),
-    status: str = typer.Option(
-        None, help="Verification status (default: pending)"
-    ),
+    status: str = typer.Option(None, help="Verification status (default: pending)"),
     verified_by: str = typer.Option(
         None, help="Who verified this owner (required when status=verified)"
     ),
@@ -1068,9 +1083,7 @@ def owner_add(
             )
             session.add(owner)
             await session.commit()
-            typer.echo(
-                f"Owner registered: {id} ({name}) [{verification['status']}]"
-            )
+            typer.echo(f"Owner registered: {id} ({name}) [{verification['status']}]")
 
     _run(_add())
 
@@ -1125,16 +1138,69 @@ def owner_remove(
     _run(_remove())
 
 
+def _refuse_dev_dids(pairs: list[tuple[str, str]]) -> None:
+    """Refuse a seed carrying a machine-local DID when this is production.
+
+    A `did:web` is a URL, so a `.localhost` DID is not merely cosmetic in
+    production — it is an identity that resolves nowhere, written into owner
+    rows, then into issued credentials and recorded provenance, where correcting
+    it destroys the evidence it was recorded as. Nothing on the resolve/export
+    path fetches it, so the mistake surfaces only at negotiation, long after
+    those records are made.
+
+    `DS_ENV` defaults to production when unset (`ds_auth.production`), so
+    forgetting the variable refuses rather than permits. In dev this is silent:
+    the dev DIDs *are* `.localhost`, and that is correct there.
+
+    Every violation is reported before exiting — a fourteen-owner deployment file
+    is fixed in one pass, the same shape as `ProductionGuard` and the selection
+    errors beside it.
+    """
+    # `ds-auth` ships no `py.typed`, so mypy skips it — the same silence the
+    # other `ds_auth` imports in this tree carry.
+    from ds_auth.production import is_production  # type: ignore[import-untyped]
+
+    from ..services.did import dev_only_did_reason
+
+    if not is_production():
+        return
+
+    violations: list[tuple[str, str, str]] = []
+    for alias, did in pairs:
+        if not did:
+            continue
+        reason = dev_only_did_reason(did)
+        if reason:
+            violations.append((alias, did, reason))
+    if not violations:
+        return
+
+    typer.echo(
+        "DS_ENV=production, and this seed carries DIDs that only resolve on a "
+        "developer's machine:",
+        err=True,
+    )
+    for alias, did, reason in violations:
+        typer.echo(f"  - {alias}: {did}\n    \u2192 {reason}", err=True)
+    typer.echo(
+        "A did:web is a URL: the host is the identity. Give each organisation "
+        "the host it is actually served from, or run this with DS_ENV=dev.",
+        err=True,
+    )
+    raise typer.Exit(1)
+
+
 @owner_app.command("import")
 def owner_import(
-    file: list[Path] = typer.Option(..., help="YAML seed file(s); later files shadow earlier"),
+    file: list[Path] = typer.Option(
+        ..., help="YAML seed file(s); later files shadow earlier"
+    ),
 ):
     """Bulk upsert owners from YAML seed file(s)."""
 
     async def _import():
         import yaml
 
-        factory = await _ensure_db()
         from sqlalchemy import select
 
         entries: dict[str, dict] = {}
@@ -1147,12 +1213,16 @@ def owner_import(
             for entry in data.get("owners", []):
                 entries[entry["id"]] = entry
 
+        # Before the database, deliberately: this reads the file the operator
+        # passed, so it must answer on a machine with no registry to connect to
+        # — a review, a CI check, a dry run before the stack exists.
+        _refuse_dev_dids([(oid, e.get("did") or "") for oid, e in entries.items()])
+
+        factory = await _ensure_db()
         async with factory() as session:
             count = 0
             for oid, entry in entries.items():
-                result = await session.execute(
-                    select(Owner).where(Owner.id == oid)
-                )
+                result = await session.execute(select(Owner).where(Owner.id == oid))
                 existing = result.scalar_one_or_none()
 
                 raw_verified_at = entry.get("verified_at")
@@ -1267,9 +1337,7 @@ def membership_list(
                 typer.echo(f"No members in {organization}.")
                 return
             for m in memberships:
-                typer.echo(
-                    f"  {m.user_did}  role={m.role or '-'}  status={m.status}"
-                )
+                typer.echo(f"  {m.user_did}  role={m.role or '-'}  status={m.status}")
 
     _run(_list())
 
@@ -1638,9 +1706,7 @@ def org_list():
                 return
             for o in owners:
                 ag = (
-                    f"{o.agreement_id}@{o.agreement_version}"
-                    if o.agreement_id
-                    else "-"
+                    f"{o.agreement_id}@{o.agreement_version}" if o.agreement_id else "-"
                 )
                 typer.echo(
                     f"  {o.id}  name={o.name}  status={o.status}  "
@@ -1925,6 +1991,11 @@ def org_apply(
         # that carries no `dataspace:` block is skipped exactly as before, so the
         # flagless invocation every current caller uses behaves identically.
         selected = {id(e) for e in selection.entries}
+        # Only what this run would write. A dev-only DID on an entry the file
+        # keeps for its other consumers is not this command's business.
+        _refuse_dev_dids(
+            [(e.get("id") or "?", e.get("did") or "") for e in selection.entries]
+        )
 
         settings = get_settings()
         factory = await _ensure_db()

@@ -5,6 +5,7 @@ the schema rejects files the platform accepts, or accepts files it refuses. Thes
 tests make the generated copies in `./schemas` a build artifact with a gate,
 rather than a document someone remembers to update.
 """
+
 from __future__ import annotations
 
 import json
@@ -57,15 +58,21 @@ def test_the_repos_own_sharing_offers_validate():
     not pass, the schema is wrong — nobody else's file is the right thing to
     debug first.
     """
-    schema = json.loads((SCHEMAS / "sharing-offers.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (SCHEMAS / "sharing-offers.schema.json").read_text(encoding="utf-8")
+    )
     offers = yaml.safe_load(
-        (REPO / "services/connector/governance-rec/sharing-offers.yaml").read_text(encoding="utf-8")
+        (REPO / "services/connector/governance-rec/sharing-offers.yaml").read_text(
+            encoding="utf-8"
+        )
     )
     Draft202012Validator(schema).validate(offers)
 
 
 def test_the_bundled_profile_validates_against_its_schema():
-    schema = json.loads((SCHEMAS / "odrl-profile.schema.json").read_text(encoding="utf-8"))
+    schema = json.loads(
+        (SCHEMAS / "odrl-profile.schema.json").read_text(encoding="utf-8")
+    )
     profile = yaml.safe_load(
         (REPO / "libs/governance/src/ds/governance/profiles/energy.yaml").read_text(
             encoding="utf-8"
@@ -86,6 +93,13 @@ def test_purpose_vocabulary_lists_exactly_the_active_profile():
 @pytest.mark.rule("M-10")
 def test_purpose_vocabulary_rejects_a_placeholder_term():
     """The regression this whole workstream came from."""
-    vocab = json.loads((SCHEMAS / "purpose-vocabulary.json").read_text(encoding="utf-8"))
-    for placeholder in ("energy-monitoring", "grid-resilience", "research", "analytics"):
+    vocab = json.loads(
+        (SCHEMAS / "purpose-vocabulary.json").read_text(encoding="utf-8")
+    )
+    for placeholder in (
+        "energy-monitoring",
+        "grid-resilience",
+        "research",
+        "analytics",
+    ):
         assert placeholder not in vocab["enum"]

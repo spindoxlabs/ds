@@ -99,45 +99,63 @@ class OrgOnboardingFlow(BaseFlow):
 
         # 4. Register application
         try:
-            app = self.http.post(
-                f"{ir}/admin/organizations/applications",
-                {
-                    "alias": alias,
-                    "legal_name": s.org_e2e_legal_name,
-                    "registration_number": "IT-E2E-0001",
-                    "registration_type": "vatID",
-                    "hq_country_code": "IT-TN",
-                    "legal_country_code": "IT-TN",
-                    "roles": ["consumer"],
-                    "did": did,
-                    "dsp_address": dsp_address,
-                },
-                headers=admin,
-            ) or {}
+            app = (
+                self.http.post(
+                    f"{ir}/admin/organizations/applications",
+                    {
+                        "alias": alias,
+                        "legal_name": s.org_e2e_legal_name,
+                        "registration_number": "IT-E2E-0001",
+                        "registration_type": "vatID",
+                        "hq_country_code": "IT-TN",
+                        "legal_country_code": "IT-TN",
+                        "roles": ["consumer"],
+                        "did": did,
+                        "dsp_address": dsp_address,
+                    },
+                    headers=admin,
+                )
+                or {}
+            )
             application_id = app.get("id")
             if not application_id or app.get("status") != "pending":
-                result.fail_step("register", "application not created as pending", app=app)
+                result.fail_step(
+                    "register", "application not created as pending", app=app
+                )
                 return result
-            result.pass_step("register", "organisation application created", alias=alias)
+            result.pass_step(
+                "register", "organisation application created", alias=alias
+            )
         except Exception as exc:
             result.fail_step("register", str(exc))
             return result
 
         # 5. Verify → promotes legal identity into an Owner row
         try:
-            verified = self.http.patch(
-                f"{ir}/admin/organizations/applications/{application_id}",
-                {"status": "verified", "verified_by": "e2e-operator"},
-                headers=admin,
-            ) or {}
+            verified = (
+                self.http.patch(
+                    f"{ir}/admin/organizations/applications/{application_id}",
+                    {"status": "verified", "verified_by": "e2e-operator"},
+                    headers=admin,
+                )
+                or {}
+            )
             if verified.get("status") != "verified":
-                result.fail_step("verify", "application verification failed", body=verified)
+                result.fail_step(
+                    "verify", "application verification failed", body=verified
+                )
                 return result
-            resolved = self.http.get(
-                f"{ir}/owners/resolve?alias={urllib.parse.quote(alias)}", headers=admin
-            ) or {}
+            resolved = (
+                self.http.get(
+                    f"{ir}/owners/resolve?alias={urllib.parse.quote(alias)}",
+                    headers=admin,
+                )
+                or {}
+            )
             if resolved.get("status") != "verified":
-                result.fail_step("verify", "owner not promoted to verified", owner=resolved)
+                result.fail_step(
+                    "verify", "owner not promoted to verified", owner=resolved
+                )
                 return result
             result.pass_step("verify", "application verified and owner promoted")
         except Exception as exc:
@@ -164,18 +182,23 @@ class OrgOnboardingFlow(BaseFlow):
 
         # 7. Accept the agreement
         try:
-            acceptance = self.http.post(
-                f"{ir}/admin/owners/{urllib.parse.quote(alias)}/agreement",
-                {
-                    "agreement_id": s.org_agreement_id,
-                    "version": s.org_agreement_version,
-                    "locale": "en",
-                    "accepted_by": "e2e-org-contact",
-                },
-                headers=admin,
-            ) or {}
+            acceptance = (
+                self.http.post(
+                    f"{ir}/admin/owners/{urllib.parse.quote(alias)}/agreement",
+                    {
+                        "agreement_id": s.org_agreement_id,
+                        "version": s.org_agreement_version,
+                        "locale": "en",
+                        "accepted_by": "e2e-org-contact",
+                    },
+                    headers=admin,
+                )
+                or {}
+            )
             if not acceptance.get("text_sha256"):
-                result.fail_step("agreement", "acceptance missing text hash", body=acceptance)
+                result.fail_step(
+                    "agreement", "acceptance missing text hash", body=acceptance
+                )
                 return result
             result.pass_step(
                 "agreement",
@@ -243,12 +266,19 @@ class OrgOnboardingFlow(BaseFlow):
                 {"owner_alias": alias, "roles": ["consumer"]},
                 headers=admin,
             )
-            registered = self.http.post(
-                f"{ir}/admin/participants",
-                {"did": did, "dsp_address": dsp_address, "roles": ["consumer"],
-                 "allowed_scopes": ["dataspaces.query"]},
-                headers=admin,
-            ) or {}
+            registered = (
+                self.http.post(
+                    f"{ir}/admin/participants",
+                    {
+                        "did": did,
+                        "dsp_address": dsp_address,
+                        "roles": ["consumer"],
+                        "allowed_scopes": ["dataspaces.query"],
+                    },
+                    headers=admin,
+                )
+                or {}
+            )
             if registered.get("did") != did:
                 result.fail_step("enrolment", "DID not registered", body=registered)
                 return result
@@ -262,13 +292,18 @@ class OrgOnboardingFlow(BaseFlow):
 
         # 9. Issue the OrganizationCredential (now that the agreement is accepted)
         try:
-            cred = self.http.post(
-                f"{ir}/admin/credentials/organization",
-                {"alias": alias, "roles": ["consumer"], "dsp_address": dsp_address},
-                headers=admin,
-            ) or {}
+            cred = (
+                self.http.post(
+                    f"{ir}/admin/credentials/organization",
+                    {"alias": alias, "roles": ["consumer"], "dsp_address": dsp_address},
+                    headers=admin,
+                )
+                or {}
+            )
             if not cred.get("credentialId"):
-                result.fail_step("issue-credential", "no credential id returned", body=cred)
+                result.fail_step(
+                    "issue-credential", "no credential id returned", body=cred
+                )
                 return result
             result.pass_step(
                 "issue-credential",
@@ -281,15 +316,22 @@ class OrgOnboardingFlow(BaseFlow):
 
         # 10. Promote to a DSP participant (gate now satisfied)
         try:
-            participant = self.http.post(
-                f"{ir}/admin/owners/{urllib.parse.quote(alias)}/promote",
-                {"dsp_address": dsp_address, "roles": ["consumer"]},
-                headers=admin,
-            ) or {}
+            participant = (
+                self.http.post(
+                    f"{ir}/admin/owners/{urllib.parse.quote(alias)}/promote",
+                    {"dsp_address": dsp_address, "roles": ["consumer"]},
+                    headers=admin,
+                )
+                or {}
+            )
             if participant.get("did") != did or not participant.get("active"):
-                result.fail_step("promote", "participant not registered/active", body=participant)
+                result.fail_step(
+                    "promote", "participant not registered/active", body=participant
+                )
                 return result
-            result.pass_step("promote", "organisation registered as an active participant")
+            result.pass_step(
+                "promote", "organisation registered as an active participant"
+            )
         except Exception as exc:
             result.fail_step("promote", str(exc))
             return result
@@ -310,13 +352,18 @@ class OrgOnboardingFlow(BaseFlow):
         #     `dcp-trust` verifies end to end.
         try:
             encoded_did = urllib.parse.quote(did, safe="")
-            check = self.http.get(
-                f"{ir}/admin/participants/check?did={encoded_did}&scope=dataspaces.query",
-                headers=admin,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{ir}/admin/participants/check?did={encoded_did}&scope=dataspaces.query",
+                    headers=admin,
+                )
+                or {}
+            )
             if not check.get("allowed"):
                 result.fail_step(
-                    "readiness", "participant not authorised for dataspaces.query", body=check
+                    "readiness",
+                    "participant not authorised for dataspaces.query",
+                    body=check,
                 )
                 return result
             status, _ = self.http.get_raw(f"{ir}/dids/{encoded_did}/did.json")
@@ -339,19 +386,27 @@ class OrgOnboardingFlow(BaseFlow):
 
         # 12. Suspend — StatusList bit + participant deactivation in one step
         try:
-            suspended = self.http.patch(
-                f"{ir}/admin/owners/{urllib.parse.quote(alias)}",
-                {"status": "suspended"},
-                headers=admin,
-            ) or {}
+            suspended = (
+                self.http.patch(
+                    f"{ir}/admin/owners/{urllib.parse.quote(alias)}",
+                    {"status": "suspended"},
+                    headers=admin,
+                )
+                or {}
+            )
             if suspended.get("status") != "suspended":
                 result.fail_step("suspend", "owner not suspended", body=suspended)
                 return result
-            creds = self.http.get(
-                f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
-                headers=admin,
-            ) or []
-            org_creds = [c for c in creds if c.get("credential_type") == "OrganizationCredential"]
+            creds = (
+                self.http.get(
+                    f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
+                    headers=admin,
+                )
+                or []
+            )
+            org_creds = [
+                c for c in creds if c.get("credential_type") == "OrganizationCredential"
+            ]
             if any(c.get("status") == "active" for c in org_creds):
                 result.fail_step(
                     "suspend",
@@ -369,13 +424,18 @@ class OrgOnboardingFlow(BaseFlow):
                     creds=org_creds,
                 )
                 return result
-            check = self.http.get(
-                f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
-                "&scope=dataspaces.query",
-                headers=admin,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
+                    "&scope=dataspaces.query",
+                    headers=admin,
+                )
+                or {}
+            )
             if check.get("allowed"):
-                result.fail_step("suspend", "participant still authorised after suspend")
+                result.fail_step(
+                    "suspend", "participant still authorised after suspend"
+                )
                 return result
             result.pass_step(
                 "suspend",
@@ -389,22 +449,32 @@ class OrgOnboardingFlow(BaseFlow):
         # slower revocation. The organisation gets the credential it already
         # holds back, unchanged: no re-issuance, no new StatusList index.
         try:
-            reinstated = self.http.patch(
-                f"{ir}/admin/owners/{urllib.parse.quote(alias)}",
-                {"status": "verified"},
-                headers=admin,
-            ) or {}
+            reinstated = (
+                self.http.patch(
+                    f"{ir}/admin/owners/{urllib.parse.quote(alias)}",
+                    {"status": "verified"},
+                    headers=admin,
+                )
+                or {}
+            )
             if reinstated.get("status") != "verified":
                 result.fail_step("reinstate", "owner not reinstated", body=reinstated)
                 return result
-            creds = self.http.get(
-                f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
-                headers=admin,
-            ) or []
-            back = [c for c in creds if c.get("credential_type") == "OrganizationCredential"]
+            creds = (
+                self.http.get(
+                    f"{ir}/admin/credentials?subject_did={urllib.parse.quote(did, safe='')}",
+                    headers=admin,
+                )
+                or []
+            )
+            back = [
+                c for c in creds if c.get("credential_type") == "OrganizationCredential"
+            ]
             if not back or any(c.get("status") != "active" for c in back):
                 result.fail_step(
-                    "reinstate", "credential not valid again after reinstate", creds=back
+                    "reinstate",
+                    "credential not valid again after reinstate",
+                    creds=back,
                 )
                 return result
             if {c.get("id") for c in back} != {c.get("id") for c in org_creds}:
@@ -414,11 +484,14 @@ class OrgOnboardingFlow(BaseFlow):
                     creds=back,
                 )
                 return result
-            check = self.http.get(
-                f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
-                "&scope=dataspaces.query",
-                headers=admin,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{ir}/admin/participants/check?did={urllib.parse.quote(did, safe='')}"
+                    "&scope=dataspaces.query",
+                    headers=admin,
+                )
+                or {}
+            )
             if not check.get("allowed"):
                 result.fail_step(
                     "reinstate", "participant still unauthorised after reinstate"

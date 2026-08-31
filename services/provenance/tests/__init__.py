@@ -12,6 +12,7 @@ Two consequences worth stating rather than leaving to be discovered:
 - A shared literal (`"secret"`) invited exactly the opposite reading, and warned
   on every call besides — a 6-byte HMAC key is below the RFC 7518 minimum.
 """
+
 import secrets
 import time
 

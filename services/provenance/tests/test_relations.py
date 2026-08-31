@@ -1,4 +1,5 @@
 """Tests for /prov/relations endpoint."""
+
 import pytest
 
 

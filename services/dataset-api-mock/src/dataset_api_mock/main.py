@@ -31,9 +31,7 @@ class Settings(BaseSettings):
     # `svc-ds-dataset-api` holds `connector.internal` with `svc-ds-connector` in
     # its audience. This replaced `connector_api_key`, which was the same value
     # as EDC's Management API key — one secret across two trust boundaries.
-    keycloak_token_url: str = (
-        "http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token"
-    )
+    keycloak_token_url: str = "http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token"
     service_client_id: str = "svc-ds-dataset-api"
     service_client_secret: str = "svc-ds-dataset-api"
     external_query_url: str | None = None
@@ -137,12 +135,27 @@ DATASETS: dict[str, dict[str, Any]] = {
         "asset_id": "datasets.gold.om_weather_features",
         "requires_consent": False,
         "rows": [
-            {"timestamp": "2026-05-11T08:00:00Z", "location": "EC-001",
-             "temperature_c": 18.7, "wind_ms": 2.8, "ghi": 426},
-            {"timestamp": "2026-05-11T08:15:00Z", "location": "EC-001",
-             "temperature_c": 18.9, "wind_ms": 2.6, "ghi": 441},
-            {"timestamp": "2026-05-11T08:30:00Z", "location": "EC-001",
-             "temperature_c": 19.1, "wind_ms": 2.5, "ghi": 455},
+            {
+                "timestamp": "2026-05-11T08:00:00Z",
+                "location": "EC-001",
+                "temperature_c": 18.7,
+                "wind_ms": 2.8,
+                "ghi": 426,
+            },
+            {
+                "timestamp": "2026-05-11T08:15:00Z",
+                "location": "EC-001",
+                "temperature_c": 18.9,
+                "wind_ms": 2.6,
+                "ghi": 441,
+            },
+            {
+                "timestamp": "2026-05-11T08:30:00Z",
+                "location": "EC-001",
+                "temperature_c": 19.1,
+                "wind_ms": 2.5,
+                "ghi": 455,
+            },
         ],
     },
     # Declared exactly as `services/connector/governance-rec/governance.yaml`
@@ -252,12 +265,9 @@ DATASETS: dict[str, dict[str, Any]] = {
             ],
         },
         "rows": [
-            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-014",
-             "headroom_kw": 320.5, "load_kw": 179.5},
-            {"timestamp": "2026-05-11T09:00:00Z", "substation": "SS-014",
-             "headroom_kw": 288.0, "load_kw": 212.0},
-            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-027",
-             "headroom_kw": 96.2, "load_kw": 403.8},
+            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-014", "headroom_kw": 320.5, "load_kw": 179.5},
+            {"timestamp": "2026-05-11T09:00:00Z", "substation": "SS-014", "headroom_kw": 288.0, "load_kw": 212.0},
+            {"timestamp": "2026-05-11T08:00:00Z", "substation": "SS-027", "headroom_kw": 96.2, "load_kw": 403.8},
         ],
     },
 }
@@ -381,11 +391,7 @@ def _catalogue_entry(name: str, spec: dict[str, Any]) -> dict[str, Any]:
         # Absent rather than null when the dataset declares none: a dataset that
         # states no model and a dataset that states "no model" are different
         # claims, and only the first is what an undeclared one means.
-        **(
-            {"dct:conformsTo": {"@id": spec["conforms_to"]}}
-            if spec.get("conforms_to")
-            else {}
-        ),
+        **({"dct:conformsTo": {"@id": spec["conforms_to"]}} if spec.get("conforms_to") else {}),
         "access_level": access_level,
         "requires_consent": spec["requires_consent"],
         # An external dataset holds no rows here; its count is the upstream's and
@@ -461,8 +467,10 @@ def _vocabulary_document(spec: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(500, f"Mapping uses undeclared prefixes: {sorted(unknown)}")
     # Prefixes first, and only the ones in play: a document using none of Dublin
     # Core should not declare it.
-    return {"@context": {**{p: _PREFIXES[p] for p in sorted(used)}, **context},
-            **{k: v for k, v in document.items() if k != "@context"}}
+    return {
+        "@context": {**{p: _PREFIXES[p] for p in sorted(used)}, **context},
+        **{k: v for k, v in document.items() if k != "@context"},
+    }
 
 
 def _dataset_enabled(spec: dict[str, Any]) -> bool:
@@ -522,15 +530,17 @@ async def subject_datasets(subject_id: str) -> dict[str, Any]:
         if not subject_match:
             continue
 
-        owned.append({
-            "name": name,
-            "asset_id": spec["asset_id"],
-            "title": name.replace("_", " ").replace(".", " / "),
-            "requires_consent": spec["requires_consent"],
-            "subject_column": subject_column,
-            "sample_rows": sum(1 for row in sample_rows if row.get(subject_column) in values),
-            "source": spec.get("source", "local"),
-        })
+        owned.append(
+            {
+                "name": name,
+                "asset_id": spec["asset_id"],
+                "title": name.replace("_", " ").replace(".", " / "),
+                "requires_consent": spec["requires_consent"],
+                "subject_column": subject_column,
+                "sample_rows": sum(1 for row in sample_rows if row.get(subject_column) in values),
+                "source": spec.get("source", "local"),
+            }
+        )
     return {"subject_id": subject_id, "datasets": owned}
 
 
@@ -704,11 +714,7 @@ def _datasets_in_sql(sql: str | None) -> list[str]:
     if not sql:
         return []
     statement = _strip_sql_noise(sql)
-    return [
-        name
-        for name in _enabled_datasets()
-        if re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.])", statement)
-    ]
+    return [name for name in _enabled_datasets() if re.search(rf"(?<![\w.]){re.escape(name)}(?![\w.])", statement)]
 
 
 def _strip_sql_noise(sql: str) -> str:
@@ -725,11 +731,7 @@ def _strip_sql_noise(sql: str) -> str:
 async def _rows_for(dataset_names: list[str]) -> tuple[list[dict[str, Any]], dict[str, Any]]:
     name = dataset_names[0]
     spec = DATASETS[name]
-    rows = (
-        await _query_external(spec)
-        if spec.get("source") == "external"
-        else list(spec["rows"])
-    )
+    rows = await _query_external(spec) if spec.get("source") == "external" else list(spec["rows"])
     return rows, spec
 
 
@@ -798,9 +800,7 @@ async def _dataspace_query(
     if verdict is None or not verdict.allowed:
         # The envelope allowed, this dataset did not — or ds never mentioned it.
         # Either way nothing here has been permitted to serve it.
-        raise HTTPException(
-            403, f"Refused by ds: {verdict.reason if verdict else 'dataset_undecided'}"
-        )
+        raise HTTPException(403, f"Refused by ds: {verdict.reason if verdict else 'dataset_undecided'}")
 
     if verdict.row_filter is not None:
         rows = _apply_row_filter(rows, verdict.row_filter)
@@ -824,9 +824,7 @@ async def _dataspace_query(
     return _page(rows, body)
 
 
-def _apply_row_filter(
-    rows: list[dict[str, Any]], row_filter: DataplaneRowFilter
-) -> list[dict[str, Any]]:
+def _apply_row_filter(rows: list[dict[str, Any]], row_filter: DataplaneRowFilter) -> list[dict[str, Any]]:
     """Narrow `rows` to the ones the filter admits.
 
     The filter arrives whole — handler, args and principals — because the
@@ -973,9 +971,7 @@ async def _verification_keys() -> list[Any]:
         # the request, but a 500 says this service is broken when what happened
         # is that ds would not answer — and it is the shape an operator reads to
         # decide which component to look at.
-        raise HTTPException(
-            502, f"ds-connector would not publish the EDR keys: {exc.response.status_code}"
-        ) from exc
+        raise HTTPException(502, f"ds-connector would not publish the EDR keys: {exc.response.status_code}") from exc
     except httpx.RequestError as exc:
         raise HTTPException(502, "ds-connector unreachable for the EDR key set") from exc
 
@@ -1060,9 +1056,7 @@ async def _internal_headers() -> dict[str, str]:
         token = await _token_provider()
     except httpx.HTTPStatusError as exc:
         log.error("Keycloak refused the service token: %s", exc.response.status_code)
-        raise HTTPException(
-            502, f"Keycloak refused this service's token: {exc.response.status_code}"
-        ) from exc
+        raise HTTPException(502, f"Keycloak refused this service's token: {exc.response.status_code}") from exc
     except httpx.RequestError as exc:
         log.error("Keycloak unreachable for the service token: %s", exc)
         raise HTTPException(502, "Keycloak unreachable — cannot authenticate to ds") from exc
@@ -1113,9 +1107,7 @@ async def _audit_query(
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
         log.error("Query audit refused by ds-connector: %s", exc.response.status_code)
-        raise HTTPException(
-            502, f"ds-connector refused the query audit: {exc.response.status_code}"
-        ) from exc
+        raise HTTPException(502, f"ds-connector refused the query audit: {exc.response.status_code}") from exc
     except httpx.RequestError as exc:
         log.error("Query audit could not be recorded: %s", exc)
         raise HTTPException(502, "ds-connector unreachable — the query cannot be recorded") from exc
@@ -1159,5 +1151,3 @@ async def _query_external(spec: dict[str, Any]) -> list[dict[str, Any]]:
     if subject_column and subject_id:
         rows = [{**row, subject_column: subject_id} for row in rows]
     return rows
-
-

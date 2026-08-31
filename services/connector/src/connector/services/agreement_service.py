@@ -1,7 +1,8 @@
 """Persist and query EDC contract agreements."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,7 +50,9 @@ async def upsert_agreement(
     return agreement
 
 
-async def _find(session: AsyncSession, agreement_id: str) -> ContractAgreementORM | None:
+async def _find(
+    session: AsyncSession, agreement_id: str
+) -> ContractAgreementORM | None:
     """Resolve by either identifier.
 
     A counterparty names the **shared** DSP id; this connector's own records and
@@ -67,9 +70,7 @@ async def _find(session: AsyncSession, agreement_id: str) -> ContractAgreementOR
     return result.scalars().first()
 
 
-async def get_agreement_status(
-    session: AsyncSession, agreement_id: str
-) -> dict | None:
+async def get_agreement_status(session: AsyncSession, agreement_id: str) -> dict | None:
     agreement = await _find(session, agreement_id)
     if not agreement:
         return None
@@ -108,6 +109,6 @@ async def terminate_agreement(
     )
     agreement = result.scalar_one_or_none()
     if agreement:
-        agreement.terminated_at = datetime.now(timezone.utc)
+        agreement.terminated_at = datetime.now(UTC)
         agreement.termination_reason = reason
     return agreement

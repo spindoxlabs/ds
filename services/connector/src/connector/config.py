@@ -1,9 +1,9 @@
 """ds-connector configuration via pydantic-settings."""
+
 from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
-
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -248,7 +248,9 @@ class Settings(BaseSettings):
         description="Client secret for service_client_id (Keycloak client-credentials)",
     )
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector"
+    database_url: str = (
+        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector"
+    )
     debug: bool = False
 
     # Notification backends — comma-separated: smtp, webhook (default: empty → null)

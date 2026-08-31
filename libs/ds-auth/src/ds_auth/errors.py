@@ -4,6 +4,7 @@ The FastAPI layer (:mod:`ds_auth.fastapi`) maps these onto HTTP responses.
 Keeping them free of any web framework lets the core be reused from CLIs,
 workers, or tests.
 """
+
 from __future__ import annotations
 
 

@@ -1,4 +1,5 @@
 """Tests for JWT scope enforcement on connector endpoints."""
+
 import httpx
 import pytest
 import pytest_asyncio
@@ -11,7 +12,6 @@ from connector.db.engine import Base
 from connector.dependencies import get_db, get_participant_registry
 from connector.main import create_app
 from connector.registry.participants import ParticipantRegistry
-
 from tests import make_headers
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -34,7 +34,9 @@ async def auth_client():
 
     app = create_app()
     app.dependency_overrides[get_db] = override_get_db
-    app.dependency_overrides[get_participant_registry] = lambda: ParticipantRegistry.empty()
+    app.dependency_overrides[get_participant_registry] = lambda: (
+        ParticipantRegistry.empty()
+    )
 
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
@@ -53,6 +55,7 @@ async def test_health_no_auth(auth_client):
 
 
 # ── Internal endpoints require connector.internal ────────────────
+
 
 @pytest.mark.rule("C-17", "X-4")
 @pytest.mark.asyncio
@@ -98,9 +101,13 @@ async def test_internal_with_correct_scope(auth_client):
 @pytest.mark.rule("D-20")
 @pytest.mark.asyncio
 async def test_consent_check_requires_scope(auth_client):
-    r = await auth_client.get("/internal/consent/check", params={
-        "dataset_id": "ds", "consumer_id": "c",
-    })
+    r = await auth_client.get(
+        "/internal/consent/check",
+        params={
+            "dataset_id": "ds",
+            "consumer_id": "c",
+        },
+    )
     assert r.status_code == 401
 
 
@@ -115,6 +122,7 @@ async def test_audit_query_requires_scope(auth_client):
 # Not `connector.admin`, which this section used to claim. Admin satisfies it as
 # a superset, so asserting only with an admin token left the requirement the
 # route actually declares — the weaker one — untested.
+
 
 @pytest.mark.rule("C-17")
 @pytest.mark.asyncio
@@ -160,6 +168,7 @@ async def test_admin_with_admin_scope_as_superset(auth_client):
 # app-layer guard would break a scraper, which holds no Keycloak token.
 # Asserted so a future change has to argue with this comment first.
 
+
 @pytest.mark.asyncio
 async def test_metrics_is_deliberately_open(auth_client):
     r = await auth_client.get("/metrics")
@@ -169,12 +178,17 @@ async def test_metrics_is_deliberately_open(auth_client):
 
 # ── Webhook endpoints require connector.webhook ──────────────────
 
+
 @pytest.mark.rule("C-17")
 @pytest.mark.asyncio
 async def test_webhook_without_token_returns_401(auth_client):
-    r = await auth_client.post("/webhooks/transfer-process", json={
-        "type": "test", "transferId": "t-1",
-    })
+    r = await auth_client.post(
+        "/webhooks/transfer-process",
+        json={
+            "type": "test",
+            "transferId": "t-1",
+        },
+    )
     assert r.status_code == 401
 
 
@@ -189,6 +203,7 @@ async def test_webhook_wrong_scope_returns_403(auth_client):
 
 
 # ── Consent register-transfer requires connector.internal ────────
+
 
 @pytest.mark.asyncio
 async def test_consent_register_transfer_requires_scope(auth_client):

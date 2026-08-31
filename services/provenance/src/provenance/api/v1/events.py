@@ -1,4 +1,5 @@
 """Domain event ingest and query routes."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -28,7 +29,11 @@ subject_router = APIRouter()
 MAX_LIMIT = 500
 
 
-@router.post("/events", response_model=EventIngestResponse, dependencies=[Depends(require_write_scope)])
+@router.post(
+    "/events",
+    response_model=EventIngestResponse,
+    dependencies=[Depends(require_write_scope)],
+)
 async def ingest(
     event: DomainEvent,
     response: Response,

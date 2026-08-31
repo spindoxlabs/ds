@@ -13,6 +13,7 @@ wire, and `pii` is the rulebook's own switch — *"`classification: pii` on a
 dataset is the switch. A dataset carrying that classification is subject to
 everything on this page"* (Rulebook · Personal data).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -129,7 +130,10 @@ def test_a_pii_dataset_without_a_filter_still_warns():
     evaluated per subject. The offer no longer under-claims; the warning still
     names what is missing.
     """
-    from ds.governance.compliance.checks import ValidationResult, check_consent_coherence
+    from ds.governance.compliance.checks import (
+        ValidationResult,
+        check_consent_coherence,
+    )
 
     class _Item:
         key = "datasets.gold.meters"

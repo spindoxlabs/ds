@@ -42,9 +42,7 @@ def build_did_document(
                 "id": kid,
                 "type": "JsonWebKey2020",
                 "controller": did,
-                "publicKeyJwk": {
-                    k: v for k, v in public_jwk.items() if k != "d"
-                },
+                "publicKeyJwk": {k: v for k, v in public_jwk.items() if k != "d"},
             }
         ]
         doc["assertionMethod"] = [kid]
@@ -125,3 +123,69 @@ def custodian_of(did: str) -> str | None:
     if not did.startswith("did:web:") or marker not in did:
         return None
     return did.rsplit(marker, 1)[0] or None
+
+
+# ── Is this DID usable outside a developer's machine? ─────────────
+#
+# A `did:web` is a URL, not an opaque identifier: `did:web:X` resolves at
+# `https://X/.well-known/did.json`, so the host **is** the identity. That makes a
+# DID environment-bound in a way an opaque id would not be, and a deployment's
+# owner registry is exactly the file where that bites — one file, several
+# environments, and the dev value is the one somebody uncomments first.
+#
+# It fails late and quietly. Nothing resolves an owner's DID to answer
+# `GET /owners/resolve`, or to name a disclosure recipient, or to key a consent
+# row — those compare strings. Resolution starts mattering at credential
+# issuance, DSP negotiation and presentation, by which time the wrong DID is in
+# issued credentials and recorded provenance, where it cannot be corrected
+# without destroying the evidence.
+
+#: Hosts that resolve only on the machine running the request.
+_DEV_ONLY_HOSTS = frozenset({"localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"})
+
+#: Host suffixes reserved for local use. `.localhost` is RFC 6761; `.local` is
+#: mDNS (RFC 6762). Neither is resolvable from anywhere but the local network,
+#: so neither can carry an identity that outlives one machine.
+_DEV_ONLY_SUFFIXES = (".localhost", ".local")
+
+
+def did_web_host(did: str) -> str | None:
+    """The host a ``did:web`` document would be fetched from, or ``None``.
+
+    Handles both spellings the method allows: the percent-encoded port
+    (``did:web:host%3A9010``) and path segments (``did:web:host:users:alice``),
+    where only the first segment is the host.
+    """
+    from urllib.parse import unquote
+
+    if not did or not did.startswith("did:web:"):
+        return None
+    identifier = did[len("did:web:") :]
+    if not identifier:
+        return None
+    host = unquote(identifier.split(":", 1)[0])
+    # A percent-encoded port decodes to `host:9010`; the port is not the host.
+    host = host.split(":", 1)[0] if not host.startswith("[") else host
+    return host.strip().lower() or None
+
+
+def dev_only_did_reason(did: str) -> str | None:
+    """Why this DID can only work on a developer's machine, or ``None``.
+
+    Shape only — it says nothing about *whether* that is allowed, because that
+    is an environment question and this module does not know the environment.
+    The caller decides, which is what lets the same classifier serve a refusal
+    in production and a silence in dev.
+    """
+    host = did_web_host(did)
+    if host is None:
+        return None
+    if host in _DEV_ONLY_HOSTS:
+        return f"{host!r} resolves only on the machine making the request"
+    for suffix in _DEV_ONLY_SUFFIXES:
+        if host.endswith(suffix):
+            return (
+                f"{host!r} is under {suffix}, which is reserved for local use "
+                "and resolves nowhere else"
+            )
+    return None

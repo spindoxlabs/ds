@@ -31,6 +31,7 @@ setting rather than a constant.
 Sync on purpose: `verify_user_vc_jwt` is sync and called from sync dependency
 functions in two services. An async variant would fork the call graph for no gain.
 """
+
 from __future__ import annotations
 
 import base64

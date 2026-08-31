@@ -1,4 +1,5 @@
 """Tests for the consent vocabulary — purpose hierarchy, offers, re-consent hash."""
+
 import pytest
 from pydantic import ValidationError
 
@@ -24,7 +25,9 @@ from ds.governance.sharing import (
 # A three-level hierarchy: Flexibility ⊂ CommunityOperation, Grid stands alone.
 _PROFILE = OdrlProfile(
     purposes=[
-        PurposeConcept(slug="EnergyCommunityOperation", label="Energy community operation"),
+        PurposeConcept(
+            slug="EnergyCommunityOperation", label="Energy community operation"
+        ),
         PurposeConcept(
             slug="FlexibilityResearch",
             label="Flexibility research",
@@ -64,6 +67,7 @@ def _offer(**kwargs) -> SharingOffer:
 
 # ── Purpose taxonomy ─────────────────────────────────────────────────────────
 
+
 def test_broader_chain_walks_local_hierarchy():
     assert _PROFILE.broader_chain("FlexibilityResearch") == [
         "FlexibilityResearch",
@@ -75,8 +79,14 @@ def test_broader_chain_walks_local_hierarchy():
 
 def test_purpose_slug_normalises_iri_and_compact_forms():
     assert _PROFILE.purpose_slug("FlexibilityResearch") == "FlexibilityResearch"
-    assert _PROFILE.purpose_slug(_PROFILE.purpose_iri("FlexibilityResearch")) == "FlexibilityResearch"
-    assert _PROFILE.purpose_slug("dsp-policy:purpose/FlexibilityResearch") == "FlexibilityResearch"
+    assert (
+        _PROFILE.purpose_slug(_PROFILE.purpose_iri("FlexibilityResearch"))
+        == "FlexibilityResearch"
+    )
+    assert (
+        _PROFILE.purpose_slug("dsp-policy:purpose/FlexibilityResearch")
+        == "FlexibilityResearch"
+    )
     assert _PROFILE.purpose_slug("purpose/FlexibilityResearch") == "FlexibilityResearch"
     assert _PROFILE.purpose_slug("SomethingElse") is None
     assert _PROFILE.purpose_slug("") is None
@@ -102,12 +112,16 @@ def test_is_a_never_follows_dpv_mapping():
             PurposeConcept(
                 slug="FlexibilityResearch",
                 label="Flexibility research",
-                dpv_mapping=DpvMapping(iri="https://w3id.org/dpv#ResearchAndDevelopment"),
+                dpv_mapping=DpvMapping(
+                    iri="https://w3id.org/dpv#ResearchAndDevelopment"
+                ),
             ),
             PurposeConcept(
                 slug="MarketResearch",
                 label="Market research",
-                dpv_mapping=DpvMapping(iri="https://w3id.org/dpv#ResearchAndDevelopment"),
+                dpv_mapping=DpvMapping(
+                    iri="https://w3id.org/dpv#ResearchAndDevelopment"
+                ),
             ),
         ]
     )
@@ -130,7 +144,7 @@ def test_purpose_iris_are_not_confusable_with_a_compact_iri():
     """A `purpose:` base compacts to `purpose:Slug`, which JSON-LD rejects
     (IRI_CONFUSED_WITH_PREFIX) and which fails the whole DSP catalogue response."""
     profile = load_odrl_profile()
-    relative = profile.purpose_iri("FlexibilityResearch")[len(profile.namespace):]
+    relative = profile.purpose_iri("FlexibilityResearch")[len(profile.namespace) :]
     assert ":" not in relative.split("/", 1)[0]
 
 
@@ -150,17 +164,23 @@ def test_shipped_energy_profile_hierarchy_and_mappings():
 
 # ── ISO 8601 durations ───────────────────────────────────────────────────────
 
-@pytest.mark.parametrize("value", ["P1Y", "P2Y", "PT15M", "P5Y", "P30D", "PT1H30M", "P4W"])
+
+@pytest.mark.parametrize(
+    "value", ["P1Y", "P2Y", "PT15M", "P5Y", "P30D", "PT1H30M", "P4W"]
+)
 def test_valid_iso_durations(value):
     assert is_iso_duration(value)
 
 
-@pytest.mark.parametrize("value", ["", "15m", "P", "1Y", "PT", "P1Y2W", "every 15 minutes"])
+@pytest.mark.parametrize(
+    "value", ["", "15m", "P", "1Y", "PT", "P1Y2W", "every 15 minutes"]
+)
 def test_invalid_iso_durations(value):
     assert not is_iso_duration(value)
 
 
 # ── Offer schema ─────────────────────────────────────────────────────────────
+
 
 def test_offer_round_trip():
     offer = _offer()
@@ -174,6 +194,7 @@ def test_only_consent_based_offers_require_a_control():
 
 
 # ── user_visible_hash — the re-consent trigger ───────────────────────────────
+
 
 def _hash(offer: SharingOffer) -> str:
     slug = _PROFILE.purpose_slug(offer.purpose)
@@ -339,21 +360,29 @@ sharing_offers:
         category: grid-operators
     consent_text_version: "1.0"
 """)
-    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml", overlay_name="site")
+    catalogue = load_sharing_offers(
+        tmp_path / "sharing-offers.yaml", overlay_name="site"
+    )
     assert len(catalogue.offers) == 2
     # Rebinding a controller for a deployment must not fork the base file.
-    assert catalogue.get("household-energy-flexibility").recipients.controller == "site-org"
+    assert (
+        catalogue.get("household-energy-flexibility").recipients.controller
+        == "site-org"
+    )
     assert catalogue.get("grid-monitoring") is not None
 
 
 # ── The reverse index ────────────────────────────────────────────────────────
 
+
 def test_datasets_by_offer_reverses_the_declaration():
-    index = datasets_by_offer({
-        "datasets.silver.meters_15m": ["household-energy-flexibility", "grid-ops"],
-        "datasets.gold.meters_1h": ["household-energy-flexibility"],
-        "datasets.gold.grid": [],
-    })
+    index = datasets_by_offer(
+        {
+            "datasets.silver.meters_15m": ["household-energy-flexibility", "grid-ops"],
+            "datasets.gold.meters_1h": ["household-energy-flexibility"],
+            "datasets.gold.grid": [],
+        }
+    )
     assert index["household-energy-flexibility"] == [
         "datasets.silver.meters_15m",
         "datasets.gold.meters_1h",
@@ -378,6 +407,7 @@ def test_an_offer_nothing_declares_simply_has_no_datasets():
 
 
 # ── Contributed offer files (T24 / T33) ──────────────────────────────────────
+
 
 def _offer_yaml(offer_id: str, controller: str = "example-org") -> str:
     return f"""\
@@ -407,7 +437,9 @@ def test_contributed_files_union_with_the_base(tmp_path):
     catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
 
     assert {o.id for o in catalogue.offers} == {
-        "local-offer", "acme-flexibility", "beta-flexibility",
+        "local-offer",
+        "acme-flexibility",
+        "beta-flexibility",
     }
 
 
@@ -475,7 +507,9 @@ def test_the_overlay_still_replaces_and_is_not_a_contribution(tmp_path):
         _offer_yaml("local-offer", controller="site-org")
     )
 
-    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml", overlay_name="site")
+    catalogue = load_sharing_offers(
+        tmp_path / "sharing-offers.yaml", overlay_name="site"
+    )
 
     assert len(catalogue.offers) == 1
     assert catalogue.get("local-offer").recipients.controller == "site-org"

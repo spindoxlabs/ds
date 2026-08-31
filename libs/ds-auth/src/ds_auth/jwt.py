@@ -7,6 +7,7 @@ deliberately mirror the semantics of ``celine-sdk``'s ``auth.jwt`` so that the
 verbatim *approach*, not a code dependency: there is no import edge between the
 repos.
 """
+
 from __future__ import annotations
 
 import logging

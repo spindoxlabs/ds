@@ -9,6 +9,7 @@ removed either would have left the suite green.
 These tests call the lifespan directly rather than through a transport, because
 what is being asserted is the startup contract, not a request.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -90,7 +91,9 @@ async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
     """A guard with no supply path is a denial of service on your own deployment
     (`IR-10`). This is the exact set the chart has to render."""
     monkeypatch.setenv("DS_ENV", "production")
-    monkeypatch.setenv("PROVENANCE_OIDC_ISSUER_URL", "https://kc.example/realms/dataspaces")
+    monkeypatch.setenv(
+        "PROVENANCE_OIDC_ISSUER_URL", "https://kc.example/realms/dataspaces"
+    )
     monkeypatch.setenv("PROVENANCE_OIDC_INSECURE_DEV", "false")
     monkeypatch.setenv("PROVENANCE_TRUST_ANCHOR_DID", "did:web:ta.example.org")
     monkeypatch.setenv("PROVENANCE_TRUST_LIST_URL", "https://ta.example.org/trust")

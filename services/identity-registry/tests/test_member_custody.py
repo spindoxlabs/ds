@@ -17,6 +17,7 @@ The two do not always name the same organisation, which is the case worth
 testing: a person who is a data subject at their REC and a consumer user at
 another company has **one** identifier and **two** custodians.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -110,9 +111,7 @@ async def test_one_person_keeps_one_did_across_organisations(
     await register_custodian(db_session, OTHER)
 
     first = await issue(client, "dual", participant=CUSTODIAN_DID)
-    second = await issue(
-        client, "dual", participant=OTHER, role="ConsumerUser"
-    )
+    second = await issue(client, "dual", participant=OTHER, role="ConsumerUser")
 
     assert first["subjectDid"] == f"{CUSTODIAN_DID}:users:dual"
     assert second["subjectDid"] == first["subjectDid"], "one human, one identifier"
@@ -248,9 +247,7 @@ async def test_an_instance_serves_the_credentials_it_holds(client, db_session):
     )
     await db_session.commit()
 
-    body = (
-        await client.get(f"/users/{subject}/credentials", headers=HEADERS)
-    ).json()
+    body = (await client.get(f"/users/{subject}/credentials", headers=HEADERS)).json()
     assert body["did"] == subject
     assert body["subject_id"] == "alice"
     assert body["roles"] == ["DataSubject"]

@@ -18,12 +18,13 @@ Expiry is not a refusal. The consent rows are marked ``expired``, not
 negotiation after ``TERMINATED``, so a consumer that still wants the data simply
 asks again.
 """
+
 from __future__ import annotations
 
 import asyncio
 import logging
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -84,7 +85,7 @@ async def expire_pending_asks(
 
     Returns ``{negotiation_id: [consent_id, ...]}``.
     """
-    now = now or datetime.now(timezone.utc)
+    now = now or datetime.now(UTC)
     cutoff = now - ttl
 
     result = await session.execute(
@@ -104,7 +105,7 @@ async def expire_pending_asks(
         if requested_at is None:
             continue
         if requested_at.tzinfo is None:
-            requested_at = requested_at.replace(tzinfo=timezone.utc)
+            requested_at = requested_at.replace(tzinfo=UTC)
         if requested_at > cutoff:
             continue
         row.status = EXPIRED
@@ -135,7 +136,7 @@ async def close_negotiation_asks(
             ConsentRequestORM.negotiation_closed_at.is_(None),
         )
     )
-    closed_at = now or datetime.now(timezone.utc)
+    closed_at = now or datetime.now(UTC)
     for row in result.scalars().all():
         row.negotiation_closed_at = closed_at
     await session.commit()
@@ -168,7 +169,9 @@ async def sweep_once(
             # Leave it open: the next pass will find it again and retry, which
             # is what makes an unreachable EDC a delay rather than a negotiation
             # parked for good.
-            log.warning("Could not terminate expired negotiation %s: %s", negotiation_id, exc)
+            log.warning(
+                "Could not terminate expired negotiation %s: %s", negotiation_id, exc
+            )
             continue
         async with session_factory() as session:
             await close_negotiation_asks(session, negotiation_id, now=now)

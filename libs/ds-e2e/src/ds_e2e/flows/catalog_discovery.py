@@ -15,6 +15,7 @@ a consumer parses this as linked data and not as an ad-hoc JSON blob.
 Needs the provider EDC to be running and synced, since the catalogue is a
 projection of what the provider publishes over DSP.
 """
+
 from __future__ import annotations
 
 import logging
@@ -56,7 +57,9 @@ class CatalogDiscoveryFlow(BaseFlow):
             health = self.http.get(f"{base}/health") or {}
             result.pass_step("health", "federated catalog reachable")
         except Exception as exc:
-            result.fail_step("health", f"federated catalog unreachable at {base}: {exc}")
+            result.fail_step(
+                "health", f"federated catalog unreachable at {base}: {exc}"
+            )
             return result
 
         try:
@@ -99,7 +102,9 @@ class CatalogDiscoveryFlow(BaseFlow):
             return result
         if catalog.get("@type") != "dcat:Catalog":
             result.fail_step(
-                "catalogue shape", "the response is not a dcat:Catalog", type=catalog.get("@type")
+                "catalogue shape",
+                "the response is not a dcat:Catalog",
+                type=catalog.get("@type"),
             )
             return result
         if not datasets:
@@ -134,7 +139,9 @@ class CatalogDiscoveryFlow(BaseFlow):
         iri = self._iri(target)
         if not iri:
             result.fail_step(
-                "provider dataset discoverable", "the dataset has no IRI", dataset=target
+                "provider dataset discoverable",
+                "the dataset has no IRI",
+                dataset=target,
             )
             return result
         if not (target.get("hasPolicy") or target.get("odrl:hasPolicy")):
@@ -169,9 +176,7 @@ class CatalogDiscoveryFlow(BaseFlow):
         )
 
         # ── 4. That IRI resolves to the same dataset ─────────────────────────
-        status, single = self.http.raw(
-            "GET", f"{base}/catalog/{iri}", headers=headers
-        )
+        status, single = self.http.raw("GET", f"{base}/catalog/{iri}", headers=headers)
         if status != 200 or not isinstance(single, dict):
             result.fail_step(
                 "dataset resolution",
@@ -182,19 +187,29 @@ class CatalogDiscoveryFlow(BaseFlow):
             return result
         if single.get("@type") != "dcat:Dataset":
             result.fail_step(
-                "dataset resolution", "the resolved document is not a dcat:Dataset",
+                "dataset resolution",
+                "the resolved document is not a dcat:Dataset",
                 type=single.get("@type"),
             )
             return result
-        result.pass_step("dataset resolution", "the advertised IRI dereferences to its dataset", iri=iri)
+        result.pass_step(
+            "dataset resolution",
+            "the advertised IRI dereferences to its dataset",
+            iri=iri,
+        )
 
         # ── 5. Search narrows ────────────────────────────────────────────────
         #     A search that returns everything is not a search. The negative
         #     term is the assertion that matters: it proves filtering happens
         #     rather than the full cache being returned regardless of the query.
-        nonsense = self.http.post(
-            f"{base}/catalog/search", {"q": "zzz-no-such-dataset-zzz"}, headers=headers
-        ) or {}
+        nonsense = (
+            self.http.post(
+                f"{base}/catalog/search",
+                {"q": "zzz-no-such-dataset-zzz"},
+                headers=headers,
+            )
+            or {}
+        )
         nonsense_count = len(self._datasets(nonsense))
         if nonsense_count != 0:
             result.fail_step(
@@ -205,7 +220,9 @@ class CatalogDiscoveryFlow(BaseFlow):
             return result
 
         term = str(s.asset_id).split(".")[-1]
-        hits = self.http.post(f"{base}/catalog/search", {"q": term}, headers=headers) or {}
+        hits = (
+            self.http.post(f"{base}/catalog/search", {"q": term}, headers=headers) or {}
+        )
         hit_datasets = self._datasets(hits)
         if not hit_datasets:
             result.fail_step(

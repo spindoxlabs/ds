@@ -15,6 +15,7 @@ person: new keypair, new credentials, empty consent state — while the data pla
 resolved **both** DIDs to the same username. A revocation against one left the
 other disclosing. That is a consent-integrity failure, not a duplicate row.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -72,9 +73,7 @@ async def test_username_resolves_when_the_id_is_unknown(client, db_session):
 async def test_email_still_resolves_for_callers_that_have_only_that(client, db_session):
     """The funnel's case, and the reason the email rung stays."""
     await _seed(db_session)
-    r = await client.get(
-        "/users/resolve?email=person-a@example.test", headers=RESOLVE
-    )
+    r = await client.get("/users/resolve?email=person-a@example.test", headers=RESOLVE)
     assert r.status_code == 200
     assert r.json()["did"] == DID
 

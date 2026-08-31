@@ -11,6 +11,7 @@ policy with **no purpose constraint**, and every consent check then denies for
 want of a stated reason. Nothing errors. Nothing logs. The dataset simply never
 returns a row.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -166,7 +167,11 @@ def test_conforms_to_is_read_from_the_canonical_location():
     between a declared semantic model and a silently domain-less catalogue.
     """
     rule = _resolve(
-        {"sources": {"d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}}},
+        {
+            "sources": {
+                "d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}
+            }
+        },
         "d",
     )
     assert rule.dcat.conforms_to == "https://saref.etsi.org/saref4ener/"
@@ -183,8 +188,12 @@ def test_a_file_with_no_dcat_block_still_loads():
 def test_dcat_defaults_are_inherited_like_every_other_block():
     """`defaults:` is where a producer puts publisher and language, once."""
     doc = {
-        "defaults": {"dcat": {"publisher_uri": "https://example.test/org/grid-operator"}},
-        "sources": {"d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}},
+        "defaults": {
+            "dcat": {"publisher_uri": "https://example.test/org/grid-operator"}
+        },
+        "sources": {
+            "d": {"dcat": {"conforms_to": "https://saref.etsi.org/saref4ener/"}}
+        },
     }
     rule = _resolve(doc, "d")
     assert rule.dcat.conforms_to == "https://saref.etsi.org/saref4ener/"

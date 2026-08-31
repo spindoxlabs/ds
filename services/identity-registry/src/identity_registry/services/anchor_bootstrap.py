@@ -19,6 +19,7 @@ publish one however many times bootstrap ran — the fix would have to be a manu
 for the same reason as `participant_bootstrap.ensure_identity`: rotating a key on
 a pod restart would silently invalidate every credential bound to it.
 """
+
 from __future__ import annotations
 
 import logging

@@ -1,4 +1,5 @@
 """ds-connector — FastAPI application factory."""
+
 import asyncio
 import logging
 from contextlib import asynccontextmanager, suppress
@@ -8,28 +9,29 @@ from fastapi import FastAPI
 
 log = logging.getLogger(__name__)
 
+from ds.governance.models import profile_path_is_missing
+from ds.governance.owners import HttpOwnersRegistry
+from ds_auth.production import ProductionGuard
+from ds_auth.service_token import ServiceTokenProvider
+from ds_obs import configure_logging, install_metrics, install_tracing
+
+from .api.v1.admin import router as admin_router
+from .api.v1.consent import router as consent_router
+from .api.v1.consumer import router as consumer_router
+from .api.v1.history import router as history_router
+from .api.v1.internal import router as internal_router
+from .api.v1.namespace import router as namespace_router
+from .api.v1.provider import router as provider_router
+from .api.v1.webhooks import router as webhooks_router
 from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
 from .config import get_settings
 from .db.engine import get_session_factory, verify_schema
 from .notifications.factory import build_notifier
-from ds.governance.owners import HttpOwnersRegistry
-from ds.governance.models import profile_path_is_missing
-from ds_auth.production import ProductionGuard
-from ds_auth.service_token import ServiceTokenProvider
-from ds_obs import configure_logging, install_metrics, install_tracing
 from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from .services.consumer_service import ConsumerService
 from .services.pending_sweep import parse_duration, run_sweeper
 from .services.prov_bridge import ProvBridge
-from .api.v1.provider import router as provider_router
-from .api.v1.consumer import router as consumer_router
-from .api.v1.webhooks import router as webhooks_router
-from .api.v1.internal import router as internal_router
-from .api.v1.namespace import router as namespace_router
-from .api.v1.consent import router as consent_router
-from .api.v1.admin import router as admin_router
-from .api.v1.history import router as history_router
 
 
 def _load_vocabulary_cache(settings) -> None:
@@ -210,7 +212,9 @@ async def lifespan(app: FastAPI):
         registry = ParticipantRegistry.empty()
 
     # Provenance bridge
-    prov_client = ProvenanceClient(settings.provenance_url, token_provider=ir_token_provider)
+    prov_client = ProvenanceClient(
+        settings.provenance_url, token_provider=ir_token_provider
+    )
     prov = ProvBridge(prov_client, settings.participant_id)
 
     if consumer_edc is not None:

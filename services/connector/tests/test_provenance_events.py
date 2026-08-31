@@ -4,10 +4,11 @@ The connector emits provenance from the API layer *after* the transaction
 commits (the ``access_revoked`` pattern), so these tests override ``get_prov``
 with a recorder and assert the right event fires with the right fields.
 """
+
 from __future__ import annotations
 
 import pathlib
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -18,8 +19,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from connector.db.models import ConsentRequestORM
 from connector.dependencies import get_db, get_notifier, get_prov
 from connector.main import create_app
-from connector.services import consent_service
-from connector.services import consent_vocabulary
+from connector.services import consent_service, consent_vocabulary
 from connector.services.consent_service import (
     WILDCARD_CONSUMER,
     consent_snapshot_hash,
@@ -101,8 +101,8 @@ async def _seed(engine, **overrides) -> str:
         status="granted",
         purpose=["FlexibilityResearch"],
         controller="example-org",
-        requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-        decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
+        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
         transfer_ids=[],
     )
     base.update(overrides)
@@ -114,6 +114,7 @@ async def _seed(engine, **overrides) -> str:
 
 
 # ── consent emits ─────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_admin_shares_emits_consent_granted(prov_client):
@@ -170,7 +171,9 @@ async def test_my_shares_toggle_emits_granted_then_revoked(prov_client):
 async def test_approve_emits_consent_granted(engine, prov_client):
     client, fake = prov_client
     consent_id = await _seed(
-        engine, consumer_id="did:web:third-party.dataspaces.localhost", status="pending",
+        engine,
+        consumer_id="did:web:third-party.dataspaces.localhost",
+        status="pending",
         decided_at=None,
     )
     r = await client.post(f"/consent/my/{consent_id}/approve", headers=SUBJECT)
@@ -184,7 +187,9 @@ async def test_approve_emits_consent_granted(engine, prov_client):
 async def test_revoke_emits_consent_revoked(engine, prov_client):
     client, fake = prov_client
     consent_id = await _seed(
-        engine, consumer_id="did:web:third-party.dataspaces.localhost", status="granted",
+        engine,
+        consumer_id="did:web:third-party.dataspaces.localhost",
+        status="granted",
     )
     r = await client.post(f"/consent/my/{consent_id}/revoke", headers=SUBJECT)
     assert r.status_code == 200, r.text
@@ -195,6 +200,7 @@ async def test_revoke_emits_consent_revoked(engine, prov_client):
 
 # ── ingestion record ──────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_ingestion_records_snapshot_and_emits(engine, prov_client):
     client, fake = prov_client
@@ -203,8 +209,12 @@ async def test_ingestion_records_snapshot_and_emits(engine, prov_client):
     r = await client.post(
         "/admin/ingestion",
         headers=INGEST,
-        json={"dataset_id": DATASET, "source_ref": "dso-2026-02", "record_count": 99,
-              "agreement_ref": "dpa-1.0"},
+        json={
+            "dataset_id": DATASET,
+            "source_ref": "dso-2026-02",
+            "record_count": 99,
+            "agreement_ref": "dpa-1.0",
+        },
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -285,7 +295,9 @@ async def test_disclosure_computes_the_snapshot_the_caller_cannot(engine, prov_c
 
 @pytest.mark.rule("L-2")
 @pytest.mark.asyncio
-async def test_a_disclosure_that_cannot_be_recorded_does_not_proceed(engine, monkeypatch):
+async def test_a_disclosure_that_cannot_be_recorded_does_not_proceed(
+    engine, monkeypatch
+):
     """`L-1`'s failure policy is chosen by position. A transfer that already
     happened is recorded non-fatally, because refusing loses the fact too. This
     one has *not* happened — the caller is about to hand the data over — so a
@@ -368,6 +380,7 @@ def _two_datasets_for_one_offer(tmp_path, monkeypatch) -> tuple[str, str]:
     test proves the loop and not the wiring.
     """
     import yaml
+
     from connector.config import get_settings
 
     src = pathlib.Path(__file__).parent / "fixtures" / "governance.yaml"
@@ -429,7 +442,9 @@ async def test_disclosure_by_offer_emits_one_event_per_dataset(
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         for event in disclosed:
-            expected, count = await dataset_consent_snapshot(session, event["dataset_id"])
+            expected, count = await dataset_consent_snapshot(
+                session, event["dataset_id"]
+            )
             assert event["consent_snapshot_hash"] == expected
             reported = next(
                 d for d in body["disclosures"] if d["dataset_id"] == event["dataset_id"]
@@ -491,7 +506,9 @@ async def test_disclosure_by_offer_keys_each_event_distinctly(
 
 
 @pytest.mark.asyncio
-async def test_disclosure_by_offer_keeps_the_dataset_form_unchanged(engine, prov_client):
+async def test_disclosure_by_offer_keeps_the_dataset_form_unchanged(
+    engine, prov_client
+):
     """An alternative argument, not a replacement: the `dataset_id` form still
     answers with the three keys it always did."""
     client, _ = prov_client
@@ -500,7 +517,11 @@ async def test_disclosure_by_offer_keeps_the_dataset_form_unchanged(engine, prov
     r = await client.post(
         "/admin/disclosure",
         headers=DISCLOSE,
-        json={"dataset_id": DATASET, "recipient_ref": "dso-org", "event_id": "export-7"},
+        json={
+            "dataset_id": DATASET,
+            "recipient_ref": "dso-org",
+            "event_id": "export-7",
+        },
     )
     assert r.status_code == 200, r.text
     body = r.json()
@@ -544,7 +565,11 @@ async def test_disclosure_unknown_offer_422(prov_client):
     "body",
     [
         {"recipient_ref": "dso-org"},
-        {"recipient_ref": "dso-org", "dataset_id": DATASET, "offer_id": "test-flexibility"},
+        {
+            "recipient_ref": "dso-org",
+            "dataset_id": DATASET,
+            "offer_id": "test-flexibility",
+        },
     ],
     ids=["neither", "both"],
 )
@@ -557,6 +582,7 @@ async def test_disclosure_needs_exactly_one_target(prov_client, body):
 
 
 # ── snapshot hash unit ────────────────────────────────────────────────────────
+
 
 def _row(**overrides) -> ConsentRequestORM:
     base = dict(
@@ -584,7 +610,10 @@ def test_snapshot_hash_is_stable_and_order_independent():
 def test_snapshot_hash_reacts_to_purpose_and_version():
     base = consent_snapshot_hash([_row()])
     assert consent_snapshot_hash([_row(purpose=["IncentiveCalculation"])]) != base
-    assert consent_snapshot_hash([_row(legal_basis={"consent_text_version": "2.0"})]) != base
+    assert (
+        consent_snapshot_hash([_row(legal_basis={"consent_text_version": "2.0"})])
+        != base
+    )
 
 
 @pytest.mark.rule("L-2", "D-14")
@@ -604,8 +633,12 @@ def test_snapshot_hash_reacts_to_the_controller():
 @pytest.mark.asyncio
 async def test_dataset_snapshot_counts_only_granted(engine):
     await _seed(engine, subject_id="did:web:a", status="granted")
-    await _seed(engine, subject_id="did:web:b", status="revoked",
-                revoked_at=datetime(2026, 1, 2, tzinfo=timezone.utc))
+    await _seed(
+        engine,
+        subject_id="did:web:b",
+        status="revoked",
+        revoked_at=datetime(2026, 1, 2, tzinfo=UTC),
+    )
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         _hash, count = await dataset_consent_snapshot(session, DATASET)
@@ -632,7 +665,7 @@ async def _decide(session, offer: str, status: str, **overrides):
                     if offer == "test-flexibility"
                     else "EnergyCommunityOperation"
                 ],
-                requested_at=overrides.pop("at", datetime(2026, 1, 1, tzinfo=timezone.utc)),
+                requested_at=overrides.pop("at", datetime(2026, 1, 1, tzinfo=UTC)),
                 **overrides,
             )
         )
@@ -655,8 +688,8 @@ async def test_the_snapshot_keeps_a_grant_when_another_offer_is_declined(engine)
             session,
             "test-grid-planning",
             "revoked",
-            at=datetime(2026, 2, 1, tzinfo=timezone.utc),
-            revoked_at=datetime(2026, 2, 1, 1, tzinfo=timezone.utc),
+            at=datetime(2026, 2, 1, tzinfo=UTC),
+            revoked_at=datetime(2026, 2, 1, 1, tzinfo=UTC),
         )
 
         rows = await consent_service.latest_granted_rows_for_dataset(session, DATASET)
@@ -679,8 +712,8 @@ async def test_the_snapshot_does_not_depend_on_decision_order(engine):
     timestamps rather than the insertion sequence.
     """
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    early = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    late = datetime(2026, 2, 1, tzinfo=timezone.utc)
+    early = datetime(2026, 1, 1, tzinfo=UTC)
+    late = datetime(2026, 2, 1, tzinfo=UTC)
 
     async def snapshot_for(grant_at, decline_at):
         async with factory() as session:
@@ -721,7 +754,7 @@ async def test_two_grants_by_one_subject_are_two_grants_in_the_count(engine):
             session,
             "test-grid-planning",
             "granted",
-            at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+            at=datetime(2026, 2, 1, tzinfo=UTC),
         )
         _hash, count = await dataset_consent_snapshot(session, DATASET)
 
@@ -738,10 +771,18 @@ async def test_a_redecided_offer_still_collapses_to_its_latest(engine):
     """
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
-        await _decide(session, "test-flexibility", "revoked",
-                      revoked_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc))
-        await _decide(session, "test-flexibility", "granted",
-                      at=datetime(2026, 2, 1, tzinfo=timezone.utc))
+        await _decide(
+            session,
+            "test-flexibility",
+            "revoked",
+            revoked_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+        )
+        await _decide(
+            session,
+            "test-flexibility",
+            "granted",
+            at=datetime(2026, 2, 1, tzinfo=UTC),
+        )
         _hash, count = await dataset_consent_snapshot(session, DATASET)
 
     assert count == 1

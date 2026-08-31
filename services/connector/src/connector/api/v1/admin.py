@@ -1,16 +1,15 @@
 """Admin routes for operational portal views."""
+
 from __future__ import annotations
 
 import inspect
 
+from ds_auth import Principal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ds_auth import Principal
-
-from ...services.prov_bridge import acting_principal
 from ...dependencies import (
     get_db,
     get_participant_registry,
@@ -23,7 +22,7 @@ from ...dependencies import (
 from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
 from ...services import consent_service
 from ...services import consent_vocabulary as vocab
-from ...services.prov_bridge import ProvBridge
+from ...services.prov_bridge import ProvBridge, acting_principal
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -166,11 +165,9 @@ class DisclosureRecord(BaseModel):
     event_id: str | None = None
 
     @model_validator(mode="after")
-    def _exactly_one_target(self) -> "DisclosureRecord":
+    def _exactly_one_target(self) -> DisclosureRecord:
         if bool(self.dataset_id) == bool(self.offer_id):
-            raise ValueError(
-                "Name exactly one of 'dataset_id' or 'offer_id'"
-            )
+            raise ValueError("Name exactly one of 'dataset_id' or 'offer_id'")
         return self
 
 
@@ -323,11 +320,13 @@ async def record_disclosure(
                     else ""
                 ),
             ) from exc
-        recorded.append({
-            "dataset_id": dataset_id,
-            "consent_snapshot_hash": snapshot_hash,
-            "granted_party_count": granted_count,
-        })
+        recorded.append(
+            {
+                "dataset_id": dataset_id,
+                "consent_snapshot_hash": snapshot_hash,
+                "granted_party_count": granted_count,
+            }
+        )
 
     response: dict = {"status": "recorded", "disclosures": recorded}
     if body.offer_id:

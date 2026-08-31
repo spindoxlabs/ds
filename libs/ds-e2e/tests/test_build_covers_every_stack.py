@@ -18,6 +18,7 @@ Found 2026-08-05 while rebuilding to run `task e2e:all`, which is the only
 reason it surfaced at all: the grid operator's connector kept answering, from
 the image it had.
 """
+
 from __future__ import annotations
 
 import re
@@ -126,9 +127,7 @@ def test_declared_skips_still_exist():
     remain named in the task, which `test_declared_skips_are_skipped_in_the_task`
     covers wherever the file is present.
     """
-    gone = [
-        s for s in DECLARED_SKIPS if _is_tracked(s) and not (ROOT / s).exists()
-    ]
+    gone = [s for s in DECLARED_SKIPS if _is_tracked(s) and not (ROOT / s).exists()]
     assert not gone, (
         f"declared exempt but no longer present: {gone}. The file was deleted or "
         "renamed — drop it from DECLARED_SKIPS, and from the build task."

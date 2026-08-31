@@ -4,6 +4,7 @@ Every failure here is a case where a person would have been shown a promise the
 platform could not enforce, so each test names the specific link that broke
 between the purpose taxonomy, the datasets and the offers.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -41,9 +42,11 @@ PROFILE = OdrlProfile(
     ]
 )
 
-OWNERS = OwnersRegistry([
-    OwnerEntry(id="example-org", name="Example Org", did="did:web:example.org"),
-])
+OWNERS = OwnersRegistry(
+    [
+        OwnerEntry(id="example-org", name="Example Org", did="did:web:example.org"),
+    ]
+)
 # The unbundling `controller_role` is checked against is declared where the real
 # files declare it — beside the offers — so it is a per-test input rather than a
 # module constant. It used to be
@@ -115,7 +118,11 @@ def run(
     gov = write(
         tmp_path,
         "governance.yaml",
-        {"sources": sources if sources is not None else {"datasets.silver.meters_15m": dataset()}},
+        {
+            "sources": sources
+            if sources is not None
+            else {"datasets.silver.meters_15m": dataset()}
+        },
     )
     offers_path = None
     if offers is not None:
@@ -135,6 +142,7 @@ def run(
 
 # ── Purpose taxonomy ─────────────────────────────────────────────────────────
 
+
 class TestPurposeTaxonomy:
     def test_valid_taxonomy_passes(self, tmp_path: Path):
         result = run(tmp_path)
@@ -143,67 +151,99 @@ class TestPurposeTaxonomy:
 
     @pytest.mark.rule("A-1", "M-13")
     def test_unresolvable_broader_is_an_error(self, tmp_path: Path):
-        profile = OdrlProfile(purposes=[
-            PurposeConcept(slug="A", label="A", definition="a", broader="Ghost"),
-        ])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        profile = OdrlProfile(
+            purposes=[
+                PurposeConcept(slug="A", label="A", definition="a", broader="Ghost"),
+            ]
+        )
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-hierarchy" in codes(result.errors)
 
     @pytest.mark.rule("A-1", "M-13")
     def test_broader_cycle_is_an_error(self, tmp_path: Path):
-        profile = OdrlProfile(purposes=[
-            PurposeConcept(slug="A", label="A", definition="a", broader="B"),
-            PurposeConcept(slug="B", label="B", definition="b", broader="A"),
-        ])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        profile = OdrlProfile(
+            purposes=[
+                PurposeConcept(slug="A", label="A", definition="a", broader="B"),
+                PurposeConcept(slug="B", label="B", definition="b", broader="A"),
+            ]
+        )
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-hierarchy" in codes(result.errors)
 
     @pytest.mark.rule("M-13")
     def test_unknown_skos_relation_is_an_error(self, tmp_path: Path):
-        profile = OdrlProfile(purposes=[
-            PurposeConcept(
-                slug="A", label="A", definition="a",
-                dpv_mapping=DpvMapping(iri="https://w3id.org/dpv#Thing", relation="sameAs"),
-            ),
-        ])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        profile = OdrlProfile(
+            purposes=[
+                PurposeConcept(
+                    slug="A",
+                    label="A",
+                    definition="a",
+                    dpv_mapping=DpvMapping(
+                        iri="https://w3id.org/dpv#Thing", relation="sameAs"
+                    ),
+                ),
+            ]
+        )
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-mapping" in codes(result.errors)
 
     @pytest.mark.rule("M-13")
     def test_non_iri_mapping_is_an_error(self, tmp_path: Path):
-        profile = OdrlProfile(purposes=[
-            PurposeConcept(
-                slug="A", label="A", definition="a",
-                dpv_mapping=DpvMapping(iri="dpv:Thing"),
-            ),
-        ])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        profile = OdrlProfile(
+            purposes=[
+                PurposeConcept(
+                    slug="A",
+                    label="A",
+                    definition="a",
+                    dpv_mapping=DpvMapping(iri="dpv:Thing"),
+                ),
+            ]
+        )
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-mapping" in codes(result.errors)
 
     def test_missing_english_label_is_an_error(self, tmp_path: Path):
         """A frontend with no translation must degrade to readable English,
         never to a raw slug."""
         profile = OdrlProfile(purposes=[PurposeConcept(slug="A", label="  ")])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-labels" in codes(result.errors)
 
     def test_missing_definition_is_a_warning(self, tmp_path: Path):
         profile = OdrlProfile(purposes=[PurposeConcept(slug="A", label="A")])
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile)
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": []})}, profile=profile
+        )
         assert "purpose-labels" in codes(result.warnings)
 
 
 class TestDatasetPurposes:
     @pytest.mark.rule("D-10")
     def test_unknown_declared_purpose_is_an_error(self, tmp_path: Path):
-        result = run(tmp_path, sources={"d": dataset(policy={"purpose": ["NotAPurpose"]})})
+        result = run(
+            tmp_path, sources={"d": dataset(policy={"purpose": ["NotAPurpose"]})}
+        )
         assert "purpose-declared" in codes(result.errors)
 
     @pytest.mark.rule("D-10")
     def test_full_iri_declaration_is_accepted(self, tmp_path: Path):
         result = run(
             tmp_path,
-            sources={"d": dataset(policy={"purpose": [PROFILE.purpose_iri("GridMonitoring")]})},
+            sources={
+                "d": dataset(
+                    policy={"purpose": [PROFILE.purpose_iri("GridMonitoring")]}
+                )
+            },
         )
         assert "purpose-declared" not in codes(result.errors)
 
@@ -238,6 +278,7 @@ class TestDatasetPurposes:
 
 # ── Sharing offers ───────────────────────────────────────────────────────────
 
+
 class TestSharingOffers:
     def test_valid_offer_passes(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer()])
@@ -250,7 +291,7 @@ class TestSharingOffers:
 
     @pytest.mark.rule("C-10")
     def test_dataset_referencing_an_unknown_offer_is_an_error(self, tmp_path: Path):
-        """"No sharing offer" and "not shared" are the same statement.
+        """ "No sharing offer" and "not shared" are the same statement.
 
         Publishing the dataset anyway would advertise a consent gate that can
         never open.
@@ -295,7 +336,9 @@ class TestSharingOffers:
             encoding="utf-8",
         )
 
-        result = run(tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]})
+        result = run(
+            tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]}
+        )
 
         assert "offer-controller" in codes(result.errors)
         assert "offer-duplicate" not in codes(result.errors)
@@ -317,7 +360,10 @@ class TestSharingOffers:
                 "datasets.silver.meters_15m": dataset(
                     classification="pii",
                     user_filter_column="sub",
-                    policy={"purpose": ["FlexibilityResearch"], "consent": {"required": True}},
+                    policy={
+                        "purpose": ["FlexibilityResearch"],
+                        "consent": {"required": True},
+                    },
                 )
             },
             offers=[offer()],
@@ -329,13 +375,19 @@ class TestSharingOffers:
         """Otherwise the negotiated offer denies the very use the person agreed to."""
         result = run(
             tmp_path,
-            sources={"datasets.silver.meters_15m": dataset(policy={"purpose": ["GridMonitoring"]})},
+            sources={
+                "datasets.silver.meters_15m": dataset(
+                    policy={"purpose": ["GridMonitoring"]}
+                )
+            },
             offers=[offer()],
         )
         assert "offer-dataset-purpose" in codes(result.errors)
 
     @pytest.mark.rule("A-2", "D-9")
-    def test_broader_declaration_does_not_satisfy_a_narrower_offer(self, tmp_path: Path):
+    def test_broader_declaration_does_not_satisfy_a_narrower_offer(
+        self, tmp_path: Path
+    ):
         """policy.purpose[] is matched exactly — a dataset offered for the parent
         purpose has not been declared for this specific child."""
         result = run(
@@ -356,7 +408,9 @@ class TestSharingOffers:
         assert "offer-controller" in codes(result.errors)
 
     @pytest.mark.rule("D-11a")
-    def test_a_controller_role_with_no_declared_vocabulary_is_an_error(self, tmp_path: Path):
+    def test_a_controller_role_with_no_declared_vocabulary_is_an_error(
+        self, tmp_path: Path
+    ):
         """The state the whole repository was in until 2026-08-08.
 
         `governance-rec` declared `controller_role: operations` and no file
@@ -421,7 +475,9 @@ class TestSharingOffers:
         assert "offer-controller" in codes(result.warnings)
 
     @pytest.mark.rule("D-11a")
-    def test_the_role_vocabulary_is_still_checked_without_a_registry(self, tmp_path: Path):
+    def test_the_role_vocabulary_is_still_checked_without_a_registry(
+        self, tmp_path: Path
+    ):
         """The two halves are independent, and this is the point of splitting them.
 
         Whether the entity exists needs a registry; whether the named function is

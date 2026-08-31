@@ -161,17 +161,20 @@ class ConsentWithdrawalFlow(BaseFlow):
         a running transfer keeps its lawful basis is *whether anyone at all still
         consents*, not whether the withdrawing subject does.
         """
-        payload = self.http.get(
-            f"{self.settings.connector_url}/internal/consent/check?"
-            + urllib.parse.urlencode(
-                {
-                    "dataset_id": dataset_id,
-                    "consumer_id": self.settings.consumer_did,
-                    "purpose": self.settings.consented_purpose,
-                }
-            ),
-            headers=svc,
-        ) or {}
+        payload = (
+            self.http.get(
+                f"{self.settings.connector_url}/internal/consent/check?"
+                + urllib.parse.urlencode(
+                    {
+                        "dataset_id": dataset_id,
+                        "consumer_id": self.settings.consumer_did,
+                        "purpose": self.settings.consented_purpose,
+                    }
+                ),
+                headers=svc,
+            )
+            or {}
+        )
         return [s for s in (payload.get("subject_ids") or []) if isinstance(s, str)]
 
     def _set_admin_share(
@@ -655,9 +658,7 @@ class ConsentWithdrawalFlow(BaseFlow):
         try:
             self.http.acquire_service_token()
             svc = self.http.bearer_headers()
-            credentials = self._fetch_credentials(
-                FlowResult(flow_name=self.name), svc
-            )
+            credentials = self._fetch_credentials(FlowResult(flow_name=self.name), svc)
             subject_vc = credentials[1] if credentials else None
             if not subject_vc:
                 return

@@ -32,6 +32,7 @@ different controller (`plans/onboarding-seam.md`, "Out of scope").
 
 Needs connector, identity-registry, provenance and Keycloak. No EDC.
 """
+
 from __future__ import annotations
 
 import logging
@@ -81,7 +82,9 @@ class OnboardingSeamFlow(BaseFlow):
             except Exception as exc:
                 result.fail_step("health", f"{name} unreachable: {exc}")
                 return result
-        result.pass_step("health", "connector, identity-registry and provenance reachable")
+        result.pass_step(
+            "health", "connector, identity-registry and provenance reachable"
+        )
 
         # The identity under test. Everything below runs on this token.
         try:
@@ -127,7 +130,9 @@ class OnboardingSeamFlow(BaseFlow):
 
     # ── Phase 1: the organisation, by the name the caller holds ──────────────
 
-    def _check_owner_resolution(self, result: FlowResult, headers: dict[str, str]) -> bool:
+    def _check_owner_resolution(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> bool:
         s = self.settings
         ir = s.identity_registry_url
 
@@ -165,7 +170,9 @@ class OnboardingSeamFlow(BaseFlow):
         )
         return True
 
-    def _check_perimeter_held(self, result: FlowResult, headers: dict[str, str]) -> bool:
+    def _check_perimeter_held(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> bool:
         """The control, and the reason this flow is not just a happy path.
 
         Admitting the caller by granting it `identity-registry.read` would pass
@@ -204,7 +211,9 @@ class OnboardingSeamFlow(BaseFlow):
 
     # ── What a wizard renders, before anyone has an identity ─────────────────
 
-    def _check_public_offer_projection(self, result: FlowResult) -> dict[str, Any] | None:
+    def _check_public_offer_projection(
+        self, result: FlowResult
+    ) -> dict[str, Any] | None:
         """`D-13` — and the reason the disclosure route had to take an offer.
 
         This is the surface the onboarding wizard reads, unauthenticated by
@@ -244,7 +253,10 @@ class OnboardingSeamFlow(BaseFlow):
                 published=[o.get("id") for o in offers],
             )
             return None
-        if not isinstance(offer.get("dataset_count"), int) or offer["dataset_count"] < 1:
+        if (
+            not isinstance(offer.get("dataset_count"), int)
+            or offer["dataset_count"] < 1
+        ):
             result.fail_step(
                 "public offer projection",
                 "the offer publishes no usable dataset_count, so there is nothing "
@@ -526,7 +538,9 @@ class OnboardingSeamFlow(BaseFlow):
         )
         return disclosures
 
-    def _check_hashes_recompute(self, result: FlowResult, disclosures: list[dict[str, Any]]) -> None:
+    def _check_hashes_recompute(
+        self, result: FlowResult, disclosures: list[dict[str, Any]]
+    ) -> None:
         """`L-2` asks the hash to be *recomputable*, not merely present.
 
         Recomputed through `POST /admin/ingestion`, which fingerprints the same

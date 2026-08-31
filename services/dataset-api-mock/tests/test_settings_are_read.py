@@ -35,9 +35,7 @@ def _sources() -> str:
 def test_every_settings_field_is_read():
     body = _sources()
     unread = [
-        name
-        for name in Settings.model_fields
-        if name not in _FRAMEWORK_FIELDS and f"settings.{name}" not in body
+        name for name in Settings.model_fields if name not in _FRAMEWORK_FIELDS and f"settings.{name}" not in body
     ]
     assert not unread, (
         f"Settings fields nothing reads: {unread}. Wire them or delete them — a "
@@ -91,6 +89,4 @@ def test_no_deployment_file_sets_a_variable_this_service_does_not_read():
         for where, token in _deployment_tokens("DATASET_API_")
         if token not in declared and token not in known_elsewhere
     )
-    assert not stray, (
-        f"Deployment files name settings this service does not read: {stray}"
-    )
+    assert not stray, f"Deployment files name settings this service does not read: {stray}"

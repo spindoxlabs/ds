@@ -34,11 +34,10 @@ from ...schemas.responses import (
     ParticipantResponse,
 )
 from ...services import org_onboarding as ops
-from ...services import trust_list
+from ...services import provisioning, trust_list
 from ...services.enrolment import EnrolmentError
-from ...services.registry_notify import invalidate_participant_caches
-from ...services import provisioning
 from ...services.keycloak_admin import KeycloakAdminClient
+from ...services.registry_notify import invalidate_participant_caches
 
 router = APIRouter(prefix="/admin", tags=["organizations"])
 
@@ -127,6 +126,7 @@ async def create_application(
     409 instead: a stranger holding an invite must not be able to mutate an
     organisation that already exists.
     """
+
     # Only what the caller actually sent. An omitted optional field used to mean
     # "set to None", which on a re-registration silently wiped values the caller
     # never mentioned — and would fire the verified-lock below on fields nobody

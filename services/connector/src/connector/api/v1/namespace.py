@@ -13,13 +13,13 @@ Everything here is public and unauthenticated by design (`M-8`), and nothing her
 makes an outbound call: the semantic vocabularies are read from a local cache
 filled at startup or by ``task vocab:fetch``.
 """
-from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse
+from __future__ import annotations
 
 from ds.governance.models import OdrlProfile
 from ds.governance.vocabulary_cache import VocabularyFetchError, read_cached
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import JSONResponse
 
 router = APIRouter(tags=["namespace"])
 
@@ -42,7 +42,6 @@ def _build_vocab(profile: OdrlProfile) -> dict:
             "skos:definition": "Whether the data subject has an active consent grant for the requesting consumer.",
             "skos:example": "active",
         },
-
         # ── ODRL action ────────────────────────────────────────────────
         {
             "@id": profile.term(profile.query_action),
@@ -53,7 +52,6 @@ def _build_vocab(profile: OdrlProfile) -> dict:
             ),
             "odrl:includedIn": {"@id": "odrl:use"},
         },
-
         # ── Party roles ────────────────────────────────────────────────
         {
             "@id": f"{pfx}:role:DataSubject",
@@ -247,6 +245,7 @@ def _cache_dir():
 # vocabulary with that slug, and 404. The existing public surface would break in
 # a way no test of *this* route would notice, which is why
 # `tests/test_ns_vocabularies.py` asserts the siblings still answer.
+
 
 @router.get("/ns/{slug}")
 async def vocabulary(slug: str):

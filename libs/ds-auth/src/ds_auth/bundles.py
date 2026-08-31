@@ -30,6 +30,7 @@ privilege-escalation surface, and this one is small enough to review. Mapping
 *someone else's* group names onto these bundles is a separate concern (Layer B),
 because that is about a foreign IAM's naming rather than about what ds permits.
 """
+
 from __future__ import annotations
 
 import json
@@ -214,7 +215,7 @@ def parse_group_aliases(raw: str | None) -> dict[str, str]:
     except (TypeError, ValueError) as exc:
         logger.error(
             "ds-auth: group alias map is not valid JSON (%s) — no aliases applied. "
-            "Expected {\"foreign-group\": \"ds-bundle\"}.",
+            'Expected {"foreign-group": "ds-bundle"}.',
             exc,
         )
         return {}

@@ -1,4 +1,5 @@
 """Domain event → PROV-O materialisation in a single transaction."""
+
 from __future__ import annotations
 
 import hashlib
@@ -242,8 +243,11 @@ async def _materialise_catalogue_published(
     session: AsyncSession, event: CataloguePublished
 ) -> ProvNodeORM:
     dataset = await upsert_node(
-        session, event.data_product_id, "Entity",
-        label=event.title, description=event.description,
+        session,
+        event.data_product_id,
+        "Entity",
+        label=event.title,
+        description=event.description,
         energy_type="DataProduct",
     )
     activity = await upsert_node(
@@ -280,11 +284,15 @@ async def _materialise_catalog_viewed(
             "datasetCount": event.dataset_count,
         },
     )
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
     await session.flush()
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     if event.consumer_did:
-        consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+        consumer = await upsert_node(
+            session, event.consumer_did, "Agent", label=event.consumer_did
+        )
         await session.flush()
         await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
     if event.user_did:
@@ -310,9 +318,15 @@ async def _materialise_access_requested(
             "offerId": event.offer_id,
         },
     )
-    dataset = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    dataset = await upsert_node(
+        session, event.data_product_id, "Entity", label=event.data_product_id
+    )
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     user = await upsert_node(session, event.user_did, "Agent", label=event.user_did)
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
@@ -331,11 +345,20 @@ async def _materialise_negotiation_started(
         "Activity",
         label="Negotiation Started",
         started_at=event.occurred_at,
-        external_meta={"negotiationId": event.negotiation_id, "offerId": event.offer_id},
+        external_meta={
+            "negotiationId": event.negotiation_id,
+            "offerId": event.offer_id,
+        },
     )
-    dataset = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    dataset = await upsert_node(
+        session, event.data_product_id, "Entity", label=event.data_product_id
+    )
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
@@ -368,9 +391,15 @@ async def _materialise_negotiation_finalized(
         label=f"Contract Agreement {event.agreement_id}",
         external_meta={"agreementId": event.agreement_id},
     )
-    dataset = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    dataset = await upsert_node(
+        session, event.data_product_id, "Entity", label=event.data_product_id
+    )
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     await session.flush()
     await _edge(session, "wasGeneratedBy", agreement.id, activity.id)
     await _edge(session, "used", activity.id, dataset.id)
@@ -404,7 +433,9 @@ async def _materialise_negotiation_terminated(
             await session.flush()
             await _edge(session, "wasAssociatedWith", activity.id, agent.id)
     if event.data_product_id:
-        dataset = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
+        dataset = await upsert_node(
+            session, event.data_product_id, "Entity", label=event.data_product_id
+        )
         await session.flush()
         await _edge(session, "used", activity.id, dataset.id)
     return activity
@@ -429,8 +460,12 @@ async def _materialise_contract_signed(
         label=f"Contract Agreement {event.agreement_id}",
         external_meta={"agreementId": event.agreement_id},
     )
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     await session.flush()
     await _edge(session, "wasGeneratedBy", agreement.id, negotiation.id)
     await _edge(session, "wasAssociatedWith", negotiation.id, provider.id)
@@ -458,14 +493,18 @@ async def _materialise_transfer_completed(
         or f"urn:entity:derived:{event.data_product_id}:{event.consumer_did}"
     )
     derived = await upsert_node(
-        session, derived_iri, "Entity",
+        session,
+        derived_iri,
+        "Entity",
         label=f"Derived dataset at {event.consumer_did}",
         energy_type="DerivedDataset",
     )
     source = await upsert_node(
         session, event.data_product_id, "Entity", label=event.data_product_id
     )
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     await session.flush()
     await _edge(session, "wasGeneratedBy", derived.id, transfer.id)
     await _edge(session, "wasDerivedFrom", derived.id, source.id)
@@ -487,9 +526,15 @@ async def _materialise_transfer_started(
             "agreementId": event.agreement_id,
         },
     )
-    source = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    source = await upsert_node(
+        session, event.data_product_id, "Entity", label=event.data_product_id
+    )
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     await session.flush()
     await _edge(session, "used", transfer.id, source.id)
     await _edge(session, "wasAssociatedWith", transfer.id, provider.id)
@@ -519,7 +564,9 @@ async def _materialise_query_executed(
             "authorizedSubjectIds": event.authorized_subject_ids,
         },
     )
-    dataset = await upsert_node(session, event.data_product_id, "Entity", label=event.data_product_id)
+    dataset = await upsert_node(
+        session, event.data_product_id, "Entity", label=event.data_product_id
+    )
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
     for did in [event.provider_did, event.consumer_did, event.user_did]:
@@ -528,7 +575,6 @@ async def _materialise_query_executed(
             await session.flush()
             await _edge(session, "wasAssociatedWith", activity.id, agent.id)
     return activity
-
 
 
 async def _materialise_access_revoked(
@@ -551,8 +597,12 @@ async def _materialise_access_revoked(
     dataset = await upsert_node(
         session, event.data_product_id, "Entity", label=event.data_product_id
     )
-    provider = await upsert_node(session, event.provider_did, "Agent", label=event.provider_did)
-    consumer = await upsert_node(session, event.consumer_did, "Agent", label=event.consumer_did)
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    consumer = await upsert_node(
+        session, event.consumer_did, "Agent", label=event.consumer_did
+    )
     # The subject whose access this revoked is named in the event and was the one
     # principal it never became an agent (rulebook `L-5`) — so the graph recorded
     # a revocation with no answer to "whose". `prov:role` distinguishes them from
@@ -564,7 +614,9 @@ async def _materialise_access_revoked(
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
-    await _edge(session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject")
+    await _edge(
+        session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject"
+    )
     return activity
 
 
@@ -591,7 +643,9 @@ async def _materialise_consent_granted(
     dataset = await upsert_node(
         session, event.dataset_id, "Entity", label=event.dataset_id
     )
-    subject = await upsert_node(session, event.subject_id, "Agent", label=event.subject_id)
+    subject = await upsert_node(
+        session, event.subject_id, "Agent", label=event.subject_id
+    )
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, subject.id)
@@ -621,7 +675,9 @@ async def _materialise_consent_revoked(
     dataset = await upsert_node(
         session, event.dataset_id, "Entity", label=event.dataset_id
     )
-    subject = await upsert_node(session, event.subject_id, "Agent", label=event.subject_id)
+    subject = await upsert_node(
+        session, event.subject_id, "Agent", label=event.subject_id
+    )
     await session.flush()
     # The subject withdraws the standing permission over the dataset; the
     # revocation invalidates the consent's hold on it.
@@ -648,7 +704,10 @@ async def _materialise_data_ingested(
         },
     )
     dataset = await upsert_node(
-        session, event.dataset_id, "Entity", label=event.dataset_id,
+        session,
+        event.dataset_id,
+        "Entity",
+        label=event.dataset_id,
         energy_type="DataProduct",
     )
     await session.flush()
@@ -695,7 +754,10 @@ async def _materialise_data_disclosed(
     # and the lineage graph, which is what an auditor traverses, does not connect
     # the handover to the data product at all.
     dataset = await upsert_node(
-        session, event.dataset_id, "Entity", label=event.dataset_id,
+        session,
+        event.dataset_id,
+        "Entity",
+        label=event.dataset_id,
         energy_type="DataProduct",
     )
     await session.flush()

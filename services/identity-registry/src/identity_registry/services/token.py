@@ -27,6 +27,7 @@ access.scope     the granted ``bearer_access_scope``
 That crossover is the binding: the credential service can tell that the party
 presenting the access token is the party its own STS minted it for.
 """
+
 from __future__ import annotations
 
 import json

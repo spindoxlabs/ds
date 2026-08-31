@@ -1,4 +1,5 @@
 """Production configuration guard — warn in dev, refuse to boot in production."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -197,6 +198,7 @@ def test_secret_equal_to_client_id_dev_only_warns(caplog):
 
 # ── AUTH-06 · a guard method with no caller enforces nothing ─────────────────
 
+
 def test_require_https_is_registered_by_every_service_that_has_an_issuer():
     """`require_https` existed, was tested, and was called by no service.
 
@@ -208,14 +210,15 @@ def test_require_https_is_registered_by_every_service_that_has_an_issuer():
     root = Path(__file__).resolve().parents[3]
     mains = {
         "connector": root / "services/connector/src/connector/main.py",
-        "federated-catalog":
-            root / "services/federated-catalog/src/federated_catalog/main.py",
-        "identity-registry":
-            root / "services/identity-registry/src/identity_registry/main.py",
+        "federated-catalog": root
+        / "services/federated-catalog/src/federated_catalog/main.py",
+        "identity-registry": root
+        / "services/identity-registry/src/identity_registry/main.py",
         "provenance": root / "services/provenance/src/provenance/main.py",
     }
     missing = [
-        name for name, path in mains.items()
+        name
+        for name, path in mains.items()
         if "guard.require_https(" not in path.read_text()
     ]
     assert not missing, f"{missing} build a ProductionGuard and register no https rule"

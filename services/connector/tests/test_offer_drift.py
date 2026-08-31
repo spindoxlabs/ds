@@ -5,17 +5,18 @@ sync succeeds, and every stored consent for that id now attests to text nobody
 agreed to. Nothing in the platform noticed before — including when offers lived
 in a single file, which is why this is not a cost of distributing them.
 """
+
 from __future__ import annotations
 
 import pytest
-
-from connector.services.offer_drift import drift_failure
 from ds.governance.sharing import (
     CONSENT_BASIS,
     OfferRecipients,
     ProcessorCategory,
     SharingOffer,
 )
+
+from connector.services.offer_drift import drift_failure
 
 
 def _offer(version: str = "1.0") -> SharingOffer:
@@ -83,14 +84,12 @@ def test_the_message_says_how_many_rows_disagree():
 
 # ── The sync consequence ─────────────────────────────────────────────────────
 
+
 @pytest.mark.rule("D-13")
 def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
     """Refusing the offer alone would not help: the dataset is what gets
     published, and republishing it leaves stored consent attesting to text
     nobody agreed to."""
-    from connector.services.governance import ConnectorGovernanceMapper
-    from connector.services.provider_service import _reject_unpublishable
-    from connector.schemas.edc import SyncResult
     from ds.governance.models import (
         DataspacePolicy,
         DataspaceSpec,
@@ -98,6 +97,10 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
         load_odrl_profile,
     )
     from ds.governance.sharing import SharingOfferCatalogue
+
+    from connector.schemas.edc import SyncResult
+    from connector.services.governance import ConnectorGovernanceMapper
+    from connector.services.provider_service import _reject_unpublishable
 
     offer = _offer()
     rule = GovernanceRuleV2(
@@ -126,9 +129,6 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
 @pytest.mark.rule("D-13")
 def test_an_unaffected_dataset_still_publishes_when_another_offer_drifted():
     """Drift is per offer — one bad edit must not empty the catalogue."""
-    from connector.services.governance import ConnectorGovernanceMapper
-    from connector.services.provider_service import _reject_unpublishable
-    from connector.schemas.edc import SyncResult
     from ds.governance.models import (
         DataspacePolicy,
         DataspaceSpec,
@@ -136,6 +136,10 @@ def test_an_unaffected_dataset_still_publishes_when_another_offer_drifted():
         load_odrl_profile,
     )
     from ds.governance.sharing import SharingOfferCatalogue
+
+    from connector.schemas.edc import SyncResult
+    from connector.services.governance import ConnectorGovernanceMapper
+    from connector.services.provider_service import _reject_unpublishable
 
     offer = _offer()
     rule = GovernanceRuleV2(

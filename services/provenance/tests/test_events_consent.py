@@ -1,4 +1,5 @@
 """PROV-O materialisation for the Block C consent & disclosure events."""
+
 import pytest
 
 
@@ -13,7 +14,10 @@ CONSENT_GRANTED = {
     "purpose": ["FlexibilityResearch"],
     "controller": "example-org",
     "controller_role": "operator",
-    "legal_basis": {"basis_iri": "https://w3id.org/dpv#Consent", "consent_text_version": "1.0"},
+    "legal_basis": {
+        "basis_iri": "https://w3id.org/dpv#Consent",
+        "consent_text_version": "1.0",
+    },
 }
 
 CONSENT_REVOKED = {
@@ -126,7 +130,8 @@ async def test_a_disclosure_without_its_consent_evidence_is_refused(client, miss
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "value", ["", "unknown", "pending", "B" * 64, "b" * 63, "sha256:" + "b" * 64],
+    "value",
+    ["", "unknown", "pending", "B" * 64, "b" * 63, "sha256:" + "b" * 64],
     ids=["empty", "unknown", "pending", "uppercase", "too-short", "prefixed"],
 )
 @pytest.mark.rule("L-2")
@@ -185,6 +190,4 @@ async def test_new_events_queryable_by_type(client):
     graph = response.json()["@graph"]
     assert len(graph) >= 1
     # data_product_id column is populated from dataset_id for these events
-    assert any(
-        e.get("ds:dataProductId") == DATA_INGESTED["dataset_id"] for e in graph
-    )
+    assert any(e.get("ds:dataProductId") == DATA_INGESTED["dataset_id"] for e in graph)

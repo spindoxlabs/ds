@@ -4,6 +4,7 @@
 this client does with a *status code and body* it did not expect, and the plain
 transport makes each case one line.
 """
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -43,6 +44,7 @@ def edc_client():
     construction — which also keeps `__init__`'s header wiring under test in
     `test_client_errors.py::test_api_key_becomes_the_edc_management_header`.
     """
+
     def _build(handler: Callable[[httpx.Request], httpx.Response]):
         fake = RecordingEdc(handler)
         client = EdcManagementClient(BASE, api_key="edc-key")
@@ -52,6 +54,7 @@ def edc_client():
             transport=httpx.MockTransport(fake),
         )
         return client, fake
+
     return _build
 
 

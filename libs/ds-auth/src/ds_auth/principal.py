@@ -1,4 +1,5 @@
 """The authenticated caller — service or user — normalized to one shape."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping

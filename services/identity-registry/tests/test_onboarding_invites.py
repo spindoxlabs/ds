@@ -3,6 +3,7 @@
 The public route is the only unauthenticated write on a service that holds every
 private key, so its refusals matter more than its successes.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -30,6 +31,7 @@ def application(code: str, alias: str = "acme-energy") -> dict:
 
 # ── issuing ───────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_code_is_returned_once_and_never_again(client):
     code = await issue(client, label="acme")
@@ -45,11 +47,18 @@ async def test_code_is_returned_once_and_never_again(client):
 
 @pytest.mark.asyncio
 async def test_issuing_needs_write_and_listing_needs_read(client):
-    assert (await client.post("/admin/onboarding/invites", headers=READ, json={})).status_code == 403
-    assert (await client.get("/admin/onboarding/invites", headers=make_headers(scope="nope"))).status_code == 403
+    assert (
+        await client.post("/admin/onboarding/invites", headers=READ, json={})
+    ).status_code == 403
+    assert (
+        await client.get(
+            "/admin/onboarding/invites", headers=make_headers(scope="nope")
+        )
+    ).status_code == 403
 
 
 # ── redeeming ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_valid_code_files_an_application(client):
@@ -73,9 +82,13 @@ async def test_valid_code_files_an_application(client):
 @pytest.mark.asyncio
 async def test_a_code_works_exactly_once(client):
     code = await issue(client)
-    assert (await client.post("/onboarding/applications", json=application(code))).status_code == 201
+    assert (
+        await client.post("/onboarding/applications", json=application(code))
+    ).status_code == 201
 
-    again = await client.post("/onboarding/applications", json=application(code, alias="acme-two"))
+    again = await client.post(
+        "/onboarding/applications", json=application(code, alias="acme-two")
+    )
     assert again.status_code == 403
 
 
@@ -93,7 +106,9 @@ async def test_redemption_is_recorded_against_the_invite(client):
 @pytest.mark.asyncio
 async def test_no_code_and_a_wrong_code_are_refused_identically(client):
     await issue(client)
-    wrong = await client.post("/onboarding/applications", json=application("not-a-real-code"))
+    wrong = await client.post(
+        "/onboarding/applications", json=application("not-a-real-code")
+    )
     assert wrong.status_code == 403
     # Same answer either way: the route must not reveal which codes exist.
     assert wrong.json()["detail"] == "Invalid or already used invite code"
@@ -112,14 +127,18 @@ async def test_expired_code_is_refused(client, db_session):
     invite.expires_at = datetime.now(UTC) - timedelta(minutes=1)
     await db_session.commit()
 
-    assert (await client.post("/onboarding/applications", json=application(code))).status_code == 403
+    assert (
+        await client.post("/onboarding/applications", json=application(code))
+    ).status_code == 403
 
 
 @pytest.mark.rule("P-4")
 @pytest.mark.asyncio
 async def test_duplicate_alias_is_refused(client):
     first, second = await issue(client), await issue(client)
-    assert (await client.post("/onboarding/applications", json=application(first))).status_code == 201
+    assert (
+        await client.post("/onboarding/applications", json=application(first))
+    ).status_code == 201
 
     clash = await client.post("/onboarding/applications", json=application(second))
     assert clash.status_code == 409

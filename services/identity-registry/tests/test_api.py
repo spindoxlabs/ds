@@ -184,7 +184,6 @@ async def test_registering_a_participant_records_a_keyless_did(client, db_sessio
     assert doc.status_code == 404
 
 
-
 @pytest.mark.rule("P-12")
 @pytest.mark.asyncio
 async def test_list_participants(client, db_session):
@@ -503,7 +502,9 @@ async def test_keycloak_sync(client, db_session):
 
 
 @pytest.mark.asyncio
-async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp_path, db_session):
+async def test_keycloak_sync_writes_nothing_to_keycloak(
+    client, monkeypatch, tmp_path, db_session
+):
     """The endpoint records a mapping and touches Keycloak **not at all**.
 
     It used to also push a `dataspace_did` user attribute, which no protocol
@@ -526,7 +527,9 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
         KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
     )
     assert settings_with_kc.keycloak_admin_url == "http://keycloak.invalid"
-    client._transport.app.dependency_overrides[get_settings_dep] = lambda: settings_with_kc
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: (
+        settings_with_kc
+    )
 
     class NoOutboundHttp:
         def __init__(self, *a, **k):
@@ -540,7 +543,11 @@ async def test_keycloak_sync_writes_nothing_to_keycloak(client, monkeypatch, tmp
     await seed_did(db_session)
     r = await client.post(
         "/admin/keycloak/sync",
-        json={"did": TEST_DID, "keycloak_realm": "dataspaces", "keycloak_user_id": "u1"},
+        json={
+            "did": TEST_DID,
+            "keycloak_realm": "dataspaces",
+            "keycloak_user_id": "u1",
+        },
         headers=HEADERS,
     )
 
@@ -571,7 +578,9 @@ async def test_keycloak_mapping_by_subject_id(client, db_session):
         headers=HEADERS,
     )
 
-    r = await client.get(f"/admin/keycloak/mapping?subject_id={TEST_DID}", headers=HEADERS)
+    r = await client.get(
+        f"/admin/keycloak/mapping?subject_id={TEST_DID}", headers=HEADERS
+    )
     assert r.status_code == 200
     assert r.json()["did"] == TEST_DID
 

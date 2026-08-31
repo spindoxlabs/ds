@@ -7,6 +7,7 @@ So every test here pins something whose failure produces *silence* rather than a
 error — which is the defect class this codebase keeps paying for (`CI-02`,
 `E2E-01`, `GOV-19`).
 """
+
 from __future__ import annotations
 
 import pytest
@@ -77,13 +78,13 @@ class TestTheSwitch:
         assert configure_tracing("svc") is False
 
     def test_being_off_is_stated_not_inferred(self, monkeypatch, caplog):
-        """"No spans arriving" and "never switched on" must not look identical."""
+        """ "No spans arriving" and "never switched on" must not look identical."""
         monkeypatch.delenv(ENDPOINT_ENV, raising=False)
         with caplog.at_level("INFO"):
             configure_tracing("ds-connector")
-        assert any(
-            ENDPOINT_ENV in record.getMessage() for record in caplog.records
-        ), "a service with tracing off said nothing about it"
+        assert any(ENDPOINT_ENV in record.getMessage() for record in caplog.records), (
+            "a service with tracing off said nothing about it"
+        )
 
     def test_the_endpoint_variable_is_opentelemetry_s_own_name(self):
         """Not a `DS_`-prefixed alias.

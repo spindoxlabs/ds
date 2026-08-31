@@ -27,6 +27,7 @@ It also asserts two production properties the happy path never exercises:
 Needs connector, provenance and identity-registry. Runs richer assertions when a
 `smoke` run has already populated the store, and says so when it has not.
 """
+
 from __future__ import annotations
 
 import logging
@@ -52,7 +53,10 @@ class LineageFlow(BaseFlow):
         s = self.settings
         result = FlowResult(flow_name=self.name)
 
-        for name, url in (("connector", s.connector_url), ("provenance", s.provenance_url)):
+        for name, url in (
+            ("connector", s.connector_url),
+            ("provenance", s.provenance_url),
+        ):
             try:
                 self.http.get(f"{url}/health")
             except Exception as exc:
@@ -238,7 +242,10 @@ class LineageFlow(BaseFlow):
             },
             headers=headers,
         )
-        if isinstance(ingested, dict) and ingested.get("consent_snapshot_hash") != snapshot:
+        if (
+            isinstance(ingested, dict)
+            and ingested.get("consent_snapshot_hash") != snapshot
+        ):
             result.fail_step(
                 "disclosure recorded",
                 "the disclosure and the ingestion fingerprinted the same consent "
@@ -294,7 +301,9 @@ class LineageFlow(BaseFlow):
             result.fail_step(
                 "lineage graph",
                 "no prov:Activity is reachable from the dataset",
-                node_types=sorted({str(n.get("@type")) for n in nodes if isinstance(n, dict)}),
+                node_types=sorted(
+                    {str(n.get("@type")) for n in nodes if isinstance(n, dict)}
+                ),
             )
             return
         if graph.get("root") != s.asset_id:
@@ -370,7 +379,9 @@ class LineageFlow(BaseFlow):
 
         summary_query = urllib.parse.urlencode({"dataset_id": s.asset_id})
         status, summary = self.http.raw(
-            "GET", f"{s.provenance_url}/audit/log/summary?{summary_query}", headers=headers
+            "GET",
+            f"{s.provenance_url}/audit/log/summary?{summary_query}",
+            headers=headers,
         )
         if status != 200 or not isinstance(summary, dict):
             result.fail_step(
@@ -420,9 +431,10 @@ class LineageFlow(BaseFlow):
     def _count_events(self, headers: dict[str, str], event_type: str) -> int:
         s = self.settings
         query = urllib.parse.urlencode({"event_type": event_type, "limit": 500})
-        payload = self.http.get(
-            f"{s.provenance_url}/prov/events?{query}", headers=headers
-        ) or {}
+        payload = (
+            self.http.get(f"{s.provenance_url}/prov/events?{query}", headers=headers)
+            or {}
+        )
         graph = payload.get("@graph") or []
         return len([g for g in graph if isinstance(g, dict)])
 

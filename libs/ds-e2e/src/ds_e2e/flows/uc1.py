@@ -45,14 +45,22 @@ class UC1Flow(BaseFlow):
         non_member_did = "did:web:rec.dataspaces.localhost:users:outsider"
         try:
             encoded = urllib.parse.quote(non_member_did, safe="")
-            check = self.http.get(
-                f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization=example-org",
-                headers=svc_headers,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization=example-org",
+                    headers=svc_headers,
+                )
+                or {}
+            )
             if check.get("member"):
-                result.fail_step("non-member precondition", f"'{non_member_did}' is unexpectedly a member")
+                result.fail_step(
+                    "non-member precondition",
+                    f"'{non_member_did}' is unexpectedly a member",
+                )
                 return result
-            result.pass_step("non-member precondition", f"'{non_member_did}' confirmed not a member")
+            result.pass_step(
+                "non-member precondition", f"'{non_member_did}' confirmed not a member"
+            )
         except Exception as exc:
             result.fail_step("non-member precondition", str(exc))
             return result
@@ -60,7 +68,9 @@ class UC1Flow(BaseFlow):
         result.pass_step("uc1 complete", "subject-pool preconditions verified")
         return result
 
-    def _check_owner_preconditions(self, result: FlowResult, headers: dict[str, str]) -> bool:
+    def _check_owner_preconditions(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> bool:
         s = self.settings
         owner_alias = "example-org"
         member_did = "did:web:rec.dataspaces.localhost:users:data-subject"
@@ -71,7 +81,9 @@ class UC1Flow(BaseFlow):
                 headers=headers,
             )
             if not owner or not owner.get("id"):
-                result.fail_step("owner precondition", f"owner '{owner_alias}' not found")
+                result.fail_step(
+                    "owner precondition", f"owner '{owner_alias}' not found"
+                )
                 return False
             result.pass_step("owner precondition", f"owner '{owner_alias}' exists")
         except Exception as exc:
@@ -80,14 +92,23 @@ class UC1Flow(BaseFlow):
 
         try:
             encoded = urllib.parse.quote(member_did, safe="")
-            check = self.http.get(
-                f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization={owner_alias}",
-                headers=headers,
-            ) or {}
+            check = (
+                self.http.get(
+                    f"{s.identity_registry_url}/memberships/check?user_did={encoded}&organization={owner_alias}",
+                    headers=headers,
+                )
+                or {}
+            )
             if not check.get("member"):
-                result.fail_step("membership precondition", f"'{member_did}' is not a member of '{owner_alias}'")
+                result.fail_step(
+                    "membership precondition",
+                    f"'{member_did}' is not a member of '{owner_alias}'",
+                )
                 return False
-            result.pass_step("membership precondition", f"'{member_did}' is a member of '{owner_alias}'")
+            result.pass_step(
+                "membership precondition",
+                f"'{member_did}' is a member of '{owner_alias}'",
+            )
         except Exception as exc:
             result.fail_step("membership precondition", str(exc))
             return False

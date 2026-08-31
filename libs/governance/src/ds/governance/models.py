@@ -3,6 +3,7 @@
 Fully backward-compatible with the legacy GovernanceRule (v1).
 New fields are optional with safe defaults — v1 YAML files load unchanged.
 """
+
 from __future__ import annotations
 
 import logging
@@ -17,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 # ── v1 (unchanged) ────────────────────────────────────────────────────────────
+
 
 class GovernanceOwner(BaseModel):
     name: str
@@ -54,9 +56,9 @@ class GovernanceRule(BaseModel):
     license: str | None = None
     attribution: str | None = None
     ownership: list[GovernanceOwner] = Field(default_factory=list)
-    access_level: str | None = None        # open | internal | restricted | secret
-    access_requirements: str | None = None # kept for backward compat
-    classification: str | None = None      # pii | green | yellow | red
+    access_level: str | None = None  # open | internal | restricted | secret
+    access_requirements: str | None = None  # kept for backward compat
+    classification: str | None = None  # pii | green | yellow | red
     tags: list[str] = Field(default_factory=list)
     retention_days: int | None = None
     documentation_url: str | None = None
@@ -77,12 +79,13 @@ class GovernanceRule(BaseModel):
 
 # ── v2 extensions ─────────────────────────────────────────────────────────────
 
+
 class PolicyObligations(BaseModel):
     attribution: bool = False
-    delete_after_days: int | None = None   # overrides retention_days for ODRL
+    delete_after_days: int | None = None  # overrides retention_days for ODRL
     notify_on_access: bool = False
     anonymize_before_use: bool = False
-    contract_required: bool = False        # auto True when access_level=restricted
+    contract_required: bool = False  # auto True when access_level=restricted
 
 
 class PolicyAudience(BaseModel):
@@ -92,14 +95,16 @@ class PolicyAudience(BaseModel):
 
 
 class PolicyConsent(BaseModel):
-    required: bool = False           # auto True when user_filter_column is set
-    scope: str = "per_subject"       # per_subject | per_dataset
-    on_revocation: str = "terminate" # terminate | suspend
+    required: bool = False  # auto True when user_filter_column is set
+    scope: str = "per_subject"  # per_subject | per_dataset
+    on_revocation: str = "terminate"  # terminate | suspend
 
 
 class DataspacePolicy(BaseModel):
-    permitted_actions: list[str] | None = None   # None = auto-derive from access_level
-    prohibited_actions: list[str] | None = None  # None = auto-derive from classification
+    permitted_actions: list[str] | None = None  # None = auto-derive from access_level
+    prohibited_actions: list[str] | None = (
+        None  # None = auto-derive from classification
+    )
     purpose: list[str] = Field(default_factory=list)
     valid_from: date | None = None
     valid_until: date | None = None
@@ -135,7 +140,7 @@ class DataspaceContract(BaseModel):
 
 class DataspaceSpec(BaseModel):
     expose: bool = False
-    medallion: str | None = None   # bronze | silver | gold — inferred from key if None
+    medallion: str | None = None  # bronze | silver | gold — inferred from key if None
     asset: DataspaceAsset = Field(default_factory=DataspaceAsset)
     data_address: DataspaceDataAddress = Field(default_factory=DataspaceDataAddress)
     contract: DataspaceContract = Field(default_factory=DataspaceContract)
@@ -327,7 +332,7 @@ class OdrlProfile(BaseModel):
             self.purpose_base,
         ):
             if candidate.startswith(prefix):
-                candidate = candidate[len(prefix):]
+                candidate = candidate[len(prefix) :]
                 break
         return candidate if candidate in self.purpose_index else None
 
@@ -400,7 +405,9 @@ def load_odrl_profile(path: Path | str | None = None) -> OdrlProfile:
                 p,
             )
         else:
-            logger.debug("ODRL profile not found at %s — falling back to energy default", p)
+            logger.debug(
+                "ODRL profile not found at %s — falling back to energy default", p
+            )
         p = _DEFAULT_PROFILE_PATH
     with p.open("r", encoding="utf-8") as f:
         raw = yaml.safe_load(f) or {}
@@ -442,7 +449,11 @@ def subject_column(rule: "GovernanceRule | GovernanceRuleV2") -> str | None:
         args = getattr(row_filter, "args", None)
         # A model when parsed from governance YAML, a plain dict when a rule is
         # built by hand in a test or a fixture.
-        column = args.get("column") if isinstance(args, dict) else getattr(args, "column", None)
+        column = (
+            args.get("column")
+            if isinstance(args, dict)
+            else getattr(args, "column", None)
+        )
         if column:
             return str(column)
     if getattr(rule, "user_filter_column", None):

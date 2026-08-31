@@ -5,6 +5,7 @@
 symptom is never a routing error — it is a 404 saying the dataset was not found,
 or a 401 from the guard on a dataset lookup. Both read as something else.
 """
+
 from __future__ import annotations
 
 import pytest

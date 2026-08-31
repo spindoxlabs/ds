@@ -1,4 +1,5 @@
 """Participant registry — backed by identity-registry HTTP API or static YAML."""
+
 from __future__ import annotations
 
 import logging
@@ -38,8 +39,7 @@ class ParticipantRegistry:
         with path.open("r", encoding="utf-8") as f:
             raw: dict[str, Any] = yaml.safe_load(f) or {}
         participants = [
-            Participant.model_validate(p)
-            for p in (raw.get("participants") or [])
+            Participant.model_validate(p) for p in (raw.get("participants") or [])
         ]
         return cls(participants)
 
@@ -66,7 +66,13 @@ class ParticipantRegistry:
 class HttpParticipantRegistry:
     """Participant registry backed by identity-registry HTTP API with TTL cache."""
 
-    def __init__(self, identity_registry_url: str, cache_ttl: float = 60.0, token_provider=None, max_staleness_factor: float = 5.0):
+    def __init__(
+        self,
+        identity_registry_url: str,
+        cache_ttl: float = 60.0,
+        token_provider=None,
+        max_staleness_factor: float = 5.0,
+    ):
         self._base_url = identity_registry_url.rstrip("/")
         self._cache_ttl = cache_ttl
         self._max_staleness = max(cache_ttl * max_staleness_factor, 300.0)
@@ -74,9 +80,7 @@ class HttpParticipantRegistry:
         self._cache_time: float = 0.0
         self._last_success: float = 0.0
         self._token_provider = token_provider
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url, timeout=10.0
-        )
+        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=10.0)
 
     async def _get_headers(self) -> dict[str, str]:
         if self._token_provider:
@@ -99,7 +103,11 @@ class HttpParticipantRegistry:
 
     async def _refresh_cache(self, *, force: bool = False) -> ParticipantRegistry:
         now = time.monotonic()
-        if not force and self._cache is not None and (now - self._cache_time) < self._cache_ttl:
+        if (
+            not force
+            and self._cache is not None
+            and (now - self._cache_time) < self._cache_ttl
+        ):
             return self._cache
         try:
             headers = await self._get_headers()
@@ -129,7 +137,8 @@ class HttpParticipantRegistry:
                     ) from exc
                 log.warning(
                     "Serving stale participant cache (age %.0fs, max %.0fs)",
-                    staleness, self._max_staleness,
+                    staleness,
+                    self._max_staleness,
                 )
                 return self._cache
             self._cache = ParticipantRegistry.empty()

@@ -330,6 +330,19 @@ eligible, and two flags decide the rest:
 | `--governance` (repeatable) | Selects the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `set-distribuzione` here. The onboarded set is derived from the data actually published rather than listed a second time |
 | `--verified-by`, `--evidence-ref` | The run's verification evidence, applied to entries that supply none. Never to entries that do: a per-entry block's claim is left alone and reported as `verification unchanged`, because overwriting a DPA reference with a generic run string would downgrade the evidence behind an issued credential |
 
+**A machine-local DID is refused under `DS_ENV=production`.** Both seed entry points —
+`org apply` and `owner import` — read the file before touching the database and refuse a
+`did:web` whose host is `localhost`, a loopback address, or under `.localhost` / `.local`,
+naming every offending entry in one pass. A `did:web` is a URL: `did:web:X` resolves at
+`https://X/.well-known/did.json`, so the host *is* the identity, and a deployment's owner
+registry is one file serving several environments. Nothing on the resolve-and-export path
+would notice — `GET /owners/resolve`, a disclosure recipient and a consent row all compare
+the DID as a string — so the mistake would surface only at credential issuance and
+negotiation, by which time the unresolvable identity is inside issued credentials and
+recorded provenance, where correcting it destroys the evidence. `DS_ENV` defaults to
+production when unset, so forgetting the variable refuses rather than permits; in dev the
+check is silent, because the dev DIDs *are* `.localhost` and that is correct there.
+
 Without `--governance` the selector is *carrying a `did`*. Either way the chain stops after
 verification — a verified owner holding its `did` and `aliases`, which is the whole of what
 `GET /owners/resolve` needs. An agreement acceptance, a credential and a participant promotion

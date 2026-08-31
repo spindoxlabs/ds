@@ -132,8 +132,11 @@ def test_the_vendored_expectations_match_upstream():
     stops the copy going quietly stale.
     """
     assert (
-        _required(*_definition("credential-request-message-schema.json",
-                               "CredentialRequestMessage"))
+        _required(
+            *_definition(
+                "credential-request-message-schema.json", "CredentialRequestMessage"
+            )
+        )
         == CREDENTIAL_REQUEST_MESSAGE_REQUIRED
     )
 
@@ -286,9 +289,7 @@ async def test_the_anchor_publishes_an_issuer_service_entry(client, db_session):
 
     doc = (await client.get(f"/dids/{identity.did}/did.json")).json()
     entry = next(
-        s
-        for s in doc["service"]
-        if s["type"] == anchor_bootstrap.ISSUER_SERVICE_TYPE
+        s for s in doc["service"] if s["type"] == anchor_bootstrap.ISSUER_SERVICE_TYPE
     )
     assert entry["serviceEndpoint"] == f"{settings.public_base_url}/issuer"
     # The *base*: a client appends CIP's own paths to it. Publishing

@@ -31,6 +31,7 @@ an Ingress) must already point there. Enrolling from a container that is up but
 not yet routed fails with a resolution error, and the error will name the URL
 that could not be fetched.
 """
+
 from __future__ import annotations
 
 import logging

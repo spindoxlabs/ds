@@ -8,6 +8,7 @@ never name a dataset that does not exist or a purpose nobody defined.
 Loaded once per process and cached — governance and offers are deployment
 configuration, not request state.
 """
+
 from __future__ import annotations
 
 import logging
@@ -191,9 +192,7 @@ def purpose_covered(requested: list[str], consented: list[str]) -> bool:
     if not requested or not consented:
         return False
     profile = get_profile()
-    return any(
-        profile.is_a(want, have) for want in requested for have in consented
-    )
+    return any(profile.is_a(want, have) for want in requested for have in consented)
 
 
 # ── Sharing offers ───────────────────────────────────────────────────────────
@@ -241,9 +240,7 @@ def offers_covering(
         ]
     if not purposes:
         return candidates
-    return [
-        offer for offer in candidates if purpose_covered(purposes, [offer.purpose])
-    ]
+    return [offer for offer in candidates if purpose_covered(purposes, [offer.purpose])]
 
 
 def offer_broader_chain(offer: SharingOffer) -> list[str]:

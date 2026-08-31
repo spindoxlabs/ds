@@ -1,4 +1,5 @@
 """GovernanceMapper — converts GovernanceRuleV2 to ODRL and EDC payloads."""
+
 from __future__ import annotations
 
 from collections.abc import Callable
@@ -43,19 +44,19 @@ RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
 # "{profile}" is replaced with the profile query-action IRI at runtime.
 
 _LEVEL_ACTION_KEYS: dict[str, list[str]] = {
-    "open":       ["{query}", "odrl:aggregate", "odrl:transfer"],
-    "internal":   ["{query}", "odrl:aggregate"],
+    "open": ["{query}", "odrl:aggregate", "odrl:transfer"],
+    "internal": ["{query}", "odrl:aggregate"],
     "restricted": ["{query}"],
-    "secret":     [],
+    "secret": [],
 }
 
 # ── Auto prohibitions by classification ───────────────────────────────────────
 
 _CLASS_PROHIBITIONS: dict[str, list[str]] = {
-    "pii":    ["odrl:transfer", "odrl:derive", "odrl:distribute", "odrl:sublicense"],
-    "red":    ["odrl:transfer", "odrl:sublicense"],
+    "pii": ["odrl:transfer", "odrl:derive", "odrl:distribute", "odrl:sublicense"],
+    "red": ["odrl:transfer", "odrl:sublicense"],
     "yellow": ["odrl:sublicense"],
-    "green":  [],
+    "green": [],
 }
 
 
@@ -167,22 +168,25 @@ class GovernanceMapper:
         policy = rule.policy
         access_level = rule.access_level or "internal"
 
-        action_keys = policy.permitted_actions or _LEVEL_ACTION_KEYS.get(access_level, ["{query}"])
+        action_keys = policy.permitted_actions or _LEVEL_ACTION_KEYS.get(
+            access_level, ["{query}"]
+        )
         permitted = self._resolve_actions(action_keys)
-        prohibited = policy.prohibited_actions or _CLASS_PROHIBITIONS.get(rule.classification or "green", [])
+        prohibited = policy.prohibited_actions or _CLASS_PROHIBITIONS.get(
+            rule.classification or "green", []
+        )
         purposes = self._purpose_iris(policy.purpose)
 
         offer_id = f"urn:offer:{self.participant_id}:{dataset_key.replace('.', ':')}"
 
         permissions = [
-            self._build_permission(action, access_level, rule.access_requirements, purposes, policy, rule)
+            self._build_permission(
+                action, access_level, rule.access_requirements, purposes, policy, rule
+            )
             for action in permitted
         ]
 
-        prohibitions = [
-            {"odrl:action": {"@id": action}}
-            for action in prohibited
-        ]
+        prohibitions = [{"odrl:action": {"@id": action}} for action in prohibited]
 
         obligations = self._build_obligations(rule)
 
@@ -230,7 +234,10 @@ class GovernanceMapper:
 
         # Membership constraint — driven by access_requirements when set, else by access_level
         reqs = access_requirements or "all"
-        needs_membership = reqs in ("partner", "contract") or access_level in ("internal", "restricted")
+        needs_membership = reqs in ("partner", "contract") or access_level in (
+            "internal",
+            "restricted",
+        )
         if needs_membership:
             scope = policy.audience.required_scope
             if rule.ownership:
@@ -239,11 +246,13 @@ class GovernanceMapper:
                     scope = f"owner:{owner_alias}:partner"
                 else:
                     scope = f"owner:{owner_alias}:member"
-            constraints.append({
-                "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
-                "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": {"@value": scope, "@type": "xsd:string"},
-            })
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
+                    "odrl:operator": {"@id": "odrl:eq"},
+                    "odrl:rightOperand": {"@value": scope, "@type": "xsd:string"},
+                }
+            )
 
         # Contract gate — `access_requirements: contract`, `access_level:
         # restricted`, or an explicit `obligations.contract_required`. The EDC
@@ -264,22 +273,24 @@ class GovernanceMapper:
             or access_level == "restricted"
             or policy.obligations.contract_required
         ):
-            constraints.append({
-                "odrl:leftOperand": {"@id": "ds:contractRequired"},
-                "odrl:operator": {"@id": "odrl:eq"},
-                # Typed, like every sibling constraint (`GOV-11`). It was a bare
-                # `"true"` — the only untyped right operand this mapper emitted,
-                # so a JSON-LD processor was free to read it as a plain literal
-                # while the membership and purpose operands beside it carried
-                # their type. `xsd:boolean` rather than the siblings'
-                # `xsd:string`, because the value is one.
-                #
-                # Safe against the enforcement side: `ContractRequiredFunction`
-                # parses through `Purposes.unwrapScalar`, which reaches `@value`
-                # inside a `JsonObject` before comparing — the same unwrapping
-                # that exists because EDC's expansion produces this shape anyway.
-                "odrl:rightOperand": {"@value": "true", "@type": "xsd:boolean"},
-            })
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": "ds:contractRequired"},
+                    "odrl:operator": {"@id": "odrl:eq"},
+                    # Typed, like every sibling constraint (`GOV-11`). It was a bare
+                    # `"true"` — the only untyped right operand this mapper emitted,
+                    # so a JSON-LD processor was free to read it as a plain literal
+                    # while the membership and purpose operands beside it carried
+                    # their type. `xsd:boolean` rather than the siblings'
+                    # `xsd:string`, because the value is one.
+                    #
+                    # Safe against the enforcement side: `ContractRequiredFunction`
+                    # parses through `Purposes.unwrapScalar`, which reaches `@value`
+                    # inside a `JsonObject` before comparing — the same unwrapping
+                    # that exists because EDC's expansion produces this shape anyway.
+                    "odrl:rightOperand": {"@value": "true", "@type": "xsd:boolean"},
+                }
+            )
 
         # Purpose constraint — ONE constraint listing every permitted purpose.
         #
@@ -309,26 +320,32 @@ class GovernanceMapper:
         # (This used to cite `docs/governance-and-odrl.md`, which has never
         # existed in this tree — `GOV-16`.)
         if len(purposes) == 1:
-            constraints.append({
-                "odrl:leftOperand": {"@id": "odrl:purpose"},
-                "odrl:operator": {"@id": "odrl:isA"},
-                "odrl:rightOperand": {"@id": purposes[0]},
-            })
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": "odrl:purpose"},
+                    "odrl:operator": {"@id": "odrl:isA"},
+                    "odrl:rightOperand": {"@id": purposes[0]},
+                }
+            )
         elif purposes:
-            constraints.append({
-                "odrl:leftOperand": {"@id": "odrl:purpose"},
-                "odrl:operator": {"@id": "odrl:isAnyOf"},
-                "odrl:rightOperand": [{"@id": purpose} for purpose in purposes],
-            })
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": "odrl:purpose"},
+                    "odrl:operator": {"@id": "odrl:isAnyOf"},
+                    "odrl:rightOperand": [{"@id": purpose} for purpose in purposes],
+                }
+            )
 
         # Consent constraint
         needs_consent = requires_consent(rule)
         if needs_consent:
-            constraints.append({
-                "odrl:leftOperand": {"@id": p.term(p.consent_operand)},
-                "odrl:operator": {"@id": "odrl:eq"},
-                "odrl:rightOperand": {"@value": "active", "@type": "xsd:string"},
-            })
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": p.term(p.consent_operand)},
+                    "odrl:operator": {"@id": "odrl:eq"},
+                    "odrl:rightOperand": {"@value": "active", "@type": "xsd:string"},
+                }
+            )
 
         perm: dict[str, Any] = {
             "odrl:action": {"@id": action},
@@ -338,9 +355,11 @@ class GovernanceMapper:
 
         # Consent pre-duty
         if needs_consent:
-            perm["odrl:duty"] = [{
-                "odrl:action": {"@id": "odrl:obtainConsent"},
-            }]
+            perm["odrl:duty"] = [
+                {
+                    "odrl:action": {"@id": "odrl:obtainConsent"},
+                }
+            ]
 
         return perm
 
@@ -350,25 +369,34 @@ class GovernanceMapper:
 
         delete_days = ob.delete_after_days or rule.retention_days
         if delete_days:
-            obligations.append({
-                "odrl:action": [{"rdf:value": {"@id": "odrl:delete"},
-                    "odrl:refinement": [{
-                        "odrl:leftOperand": {"@id": "odrl:delayPeriod"},
-                        "odrl:operator": {"@id": "odrl:lteq"},
-                        "odrl:rightOperand": {
-                            "@value": f"P{delete_days}D",
-                            "@type": "xsd:duration",
-                        },
-                    }],
-                }],
-            })
+            obligations.append(
+                {
+                    "odrl:action": [
+                        {
+                            "rdf:value": {"@id": "odrl:delete"},
+                            "odrl:refinement": [
+                                {
+                                    "odrl:leftOperand": {"@id": "odrl:delayPeriod"},
+                                    "odrl:operator": {"@id": "odrl:lteq"},
+                                    "odrl:rightOperand": {
+                                        "@value": f"P{delete_days}D",
+                                        "@type": "xsd:duration",
+                                    },
+                                }
+                            ],
+                        }
+                    ],
+                }
+            )
 
         if ob.attribution and rule.attribution:
-            obligations.append({
-                "odrl:action": {"@id": "odrl:attributeTo"},
-                "odrl:attributeTo": {"@id": self._resolve_assigner(rule)},
-                "odrl:target": rule.attribution,
-            })
+            obligations.append(
+                {
+                    "odrl:action": {"@id": "odrl:attributeTo"},
+                    "odrl:attributeTo": {"@id": self._resolve_assigner(rule)},
+                    "odrl:target": rule.attribution,
+                }
+            )
 
         return obligations
 
@@ -385,8 +413,10 @@ class GovernanceMapper:
         purposes: list[str] = []
         for entry in declared:
             slug = self.profile.purpose_slug(entry)
-            iri = self.profile.purpose_iri(slug) if slug else (
-                entry if "://" in entry else None
+            iri = (
+                self.profile.purpose_iri(slug)
+                if slug
+                else (entry if "://" in entry else None)
             )
             if iri and iri not in seen:
                 purposes.append(iri)
@@ -410,9 +440,13 @@ class GovernanceMapper:
 
     # ── EDC Asset ─────────────────────────────────────────────────────────────
 
-    def to_asset_create(self, dataset_key: str, rule: GovernanceRuleV2) -> dict[str, Any]:
+    def to_asset_create(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> dict[str, Any]:
         ds = rule.dataspace
-        asset_id = ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
+        asset_id = (
+            ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
+        )
         medallion = ds.medallion or self._infer_medallion(dataset_key)
         pfx = self.profile.prefix
 
@@ -462,7 +496,8 @@ class GovernanceMapper:
                 f"{pfx}:rowFilters": [
                     {"handler": f.handler, "column": f.args.column}
                     for f in rule.row_filters
-                ] or None,
+                ]
+                or None,
                 # `GOV-14`. Parsed, merged through overlays and read by nothing
                 # until now — so a producer who documented their dataset saw the
                 # link go nowhere, and a consumer browsing the catalogue had no
@@ -482,7 +517,9 @@ class GovernanceMapper:
 
     # ── EDC Policy Definition ─────────────────────────────────────────────────
 
-    def to_policy_create(self, dataset_key: str, rule: GovernanceRuleV2) -> dict[str, Any]:
+    def to_policy_create(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> dict[str, Any]:
         policy_id = (
             rule.dataspace.contract.access_policy_id
             or f"{dataset_key.replace('.', '-')}-policy"
@@ -525,12 +562,14 @@ class GovernanceMapper:
             "@id": contract_id,
             "accessPolicyId": ds.contract.access_policy_id or policy_id,
             "contractPolicyId": ds.contract.contract_policy_id or policy_id,
-            "assetsSelector": [{
-                "@type": "CriterionDto",
-                "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
-                "operator": "=",
-                "operandRight": asset_id,
-            }],
+            "assetsSelector": [
+                {
+                    "@type": "CriterionDto",
+                    "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
+                    "operator": "=",
+                    "operandRight": asset_id,
+                }
+            ],
         }
 
     @staticmethod

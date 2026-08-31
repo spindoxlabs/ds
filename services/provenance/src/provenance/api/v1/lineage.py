@@ -1,4 +1,5 @@
 """Lineage traversal and complex query routes."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -17,14 +18,19 @@ async def get_lineage_route(
     iri: str,
     direction: str = Query(default="both", pattern="^(upstream|downstream|both)$"),
     max_depth: int = Query(default=5, ge=1, le=20),
-    relation_types: str | None = Query(default=None, description="Comma-separated list"),
+    relation_types: str | None = Query(
+        default=None, description="Comma-separated list"
+    ),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    rtype_list = [r.strip() for r in relation_types.split(",")] if relation_types else None
+    rtype_list = (
+        [r.strip() for r in relation_types.split(",")] if relation_types else None
+    )
 
     graph_data = await get_lineage(
-        db, iri,
+        db,
+        iri,
         direction=direction,
         max_depth=min(max_depth, settings.max_lineage_depth),
         relation_types=rtype_list,
@@ -41,4 +47,5 @@ async def get_lineage_route(
         "@graph": lineage_to_jsonld(graph_data),
     }
     from fastapi.responses import JSONResponse
+
     return JSONResponse(content=response_body, media_type="application/ld+json")

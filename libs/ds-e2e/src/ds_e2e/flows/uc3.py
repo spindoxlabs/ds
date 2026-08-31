@@ -38,21 +38,33 @@ class UC3Flow(BaseFlow):
 
         # Open-data owner resolution
         try:
-            owner = self.http.get(
-                f"{s.identity_registry_url}/owners/resolve?alias=open-data-provider",
-                headers=svc_headers,
-            ) or {}
+            owner = (
+                self.http.get(
+                    f"{s.identity_registry_url}/owners/resolve?alias=open-data-provider",
+                    headers=svc_headers,
+                )
+                or {}
+            )
             canonical = owner.get("canonical_uri")
             if canonical and not canonical.startswith("did:"):
-                result.pass_step("open-data owner", f"URL-only owner resolved: {canonical}")
+                result.pass_step(
+                    "open-data owner", f"URL-only owner resolved: {canonical}"
+                )
             elif canonical:
-                result.pass_step("open-data owner", f"owner resolved (has DID): {canonical}")
+                result.pass_step(
+                    "open-data owner", f"owner resolved (has DID): {canonical}"
+                )
             else:
-                result.fail_step("open-data owner", "open-data-provider not found in registry")
+                result.fail_step(
+                    "open-data owner", "open-data-provider not found in registry"
+                )
                 return result
         except Exception as exc:
             result.fail_step("open-data owner", str(exc))
             return result
 
-        result.pass_step("uc3 complete", "open-data owner resolved — no membership constraint applies")
+        result.pass_step(
+            "uc3 complete",
+            "open-data owner resolved — no membership constraint applies",
+        )
         return result

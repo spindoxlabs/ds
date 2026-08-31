@@ -7,6 +7,7 @@ so `ds_auth` decodes without verifying a signature and any key would do. A
 literal `"secret"` was doing the same job while reading as a hardcoded
 credential and emitting an `InsecureKeyLengthWarning` per token minted.
 """
+
 import secrets
 
 SIGNING_KEY = secrets.token_hex(32)

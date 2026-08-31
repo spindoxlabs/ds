@@ -15,6 +15,7 @@ nothing anywhere reporting that the value had been discarded.
 The sweep here is what keeps that from coming back; it is the only test in the
 unit that can fail because of something a change *did not* do.
 """
+
 from __future__ import annotations
 
 import re
@@ -187,6 +188,7 @@ async def test_the_app_passes_both_intervals_through():
         monkey.undo()
 
     assert captured == {"negotiation": 3.0, "transfer": 7.0}
+
 
 #: `CONNECTOR_*` names that a deployment file legitimately carries and this
 #: service does not read. Each needs its actual reader, because an entry here is

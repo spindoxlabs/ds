@@ -15,6 +15,7 @@ implementations, not invented:
 * `IdentityHub` `SelfIssuedTokenVerifierImpl` — the verification order
 * `IdentityHub` `EmbeddedSecureTokenService` — the access token's claim crossover
 """
+
 from __future__ import annotations
 
 import base64
@@ -288,9 +289,7 @@ async def test_audience_must_name_the_participant_queried(
         db_session, HOLDER, verifier_did=VERIFIER, scope=MEMBERSHIP_SCOPE
     )
     await _publish(resolver, db_session, VERIFIER)
-    token = await _si_token(
-        db_session, VERIFIER, audience=STRANGER, access_token=grant
-    )
+    token = await _si_token(db_session, VERIFIER, audience=STRANGER, access_token=grant)
     r = await client.post(
         f"/credentials/{HOLDER}/presentations/query",
         json=_query(),
@@ -509,9 +508,7 @@ async def test_si_token_carries_no_grant_when_none_was_asked_for(
     credential service could ever validate, presented as if it were a grant.
     """
     token, _ = await create_si_token(db_session, HOLDER, audience=VERIFIER)
-    claims = json.loads(
-        base64.urlsafe_b64decode(token.split(".")[1] + "===").decode()
-    )
+    claims = json.loads(base64.urlsafe_b64decode(token.split(".")[1] + "===").decode())
     assert "token" not in claims
 
 
@@ -544,9 +541,7 @@ async def test_a_grant_cannot_be_minted_without_an_audience(
 ):
     """An unbound grant is a bearer token for whoever obtains it."""
     with pytest.raises(ValueError):
-        await create_si_token(
-            db_session, HOLDER, bearer_access_scope=MEMBERSHIP_SCOPE
-        )
+        await create_si_token(db_session, HOLDER, bearer_access_scope=MEMBERSHIP_SCOPE)
 
 
 # ── Verification unit level ─────────────────────────────────────────────────

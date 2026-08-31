@@ -270,8 +270,12 @@ async def test_revoking_one_credential_does_not_revoke_the_other(client, db_sess
     revoke the first credential and the second must still be valid, both in its
     row and in the register the world reads."""
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
+    first = await _issue_membership(
+        client, "did:web:one.dataspaces.localhost", db_session
+    )
+    second = await _issue_membership(
+        client, "did:web:two.dataspaces.localhost", db_session
+    )
 
     r = await client.delete(
         f"/admin/credentials/{first['credentialId']}", headers=HEADERS
@@ -313,7 +317,9 @@ async def test_suspending_an_organisation_sets_only_its_own_bit(client, db_sessi
     recorded there could only ever be lifted by re-issuing the credential.
     """
     await _issue_organization(client, db_session)
-    survivor = await _issue_membership(client, "did:web:bystander.dataspaces.localhost", db_session)
+    survivor = await _issue_membership(
+        client, "did:web:bystander.dataspaces.localhost", db_session
+    )
 
     r = await client.patch(
         "/admin/owners/acme-energy", json={"status": "suspended"}, headers=HEADERS
@@ -356,7 +362,9 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
     why it is worth writing down: it forbids the obvious wrong fix.
     """
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
+    first = await _issue_membership(
+        client, "did:web:one.dataspaces.localhost", db_session
+    )
     await client.delete(f"/admin/credentials/{first['credentialId']}", headers=HEADERS)
 
     await db_session.rollback()
@@ -368,7 +376,9 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
         )
     ).scalar_one()
 
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
+    second = await _issue_membership(
+        client, "did:web:two.dataspaces.localhost", db_session
+    )
     await db_session.rollback()
     reissued_index = (
         await db_session.execute(
@@ -386,16 +396,16 @@ async def test_a_revoked_index_is_never_reissued(client, db_session):
 
 @pytest.mark.rule("P-9")
 @pytest.mark.asyncio
-async def test_the_counter_survives_deleting_the_highest_credential(
-    client, db_session
-):
+async def test_the_counter_survives_deleting_the_highest_credential(client, db_session):
     """The `max(status_list_index) + 1` allocator's failure mode, forbidden
     explicitly. Deleting the highest-numbered credential row must not make the
     next issuance reuse its index — the deleted credential's JSON is signed and
     may still be in a holder's wallet."""
     await _bootstrap_ta(client)
     await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
-    top = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
+    top = await _issue_membership(
+        client, "did:web:two.dataspaces.localhost", db_session
+    )
 
     await db_session.rollback()
     top_row = (
@@ -407,7 +417,9 @@ async def test_the_counter_survives_deleting_the_highest_credential(
     await db_session.delete(top_row)
     await db_session.commit()
 
-    third = await _issue_membership(client, "did:web:three.dataspaces.localhost", db_session)
+    third = await _issue_membership(
+        client, "did:web:three.dataspaces.localhost", db_session
+    )
     await db_session.rollback()
     third_index = (
         await db_session.execute(
@@ -441,9 +453,7 @@ async def test_no_duplicates_are_reported_on_a_healthy_register(client, db_sessi
 
 @pytest.mark.rule("P-9")
 @pytest.mark.asyncio
-async def test_duplicates_are_reported_with_every_affected_subject(
-    client, db_session
-):
+async def test_duplicates_are_reported_with_every_affected_subject(client, db_session):
     """The collision is written directly, because the code can no longer
     produce one — this is what a database carrying pre-0011 credentials looks
     like, and the report is the only way an operator can tell.
@@ -452,8 +462,12 @@ async def test_duplicates_are_reported_with_every_affected_subject(
     they cannot re-issue a credential whose holder the report omits.
     """
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
+    first = await _issue_membership(
+        client, "did:web:one.dataspaces.localhost", db_session
+    )
+    second = await _issue_membership(
+        client, "did:web:two.dataspaces.localhost", db_session
+    )
 
     await db_session.rollback()
     rows = (await db_session.execute(select(Credential))).scalars().all()
@@ -481,8 +495,12 @@ async def test_the_report_ignores_credentials_with_no_index(client, db_session):
     """A NULL `status_list_index` is not a collision, however many rows share
     it. Grouping on NULL would report every un-indexed credential as damage."""
     await _bootstrap_ta(client)
-    first = await _issue_membership(client, "did:web:one.dataspaces.localhost", db_session)
-    second = await _issue_membership(client, "did:web:two.dataspaces.localhost", db_session)
+    first = await _issue_membership(
+        client, "did:web:one.dataspaces.localhost", db_session
+    )
+    second = await _issue_membership(
+        client, "did:web:two.dataspaces.localhost", db_session
+    )
 
     await db_session.rollback()
     rows = (await db_session.execute(select(Credential))).scalars().all()

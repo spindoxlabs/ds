@@ -18,6 +18,7 @@ Usage::
     # Or call directly
     token = await token_provider()
 """
+
 from __future__ import annotations
 
 import logging

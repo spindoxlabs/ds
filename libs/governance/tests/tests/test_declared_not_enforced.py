@@ -10,6 +10,7 @@ the file. Deleting an unimplemented field would satisfy that by silence; the
 next producer re-adds the key expecting it to work. Reporting it says what is
 true.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -36,6 +37,7 @@ def _mapper() -> GovernanceMapper:
 
 
 # ── GOV-12 · a policy id and a contract id are different things ──────────────
+
 
 def test_policy_and_contract_ids_differ_by_default():
     mapper = _mapper()
@@ -103,25 +105,34 @@ def test_a_collision_reintroduced_by_configuration_fails_the_gate(tmp_path: Path
     """
     write_governance(
         tmp_path,
-        {"sources": {"a": {
-            **exposed_dataset(),
-            "dataspace": {
-                "expose": True,
-                "contract": {
-                    "access_policy_id": "same-id",
-                    "contract_definition_id": "same-id",
-                },
-            },
-        }}},
+        {
+            "sources": {
+                "a": {
+                    **exposed_dataset(),
+                    "dataspace": {
+                        "expose": True,
+                        "contract": {
+                            "access_policy_id": "same-id",
+                            "contract_definition_id": "same-id",
+                        },
+                    },
+                }
+            }
+        },
     )
     result = run(tmp_path / "governance.yaml")
     assert not result.passed
-    assert any(e["check"] == "policy-contract-id-collision" for e in result.asdict()["errors"])
+    assert any(
+        e["check"] == "policy-contract-id-collision" for e in result.asdict()["errors"]
+    )
 
 
 # ── GOV-13, GOV-14 · declared and not enforced ───────────────────────────────
 
-@pytest.mark.parametrize("label,dotted,_c", UNENFORCED_DECLARATIONS, ids=lambda v: str(v)[:40])
+
+@pytest.mark.parametrize(
+    "label,dotted,_c", UNENFORCED_DECLARATIONS, ids=lambda v: str(v)[:40]
+)
 def test_every_unenforced_field_is_still_unenforced(label, dotted, _c):
     """A guard on the list itself.
 
@@ -154,19 +165,26 @@ def test_a_validity_window_is_reported_rather_than_silently_ignored(tmp_path: Pa
     so an offer declared valid until a date simply did not expire."""
     write_governance(
         tmp_path,
-        {"sources": {"a": {
-            **exposed_dataset(),
-            "policy": {
-                "purpose": ["GridMonitoring"],
-                "valid_from": "2026-01-01",
-                "valid_until": "2026-12-31",
-            },
-        }}},
+        {
+            "sources": {
+                "a": {
+                    **exposed_dataset(),
+                    "policy": {
+                        "purpose": ["GridMonitoring"],
+                        "valid_from": "2026-01-01",
+                        "valid_until": "2026-12-31",
+                    },
+                }
+            }
+        },
     )
     result = run(tmp_path / "governance.yaml")
-    warnings = [w for w in result.asdict()["warnings"] if w["check"] == "declared-not-enforced"]
+    warnings = [
+        w for w in result.asdict()["warnings"] if w["check"] == "declared-not-enforced"
+    ]
     assert {w["message"].split(" is declared")[0] for w in warnings} == {
-        "policy.valid_from", "policy.valid_until",
+        "policy.valid_from",
+        "policy.valid_until",
     }
     assert result.passed, "an unimplemented platform feature is not an invalid file"
 
@@ -177,19 +195,25 @@ def test_unenforced_obligations_are_reported(tmp_path: Path):
     filter selects, unchanged."""
     write_governance(
         tmp_path,
-        {"sources": {"a": {
-            **exposed_dataset(),
-            "policy": {
-                "purpose": ["GridMonitoring"],
-                "obligations": {
-                    "notify_on_access": True, "anonymize_before_use": True,
-                },
-            },
-        }}},
+        {
+            "sources": {
+                "a": {
+                    **exposed_dataset(),
+                    "policy": {
+                        "purpose": ["GridMonitoring"],
+                        "obligations": {
+                            "notify_on_access": True,
+                            "anonymize_before_use": True,
+                        },
+                    },
+                }
+            }
+        },
     )
     result = run(tmp_path / "governance.yaml")
     messages = " ".join(
-        w["message"] for w in result.asdict()["warnings"]
+        w["message"]
+        for w in result.asdict()["warnings"]
         if w["check"] == "declared-not-enforced"
     )
     assert "notify_on_access" in messages
@@ -207,6 +231,7 @@ def test_a_file_declaring_none_of_them_is_quiet(tmp_path: Path):
 
 
 # ── GOV-14 · the one that could be wired, and was ────────────────────────────
+
 
 def test_documentation_url_reaches_the_published_asset():
     """Description, not policy — so publishing it claims nothing about
@@ -231,6 +256,7 @@ def test_dct_is_not_declared_when_nothing_uses_it():
 
 # ── GOV-07 · DCAT-AP conformance, rulebook C-12 / DSSC-DSO-11 ────────────────
 
+
 @pytest.mark.rule("C-12", "C-14")
 def test_a_dataset_missing_a_mandatory_dcat_property_fails(tmp_path: Path):
     """The gap the rulebook recorded: `validate` checked internal coherence and
@@ -243,19 +269,24 @@ def test_a_dataset_missing_a_mandatory_dcat_property_fails(tmp_path: Path):
     """
     write_governance(
         tmp_path,
-        {"sources": {"a": {
-            "access_level": "open",
-            "policy": {"purpose": ["GridMonitoring"]},
-            "dataspace": {
-                "expose": True,
-                "data_address": {"base_url": "http://dataset-api:30002"},
-            },
-        }}},
+        {
+            "sources": {
+                "a": {
+                    "access_level": "open",
+                    "policy": {"purpose": ["GridMonitoring"]},
+                    "dataspace": {
+                        "expose": True,
+                        "data_address": {"base_url": "http://dataset-api:30002"},
+                    },
+                }
+            }
+        },
     )
     result = run(tmp_path / "governance.yaml")
     errors = [e for e in result.asdict()["errors"] if e["check"] == "dcat-ap"]
     assert {e["message"].split(" is mandatory")[0] for e in errors} == {
-        "dct:title", "dct:description",
+        "dct:title",
+        "dct:description",
     }
     assert not result.passed
 
@@ -293,6 +324,7 @@ def test_the_repositorys_own_governance_files_conform(tmp_path: Path):
 
 
 # ── GOV-08 · a policy version a consumer can ask about ───────────────────────
+
 
 def test_no_version_is_emitted_when_the_profile_declares_none():
     """Naming a version the profile does not have would be worse than silence."""

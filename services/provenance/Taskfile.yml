@@ -64,6 +64,7 @@ tasks:
 
   lint:
     cmds:
+      - uv run ruff format --check {{.SRC}} tests/
       - uv run ruff check {{.SRC}} tests/
 
   format:

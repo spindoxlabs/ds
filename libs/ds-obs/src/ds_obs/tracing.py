@@ -46,6 +46,7 @@ say so, and a new span added later would silently not be. This repository has
 twice fixed a hand-kept list that mirrored something it sat beside (`E2E-03`,
 `E2E-14`); a hand-kept set of tagging call sites is the same shape.
 """
+
 from __future__ import annotations
 
 import logging

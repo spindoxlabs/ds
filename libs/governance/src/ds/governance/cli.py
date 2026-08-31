@@ -9,6 +9,7 @@ in CI, or against a live deployment:
 
 Nothing is hardcoded to a participant, deployment, or dataset naming scheme.
 """
+
 from __future__ import annotations
 
 import json
@@ -64,9 +65,7 @@ IdentityRegistryOpt = typer.Option(
     help="Resolve owners and participants against a live identity-registry "
     "instead of YAML seeds",
 )
-TokenOpt = typer.Option(
-    None, help="Bearer token for identity-registry admin endpoints"
-)
+TokenOpt = typer.Option(None, help="Bearer token for identity-registry admin endpoints")
 ProfileOpt = typer.Option(None, help="Path to an ODRL profile YAML")
 OverlayOpt = typer.Option(
     None, help="Governance overlay name (loads governance.<name>.yaml)"
@@ -124,7 +123,9 @@ def _resolve_registries(
     return (owners, load_participant_dids(participants_path), closers)
 
 
-def _resolve_sharing_offers(governance_file: Path, explicit: Path | None) -> Path | None:
+def _resolve_sharing_offers(
+    governance_file: Path, explicit: Path | None
+) -> Path | None:
     """An explicit path wins; otherwise pick up the sibling file by convention."""
     if explicit is not None:
         return explicit
@@ -181,9 +182,7 @@ def validate(
     output_format: str = typer.Option(
         "text", "--format", help="text | json | markdown"
     ),
-    strict: bool = typer.Option(
-        False, help="Treat warnings as failures"
-    ),
+    strict: bool = typer.Option(False, help="Treat warnings as failures"),
 ):
     """Validate a governance file before importing it into a connector."""
     owner_lookup, participant_dids, closers = _resolve_registries(
@@ -226,9 +225,12 @@ def evidence(
     participant_id: str = ParticipantIdOpt,
     base_url: str = BaseUrlOpt,
     publisher_id: str = typer.Option(
-        None, help="Publisher IRI for the DCAT catalog (default: did:web of base URL host)"
+        None,
+        help="Publisher IRI for the DCAT catalog (default: did:web of base URL host)",
     ),
-    publisher_name: str = typer.Option("Dataspace Provider", help="Publisher display name"),
+    publisher_name: str = typer.Option(
+        "Dataspace Provider", help="Publisher display name"
+    ),
     dsp_endpoint: str = typer.Option(
         None,
         help=(
@@ -291,9 +293,7 @@ def evidence(
         catalog_name=name,
         service_endpoint=dsp_endpoint,
     )
-    write_artifacts(
-        result, catalog, offers, out_dir, profile=mapper.profile, name=name
-    )
+    write_artifacts(result, catalog, offers, out_dir, profile=mapper.profile, name=name)
 
     _emit(result, "text")
     raise typer.Exit(0 if result.passed else 1)
@@ -350,8 +350,7 @@ def collect_offers(
 
         data = {
             "sharing_offers": [
-                offer.model_dump(exclude_none=True)
-                for offer in catalogue.offers
+                offer.model_dump(exclude_none=True) for offer in catalogue.offers
             ]
         }
         dest = out_dir / f"{app_name}.yaml"
@@ -362,9 +361,7 @@ def collect_offers(
         collected += 1
 
         if verbose:
-            overlay_applied = any(
-                s != source.name for s in catalogue.sources.values()
-            )
+            overlay_applied = any(s != source.name for s in catalogue.sources.values())
             note = " (with overlay)" if overlay_applied else ""
             typer.echo(
                 f"  {app_name}{note} → {dest.name} "
@@ -420,9 +417,7 @@ def fetch_vocabularies(
     for entry in status(cache_dir, registry):
         mark = "cached" if entry.cached else "MISSING"
         typer.echo(f"  {entry.slug}: {mark} → {entry.path}")
-    typer.echo(
-        f"{len(registry.vocabularies)} registered, {len(written)} fetched now."
-    )
+    typer.echo(f"{len(registry.vocabularies)} registered, {len(written)} fetched now.")
 
 
 def main() -> None:

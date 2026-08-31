@@ -8,8 +8,9 @@ import os
 import uuid
 from dataclasses import dataclass
 
-from cryptography.fernet import Fernet, InvalidToken
-from cryptography.hazmat.primitives.asymmetric import ec, utils as ec_utils
+from cryptography.fernet import Fernet
+from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import utils as ec_utils
 from cryptography.hazmat.primitives.hashes import SHA256
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
@@ -108,12 +109,8 @@ def sign_es256(payload: bytes, private_key: ec.EllipticCurvePrivateKey) -> bytes
 def create_jws(
     header: dict, payload: dict, private_key: ec.EllipticCurvePrivateKey
 ) -> str:
-    header_b64 = _b64url_encode(
-        json.dumps(header, separators=(",", ":")).encode()
-    )
-    payload_b64 = _b64url_encode(
-        json.dumps(payload, separators=(",", ":")).encode()
-    )
+    header_b64 = _b64url_encode(json.dumps(header, separators=(",", ":")).encode())
+    payload_b64 = _b64url_encode(json.dumps(payload, separators=(",", ":")).encode())
     signing_input = f"{header_b64}.{payload_b64}".encode()
     signature = sign_es256(signing_input, private_key)
     return f"{header_b64}.{payload_b64}.{_b64url_encode(signature)}"
@@ -181,7 +178,9 @@ def derive_email_subject_id(email: str, key: str) -> str:
     if not normalized:
         raise ValueError("Cannot derive subject id from empty email")
     digest = hmac.new(
-        key.encode("utf-8"), normalized.encode("utf-8"), hashlib.sha256,
+        key.encode("utf-8"),
+        normalized.encode("utf-8"),
+        hashlib.sha256,
     ).hexdigest()[:24]
     return f"email-{digest}"
 

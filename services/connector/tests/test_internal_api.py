@@ -1,16 +1,18 @@
 """Tests for /internal endpoints."""
+
+from datetime import UTC, datetime
+
 import httpx
 import pytest
 import respx
-from datetime import datetime, timezone
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from tests import make_headers
 from connector.config import get_settings
 from connector.db.models import ConsentRequestORM
 from connector.services.agreement_service import upsert_agreement
 from connector.services.consent_service import create_consent_request
+from tests import make_headers
 
 HEADERS = make_headers(scope="connector.internal")
 
@@ -41,9 +43,7 @@ async def test_agreement_status_unreachable_edc_is_not_a_404(client):
     respx.get(f"{EDC}/v3/contractagreements/urn:uuid:x").mock(
         side_effect=httpx.ConnectError("connection refused")
     )
-    r = await client.get(
-        "/internal/agreements/urn:uuid:x/status", headers=HEADERS
-    )
+    r = await client.get("/internal/agreements/urn:uuid:x/status", headers=HEADERS)
     assert r.status_code == 503
     assert "unreachable" in r.json()["detail"].lower()
 
@@ -56,9 +56,7 @@ async def test_agreement_status_edc_5xx_is_not_a_404(client):
     respx.get(f"{EDC}/v3/contractagreements/urn:uuid:x").mock(
         return_value=httpx.Response(500, text="boom")
     )
-    r = await client.get(
-        "/internal/agreements/urn:uuid:x/status", headers=HEADERS
-    )
+    r = await client.get("/internal/agreements/urn:uuid:x/status", headers=HEADERS)
     assert r.status_code == 503
 
 
@@ -107,7 +105,7 @@ async def test_agreement_status_found(engine, client):
                 consumer_id="consumer",
                 provider_id="provider",
                 policy_snapshot={"@type": "odrl:Set"},
-                agreed_at=datetime.now(timezone.utc),
+                agreed_at=datetime.now(UTC),
             )
 
     r = await client.get(
@@ -124,11 +122,15 @@ async def test_agreement_status_found(engine, client):
 @pytest.mark.rule("X-6b")
 @pytest.mark.asyncio
 async def test_consent_check_no_consent(client):
-    r = await client.get("/internal/consent/check", params={
-        "subject_id": "sub-001",
-        "dataset_id": "datasets.silver.meters",
-        "consumer_id": "consumer",
-    }, headers=HEADERS)
+    r = await client.get(
+        "/internal/consent/check",
+        params={
+            "subject_id": "sub-001",
+            "dataset_id": "datasets.silver.meters",
+            "consumer_id": "consumer",
+        },
+        headers=HEADERS,
+    )
     assert r.status_code == 200
     body = r.json()
     assert body["consent_active"] is False
@@ -140,42 +142,52 @@ async def test_consent_check_uses_latest_status(engine, client):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
-            session.add_all([
-                ConsentRequestORM(
-                    subject_id="sub-001",
-                    dataset_id="datasets.silver.meters",
-                    consumer_id="consumer",
-                    status="granted",
-                    requested_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 1, 1, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-                ConsentRequestORM(
-                    subject_id="sub-001",
-                    dataset_id="datasets.silver.meters",
-                    consumer_id="consumer",
-                    status="revoked",
-                    requested_at=datetime(2026, 1, 2, tzinfo=timezone.utc),
-                    decided_at=datetime(2026, 1, 2, 1, tzinfo=timezone.utc),
-                    revoked_at=datetime(2026, 1, 2, 2, tzinfo=timezone.utc),
-                    purpose=[],
-                    transfer_ids=[],
-                ),
-            ])
+            session.add_all(
+                [
+                    ConsentRequestORM(
+                        subject_id="sub-001",
+                        dataset_id="datasets.silver.meters",
+                        consumer_id="consumer",
+                        status="granted",
+                        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                    ConsentRequestORM(
+                        subject_id="sub-001",
+                        dataset_id="datasets.silver.meters",
+                        consumer_id="consumer",
+                        status="revoked",
+                        requested_at=datetime(2026, 1, 2, tzinfo=UTC),
+                        decided_at=datetime(2026, 1, 2, 1, tzinfo=UTC),
+                        revoked_at=datetime(2026, 1, 2, 2, tzinfo=UTC),
+                        purpose=[],
+                        transfer_ids=[],
+                    ),
+                ]
+            )
 
-    r = await client.get("/internal/consent/check", params={
-        "subject_id": "sub-001",
-        "dataset_id": "datasets.silver.meters",
-        "consumer_id": "consumer",
-    }, headers=HEADERS)
+    r = await client.get(
+        "/internal/consent/check",
+        params={
+            "subject_id": "sub-001",
+            "dataset_id": "datasets.silver.meters",
+            "consumer_id": "consumer",
+        },
+        headers=HEADERS,
+    )
     assert r.status_code == 200
     assert r.json()["consent_active"] is False
 
-    r = await client.get("/internal/consent/check", params={
-        "dataset_id": "datasets.silver.meters",
-        "consumer_id": "consumer",
-    }, headers=HEADERS)
+    r = await client.get(
+        "/internal/consent/check",
+        params={
+            "dataset_id": "datasets.silver.meters",
+            "consumer_id": "consumer",
+        },
+        headers=HEADERS,
+    )
     assert r.status_code == 200
     assert r.json()["subject_ids"] == []
 
@@ -198,7 +210,9 @@ async def test_create_consent_request_reuses_open_request(engine):
                 consumer_id="consumer",
             )
 
-        result = await session.execute(select(func.count()).select_from(ConsentRequestORM))
+        result = await session.execute(
+            select(func.count()).select_from(ConsentRequestORM)
+        )
 
     assert second.id == first.id
     assert result.scalar_one() == 1

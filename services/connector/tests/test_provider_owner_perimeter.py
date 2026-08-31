@@ -14,6 +14,7 @@ Note the membership source. It is the Keycloak `organization` claim — the
 subject's DID. A provider operator legitimately has no DID at all, so sourcing
 this from the registry would refuse every operator in the deployment.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -156,9 +157,9 @@ async def test_strict_mode_refuses_a_holder_with_no_organisations(
 
     settings = get_settings()
     monkeypatch.setattr(
-        dependencies, "get_settings", lambda: settings.model_copy(
-            update={"owner_scoping_strict": True}
-        )
+        dependencies,
+        "get_settings",
+        lambda: settings.model_copy(update={"owner_scoping_strict": True}),
     )
 
     edc = owned_by("example-org")
@@ -335,10 +336,10 @@ async def test_service_token_is_unaffected(client, owned_by):
 @pytest.mark.parametrize(
     "key",
     [
-        "dsp-policy:owner",                        # today's profile prefix
-        "custom:owner",                            # a deployment that renamed it
-        "https://w3id.org/dsp/policy/owner",       # expanded, not compacted
-        "owner",                                   # bare
+        "dsp-policy:owner",  # today's profile prefix
+        "custom:owner",  # a deployment that renamed it
+        "https://w3id.org/dsp/policy/owner",  # expanded, not compacted
+        "owner",  # bare
     ],
 )
 @pytest.mark.asyncio
@@ -515,7 +516,7 @@ async def test_the_owning_operator_may_delete_a_policy(client, governed):
 
 @pytest.mark.asyncio
 async def test_an_id_governance_does_not_know_is_not_confined(client, governed):
-    """"Unknown id" is the endpoint's 404 to report, not an authorization
+    """ "Unknown id" is the endpoint's 404 to report, not an authorization
     decision. Refusing here would turn "does not exist" into "not yours"."""
     governed({POLICY: "example-org"})
     r = await client.delete(
@@ -551,7 +552,9 @@ def test_the_index_covers_policies_and_contracts_from_real_governance():
         assert index, f"no owned datasets resolved from {path.relative_to(unit)}"
         assert any(k.endswith("-policy") for k in index), path
         assert any(k.endswith("-contract") for k in index), path
-        assert all(v for v in index.values()), f"an unowned dataset leaked in as empty: {path}"
+        assert all(v for v in index.values()), (
+            f"an unowned dataset leaked in as empty: {path}"
+        )
 
 
 # ── ENV-09 · a lookup that failed is not an absence of owner ─────────────────
@@ -654,7 +657,7 @@ async def test_the_refusal_says_the_owner_could_not_be_determined(client, lookup
 
 @pytest.mark.asyncio
 async def test_a_404_from_the_edc_is_an_answer_not_a_failure(client, lookup_fails):
-    """"There is no such asset" means there is no owner, so it is not confined.
+    """ "There is no such asset" means there is no owner, so it is not confined.
 
     The one status that must stay on the allowing side: refusing here would turn
     the endpoint's own 404 into a 403, which tells a caller that someone else's

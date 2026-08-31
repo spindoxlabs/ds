@@ -1,4 +1,5 @@
 """Health and context endpoint smoke tests."""
+
 import pytest
 
 

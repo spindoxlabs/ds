@@ -111,7 +111,11 @@ async def resolve_mapping(
             return None, "ambiguous"
         if rows:
             mapping = rows[0]
-            if user_id and mapping.keycloak_user_id and mapping.keycloak_user_id != user_id:
+            if (
+                user_id
+                and mapping.keycloak_user_id
+                and mapping.keycloak_user_id != user_id
+            ):
                 return mapping, "conflict"
             return mapping, None
 
@@ -264,12 +268,18 @@ async def credentials_held_for(
     # nothing about the answer is empty.
 
     rows = (
-        await db.execute(
-            select(Credential)
-            .where(Credential.subject_did == subject_did, Credential.status == "active")
-            .order_by(Credential.issued_at.desc())
+        (
+            await db.execute(
+                select(Credential)
+                .where(
+                    Credential.subject_did == subject_did, Credential.status == "active"
+                )
+                .order_by(Credential.issued_at.desc())
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
 
     now = datetime.now(UTC)
     credentials = [
@@ -328,7 +338,5 @@ async def resolve_subject_identities(
         username = mapping.username or mapping.email
         if not username:
             continue
-        identities.append(
-            SubjectIdentityResponse(did=mapping.did, username=username)
-        )
+        identities.append(SubjectIdentityResponse(did=mapping.did, username=username))
     return identities

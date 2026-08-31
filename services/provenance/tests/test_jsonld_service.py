@@ -14,6 +14,7 @@ consumer:
 
 This pins both so the two ends cannot drift apart again.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -27,7 +28,9 @@ def _node(id_: str, iri: str, node_type: str) -> SimpleNamespace:
     return SimpleNamespace(id=id_, iri=iri, node_type=node_type)
 
 
-def _edge(relation_type: str, subject_id: str, object_id: str, role=None) -> SimpleNamespace:
+def _edge(
+    relation_type: str, subject_id: str, object_id: str, role=None
+) -> SimpleNamespace:
     return SimpleNamespace(
         id="r1",
         relation_type=relation_type,
@@ -41,7 +44,9 @@ def test_direction_is_published_on_every_edge():
     dataset = _node("n1", "urn:dataset:meters", "Entity")
     activity = _node("n2", "urn:activity:ingest", "Activity")
 
-    out = relation_to_jsonld(_edge("wasGeneratedBy", "n1", "n2"), {"n1": dataset, "n2": activity})
+    out = relation_to_jsonld(
+        _edge("wasGeneratedBy", "n1", "n2"), {"n1": dataset, "n2": activity}
+    )
 
     assert out["@type"] == "prov:wasGeneratedBy"
     assert out["ds:source"] == "urn:dataset:meters"
@@ -56,7 +61,9 @@ def test_endpoints_are_keyed_by_the_nodes_own_type():
     dataset = _node("n1", "urn:dataset:meters", "Entity")
     activity = _node("n2", "urn:activity:ingest", "Activity")
 
-    out = relation_to_jsonld(_edge("wasGeneratedBy", "n1", "n2"), {"n1": dataset, "n2": activity})
+    out = relation_to_jsonld(
+        _edge("wasGeneratedBy", "n1", "n2"), {"n1": dataset, "n2": activity}
+    )
 
     assert out["prov:entity"] == "urn:dataset:meters"
     assert out["prov:activity"] == "urn:activity:ingest"
@@ -73,7 +80,9 @@ def test_an_agent_endpoint_is_an_agent_not_an_activity():
     activity = _node("n1", "urn:activity:ingest", "Activity")
     agent = _node("n2", "did:web:provider.test", "Agent")
 
-    out = relation_to_jsonld(_edge("wasAssociatedWith", "n1", "n2"), {"n1": activity, "n2": agent})
+    out = relation_to_jsonld(
+        _edge("wasAssociatedWith", "n1", "n2"), {"n1": activity, "n2": agent}
+    )
 
     assert out["prov:activity"] == "urn:activity:ingest"
     assert out["prov:agent"] == "did:web:provider.test"
@@ -88,7 +97,9 @@ def test_a_same_type_edge_keeps_both_ends_and_stays_directional():
     copy = _node("n1", "urn:entity:copy", "Entity")
     source = _node("n2", "urn:entity:source", "Entity")
 
-    out = relation_to_jsonld(_edge("wasDerivedFrom", "n1", "n2"), {"n1": copy, "n2": source})
+    out = relation_to_jsonld(
+        _edge("wasDerivedFrom", "n1", "n2"), {"n1": copy, "n2": source}
+    )
 
     assert out["prov:entity"] == ["urn:entity:copy", "urn:entity:source"]
     assert out["ds:source"] == "urn:entity:copy"

@@ -14,6 +14,7 @@ to nothing for any consumer that processed the context (rulebook `L-7`).
 This sweeps the materialisers for the terms they actually write and fails on any
 that the other two do not carry. A comment cannot fail; this can.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -25,7 +26,11 @@ from provenance.schemas.context import PROV_CONTEXT
 from provenance.schemas.prov import RELATION_TYPES
 
 _EVENT_SERVICE = (
-    Path(__file__).resolve().parents[1] / "src" / "provenance" / "services" / "event_service.py"
+    Path(__file__).resolve().parents[1]
+    / "src"
+    / "provenance"
+    / "services"
+    / "event_service.py"
 )
 
 
@@ -68,7 +73,9 @@ def test_every_written_relation_is_defined_in_the_context():
 def test_every_accepted_relation_is_defined_in_the_context():
     """The manual door must not admit a term the published graph cannot express."""
     missing = set(RELATION_TYPES) - set(PROV_CONTEXT)
-    assert not missing, f"{sorted(missing)} accepted by the API, undefined in PROV_CONTEXT"
+    assert not missing, (
+        f"{sorted(missing)} accepted by the API, undefined in PROV_CONTEXT"
+    )
 
 
 @pytest.mark.rule("L-7")

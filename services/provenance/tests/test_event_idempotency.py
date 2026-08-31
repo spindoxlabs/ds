@@ -5,6 +5,7 @@ idempotency check could never match. Emission is non-fatal and therefore
 retried, which made a duplicate the *ordinary* outcome of a timeout, not an edge
 case: the same disclosure counted twice in every reading of the log.
 """
+
 from __future__ import annotations
 
 import pytest

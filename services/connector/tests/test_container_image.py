@@ -16,6 +16,7 @@ fails at import — in an image that looked like it built. `pyjwt` is what
 verifies every JWT this service accepts, so the failure lands on the first
 authenticated request.
 """
+
 from __future__ import annotations
 
 import re
@@ -50,7 +51,8 @@ def test_there_is_no_fallback_install_list():
     satisfied, `docker build` must stop.
     """
     install = [
-        line for line in DOCKERFILE.splitlines()
+        line
+        for line in DOCKERFILE.splitlines()
         if "pyproject.toml" in line and "uv pip install" in line
     ]
     assert install, "no pyproject-driven install in the Dockerfile"

@@ -1,4 +1,5 @@
 """SMTP email notifier using aiosmtplib."""
+
 from __future__ import annotations
 
 import logging
@@ -86,7 +87,7 @@ class SmtpNotifier(ConsentNotifier):
       <td style="padding:8px">{consent.consumer_id}</td></tr>
   <tr><td style="padding:8px;color:#6b7280">Purpose</td>
       <td style="padding:8px">{purpose}</td></tr>
-  {f'<tr><td style="padding:8px;color:#6b7280">Message</td><td style="padding:8px">{consent.message}</td></tr>' if consent.message else ''}
+  {f'<tr><td style="padding:8px;color:#6b7280">Message</td><td style="padding:8px">{consent.message}</td></tr>' if consent.message else ""}
 </table>
 <a href="{portal_url}" style="display:inline-block;background:#1a56db;color:white;padding:10px 20px;border-radius:6px;text-decoration:none;font-weight:500">
   Review Request

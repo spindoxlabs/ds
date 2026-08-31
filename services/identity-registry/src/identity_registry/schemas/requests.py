@@ -107,9 +107,7 @@ class CreateOwnerRequest(BaseModel):
     @classmethod
     def _valid_status(cls, v: str | None) -> str | None:
         if v is not None and v not in VALID_OWNER_STATUSES:
-            raise ValueError(
-                f"status must be one of {sorted(VALID_OWNER_STATUSES)}"
-            )
+            raise ValueError(f"status must be one of {sorted(VALID_OWNER_STATUSES)}")
         return v
 
 

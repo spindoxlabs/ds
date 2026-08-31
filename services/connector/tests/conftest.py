@@ -1,4 +1,5 @@
 """Shared test fixtures for ds-connector."""
+
 from __future__ import annotations
 
 import os
@@ -10,8 +11,12 @@ os.environ.setdefault("CONNECTOR_ROLE", "provider")
 # read. Consent writes resolve dataset ids and purposes against these, so the
 # suite asserts on a stable vocabulary instead of the dev catalogue.
 _FIXTURES = Path(__file__).parent / "fixtures"
-os.environ.setdefault("CONNECTOR_GOVERNANCE_YAML_PATH", str(_FIXTURES / "governance.yaml"))
-os.environ.setdefault("CONNECTOR_SHARING_OFFERS_PATH", str(_FIXTURES / "sharing-offers.yaml"))
+os.environ.setdefault(
+    "CONNECTOR_GOVERNANCE_YAML_PATH", str(_FIXTURES / "governance.yaml")
+)
+os.environ.setdefault(
+    "CONNECTOR_SHARING_OFFERS_PATH", str(_FIXTURES / "sharing-offers.yaml")
+)
 
 import pytest
 import pytest_asyncio
@@ -30,6 +35,7 @@ def _fresh_vocabulary():
     consent_vocabulary.reset_caches()
     yield
     consent_vocabulary.reset_caches()
+
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 

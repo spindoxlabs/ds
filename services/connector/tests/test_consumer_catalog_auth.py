@@ -14,6 +14,7 @@ paths are asserted here along with what each records:
 * a **service** driving the consumer side (`connector.consumer.read`) — the
   federated catalogue's crawler, which previously sent nothing at all.
 """
+
 from __future__ import annotations
 
 import pytest

@@ -28,6 +28,7 @@ Before this docstring existed the shared id had no accessor at all, and the
 connector reached past the model into ``event.payload["dspAgreementId"]`` — the
 usual sign that a vocabulary was never settled.
 """
+
 from __future__ import annotations
 
 from typing import Any
@@ -37,6 +38,7 @@ from pydantic import BaseModel
 
 class TransferProcessEvent(BaseModel):
     """EDC transfer process state change event."""
+
     id: str | None = None
     type: str
     payload: dict[str, Any] = {}
@@ -57,6 +59,7 @@ class TransferProcessEvent(BaseModel):
 
 class ContractNegotiationEvent(BaseModel):
     """EDC contract negotiation state change event."""
+
     id: str | None = None
     type: str
     payload: dict[str, Any] = {}

@@ -1,4 +1,5 @@
 """Tests for ds.governance.compliance.evidence and .runtime."""
+
 from __future__ import annotations
 
 import json
@@ -200,22 +201,33 @@ class TestWriteArtifacts:
         )
         result = validate(path, participant_id=PARTICIPANT, base_url=BASE_URL)
         out = tmp_path / "reports"
-        write_artifacts(result, catalog, offers, out, profile=mapper.profile, name="core")
+        write_artifacts(
+            result, catalog, offers, out, profile=mapper.profile, name="core"
+        )
 
         loaded = json.loads((out / "core-odrl-offers.jsonld").read_text())
         assert "@context" in loaded
         assert len(loaded["@graph"]) == 1
-        assert json.loads((out / "core-dcat-catalog.jsonld").read_text())["@type"] == "dcat:Catalog"
+        assert (
+            json.loads((out / "core-dcat-catalog.jsonld").read_text())["@type"]
+            == "dcat:Catalog"
+        )
 
     def test_creates_nested_output_directory(self, sample, tmp_path: Path):
         path, _, mapper, exposed = sample
         catalog, offers = build_evidence(
-            exposed, mapper, base_url=BASE_URL, publisher_id=PUBLISHER,
-            publisher_name="P", catalog_name="core",
+            exposed,
+            mapper,
+            base_url=BASE_URL,
+            publisher_id=PUBLISHER,
+            publisher_name="P",
+            catalog_name="core",
         )
         result = validate(path, participant_id=PARTICIPANT, base_url=BASE_URL)
         out = tmp_path / "deep" / "nested" / "reports"
-        write_artifacts(result, catalog, offers, out, profile=mapper.profile, name="core")
+        write_artifacts(
+            result, catalog, offers, out, profile=mapper.profile, name="core"
+        )
         assert (out / "core-dcat-catalog.jsonld").exists()
 
 
@@ -249,7 +261,9 @@ class TestRuntimeOwnerLookup:
                 200, json={"id": "example-org", "did": "did:web:example-org.test"}
             )
 
-        with RuntimeOwnerLookup("http://ir.test", client=self._client(handler)) as lookup:
+        with RuntimeOwnerLookup(
+            "http://ir.test", client=self._client(handler)
+        ) as lookup:
             entry = lookup.by_id("example-org")
             assert entry is not None
             assert entry.did == "did:web:example-org.test"
@@ -267,7 +281,9 @@ class TestRuntimeOwnerLookup:
             calls.append(request.url.params["alias"])
             return httpx.Response(200, json={"id": "example-org"})
 
-        with RuntimeOwnerLookup("http://ir.test", client=self._client(handler)) as lookup:
+        with RuntimeOwnerLookup(
+            "http://ir.test", client=self._client(handler)
+        ) as lookup:
             lookup.by_id("example-org")
             lookup.by_id("example-org")
         assert calls == ["example-org"]
@@ -291,7 +307,9 @@ class TestRuntimeOwnerLookup:
         def handler(request: httpx.Request) -> httpx.Response:
             raise httpx.ConnectError("refused")
 
-        with RuntimeOwnerLookup("http://ir.test", client=self._client(handler)) as lookup:
+        with RuntimeOwnerLookup(
+            "http://ir.test", client=self._client(handler)
+        ) as lookup:
             with pytest.raises(RuntimeError, match="Failed to resolve owner"):
                 lookup.by_id("example-org")
 
@@ -301,7 +319,9 @@ class TestRuntimeOwnerLookup:
                 return httpx.Response(403)
             return httpx.Response(200, json={"id": "example-org"})
 
-        with RuntimeOwnerLookup("http://ir.test", client=self._client(handler)) as lookup:
+        with RuntimeOwnerLookup(
+            "http://ir.test", client=self._client(handler)
+        ) as lookup:
             lookup.by_id("example-org")
             assert [entry.id for entry in lookup.all()] == ["example-org"]
 
@@ -311,7 +331,9 @@ class TestRuntimeOwnerLookup:
                 return httpx.Response(200, json=[{"id": "a"}, {"id": "b"}])
             return httpx.Response(404)
 
-        with RuntimeOwnerLookup("http://ir.test", client=self._client(handler)) as lookup:
+        with RuntimeOwnerLookup(
+            "http://ir.test", client=self._client(handler)
+        ) as lookup:
             assert sorted(entry.id for entry in lookup.all()) == ["a", "b"]
 
 
@@ -417,9 +439,7 @@ SAREF = "https://saref.etsi.org/saref4ener/"
 THEME_ENER = "http://publications.europa.eu/resource/authority/data-theme/ENER"
 LANG_ENG = "http://publications.europa.eu/resource/authority/language/ENG"
 SPATIAL_ITA = "http://publications.europa.eu/resource/authority/atu/ITA"
-FREQ_15MIN = (
-    "http://publications.europa.eu/resource/authority/frequency/QUARTER_HOURLY"
-)
+FREQ_15MIN = "http://publications.europa.eu/resource/authority/frequency/QUARTER_HOURLY"
 
 
 @pytest.fixture
@@ -485,8 +505,7 @@ class TestDcatBlock:
         dataset = _dataset(*sample_with_dcat)
         assert dataset["dct:conformsTo"]["@id"] == SAREF
         assert (
-            dataset["dcat:distribution"][0]["dct:conformsTo"]["@id"]
-            == DSP_PROTOCOL_IRI
+            dataset["dcat:distribution"][0]["dct:conformsTo"]["@id"] == DSP_PROTOCOL_IRI
         )
 
     @pytest.mark.rule("M-1", "C-12")
@@ -534,7 +553,9 @@ class TestDcatBlock:
             "dct:accrualPeriodicity",
             "dct:temporal",
         ):
-            assert absent not in dataset, f"{absent} emitted for a rule with no dcat block"
+            assert absent not in dataset, (
+                f"{absent} emitted for a rule with no dcat block"
+            )
         assert dataset["dct:publisher"] == {"@id": PUBLISHER}
 
     def test_an_open_ended_period_keeps_its_start(self, sample_with_dcat):
@@ -568,7 +589,9 @@ class TestCatalogueConformance:
         records = catalog["dcat:record"]
         assert len(records) == len(catalog["dcat:dataset"])
         assert records[0]["@type"] == "dcat:CatalogRecord"
-        assert records[0]["foaf:primaryTopic"]["@id"] == catalog["dcat:dataset"][0]["@id"]
+        assert (
+            records[0]["foaf:primaryTopic"]["@id"] == catalog["dcat:dataset"][0]["@id"]
+        )
 
     def test_a_dsp_endpoint_becomes_the_catalogues_data_service(self, sample):
         _, _, mapper, exposed = sample
@@ -583,7 +606,9 @@ class TestCatalogueConformance:
         )
         service = catalog["dcat:service"][0]
         assert service["@type"] == "dcat:DataService"
-        assert service["dcat:endpointURL"] == {"@id": "http://edc:19194/protocol/2025-1"}
+        assert service["dcat:endpointURL"] == {
+            "@id": "http://edc:19194/protocol/2025-1"
+        }
         assert service["dct:conformsTo"]["@id"].startswith("https://w3id.org/dspace/")
 
     def test_no_endpoint_means_no_service_rather_than_a_guessed_one(self, sample):

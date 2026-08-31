@@ -9,6 +9,7 @@ That is the claim `D-47` makes, and it is not provable by testing either side
 alone — which is why the anchor's own suite (`test_enrolment.py`) fabricates a
 client, and this one runs the real thing.
 """
+
 from __future__ import annotations
 
 import time
@@ -101,9 +102,7 @@ async def participant_app(participant_db, monkeypatch):
     stub = StubResolver()
     app.dependency_overrides[get_did_resolver] = lambda: stub
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url=REC_URL
-    ) as ac:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url=REC_URL) as ac:
         ac.resolver = stub
         yield ac
     get_settings.cache_clear()
@@ -158,8 +157,10 @@ async def test_ensure_identity_is_idempotent_and_never_rotates(participant_db):
     assert second.created is False
     assert second.kid == first.kid
     keys = (
-        await participant_db.execute(select(Key).where(Key.owner_did == REC_DID))
-    ).scalars().all()
+        (await participant_db.execute(select(Key).where(Key.owner_did == REC_DID)))
+        .scalars()
+        .all()
+    )
     assert len(keys) == 1
 
 
@@ -341,16 +342,12 @@ async def test_a_participant_enrols_with_an_anchor_that_never_sees_its_key(
         # fixture has put its own in the environment, and a key encrypted with
         # the wrong one fails as an opaque Fernet `InvalidToken` three layers
         # away. Two instances, two keys, and the test has to model both.
-        private_jwk=encrypt_private_jwk(
-            anchor_kp.private_jwk, ANCHOR_ENCRYPTION_KEY
-        ),
+        private_jwk=encrypt_private_jwk(anchor_kp.private_jwk, ANCHOR_ENCRYPTION_KEY),
         public_jwk=anchor_kp.public_jwk,
     )
     db_session.add(anchor_key)
     await db_session.flush()
-    db_session.add(
-        Did(did=ANCHOR_DID, did_type="participant", key_id=anchor_key.id)
-    )
+    db_session.add(Did(did=ANCHOR_DID, did_type="participant", key_id=anchor_key.id))
 
     # 1. The organisation exists and has been admitted.
     db_session.add(
@@ -424,10 +421,14 @@ async def test_a_participant_enrols_with_an_anchor_that_never_sees_its_key(
     # 5. The credential the anchor issued is in the *participant's* store, which
     #    is the only place a presentation query can read it from.
     held = (
-        await participant_db.execute(
-            select(Credential).where(Credential.subject_did == REC_DID)
+        (
+            await participant_db.execute(
+                select(Credential).where(Credential.subject_did == REC_DID)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [c.credential_type for c in held] == ["MembershipCredential"]
     assert held[0].issuer_did == ANCHOR_DID
 
@@ -723,9 +724,7 @@ async def test_redelivery_is_idempotent(holder, participant_db, participant_reso
 
 
 @pytest.mark.asyncio
-async def test_a_payload_that_is_not_an_object_is_refused(
-    holder, participant_resolver
-):
+async def test_a_payload_that_is_not_an_object_is_refused(holder, participant_resolver):
     """Only json-ld. A holder that re-envelopes a JWT can disagree with its issuer."""
     anchor = Anchor()
     participant_resolver.documents[anchor.did] = anchor.document()

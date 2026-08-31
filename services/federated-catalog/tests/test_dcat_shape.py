@@ -11,6 +11,7 @@ descriptions, and the recorded architecture makes it advisory (rulebook `C-2`).
 So the service it names is each **crawled source's** endpoint, and a consumer
 following it arrives at the provider it must negotiate with, not back here.
 """
+
 from __future__ import annotations
 
 import pytest

@@ -9,6 +9,7 @@ KC organizations provide portal-level gating parallel to the identity-registry
 ``docs/services/keycloak.md``; for the membership registry itself, see
 ``docs/services/identity-registry.md``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -211,8 +212,7 @@ class KeycloakAdminClient:
             return
 
         current = (
-            await self._request("GET", f"/clients/{uuid}/protocol-mappers/models")
-            or []
+            await self._request("GET", f"/clients/{uuid}/protocol-mappers/models") or []
         )
         have = {
             (m.get("config") or {}).get("included.client.audience")

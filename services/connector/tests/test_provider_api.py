@@ -9,9 +9,10 @@ each one, so it rendered only while the list happened to be empty and threw a
 The fix is an endpoint that returns what the page always meant to show, gated so
 a read-only producer can actually reach it.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 import pytest_asyncio
@@ -38,7 +39,7 @@ def _agreement(**overrides) -> ContractAgreementORM:
         consumer_id=CONSUMER,
         provider_id=PROVIDER,
         policy_snapshot={},
-        agreed_at=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        agreed_at=datetime(2026, 1, 1, tzinfo=UTC),
     )
     base.update(overrides)
     return ContractAgreementORM(**base)
@@ -80,20 +81,22 @@ async def test_another_participants_agreements_are_not_listed(client, session_fa
 
 @pytest.mark.asyncio
 async def test_active_only_excludes_terminated(client, session_factory):
-    """"Active" is the absence of a termination, not a separate status column —
+    """ "Active" is the absence of a termination, not a separate status column —
     the page derives its badge the same way."""
     async with session_factory() as session:
         session.add(_agreement(agreement_id="live"))
         session.add(
             _agreement(
                 agreement_id="dead",
-                terminated_at=datetime(2026, 2, 1, tzinfo=timezone.utc),
+                terminated_at=datetime(2026, 2, 1, tzinfo=UTC),
                 termination_reason="revoked by subject",
             )
         )
         await session.commit()
 
-    everything = (await client.get("/provider/agreements", headers=PROVIDER_READ)).json()
+    everything = (
+        await client.get("/provider/agreements", headers=PROVIDER_READ)
+    ).json()
     assert {row["agreement_id"] for row in everything} == {"live", "dead"}
 
     active = (
@@ -115,7 +118,8 @@ async def test_an_unrelated_scope_is_refused(client):
     """Authentication is not authorisation: a valid token without the provider
     grant must not read another participant's contract history."""
     r = await client.get(
-        "/provider/agreements", headers=make_headers(scope="connector.consent.provision")
+        "/provider/agreements",
+        headers=make_headers(scope="connector.consent.provision"),
     )
     assert r.status_code == 403
 

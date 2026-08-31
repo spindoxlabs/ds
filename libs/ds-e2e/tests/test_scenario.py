@@ -5,6 +5,7 @@ properties worth pinning are the ones that make it safe to point at a shared
 environment: apply is idempotent, destroy is *narrow*, and a precondition it
 cannot provision stops the run instead of being papered over.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -87,9 +88,7 @@ def test_every_owner_that_accepts_names_a_seeded_agreement():
     Catching it here means the mismatch surfaces on any test run rather than
     only when someone has a stack up."""
     data = load_scenario(DEFAULT_SCENARIO)
-    seeded = {
-        (a["id"], a["version"]) for a in data.get("requires_agreements") or []
-    }
+    seeded = {(a["id"], a["version"]) for a in data.get("requires_agreements") or []}
     for owner in data["owners"]:
         accepts = owner.get("accepts")
         if accepts:
@@ -142,7 +141,7 @@ def test_apply_stops_when_a_required_agreement_is_missing():
     settings = E2ESettings(_env_file=None)
     http = MagicMock(spec=HttpClient)
     http.bearer_headers_for.return_value = {}
-    http.get.return_value = []          # no agreements seeded
+    http.get.return_value = []  # no agreements seeded
     http.raw.return_value = (200, {})
     report = ScenarioRunner(settings, http, SCENARIO).apply()
     assert not report.ok
@@ -173,7 +172,10 @@ def test_apply_reactivates_a_participant_left_deactivated_by_destroy():
     runner, calls = _runner(
         {
             ("POST", "/admin/participants"): (409, {"detail": "exists"}),
-            ("GET", "/admin/participants"): (200, {"did": "did:web:partner.test", "active": False}),
+            ("GET", "/admin/participants"): (
+                200,
+                {"did": "did:web:partner.test", "active": False},
+            ),
             ("PATCH", "/admin/participants"): (200, {"active": True}),
         }
     )
@@ -187,7 +189,10 @@ def test_apply_does_not_patch_an_already_active_participant():
     runner, calls = _runner(
         {
             ("POST", "/admin/participants"): (409, {"detail": "exists"}),
-            ("GET", "/admin/participants"): (200, {"did": "did:web:partner.test", "active": True}),
+            ("GET", "/admin/participants"): (
+                200,
+                {"did": "did:web:partner.test", "active": True},
+            ),
         }
     )
     report = runner.apply()
@@ -223,7 +228,9 @@ def test_destroy_removes_participants_before_owners():
     runner, calls = _runner({})
     runner.destroy()
     deletes = [url for method, url in calls if method == "DELETE"]
-    participant_idx = next(i for i, u in enumerate(deletes) if "/admin/participants" in u)
+    participant_idx = next(
+        i for i, u in enumerate(deletes) if "/admin/participants" in u
+    )
     owner_idx = next(i for i, u in enumerate(deletes) if "/admin/owners" in u)
     assert participant_idx < owner_idx
 

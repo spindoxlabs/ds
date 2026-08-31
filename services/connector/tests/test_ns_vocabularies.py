@@ -9,6 +9,7 @@ FastAPI resolves in registration order — so declaring it too early makes
 `/ns/policy` resolve into the vocabulary handler, find no vocabulary slugged
 "policy", and 404. Every test of the *new* route would still pass.
 """
+
 from __future__ import annotations
 
 import json
@@ -68,6 +69,7 @@ async def ns_client(tmp_path, monkeypatch):
 
 # ── The trap ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_the_catch_all_does_not_shadow_the_siblings(ns_client):
     """`/ns/policy` and `/ns/sharing-offers` must still be themselves.
@@ -92,6 +94,7 @@ async def test_the_catch_all_does_not_shadow_the_siblings(ns_client):
 
 
 # ── Browse ────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("M-11")
 @pytest.mark.asyncio
@@ -128,6 +131,7 @@ async def test_the_registry_projection_carries_the_iri(ns_client):
 
 
 # ── Retrieval ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("M-8", "M-11")
 @pytest.mark.asyncio
@@ -173,6 +177,7 @@ async def test_a_corrupt_cached_copy_is_a_500_not_a_404(ns_client):
 
 
 # ── Perimeter ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("M-8", "M-11")
 @pytest.mark.asyncio

@@ -6,6 +6,7 @@ of resolving rather than trusting — never happen. Each case below is a sentenc
 from the DCP specification, §Validating Self-Issued ID Tokens, or from the
 did:web method.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -24,8 +25,7 @@ from identity_registry.services.did_resolver import (
 
 def test_bare_host_resolves_to_well_known():
     assert (
-        did_web_url("did:web:example.com")
-        == "https://example.com/.well-known/did.json"
+        did_web_url("did:web:example.com") == "https://example.com/.well-known/did.json"
     )
 
 
@@ -80,9 +80,10 @@ def test_kid_selects_the_matching_method():
         _method("did:web:example.com#key-1"),
         _method("did:web:example.com#key-2"),
     )
-    assert verification_key(doc, "did:web:example.com#key-2") == doc[
-        "verificationMethod"
-    ][1]["publicKeyJwk"]
+    assert (
+        verification_key(doc, "did:web:example.com#key-2")
+        == doc["verificationMethod"][1]["publicKeyJwk"]
+    )
 
 
 @pytest.mark.rule("P-8a")
@@ -218,9 +219,7 @@ def test_a_decoded_port_is_restored():
     every `client_id` comparison is string equality against the stored, encoded
     form, so the decoded spelling matched nothing and the STS answered 401.
     """
-    assert (
-        normalize_did_web("did:web:127.0.0.1:8080") == "did:web:127.0.0.1%3A8080"
-    )
+    assert normalize_did_web("did:web:127.0.0.1:8080") == "did:web:127.0.0.1%3A8080"
 
 
 def test_a_path_segment_is_not_mistaken_for_a_port():

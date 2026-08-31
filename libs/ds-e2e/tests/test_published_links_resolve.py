@@ -24,6 +24,7 @@ that gets skipped in CI and stops running. The mapping is mkdocs' own, from
 `awesome-pages`: a URL path is a file path, and a trailing slash means either
 `<name>.md` or `<name>/index.md`.
 """
+
 from __future__ import annotations
 
 import re
@@ -40,6 +41,7 @@ SITE_URL = "https://spindoxlabs.github.io/ds/"
 #: `docs/` — the generated schemas declare this URL as their own `$id`, so it has
 #: to serve the document itself.
 SCHEMA_PREFIX = "schemas/"
+
 
 #: Markdown outside `docs/` — the files a reader meets on GitHub.
 def _markdown_files() -> list[Path]:

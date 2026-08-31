@@ -18,6 +18,7 @@ precedent `services/identity-registry` set, but a third one should be extracted
 rather than pasted — the drift risk in a duplicated fixture is exactly what
 `GOV-01` records.
 """
+
 from __future__ import annotations
 
 import os

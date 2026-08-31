@@ -1,4 +1,5 @@
 """CRUD operations for PROV-O nodes."""
+
 from __future__ import annotations
 
 import logging
@@ -49,9 +50,7 @@ async def upsert_node(
     # permanently — and the graph then published the wrong `@type` for the node
     # and, through it, the wrong endpoint key for every edge touching it.
     if node.node_type != node_type:
-        log.info(
-            "prov node %s reclassified %s → %s", iri, node.node_type, node_type
-        )
+        log.info("prov node %s reclassified %s → %s", iri, node.node_type, node_type)
         node.node_type = node_type
 
     for k, v in fields.items():
@@ -70,22 +69,41 @@ async def get_node_by_iri(session: AsyncSession, iri: str) -> ProvNodeORM | None
 
 
 async def create_entity(session: AsyncSession, data: EntityCreate) -> ProvNodeORM:
-    return await upsert_node(session, data.iri, "Entity",
-                             label=data.label, description=data.description,
-                             energy_type=data.energy_type, external_meta=data.external_meta)
+    return await upsert_node(
+        session,
+        data.iri,
+        "Entity",
+        label=data.label,
+        description=data.description,
+        energy_type=data.energy_type,
+        external_meta=data.external_meta,
+    )
 
 
 async def create_activity(session: AsyncSession, data: ActivityCreate) -> ProvNodeORM:
-    return await upsert_node(session, data.iri, "Activity",
-                             label=data.label, description=data.description,
-                             energy_type=data.energy_type, external_meta=data.external_meta,
-                             started_at=data.started_at, ended_at=data.ended_at)
+    return await upsert_node(
+        session,
+        data.iri,
+        "Activity",
+        label=data.label,
+        description=data.description,
+        energy_type=data.energy_type,
+        external_meta=data.external_meta,
+        started_at=data.started_at,
+        ended_at=data.ended_at,
+    )
 
 
 async def create_agent(session: AsyncSession, data: AgentCreate) -> ProvNodeORM:
-    return await upsert_node(session, data.iri, "Agent",
-                             label=data.label, description=data.description,
-                             energy_type=data.energy_type, external_meta=data.external_meta)
+    return await upsert_node(
+        session,
+        data.iri,
+        "Agent",
+        label=data.label,
+        description=data.description,
+        energy_type=data.energy_type,
+        external_meta=data.external_meta,
+    )
 
 
 async def soft_delete_node(

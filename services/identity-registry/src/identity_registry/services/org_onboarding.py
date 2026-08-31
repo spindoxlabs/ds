@@ -884,9 +884,7 @@ async def apply_owner_entry(
         # no credential, no promotion, because a run flag cannot assert those.
         if evidence is None:
             outcome.applied = False
-            outcome.steps.append(
-                ApplyStep("entry", "skipped", "no dataspace: block")
-            )
+            outcome.steps.append(ApplyStep("entry", "skipped", "no dataspace: block"))
             return outcome
         block = {
             "verified_by": evidence.verified_by,
@@ -899,7 +897,12 @@ async def apply_owner_entry(
 
     try:
         await _apply_steps(
-            db, settings, entry, block, alias, outcome,
+            db,
+            settings,
+            entry,
+            block,
+            alias,
+            outcome,
             per_run_evidence=per_run_evidence,
         )
     except OrgOnboardingError as exc:

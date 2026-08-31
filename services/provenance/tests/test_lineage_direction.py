@@ -7,6 +7,7 @@ which made it a synonym for `both`: a caller asking "what came out of this
 dataset" was handed its provenance as well, with nothing in the response saying
 so.
 """
+
 from __future__ import annotations
 
 import urllib.parse
@@ -46,7 +47,9 @@ async def _seed(client):
 
 async def _iris(client, direction: str) -> set[str]:
     iri = urllib.parse.quote(DATASET, safe="")
-    response = await client.get(f"/prov/lineage/{iri}?direction={direction}&max_depth=5")
+    response = await client.get(
+        f"/prov/lineage/{iri}?direction={direction}&max_depth=5"
+    )
     assert response.status_code == 200
     return {item["@id"] for item in response.json()["@graph"]}
 
@@ -75,7 +78,9 @@ async def test_both_is_the_union_and_is_still_wider_than_either(client):
     both = await _iris(client, "both")
     assert PUBLICATION in both
     assert DERIVED in both
-    assert both >= (await _iris(client, "upstream")) | (await _iris(client, "downstream"))
+    assert both >= (await _iris(client, "upstream")) | (
+        await _iris(client, "downstream")
+    )
 
 
 @pytest.mark.asyncio

@@ -5,6 +5,7 @@ decidable: that `@graph` was a key (true of an empty graph), and that an unknown
 IRI answered "200 **or** 404" — which is every outcome the route can produce, so
 the test could not fail whatever the code did.
 """
+
 import urllib.parse
 
 import pytest
@@ -71,7 +72,9 @@ async def test_the_query_parameters_are_bounded(client):
 
     assert (await client.get(f"/prov/lineage/{iri}?max_depth=21")).status_code == 422
     assert (await client.get(f"/prov/lineage/{iri}?max_depth=0")).status_code == 422
-    assert (await client.get(f"/prov/lineage/{iri}?direction=sideways")).status_code == 422
+    assert (
+        await client.get(f"/prov/lineage/{iri}?direction=sideways")
+    ).status_code == 422
 
 
 @pytest.mark.rule("L-12")
@@ -82,7 +85,9 @@ async def test_relation_types_narrow_the_walk(client):
     iri = urllib.parse.quote(DATASET, safe="")
 
     body = (
-        await client.get(f"/prov/lineage/{iri}?direction=both&relation_types=wasDerivedFrom")
+        await client.get(
+            f"/prov/lineage/{iri}?direction=both&relation_types=wasDerivedFrom"
+        )
     ).json()
     types = {item["@type"] for item in body["@graph"] if "ds:source" in item}
     assert types == {"prov:wasDerivedFrom"}

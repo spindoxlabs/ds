@@ -78,10 +78,9 @@ def test_no_row_is_keyed_by_a_subject_did():
     """
     for name, spec in DATASETS.items():
         for row in spec.get("rows") or []:
-            assert not any(
-                isinstance(value, str) and value.startswith("did:")
-                for value in row.values()
-            ), f"{name} carries a DID in its payload"
+            assert not any(isinstance(value, str) and value.startswith("did:") for value in row.values()), (
+                f"{name} carries a DID in its payload"
+            )
 
 
 def test_the_rec_fixture_matches_the_e2e_registry():
@@ -95,9 +94,7 @@ def test_the_rec_fixture_matches_the_e2e_registry():
     for member in community.values():
         username = member["user_id"]
         assert username in REC_MEMBERS, f"{username} is in the e2e registry and not here"
-        sensors = {
-            asset["sensor_id"] for asset in member["assets"]["meter"].values()
-        }
+        sensors = {asset["sensor_id"] for asset in member["assets"]["meter"].values()}
         assert set(REC_MEMBERS[username]["devices"]) == sensors
 
 
@@ -105,9 +102,7 @@ def test_the_unowned_device_belongs_to_nobody():
     """The negative control only controls if nothing claims it."""
     owned = {device for member in REC_MEMBERS.values() for device in member["devices"]}
     assert "ds-e2e-METER-9999" not in owned
-    assert any(
-        row["device_id"] == "ds-e2e-METER-9999" for row in DATASETS[GATED]["rows"]
-    )
+    assert any(row["device_id"] == "ds-e2e-METER-9999" for row in DATASETS[GATED]["rows"])
 
 
 # ── A dataset must say enough to be served ────────────────────────────────────

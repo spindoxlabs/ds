@@ -1,4 +1,5 @@
 """Build the active notifier from Settings."""
+
 from __future__ import annotations
 
 import logging
@@ -12,7 +13,7 @@ from .webhook import WebhookNotifier
 log = logging.getLogger(__name__)
 
 
-def build_notifier(settings: "Settings") -> ConsentNotifier:  # noqa: F821
+def build_notifier(settings: Settings) -> ConsentNotifier:  # noqa: F821
     """Construct the active notifier from CONNECTOR_NOTIFY_BACKENDS.
 
     Returns NullNotifier when no backends are configured.
@@ -28,7 +29,9 @@ def build_notifier(settings: "Settings") -> ConsentNotifier:  # noqa: F821
         if backend == "smtp":
             notifiers.append(_build_smtp(settings))
         elif backend == "webhook":
-            notifiers.append(WebhookNotifier(portal_base_url=settings.notify_portal_base_url))
+            notifiers.append(
+                WebhookNotifier(portal_base_url=settings.notify_portal_base_url)
+            )
         else:
             log.warning("Unknown notification backend %r — skipped", backend)
 
@@ -40,7 +43,7 @@ def build_notifier(settings: "Settings") -> ConsentNotifier:  # noqa: F821
     return MultiNotifier(notifiers)
 
 
-def _build_smtp(settings: "Settings") -> SmtpNotifier:  # noqa: F821
+def _build_smtp(settings: Settings) -> SmtpNotifier:  # noqa: F821
     missing = [
         name
         for name in ("notify_smtp_host", "notify_smtp_from")

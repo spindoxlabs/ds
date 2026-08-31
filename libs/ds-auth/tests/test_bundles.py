@@ -5,6 +5,7 @@ properties that make bundles usable at all: a bundle can never confer a
 machine identity, and a realm still carrying the old scope-named groups keeps
 working unchanged.
 """
+
 from ds_auth import (
     MACHINE_IDENTITY_PERMISSIONS,
     ROLE_BUNDLES,
@@ -66,9 +67,7 @@ def test_machine_identity_is_dropped_but_siblings_survive():
 
 def test_unknown_group_passes_through_as_itself():
     """This is the whole migration path: the ~30 scope-named groups still work."""
-    assert expand_bundles(["connector.provider.write"]) == (
-        "connector.provider.write",
-    )
+    assert expand_bundles(["connector.provider.write"]) == ("connector.provider.write",)
 
 
 def test_bundles_and_legacy_groups_compose():
@@ -258,9 +257,10 @@ from ds_auth import parse_group_aliases  # noqa: E402
 
 def test_an_alias_translates_a_foreign_group():
     aliases = parse_group_aliases('{"celine-manager": "ds-participant-admin"}')
-    assert expand_bundles(["celine-manager"], aliases) == ROLE_BUNDLES[
-        "ds-participant-admin"
-    ]
+    assert (
+        expand_bundles(["celine-manager"], aliases)
+        == ROLE_BUNDLES["ds-participant-admin"]
+    )
 
 
 def test_an_alias_cannot_name_a_capability():

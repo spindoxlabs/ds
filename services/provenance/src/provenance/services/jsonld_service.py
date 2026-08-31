@@ -1,21 +1,22 @@
 """ORM → JSON-LD serialisation."""
+
 from __future__ import annotations
 
 from ..db.models import ProvNodeORM, ProvRelationORM
 from .lineage_service import LineageGraph
 
 _TYPE_MAP = {
-    "Entity":   "prov:Entity",
+    "Entity": "prov:Entity",
     "Activity": "prov:Activity",
-    "Agent":    "prov:Agent",
+    "Agent": "prov:Agent",
 }
 
 # The PROV-O property that names an endpoint of a given kind. `prov:entity`
 # means "this end is an Entity" — it is a *type* statement, not a position.
 _ENDPOINT_KEY = {
-    "Entity":   "prov:entity",
+    "Entity": "prov:entity",
     "Activity": "prov:activity",
-    "Agent":    "prov:agent",
+    "Agent": "prov:agent",
 }
 
 
@@ -38,7 +39,9 @@ def node_to_jsonld(node: ProvNodeORM) -> dict:
     return {k: v for k, v in obj.items() if v is not None}
 
 
-def relation_to_jsonld(edge: ProvRelationORM, nodes_by_id: dict[str, ProvNodeORM]) -> dict:
+def relation_to_jsonld(
+    edge: ProvRelationORM, nodes_by_id: dict[str, ProvNodeORM]
+) -> dict:
     """Serialise one edge, naming each end by **what it is**.
 
     Two facts have to survive and they are not the same fact:

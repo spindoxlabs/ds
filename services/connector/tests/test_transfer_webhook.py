@@ -9,6 +9,7 @@ Two things are pinned here that the route got wrong while it was unreachable:
 the counterparties were a **hardcoded literal**, and *started* and *completed*
 emitted the same event.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime

@@ -9,6 +9,7 @@ version; the sync passing one the CLI would have caught is the bad one.
 The rule mirrors `GovernanceMapper._purpose_iris` deliberately: the point is to
 name exactly what the mapper would otherwise drop in silence.
 """
+
 from __future__ import annotations
 
 from .models import GovernanceRuleV2, OdrlProfile
@@ -47,7 +48,9 @@ def purpose_failure(rule: GovernanceRuleV2, profile: OdrlProfile) -> str | None:
     unresolved = unresolved_purposes(declared, profile)
     if unresolved:
         listed = ", ".join(repr(entry) for entry in unresolved)
-        known = ", ".join(sorted(profile.purpose_index)) or "(the profile declares none)"
+        known = (
+            ", ".join(sorted(profile.purpose_index)) or "(the profile declares none)"
+        )
         return (
             f"declares {listed}, which the ODRL profile taxonomy does not "
             f"define — the constraint would be dropped and the dataset "

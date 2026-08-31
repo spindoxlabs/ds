@@ -3,9 +3,13 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="PROVENANCE_", env_file=".env", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="PROVENANCE_", env_file=".env", extra="ignore"
+    )
 
-    database_url: str = "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance"
+    database_url: str = (
+        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance"
+    )
     debug: bool = False
 
     oidc_issuer_url: str | None = None

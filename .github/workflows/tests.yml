@@ -52,16 +52,24 @@ jobs:
           # `main` permanently red over pre-existing P3 debt, and a red `main` is
           # how a workflow stops being read.
           #
-          # Measured 2026-08-05, and these are the rows that close each one:
-          #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06, now `lint: true`
-          #   libs/ds-e2e              184   E2E-11 — `mypy --strict` on src/ is
+          # **Every unit's `lint` also runs `ruff format --check` as of
+          # 2026-08-31.** The formatter had been wired into nothing, so 331 of
+          # ~380 files had drifted from it — invisible, because no task and no
+          # job ever ran it. Running it closed 316 of the 392 `E501`s on its own:
+          # the formatter wraps a long line, so most line-length debt was never
+          # a judgement call. What a formatter cannot split — a long string, a
+          # URL, a comment — is what is left below.
+          #
+          # Re-measured 2026-08-31, after `ruff format` + `ruff check --fix`:
+          #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06
+          #   libs/ds-e2e               40   E2E-11 — `mypy --strict` on src/ is
           #                                    clear (2026-08-28, issue #8) and now
           #                                    runs in that unit's `lint`; ruff, and
           #                                    mypy over tests/, are what is left
-          #   libs/governance           10   (all in tests/)
-          #   services/connector       265
-          #   services/federated-catalog 1
-          #   services/identity-registry 78
+          #   libs/governance            0   cleared 2026-08-31, now `lint: true`
+          #   services/connector        61
+          #   services/federated-catalog 0   cleared 2026-08-31, now `lint: true`
+          #   services/identity-registry 9
           # Flip a unit to `lint: true` in the same commit that clears it.
           - unit: libs/ds-auth
             lint: true
@@ -74,13 +82,13 @@ jobs:
           - unit: libs/ds-obs
             lint: true
           - unit: libs/governance
-            lint: false
+            lint: true
           - unit: services/connector
             lint: false
           - unit: services/dataset-api-mock
             lint: true
           - unit: services/federated-catalog
-            lint: false
+            lint: true
           - unit: services/identity-registry
             lint: false
           - unit: services/provenance

@@ -6,6 +6,7 @@ three were validated and stored verbatim in the payload, so they *looked*
 recorded; the graph — the thing lineage and the portal read — could not answer
 "whose access was revoked" or "who published this offer".
 """
+
 from __future__ import annotations
 
 import urllib.parse
@@ -70,12 +71,15 @@ async def test_the_subject_edge_is_distinguishable_from_the_two_parties(client):
     uses to tell "performed it" from "it was about them"."""
     await client.post("/prov/events", json=REVOKED_EVENT)
 
-    graph = await _lineage(client, f"urn:activity:access-revocation:{REVOKED_EVENT['event_id']}")
+    graph = await _lineage(
+        client, f"urn:activity:access-revocation:{REVOKED_EVENT['event_id']}"
+    )
     subject_edges = [
-        item for item in graph
-        if item.get("ds:target") == SUBJECT and "@type" in item
+        item for item in graph if item.get("ds:target") == SUBJECT and "@type" in item
     ]
-    assert subject_edges, "the subject is in the graph but nothing links it to the revocation"
+    assert subject_edges, (
+        "the subject is in the graph but nothing links it to the revocation"
+    )
     assert subject_edges[0]["prov:role"] == "dataSubject"
 
     party_edges = [
@@ -87,7 +91,9 @@ async def test_the_subject_edge_is_distinguishable_from_the_two_parties(client):
 @pytest.mark.rule("L-3", "L-5")
 @pytest.mark.asyncio
 async def test_acted_by_becomes_a_pseudonymous_agent(client):
-    assert (await client.post("/prov/events", json=PUBLISHED_BY_A_PERSON)).status_code == 201
+    assert (
+        await client.post("/prov/events", json=PUBLISHED_BY_A_PERSON)
+    ).status_code == 201
 
     agents = await _agents(client)
     iri = "urn:ds:principal:https://keycloak.test/realms/dataspaces:f7c1-opaque-sub"
@@ -104,7 +110,7 @@ async def test_acted_by_becomes_a_pseudonymous_agent(client):
 @pytest.mark.rule("L-5")
 @pytest.mark.asyncio
 async def test_acted_on_behalf_of_is_an_edge_not_a_string(client):
-    """"Acting for whom" is the second half of the Art. 5(2) question, and it is
+    """ "Acting for whom" is the second half of the Art. 5(2) question, and it is
     only answerable if the owner is a node with an edge to the actor."""
     await client.post("/prov/events", json=PUBLISHED_BY_A_PERSON)
 
@@ -131,7 +137,9 @@ async def test_an_automated_publish_is_recorded_as_one(client):
     assert agents["urn:ds:principal:svc-sub"]["isService"] is True
 
     graph = await _lineage(client, "urn:ds:principal:svc-sub")
-    edge = [item for item in graph if item.get("ds:target") == "urn:ds:principal:svc-sub"]
+    edge = [
+        item for item in graph if item.get("ds:target") == "urn:ds:principal:svc-sub"
+    ]
     assert edge[0]["prov:role"] == "service"
 
 
@@ -166,4 +174,6 @@ async def test_an_event_without_a_principal_adds_no_agent(client):
     }
     await client.post("/prov/events", json=plain)
 
-    assert not [iri for iri in await _agents(client) if iri.startswith("urn:ds:principal:")]
+    assert not [
+        iri for iri in await _agents(client) if iri.startswith("urn:ds:principal:")
+    ]

@@ -1,4 +1,5 @@
 """Tests for crawler — crawl_dcat_source and crawl_all integration."""
+
 from __future__ import annotations
 
 import textwrap
@@ -47,9 +48,7 @@ async def test_crawl_dcat_source_success(sample_dcat_catalog):
 
 @respx.mock
 async def test_crawl_dcat_source_tags_publisher():
-    catalog = {
-        "dcat:dataset": [{"@id": "https://example.com/ds1", "dct:title": "DS1"}]
-    }
+    catalog = {"dcat:dataset": [{"@id": "https://example.com/ds1", "dct:title": "DS1"}]}
     source = DcatSource(id="src-1", url="http://api.test/cat")
     respx.get("http://api.test/cat").mock(
         return_value=httpx.Response(200, json=catalog)
@@ -119,12 +118,14 @@ async def test_crawl_all_includes_dcat_sources(tmp_path, sample_dcat_catalog):
     participants_yaml.write_text("participants: []\n")
 
     catalogues_yaml = tmp_path / "catalogues.yaml"
-    catalogues_yaml.write_text(textwrap.dedent("""\
+    catalogues_yaml.write_text(
+        textwrap.dedent("""\
         catalogues:
           - id: test-api
             url: http://api.test/catalogue
             type: dcat-ap
-    """))
+    """)
+    )
 
     respx.get("http://api.test/catalogue").mock(
         return_value=httpx.Response(200, json=sample_dcat_catalog)
@@ -143,11 +144,13 @@ async def test_crawl_all_dcat_error_is_failsafe(tmp_path):
     participants_yaml.write_text("participants: []\n")
 
     catalogues_yaml = tmp_path / "catalogues.yaml"
-    catalogues_yaml.write_text(textwrap.dedent("""\
+    catalogues_yaml.write_text(
+        textwrap.dedent("""\
         catalogues:
           - id: broken-api
             url: http://api.broken/catalogue
-    """))
+    """)
+    )
 
     respx.get("http://api.broken/catalogue").mock(
         return_value=httpx.Response(500, text="Internal Server Error")
@@ -163,26 +166,33 @@ async def test_crawl_all_dcat_error_is_failsafe(tmp_path):
 @respx.mock
 async def test_crawl_all_mixed_dsp_and_dcat(tmp_path, sample_dcat_catalog):
     participants_yaml = tmp_path / "participants.yaml"
-    participants_yaml.write_text(textwrap.dedent("""\
+    participants_yaml.write_text(
+        textwrap.dedent("""\
         participants:
           - id: did:web:provider
             role: provider
             dsp_address: http://edc:19194/protocol
-    """))
+    """)
+    )
 
     catalogues_yaml = tmp_path / "catalogues.yaml"
-    catalogues_yaml.write_text(textwrap.dedent("""\
+    catalogues_yaml.write_text(
+        textwrap.dedent("""\
         catalogues:
           - id: dcat-api
             url: http://api.test/catalogue
-    """))
+    """)
+    )
 
     respx.post(f"{CONNECTOR_URL}/consumer/catalog").mock(
-        return_value=httpx.Response(200, json={
-            "dcat:dataset": [
-                {"@id": "https://dsp.example/ds1", "dct:title": "DSP Dataset"}
-            ]
-        })
+        return_value=httpx.Response(
+            200,
+            json={
+                "dcat:dataset": [
+                    {"@id": "https://dsp.example/ds1", "dct:title": "DSP Dataset"}
+                ]
+            },
+        )
     )
     respx.get("http://api.test/catalogue").mock(
         return_value=httpx.Response(200, json=sample_dcat_catalog)

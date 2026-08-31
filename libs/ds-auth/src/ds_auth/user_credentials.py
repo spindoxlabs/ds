@@ -20,6 +20,7 @@ that is not the configured issuer is refused without resolving anything. Without
 that ordering, anyone could name their own DID as issuer and sign with their own
 key.
 """
+
 from __future__ import annotations
 
 import base64
@@ -168,9 +169,7 @@ def verify_user_vc_jwt(
                     trust_anchor_did,
                     credential_type=_credential_type(vc),
                 )
-            public_key = public_key_from_jwk(
-                assertion_jwk(document, header.get("kid"))
-            )
+            public_key = public_key_from_jwk(assertion_jwk(document, header.get("kid")))
         except DidResolutionError as exc:
             log.error("cannot verify user credential: %s", exc)
             raise HTTPException(

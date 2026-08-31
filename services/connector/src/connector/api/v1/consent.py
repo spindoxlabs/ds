@@ -1,4 +1,5 @@
 """Consent registry API — subject sovereignty endpoints."""
+
 from __future__ import annotations
 
 import inspect
@@ -6,6 +7,7 @@ import logging
 from datetime import datetime
 from urllib.parse import urlparse
 
+from ds_auth.user_credentials import verify_user_vc_jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -29,7 +31,6 @@ from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
 from ...services.membership_check import check_subject_membership, resolve_dataset_owner
 from ...services.prov_bridge import ProvBridge
-from ds_auth.user_credentials import verify_user_vc_jwt
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/consent", tags=["consent"])
@@ -80,6 +81,7 @@ async def _emit_consent_events(
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
+
 
 class ConsentRequestCreate(BaseModel):
     consumer_id: str
@@ -239,6 +241,7 @@ def _verify_user(
 
 # ── Provider-local request seeding ────────────────────────────────────────────
 
+
 @router.post("/request", status_code=201)
 async def create_consent_request(
     body: ConsentRequestCreate,
@@ -284,7 +287,11 @@ async def create_consent_request(
 
     if body.notification_url:
         allowed_raw = settings.webhook_allowed_hosts.strip()
-        allowed = {h.strip().lower() for h in allowed_raw.split(",") if h.strip()} if allowed_raw else set()
+        allowed = (
+            {h.strip().lower() for h in allowed_raw.split(",") if h.strip()}
+            if allowed_raw
+            else set()
+        )
         parsed = urlparse(body.notification_url)
         host = (parsed.hostname or "").lower()
         if parsed.scheme not in ("https", "http") or not host:
@@ -305,7 +312,9 @@ async def create_consent_request(
         for subject_id in body.subject_ids:
             subject_did = subject_id
             if not subject_did.startswith("did:"):
-                users_domain = settings.trust_anchor_did.replace("did:web:", "").replace("trust-anchor.", "users.")
+                users_domain = settings.trust_anchor_did.replace(
+                    "did:web:", ""
+                ).replace("trust-anchor.", "users.")
                 subject_did = f"did:web:{users_domain}:{subject_id}"
 
             is_member = await check_subject_membership(
@@ -345,7 +354,9 @@ async def create_consent_request(
     return {"request_ids": request_ids, "status": "pending"}
 
 
-async def _require_known_participant(registry, consumer_id: str, settings: Settings) -> None:
+async def _require_known_participant(
+    registry, consumer_id: str, settings: Settings
+) -> None:
     """Refuse a request naming a party the dataspace does not know.
 
     Option B's surviving half. The cross-participant channel is gone, so this no
@@ -421,9 +432,7 @@ async def get_consent_status(
     # The `subject_id` query parameter is caller-supplied; without this check any
     # authenticated holder could enumerate another subject's consent decisions.
     if subject_id != x_subject_id:
-        raise HTTPException(
-            403, "Cannot read consent status for another subject"
-        )
+        raise HTTPException(403, "Cannot read consent status for another subject")
     consents = await consent_service.list_subject_consents(
         session=db,
         subject_id=subject_id,
@@ -543,6 +552,7 @@ async def list_consent_asks(
 
 
 # ── Subject-facing endpoints (JWT-protected) ──────────────────────────────────
+
 
 @router.get("/my")
 async def list_my_consents(
@@ -680,6 +690,7 @@ async def set_my_data_share(
 
 # ── Service-provisioned shares (onboarding) ───────────────────────────────────
 
+
 def _offer_legal_basis_record(offer, caller: AdminShareLegalBasis | None) -> dict:
     """Assemble the stored legal-basis evidence for a provisioned share.
 
@@ -698,7 +709,8 @@ def _offer_legal_basis_record(offer, caller: AdminShareLegalBasis | None) -> dic
         "basis_iri": sent.get("basis_iri") or offer.legal_basis,
         "controller": offer.recipients.controller,
         "controller_role": offer.recipients.controller_role,
-        "consent_text_version": sent.get("consent_text_version") or offer.consent_text_version,
+        "consent_text_version": sent.get("consent_text_version")
+        or offer.consent_text_version,
         "locale": sent.get("locale"),
         "rendered_text_sha256": sent.get("rendered_text_sha256"),
         "user_visible_hash": vocab.offer_user_visible_hash(offer),
@@ -1059,7 +1071,9 @@ async def _resume_blocked_negotiation(
     except Exception as exc:
         log.warning(
             "Could not resume negotiation %s after consent %s was granted: %s",
-            consent.negotiation_id, consent.id, exc,
+            consent.negotiation_id,
+            consent.id,
+            exc,
         )
         return {"resumed": False, "outcome": "error"}
 
@@ -1114,7 +1128,9 @@ async def _terminate_refused_negotiation(request: Request, negotiation_id: str) 
         )
         return {"terminated": True, "outcome": "terminated"}
     except Exception as exc:
-        log.warning("Could not terminate refused negotiation %s: %s", negotiation_id, exc)
+        log.warning(
+            "Could not terminate refused negotiation %s: %s", negotiation_id, exc
+        )
         return {"terminated": False, "outcome": "error"}
 
 
@@ -1163,6 +1179,7 @@ async def revoke_consent(
 
 # ── Internal endpoints ────────────────────────────────────────────────────────
 
+
 @router.post("/register-transfer", status_code=200)
 async def register_transfer(
     body: TransferRegisterRequest,
@@ -1170,5 +1187,7 @@ async def register_transfer(
     _claims: dict = Depends(require_internal_scope),
 ):
     async with db.begin():
-        ok = await consent_service.register_transfer(db, body.consent_request_id, body.transfer_id)
+        ok = await consent_service.register_transfer(
+            db, body.consent_request_id, body.transfer_id
+        )
     return {"registered": ok}

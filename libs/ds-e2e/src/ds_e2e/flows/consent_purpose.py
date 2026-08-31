@@ -17,6 +17,7 @@ Every step here would have passed silently before Block A: purposes were
 free-form strings, dataset ids were unvalidated, and the check took no purpose
 at all.
 """
+
 from __future__ import annotations
 
 import logging
@@ -127,7 +128,8 @@ class ConsentPurposeFlow(BaseFlow):
             declared = [
                 key.removeprefix("skos:")
                 for key in concept
-                if key.startswith("skos:") and key.removeprefix("skos:") in SKOS_MATCH_RELATIONS
+                if key.startswith("skos:")
+                and key.removeprefix("skos:") in SKOS_MATCH_RELATIONS
             ]
             for relation in declared:
                 target = concept.get(f"skos:{relation}") or {}
@@ -185,11 +187,15 @@ class ConsentPurposeFlow(BaseFlow):
         # Every code a frontend renders must carry an English fallback, so an
         # untranslated locale degrades to readable English, never a raw slug.
         missing = [
-            o["id"] for o in offers if not o.get("fallback_text_en", {}).get("purpose_label")
+            o["id"]
+            for o in offers
+            if not o.get("fallback_text_en", {}).get("purpose_label")
         ]
         if missing:
             result.fail_step(
-                "sharing offers", "offers without an English fallback label", offers=missing
+                "sharing offers",
+                "offers without an English fallback label",
+                offers=missing,
             )
             return None
 
@@ -260,17 +266,22 @@ class ConsentPurposeFlow(BaseFlow):
         s = self.settings
 
         try:
-            rows = self.http.post(
-                f"{s.connector_url}/consent/my/shares",
-                {
-                    "offer_id": s.sharing_offer_id,
-                    "consumer_id": s.consumer_did,
-                    "enabled": True,
-                },
-                headers=subject_headers,
-            ) or []
+            rows = (
+                self.http.post(
+                    f"{s.connector_url}/consent/my/shares",
+                    {
+                        "offer_id": s.sharing_offer_id,
+                        "consumer_id": s.consumer_did,
+                        "enabled": True,
+                    },
+                    headers=subject_headers,
+                )
+                or []
+            )
         except HttpError as exc:
-            result.fail_step("consent by offer", f"HTTP {exc.status}", response=exc.body)
+            result.fail_step(
+                "consent by offer", f"HTTP {exc.status}", response=exc.body
+            )
             return False
 
         rows = rows if isinstance(rows, list) else [rows]
@@ -285,11 +296,15 @@ class ConsentPurposeFlow(BaseFlow):
                 return False
             if row.get("controller") != offer["recipients"]["controller"]:
                 result.fail_step(
-                    "consent by offer", "row controller does not match the offer", row=row
+                    "consent by offer",
+                    "row controller does not match the offer",
+                    row=row,
                 )
                 return False
             if row.get("offer_id") != s.sharing_offer_id:
-                result.fail_step("consent by offer", "row is not linked to the offer", row=row)
+                result.fail_step(
+                    "consent by offer", "row is not linked to the offer", row=row
+                )
                 return False
 
         result.pass_step(
@@ -392,15 +407,20 @@ class ConsentPurposeFlow(BaseFlow):
                 headers=subject_headers,
             )
         except Exception as exc:  # noqa: BLE001 - cleanup must not mask results
-            log.warning("consent-purpose: could not withdraw its standing share: %s", exc)
+            log.warning(
+                "consent-purpose: could not withdraw its standing share: %s", exc
+            )
 
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
         encoded_email = urllib.parse.quote(email, safe="")
-        resp = self.http.get(
-            f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
-            headers=headers,
-        ) or {}
+        resp = (
+            self.http.get(
+                f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
+                headers=headers,
+            )
+            or {}
+        )
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")

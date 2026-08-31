@@ -14,6 +14,7 @@ The scan is source-level on purpose. Asserting against the statuses a test run
 happens to produce would only ever prove the paths that test exercises, and the
 sweep is exactly the path a unit suite is least likely to reach.
 """
+
 from __future__ import annotations
 
 import re
@@ -69,7 +70,7 @@ def _statuses_written(path: Path) -> set[str]:
     written: set[str] = set()
     for match in _ASSIGN.finditer(body):
         value = match.group("value")
-        if value.startswith(("\"", "'")):
+        if value.startswith(('"', "'")):
             written.add(value.strip("\"'"))
         elif value in constants:
             written.add(constants[value])

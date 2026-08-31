@@ -33,6 +33,7 @@ hand-written list of the exceptions and a single entry in it,
 gone. Hiding a route conceals it from readers of a document whose source is
 public anyway, and turns a documentation decision into a security-sweep one.
 """
+
 from __future__ import annotations
 
 import base64

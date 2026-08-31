@@ -14,6 +14,7 @@ Art. 5(2) accountability gap, not a nice-to-have.
 The other half of these tests is the constraint: an audit trail is not a reason to
 start storing people's names.
 """
+
 from __future__ import annotations
 
 import jwt as pyjwt
@@ -88,7 +89,7 @@ def test_a_service_is_recorded_as_a_service():
 
 @pytest.mark.rule("D-16")
 def test_the_owner_acted_for_is_recorded():
-    """"Acting for whom" is the question an owner-scoped act has to answer."""
+    """ "Acting for whom" is the question an owner-scoped act has to answer."""
     acted = acting_principal(_human(), on_behalf_of="example-org")
     assert acted["on_behalf_of"] == "example-org"
 

@@ -140,9 +140,7 @@ async def test_apply_walks_the_operators_half_and_stops_at_enrolment(
         "participant": "skipped",
     }
     assert all(
-        s.detail == "awaiting enrolment"
-        for s in outcome.steps
-        if s.action == "skipped"
+        s.detail == "awaiting enrolment" for s in outcome.steps if s.action == "skipped"
     )
 
     owner = (
@@ -163,15 +161,11 @@ async def test_apply_walks_the_operators_half_and_stops_at_enrolment(
     assert (
         await db_session.execute(select(Participant).where(Participant.did == ORG_DID))
     ).scalar_one_or_none() is None
-    assert (
-        await db_session.execute(select(Credential))
-    ).scalars().first() is None
+    assert (await db_session.execute(select(Credential))).scalars().first() is None
 
 
 @pytest.mark.asyncio
-async def test_apply_completes_once_the_organisation_has_enrolled(
-    db_session, tmp_path
-):
+async def test_apply_completes_once_the_organisation_has_enrolled(db_session, tmp_path):
     """The other half of the handshake, and the chain closes.
 
     Enrolment registers the DID with the **public** key the organisation
@@ -303,9 +297,7 @@ async def test_unimported_agreement_names_itself(db_session, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_entry_without_dsp_address_stops_at_the_credential(
-    db_session, tmp_path
-):
+async def test_entry_without_dsp_address_stops_at_the_credential(db_session, tmp_path):
     settings = await _seed(db_session, tmp_path)
 
     outcome = await ops.apply_owner_entry(
@@ -507,14 +499,17 @@ def test_governance_selects_the_owners_it_names_by_alias(tmp_path):
     id is `set-distribuzione`. The registry's id/alias swap is what joins them,
     and it is the reason this selector can read a governance file written by
     somebody who has never seen the deployment's owner registry."""
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.silver.meters_15m:
             ownership:
               - name: dso
             dataspace:
               expose: true
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -525,14 +520,17 @@ def test_governance_selects_the_owners_it_names_by_alias(tmp_path):
 def test_the_open_data_owners_are_not_selected(tmp_path):
     """The property the `dataspace:` skip provided, preserved: an owner that is
     attribution metadata is left alone rather than registered."""
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership:
               - name: greenland
             dataspace:
               expose: true
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -540,13 +538,19 @@ def test_the_open_data_owners_are_not_selected(tmp_path):
 
 
 def test_two_governance_files_select_the_union_once_each(tmp_path):
-    gov_a = _governance(tmp_path, """
+    gov_a = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership: [{name: dso}]
             dataspace: {expose: true}
-    """, "a.yaml")
-    gov_b = _governance(tmp_path, """
+    """,
+        "a.yaml",
+    )
+    gov_b = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.b:
             ownership: [{name: dso}]
@@ -554,7 +558,9 @@ def test_two_governance_files_select_the_union_once_each(tmp_path):
           datasets.gold.c:
             ownership: [{name: rec}]
             dataspace: {expose: true}
-    """, "b.yaml")
+    """,
+        "b.yaml",
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov_a, gov_b])
 
@@ -565,12 +571,15 @@ def test_an_owner_governance_names_and_the_file_does_not_declare_is_an_error(tmp
     """Not a skip. A governance file naming an owner the deployment does not
     declare is a broken deployment, and reporting it as a skip is how it reaches
     production — the run would succeed having onboarded nobody for that dataset."""
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership: [{name: nobody-here}]
             dataspace: {expose: true}
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -583,12 +592,15 @@ def test_a_selected_owner_carrying_no_did_is_an_error(tmp_path):
     """The whole point of the run is a resolvable owner. An entry with its `did`
     still commented out — the state every deployment file starts in — must fail
     review rather than register an organisation nothing can resolve."""
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership: [{name: openstreetmap}]
             dataspace: {expose: true}
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -597,7 +609,9 @@ def test_a_selected_owner_carrying_no_did_is_an_error(tmp_path):
 
 
 def test_every_error_is_reported_in_one_pass(tmp_path):
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership: [{name: nobody-here}]
@@ -605,7 +619,8 @@ def test_every_error_is_reported_in_one_pass(tmp_path):
           datasets.gold.b:
             ownership: [{name: openstreetmap}]
             dataspace: {expose: true}
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -613,14 +628,17 @@ def test_every_error_is_reported_in_one_pass(tmp_path):
 
 
 def test_a_governance_file_exposing_nothing_is_an_error_not_an_empty_run(tmp_path):
-    """"Nothing would be onboarded" and "no organisations needed" are different
+    """ "Nothing would be onboarded" and "no organisations needed" are different
     answers, and a silent empty selection returns the first as the second."""
-    gov = _governance(tmp_path, """
+    gov = _governance(
+        tmp_path,
+        """
         sources:
           datasets.bronze.raw:
             ownership: [{name: dso}]
             dataspace: {expose: false}
-    """)
+    """,
+    )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
@@ -711,12 +729,16 @@ async def test_run_evidence_never_overwrites_the_entrys_own_evidence(
     owner = (await db_session.execute(select(Owner))).scalars().one()
     assert owner.verified_by == "ops@example.test"
     app = (
-        await db_session.execute(
-            select(OrganizationApplication).where(
-                OrganizationApplication.alias == ALIAS
+        (
+            await db_session.execute(
+                select(OrganizationApplication).where(
+                    OrganizationApplication.alias == ALIAS
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert app.verified_by == "ops@example.test"
     assert app.evidence_ref == "TICKET-42"
 
@@ -776,12 +798,16 @@ async def test_run_evidence_does_not_blank_a_legal_identity_it_cannot_carry(
 
     assert outcome.ok, outcome.error
     app = (
-        await db_session.execute(
-            select(OrganizationApplication).where(
-                OrganizationApplication.alias == ALIAS
+        (
+            await db_session.execute(
+                select(OrganizationApplication).where(
+                    OrganizationApplication.alias == ALIAS
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert app.registration_number == "IT12345678901"
     assert app.registration_type == "vatID"
     assert app.hq_country_code == "IT-TN"
@@ -805,12 +831,16 @@ async def test_a_first_run_still_writes_a_complete_row(db_session, tmp_path):
     await db_session.commit()
 
     app = (
-        await db_session.execute(
-            select(OrganizationApplication).where(
-                OrganizationApplication.alias == "greenland"
+        (
+            await db_session.execute(
+                select(OrganizationApplication).where(
+                    OrganizationApplication.alias == "greenland"
+                )
             )
         )
-    ).scalars().one()
+        .scalars()
+        .one()
+    )
     assert app.legal_name == "Greenland Soc. Coop."
     assert app.roles == ["consumer"]
     assert app.did == "did:web:rec.dataspaces.localhost"

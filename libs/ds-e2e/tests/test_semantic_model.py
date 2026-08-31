@@ -10,6 +10,7 @@ Both of those are the failures worth guarding. A flow that compared nothing and
 reported PASS would state agreement between one party and nothing, which is
 exactly the condition the whole seam existed in for a release.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

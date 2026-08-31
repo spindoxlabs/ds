@@ -1,4 +1,5 @@
 """Consent lifecycle management."""
+
 from __future__ import annotations
 
 import hashlib
@@ -6,7 +7,7 @@ import json
 import logging
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -93,9 +94,7 @@ async def create_consent_request(
     return consent
 
 
-async def subject_pool_for_dataset(
-    session: AsyncSession, dataset_id: str
-) -> list[str]:
+async def subject_pool_for_dataset(session: AsyncSession, dataset_id: str) -> list[str]:
     """Who can be asked about this dataset.
 
     The pool is the set of subjects this connector already holds a consent row
@@ -245,9 +244,7 @@ async def list_asks(
         stmt = stmt.where(ConsentRequestORM.negotiation_id == negotiation_id)
     if status:
         stmt = stmt.where(ConsentRequestORM.status == status)
-    result = await session.execute(
-        stmt.order_by(ConsentRequestORM.requested_at.desc())
-    )
+    result = await session.execute(stmt.order_by(ConsentRequestORM.requested_at.desc()))
     return list(result.scalars().all())
 
 
@@ -314,14 +311,16 @@ async def approve_consent(
     if consent.status != "pending":
         return None
     consent.status = "granted"
-    consent.decided_at = datetime.now(timezone.utc)
+    consent.decided_at = datetime.now(UTC)
     if legal_basis is not None:
         consent.legal_basis = legal_basis
     if notifier:
         try:
             await notifier.notify_status_changed(consent)
         except Exception as exc:
-            log.warning("notify_status_changed failed for consent %s: %s", consent.id, exc)
+            log.warning(
+                "notify_status_changed failed for consent %s: %s", consent.id, exc
+            )
     return consent
 
 
@@ -337,12 +336,14 @@ async def reject_consent(
     if consent.status != "pending":
         return None
     consent.status = "rejected"
-    consent.decided_at = datetime.now(timezone.utc)
+    consent.decided_at = datetime.now(UTC)
     if notifier:
         try:
             await notifier.notify_status_changed(consent)
         except Exception as exc:
-            log.warning("notify_status_changed failed for consent %s: %s", consent.id, exc)
+            log.warning(
+                "notify_status_changed failed for consent %s: %s", consent.id, exc
+            )
     return consent
 
 
@@ -377,7 +378,7 @@ async def set_subject_data_sharing(
         if offer_id
         else await get_latest_consent(session, subject_id, dataset_id, consumer_id)
     )
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     if enabled:
         if latest and latest.status == "granted":
@@ -444,13 +445,15 @@ async def revoke_consent(
     if consent.status != "granted":
         return None
     consent.status = "revoked"
-    consent.revoked_at = datetime.now(timezone.utc)
+    consent.revoked_at = datetime.now(UTC)
     consent.revocation_reason = reason
     if notifier:
         try:
             await notifier.notify_status_changed(consent)
         except Exception as exc:
-            log.warning("notify_status_changed failed for consent %s: %s", consent.id, exc)
+            log.warning(
+                "notify_status_changed failed for consent %s: %s", consent.id, exc
+            )
     return consent
 
 
@@ -505,7 +508,11 @@ def consent_satisfies(
             f"requested purpose {purpose} is not covered by consented {consented}"
         )
 
-    if controller_role and consent.controller_role and controller_role != consent.controller_role:
+    if (
+        controller_role
+        and consent.controller_role
+        and controller_role != consent.controller_role
+    ):
         return False, (
             f"controller role '{controller_role}' differs from consented "
             f"'{consent.controller_role}'"
@@ -540,7 +547,11 @@ def resolve_decision(
             )
             return allowed, reason, specific
         if specific.status in ("revoked", "rejected"):
-            return False, f"consumer explicitly opted out (status {specific.status})", specific
+            return (
+                False,
+                f"consumer explicitly opted out (status {specific.status})",
+                specific,
+            )
     if wildcard is not None:
         allowed, reason = consent_satisfies(
             wildcard, purpose, controller_role, consent_required
@@ -729,7 +740,9 @@ def _dataset_requires_consent(dataset_id: str) -> bool:
     try:
         return vocab.requires_consent(vocab.resolve_dataset(dataset_id))
     except vocab.VocabularyError:
-        log.warning("Consent check for unknown dataset '%s' — failing closed", dataset_id)
+        log.warning(
+            "Consent check for unknown dataset '%s' — failing closed", dataset_id
+        )
         return True
 
 
@@ -932,7 +945,10 @@ async def get_granted_subjects(
             )
         else:
             log.debug(
-                "Subject %s excluded from %s row filter: %s", subject_id, dataset_id, reason
+                "Subject %s excluded from %s row filter: %s",
+                subject_id,
+                dataset_id,
+                reason,
             )
     return granted
 

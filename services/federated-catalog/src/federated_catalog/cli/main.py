@@ -14,6 +14,7 @@ ledger's `services/federated-catalog` decisions. An external DCAT-AP catalogue i
 folded in through the **read** side (`crawl_dcat_source`), where the index is
 advisory and claims no authority over what it republishes.
 """
+
 from __future__ import annotations
 
 import asyncio

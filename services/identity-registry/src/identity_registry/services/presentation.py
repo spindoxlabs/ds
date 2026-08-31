@@ -8,6 +8,7 @@ Before this, neither bound applied: the query's scope was not read at all and no
 grant existed, so an empty presentation definition — which is exactly what EDC
 sends — returned every active credential the participant held.
 """
+
 from __future__ import annotations
 
 import time
@@ -48,8 +49,8 @@ def parse_credential_scope(scope: str) -> str:
 
     alias, discriminator, operation = (
         scope[:first],
-        scope[first + 1:last],
-        scope[last + 1:],
+        scope[first + 1 : last],
+        scope[last + 1 :],
     )
     if alias.lower() != SCOPE_ALIAS:
         raise ScopeInvalid(f"scope alias must be {SCOPE_ALIAS}, got {alias}")

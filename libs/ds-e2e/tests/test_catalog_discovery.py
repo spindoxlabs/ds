@@ -10,6 +10,7 @@ Both are fixed in `_await_a_crawl_of_our_own`, and both are pinned here. The
 live half cannot be unit-tested; the reasoning that turns an observation into a
 verdict can, and it is the half that was wrong.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -83,10 +84,13 @@ def test_an_empty_catalogue_waits_for_a_crawl_this_run_did_not_inherit(settings)
     An empty catalogue on arrival is not a verdict — it may simply be the last
     cycle having run before `e2e:prepare` published. So the flow waits for a
     `last_crawl` later than the one it found, and only then decides."""
-    flow = _flow(settings, {
-        "/catalog/meta": [_meta(), _meta(last_crawl="2026-08-06T12:05:00+00:00")],
-        "/catalog": _catalog([{"@id": "datasets.silver.meters_15m"}]),
-    })
+    flow = _flow(
+        settings,
+        {
+            "/catalog/meta": [_meta(), _meta(last_crawl="2026-08-06T12:05:00+00:00")],
+            "/catalog": _catalog([{"@id": "datasets.silver.meters_15m"}]),
+        },
+    )
 
     result = FlowResult(flow_name="catalog-discovery")
     datasets, catalog = flow._await_a_crawl_of_our_own(result, {})
@@ -137,10 +141,13 @@ def test_a_still_empty_catalogue_with_no_errors_blames_the_provider_sync(setting
     job and the providers had nothing to give. Measured live — the crawler ran
     on schedule at 14:11, 14:16 and 14:21 while the providers' contract
     definitions had been wiped (`E2E-17`)."""
-    flow = _flow(settings, {
-        "/catalog/meta": [_meta(), _meta(last_crawl="2026-08-06T12:05:00+00:00")],
-        "/catalog": _catalog([]),
-    })
+    flow = _flow(
+        settings,
+        {
+            "/catalog/meta": [_meta(), _meta(last_crawl="2026-08-06T12:05:00+00:00")],
+            "/catalog": _catalog([]),
+        },
+    )
 
     result = FlowResult(flow_name="catalog-discovery")
     datasets, _ = flow._await_a_crawl_of_our_own(result, {})
@@ -152,18 +159,21 @@ def test_a_still_empty_catalogue_with_no_errors_blames_the_provider_sync(setting
 
 
 def test_a_still_empty_catalogue_with_crawl_errors_blames_the_crawler(settings):
-    flow = _flow(settings, {
-        "/catalog/meta": [
-            _meta(),
-            _meta(
-                last_crawl="2026-08-06T12:05:00+00:00",
-                crawl_errors=[
-                    {"provider_id": "did:web:rec.test", "message": "timeout"}
-                ],
-            ),
-        ],
-        "/catalog": _catalog([]),
-    })
+    flow = _flow(
+        settings,
+        {
+            "/catalog/meta": [
+                _meta(),
+                _meta(
+                    last_crawl="2026-08-06T12:05:00+00:00",
+                    crawl_errors=[
+                        {"provider_id": "did:web:rec.test", "message": "timeout"}
+                    ],
+                ),
+            ],
+            "/catalog": _catalog([]),
+        },
+    )
 
     result = FlowResult(flow_name="catalog-discovery")
     flow._await_a_crawl_of_our_own(result, {})
@@ -174,13 +184,16 @@ def test_a_still_empty_catalogue_with_crawl_errors_blames_the_crawler(settings):
 
 def test_a_still_empty_catalogue_with_no_providers_blames_the_registry(settings):
     """Nobody to crawl is a registry answer, not a catalogue one."""
-    flow = _flow(settings, {
-        "/catalog/meta": [
-            _meta(),
-            _meta(last_crawl="2026-08-06T12:05:00+00:00", providers=[]),
-        ],
-        "/catalog": _catalog([]),
-    })
+    flow = _flow(
+        settings,
+        {
+            "/catalog/meta": [
+                _meta(),
+                _meta(last_crawl="2026-08-06T12:05:00+00:00", providers=[]),
+            ],
+            "/catalog": _catalog([]),
+        },
+    )
 
     result = FlowResult(flow_name="catalog-discovery")
     flow._await_a_crawl_of_our_own(result, {})
@@ -193,11 +206,15 @@ def test_the_three_empty_cases_report_different_things(settings):
 
     The old single message named two of them at once and omitted the third,
     which is how it managed to be wrong whichever one had happened."""
+
     def _detail(second_meta):
-        flow = _flow(settings, {
-            "/catalog/meta": [_meta(), second_meta],
-            "/catalog": _catalog([]),
-        })
+        flow = _flow(
+            settings,
+            {
+                "/catalog/meta": [_meta(), second_meta],
+                "/catalog": _catalog([]),
+            },
+        )
         result = FlowResult(flow_name="catalog-discovery")
         flow._await_a_crawl_of_our_own(result, {})
         return result.steps[-1].detail
@@ -206,9 +223,11 @@ def test_the_three_empty_cases_report_different_things(settings):
     details = {
         _detail(_meta(last_crawl=fresh)),
         _detail(_meta(last_crawl=fresh, providers=[])),
-        _detail(_meta(
-            last_crawl=fresh,
-            crawl_errors=[{"provider_id": "x", "message": "boom"}],
-        )),
+        _detail(
+            _meta(
+                last_crawl=fresh,
+                crawl_errors=[{"provider_id": "x", "message": "boom"}],
+            )
+        ),
     }
     assert len(details) == 3

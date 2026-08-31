@@ -1,4 +1,5 @@
 """Webhook notifier — POSTs JSON to consent.notification_url."""
+
 from __future__ import annotations
 
 import logging
@@ -14,7 +15,9 @@ log = logging.getLogger(__name__)
 class WebhookNotifier(ConsentNotifier):
     """POSTs a JSON consent event to the notification_url stored on the consent record."""
 
-    def __init__(self, portal_base_url: str = "https://portal.dataspaces.localhost") -> None:
+    def __init__(
+        self, portal_base_url: str = "https://portal.dataspaces.localhost"
+    ) -> None:
         self._portal_base_url = portal_base_url.rstrip("/")
 
     async def notify_requested(self, consent: ConsentRequestORM) -> None:

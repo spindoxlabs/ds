@@ -44,9 +44,7 @@ async def _hold_private_key(db, did: str, did_type: str = "participant"):
     )
     db.add(key)
     await db.flush()
-    existing = await db.execute(
-        text("SELECT 1 FROM dids WHERE did = :d"), {"d": did}
-    )
+    existing = await db.execute(text("SELECT 1 FROM dids WHERE did = :d"), {"d": did})
     if existing.first() is None:
         db.add(Did(did=did, did_type=did_type, key_id=key.id))
     await db.commit()

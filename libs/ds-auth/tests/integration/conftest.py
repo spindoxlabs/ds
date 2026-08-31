@@ -37,6 +37,7 @@ not a style choice: `verify_token` checks `iss`, the realm mints
 from the other address carries that same issuer — so the host-binding rule's
 "OIDC issuer" row is the one that applies here.
 """
+
 from __future__ import annotations
 
 import os
@@ -89,7 +90,8 @@ def declared_clients() -> list[dict]:
         document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         for client in document.get("clients", []) or []:
             entry = merged.setdefault(
-                client["client_id"], {"client_id": client["client_id"], "default_scopes": []}
+                client["client_id"],
+                {"client_id": client["client_id"], "default_scopes": []},
             )
             entry["default_scopes"] += client.get("default_scopes") or []
     return [c for c in merged.values() if c["default_scopes"]]

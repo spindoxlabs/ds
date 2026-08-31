@@ -7,6 +7,7 @@ early. So a caller that named a missing file got a clean PASS with the
 `owner-participant` check silently skipped, which is exactly what
 `.github/workflows/compliance.yml` did from `5484ff0` onwards.
 """
+
 from __future__ import annotations
 
 from pathlib import Path

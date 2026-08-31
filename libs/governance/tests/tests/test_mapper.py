@@ -1,4 +1,5 @@
 """Tests for GovernanceMapper — ODRL offer and EDC payload generation."""
+
 import pytest
 
 from ds.governance.mapper import GovernanceMapper
@@ -9,8 +10,6 @@ from ds.governance.models import (
     GovernanceOwner,
     GovernanceRuleV2,
     OdrlProfile,
-    PolicyAudience,
-    PolicyConsent,
     PolicyObligations,
     PurposeConcept,
 )
@@ -66,6 +65,7 @@ def _left_op(constraint: dict) -> str:
 
 
 # ── ODRL Offer ────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("C-5")
 def test_odrl_offer_basic_structure():
@@ -202,9 +202,9 @@ def test_unknown_declared_purpose_is_dropped():
         policy=_policy(purpose=["GridMonitoring", "NotAPurpose"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
-    assert _purpose_iris(offer) == [
-        _P.purpose_iri("GridMonitoring")
-    ] * len(offer["odrl:permission"])
+    assert _purpose_iris(offer) == [_P.purpose_iri("GridMonitoring")] * len(
+        offer["odrl:permission"]
+    )
 
 
 def test_declared_purpose_accepts_full_iri():
@@ -234,14 +234,17 @@ def test_consent_duty_added_when_user_filter_column_set():
 
 def test_consent_constraint_added_when_user_filter_column_set():
     mapper = _mapper()
-    rule = _rule(access_level="restricted", classification="pii", user_filter_column="sub")
+    rule = _rule(
+        access_level="restricted", classification="pii", user_filter_column="sub"
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
     consent_operand = _P.term(_P.consent_operand)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
         consent_constraints = [
-            c for c in constraints
+            c
+            for c in constraints
             if c.get("odrl:leftOperand", {}).get("@id") == consent_operand
         ]
         assert len(consent_constraints) == 1
@@ -272,9 +275,7 @@ def test_attribution_obligation_uses_attribute_to():
         access_level="open",
         classification="green",
         attribution="https://provider.example/credit",
-        policy=DataspacePolicy(
-            obligations=PolicyObligations(attribution=True)
-        ),
+        policy=DataspacePolicy(obligations=PolicyObligations(attribution=True)),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     obligations = offer["odrl:obligation"]
@@ -285,6 +286,7 @@ def test_attribution_obligation_uses_attribute_to():
 
 # ── access_requirements → constraints ────────────────────────────────────────
 
+
 @pytest.mark.rule("C-21")
 def test_access_requirements_all_no_membership_constraint():
     mapper = _mapper()
@@ -294,34 +296,51 @@ def test_access_requirements_all_no_membership_constraint():
     membership_operand = _P.term(_P.membership_operand)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
-        membership = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == membership_operand]
+        membership = [
+            c
+            for c in constraints
+            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
+        ]
         assert len(membership) == 0
 
 
 @pytest.mark.rule("C-21")
 def test_access_requirements_partner_adds_membership_constraint():
     mapper = _mapper()
-    rule = _rule(access_level="open", classification="green", access_requirements="partner")
+    rule = _rule(
+        access_level="open", classification="green", access_requirements="partner"
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
     membership_operand = _P.term(_P.membership_operand)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
-        membership = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == membership_operand]
+        membership = [
+            c
+            for c in constraints
+            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
+        ]
         assert len(membership) == 1
 
 
 def test_access_requirements_contract_adds_membership_and_contract():
     mapper = _mapper()
-    rule = _rule(access_level="open", classification="green", access_requirements="contract")
+    rule = _rule(
+        access_level="open", classification="green", access_requirements="contract"
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
     membership_operand = _P.term(_P.membership_operand)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
-        membership = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == membership_operand]
+        membership = [
+            c
+            for c in constraints
+            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
+        ]
         contract = [
-            c for c in constraints
+            c
+            for c in constraints
             if c.get("odrl:leftOperand", {}).get("@id") == "ds:contractRequired"
         ]
         assert len(membership) == 1
@@ -346,7 +365,9 @@ def test_access_requirements_contract_does_not_emit_odrl_industry():
     violation, not a harmless extra.
     """
     mapper = _mapper()
-    rule = _rule(access_level="open", classification="green", access_requirements="contract")
+    rule = _rule(
+        access_level="open", classification="green", access_requirements="contract"
+    )
     offer = mapper.to_odrl_offer("ds", rule)
 
     operands = {
@@ -366,15 +387,22 @@ def test_internal_access_level_adds_membership_even_without_access_requirements(
     membership_operand = _P.term(_P.membership_operand)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
-        membership = [c for c in constraints if c.get("odrl:leftOperand", {}).get("@id") == membership_operand]
+        membership = [
+            c
+            for c in constraints
+            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
+        ]
         assert len(membership) == 1
 
 
 # ── Owner DID resolution ─────────────────────────────────────────────────────
 
+
 def test_assigner_uses_owner_did_when_resolver_provided():
     did = "did:web:example-org.dataspaces.localhost"
-    mapper = _mapper(owner_did_resolver=lambda name: did if name == "example-org" else None)
+    mapper = _mapper(
+        owner_did_resolver=lambda name: did if name == "example-org" else None
+    )
     rule = _rule(
         access_level="open",
         classification="green",
@@ -392,17 +420,22 @@ def test_assigner_falls_back_to_participant_did():
         ownership=[GovernanceOwner(name="Unknown")],
     )
     offer = mapper.to_odrl_offer("ds", rule)
-    assert offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
+    assert (
+        offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
+    )
 
 
 def test_assigner_default_without_resolver():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green")
     offer = mapper.to_odrl_offer("ds", rule)
-    assert offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
+    assert (
+        offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
+    )
 
 
 # ── Owner-relative scope generation ─────────────────────────────────────────
+
 
 def _membership_scope_values(offer: dict) -> list[str]:
     """Extract all membership right-operand values across permissions."""
@@ -457,6 +490,7 @@ def test_no_ownership_uses_required_scope():
 
 # ── @id wrapping consistency ─────────────────────────────────────────────────
 
+
 def test_id_wrapping_consistent_across_constraints():
     mapper = _mapper(profile=_ENERGY_PROFILE)
     rule = _rule(
@@ -469,11 +503,14 @@ def test_id_wrapping_consistent_across_constraints():
 
     for perm in offer["odrl:permission"]:
         for c in perm.get("odrl:constraint", []):
-            assert isinstance(c["odrl:leftOperand"], dict), f"leftOperand not wrapped: {c}"
+            assert isinstance(c["odrl:leftOperand"], dict), (
+                f"leftOperand not wrapped: {c}"
+            )
             assert "@id" in c["odrl:leftOperand"], f"leftOperand missing @id: {c}"
 
 
 # ── Custom profile ───────────────────────────────────────────────────────────
+
 
 def test_custom_profile_namespace_in_odrl():
     profile = OdrlProfile(
@@ -507,6 +544,7 @@ def test_profile_iri_included_in_context():
 
 
 # ── EDC Asset ─────────────────────────────────────────────────────────────────
+
 
 def test_asset_create_basic():
     mapper = _mapper()
@@ -545,6 +583,7 @@ def test_asset_id_overridden_by_spec():
 
 # ── EDC Policy Definition ─────────────────────────────────────────────────────
 
+
 def test_policy_create_type():
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
@@ -555,20 +594,26 @@ def test_policy_create_type():
 
 # ── EDC Contract Definition ───────────────────────────────────────────────────
 
+
 def test_contract_definition_structure():
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
     contract = mapper.to_contract_definition(
-        "datasets.gold.meters", rule,
+        "datasets.gold.meters",
+        rule,
         policy_id="meters-policy",
         asset_id="https://provider.example/datasets/meters",
     )
     assert contract["@type"] == "ContractDefinition"
     assert len(contract["assetsSelector"]) == 1
-    assert contract["assetsSelector"][0]["operandRight"] == "https://provider.example/datasets/meters"
+    assert (
+        contract["assetsSelector"][0]["operandRight"]
+        == "https://provider.example/datasets/meters"
+    )
 
 
 # ── Purpose derivation ────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("A-10")
 def test_several_purposes_stay_one_multi_valued_isanyof():
@@ -609,11 +654,13 @@ def test_multiple_declared_purposes_are_deduplicated():
         access_level="open",
         classification="green",
         # slug and full IRI of the same concept, plus a second concept
-        policy=_policy(purpose=[
-            "EnergyBalancing",
-            _P.purpose_iri("EnergyBalancing"),
-            "GridMonitoring",
-        ]),
+        policy=_policy(
+            purpose=[
+                "EnergyBalancing",
+                _P.purpose_iri("EnergyBalancing"),
+                "GridMonitoring",
+            ]
+        ),
     )
     offer = mapper.to_odrl_offer("ds", rule)
 
@@ -621,7 +668,9 @@ def test_multiple_declared_purposes_are_deduplicated():
     assert _P.purpose_iri("EnergyBalancing") in purpose_values
     assert _P.purpose_iri("GridMonitoring") in purpose_values
     # The slug and the full IRI denote the same concept — listed once.
-    assert purpose_values.count(_P.purpose_iri("EnergyBalancing")) == len(offer["odrl:permission"])
+    assert purpose_values.count(_P.purpose_iri("EnergyBalancing")) == len(
+        offer["odrl:permission"]
+    )
 
     # Several purposes collapse into ONE isAnyOf constraint per permission:
     # constraints inside a permission are ANDed, so one per purpose would
@@ -643,7 +692,9 @@ def test_single_declared_purpose_uses_is_a():
     offer = mapper.to_odrl_offer("ds", rule)
     for constraint in _purpose_constraints(offer):
         assert constraint["odrl:operator"]["@id"] == "odrl:isA"
-        assert constraint["odrl:rightOperand"] == {"@id": _P.purpose_iri("GridMonitoring")}
+        assert constraint["odrl:rightOperand"] == {
+            "@id": _P.purpose_iri("GridMonitoring")
+        }
 
 
 @pytest.mark.rule("C-6")
@@ -685,15 +736,21 @@ def test_medallion_inference():
     ]:
         rule = _rule(access_level="open", classification="green")
         asset = mapper.to_asset_create(key, rule)
-        assert asset["properties"][f"{_P.prefix}:medallion"] == expected, f"failed for {key}"
+        assert asset["properties"][f"{_P.prefix}:medallion"] == expected, (
+            f"failed for {key}"
+        )
 
 
 # ── OdrlProfile model ────────────────────────────────────────────────────────
 
+
 def test_profile_defaults_produce_valid_iris():
     p = OdrlProfile()
     assert p.term("Membership") == "https://w3id.org/dsp/policy/Membership"
-    assert p.purpose_iri("EnergyBalancing") == "https://w3id.org/dsp/policy/purpose/EnergyBalancing"
+    assert (
+        p.purpose_iri("EnergyBalancing")
+        == "https://w3id.org/dsp/policy/purpose/EnergyBalancing"
+    )
 
 
 def test_profile_custom_namespace():
@@ -703,6 +760,7 @@ def test_profile_custom_namespace():
 
 
 # ── Domain-neutral: manufacturing profile ─────────────────────────────────────
+
 
 def test_manufacturing_profile_produces_correct_purposes():
     mfg_profile = OdrlProfile(
@@ -732,11 +790,17 @@ def test_manufacturing_profile_produces_correct_purposes():
     assert ctx["mfg-policy"] == "https://example.org/manufacturing/policy/"
 
     purpose_iris = _purpose_iris(offer)
-    assert "https://example.org/manufacturing/policy/purpose/QualityAssurance" in purpose_iris
-    assert "https://example.org/manufacturing/policy/purpose/SupplyChain" in purpose_iris
+    assert (
+        "https://example.org/manufacturing/policy/purpose/QualityAssurance"
+        in purpose_iris
+    )
+    assert (
+        "https://example.org/manufacturing/policy/purpose/SupplyChain" in purpose_iris
+    )
 
 
 # ── Participant DID override (deployments outside the dev domain) ────────────
+
 
 def test_participant_did_override_used_as_assigner():
     mapper = GovernanceMapper(
@@ -777,6 +841,7 @@ def test_participant_did_defaults_to_legacy_dev_domain():
 # The declared payload semantic model has to survive into the DSP catalogue, or a
 # consumer only learns what a dataset's columns mean after negotiating for it.
 
+
 def _rule_with_conforms_to(iri):
     from ds.governance.models import DcatSpec, GovernanceRuleV2
 
@@ -812,7 +877,9 @@ def test_the_dct_prefix_is_absent_when_nothing_uses_it():
     from ds.governance.models import GovernanceRuleV2
 
     mapper = GovernanceMapper(participant_id="p", base_url="https://p.example.org")
-    asset = mapper.to_asset_create("datasets.silver.meters", GovernanceRuleV2(title="M"))
+    asset = mapper.to_asset_create(
+        "datasets.silver.meters", GovernanceRuleV2(title="M")
+    )
     assert "dct" not in asset["@context"]
     assert asset["properties"]["dct:conformsTo"] is None
 
@@ -840,6 +907,7 @@ def test_the_semantic_model_is_not_respelled_under_the_profile_prefix():
 
 
 # ── GOV-10 · the emitted @context declares what the document uses ────────────
+
 
 @pytest.mark.rule("A-8")
 def test_rdf_is_declared_when_an_obligation_uses_it():

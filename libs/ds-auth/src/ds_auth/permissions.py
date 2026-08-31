@@ -5,6 +5,7 @@ with ``{service}.admin`` acting as a superset that satisfies any ``{service}.*``
 The *same* string is a granted scope on a service token and a granted group on a
 user token — that symmetry is what lets one guard authorize both principals.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterable

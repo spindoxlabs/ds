@@ -1,7 +1,7 @@
 """Tests for ds.governance.owners — OwnerEntry, OwnersRegistry, load_owners_yaml."""
+
 from __future__ import annotations
 
-from pathlib import Path
 
 import pytest
 

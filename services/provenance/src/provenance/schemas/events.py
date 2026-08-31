@@ -1,4 +1,5 @@
 """Domain event schemas — one per DSSC lifecycle event."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -51,7 +52,7 @@ class CataloguePublished(BaseModel):
     event_type: Literal["CataloguePublished"] = "CataloguePublished"
     event_id: str | None = None
     occurred_at: datetime
-    data_product_id: str          # IRI of the published dataset/asset
+    data_product_id: str  # IRI of the published dataset/asset
     provider_did: str
     title: str | None = None
     description: str | None = None
@@ -215,9 +216,11 @@ class ConsentGranted(BaseModel):
     event_type: Literal["ConsentGranted"] = "ConsentGranted"
     event_id: str | None = None
     occurred_at: datetime
-    subject_id: str               # pseudonymous subject DID
-    dataset_id: str               # governance key the consent is about
-    consumer_did: str | None = None  # the party admitted, or "*" for the scoped wildcard
+    subject_id: str  # pseudonymous subject DID
+    dataset_id: str  # governance key the consent is about
+    consumer_did: str | None = (
+        None  # the party admitted, or "*" for the scoped wildcard
+    )
     offer_id: str | None = None
     purpose: list[str] = []
     controller: str | None = None
@@ -257,10 +260,10 @@ class DataIngested(BaseModel):
     occurred_at: datetime
     dataset_id: str
     provider_did: str | None = None
-    source_ref: str | None = None        # opaque handle for the source handover, never PII
+    source_ref: str | None = None  # opaque handle for the source handover, never PII
     record_count: int | None = None
     consent_snapshot_hash: ConsentSnapshotHash | None = None
-    agreement_ref: str | None = None     # identifies the DPA, never its contents
+    agreement_ref: str | None = None  # identifies the DPA, never its contents
     # An offline handover is recorded *by a person*; without this the record says
     # a participant ingested data and cannot say who decided to.
     acted_by: ActingPrincipal | None = None
@@ -285,13 +288,13 @@ class DataDisclosed(BaseModel):
     event_type: Literal["DataDisclosed"] = "DataDisclosed"
     event_id: str | None = None
     occurred_at: datetime
-    dataset_id: str                      # the governance key the hash is computed over
-    recipient_ref: str                   # who received the data (org alias/DID/DPA ref)
+    dataset_id: str  # the governance key the hash is computed over
+    recipient_ref: str  # who received the data (org alias/DID/DPA ref)
     purpose: list[str] = []
-    columns: list[str] = []              # disclosed column *names*, not values (Art. 13/14)
+    columns: list[str] = []  # disclosed column *names*, not values (Art. 13/14)
     subject_count: int | None = None
-    source_ref: str | None = None        # what was disclosed (e.g. a REC slug), never PII
-    disclosed_by: str | None = None      # the disclosing agent (e.g. the REC controller)
+    source_ref: str | None = None  # what was disclosed (e.g. a REC slug), never PII
+    disclosed_by: str | None = None  # the disclosing agent (e.g. the REC controller)
     consent_snapshot_hash: ConsentSnapshotHash
     agreement_ref: str | None = None
 

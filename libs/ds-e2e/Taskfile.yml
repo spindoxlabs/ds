@@ -42,6 +42,7 @@ tasks:
       - |
         status=0
         uv run mypy src/ || status=1
+        uv run ruff format --check src/ tests/ || status=1
         uv run ruff check src/ tests/ || status=1
         exit $status
 

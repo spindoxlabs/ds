@@ -4,6 +4,7 @@ Drop-in replacement for the legacy GovernanceResolver, extended to
 produce GovernanceRuleV2 instances while remaining 100% backward-compatible
 with v1 YAML files.
 """
+
 from __future__ import annotations
 
 import fnmatch
@@ -124,15 +125,27 @@ class GovernanceResolver:
 
         owners_raw = block.get("ownership") or []
         owners = [
-            GovernanceOwner(**o) if isinstance(o, dict) else GovernanceOwner(name=str(o))
+            GovernanceOwner(**o)
+            if isinstance(o, dict)
+            else GovernanceOwner(name=str(o))
             for o in owners_raw
         ]
 
         v1_keys = {
-            "title", "description", "license", "attribution", "ownership",
-            "access_level", "access_requirements", "classification", "tags",
-            "retention_days", "documentation_url", "source_system",
-            "user_filter_column", "row_filters",
+            "title",
+            "description",
+            "license",
+            "attribution",
+            "ownership",
+            "access_level",
+            "access_requirements",
+            "classification",
+            "tags",
+            "retention_days",
+            "documentation_url",
+            "source_system",
+            "user_filter_column",
+            "row_filters",
         }
 
         policy_raw = dict(block.get("policy") or {})
@@ -179,14 +192,21 @@ class GovernanceResolver:
                     args=RowFilterArgs.model_validate(f["args"]),
                 )
                 for f in (block.get("row_filters") or [])
-                if isinstance(f, dict) and f.get("handler") and isinstance(f.get("args"), dict)
+                if isinstance(f, dict)
+                and f.get("handler")
+                and isinstance(f.get("args"), dict)
             ],
             extra={
-                k: v for k, v in block.items()
+                k: v
+                for k, v in block.items()
                 if k not in v1_keys | {"policy", "dataspace", "dcat"}
             },
-            policy=DataspacePolicy.model_validate(policy_raw) if policy_raw else DataspacePolicy(),
-            dataspace=DataspaceSpec.model_validate(dataspace_raw) if dataspace_raw else DataspaceSpec(),
+            policy=DataspacePolicy.model_validate(policy_raw)
+            if policy_raw
+            else DataspacePolicy(),
+            dataspace=DataspaceSpec.model_validate(dataspace_raw)
+            if dataspace_raw
+            else DataspaceSpec(),
             dcat=DcatSpec.model_validate(dcat_raw) if dcat_raw else DcatSpec(),
         )
 
@@ -239,14 +259,20 @@ class GovernanceResolver:
             attribution=pick(base.attribution, override.attribution),
             ownership=override.ownership or base.ownership,
             access_level=pick(base.access_level, override.access_level),
-            access_requirements=pick(base.access_requirements, override.access_requirements),
+            access_requirements=pick(
+                base.access_requirements, override.access_requirements
+            ),
             classification=pick(base.classification, override.classification),
             tags=sorted(set(base.tags) | set(override.tags)),
             retention_days=pick(base.retention_days, override.retention_days),
             documentation_url=pick(base.documentation_url, override.documentation_url),
             source_system=pick(base.source_system, override.source_system),
-            user_filter_column=pick(base.user_filter_column, override.user_filter_column),
-            row_filters=override.row_filters if override.row_filters else base.row_filters,
+            user_filter_column=pick(
+                base.user_filter_column, override.user_filter_column
+            ),
+            row_filters=override.row_filters
+            if override.row_filters
+            else base.row_filters,
             extra={**base.extra, **override.extra},
             # v2: merged **field by field**, not wholesale.
             #

@@ -14,6 +14,7 @@ version this file pins, derived from the pin rather than written out again. This
 is the `T-4` shape — a startup invariant, hoisted to a test — and it is the one
 thing that makes bumping the version a mechanical change instead of a hunt.
 """
+
 from __future__ import annotations
 
 import re
@@ -79,7 +80,8 @@ def test_the_version_is_derived_from_the_pin_and_not_written_twice():
 def test_the_pin_occurs_once_in_the_tree():
     """§6 rule 2. A second copy is how the two come to disagree."""
     holders = [
-        _rel(p) for p in _files()
+        _rel(p)
+        for p in _files()
         if DATASPACE_PROTOCOL in p.read_text(encoding="utf-8", errors="ignore")
     ]
     assert holders == ["libs/ds-edc/src/ds_edc/schemas.py"], (
@@ -107,9 +109,8 @@ def test_every_configured_dsp_address_carries_the_pinned_version():
                 wrong.append(
                     f"{_rel(path)}:{line} {m.group('name')}={m.group('value')}"
                 )
-    assert not wrong, (
-        "DSP addresses missing "
-        f"{DSP_PATH_SEGMENT!r}:\n  " + "\n  ".join(wrong)
+    assert not wrong, f"DSP addresses missing {DSP_PATH_SEGMENT!r}:\n  " + "\n  ".join(
+        wrong
     )
 
 
@@ -136,9 +137,12 @@ def test_no_protocol_url_names_a_different_version():
     )
 
 
-@pytest.mark.parametrize("body", [
-    {"counter_party_address": "http://172.17.0.1:19194/protocol/2025-1"},
-])
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"counter_party_address": "http://172.17.0.1:19194/protocol/2025-1"},
+    ],
+)
 @pytest.mark.rule("X-2")
 def test_the_search_actually_reaches_the_tree(body):
     """A guard on this file, not on the platform.

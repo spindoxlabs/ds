@@ -22,6 +22,7 @@ dependency on an external host. Verified by hand across three render paths
 (nothing registered / registry only / registry plus supplied cache); a
 `helm unittest` harness would be a repo-wide addition, not a connector one.
 """
+
 from __future__ import annotations
 
 import json
@@ -81,6 +82,7 @@ def configured(tmp_path, monkeypatch):
 
 # ── The fail-closed decision ──────────────────────────────────────────────────
 
+
 def test_an_empty_registry_never_touches_the_network(configured):
     """`V-5` — this is what keeps `task start` offline-capable.
 
@@ -135,6 +137,7 @@ def test_the_failure_says_what_to_do_about_it(configured):
 
 
 # ── Registry resolution ───────────────────────────────────────────────────────
+
 
 def test_an_explicit_path_wins_over_the_sibling_convention(configured):
     settings, _ = configured(REGISTRY)
@@ -223,7 +226,9 @@ def _host_path_for(service_def: dict, container_dir: str) -> Path:
         target = rest.split(":")[0]
         if target == container_dir:
             return ROOT / host.lstrip("./")
-    raise AssertionError(f"no volume mounted at {container_dir}: {service_def.get('volumes')}")
+    raise AssertionError(
+        f"no volume mounted at {container_dir}: {service_def.get('volumes')}"
+    )
 
 
 @pytest.mark.parametrize("compose_file,service", COMPOSE)

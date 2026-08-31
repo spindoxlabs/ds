@@ -136,10 +136,7 @@ def test_every_mapped_term_exists_in_the_definition_this_participant_serves(
         for term in json.loads(DEFINITION.read_text())["@context"].values()
         if isinstance(term, dict) and "@id" in term
     }
-    mapped = {
-        term["@id"] for term in _vocabulary(client, GATED).json()["@context"].values()
-        if isinstance(term, dict)
-    }
+    mapped = {term["@id"] for term in _vocabulary(client, GATED).json()["@context"].values() if isinstance(term, dict)}
     assert mapped <= defined, f"mapped terms the definition does not declare: {mapped - defined}"
 
 
@@ -249,7 +246,5 @@ def test_the_other_producer_serves_its_own_model(client: TestClient):
     per producer — a platform-wide vocabulary is the thing this must not
     become."""
     doc = _vocabulary(client, "datasets.gold.grid_capacity").json()
-    assert doc["dct:conformsTo"] == {
-        "@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity"
-    }
+    assert doc["dct:conformsTo"] == {"@id": "https://grid-operator.dataspaces.localhost/ns/grid-capacity"}
     assert doc["@context"]["headroom_kw"]["@id"].endswith("#headroomKw")

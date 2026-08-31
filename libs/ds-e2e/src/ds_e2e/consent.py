@@ -10,6 +10,7 @@ Withdrawal (`enabled: false`) needs no evidence and must not be given any — a
 person may always stop, and a flow that supplies proof to stop would hide a
 regression in that rule.
 """
+
 from __future__ import annotations
 
 import hashlib

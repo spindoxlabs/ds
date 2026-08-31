@@ -1,4 +1,5 @@
 """SQLAlchemy ORM models for ds-connector."""
+
 from __future__ import annotations
 
 import uuid
@@ -64,13 +65,13 @@ class ConsentRequestORM(Base):
     __tablename__ = "consent_requests"
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    subject_id: Mapped[str] = mapped_column(Text, nullable=False)   # User DID
+    subject_id: Mapped[str] = mapped_column(Text, nullable=False)  # User DID
     consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
     # Purpose slugs from the ODRL profile taxonomy, validated on write.
     # An empty list is never a wildcard: for a consent-required dataset it means
     # the person was never told the use, so the row fails closed.
-    purpose: Mapped[list | None] = mapped_column(JSON)              # list[str]
+    purpose: Mapped[list | None] = mapped_column(JSON)  # list[str]
     # Who decides the purpose. `controller` is an owner alias; `controller_role`
     # names which of that participant's roles is acting, because controller is
     # not the same thing as legal entity — a DSO's grid-operations and metering
@@ -94,8 +95,8 @@ class ConsentRequestORM(Base):
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     revocation_reason: Mapped[str | None] = mapped_column(Text)
     notification_sent: Mapped[bool] = mapped_column(Boolean, default=False)
-    notification_url: Mapped[str | None] = mapped_column(Text)      # webhook target
-    transfer_ids: Mapped[list | None] = mapped_column(JSON)         # list[str]
+    notification_url: Mapped[str | None] = mapped_column(Text)  # webhook target
+    transfer_ids: Mapped[list | None] = mapped_column(JSON)  # list[str]
     # The negotiation this ask is blocking, when it came from the pending guard.
     #
     # `negotiation_id` is *this* connector's id for it — what the resume call

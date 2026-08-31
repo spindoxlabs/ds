@@ -10,14 +10,15 @@ Both are the ledger's closing rule — *a green check is not a check that ran* �
 inside the harness whose job is to catch exactly that, which is why they are
 tested together.
 """
+
 from __future__ import annotations
 
 from ds_e2e.config import E2ESettings
 from ds_e2e.flows.api_contract import PUBLIC_ROUTES, ApiContractFlow
 from ds_e2e.models import FlowResult
 
-
 # ── E2E-01 ───────────────────────────────────────────────────────────────────
+
 
 def test_a_flow_that_recorded_nothing_does_not_pass():
     """The counterfactual. `all([])` is `True`, so this used to be a PASS."""
@@ -43,6 +44,7 @@ def test_the_empty_flow_serialises_as_failed():
 
 
 # ── E2E-14 ───────────────────────────────────────────────────────────────────
+
 
 def test_every_service_the_flow_calls_is_health_checked():
     """The gate must cover the routes, not a hand-kept list beside them.
@@ -80,6 +82,7 @@ def test_the_health_list_is_not_hardcoded():
 
 
 # ── ENV-09 · a 5xx is not evidence of a fail-open ────────────────────────────
+
 
 def test_the_cross_owner_step_separates_an_outage_from_a_fail_open():
     """`user-authority` reported a P1 whose cause was an outage.

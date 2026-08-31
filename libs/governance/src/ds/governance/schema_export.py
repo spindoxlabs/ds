@@ -19,6 +19,7 @@ file outside this repo needs in order to validate before ds ever sees it:
 ``governance.schema.json`` is not here: celine-utils defines that shape and this
 repo only caches it. A schema lives where the shape is defined.
 """
+
 from __future__ import annotations
 
 import json

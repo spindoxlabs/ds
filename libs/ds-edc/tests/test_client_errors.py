@@ -5,6 +5,7 @@
 that explains a 400 in its body was reduced to `Client error '400 Bad Request'`
 and the explanation was thrown away at the one place it was in hand.
 """
+
 from __future__ import annotations
 
 import inspect
@@ -44,19 +45,28 @@ def _calls(client: EdcManagementClient):
         "list_contract_definitions": client.list_contract_definitions,
         "delete_contract_definition": lambda: client.delete_contract_definition("c"),
         "request_catalog": lambda: client.request_catalog(
-            CatalogRequest(counter_party_address="http://x",
-                           counter_party_id="did:web:x")
+            CatalogRequest(
+                counter_party_address="http://x", counter_party_id="did:web:x"
+            )
         ),
         "start_negotiation": lambda: client.start_negotiation(
-            NegotiationRequest(counter_party_address="http://x", offer_id="o",
-                               asset_id="a", assigner="did:web:x")
+            NegotiationRequest(
+                counter_party_address="http://x",
+                offer_id="o",
+                asset_id="a",
+                assigner="did:web:x",
+            )
         ),
         "get_negotiation": lambda: client.get_negotiation("n"),
         "terminate_negotiation": lambda: client.terminate_negotiation("n", "why"),
         "resume_negotiation": lambda: client.resume_negotiation("n"),
         "start_transfer": lambda: client.start_transfer(
-            TransferRequest(contract_agreement_id="ag", counter_party_address="http://x",
-                            asset_id="a", connector_id="did:web:x")
+            TransferRequest(
+                contract_agreement_id="ag",
+                counter_party_address="http://x",
+                asset_id="a",
+                connector_id="did:web:x",
+            )
         ),
         "get_transfer": lambda: client.get_transfer("t"),
         "terminate_transfer": lambda: client.terminate_transfer("t", "why"),
@@ -82,7 +92,8 @@ def test_every_request_issuing_method_is_covered_by_this_file():
     exempt from the error-body check by omission, and nothing would say so.
     """
     public = {
-        name for name, fn in inspect.getmembers(EdcManagementClient, inspect.isfunction)
+        name
+        for name, fn in inspect.getmembers(EdcManagementClient, inspect.isfunction)
         if not name.startswith("_")
     } - NOT_A_REQUEST
     client = EdcManagementClient("http://x")
@@ -123,20 +134,31 @@ async def test_delete_still_raises_on_a_real_failure(edc_client, name):
 
 # -- The unchecked `r.json()["@id"]` -------------------------------------------
 
+
 async def test_start_negotiation_returns_the_id(edc_client):
     client, _ = edc_client(lambda _r: json_response(200, {"@id": "neg-1"}))
-    assert await client.start_negotiation(
-        NegotiationRequest(counter_party_address="http://x", offer_id="o",
-                           asset_id="a", assigner="did:web:x")
-    ) == "neg-1"
+    assert (
+        await client.start_negotiation(
+            NegotiationRequest(
+                counter_party_address="http://x",
+                offer_id="o",
+                asset_id="a",
+                assigner="did:web:x",
+            )
+        )
+        == "neg-1"
+    )
 
 
-@pytest.mark.parametrize("body,kind", [
-    ({"id": "neg-1"}, "json"),          # `id`, not `@id` — a JSON-LD compaction change
-    ({}, "json"),
-    ([{"@id": "neg-1"}], "json"),       # a list, not an object
-    (None, "text"),                     # 200 with a non-JSON body
-])
+@pytest.mark.parametrize(
+    "body,kind",
+    [
+        ({"id": "neg-1"}, "json"),  # `id`, not `@id` — a JSON-LD compaction change
+        ({}, "json"),
+        ([{"@id": "neg-1"}], "json"),  # a list, not an object
+        (None, "text"),  # 200 with a non-JSON body
+    ],
+)
 async def test_a_2xx_without_an_id_names_the_operation(edc_client, body, kind):
     """The counterfactual: `r.json()["@id"]` raised `KeyError: '@id'`.
 
@@ -147,16 +169,27 @@ async def test_a_2xx_without_an_id_names_the_operation(edc_client, body, kind):
     client, _ = edc_client(lambda _r: resp)
     with pytest.raises(ValueError, match="start_negotiation"):
         await client.start_negotiation(
-            NegotiationRequest(counter_party_address="http://x", offer_id="o",
-                               asset_id="a", assigner="did:web:x")
+            NegotiationRequest(
+                counter_party_address="http://x",
+                offer_id="o",
+                asset_id="a",
+                assigner="did:web:x",
+            )
         )
 
 
 # -- The QuerySpec the list calls send -----------------------------------------
 
-@pytest.mark.parametrize("name", [
-    "list_assets", "list_policies", "list_contract_definitions", "list_transfers",
-])
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "list_assets",
+        "list_policies",
+        "list_contract_definitions",
+        "list_transfers",
+    ],
+)
 async def test_list_calls_send_a_json_ld_query_spec(edc_client, name):
     """`list_policies` and `list_contract_definitions` used to send `{}`.
 

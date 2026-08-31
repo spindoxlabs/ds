@@ -1,4 +1,5 @@
 """Pydantic schemas for PROV-O nodes and relations."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -48,9 +49,14 @@ class AgentCreate(NodeBase):
 #: not happen to derive it yet would make the manual door narrower than the
 #: vocabulary it publishes.
 RelationType = Literal[
-    "wasGeneratedBy", "wasAttributedTo", "wasDerivedFrom",
-    "wasAssociatedWith", "used", "invalidated",
-    "actedOnBehalfOf", "wasInformedBy",
+    "wasGeneratedBy",
+    "wasAttributedTo",
+    "wasDerivedFrom",
+    "wasAssociatedWith",
+    "used",
+    "invalidated",
+    "actedOnBehalfOf",
+    "wasInformedBy",
 ]
 
 #: The same set as a tuple, for the sweep and for anything that has to enumerate

@@ -1,4 +1,5 @@
 """Background crawl loop — fetches catalogs from all registered providers."""
+
 from __future__ import annotations
 
 import asyncio

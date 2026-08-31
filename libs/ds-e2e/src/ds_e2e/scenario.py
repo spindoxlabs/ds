@@ -24,6 +24,7 @@ capacity and stops with the exact command when they do not — a scenario that
 ran against a missing or wrong-capacity agreement would make the circle
 assertions pass for the wrong reason.
 """
+
 from __future__ import annotations
 
 import logging
@@ -89,7 +90,9 @@ def load_scenario(name_or_path: str = DEFAULT_SCENARIO) -> dict[str, Any]:
 class ScenarioRunner:
     """Applies, inspects and removes a scenario through the admin API."""
 
-    def __init__(self, settings: E2ESettings, http: HttpClient, scenario: dict[str, Any]):
+    def __init__(
+        self, settings: E2ESettings, http: HttpClient, scenario: dict[str, Any]
+    ):
         self.settings = settings
         self.http = http
         self.scenario = scenario
@@ -143,7 +146,9 @@ class ScenarioRunner:
             report.problem(f"could not list agreements: {exc}")
             return False
 
-        by_key = {(a.get("id"), a.get("version")): a for a in existing if isinstance(a, dict)}
+        by_key = {
+            (a.get("id"), a.get("version")): a for a in existing if isinstance(a, dict)
+        }
         missing: list[str] = []
         for want in required:
             key = (want.get("id"), want.get("version"))
@@ -171,7 +176,9 @@ class ScenarioRunner:
         if not required:
             return
         try:
-            published = self.http.get(f"{self.settings.connector_url}/ns/sharing-offers") or []
+            published = (
+                self.http.get(f"{self.settings.connector_url}/ns/sharing-offers") or []
+            )
         except Exception as exc:
             report.problem(f"could not read published sharing offers: {exc}")
             return
@@ -314,7 +321,9 @@ class ScenarioRunner:
             f"could not register participant {spec['did']}: HTTP {status} {payload}"
         )
 
-    def _reactivate_participant(self, spec: dict[str, Any], report: ScenarioReport) -> None:
+    def _reactivate_participant(
+        self, spec: dict[str, Any], report: ScenarioReport
+    ) -> None:
         encoded = urllib.parse.quote(spec["did"], safe="")
         status, payload = self.http.raw(
             "GET", f"{self.ir}/admin/participants/{encoded}", headers=self.admin

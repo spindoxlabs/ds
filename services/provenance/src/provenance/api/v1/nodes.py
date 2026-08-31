@@ -1,4 +1,5 @@
 """Entities, Activities, Agents CRUD routes."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -28,6 +29,7 @@ def _context_url(settings: Settings) -> str:
 
 # ── Entities ──────────────────────────────────────────────────────────────────
 
+
 @router.post("/entities", status_code=201, dependencies=[Depends(require_write_scope)])
 async def create_entity(
     data: EntityCreate,
@@ -36,7 +38,9 @@ async def create_entity(
 ):
     async with db.begin():
         node = await prov_service.create_entity(db, data)
-    return JSONLDResponse([node_to_jsonld(node)], _context_url(settings), status_code=201)
+    return JSONLDResponse(
+        [node_to_jsonld(node)], _context_url(settings), status_code=201
+    )
 
 
 @router.get("/entities")
@@ -46,7 +50,9 @@ async def list_entities(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    nodes = await prov_service.list_nodes(db, node_type="Entity", limit=limit, offset=offset)
+    nodes = await prov_service.list_nodes(
+        db, node_type="Entity", limit=limit, offset=offset
+    )
     return JSONLDResponse([node_to_jsonld(n) for n in nodes], _context_url(settings))
 
 
@@ -62,7 +68,9 @@ async def get_entity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete("/entities/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)])
+@router.delete(
+    "/entities/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)]
+)
 async def delete_entity(iri: str, db: AsyncSession = Depends(get_db)):
     async with db.begin():
         node = await prov_service.soft_delete_node(db, iri, "Entity")
@@ -73,7 +81,10 @@ async def delete_entity(iri: str, db: AsyncSession = Depends(get_db)):
 
 # ── Activities ────────────────────────────────────────────────────────────────
 
-@router.post("/activities", status_code=201, dependencies=[Depends(require_write_scope)])
+
+@router.post(
+    "/activities", status_code=201, dependencies=[Depends(require_write_scope)]
+)
 async def create_activity(
     data: ActivityCreate,
     db: AsyncSession = Depends(get_db),
@@ -81,7 +92,9 @@ async def create_activity(
 ):
     async with db.begin():
         node = await prov_service.create_activity(db, data)
-    return JSONLDResponse([node_to_jsonld(node)], _context_url(settings), status_code=201)
+    return JSONLDResponse(
+        [node_to_jsonld(node)], _context_url(settings), status_code=201
+    )
 
 
 @router.get("/activities")
@@ -91,7 +104,9 @@ async def list_activities(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    nodes = await prov_service.list_nodes(db, node_type="Activity", limit=limit, offset=offset)
+    nodes = await prov_service.list_nodes(
+        db, node_type="Activity", limit=limit, offset=offset
+    )
     return JSONLDResponse([node_to_jsonld(n) for n in nodes], _context_url(settings))
 
 
@@ -107,7 +122,11 @@ async def get_activity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete("/activities/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)])
+@router.delete(
+    "/activities/{iri:path}",
+    status_code=204,
+    dependencies=[Depends(require_write_scope)],
+)
 async def delete_activity(iri: str, db: AsyncSession = Depends(get_db)):
     async with db.begin():
         node = await prov_service.soft_delete_node(db, iri, "Activity")
@@ -118,6 +137,7 @@ async def delete_activity(iri: str, db: AsyncSession = Depends(get_db)):
 
 # ── Agents ────────────────────────────────────────────────────────────────────
 
+
 @router.post("/agents", status_code=201, dependencies=[Depends(require_write_scope)])
 async def create_agent(
     data: AgentCreate,
@@ -126,7 +146,9 @@ async def create_agent(
 ):
     async with db.begin():
         node = await prov_service.create_agent(db, data)
-    return JSONLDResponse([node_to_jsonld(node)], _context_url(settings), status_code=201)
+    return JSONLDResponse(
+        [node_to_jsonld(node)], _context_url(settings), status_code=201
+    )
 
 
 @router.get("/agents")
@@ -136,7 +158,9 @@ async def list_agents(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    nodes = await prov_service.list_nodes(db, node_type="Agent", limit=limit, offset=offset)
+    nodes = await prov_service.list_nodes(
+        db, node_type="Agent", limit=limit, offset=offset
+    )
     return JSONLDResponse([node_to_jsonld(n) for n in nodes], _context_url(settings))
 
 
@@ -154,7 +178,9 @@ async def get_agent(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete("/agents/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)])
+@router.delete(
+    "/agents/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)]
+)
 async def delete_agent(iri: str, db: AsyncSession = Depends(get_db)):
     async with db.begin():
         node = await prov_service.soft_delete_node(db, iri, "Agent")

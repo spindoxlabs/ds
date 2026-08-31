@@ -13,6 +13,7 @@ committed; failing it because a cache hint could not be delivered would trade a
 minute of staleness for a lost operation. Unreachable connectors are logged and
 the cache expires on its own.
 """
+
 from __future__ import annotations
 
 import logging
@@ -43,7 +44,9 @@ async def invalidate_participant_caches(settings) -> None:
                 response.raise_for_status()
                 log.info("Invalidated participant cache at %s", url)
             except (httpx.HTTPError, httpx.RequestError) as exc:
-                log.warning("Could not invalidate participant cache at %s: %s", url, exc)
+                log.warning(
+                    "Could not invalidate participant cache at %s: %s", url, exc
+                )
 
 
 def _connector_urls(settings) -> list[str]:

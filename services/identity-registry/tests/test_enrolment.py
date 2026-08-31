@@ -9,6 +9,7 @@ Shapes are DCP's, not ours: `credential.issuance.protocol.md` §Credential Reque
 API, and `base.protocol.md` §Validating Self-Issued ID Tokens for the check. The
 `pre-authorized_code` claim is the spec's own name for the authorization carrier.
 """
+
 from __future__ import annotations
 
 import time
@@ -454,8 +455,10 @@ async def test_re_enrolling_the_same_did_is_idempotent(client, db_session, resol
         assert r.status_code == 201, r.text
 
     keys = (
-        await db_session.execute(select(Key).where(Key.owner_did == org.did))
-    ).scalars().all()
+        (await db_session.execute(select(Key).where(Key.owner_did == org.did)))
+        .scalars()
+        .all()
+    )
     assert len(keys) == 1
     participants = (await db_session.execute(select(Participant))).scalars().all()
     assert len(participants) == 1
@@ -505,8 +508,12 @@ async def test_a_locally_held_did_cannot_be_enrolled(client, db_session, resolve
     org = Client()
     local = generate_key_pair(org.did)
     db_session.add(
-        Key(owner_did=org.did, kid=local.kid, private_jwk={"fake": "encrypted"},
-            public_jwk=local.public_jwk)
+        Key(
+            owner_did=org.did,
+            kid=local.kid,
+            private_jwk={"fake": "encrypted"},
+            public_jwk=local.public_jwk,
+        )
     )
     from identity_registry.db.models import Did as DidRow
 
@@ -550,9 +557,7 @@ async def test_an_unknown_owner_gets_no_enrolment_token(client):
 @pytest.mark.asyncio
 async def test_issuing_an_enrolment_token_needs_a_scope(client, db_session):
     await make_owner(db_session)
-    r = await client.post(
-        "/admin/onboarding/enrolments", json={"owner_alias": "rec"}
-    )
+    r = await client.post("/admin/onboarding/enrolments", json={"owner_alias": "rec"})
     assert r.status_code in (401, 403)
 
 
@@ -785,10 +790,14 @@ async def test_the_anchor_keeps_its_own_issuance_record(
     from identity_registry.db.models import Credential
 
     rows = (
-        await db_session.execute(
-            select(Credential).where(Credential.subject_did == org.did)
+        (
+            await db_session.execute(
+                select(Credential).where(Credential.subject_did == org.did)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert [row.credential_type for row in rows] == ["MembershipCredential"]
     assert rows[0].status_list_index is not None
 
@@ -829,6 +838,7 @@ async def test_a_delivery_failure_is_reported_not_swallowed(
     client, db_session, resolver, monkeypatch
 ):
     """A credential issued and not delivered is a partial state, and says so."""
+
     def _raise(request):
         raise httpx.ConnectError("no credential service there")
 
@@ -899,10 +909,14 @@ async def test_re_enrolment_redelivers_and_does_not_re_mint(
     from identity_registry.db.models import Credential
 
     rows = (
-        await db_session.execute(
-            select(Credential).where(Credential.subject_did == org.did)
+        (
+            await db_session.execute(
+                select(Credential).where(Credential.subject_did == org.did)
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     assert len(rows) == 1
     assert len(credential_store) == 2  # delivered twice, minted once
 

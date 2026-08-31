@@ -26,6 +26,7 @@ Three env vars, all optional and all read here rather than in each service's
     were burying everything else. Non-2xx probes are always kept — a *failing*
     healthcheck is exactly the line you need.
 """
+
 from __future__ import annotations
 
 import json

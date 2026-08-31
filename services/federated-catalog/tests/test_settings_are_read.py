@@ -11,11 +11,11 @@ scope literally — so a deployment setting `CATALOG_READ_SCOPE` would have chan
 nothing while appearing to change what the service accepts. A scope name is
 vocabulary, not configuration.
 """
+
 from __future__ import annotations
 
-import re
-
 import pathlib
+import re
 
 from federated_catalog.config import Settings
 
@@ -40,7 +40,8 @@ def test_every_settings_field_is_read():
     unread = [
         name
         for name in Settings.model_fields
-        if name not in _FRAMEWORK_FIELDS and f"settings.{name}" not in body
+        if name not in _FRAMEWORK_FIELDS
+        and f"settings.{name}" not in body
         and f".{name}" not in body
     ]
     assert not unread, (
@@ -56,6 +57,7 @@ def test_no_scope_name_is_configurable():
     service accepts without any guard changing."""
     scopeish = [n for n in Settings.model_fields if n.endswith("_scope")]
     assert not scopeish, f"scope names must not be settings: {scopeish}"
+
 
 #: `CATALOG_*` names a deployment file carries and this service does not read.
 #: Empty, and that is the healthy state: an entry is an exemption from the sweep

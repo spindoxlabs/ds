@@ -6,6 +6,7 @@ particular the two ways this step could report success while having verified
 nothing: a plane that does not expose the endpoint, and a plane that validated an
 empty sample.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock

@@ -5,14 +5,14 @@ is consent-gated PII declaring the purposes
 {EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch};
 ``datasets.gold.weather`` is open and non-personal.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from tests import make_headers, make_vc_headers
 from connector.db.models import ConsentRequestORM
 from connector.services import consent_vocabulary as vocab
 from connector.services.consent_service import (
@@ -21,6 +21,7 @@ from connector.services.consent_service import (
     get_granted_subject_ids,
     set_subject_data_sharing,
 )
+from tests import make_headers, make_vc_headers
 
 HEADERS = make_headers(scope="connector.internal")
 SUBJECT = make_vc_headers()
@@ -33,7 +34,7 @@ OPEN = "datasets.gold.weather"
 async def _grant(engine, **overrides):
     """Persist one granted consent row."""
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     row = {
         "subject_id": "sub-001",
         "consumer_id": "consumer",
@@ -155,7 +156,11 @@ class TestPurposeEnforcement:
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
             active, reason = await check_consent(
-                session, "sub-001", PII, "consumer", purpose=["EnergyCommunityOperation"]
+                session,
+                "sub-001",
+                PII,
+                "consumer",
+                purpose=["EnergyCommunityOperation"],
             )
         assert not active
         assert "not covered" in reason
@@ -221,7 +226,9 @@ class TestControllerRoleEnforcement:
     @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_matching_role_is_allowed(self, engine):
-        await _grant(engine, controller="example-org", controller_role="community-operator")
+        await _grant(
+            engine, controller="example-org", controller_role="community-operator"
+        )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
             active, _ = await check_consent(
@@ -238,7 +245,9 @@ class TestControllerRoleEnforcement:
     @pytest.mark.asyncio
     async def test_different_role_is_denied(self, engine):
         """Controller ≠ legal entity: two roles of one company are two controllers."""
-        await _grant(engine, controller="example-org", controller_role="community-operator")
+        await _grant(
+            engine, controller="example-org", controller_role="community-operator"
+        )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
             active, reason = await check_consent(
@@ -256,8 +265,12 @@ class TestControllerRoleEnforcement:
 class TestRowFiltering:
     @pytest.mark.rule("D-8")
     @pytest.mark.asyncio
-    async def test_row_filter_excludes_subjects_who_consented_to_another_purpose(self, engine):
-        await _grant(engine, subject_id="sub-consented", purpose=["FlexibilityResearch"])
+    async def test_row_filter_excludes_subjects_who_consented_to_another_purpose(
+        self, engine
+    ):
+        await _grant(
+            engine, subject_id="sub-consented", purpose=["FlexibilityResearch"]
+        )
         await _grant(engine, subject_id="sub-other", purpose=["IncentiveCalculation"])
         await _grant(engine, subject_id="sub-silent", purpose=[])
 
@@ -276,8 +289,8 @@ class TestRowFiltering:
             engine,
             subject_id="sub-consented",
             status="revoked",
-            requested_at=datetime(2030, 1, 1, tzinfo=timezone.utc),
-            revoked_at=datetime(2030, 1, 2, tzinfo=timezone.utc),
+            requested_at=datetime(2030, 1, 1, tzinfo=UTC),
+            revoked_at=datetime(2030, 1, 2, tzinfo=UTC),
         )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
@@ -363,10 +376,10 @@ class TestSharingOffersEndpoint:
         r = await client.get("/ns/sharing-offers")
         assert r.status_code == 200
         assert {o["id"] for o in r.json()} == {
-        "test-flexibility",
-        "test-incentives",
-        "test-grid-planning",
-    }
+            "test-flexibility",
+            "test-incentives",
+            "test-grid-planning",
+        }
 
     @pytest.mark.asyncio
     async def test_public_projection_omits_dataset_keys(self, client):
@@ -383,7 +396,10 @@ class TestSharingOffersEndpoint:
         assert offer["purpose_broader"] == ["EnergyCommunityOperation"]
         assert offer["resolution"] == "PT15M"
         assert offer["measures"] == ["consumption"]
-        assert offer["recipients"]["processors"]["category"] == "appointed-service-providers"
+        assert (
+            offer["recipients"]["processors"]["category"]
+            == "appointed-service-providers"
+        )
         assert offer["fallback_text_en"]["purpose_label"]
         assert offer["user_visible_hash"]
 

@@ -3,6 +3,7 @@
 Each test builds a minimal governance file and asserts on the specific check
 it targets, so a failure names the broken rule directly.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -24,7 +25,9 @@ PARTICIPANT = "provider"
 BASE_URL = "https://provider.example.org"
 
 
-def write_governance(tmp_path: Path, config: dict, name: str = "governance.yaml") -> Path:
+def write_governance(
+    tmp_path: Path, config: dict, name: str = "governance.yaml"
+) -> Path:
     path = tmp_path / name
     path.write_text(yaml.safe_dump(config), encoding="utf-8")
     return path
@@ -152,9 +155,7 @@ class TestIdentifierCollisions:
     def test_explicit_duplicate_asset_ids_collide(self, tmp_path: Path):
         dataset = exposed_dataset()
         dataset["dataspace"]["asset"] = {"id": "urn:asset:shared"}
-        path = write_governance(
-            tmp_path, {"sources": {"one": dataset, "two": dataset}}
-        )
+        path = write_governance(tmp_path, {"sources": {"one": dataset, "two": dataset}})
         result = run(path)
         assert not result.passed
         assert "asset-id-collision" in codes(result.errors)
@@ -280,7 +281,9 @@ class TestConsentCoherence:
             {
                 "sources": {
                     "a": exposed_dataset(
-                        row_filters=[{"handler": "by_subject", "args": {"column": "  "}}]
+                        row_filters=[
+                            {"handler": "by_subject", "args": {"column": "  "}}
+                        ]
                     )
                 }
             },
@@ -434,7 +437,9 @@ class TestOwners:
         assert "owner-participant" not in codes(result.warnings)
 
     @pytest.mark.rule("A-4")
-    def test_owner_did_registered_as_participant_is_clean(self, tmp_path: Path, registry):
+    def test_owner_did_registered_as_participant_is_clean(
+        self, tmp_path: Path, registry
+    ):
         path = write_governance(
             tmp_path,
             {"sources": {"a": exposed_dataset(ownership=[{"name": "example-org"}])}},
@@ -523,7 +528,9 @@ class TestOverlay:
         write_governance(
             tmp_path, {"sources": {"b": exposed_dataset()}}, name="governance.prod.yaml"
         )
-        assert run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 2
+        assert (
+            run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 2
+        )
 
     def test_missing_overlay_falls_back_to_base(self, tmp_path: Path):
         path = write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
@@ -545,7 +552,9 @@ class TestOverlay:
             {"sources": {"a": {"dataspace": {"expose": False}}}},
             name="governance.prod.yaml",
         )
-        assert run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 0
+        assert (
+            run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 0
+        )
 
     def test_an_overlay_that_says_nothing_still_inherits_expose(self, tmp_path: Path):
         """The other half, and the reason `exclude_unset` is not `model_dump()`.
@@ -560,7 +569,9 @@ class TestOverlay:
             {"sources": {"a": {"title": "Renamed in prod"}}},
             name="governance.prod.yaml",
         )
-        assert run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 1
+        assert (
+            run(tmp_path / "governance.yaml", overlay_name="prod").datasets_checked == 1
+        )
 
     def test_the_tightening_rules_survive_the_unset_fix(self, tmp_path: Path):
         """The risk `GOV-06`'s fix introduced, pinned.
@@ -579,20 +590,30 @@ class TestOverlay:
 
         write_governance(
             tmp_path,
-            {"sources": {"a": {
-                **exposed_dataset(),
-                "policy": {
-                    "consent": {"required": True},
-                    "obligations": {"contract_required": True},
-                },
-            }}},
+            {
+                "sources": {
+                    "a": {
+                        **exposed_dataset(),
+                        "policy": {
+                            "consent": {"required": True},
+                            "obligations": {"contract_required": True},
+                        },
+                    }
+                }
+            },
         )
         write_governance(
             tmp_path,
-            {"sources": {"a": {"policy": {
-                "consent": {"required": False},
-                "obligations": {"contract_required": False},
-            }}}},
+            {
+                "sources": {
+                    "a": {
+                        "policy": {
+                            "consent": {"required": False},
+                            "obligations": {"contract_required": False},
+                        }
+                    }
+                }
+            },
             name="governance.prod.yaml",
         )
         rule = GovernanceResolver.from_file_with_override(
@@ -623,6 +644,7 @@ class TestResultSerialization:
 
 
 # ── semantic-model (`M-4`, `M-7`) ─────────────────────────────────────────────
+
 
 class TestSemanticModel:
     """`dcat.conforms_to` — error on unresolvable, warn on unregistered, silent on absent.

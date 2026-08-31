@@ -80,6 +80,7 @@ def test_no_setting_is_read_by_nothing():
         f"{unread}"
     )
 
+
 #: `IDENTITY_REGISTRY_*` names a deployment file carries and this service does
 #: not read. Each needs its actual reader — an entry here is an exemption from
 #: the sweep below, not somewhere to park a dead name.

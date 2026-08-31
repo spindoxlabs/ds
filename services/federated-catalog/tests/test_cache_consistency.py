@@ -5,6 +5,7 @@ per-provider bucket, so the same record was simultaneously findable through
 `POST /catalog/search` with a `provider` filter, unresolvable through
 `GET /catalog/{iri}`, and absent from `GET /catalog` and from `dataset_count`.
 """
+
 from __future__ import annotations
 
 from federated_catalog.cache import CatalogCache, SourceEndpoint

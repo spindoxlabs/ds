@@ -15,7 +15,10 @@ def run_flow(flow_name: str, settings: E2ESettings) -> FlowResult:
     flow_cls = FLOW_REGISTRY.get(flow_name)
     if not flow_cls:
         result = FlowResult(flow_name=flow_name)
-        result.fail_step("setup", f"unknown flow: {flow_name}. Available: {list(FLOW_REGISTRY.keys())}")
+        result.fail_step(
+            "setup",
+            f"unknown flow: {flow_name}. Available: {list(FLOW_REGISTRY.keys())}",
+        )
         return result
 
     http = HttpClient(settings)

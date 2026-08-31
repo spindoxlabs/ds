@@ -32,6 +32,7 @@ deferred, not overlooked — so those keys are reported every start, by DID, as 
 declared deviation. The moment `DID-11` lands they disappear and this reports
 nothing; if they *grow*, that is visible.
 """
+
 from __future__ import annotations
 
 import logging

@@ -48,6 +48,7 @@ the signature. The alternative — fields in the request — would let a client
 claim endpoints its DID document does not carry, and would mean two sources for
 one fact.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -177,9 +178,7 @@ async def create_enrolment_token(
         created_by=created_by,
         roles=list(roles) if roles else None,
         allowed_scopes=list(allowed_scopes) if allowed_scopes else None,
-        expires_at=(
-            datetime.now(UTC) + timedelta(days=ttl_days) if ttl_days else None
-        ),
+        expires_at=(datetime.now(UTC) + timedelta(days=ttl_days) if ttl_days else None),
     )
     db.add(token)
     await db.flush()
@@ -201,9 +200,7 @@ def _expired(token: EnrolmentToken, now: datetime) -> bool:
     return expires <= now
 
 
-async def resolve_enrolment_token(
-    db: AsyncSession, code: str | None
-) -> EnrolmentToken:
+async def resolve_enrolment_token(db: AsyncSession, code: str | None) -> EnrolmentToken:
     """The token for *code*, if it is usable. One refusal for every failure."""
     refused = EnrolmentError("invalid, spent or expired enrolment code")
     if not code:
@@ -316,9 +313,7 @@ async def enrol(
     dsp_address = endpoint_of(endpoints, DSP_ENDPOINT_TYPE)
     credential_service_url = endpoint_of(endpoints, CREDENTIAL_SERVICE_TYPE)
 
-    did_row = (
-        await db.execute(select(Did).where(Did.did == did))
-    ).scalar_one_or_none()
+    did_row = (await db.execute(select(Did).where(Did.did == did))).scalar_one_or_none()
     created_did = did_row is None
 
     if did_row is None:

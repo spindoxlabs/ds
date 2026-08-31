@@ -4,6 +4,7 @@ The interesting cases are all failures, and one of them is the reason the module
 parses before it writes: a source that answers 200 with a login page would
 otherwise be cached and served from `/ns/saref4ener` as though it were SAREF.
 """
+
 from __future__ import annotations
 
 import json
@@ -43,6 +44,7 @@ def client_returning(*responses: httpx.Response) -> httpx.Client:
 
 
 # ── Fetching ──────────────────────────────────────────────────────────────────
+
 
 def test_a_fetch_writes_the_document(tmp_path):
     with client_returning(httpx.Response(200, json=DOCUMENT)) as client:
@@ -93,6 +95,7 @@ def test_no_source_and_no_cached_copy_names_the_path_to_supply(tmp_path):
 
 # ── ensure_cached ─────────────────────────────────────────────────────────────
 
+
 def test_an_already_cached_vocabulary_is_not_refetched(tmp_path):
     (tmp_path / "saref4ener.jsonld").write_text(json.dumps(DOCUMENT))
     registry = VocabularyRegistry(vocabularies=[vocab()])
@@ -123,7 +126,11 @@ def test_every_failure_is_reported_together(tmp_path):
     registry = VocabularyRegistry(
         vocabularies=[
             vocab(),
-            vocab(slug="cim", iri="https://cim.ucaiug.io/ns#", source="https://cim.example/x.jsonld"),
+            vocab(
+                slug="cim",
+                iri="https://cim.ucaiug.io/ns#",
+                source="https://cim.example/x.jsonld",
+            ),
             vocab(slug="cosem", iri="https://example.test/cosem#", source=None),
         ]
     )
@@ -137,6 +144,7 @@ def test_every_failure_is_reported_together(tmp_path):
 
 
 # ── Reading ───────────────────────────────────────────────────────────────────
+
 
 def test_read_cached_returns_none_when_absent(tmp_path):
     """A missing copy is a 404 with the canonical IRI — a useful answer."""
@@ -305,7 +313,9 @@ def test_a_read_only_cache_still_starts_when_it_is_already_correct(tmp_path):
         os.chmod(cached, stat.S_IRUSR | stat.S_IWUSR)
 
 
-def test_a_changed_definition_is_still_republished_over_a_file_it_does_not_own(tmp_path):
+def test_a_changed_definition_is_still_republished_over_a_file_it_does_not_own(
+    tmp_path,
+):
     """The property the skip must not cost: the committed file still wins.
 
     Replacement goes through a temporary file and `os.replace`, so it needs write

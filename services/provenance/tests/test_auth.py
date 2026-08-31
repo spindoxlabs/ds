@@ -1,4 +1,5 @@
 """Tests for JWT scope enforcement on provenance endpoints."""
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
@@ -53,11 +54,14 @@ async def test_context_no_auth(raw_client):
 @pytest.mark.rule("L-10", "L-13")
 @pytest.mark.asyncio
 async def test_write_without_token_returns_401(raw_client):
-    r = await raw_client.post("/prov/events", json={
-        "type": "CataloguePublished",
-        "provider_id": "p",
-        "catalogue_id": "c",
-    })
+    r = await raw_client.post(
+        "/prov/events",
+        json={
+            "type": "CataloguePublished",
+            "provider_id": "p",
+            "catalogue_id": "c",
+        },
+    )
     assert r.status_code == 401
 
 

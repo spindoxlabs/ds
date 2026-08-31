@@ -8,6 +8,7 @@ The consequential case is 409 on a `FINALIZED` negotiation and 405 on a running
 transfer: a data subject refuses or revokes, nothing stops, and every surface
 says it did.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -17,14 +18,17 @@ from conftest import json_response, status_only
 
 def responder(*, terminate, state=None):
     """Answer the terminate POST one way and the state GET another."""
+
     def handler(request: httpx.Request) -> httpx.Response:
         if request.method == "POST":
             return terminate
         return json_response(200, {"state": state})
+
     return handler
 
 
 # -- The success path ----------------------------------------------------------
+
 
 async def test_a_negotiation_terminates(edc_client):
     client, fake = edc_client(responder(terminate=status_only(204)))
@@ -46,6 +50,7 @@ async def test_the_default_transfer_reason_is_sent(edc_client):
 
 
 # -- The counterfactuals -------------------------------------------------------
+
 
 @pytest.mark.parametrize("status", [404, 405, 500, 503])
 async def test_a_negotiation_that_did_not_terminate_raises(edc_client, status):
@@ -90,6 +95,7 @@ async def test_409_on_a_started_transfer_raises(edc_client):
 
 # -- Idempotence, established by reading rather than by assuming ---------------
 
+
 async def test_409_on_an_already_terminated_negotiation_succeeds(edc_client):
     """The TTL sweep retries into this, and must not treat it as a failure.
 
@@ -113,6 +119,7 @@ async def test_409_on_an_already_terminated_transfer_succeeds(edc_client):
 
 async def test_an_unreadable_state_after_409_stays_a_failure(edc_client):
     """Fail closed: if we cannot confirm it stopped, we did not stop it."""
+
     def handler(request):
         if request.method == "POST":
             return status_only(409, "cannot terminate")
@@ -125,13 +132,16 @@ async def test_an_unreadable_state_after_409_stays_a_failure(edc_client):
 
 # -- Resume, which is genuinely allowed to be a non-event ---------------------
 
+
 async def test_resume_reports_a_missing_negotiation_without_raising(edc_client):
     """Unlike terminate: `resume` is documented as idempotent, and a grant
     arriving after the TTL already terminated the negotiation is a race to
     record, not an error to retry into."""
     client, _ = edc_client(lambda _r: status_only(404))
     assert await client.resume_negotiation("n") == {
-        "id": "n", "resumed": False, "outcome": "not_found",
+        "id": "n",
+        "resumed": False,
+        "outcome": "not_found",
     }
 
 

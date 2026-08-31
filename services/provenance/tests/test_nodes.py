@@ -1,4 +1,5 @@
 """Tests for /prov/entities, /prov/activities, /prov/agents endpoints."""
+
 import urllib.parse
 
 import pytest

@@ -25,6 +25,7 @@ participant does not hold — so the request is recorded `REJECTED` with the rea
 the issued rows stay (they are what a retry re-delivers rather than re-mints), and
 nothing pretends the exchange completed.
 """
+
 from __future__ import annotations
 
 import logging
@@ -117,9 +118,7 @@ async def issue_for_participant(
         # An issuer with no issuing key is a deployment that was never
         # bootstrapped. Name it as such rather than letting a service-layer
         # exception surface as an opaque 500 three layers up.
-        raise IssuanceError(
-            f"this instance cannot issue: {exc.message}"
-        ) from exc
+        raise IssuanceError(f"this instance cannot issue: {exc.message}") from exc
     anchor_did = settings.trust_anchor_did
     anchor_jwk = decrypt_private_jwk(anchor_key.private_jwk, settings.encryption_key)
     ttl = min(settings.default_credential_ttl_days, settings.max_credential_ttl_days)
@@ -213,14 +212,18 @@ async def _active_credential(
     db: AsyncSession, did: str, credential_type: str
 ) -> Credential | None:
     return (
-        await db.execute(
-            select(Credential).where(
-                Credential.subject_did == did,
-                Credential.credential_type == credential_type,
-                Credential.status == "active",
+        (
+            await db.execute(
+                select(Credential).where(
+                    Credential.subject_did == did,
+                    Credential.credential_type == credential_type,
+                    Credential.status == "active",
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
 
 
 async def _membership_credentials(
@@ -323,9 +326,7 @@ async def deliver(
             f"{url} refused delivery ({response.status_code}): "
             f"{response.text.strip()[:200]}"
         )
-    log.info(
-        "Delivered %s to %s", ", ".join(name for name, _ in credentials), url
-    )
+    log.info("Delivered %s to %s", ", ".join(name for name, _ in credentials), url)
 
 
 async def store_delivered(

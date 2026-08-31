@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 import httpx
 
@@ -30,9 +31,15 @@ class HttpClient:
         self._client.close()
 
     def get(
-        self, url: str, *, headers: dict[str, str] | None = None, raise_for_status: bool = True
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        raise_for_status: bool = True,
     ) -> Any:
-        return self._request("GET", url, headers=headers, raise_for_status=raise_for_status)
+        return self._request(
+            "GET", url, headers=headers, raise_for_status=raise_for_status
+        )
 
     def post(
         self,
@@ -42,7 +49,9 @@ class HttpClient:
         headers: dict[str, str] | None = None,
         raise_for_status: bool = True,
     ) -> Any:
-        return self._request("POST", url, body=body, headers=headers, raise_for_status=raise_for_status)
+        return self._request(
+            "POST", url, body=body, headers=headers, raise_for_status=raise_for_status
+        )
 
     def patch(
         self,
@@ -56,11 +65,17 @@ class HttpClient:
             "PATCH", url, body=body, headers=headers, raise_for_status=raise_for_status
         )
 
-    def get_raw(self, url: str, *, headers: dict[str, str] | None = None) -> tuple[int, Any]:
+    def get_raw(
+        self, url: str, *, headers: dict[str, str] | None = None
+    ) -> tuple[int, Any]:
         return self._request_raw("GET", url, headers=headers)
 
     def post_raw(
-        self, url: str, body: dict[str, Any] | None = None, *, headers: dict[str, str] | None = None
+        self,
+        url: str,
+        body: dict[str, Any] | None = None,
+        *,
+        headers: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         return self._request_raw("POST", url, body=body, headers=headers)
 
@@ -145,7 +160,9 @@ class HttpClient:
         data = resp.json()
         self._token = data["access_token"]
         self._token_expires = now + data.get("expires_in", 300) - 30
-        log.debug("Acquired service token (expires in %ds)", data.get("expires_in", 300))
+        log.debug(
+            "Acquired service token (expires in %ds)", data.get("expires_in", 300)
+        )
         return self._token
 
     def bearer_headers(self) -> dict[str, str]:

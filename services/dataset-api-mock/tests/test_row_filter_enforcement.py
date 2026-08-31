@@ -77,9 +77,7 @@ def test_rec_registry_resolves_a_member_to_their_own_devices():
     missing entirely.
     """
     kept = _rec_filter(["subject@example.test"])
-    assert [row["device_id"] for row in _apply_row_filter(DEVICE_ROWS, kept)] == [
-        "ds-e2e-METER-0001"
-    ]
+    assert [row["device_id"] for row in _apply_row_filter(DEVICE_ROWS, kept)] == ["ds-e2e-METER-0001"]
 
 
 def test_rec_registry_never_serves_the_unowned_device():

@@ -6,6 +6,7 @@ whether the live observation counts — the classification of a refusal, and the
 access-request clearing that makes a refusal attributable. Both are the parts
 that were wrong, and both are cheap to get wrong again.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock
@@ -164,29 +165,41 @@ def test_the_outage_is_not_entered_when_the_clear_fails(settings):
 
 _PURPOSE_ONLY = {
     "@id": "offer-1",
-    "permission": [{
-        "action": "https://w3id.org/dsp/policy/Query",
-        "constraint": [{
-            "leftOperand": "odrl:purpose",
-            "operator": "isAnyOf",
-            "rightOperand": ["https://w3id.org/dsp/policy/purpose/GridMonitoring"],
-        }],
-    }],
+    "permission": [
+        {
+            "action": "https://w3id.org/dsp/policy/Query",
+            "constraint": [
+                {
+                    "leftOperand": "odrl:purpose",
+                    "operator": "isAnyOf",
+                    "rightOperand": [
+                        "https://w3id.org/dsp/policy/purpose/GridMonitoring"
+                    ],
+                }
+            ],
+        }
+    ],
 }
 
 _MEMBERSHIP_GATED = {
     "@id": "offer-2",
-    "permission": [{
-        "action": "https://w3id.org/dsp/policy/Query",
-        "constraint": [
-            {
-                "leftOperand": "https://w3id.org/dsp/policy/Membership",
-                "operator": "eq",
-                "rightOperand": "owner:example-org:member",
-            },
-            {"leftOperand": "odrl:purpose", "operator": "isAnyOf", "rightOperand": []},
-        ],
-    }],
+    "permission": [
+        {
+            "action": "https://w3id.org/dsp/policy/Query",
+            "constraint": [
+                {
+                    "leftOperand": "https://w3id.org/dsp/policy/Membership",
+                    "operator": "eq",
+                    "rightOperand": "owner:example-org:member",
+                },
+                {
+                    "leftOperand": "odrl:purpose",
+                    "operator": "isAnyOf",
+                    "rightOperand": [],
+                },
+            ],
+        }
+    ],
 }
 
 
@@ -405,11 +418,13 @@ def test_recovery_retries_until_the_decision_cache_expires(settings, monkeypatch
     flow = _flow(settings, http)
     flow._clear_access_requests = MagicMock(return_value=([], None))
     flow._clear = MagicMock(return_value=True)
-    flow._start_exchange = MagicMock(side_effect=[
-        Attempt("terminated", 200, state="TERMINATED"),
-        Attempt("terminated", 200, state="TERMINATED"),
-        Attempt("agreed", 200, agreement_id="agreement-3"),
-    ])
+    flow._start_exchange = MagicMock(
+        side_effect=[
+            Attempt("terminated", 200, state="TERMINATED"),
+            Attempt("terminated", 200, state="TERMINATED"),
+            Attempt("agreed", 200, agreement_id="agreement-3"),
+        ]
+    )
 
     result = FlowResult(flow_name="fail-closed")
     flow._assert_service_resumes(result, {})
@@ -426,9 +441,7 @@ def test_recovery_gives_up_after_the_cache_window(settings, monkeypatch):
     the deadline is the property, not the patience."""
     clock = iter([0.0, 0.0] + [float(n) for n in range(10, 2000, 10)])
     monkeypatch.setattr("ds_e2e.flows.fail_closed.time.sleep", lambda _: None)
-    monkeypatch.setattr(
-        "ds_e2e.flows.fail_closed.time.monotonic", lambda: next(clock)
-    )
+    monkeypatch.setattr("ds_e2e.flows.fail_closed.time.monotonic", lambda: next(clock))
     http = MagicMock(spec=HttpClient)
     flow = _flow(settings, http)
     flow._clear_access_requests = MagicMock(return_value=([], None))

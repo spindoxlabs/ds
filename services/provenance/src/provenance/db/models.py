@@ -1,12 +1,19 @@
 """SQLAlchemy ORM models for ds-provenance."""
+
 from __future__ import annotations
 
 import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    DateTime, ForeignKey, Index, Integer, String, Text,
-    UniqueConstraint, func,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -29,7 +36,9 @@ class ProvNodeORM(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     iri: Mapped[str] = mapped_column(Text, unique=True, nullable=False)
-    node_type: Mapped[str] = mapped_column(String(16), nullable=False)  # Entity|Activity|Agent
+    node_type: Mapped[str] = mapped_column(
+        String(16), nullable=False
+    )  # Entity|Activity|Agent
     label: Mapped[str | None] = mapped_column(Text)
     description: Mapped[str | None] = mapped_column(Text)
     energy_type: Mapped[str | None] = mapped_column(Text)
@@ -45,10 +54,14 @@ class ProvNodeORM(Base):
     )
 
     subject_relations: Mapped[list[ProvRelationORM]] = relationship(
-        "ProvRelationORM", foreign_keys="ProvRelationORM.subject_id", back_populates="subject"
+        "ProvRelationORM",
+        foreign_keys="ProvRelationORM.subject_id",
+        back_populates="subject",
     )
     object_relations: Mapped[list[ProvRelationORM]] = relationship(
-        "ProvRelationORM", foreign_keys="ProvRelationORM.object_id", back_populates="object"
+        "ProvRelationORM",
+        foreign_keys="ProvRelationORM.object_id",
+        back_populates="object",
     )
 
 
@@ -56,9 +69,7 @@ class ProvRelationORM(Base):
     """PROV-O edges (all 7 relation types)."""
 
     __tablename__ = "prov_relations"
-    __table_args__ = (
-        UniqueConstraint("relation_type", "subject_id", "object_id"),
-    )
+    __table_args__ = (UniqueConstraint("relation_type", "subject_id", "object_id"),)
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     relation_type: Mapped[str] = mapped_column(Text, nullable=False)
@@ -93,8 +104,12 @@ class DomainEventORM(Base):
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     event_type: Mapped[str] = mapped_column(Text, nullable=False)
-    event_id: Mapped[str | None] = mapped_column(Text, unique=True)  # caller idempotency key
-    occurred_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    event_id: Mapped[str | None] = mapped_column(
+        Text, unique=True
+    )  # caller idempotency key
+    occurred_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

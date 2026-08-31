@@ -18,6 +18,7 @@ publication.
 
 Needs only the identity-registry.
 """
+
 from __future__ import annotations
 
 import base64
@@ -248,7 +249,9 @@ class DcpTrustFlow(BaseFlow):
             )
             return
         methods = doc.get("verificationMethod") or []
-        if not methods or not any(m.get("publicKeyJwk") for m in methods if isinstance(m, dict)):
+        if not methods or not any(
+            m.get("publicKeyJwk") for m in methods if isinstance(m, dict)
+        ):
             result.fail_step(
                 "did:web resolution",
                 "the document publishes no verification key — signatures could not be checked",
@@ -334,7 +337,9 @@ class DcpTrustFlow(BaseFlow):
         wrong: list[str] = []
         for label, form, acceptable in refusals:
             probe_did = urllib.parse.quote(form["client_id"], safe="")
-            probe_url = f"{ir}/sts/{probe_did}/token" if label == "unknown participant" else url
+            probe_url = (
+                f"{ir}/sts/{probe_did}/token" if label == "unknown participant" else url
+            )
             status, _ = self.http.raw("POST", probe_url, form=form)
             if status < 400:
                 wrong.append(f"{label} → {status} (a token was issued)")
@@ -388,7 +393,11 @@ class DcpTrustFlow(BaseFlow):
                 "audience": s.consumer_did,
             },
         )
-        if status != 200 or not isinstance(payload, dict) or not payload.get("access_token"):
+        if (
+            status != 200
+            or not isinstance(payload, dict)
+            or not payload.get("access_token")
+        ):
             result.fail_step(
                 "STS issuance",
                 "a valid client did not receive a token",
@@ -400,16 +409,22 @@ class DcpTrustFlow(BaseFlow):
         token = str(payload["access_token"])
         parts = token.split(".")
         if len(parts) != 3:
-            result.fail_step("STS issuance", "the issued token is not a JWS", token_parts=len(parts))
+            result.fail_step(
+                "STS issuance", "the issued token is not a JWS", token_parts=len(parts)
+            )
             return None
         try:
             header = _decode_segment(parts[0])
             claims = _decode_segment(parts[1])
         except Exception as exc:
-            result.fail_step("STS issuance", f"could not decode the issued token: {exc}")
+            result.fail_step(
+                "STS issuance", f"could not decode the issued token: {exc}"
+            )
             return None
         if header.get("alg") != "ES256":
-            result.fail_step("STS issuance", "the token is not ES256-signed", alg=header.get("alg"))
+            result.fail_step(
+                "STS issuance", "the token is not ES256-signed", alg=header.get("alg")
+            )
             return None
         if claims.get("iss") != did or claims.get("sub") != did:
             result.fail_step(
@@ -421,7 +436,8 @@ class DcpTrustFlow(BaseFlow):
             return None
         if not claims.get("exp"):
             result.fail_step(
-                "STS issuance", "the token carries no expiry — it would be valid forever"
+                "STS issuance",
+                "the token carries no expiry — it would be valid forever",
             )
             return None
         result.pass_step(
@@ -434,7 +450,9 @@ class DcpTrustFlow(BaseFlow):
 
     # ── credential service ───────────────────────────────────────────────────
 
-    def _check_presentation_binding(self, result: FlowResult, token: str | None) -> None:
+    def _check_presentation_binding(
+        self, result: FlowResult, token: str | None
+    ) -> None:
         """A presentation query must be bound to the DID it asks about.
 
         This endpoint returns a signed VP of a participant's full credential set.
@@ -575,9 +593,7 @@ class DcpTrustFlow(BaseFlow):
             )
             return
         try:
-            claims = json.loads(
-                base64.urlsafe_b64decode(parts[1] + "===").decode()
-            )
+            claims = json.loads(base64.urlsafe_b64decode(parts[1] + "===").decode())
         except Exception as exc:  # noqa: BLE001 — any decode failure is the same verdict
             result.fail_step(
                 "status list", f"the signed status list could not be decoded: {exc}"

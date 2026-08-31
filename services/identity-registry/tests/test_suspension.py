@@ -392,8 +392,6 @@ async def test_the_suspension_register_is_served_with_its_own_purpose(
     await get_or_create_status_list(db_session, SUSPENSION_LIST_ID)
     await db_session.commit()
 
-    response = await client.get(
-        "/status/2", headers={"Accept": "application/json"}
-    )
+    response = await client.get("/status/2", headers={"Accept": "application/json"})
     assert response.status_code == 200, response.text
     assert response.json()["credentialSubject"]["statusPurpose"] == "suspension"

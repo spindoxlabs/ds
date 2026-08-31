@@ -1,4 +1,5 @@
 """Insert and query PROV-O edges."""
+
 from __future__ import annotations
 
 from sqlalchemy import select

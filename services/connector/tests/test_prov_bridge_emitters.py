@@ -15,6 +15,7 @@ This is a source-level scan for the same reason `test_settings_are_read.py` is:
 it must fail on something a change *did not* do — add the call site — and an
 uncalled method is invisible to any test that runs code.
 """
+
 from __future__ import annotations
 
 import re
@@ -28,23 +29,25 @@ BRIDGE = SRC / "services" / "prov_bridge.py"
 # The sixteen types of `docs/rulebook/provenance-and-logging.md` §"sixteen event
 # types". Duplicated here deliberately: a test that read the rulebook would pass
 # whenever somebody edited the rulebook, which is the wrong direction of proof.
-RULEBOOK_EVENT_TYPES = frozenset({
-    "CataloguePublished",
-    "CatalogViewed",
-    "AccessRequested",
-    "NegotiationStarted",
-    "NegotiationFinalized",
-    "NegotiationTerminated",
-    "ContractAgreementSigned",
-    "TransferStarted",
-    "DataTransferCompleted",
-    "QueryExecuted",
-    "AccessRevoked",
-    "ConsentGranted",
-    "ConsentRevoked",
-    "DataIngested",
-    "DataDisclosed",
-})
+RULEBOOK_EVENT_TYPES = frozenset(
+    {
+        "CataloguePublished",
+        "CatalogViewed",
+        "AccessRequested",
+        "NegotiationStarted",
+        "NegotiationFinalized",
+        "NegotiationTerminated",
+        "ContractAgreementSigned",
+        "TransferStarted",
+        "DataTransferCompleted",
+        "QueryExecuted",
+        "AccessRevoked",
+        "ConsentGranted",
+        "ConsentRevoked",
+        "DataIngested",
+        "DataDisclosed",
+    }
+)
 
 # **Empty, and that is the point.** Every event type the rulebook names is
 # emitted by this connector.

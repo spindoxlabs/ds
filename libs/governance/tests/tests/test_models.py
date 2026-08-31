@@ -1,4 +1,5 @@
 """Tests for GovernanceRule v1/v2 model parsing and defaults."""
+
 import logging
 
 import pytest
@@ -8,7 +9,6 @@ from ds.governance.models import (
     DataspaceSpec,
     GovernanceRule,
     GovernanceRuleV2,
-    OdrlProfile,
     PolicyConsent,
     load_odrl_profile,
     profile_path_is_missing,
@@ -32,7 +32,9 @@ def test_v2_rule_has_safe_defaults():
 
 def test_v2_consent_auto_schema():
     """Consent model fields are correct."""
-    consent = PolicyConsent(required=True, scope="per_subject", on_revocation="terminate")
+    consent = PolicyConsent(
+        required=True, scope="per_subject", on_revocation="terminate"
+    )
     assert consent.required is True
     assert consent.scope == "per_subject"
     assert consent.on_revocation == "terminate"
@@ -59,6 +61,7 @@ def test_dataspace_spec_defaults():
 
 
 # ── OdrlProfile loading ──────────────────────────────────────────────────────
+
 
 def test_load_default_profile():
     profile = load_odrl_profile()
@@ -175,7 +178,10 @@ def test_configured_but_missing_profile_path_warns(caplog):
     """
     with caplog.at_level(logging.WARNING, logger="ds.governance.models"):
         load_odrl_profile("/nonexistent/path.yaml")
-    assert any("falling back to the bundled energy profile" in r.message for r in caplog.records)
+    assert any(
+        "falling back to the bundled energy profile" in r.message
+        for r in caplog.records
+    )
 
 
 @pytest.mark.rule("M-13")

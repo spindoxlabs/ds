@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import sys
 from enum import Enum
 from typing import Annotated
 
@@ -11,7 +10,7 @@ from rich.logging import RichHandler
 
 from ds_e2e.cleanup import provider_sync_targets, run_cleanup
 from ds_e2e.config import E2ESettings
-from ds_e2e.flows import CHAIN_FLOWS, FAST_FLOWS, FLOW_REGISTRY, SECURITY_FLOWS
+from ds_e2e.flows import CHAIN_FLOWS, FAST_FLOWS, SECURITY_FLOWS
 from ds_e2e.http import HttpClient
 from ds_e2e.models import FlowResult
 from ds_e2e.runner import run_all, run_flow, run_selected
@@ -22,7 +21,9 @@ from ds_e2e.scenario import (
     build_runner,
 )
 
-app = typer.Typer(help="ds-e2e: End-to-end verification framework for the dataspaces platform")
+app = typer.Typer(
+    help="ds-e2e: End-to-end verification framework for the dataspaces platform"
+)
 console = Console()
 
 
@@ -103,7 +104,9 @@ def _print_backend(settings: E2ESettings, fmt: Format) -> None:
     console.print(f"[dim]data plane:[/dim] {settings.data_plane_label}")
 
 
-def _print_summary(results: list[FlowResult], fmt: Format, settings: E2ESettings) -> None:
+def _print_summary(
+    results: list[FlowResult], fmt: Format, settings: E2ESettings
+) -> None:
     """One line per flow after a multi-flow run.
 
     A dozen flows scroll off the screen; without a roll-up the exit code is the
@@ -123,9 +126,15 @@ def _print_summary(results: list[FlowResult], fmt: Format, settings: E2ESettings
 
 @app.command()
 def run(
-    flow: Annotated[FlowName, typer.Option("--flow", "-f", help="Flow to execute")] = FlowName.smoke,
-    clean_first: Annotated[bool, typer.Option("--clean-first", help="Run cleanup before executing")] = False,
-    fmt: Annotated[Format, typer.Option("--format", help="Output format")] = Format.text,
+    flow: Annotated[
+        FlowName, typer.Option("--flow", "-f", help="Flow to execute")
+    ] = FlowName.smoke,
+    clean_first: Annotated[
+        bool, typer.Option("--clean-first", help="Run cleanup before executing")
+    ] = False,
+    fmt: Annotated[
+        Format, typer.Option("--format", help="Output format")
+    ] = Format.text,
     verbose: Annotated[bool, typer.Option("--verbose", "-v")] = False,
     quiet: Annotated[bool, typer.Option("--quiet", "-q")] = False,
 ) -> None:
@@ -209,7 +218,9 @@ def sync_providers(
         for url, label in provider_sync_targets(settings):
             try:
                 result = http.post(f"{url}/provider/sync", {}, headers=headers)
-                synced = (result or {}).get("synced", []) if isinstance(result, dict) else []
+                synced = (
+                    (result or {}).get("synced", []) if isinstance(result, dict) else []
+                )
                 console.print(f"  synced {label}: {len(synced)} asset(s)")
                 if not synced:
                     failures.append(f"{label} published nothing")

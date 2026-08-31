@@ -28,6 +28,7 @@ unprovable here — and unprovable resolves to "outside the circle", which asks
 rather than assumes.  That is the safe direction: a redundant question is
 recoverable, a skipped one is not.
 """
+
 from __future__ import annotations
 
 import logging
@@ -120,7 +121,9 @@ async def is_covered_processor(
         if not verdict.covered_processor:
             log.debug(
                 "Requester %s not covered by offer %s: %s",
-                requester_did, offer.id, verdict.reason,
+                requester_did,
+                offer.id,
+                verdict.reason,
             )
             return False
     return True
@@ -160,15 +163,15 @@ async def _check_constraint(
     token_provider=None,
 ) -> bool:
     if kind == "membership":
-        return await _is_member(identity_registry_url, requester_did, value, token_provider)
+        return await _is_member(
+            identity_registry_url, requester_did, value, token_provider
+        )
     if kind == "credential_type":
         return await _holds_credential(
             identity_registry_url, requester_did, value, token_provider
         )
     # An unknown constraint kind cannot be evaluated, so it cannot be satisfied.
-    log.warning(
-        "Unknown admitted_by constraint '%s' — treating as unsatisfied", kind
-    )
+    log.warning("Unknown admitted_by constraint '%s' — treating as unsatisfied", kind)
     return False
 
 
@@ -273,11 +276,15 @@ async def _agreement_capacity(
             if resp.status_code != 200:
                 return None
             capacity = resp.json().get("capacity")
-            return capacity if capacity in {
-                PROCESSOR, JOINT_CONTROLLER, INDEPENDENT_CONTROLLER
-            } else None
+            return (
+                capacity
+                if capacity in {PROCESSOR, JOINT_CONTROLLER, INDEPENDENT_CONTROLLER}
+                else None
+            )
     except httpx.HTTPError:
         # The agreements surface lands with organisation onboarding; until then
         # every requester is treated as outside the circle.
-        log.debug("Agreements endpoint unavailable — treating %s as outside", participant_did)
+        log.debug(
+            "Agreements endpoint unavailable — treating %s as outside", participant_did
+        )
         return None

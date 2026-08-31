@@ -22,6 +22,7 @@ identity-registry:
 
 Needs no EDC: connector and identity-registry are enough.
 """
+
 from __future__ import annotations
 
 import logging
@@ -69,7 +70,10 @@ class AuthzPerimeterFlow(BaseFlow):
             return result
 
         subject_headers = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
-        consumer_headers = {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
+        consumer_headers = {
+            "X-Subject-Id": s.consumer_subject_id,
+            "X-User-VC": consumer_vc,
+        }
 
         # The credentials must actually work, or every negative below would pass
         # for the wrong reason.
@@ -120,7 +124,11 @@ class AuthzPerimeterFlow(BaseFlow):
         probes = [
             ("GET", "/consent/my", None),
             ("GET", "/consent/my/shares", None),
-            ("POST", "/consent/my/shares", {"offer_id": s.sharing_offer_id, "enabled": True}),
+            (
+                "POST",
+                "/consent/my/shares",
+                {"offer_id": s.sharing_offer_id, "enabled": True},
+            ),
         ]
 
         accepted: list[str] = []
@@ -196,7 +204,9 @@ class AuthzPerimeterFlow(BaseFlow):
             }
         )
         own_status, _ = self.http.raw(
-            "GET", f"{s.connector_url}/consent/status?{own_params}", headers=subject_headers
+            "GET",
+            f"{s.connector_url}/consent/status?{own_params}",
+            headers=subject_headers,
         )
         if own_status != 200:
             result.fail_step(
@@ -241,7 +251,9 @@ class AuthzPerimeterFlow(BaseFlow):
         for method, url, body in subject_only:
             status, _ = self.http.raw(method, url, body=body, headers=consumer_headers)
             if status < 400:
-                accepted.append(f"ConsumerUser on {method} {url.rsplit('/', 2)[-2:]} → {status}")
+                accepted.append(
+                    f"ConsumerUser on {method} {url.rsplit('/', 2)[-2:]} → {status}"
+                )
 
         # DataSubject must not drive the consumer's acquisition endpoints.
         consumer_only: list[tuple[str, str, dict[str, Any] | None]] = [
@@ -260,7 +272,9 @@ class AuthzPerimeterFlow(BaseFlow):
         for method, url, body in consumer_only:
             status, _ = self.http.raw(method, url, body=body, headers=subject_headers)
             if status < 400:
-                accepted.append(f"DataSubject on {method} {url.rsplit('/', 2)[-2:]} → {status}")
+                accepted.append(
+                    f"DataSubject on {method} {url.rsplit('/', 2)[-2:]} → {status}"
+                )
 
         # Operator-only provisioning must not be reachable with a user credential
         # at all — it writes a consent row on the subject's behalf.
@@ -295,7 +309,9 @@ class AuthzPerimeterFlow(BaseFlow):
 
     # ── enumeration ──────────────────────────────────────────────────────────
 
-    def _check_enumeration(self, result: FlowResult, subject_headers: dict[str, str]) -> None:
+    def _check_enumeration(
+        self, result: FlowResult, subject_headers: dict[str, str]
+    ) -> None:
         """Someone else's record must look exactly like no record.
 
         If fetching a consent that exists but belongs to another subject answers
@@ -314,16 +330,19 @@ class AuthzPerimeterFlow(BaseFlow):
         # assertion rather than silently passing.
         try:
             svc_headers = self.http.bearer_headers()
-            rows = self.http.post(
-                f"{s.connector_url}/consent/admin/shares",
-                {
-                    "subject_id": s.consumer_subject_id,
-                    "offer_id": s.sharing_offer_id,
-                    "enabled": True,
-                    "legal_basis": legal_basis("authz-perimeter"),
-                },
-                headers=svc_headers,
-            ) or []
+            rows = (
+                self.http.post(
+                    f"{s.connector_url}/consent/admin/shares",
+                    {
+                        "subject_id": s.consumer_subject_id,
+                        "offer_id": s.sharing_offer_id,
+                        "enabled": True,
+                        "legal_basis": legal_basis("authz-perimeter"),
+                    },
+                    headers=svc_headers,
+                )
+                or []
+            )
             rows = rows if isinstance(rows, list) else [rows]
             foreign_id = next((r.get("id") for r in rows if r.get("id")), None)
         except Exception as exc:
@@ -379,9 +398,13 @@ class AuthzPerimeterFlow(BaseFlow):
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
         encoded = urllib.parse.quote(email, safe="")
-        resp = self.http.get(
-            f"{s.identity_registry_url}/users/resolve?email={encoded}", headers=headers
-        ) or {}
+        resp = (
+            self.http.get(
+                f"{s.identity_registry_url}/users/resolve?email={encoded}",
+                headers=headers,
+            )
+            or {}
+        )
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")

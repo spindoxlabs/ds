@@ -26,6 +26,7 @@ startup proceeds unchanged. In production the guard collects *all* violations
 and raises once, so a chart author gets the complete list in a single deploy
 cycle rather than discovering them one at a time.
 """
+
 from __future__ import annotations
 
 import logging

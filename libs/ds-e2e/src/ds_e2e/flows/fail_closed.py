@@ -103,6 +103,7 @@ re-evaluation, so asserting it would make this flow's verdict depend on how long
 it slept. The negotiation gate is synchronous, and it is the gate every consumer
 passes through first.
 """
+
 from __future__ import annotations
 
 import logging
@@ -164,6 +165,7 @@ def _left_operands(offer: dict[str, Any]) -> set[str]:
     the failing side. Full IRIs are kept: the caller matches on the suffix, so
     it works whether the term arrived expanded or prefixed.
     """
+
     def _as_list(value: Any) -> list[Any]:
         if isinstance(value, dict):
             return [value]
@@ -269,9 +271,12 @@ class FailClosedFlow(BaseFlow):
 
     def _container_exists(self) -> bool:
         code, out = self._docker(
-            "ps", "-a",
-            "--filter", f"name=^{self.settings.pdp_container}$",
-            "--format", "{{.Names}}",
+            "ps",
+            "-a",
+            "--filter",
+            f"name=^{self.settings.pdp_container}$",
+            "--format",
+            "{{.Names}}",
         )
         return code == 0 and self.settings.pdp_container in out
 
@@ -328,8 +333,10 @@ class FailClosedFlow(BaseFlow):
         rather than leaving it to each one to remember.
         """
         if self._stopped:
-            log.warning("fail-closed: restoring %s after an incomplete run",
-                        self.settings.pdp_container)
+            log.warning(
+                "fail-closed: restoring %s after an incomplete run",
+                self.settings.pdp_container,
+            )
             self._start_pdp()
             self._wait_healthy()
 
@@ -345,8 +352,11 @@ class FailClosedFlow(BaseFlow):
                 svc = self.http.bearer_headers()
                 self.http.post(
                     f"{s.connector_url}/consent/my/shares",
-                    {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did,
-                     "enabled": False},
+                    {
+                        "offer_id": s.sharing_offer_id,
+                        "consumer_id": s.consumer_did,
+                        "enabled": False,
+                    },
                     headers={
                         "X-Subject-Id": s.data_subject_id,
                         "X-User-VC": self._resolve_user_vc(s.data_subject_email, svc),
@@ -429,9 +439,12 @@ class FailClosedFlow(BaseFlow):
         """
         s = self.settings
         try:
-            requests = self.http.get(
-                f"{s.consumer_connector_url}/consumer/requests", headers=headers
-            ) or []
+            requests = (
+                self.http.get(
+                    f"{s.consumer_connector_url}/consumer/requests", headers=headers
+                )
+                or []
+            )
         except Exception as exc:
             return [], f"could not list access requests: {exc}"
         if not isinstance(requests, list):
@@ -450,11 +463,14 @@ class FailClosedFlow(BaseFlow):
                 continue
             encoded = urllib.parse.quote(request_id, safe="")
             try:
-                body = self.http.post(
-                    f"{s.consumer_connector_url}/consumer/requests/{encoded}/revoke",
-                    {"reason": "e2e-fail-closed"},
-                    headers=headers,
-                ) or {}
+                body = (
+                    self.http.post(
+                        f"{s.consumer_connector_url}/consumer/requests/{encoded}/revoke",
+                        {"reason": "e2e-fail-closed"},
+                        headers=headers,
+                    )
+                    or {}
+                )
             except Exception as exc:
                 return revoked, f"could not revoke {request_id}: {exc}"
             if body.get("status") != "revoked":
@@ -464,9 +480,7 @@ class FailClosedFlow(BaseFlow):
             revoked.append(request_id)
         return revoked, None
 
-    def _clear(
-        self, result: FlowResult, headers: dict[str, str], step: str
-    ) -> bool:
+    def _clear(self, result: FlowResult, headers: dict[str, str], step: str) -> bool:
         """`_clear_access_requests` as an assertion.
 
         A clear that fails silently is how the 409 gets back in: the next
@@ -498,10 +512,13 @@ class FailClosedFlow(BaseFlow):
         s = self.settings
         try:
             email = urllib.parse.quote(s.consumer_email, safe="")
-            body = self.http.get(
-                f"{s.identity_registry_url}/users/resolve?email={email}",
-                headers=self.http.bearer_headers(),
-            ) or {}
+            body = (
+                self.http.get(
+                    f"{s.identity_registry_url}/users/resolve?email={email}",
+                    headers=self.http.bearer_headers(),
+                )
+                or {}
+            )
             consumer_vc = body.get("vc_jws")
         except Exception as exc:
             result.fail_step(
@@ -516,9 +533,7 @@ class FailClosedFlow(BaseFlow):
             return None
         return {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
 
-    def _establish_baseline(
-        self, result: FlowResult, headers: dict[str, str]
-    ) -> bool:
+    def _establish_baseline(self, result: FlowResult, headers: dict[str, str]) -> bool:
         """A contract agreed with the PDP up, so a refusal later means something."""
         attempt = self._start_exchange(headers)
         if not attempt.agreed:
@@ -552,14 +567,17 @@ class FailClosedFlow(BaseFlow):
         """
         s = self.settings
         try:
-            catalog = self.http.post(
-                f"{s.consumer_connector_url}/consumer/catalog",
-                {
-                    "counter_party_address": s.counter_party_address,
-                    "counter_party_id": s.provider_did,
-                },
-                headers=headers,
-            ) or {}
+            catalog = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/catalog",
+                    {
+                        "counter_party_address": s.counter_party_address,
+                        "counter_party_id": s.provider_did,
+                    },
+                    headers=headers,
+                )
+                or {}
+            )
         except Exception:
             return None
         datasets = catalog.get("dataset") or catalog.get("dcat:dataset") or []
@@ -602,8 +620,7 @@ class FailClosedFlow(BaseFlow):
             return False
         operands = _left_operands(offer)
         backed = sorted(
-            o for o in operands
-            if any(o.endswith(name) for name in PDP_BACKED_OPERANDS)
+            o for o in operands if any(o.endswith(name) for name in PDP_BACKED_OPERANDS)
         )
         if not backed:
             result.fail_step(
@@ -671,11 +688,14 @@ class FailClosedFlow(BaseFlow):
         state: dict[str, Any] = {}
         while time.monotonic() < deadline:
             try:
-                state = self.http.get(
-                    f"{s.consumer_connector_url}/consumer/negotiations/"
-                    f"{urllib.parse.quote(negotiation_id, safe='')}",
-                    headers=headers,
-                ) or {}
+                state = (
+                    self.http.get(
+                        f"{s.consumer_connector_url}/consumer/negotiations/"
+                        f"{urllib.parse.quote(negotiation_id, safe='')}",
+                        headers=headers,
+                    )
+                    or {}
+                )
             except Exception:
                 state = {}
             if state.get("contractAgreementId") or state.get("state") == "TERMINATED":
@@ -691,7 +711,6 @@ class FailClosedFlow(BaseFlow):
         if observed == "TERMINATED":
             return Attempt("terminated", 200, state=observed)
         return Attempt("unsettled", 200, state=observed, detail=state or None)
-
 
     # ── the per-query gate (`E2E-16`, `X-6`'s other half) ────────────────────
     #
@@ -737,8 +756,11 @@ class FailClosedFlow(BaseFlow):
         try:
             self.http.post(
                 f"{s.connector_url}/consent/my/shares",
-                {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did,
-                 "enabled": True},
+                {
+                    "offer_id": s.sharing_offer_id,
+                    "consumer_id": s.consumer_did,
+                    "enabled": True,
+                },
                 headers=subject,
             )
         except Exception as exc:
@@ -769,13 +791,19 @@ class FailClosedFlow(BaseFlow):
             return None
 
         try:
-            transfer = self.http.post(
-                f"{s.consumer_connector_url}/consumer/transfer",
-                {"contract_agreement_id": exchange.agreement_id,
-                 "counter_party_address": s.counter_party_address,
-                 "asset_id": s.asset_id, "connector_id": s.provider_did},
-                headers=headers,
-            ) or {}
+            transfer = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/transfer",
+                    {
+                        "contract_agreement_id": exchange.agreement_id,
+                        "counter_party_address": s.counter_party_address,
+                        "asset_id": s.asset_id,
+                        "connector_id": s.provider_did,
+                    },
+                    headers=headers,
+                )
+                or {}
+            )
             transfer_id = transfer["transfer_id"]
             self.http.poll_until(
                 f"{s.consumer_connector_url}/consumer/transfers/"
@@ -783,11 +811,14 @@ class FailClosedFlow(BaseFlow):
                 lambda p: p.get("state") == "STARTED",
                 headers=headers,
             )
-            edr = self.http.get(
-                f"{s.consumer_connector_url}/consumer/edr/"
-                f"{urllib.parse.quote(transfer_id, safe='')}",
-                headers=headers,
-            ) or {}
+            edr = (
+                self.http.get(
+                    f"{s.consumer_connector_url}/consumer/edr/"
+                    f"{urllib.parse.quote(transfer_id, safe='')}",
+                    headers=headers,
+                )
+                or {}
+            )
         except Exception as exc:
             result.fail_step("query baseline", f"no EDR-gated transfer: {exc}")
             return None
@@ -940,8 +971,7 @@ class FailClosedFlow(BaseFlow):
             return
         result.pass_step(
             "pdp stopped",
-            f"{s.pdp_container} is down and {s.connector_url} has stopped "
-            "answering",
+            f"{s.pdp_container} is down and {s.connector_url} has stopped answering",
         )
 
         # **The per-query gate first, before the cache wait** (`E2E-16`). It
@@ -1009,9 +1039,7 @@ class FailClosedFlow(BaseFlow):
                 f"{RESTART_TIMEOUT_S}s — the stack is left degraded",
             )
             return
-        result.pass_step(
-            "pdp restored", f"{s.pdp_container} is healthy again"
-        )
+        result.pass_step("pdp restored", f"{s.pdp_container} is healthy again")
 
     def _assert_service_resumes(
         self, result: FlowResult, headers: dict[str, str]

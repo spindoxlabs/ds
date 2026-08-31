@@ -8,6 +8,7 @@ validity itself, which failed three ways — two of them *open*. Those three are
 pinned below, because widening a grant is the obvious fix and it would have
 turned an always-negative check into an always-positive one.
 """
+
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
@@ -90,9 +91,9 @@ async def test_the_type_is_applied(client, headers, issue):
     about a specific one."""
     await issue(credential_type="DataSubjectCredential")
     assert (await _check(client, headers, type=TYPE)).json()["holds"] is False
-    assert (
-        await _check(client, headers, type="DataSubjectCredential")
-    ).json()["holds"] is True
+    assert (await _check(client, headers, type="DataSubjectCredential")).json()[
+        "holds"
+    ] is True
 
 
 @pytest.mark.rule("P-16")

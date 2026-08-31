@@ -1,7 +1,5 @@
-import pytest
-import json
-
 import jwt
+import pytest
 
 from identity_registry.services.crypto import generate_key_pair, load_private_key
 from identity_registry.services.vc import (
@@ -74,7 +72,10 @@ def test_data_subject_credential_structure():
         status_list_index=1,
     )
     assert "DataSubjectCredential" in vc["type"]
-    assert vc["credentialSubject"]["linkedParticipant"] == "did:web:rec.dataspaces.localhost"
+    assert (
+        vc["credentialSubject"]["linkedParticipant"]
+        == "did:web:rec.dataspaces.localhost"
+    )
     assert vc["credentialSubject"]["allowedActions"] == ["consent.manage"]
 
 

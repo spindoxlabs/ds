@@ -1,4 +1,5 @@
 """ds-federated-catalog configuration via pydantic-settings."""
+
 from __future__ import annotations
 
 from functools import lru_cache
@@ -51,8 +52,7 @@ class Settings(BaseSettings):
     keycloak_token_url: str = Field(
         default="http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token",
         description=(
-            "Keycloak token endpoint for service-to-service "
-            "client-credentials grants"
+            "Keycloak token endpoint for service-to-service client-credentials grants"
         ),
     )
     service_client_secret: str = Field(

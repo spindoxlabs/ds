@@ -34,6 +34,7 @@ failure with the reason, never skipped. A conformity check that silently drops
 the rules it cannot evaluate reports conformity it did not establish, which is
 the one output worse than "unknown".
 """
+
 from __future__ import annotations
 
 import logging
@@ -190,18 +191,18 @@ async def assess(
 
     owner = await _owner_for(db, participant.did)
     credentials = (
-        await db.execute(
-            select(Credential).where(
-                Credential.subject_did == participant.did,
-                Credential.status == "active",
+        (
+            await db.execute(
+                select(Credential).where(
+                    Credential.subject_did == participant.did,
+                    Credential.status == "active",
+                )
             )
         )
-    ).scalars().all()
-    held = {
-        c.credential_type
-        for c in credentials
-        if not _expired(c.expires_at, now)
-    }
+        .scalars()
+        .all()
+    )
+    held = {c.credential_type for c in credentials if not _expired(c.expires_at, now)}
 
     for c in applicable:
         for want in c.required_credentials:
@@ -252,13 +253,18 @@ async def assess(
                 )
             else:
                 accepted = (
-                    await db.execute(
-                        select(AgreementAcceptance).where(
-                            AgreementAcceptance.owner_alias == owner.id,
-                            AgreementAcceptance.agreement_id == c.required_agreement,
+                    (
+                        await db.execute(
+                            select(AgreementAcceptance).where(
+                                AgreementAcceptance.owner_alias == owner.id,
+                                AgreementAcceptance.agreement_id
+                                == c.required_agreement,
+                            )
                         )
                     )
-                ).scalars().all()
+                    .scalars()
+                    .all()
+                )
                 versions = {a.agreement_version for a in accepted}
                 want_version = c.required_agreement_version
                 if not versions:
@@ -292,9 +298,7 @@ async def assess(
 
         if c.require_dsp_address:
             if participant.dsp_address:
-                report.findings.append(
-                    Finding("dsp", True, participant.dsp_address)
-                )
+                report.findings.append(Finding("dsp", True, participant.dsp_address))
             else:
                 report.findings.append(
                     Finding(
@@ -318,8 +322,10 @@ async def assess_all(
     its name.
     """
     rows = (
-        await db.execute(select(Participant).order_by(Participant.did))
-    ).scalars().all()
+        (await db.execute(select(Participant).order_by(Participant.did)))
+        .scalars()
+        .all()
+    )
     return [await assess(db, settings, p, criteria) for p in rows]
 
 
@@ -338,9 +344,7 @@ def render(assessments: list[Assessment], settings: Settings) -> dict[str, Any]:
         "summary": {
             "participants": len(assessments),
             "conformant": sum(1 for a in assessments if a.status == CONFORMANT),
-            "nonConformant": sum(
-                1 for a in assessments if a.status == NON_CONFORMANT
-            ),
+            "nonConformant": sum(1 for a in assessments if a.status == NON_CONFORMANT),
         },
         "participants": [
             {
@@ -348,8 +352,7 @@ def render(assessments: list[Assessment], settings: Settings) -> dict[str, Any]:
                 "roles": a.roles,
                 "status": a.status,
                 "findings": [
-                    {"rule": f.rule, "ok": f.ok, "detail": f.detail}
-                    for f in a.findings
+                    {"rule": f.rule, "ok": f.ok, "detail": f.detail} for f in a.findings
                 ],
             }
             for a in assessments

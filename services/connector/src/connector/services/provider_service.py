@@ -1,14 +1,11 @@
 """Provider-side service: sync governance.yaml to EDC."""
+
 from __future__ import annotations
 
 import logging
-
-import httpx
-
 from pathlib import Path
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
+import httpx
 from ds.governance.models import GovernanceRuleV2
 from ds.governance.purposes import purpose_failure
 from ds.governance.sharing import (
@@ -16,6 +13,7 @@ from ds.governance.sharing import (
     SharingOfferCatalogue,
     load_sharing_offers,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..clients.edc_management import EdcManagementClient
 from ..schemas.edc import SyncResult
@@ -27,7 +25,9 @@ from .prov_bridge import ProvBridge
 log = logging.getLogger(__name__)
 
 
-def _offer_failure(rule: GovernanceRuleV2, catalogue: SharingOfferCatalogue) -> str | None:
+def _offer_failure(
+    rule: GovernanceRuleV2, catalogue: SharingOfferCatalogue
+) -> str | None:
     """Why this dataset's declared sharing offers are unusable, or ``None``.
 
     An id that does not resolve means the dataset is **not shared**: "no sharing
@@ -65,7 +65,9 @@ def _sibling_offers(
     that is not there.
     """
     path = Path(governance_yaml_path).parent / "sharing-offers.yaml"
-    return load_sharing_offers(path if path.exists() else None, overlay_name=overlay_name)
+    return load_sharing_offers(
+        path if path.exists() else None, overlay_name=overlay_name
+    )
 
 
 async def _drifted_offers(
@@ -142,7 +144,9 @@ def _reject_unpublishable(
     for key, reasons in rejected.items():
         for reason in reasons:
             log.error("Refusing to publish %s — it %s", key, reason)
-            result.errors.append({"dataset": key, "error": f"Not published — it {reason}"})
+            result.errors.append(
+                {"dataset": key, "error": f"Not published — it {reason}"}
+            )
 
     return set(rejected)
 
@@ -160,7 +164,9 @@ async def sync_governance(
 ) -> SyncResult:
     result = SyncResult()
     try:
-        datasets = load_exposed_datasets(governance_yaml_path, overlay_name=overlay_name)
+        datasets = load_exposed_datasets(
+            governance_yaml_path, overlay_name=overlay_name
+        )
     except Exception as exc:
         result.errors.append({"error": f"Failed to load governance.yaml: {exc}"})
         return result
@@ -184,7 +190,9 @@ async def sync_governance(
     # attesting to text nobody agreed to.
     drifted = await _drifted_offers(session, catalogue)
     for offer_id, failure in drifted.items():
-        result.errors.append({"offer": offer_id, "error": f"Not published — it {failure}"})
+        result.errors.append(
+            {"offer": offer_id, "error": f"Not published — it {failure}"}
+        )
 
     rejected = _reject_unpublishable(datasets, mapper, catalogue, result, set(drifted))
 
@@ -206,7 +214,10 @@ async def sync_governance(
                 await edc.create_asset(asset_create)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 409:
-                    log.debug("Asset %s already exists (has agreements) — keeping", asset_create.id)
+                    log.debug(
+                        "Asset %s already exists (has agreements) — keeping",
+                        asset_create.id,
+                    )
                 else:
                     raise
 
@@ -229,6 +240,8 @@ async def sync_governance(
 
     skipped_count = len(datasets) - len(result.synced) - len(result.errors)
     if skipped_count > 0:
-        result.skipped.append(f"{skipped_count} datasets skipped (not exposed or secret)")
+        result.skipped.append(
+            f"{skipped_count} datasets skipped (not exposed or secret)"
+        )
 
     return result

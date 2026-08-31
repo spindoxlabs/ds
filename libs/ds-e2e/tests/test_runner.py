@@ -5,6 +5,7 @@ stayed dead while `fail_closed.py` documented it as the net that restores a
 stopped container. A net nothing holds is worse than no net, because the flow
 that relies on it reads as safe.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -41,6 +42,7 @@ def registered(monkeypatch):
     def _register(cls):
         monkeypatch.setitem(FLOW_REGISTRY, cls.name, cls)
         return cls
+
     return _register
 
 
@@ -77,6 +79,7 @@ def test_a_failing_cleanup_does_not_replace_the_flows_verdict(registered, settin
     A cleanup that raises would otherwise turn a flow that recorded real steps
     into a traceback with no results at all — the failure mode where one broken
     thing erases the evidence about everything else."""
+
     class Untidy(_Recorder):
         name = "untidy"
 
@@ -93,6 +96,7 @@ def test_cleanup_is_not_attempted_when_the_flow_cannot_be_constructed(
     registered, settings, monkeypatch
 ):
     """No instance, nothing to clean — and no `AttributeError` in the `finally`."""
+
     class Unbuildable(_Recorder):
         name = "unbuildable"
 

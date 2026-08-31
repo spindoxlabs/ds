@@ -12,6 +12,7 @@ that replaced it, and the three things that derivation cannot see on its own:
 * a route in neither classification table must fail the sweep rather than be
   quietly skipped.
 """
+
 from __future__ import annotations
 
 import base64
@@ -62,6 +63,7 @@ def spec(*operations: tuple[str, str, list[str] | None]) -> dict:
 
 
 # ── reading the document ─────────────────────────────────────────────────────
+
 
 def test_a_route_is_guarded_because_the_app_says_so():
     routes = routes_from_openapi(
@@ -119,6 +121,7 @@ def test_the_substituted_value_is_no_services_literal_segment(service: str):
 
 # ── the token, read from the realm rather than from a comment ────────────────
 
+
 def _token(claims: dict) -> str:
     raw = base64.urlsafe_b64encode(json.dumps(claims).encode())
     payload = raw.rstrip(b"=").decode()
@@ -151,6 +154,7 @@ def test_an_unreadable_token_excuses_no_route():
 
 # ── the classification tables ────────────────────────────────────────────────
 
+
 def test_a_route_cannot_be_both_open_and_self_authenticated():
     """Opposite expectations: one must answer 200, the other must refuse.
 
@@ -181,6 +185,7 @@ def test_a_refusal_must_be_the_guards():
 
 
 # ── the two holes the derivation cannot see ──────────────────────────────────
+
 
 def test_the_scheme_name_agrees_with_ds_auth():
     """One string, two holders — checked, because `ds-e2e` does not import `ds_auth`.
@@ -234,6 +239,7 @@ def test_no_service_hides_a_route_from_its_openapi_document(service: str):
 
 
 # ── the inventory step ───────────────────────────────────────────────────────
+
 
 class FakeHttp:
     """Answers `/openapi.json` from a dict keyed by the URL the flow builds.

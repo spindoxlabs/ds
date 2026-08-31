@@ -4,7 +4,9 @@ from conftest import make_headers, register_did
 
 @pytest.mark.asyncio
 async def test_admin_without_token_returns_401(client):
-    r = await client.post("/admin/participants", json={"did": "did:web:x", "roles": ["consumer"]})
+    r = await client.post(
+        "/admin/participants", json={"did": "did:web:x", "roles": ["consumer"]}
+    )
     assert r.status_code == 401
 
 

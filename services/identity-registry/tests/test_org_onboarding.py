@@ -181,9 +181,7 @@ async def test_verify_promotes_owner(client):
     assert r.status_code == 200
     assert r.json()["status"] == "verified"
 
-    owner = await client.get(
-        "/owners/resolve?alias=acme-energy", headers=HEADERS
-    )
+    owner = await client.get("/owners/resolve?alias=acme-energy", headers=HEADERS)
     assert owner.status_code == 200
     body = owner.json()
     assert body["status"] == "verified"
@@ -264,7 +262,9 @@ async def test_agreement_acceptance_records_hash(client, db_session):
     assert body["text_sha256"] == "deadbeef"
     assert body["capacity"] == "processor"
 
-    owner = (await client.get("/owners/resolve?alias=acme-energy", headers=HEADERS)).json()
+    owner = (
+        await client.get("/owners/resolve?alias=acme-energy", headers=HEADERS)
+    ).json()
     assert owner["agreement_id"] == "dataspace-participation"
     assert owner["agreement_capacity"] == "processor"
 
@@ -280,7 +280,11 @@ async def test_agreement_acceptance_unknown_locale(client, db_session):
     )
     r = await client.post(
         "/admin/owners/acme-energy/agreement",
-        json={"agreement_id": "dataspace-participation", "version": "1.0", "locale": "de"},
+        json={
+            "agreement_id": "dataspace-participation",
+            "version": "1.0",
+            "locale": "de",
+        },
         headers=HEADERS,
     )
     assert r.status_code == 422
@@ -311,7 +315,11 @@ async def test_full_lifecycle_and_suspend(client, db_session):
 
     cred = await client.post(
         "/admin/credentials/organization",
-        json={"alias": "acme-energy", "roles": ["consumer"], "dsp_address": "https://acme/dsp"},
+        json={
+            "alias": "acme-energy",
+            "roles": ["consumer"],
+            "dsp_address": "https://acme/dsp",
+        },
         headers=HEADERS,
     )
     assert cred.status_code == 201, cred.text
@@ -408,7 +416,7 @@ async def test_reregistering_an_alias_upserts_instead_of_duplicating(client):
         },
         headers=HEADERS,
     )
-    assert r.status_code == 200, r.text          # 201 creates, 200 updates
+    assert r.status_code == 200, r.text  # 201 creates, 200 updates
     assert r.json()["id"] == first["id"]
     assert r.json()["dsp_address"] == "https://acme/dsp2"
 

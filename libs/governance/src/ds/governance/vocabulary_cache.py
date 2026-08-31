@@ -10,6 +10,7 @@ demand would proxy an operator-configured URL and tie its availability to a thir
 party's uptime; the fetch is an explicit step (``task vocab:fetch``) or a startup
 one, and both fail loudly rather than degrading a route.
 """
+
 from __future__ import annotations
 
 import json
@@ -69,7 +70,9 @@ def cache_path(cache_dir: Path | str, vocab: Vocabulary) -> Path:
 
 def status(cache_dir: Path | str, registry: VocabularyRegistry) -> list[CacheStatus]:
     return [
-        CacheStatus(v.slug, cache_path(cache_dir, v).is_file(), cache_path(cache_dir, v))
+        CacheStatus(
+            v.slug, cache_path(cache_dir, v).is_file(), cache_path(cache_dir, v)
+        )
         for v in registry.vocabularies
     ]
 
@@ -92,7 +95,9 @@ def read_cached(cache_dir: Path | str, vocab: Vocabulary) -> dict | None:
         ) from exc
 
 
-def _write_document(cache_dir: Path | str, vocab: Vocabulary, body: bytes, origin: str) -> Path:
+def _write_document(
+    cache_dir: Path | str, vocab: Vocabulary, body: bytes, origin: str
+) -> Path:
     """Validate and write one vocabulary document into the cache.
 
     Parsed **before** it is written, wherever it came from, so a login page
@@ -115,7 +120,9 @@ def _write_document(cache_dir: Path | str, vocab: Vocabulary, body: bytes, origi
         ) from exc
 
     path = cache_path(cache_dir, vocab)
-    serialised = json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    serialised = (
+        json.dumps(document, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
+    )
 
     # **A write that would change nothing is not performed**, and this is a
     # correctness fix rather than an optimisation. A `definition:` is republished

@@ -12,6 +12,7 @@ The claim semantics mirror ``celine-sdk`` so a Keycloak realm synced from
 ``clients.yaml`` authorizes identically across projects — a compatible
 approach, not a code dependency.
 """
+
 from __future__ import annotations
 
 from .bundles import (
@@ -83,5 +84,6 @@ __all__ = [
 def __getattr__(name: str):
     if name == "ServiceTokenProvider":
         from .service_token import ServiceTokenProvider
+
         return ServiceTokenProvider
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

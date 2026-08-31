@@ -9,6 +9,7 @@ material enough to require re-consent.
 The schema is domain-neutral.  The purposes, measures and recipient categories
 a deployment actually uses live in its ODRL profile and its offer file.
 """
+
 from __future__ import annotations
 
 import hashlib
@@ -56,8 +57,8 @@ def is_iso_duration(value: str) -> bool:
 class OfferCoverage(BaseModel):
     """How far back and how far forward the sharing reaches."""
 
-    retrospective: str | None = None   # ISO 8601, e.g. P1Y
-    prospective: str | None = None     # ISO 8601, e.g. P2Y
+    retrospective: str | None = None  # ISO 8601, e.g. P1Y
+    prospective: str | None = None  # ISO 8601, e.g. P2Y
 
 
 class ProcessorCategory(BaseModel):
@@ -89,8 +90,8 @@ class OfferRecipients(BaseModel):
     offers; see :class:`SharingOfferCatalogue`.
     """
 
-    controller: str                      # owner alias
-    controller_role: str | None = None   # one of controller_roles[controller]
+    controller: str  # owner alias
+    controller_role: str | None = None  # one of controller_roles[controller]
     processors: ProcessorCategory
 
 
@@ -107,12 +108,12 @@ class SharingOffer(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     id: str
-    purpose: str                       # slug, must exist in the ODRL profile
-    legal_basis: str                   # DPV legal-basis IRI
+    purpose: str  # slug, must exist in the ODRL profile
+    legal_basis: str  # DPV legal-basis IRI
     recipients: OfferRecipients
     subject_scope: str = "own_data"
     measures: list[str] = Field(default_factory=list)
-    resolution: str | None = None      # ISO 8601, e.g. PT15M
+    resolution: str | None = None  # ISO 8601, e.g. PT15M
     coverage: OfferCoverage = Field(default_factory=OfferCoverage)
     consent_text_version: str = "1.0"
     revocable: bool = True
@@ -127,7 +128,9 @@ class SharingOffer(BaseModel):
         """
         return self.legal_basis == CONSENT_BASIS
 
-    def user_visible_facts(self, broader_chain: list[str] | None = None) -> dict[str, Any]:
+    def user_visible_facts(
+        self, broader_chain: list[str] | None = None
+    ) -> dict[str, Any]:
         """The facts a person actually read, in canonical form.
 
         Which datasets back an offer is deliberately absent — that is a

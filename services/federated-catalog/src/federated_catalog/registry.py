@@ -1,4 +1,5 @@
 """Participant registry — reads providers from identity-registry API or YAML."""
+
 from __future__ import annotations
 
 import logging

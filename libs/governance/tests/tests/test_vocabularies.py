@@ -5,6 +5,7 @@ lookup; its value is in what it declines to accept, because a slug is a public
 URL segment and a filename, and an IRI is the identity a dataset's
 `dcat.conforms_to` is matched against.
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -44,6 +45,7 @@ def entry(**overrides) -> dict:
 
 
 # ── Loading ───────────────────────────────────────────────────────────────────
+
 
 def test_a_missing_file_is_an_empty_registry_not_an_error():
     """`V-5`: the platform ships no vocabularies, so `task start` must work.
@@ -93,6 +95,7 @@ def test_an_absent_overlay_is_not_an_error(tmp_path):
 
 # ── Resolution ────────────────────────────────────────────────────────────────
 
+
 def test_resolve_matches_a_dataset_conforms_to(tmp_path):
     registry = load_vocabularies(write(tmp_path, {"vocabularies": [entry()]}))
     assert registry.resolve(SAREF).slug == "saref4ener"
@@ -123,11 +126,12 @@ def test_no_conforms_to_resolves_to_none(tmp_path):
 
 # ── Refusals ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "slug",
     [
-        "../etc/passwd",     # the one that matters: slug becomes a filename
-        "SAREF4ENER",        # a public URL segment, so case is not free
+        "../etc/passwd",  # the one that matters: slug becomes a filename
+        "SAREF4ENER",  # a public URL segment, so case is not free
         "saref ener",
         "saref_ener",
         "",

@@ -1,4 +1,5 @@
 """Tests for GovernanceResolver — YAML loading, resolving, merging."""
+
 import textwrap
 from pathlib import Path
 
@@ -14,6 +15,7 @@ from ds.governance.models import GovernanceRuleV2, DataspacePolicy
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
+
 def _write_yaml(tmp_path: Path, content: str) -> Path:
     p = tmp_path / "governance.yaml"
     p.write_text(textwrap.dedent(content))
@@ -21,6 +23,7 @@ def _write_yaml(tmp_path: Path, content: str) -> Path:
 
 
 # ── tests ─────────────────────────────────────────────────────────────────────
+
 
 def test_from_file_missing_raises(tmp_path):
     """A configured path that is missing is an error, not an empty config.
@@ -53,18 +56,23 @@ def test_an_absent_overlay_is_still_absence(tmp_path):
     *nothing was asked for* is a supported mode there, and it must stay one, or
     naming no overlay would become an error.
     """
-    base = _write_yaml(tmp_path, """
+    base = _write_yaml(
+        tmp_path,
+        """
 version: 2
 sources:
   datasets.a:
     access_level: internal
-""")
+""",
+    )
     resolver = GovernanceResolver.from_file_with_override(base, overlay_name="nope")
     assert resolver.resolve("datasets.a").access_level == "internal"
 
 
 def test_from_file_v1_yaml(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           access_level: internal
           classification: green
@@ -73,7 +81,8 @@ def test_from_file_v1_yaml(tmp_path):
             access_level: restricted
             classification: pii
             user_filter_column: sub
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.meters")
     assert rule.access_level == "restricted"
@@ -84,7 +93,9 @@ def test_from_file_v1_yaml(tmp_path):
 
 
 def test_from_file_v2_yaml(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           access_level: internal
         sources:
@@ -97,7 +108,8 @@ def test_from_file_v2_yaml(tmp_path):
                 delete_after_days: 90
             dataspace:
               expose: true
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.grid")
     assert rule.policy.obligations.delete_after_days == 90
@@ -106,20 +118,25 @@ def test_from_file_v2_yaml(tmp_path):
 
 
 def test_resolve_defaults_fallback(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           access_level: open
         sources:
           datasets.gold.meters:
             classification: green
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.unknown")
     assert rule.access_level == "open"
 
 
 def test_resolve_glob_match(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           access_level: internal
         sources:
@@ -127,7 +144,8 @@ def test_resolve_glob_match(tmp_path):
             access_level: restricted
           datasets.*:
             access_level: open
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     # longer glob wins
     rule = resolver.resolve("datasets.gold.meters")
@@ -135,7 +153,9 @@ def test_resolve_glob_match(tmp_path):
 
 
 def test_resolve_exact_over_glob(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           access_level: internal
         sources:
@@ -143,14 +163,17 @@ def test_resolve_exact_over_glob(tmp_path):
             access_level: restricted
           datasets.gold.meters:
             access_level: open
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.meters")
     assert rule.access_level == "open"
 
 
 def test_merge_inherits_defaults(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           tags: [base_tag]
           access_level: internal
@@ -158,7 +181,8 @@ def test_merge_inherits_defaults(tmp_path):
         sources:
           datasets.gold.meters:
             access_level: restricted
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.meters")
     # access_level overridden; classification and tags inherited
@@ -175,7 +199,9 @@ def test_resolve_empty_config():
 
 
 def test_row_filters_parsed(tmp_path):
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         sources:
           datasets.silver.meters_15m:
             access_level: restricted
@@ -184,7 +210,8 @@ def test_row_filters_parsed(tmp_path):
               - handler: rec_registry
                 args:
                   column: sub
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.silver.meters_15m")
     assert len(rule.row_filters) == 1
@@ -194,7 +221,9 @@ def test_row_filters_parsed(tmp_path):
 
 def test_row_filters_override_defaults(tmp_path):
     """Override row_filters wins; empty override inherits from defaults."""
-    yaml_path = _write_yaml(tmp_path, """
+    yaml_path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           row_filters:
             - handler: default_handler
@@ -208,7 +237,8 @@ def test_row_filters_override_defaults(tmp_path):
                   column: sub
           datasets.silver.other:
             access_level: restricted
-    """)
+    """,
+    )
     resolver = GovernanceResolver.from_file(yaml_path)
     meters = resolver.resolve("datasets.silver.meters")
     assert meters.row_filters[0].handler == "rec_registry"
@@ -217,6 +247,7 @@ def test_row_filters_override_defaults(tmp_path):
 
 
 # ── exposed_owner_aliases ─────────────────────────────────────────────────────
+
 
 def test_ownership_declared_only_in_defaults_is_found(tmp_path):
     """The shape that makes reading `config.sources` directly wrong.
@@ -227,7 +258,9 @@ def test_ownership_declared_only_in_defaults_is_found(tmp_path):
     file with owners as naming none. `resolve()` merges the defaults in, which is
     also what decides the ODRL assigner.
     """
-    path = _write_yaml(tmp_path, """
+    path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           ownership:
             - name: example-org
@@ -238,14 +271,17 @@ def test_ownership_declared_only_in_defaults_is_found(tmp_path):
           datasets.gold.a:
             dataspace:
               expose: true
-    """)
+    """,
+    )
 
     assert exposed_owner_aliases(path) == ["example-org"]
 
 
 def test_an_unexposed_dataset_does_not_onboard_its_owner(tmp_path):
     """`expose: false` publishes nothing, so its owner owns nothing here."""
-    path = _write_yaml(tmp_path, """
+    path = _write_yaml(
+        tmp_path,
+        """
         sources:
           datasets.gold.published:
             ownership:
@@ -257,14 +293,17 @@ def test_an_unexposed_dataset_does_not_onboard_its_owner(tmp_path):
               - name: internal-only
             dataspace:
               expose: false
-    """)
+    """,
+    )
 
     assert exposed_owner_aliases(path) == ["publisher"]
 
 
 def test_aliases_are_deduplicated_in_file_order(tmp_path):
     """Two datasets, one owner, one line — and the order is the file's."""
-    path = _write_yaml(tmp_path, """
+    path = _write_yaml(
+        tmp_path,
+        """
         sources:
           datasets.gold.a:
             ownership:
@@ -277,14 +316,17 @@ def test_aliases_are_deduplicated_in_file_order(tmp_path):
               - name: first
             dataspace:
               expose: true
-    """)
+    """,
+    )
 
     assert exposed_owner_aliases(path) == ["second", "first"]
 
 
 def test_a_dataset_overriding_the_default_owner_reports_both(tmp_path):
     """The merge is per dataset, so a default owner survives alongside an override."""
-    path = _write_yaml(tmp_path, """
+    path = _write_yaml(
+        tmp_path,
+        """
         defaults:
           ownership:
             - name: house-owner
@@ -295,18 +337,22 @@ def test_a_dataset_overriding_the_default_owner_reports_both(tmp_path):
           datasets.gold.b:
             ownership:
               - name: other-owner
-    """)
+    """,
+    )
 
     assert exposed_owner_aliases(path) == ["house-owner", "other-owner"]
 
 
 def test_a_governance_file_exposing_nothing_names_no_owner(tmp_path):
     """Empty, and the caller — not this function — decides whether that is an error."""
-    path = _write_yaml(tmp_path, """
+    path = _write_yaml(
+        tmp_path,
+        """
         sources:
           datasets.bronze.raw:
             ownership:
               - name: somebody
-    """)
+    """,
+    )
 
     assert exposed_owner_aliases(path) == []

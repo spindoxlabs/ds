@@ -11,6 +11,7 @@ querying — the hardest kind to diagnose.
 Mirrors `Purposes.java` in `services/edc-extensions`, which does the same job
 inside the JVM. That one cannot be shared; this one must not be forked again.
 """
+
 from __future__ import annotations
 
 from typing import Any

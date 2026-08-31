@@ -3,6 +3,7 @@
 Separate from validation: validation gates an import, evidence is the
 deliverable handed to an auditor.  Both derive from the same resolved rules.
 """
+
 from __future__ import annotations
 
 import json
@@ -85,9 +86,7 @@ def to_dcat_dataset(
         # naming the *protocol* (DSP), and a column's meaning is a property of the
         # data, not of the way it is fetched. Two different conformance claims, and
         # putting them on one node would make them indistinguishable to a reader.
-        "dct:conformsTo": (
-            {"@id": dcat.conforms_to} if dcat.conforms_to else None
-        ),
+        "dct:conformsTo": ({"@id": dcat.conforms_to} if dcat.conforms_to else None),
         "dct:temporal": _temporal(dcat) if dcat.temporal else None,
         "dcat:distribution": [
             {

@@ -37,20 +37,24 @@ HEADERS = {
 
 
 def _allowing_decision() -> DataplaneDecision:
-    return DataplaneDecision.model_validate({
-        "decision": ALLOW,
-        "agreement_id": "agr-1",
-        "purpose": ["FlexibilityResearch"],
-        "datasets": [{
-            "dataset_id": GATED,
+    return DataplaneDecision.model_validate(
+        {
             "decision": ALLOW,
-            "row_filter": {
-                "handler": REC_REGISTRY,
-                "args": {"column": "device_id"},
-                "principals": [SUBJECT],
-            },
-        }],
-    })
+            "agreement_id": "agr-1",
+            "purpose": ["FlexibilityResearch"],
+            "datasets": [
+                {
+                    "dataset_id": GATED,
+                    "decision": ALLOW,
+                    "row_filter": {
+                        "handler": REC_REGISTRY,
+                        "args": {"column": "device_id"},
+                        "principals": [SUBJECT],
+                    },
+                }
+            ],
+        }
+    )
 
 
 @pytest.fixture
@@ -67,9 +71,7 @@ def client(monkeypatch):
 
 
 def _query(client):
-    return client.post(
-        "/query", json={"sql": f"SELECT * FROM {GATED}", "limit": 100}, headers=HEADERS
-    )
+    return client.post("/query", json={"sql": f"SELECT * FROM {GATED}", "limit": 100}, headers=HEADERS)
 
 
 def _request_error(*_args, **_kwargs):
@@ -79,9 +81,7 @@ def _request_error(*_args, **_kwargs):
 def _status_error(status: int):
     def raise_it(*_args, **_kwargs):
         request = httpx.Request("POST", "http://ds/internal")
-        raise httpx.HTTPStatusError(
-            "refused", request=request, response=httpx.Response(status, request=request)
-        )
+        raise httpx.HTTPStatusError("refused", request=request, response=httpx.Response(status, request=request))
 
     return raise_it
 
@@ -128,6 +128,7 @@ async def test_an_unreachable_connector_is_a_502_on_the_key_fetch(monkeypatch):
 
 async def test_the_connector_refusing_the_key_set_is_a_502(monkeypatch):
     """`raise_for_status` used to escape uncaught."""
+
     async def headers():
         return {}
 
@@ -186,6 +187,7 @@ def test_an_audit_the_connector_refuses_serves_no_rows(client, monkeypatch):
     So the one failure that means "ds rejected this record" was the one failure
     that changed nothing.
     """
+
     async def post(*_args, **_kwargs):
         request = httpx.Request("POST", "http://ds/internal/audit/query")
         return httpx.Response(422, request=request)

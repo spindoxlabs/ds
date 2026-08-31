@@ -7,6 +7,7 @@ when the organisation never signed as one would suppress a consent request that
 GDPR Art. 4(11) requires, so every path that cannot prove a capacity must
 answer 404 and let the caller fail closed.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -66,9 +67,7 @@ async def test_resolve_scope_alone_does_not_grant(client):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "scope", ["identity-registry.read", "identity-registry.admin"]
-)
+@pytest.mark.parametrize("scope", ["identity-registry.read", "identity-registry.admin"])
 async def test_read_and_admin_scopes_are_accepted(client, db_session, scope):
     await _seed_owner(db_session)
     r = await client.get(
@@ -111,7 +110,9 @@ async def test_resolves_via_participant_alias_when_owner_has_no_did(client, db_s
     participant that has one, and every processor silently becomes an
     independent controller."""
     db_session.add(
-        Participant(did=PARTICIPANT_DID, roles=["consumer"], allowed_scopes=[], active=True)
+        Participant(
+            did=PARTICIPANT_DID, roles=["consumer"], allowed_scopes=[], active=True
+        )
     )
     await _seed_owner(db_session, did=None, aliases=[PARTICIPANT_DID])
     r = await client.get(

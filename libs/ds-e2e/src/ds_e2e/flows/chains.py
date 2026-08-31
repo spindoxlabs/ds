@@ -25,6 +25,7 @@ Run `ds-e2e scenario apply` first — these flows assert against fixtures rather
 than creating them, so a missing fixture is reported as a missing precondition
 instead of being silently invented mid-test.
 """
+
 from __future__ import annotations
 
 import logging
@@ -107,24 +108,32 @@ class _ChainFlow(BaseFlow):
         }
         if controller_role:
             params["controller_role"] = controller_role
-        return self.http.get(
-            f"{self.settings.connector_url}/internal/consent/check?"
-            + urllib.parse.urlencode(params),
-            headers=headers,
-        ) or {}
+        return (
+            self.http.get(
+                f"{self.settings.connector_url}/internal/consent/check?"
+                + urllib.parse.urlencode(params),
+                headers=headers,
+            )
+            or {}
+        )
 
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         encoded = urllib.parse.quote(email, safe="")
-        resp = self.http.get(
-            f"{self.settings.identity_registry_url}/users/resolve?email={encoded}",
-            headers=headers,
-        ) or {}
+        resp = (
+            self.http.get(
+                f"{self.settings.identity_registry_url}/users/resolve?email={encoded}",
+                headers=headers,
+            )
+            or {}
+        )
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")
         return vc_jws
 
-    def _subject_headers(self, result: FlowResult, svc: dict[str, str]) -> dict[str, str] | None:
+    def _subject_headers(
+        self, result: FlowResult, svc: dict[str, str]
+    ) -> dict[str, str] | None:
         s = self.settings
         try:
             return {
@@ -187,15 +196,21 @@ class ChainCommunityFlow(_ChainFlow):
             return result
 
         # 1. The community exists and the member is in its pool.
-        if self._require_owner(result, COMMUNITY_ALIAS, svc, "community fixture") is None:
+        if (
+            self._require_owner(result, COMMUNITY_ALIAS, svc, "community fixture")
+            is None
+        ):
             return result
 
-        member_check = self.http.get(
-            f"{s.identity_registry_url}/memberships/check?"
-            f"user_did={urllib.parse.quote(s.data_subject_id, safe='')}"
-            f"&organization={COMMUNITY_ALIAS}",
-            headers=svc,
-        ) or {}
+        member_check = (
+            self.http.get(
+                f"{s.identity_registry_url}/memberships/check?"
+                f"user_did={urllib.parse.quote(s.data_subject_id, safe='')}"
+                f"&organization={COMMUNITY_ALIAS}",
+                headers=svc,
+            )
+            or {}
+        )
         if not member_check.get("member"):
             result.fail_step(
                 "subject pool",
@@ -215,11 +230,18 @@ class ChainCommunityFlow(_ChainFlow):
         #    controller — the consent names who decides the purpose, not merely
         #    which connector will pull.
         try:
-            rows = self.http.post(
-                f"{s.connector_url}/consent/my/shares",
-                {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did, "enabled": True},
-                headers=subject,
-            ) or []
+            rows = (
+                self.http.post(
+                    f"{s.connector_url}/consent/my/shares",
+                    {
+                        "offer_id": s.sharing_offer_id,
+                        "consumer_id": s.consumer_did,
+                        "enabled": True,
+                    },
+                    headers=subject,
+                )
+                or []
+            )
         except Exception as exc:
             result.fail_step("member consents", str(exc))
             return result
@@ -247,7 +269,8 @@ class ChainCommunityFlow(_ChainFlow):
         )
         if not active.get("consent_active"):
             result.fail_step(
-                "consent authorises", "the consent did not authorise its own purpose",
+                "consent authorises",
+                "the consent did not authorise its own purpose",
                 reason=active.get("reason"),
             )
             self._revoke_share(subject, s.sharing_offer_id)
@@ -277,14 +300,19 @@ class ChainCommunityFlow(_ChainFlow):
         #    must not be reachable through it — this is the assertion that makes
         #    delegated consent safe, and the one nothing previously covered.
         outsider = "did:web:rec.dataspaces.localhost:users:outsider"
-        out_check = self.http.get(
-            f"{s.identity_registry_url}/memberships/check?"
-            f"user_did={urllib.parse.quote(outsider, safe='')}"
-            f"&organization={COMMUNITY_ALIAS}",
-            headers=svc,
-        ) or {}
+        out_check = (
+            self.http.get(
+                f"{s.identity_registry_url}/memberships/check?"
+                f"user_did={urllib.parse.quote(outsider, safe='')}"
+                f"&organization={COMMUNITY_ALIAS}",
+                headers=svc,
+            )
+            or {}
+        )
         if out_check.get("member"):
-            result.fail_step("pool is a boundary", f"{outsider} is unexpectedly a member")
+            result.fail_step(
+                "pool is a boundary", f"{outsider} is unexpectedly a member"
+            )
             self._revoke_share(subject, s.sharing_offer_id)
             return result
 
@@ -324,9 +352,7 @@ class ChainCommunityFlow(_ChainFlow):
             purpose=s.consented_purpose,
         )
         if after.get("consent_active"):
-            result.fail_step(
-                "withdrawal", "the consent survived its own withdrawal"
-            )
+            result.fail_step("withdrawal", "the consent survived its own withdrawal")
             return result
         result.pass_step("withdrawal", "withdrawing the share closes the check again")
         return result
@@ -363,7 +389,9 @@ class ChainPartnerFlow(_ChainFlow):
         for alias in (PARTNER_ALIAS, OUTSIDER_ALIAS):
             if self._require_owner(result, alias, svc, "partner fixtures") is None:
                 return result
-        result.pass_step("partner fixtures", "partner and outsider organisations are registered")
+        result.pass_step(
+            "partner fixtures", "partner and outsider organisations are registered"
+        )
 
         # 1. Capacity must be *readable*. This is the endpoint the connector's
         #    circle check calls; if it cannot answer, every party silently
@@ -426,18 +454,24 @@ class ChainPartnerFlow(_ChainFlow):
 
         # 3. The processor half: membership is the offer's admitted_by
         #    constraint, and capacity alone is not enough to be inside.
-        member = self.http.get(
-            f"{s.identity_registry_url}/memberships/check?"
-            f"user_did={urllib.parse.quote(PARTNER_DID, safe='')}"
-            f"&organization={COMMUNITY_ALIAS}",
-            headers=svc,
-        ) or {}
-        outsider_member = self.http.get(
-            f"{s.identity_registry_url}/memberships/check?"
-            f"user_did={urllib.parse.quote(OUTSIDER_DID, safe='')}"
-            f"&organization={COMMUNITY_ALIAS}",
-            headers=svc,
-        ) or {}
+        member = (
+            self.http.get(
+                f"{s.identity_registry_url}/memberships/check?"
+                f"user_did={urllib.parse.quote(PARTNER_DID, safe='')}"
+                f"&organization={COMMUNITY_ALIAS}",
+                headers=svc,
+            )
+            or {}
+        )
+        outsider_member = (
+            self.http.get(
+                f"{s.identity_registry_url}/memberships/check?"
+                f"user_did={urllib.parse.quote(OUTSIDER_DID, safe='')}"
+                f"&organization={COMMUNITY_ALIAS}",
+                headers=svc,
+            )
+            or {}
+        )
         if not member.get("member"):
             result.fail_step(
                 "admitted_by is checkable",
@@ -467,7 +501,11 @@ class ChainPartnerFlow(_ChainFlow):
         try:
             self.http.post(
                 f"{s.connector_url}/consent/my/shares",
-                {"offer_id": s.sharing_offer_id, "consumer_id": s.consumer_did, "enabled": True},
+                {
+                    "offer_id": s.sharing_offer_id,
+                    "consumer_id": s.consumer_did,
+                    "enabled": True,
+                },
                 headers=subject,
             )
         except Exception as exc:
@@ -528,7 +566,10 @@ class ChainUnbundlingFlow(_ChainFlow):
         if svc is None:
             return result
 
-        if self._require_owner(result, GRID_ALIAS, svc, "grid operator fixture") is None:
+        if (
+            self._require_owner(result, GRID_ALIAS, svc, "grid operator fixture")
+            is None
+        ):
             return result
 
         # 1. The offer must actually declare a role. Without it there is no
@@ -565,11 +606,14 @@ class ChainUnbundlingFlow(_ChainFlow):
 
         # 2. Consenting to it stamps the role onto the row.
         try:
-            rows = self.http.post(
-                f"{s.connector_url}/consent/my/shares",
-                {"offer_id": GRID_OFFER, "consumer_id": GRID_DID, "enabled": True},
-                headers=subject,
-            ) or []
+            rows = (
+                self.http.post(
+                    f"{s.connector_url}/consent/my/shares",
+                    {"offer_id": GRID_OFFER, "consumer_id": GRID_DID, "enabled": True},
+                    headers=subject,
+                )
+                or []
+            )
         except Exception as exc:
             result.fail_step("member consents to a role", str(exc))
             return result
@@ -647,7 +691,9 @@ class ChainUnbundlingFlow(_ChainFlow):
             controller_role="operations",
         )
         if after.get("consent_active"):
-            result.fail_step("withdrawal", "the role-scoped consent survived withdrawal")
+            result.fail_step(
+                "withdrawal", "the role-scoped consent survived withdrawal"
+            )
             return result
         result.pass_step("withdrawal", "withdrawing closes the role-scoped consent")
         return result

@@ -20,6 +20,7 @@ class CleanupIncomplete(RuntimeError):
     — which surfaces as an unrelated flow failing on stale state.
     """
 
+
 # The EDC management credentials and endpoints (`E2E-07`).
 #
 # Hardcoded module constants until now, so a stack whose EDC key or ports were
@@ -58,7 +59,10 @@ DATABASES = {
 # owned by the connector runtime, so the table set is not ours to enumerate.
 EDC_DATABASES = ("edc_rec", "edc_third_party", "edc_grid_operator")
 
-EDC_CONTEXT = {"@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"}, "@type": "QuerySpec"}
+EDC_CONTEXT = {
+    "@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"},
+    "@type": "QuerySpec",
+}
 
 
 def edc_headers(settings: E2ESettings) -> dict[str, str]:
@@ -100,8 +104,12 @@ def _edc_list(
 
 
 def _edc_terminate(
-    client: httpx.Client, mgmt_url: str, resource: str, item_id: str,
-    body_type: str, headers: dict[str, str],
+    client: httpx.Client,
+    mgmt_url: str,
+    resource: str,
+    item_id: str,
+    body_type: str,
+    headers: dict[str, str],
 ) -> None:
     client.post(
         f"{mgmt_url}/v3/{resource}/{item_id}/terminate",
@@ -125,7 +133,14 @@ def _clear_edc(
         tp_id = tp.get("@id", "")
         state = tp.get("edc:state", tp.get("state", ""))
         if state not in ("TERMINATED", "COMPLETED"):
-            _edc_terminate(client, mgmt_url, "transferprocesses", tp_id, "TerminateTransfer", headers)
+            _edc_terminate(
+                client,
+                mgmt_url,
+                "transferprocesses",
+                tp_id,
+                "TerminateTransfer",
+                headers,
+            )
     if transfers:
         log.info("Terminated %d transfers (%s)", len(transfers), label)
 
@@ -135,7 +150,14 @@ def _clear_edc(
         neg_id = neg.get("@id", "")
         state = neg.get("edc:state", neg.get("state", ""))
         if state not in ("TERMINATED",):
-            _edc_terminate(client, mgmt_url, "contractnegotiations", neg_id, "TerminateNegotiation", headers)
+            _edc_terminate(
+                client,
+                mgmt_url,
+                "contractnegotiations",
+                neg_id,
+                "TerminateNegotiation",
+                headers,
+            )
     if negotiations:
         log.info("Terminated %d negotiations (%s)", len(negotiations), label)
 
@@ -143,7 +165,9 @@ def _clear_edc(
     for resource in ("contractdefinitions", "policydefinitions", "assets"):
         items = _edc_list(client, mgmt_url, resource, headers)
         for item in items:
-            client.delete(f"{mgmt_url}/v3/{resource}/{item.get('@id', '')}", headers=headers)
+            client.delete(
+                f"{mgmt_url}/v3/{resource}/{item.get('@id', '')}", headers=headers
+            )
         if items:
             log.info("Deleted %d %s (%s)", len(items), resource, label)
 
@@ -183,9 +207,7 @@ def run_cleanup(
             with psycopg.connect(dsn) as conn:
                 with conn.cursor() as cur:
                     table_list = ", ".join(tables)
-                    cur.execute(
-                        f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE"
-                    )
+                    cur.execute(f"TRUNCATE TABLE {table_list} RESTART IDENTITY CASCADE")
                 conn.commit()
             log.info("Truncated %s: %s", db_name, ", ".join(tables))
         except psycopg.Error as exc:

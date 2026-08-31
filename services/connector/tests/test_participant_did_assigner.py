@@ -10,6 +10,7 @@ The assigner is not cosmetic: it is the identity a consumer resolves and
 verifies the offer against. Under any deployment domain other than the dev one,
 every published policy named a DID that resolves to nothing.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -58,9 +59,7 @@ def test_the_dev_fallback_still_applies_when_no_did_is_configured():
 
     policy = mapper.to_policy_create("datasets.gold.test", _rule())
 
-    assert policy.policy["odrl:assigner"] == {
-        "@id": "did:web:rec.dataspaces.localhost"
-    }
+    assert policy.policy["odrl:assigner"] == {"@id": "did:web:rec.dataspaces.localhost"}
 
 
 @pytest.mark.asyncio

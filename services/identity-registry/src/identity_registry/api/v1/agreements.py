@@ -15,7 +15,9 @@ from ...schemas.responses import (
 router = APIRouter(tags=["agreements"])
 
 
-async def _owner_for_participant(db: AsyncSession, participant_did: str) -> Owner | None:
+async def _owner_for_participant(
+    db: AsyncSession, participant_did: str
+) -> Owner | None:
     """Resolve a DSP participant DID to the owner that signed for it.
 
     An owner is normally reachable by its own ``did``. When it is not — the
@@ -124,9 +126,7 @@ async def get_agreement_versions(
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_agreements_read),
 ):
-    result = await db.execute(
-        select(Agreement).where(Agreement.id == agreement_id)
-    )
+    result = await db.execute(select(Agreement).where(Agreement.id == agreement_id))
     versions = result.scalars().all()
     if not versions:
         raise HTTPException(status_code=404, detail="Agreement not found")

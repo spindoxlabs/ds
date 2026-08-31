@@ -1,4 +1,5 @@
 """Each test here corresponds to a defect measured on a running service."""
+
 from __future__ import annotations
 
 import pytest
@@ -37,7 +38,7 @@ class TestHistogram:
         rendered = m.render()
 
         assert (
-            'ds_http_request_duration_seconds_count'
+            "ds_http_request_duration_seconds_count"
             '{service="svc",method="GET",path="/x"} 2'
         ) in rendered
         sum_line = _series(rendered, "ds_http_request_duration_seconds_sum")[0]

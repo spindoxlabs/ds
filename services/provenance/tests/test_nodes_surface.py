@@ -5,6 +5,7 @@ and deleted, activities could be read but not deleted, agents could be neither.
 And all three listings took an unbounded `limit`/`offset` while `GET /prov/events`
 next door has always capped them.
 """
+
 from __future__ import annotations
 
 import urllib.parse
@@ -47,7 +48,9 @@ async def test_the_agent_listing_is_still_reachable(client):
 async def test_every_collection_can_be_deleted_from(client, collection, payload):
     await client.post(f"/prov/{collection}", json=payload)
 
-    assert (await client.delete(f"/prov/{collection}/{_q(payload['iri'])}")).status_code == 204
+    assert (
+        await client.delete(f"/prov/{collection}/{_q(payload['iri'])}")
+    ).status_code == 204
     listed = (await client.get(f"/prov/{collection}")).json()["@graph"]
     assert payload["iri"] not in [n["@id"] for n in listed]
 
@@ -58,8 +61,12 @@ async def test_a_delete_cannot_reach_across_collections(client):
     route — removing a node from a collection it may not even enumerate."""
     await client.post("/prov/entities", json={"iri": "urn:dataset:protected"})
 
-    assert (await client.delete(f"/prov/agents/{_q('urn:dataset:protected')}")).status_code == 404
-    assert (await client.get(f"/prov/entities/{_q('urn:dataset:protected')}")).status_code == 200
+    assert (
+        await client.delete(f"/prov/agents/{_q('urn:dataset:protected')}")
+    ).status_code == 404
+    assert (
+        await client.get(f"/prov/entities/{_q('urn:dataset:protected')}")
+    ).status_code == 200
 
 
 @pytest.mark.asyncio

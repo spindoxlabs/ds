@@ -13,6 +13,7 @@ either duplicated four times (`metrics.py`) or missing entirely (logging).
 plus `tracing`; `configure_logging` needs neither, so a CLI can use it without
 pulling a web framework or an OTLP exporter in.
 """
+
 from .logging import JsonFormatter, ProbeAccessFilter, configure_logging
 
 __all__ = [

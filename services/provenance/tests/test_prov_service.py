@@ -3,6 +3,7 @@
 Both are rulebook `L-8`: a node's type and what is known about it belong to the
 node, not to the first event that happened to mention it.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -36,13 +37,17 @@ async def test_external_meta_accumulates_rather_than_replacing(db_session):
     agreement, both on the same activity node. Replacing the block dropped the
     offer id the moment the agreement arrived."""
     await upsert_node(
-        db_session, "urn:activity:negotiation:n1", "Activity",
+        db_session,
+        "urn:activity:negotiation:n1",
+        "Activity",
         external_meta={"negotiationId": "n1", "offerId": "offer-7"},
     )
     await db_session.flush()
 
     await upsert_node(
-        db_session, "urn:activity:negotiation:n1", "Activity",
+        db_session,
+        "urn:activity:negotiation:n1",
+        "Activity",
         external_meta={"negotiationId": "n1", "agreementId": "agr-3"},
     )
     await db_session.flush()
@@ -62,13 +67,17 @@ async def test_an_unknown_value_does_not_erase_a_known_one(db_session):
     *forget what you knew* — an optional field absent from a later event must not
     blank a value an earlier one supplied."""
     await upsert_node(
-        db_session, "urn:activity:negotiation:n2", "Activity",
+        db_session,
+        "urn:activity:negotiation:n2",
+        "Activity",
         external_meta={"offerId": "offer-9"},
     )
     await db_session.flush()
 
     await upsert_node(
-        db_session, "urn:activity:negotiation:n2", "Activity",
+        db_session,
+        "urn:activity:negotiation:n2",
+        "Activity",
         external_meta={"offerId": None, "reason": "terminated"},
     )
     await db_session.flush()
@@ -105,6 +114,7 @@ async def test_the_negotiation_pair_keeps_both_ids_end_to_end(client):
     assert (await client.post("/prov/events", json=finalized)).status_code == 201
 
     import urllib.parse
+
     iri = urllib.parse.quote("urn:activity:negotiation:n-100", safe="")
     body = (await client.get(f"/prov/activities/{iri}")).json()
     node = body["@graph"][0]
@@ -114,5 +124,8 @@ async def test_the_negotiation_pair_keeps_both_ids_end_to_end(client):
 
 async def _one(session) -> ProvNodeORM:
     from sqlalchemy import select
-    result = await session.execute(select(ProvNodeORM).order_by(ProvNodeORM.created_at.desc()))
+
+    result = await session.execute(
+        select(ProvNodeORM).order_by(ProvNodeORM.created_at.desc())
+    )
     return result.scalars().first()

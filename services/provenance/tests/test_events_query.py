@@ -5,6 +5,7 @@ fixed columns, so `ConsentGranted`, `DataIngested` and friends were stored in fu
 and served as four empty values. Nothing read the published events back, which is
 why it went unnoticed.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -15,7 +16,9 @@ OTHER_SUBJECT = "did:web:rec.dataspaces.localhost:users:bob"
 DATASET = "datasets.silver.meters_15m"
 
 
-def _consent_granted(event_id: str, *, subject: str = SUBJECT, at: str = "2026-02-01T10:00:00Z") -> dict:
+def _consent_granted(
+    event_id: str, *, subject: str = SUBJECT, at: str = "2026-02-01T10:00:00Z"
+) -> dict:
     return {
         "event_type": "ConsentGranted",
         "event_id": event_id,
@@ -27,7 +30,10 @@ def _consent_granted(event_id: str, *, subject: str = SUBJECT, at: str = "2026-0
         "purpose": ["FlexibilityResearch"],
         "controller": "example-org",
         "controller_role": "operator",
-        "legal_basis": {"basis_iri": "https://w3id.org/dpv#Consent", "consent_text_version": "1.0"},
+        "legal_basis": {
+            "basis_iri": "https://w3id.org/dpv#Consent",
+            "consent_text_version": "1.0",
+        },
     }
 
 
@@ -43,6 +49,7 @@ async def _graph(client, path: str = "/prov/events", **params) -> list[dict]:
 
 
 # ── projection ───────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("L-12")
 @pytest.mark.asyncio
@@ -89,6 +96,7 @@ async def test_omits_empty_fields(client):
 
 # ── filters ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_filters_by_subject_and_dataset(client):
@@ -105,13 +113,16 @@ async def test_filters_by_subject_and_dataset(client):
 @pytest.mark.asyncio
 async def test_event_type_filter_is_repeatable(client):
     await _post(client, _consent_granted("filt-3"))
-    await _post(client, {
-        "event_type": "ConsentRevoked",
-        "event_id": "filt-4",
-        "occurred_at": "2026-02-02T10:00:00Z",
-        "subject_id": SUBJECT,
-        "dataset_id": DATASET,
-    })
+    await _post(
+        client,
+        {
+            "event_type": "ConsentRevoked",
+            "event_id": "filt-4",
+            "occurred_at": "2026-02-02T10:00:00Z",
+            "subject_id": SUBJECT,
+            "dataset_id": DATASET,
+        },
+    )
 
     both = await _graph(client, event_type=["ConsentGranted", "ConsentRevoked"])
     assert {e["@type"] for e in both} == {"ds:ConsentGranted", "ds:ConsentRevoked"}
@@ -131,18 +142,26 @@ async def test_time_window_narrows(client):
     earlier = await _graph(client, occurred_before="2026-03-01T00:00:00Z")
     assert len(earlier) == 1
 
-    assert await _graph(
-        client, occurred_after="2026-02-01T00:00:00Z", occurred_before="2026-03-01T00:00:00Z"
-    ) == []
+    assert (
+        await _graph(
+            client,
+            occurred_after="2026-02-01T00:00:00Z",
+            occurred_before="2026-03-01T00:00:00Z",
+        )
+        == []
+    )
 
 
 # ── paging ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("L-12")
 @pytest.mark.asyncio
 async def test_paging_reports_the_total(client):
     for i in range(5):
-        await _post(client, _consent_granted(f"page-{i}", at=f"2026-02-0{i + 1}T10:00:00Z"))
+        await _post(
+            client, _consent_granted(f"page-{i}", at=f"2026-02-0{i + 1}T10:00:00Z")
+        )
 
     r = await client.get("/prov/events", params={"limit": 2, "offset": 0})
     body = r.json()
@@ -154,16 +173,21 @@ async def test_paging_reports_the_total(client):
     assert body["hydra:limit"] == 2
 
     second = (await client.get("/prov/events", params={"limit": 2, "offset": 2})).json()
-    assert {e["@id"] for e in second["@graph"]}.isdisjoint({e["@id"] for e in body["@graph"]})
+    assert {e["@id"] for e in second["@graph"]}.isdisjoint(
+        {e["@id"] for e in body["@graph"]}
+    )
 
 
 @pytest.mark.asyncio
 async def test_limit_is_bounded(client):
-    assert (await client.get("/prov/events", params={"limit": 10_000})).status_code == 422
+    assert (
+        await client.get("/prov/events", params={"limit": 10_000})
+    ).status_code == 422
     assert (await client.get("/prov/events", params={"offset": -1})).status_code == 422
 
 
 # ── the subject's own view ───────────────────────────────────────────────────
+
 
 @pytest.mark.rule("L-11")
 @pytest.mark.asyncio
@@ -181,5 +205,7 @@ async def test_my_events_rejects_a_read_scope_alone(client):
     Guards the split: if this route were ever mounted under the scoped router, a
     service token would silently read a person's history.
     """
-    r = await client.get("/prov/my/events", headers=make_headers(scope="provenance.read"))
+    r = await client.get(
+        "/prov/my/events", headers=make_headers(scope="provenance.read")
+    )
     assert r.status_code == 401

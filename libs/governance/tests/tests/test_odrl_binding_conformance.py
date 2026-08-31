@@ -36,6 +36,7 @@ artifact plus a staleness guard for it — two more things to drift. The parse i
 deliberately strict: an unreadable ``DataspacesExtension.java`` fails the test
 rather than yielding an empty set that would make every assertion below pass.
 """
+
 from __future__ import annotations
 
 import re
@@ -63,7 +64,9 @@ _EXTENSION = (
 
 _PROFILE = OdrlProfile(
     purposes=[
-        PurposeConcept(slug="EnergyCommunityOperation", label="Energy community operation"),
+        PurposeConcept(
+            slug="EnergyCommunityOperation", label="Energy community operation"
+        ),
         PurposeConcept(slug="GridMonitoring", label="Grid monitoring"),
     ],
 )
@@ -97,9 +100,7 @@ def _expand(term: str) -> str:
     absolute IRI and it survives verbatim — which is why the extension binds the
     literal string `ds:contractRequired`.
     """
-    return (
-        _ODRL_NAMESPACE + term[len("odrl:"):] if term.startswith("odrl:") else term
-    )
+    return _ODRL_NAMESPACE + term[len("odrl:") :] if term.startswith("odrl:") else term
 
 
 def _bound_terms() -> set[str]:
@@ -114,7 +115,9 @@ def _bound_terms() -> set[str]:
     for expression in re.findall(r"ruleBindingRegistry\.bind\(\s*([^,]+?)\s*,", source):
         terms |= _resolve(source, expression)
 
-    assert terms, f"parsed no bindings out of {_EXTENSION} — the parse, not the bindings, is broken"
+    assert terms, (
+        f"parsed no bindings out of {_EXTENSION} — the parse, not the bindings, is broken"
+    )
     return terms
 
 
@@ -152,12 +155,16 @@ def _resolve(source: str, expression: str) -> set[str]:
     if loop:
         return _resolve_iterable(source, loop.group(1))
 
-    pytest.fail(f"cannot resolve the Java expression `{expression}` bound in {_EXTENSION}")
+    pytest.fail(
+        f"cannot resolve the Java expression `{expression}` bound in {_EXTENSION}"
+    )
 
 
 def _resolve_iterable(source: str, name: str) -> set[str]:
     """The elements of a `List.of(...)` constant or a `String[]` local."""
-    constant = re.search(rf"List<String> {name} = List\.of\((.*?)\);", source, re.DOTALL)
+    constant = re.search(
+        rf"List<String> {name} = List\.of\((.*?)\);", source, re.DOTALL
+    )
     if constant:
         return set(re.findall(r'"([^"]+)"', constant.group(1)))
     return _resolve(source, name)
@@ -165,9 +172,7 @@ def _resolve_iterable(source: str, name: str) -> set[str]:
 
 def _java_constant(path: Path, field: str) -> str:
     """The value of `static final String FIELD = "…";` in another class."""
-    match = re.search(
-        rf'String {field} = "([^"]+)"', path.read_text(encoding="utf-8")
-    )
+    match = re.search(rf'String {field} = "([^"]+)"', path.read_text(encoding="utf-8"))
     assert match, f"cannot resolve {path.stem}.{field} in {path}"
     return match.group(1)
 
@@ -180,7 +185,9 @@ def _emitted_terms() -> set[str]:
     rarest constraints are exactly the ones nobody exercises by hand.
     """
     mapper = GovernanceMapper(
-        participant_id="rec", base_url="https://rec.dataspaces.localhost", profile=_PROFILE
+        participant_id="rec",
+        base_url="https://rec.dataspaces.localhost",
+        profile=_PROFILE,
     )
     terms: set[str] = set()
 
@@ -196,7 +203,9 @@ def _emitted_terms() -> set[str]:
                         policy=DataspacePolicy(
                             purpose=["EnergyCommunityOperation", "GridMonitoring"],
                             consent=PolicyConsent(required=consent_required),
-                            obligations=PolicyObligations(contract_required=contract_required),
+                            obligations=PolicyObligations(
+                                contract_required=contract_required
+                            ),
                         ),
                     )
                     offer = mapper.to_odrl_offer("datasets.silver.meters_15m", rule)
@@ -227,7 +236,9 @@ def test_every_emitted_term_is_bound_by_the_edc_extension():
     before evaluation. Nothing raises, nothing logs, and the check the term
     stood for is gone.
     """
-    unbound = {_expand(t) for t in _emitted_terms()} - {_expand(t) for t in _bound_terms()}
+    unbound = {_expand(t) for t in _emitted_terms()} - {
+        _expand(t) for t in _bound_terms()
+    }
     assert not unbound, (
         "the governance mapper emits ODRL terms that services/edc-extensions does not bind: "
         f"{sorted(unbound)}. EDC's ScopeFilter *removes* an unbound operand rather than "
@@ -259,7 +270,9 @@ def test_no_binding_is_dead():
     registered function fails evaluation outright and denies everything. That is
     what `ds:accessScope` was.
     """
-    emitted = {_expand(t) for t in _emitted_terms()} | {_expand(t) for t in _ALLOWED_UNEMITTED}
+    emitted = {_expand(t) for t in _emitted_terms()} | {
+        _expand(t) for t in _ALLOWED_UNEMITTED
+    }
     dead = {_expand(t) for t in _bound_terms()} - emitted
     assert not dead, (
         f"services/edc-extensions binds ODRL terms nothing emits: {sorted(dead)}. "
@@ -277,9 +290,7 @@ def test_the_extension_namespace_matches_the_profile():
     the test above describes, arriving through configuration rather than code.
     """
     source = _EXTENSION.read_text(encoding="utf-8")
-    default = re.search(
-        r'"dataspaces\.odrl\.namespace",\s*"([^"]+)"', source
-    )
+    default = re.search(r'"dataspaces\.odrl\.namespace",\s*"([^"]+)"', source)
     assert default, f"cannot find the namespace default in {_EXTENSION}"
     assert default.group(1) == OdrlProfile().namespace, (
         "the EDC extension's default ODRL namespace and the default OdrlProfile namespace "

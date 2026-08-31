@@ -1,13 +1,13 @@
 """Read-only history endpoints for EDC negotiations, agreements, and transfers."""
+
 from __future__ import annotations
 
 from typing import Any
 
+from ds_edc import EdcManagementClient
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
-from ds_edc import EdcManagementClient
 
 from ...db.models import ContractAgreementORM
 from ...dependencies import get_db, get_edc, require_history_read
@@ -22,6 +22,7 @@ def _clamp(offset: int, limit: int) -> tuple[int, int]:
 
 
 # -- Negotiations -------------------------------------------------------------
+
 
 @router.get("/negotiations")
 async def list_negotiations(
@@ -46,6 +47,7 @@ async def get_negotiation(
 
 
 # -- Agreements ---------------------------------------------------------------
+
 
 @router.get("/agreements")
 async def list_agreements(
@@ -114,6 +116,7 @@ async def get_agreement(
 
 
 # -- Transfers ----------------------------------------------------------------
+
 
 @router.get("/transfers")
 async def list_transfers(

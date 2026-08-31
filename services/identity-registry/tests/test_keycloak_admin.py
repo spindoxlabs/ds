@@ -4,6 +4,7 @@ The KC Admin REST API is faked with an httpx MockTransport backed by a small
 in-memory realm, so idempotency is asserted by running the sync twice against
 the same state.
 """
+
 from __future__ import annotations
 
 import json
@@ -148,7 +149,7 @@ class TestLoadConfig:
             "    name: Example Organization\n"
             "    domains: []\n"
             "    attributes:\n"
-            "      type: [\"dso\"]\n"
+            '      type: ["dso"]\n'
             "    members:\n"
             "      - email: provider@example.test\n"
             "        groups: [dataset.admin]\n"
@@ -336,9 +337,11 @@ class TestKeycloakAdminClient:
         """Older KC versions 404 on the org-groups endpoint; treat as empty."""
         client = httpx.AsyncClient(
             transport=httpx.MockTransport(
-                lambda r: httpx.Response(200, json={"access_token": "t"})
-                if r.url.path.endswith("/token")
-                else httpx.Response(404)
+                lambda r: (
+                    httpx.Response(200, json={"access_token": "t"})
+                    if r.url.path.endswith("/token")
+                    else httpx.Response(404)
+                )
             )
         )
         kc = await KeycloakAdminClient.authenticate(

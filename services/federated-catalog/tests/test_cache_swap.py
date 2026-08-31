@@ -7,6 +7,7 @@ failed" — and the unconditional swap then served a *fresh, empty* catalogue fo
 a full 300s interval. Downstream that reads as "the provider published nothing",
 which is the opposite of what happened.
 """
+
 from __future__ import annotations
 
 from federated_catalog.cache import CatalogCache, CrawlError
@@ -36,9 +37,9 @@ def test_a_crawl_that_reached_nobody_keeps_the_previous_catalogue():
 
     assert applied is False
     assert len(cache.all_datasets()) == 2, "good data was discarded over one bad cycle"
-    assert (
-        cache.meta["last_crawl"] == crawled_at
-    ), "an attempt that returned nothing counted as a crawl"
+    assert cache.meta["last_crawl"] == crawled_at, (
+        "an attempt that returned nothing counted as a crawl"
+    )
 
 
 def test_the_errors_are_still_reported():

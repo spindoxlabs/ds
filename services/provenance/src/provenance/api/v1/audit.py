@@ -6,6 +6,7 @@ well as directly through `POST /audit/log`, so a deployment whose data plane
 already reports queries to the connector's PEP route gets the compliance log
 without wiring a second caller.
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -36,7 +37,12 @@ def _mentions_subject(db: AsyncSession, subject_id: str):
     return select(1).select_from(each).where(each.c.value == subject_id).exists()
 
 
-@router.post("/audit/log", status_code=201, response_model=AccessLogRead, dependencies=[Depends(require_write_scope)])
+@router.post(
+    "/audit/log",
+    status_code=201,
+    response_model=AccessLogRead,
+    dependencies=[Depends(require_write_scope)],
+)
 async def write_log_entry(
     entry: AccessLogEntry,
     db: AsyncSession = Depends(get_db),

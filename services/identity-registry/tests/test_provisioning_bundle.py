@@ -10,6 +10,7 @@ belonging to an identity the recipient should have generated**, and that the
 config it renders points at the recipient's own host rather than ours. Several
 tests here are therefore inverted rather than adjusted, and each says so.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -61,6 +62,7 @@ async def _seed(db_session, *, promoted: bool = True) -> None:
 
 
 # ── authorisation ─────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_write_alone_cannot_generate_a_bundle(client, db_session):
@@ -115,12 +117,11 @@ async def test_an_owner_with_no_did_is_refused(client, db_session):
 
 # ── contents ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_bundle_carries_what_a_deployment_needs(client, db_session):
     await _seed(db_session)
-    r = await client.post(
-        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
-    )
+    r = await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
     body = r.json()
 
     assert body["participant"]["did"] == DID
@@ -191,6 +192,7 @@ async def test_the_enrolment_code_is_real_and_single_use(client, db_session):
 
 # ── rotation ──────────────────────────────────────────────────────────────────
 
+
 @pytest.mark.asyncio
 async def test_generating_a_bundle_changes_no_ones_identity(client, db_session):
     """**Inverted.** Every call used to rotate the participant's STS secret.
@@ -208,8 +210,10 @@ async def test_generating_a_bundle_changes_no_ones_identity(client, db_session):
 
     await _seed(db_session)
     before = (
-        await db_session.execute(select(Participant).where(Participant.did == DID))
-    ).scalar_one().sts_client_secret
+        (await db_session.execute(select(Participant).where(Participant.did == DID)))
+        .scalar_one()
+        .sts_client_secret
+    )
 
     first = (
         await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
@@ -232,6 +236,7 @@ async def test_generating_a_bundle_changes_no_ones_identity(client, db_session):
 
 
 # ── renderers ─────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.asyncio
 async def test_env_format_renders_the_secret(client, db_session):
@@ -353,12 +358,14 @@ async def test_guest_posture_never_touches_the_realm(
 
     await _seed(db_session)
 
-    client._transport.app.dependency_overrides[get_settings_dep] = lambda: _settings_with(
-        tmp_path,
-        KEYCLOAK_MUTATE=False,
-        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
-        KEYCLOAK_ADMIN_USERNAME="admin",
-        KEYCLOAK_ADMIN_PASSWORD="admin",
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: (
+        _settings_with(
+            tmp_path,
+            KEYCLOAK_MUTATE=False,
+            KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
+            KEYCLOAK_ADMIN_USERNAME="admin",
+            KEYCLOAK_ADMIN_PASSWORD="admin",
+        )
     )
 
     async def _forbidden(*a, **k):
@@ -368,9 +375,7 @@ async def test_guest_posture_never_touches_the_realm(
 
     monkeypatch.setattr(keycloak_admin.KeycloakAdminClient, "authenticate", _forbidden)
 
-    r = await client.post(
-        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
-    )
+    r = await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
     assert r.status_code == 201
     # The bundle is still useful — it just carries no Keycloak block at all. A
     # participant in this posture is given credentials by whoever runs the realm.
@@ -389,12 +394,14 @@ async def test_owning_posture_provisions_the_client(
 
     await _seed(db_session)
 
-    client._transport.app.dependency_overrides[get_settings_dep] = lambda: _settings_with(
-        tmp_path,
-        KEYCLOAK_MUTATE=True,
-        KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
-        KEYCLOAK_ADMIN_USERNAME="admin",
-        KEYCLOAK_ADMIN_PASSWORD="admin",
+    client._transport.app.dependency_overrides[get_settings_dep] = lambda: (
+        _settings_with(
+            tmp_path,
+            KEYCLOAK_MUTATE=True,
+            KEYCLOAK_ADMIN_URL="http://keycloak.invalid",
+            KEYCLOAK_ADMIN_USERNAME="admin",
+            KEYCLOAK_ADMIN_PASSWORD="admin",
+        )
     )
 
     created: dict[str, object] = {}
@@ -420,9 +427,7 @@ async def test_owning_posture_provisions_the_client(
 
     monkeypatch.setattr(orgs_api, "KeycloakAdminClient", FakeAdmin)
 
-    r = await client.post(
-        f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE
-    )
+    r = await client.post(f"/admin/owners/{ALIAS}/provisioning-bundle", headers=PROMOTE)
     assert r.status_code == 201
     assert created["client_id"] == f"svc-ds-connector-{ALIAS}"
     # A participant's connector is not a more privileged thing than ours.

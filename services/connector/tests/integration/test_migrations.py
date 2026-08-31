@@ -10,6 +10,7 @@ The failure it catches is ordinary and undramatic: someone adds a column to a
 model, the unit suite's `create_all` picks it up from the model, all 319 tests
 stay green, and the revision is never written. It is found in a deployment.
 """
+
 from __future__ import annotations
 
 import os

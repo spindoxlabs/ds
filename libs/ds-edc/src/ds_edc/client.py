@@ -1,4 +1,5 @@
 """Async httpx client for EDC Management API v3."""
+
 from __future__ import annotations
 
 import asyncio
@@ -290,7 +291,9 @@ class EdcManagementClient:
         except (httpx.HTTPError, ValueError) as exc:
             log.warning(
                 "Could not read %s %s back after a 409 on terminate: %s",
-                kind, entity_id, exc,
+                kind,
+                entity_id,
+                exc,
             )
             return False
         if state == "TERMINATED":
@@ -298,7 +301,9 @@ class EdcManagementClient:
             return True
         log.error(
             "%s %s refused termination and is in state %s, not TERMINATED",
-            kind.capitalize(), entity_id, state,
+            kind.capitalize(),
+            entity_id,
+            state,
         )
         return False
 
@@ -405,7 +410,10 @@ class EdcManagementClient:
     # -- Query helpers (used by history API) ----------------------------------
 
     async def query_negotiations(
-        self, offset: int = 0, limit: int = 50, state: str | None = None,
+        self,
+        offset: int = 0,
+        limit: int = 50,
+        state: str | None = None,
     ) -> list[dict[str, Any]]:
         query_spec: dict[str, Any] = {
             "@context": EDC_CONTEXT,
@@ -416,20 +424,23 @@ class EdcManagementClient:
             "sortField": "createdAt",
         }
         if state:
-            query_spec["filterExpression"] = [{
-                "operandLeft": "state",
-                "operator": "=",
-                "operandRight": state,
-            }]
-        r = await self._http.post(
-            "/v3/contractnegotiations/request", json=query_spec
-        )
+            query_spec["filterExpression"] = [
+                {
+                    "operandLeft": "state",
+                    "operator": "=",
+                    "operandRight": state,
+                }
+            ]
+        r = await self._http.post("/v3/contractnegotiations/request", json=query_spec)
         self._raise_with_body(r, "query_negotiations")
         data: list[dict[str, Any]] = r.json()
         return data
 
     async def query_transfers(
-        self, offset: int = 0, limit: int = 50, state: str | None = None,
+        self,
+        offset: int = 0,
+        limit: int = 50,
+        state: str | None = None,
     ) -> list[dict[str, Any]]:
         query_spec: dict[str, Any] = {
             "@context": EDC_CONTEXT,
@@ -440,11 +451,13 @@ class EdcManagementClient:
             "sortField": "createdAt",
         }
         if state:
-            query_spec["filterExpression"] = [{
-                "operandLeft": "state",
-                "operator": "=",
-                "operandRight": state,
-            }]
+            query_spec["filterExpression"] = [
+                {
+                    "operandLeft": "state",
+                    "operator": "=",
+                    "operandRight": state,
+                }
+            ]
         r = await self._http.post("/v3/transferprocesses/request", json=query_spec)
         self._raise_with_body(r, "query_transfers")
         data: list[dict[str, Any]] = r.json()

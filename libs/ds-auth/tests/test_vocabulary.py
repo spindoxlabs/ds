@@ -12,6 +12,7 @@ explicitly declared service-only; no bundle invents a permission the realm never
 declares; no bundle reaches into a domain overlay's vocabulary; and no bundle name
 collides with a scope name (which would make expansion depend on edit order).
 """
+
 from __future__ import annotations
 
 from pathlib import Path

@@ -5,9 +5,10 @@ answer. The sweep is what stops that from being permanent, so what it does and
 — more importantly — what it refuses to do needs pinning down: one silent
 subject must not cancel a request another subject has already granted.
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
@@ -25,7 +26,7 @@ from connector.services.pending_sweep import (
 NEGOTIATION = "neg-001"
 DATASET = "datasets.silver.meters"
 CONSUMER = "did:web:third-party.dataspaces.localhost"
-NOW = datetime(2026, 7, 24, 12, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 7, 24, 12, 0, tzinfo=UTC)
 
 
 @pytest_asyncio.fixture
@@ -33,7 +34,9 @@ async def session_factory(engine):
     return async_sessionmaker(engine, expire_on_commit=False)
 
 
-def _ask(subject: str, *, age_days: int, status: str = "pending", negotiation=NEGOTIATION):
+def _ask(
+    subject: str, *, age_days: int, status: str = "pending", negotiation=NEGOTIATION
+):
     return ConsentRequestORM(
         subject_id=subject,
         consumer_id=CONSUMER,
@@ -64,6 +67,7 @@ async def _statuses(session_factory) -> dict[str, str]:
 
 # ── Duration parsing ─────────────────────────────────────────────────────────
 
+
 @pytest.mark.parametrize(
     "value,expected",
     [
@@ -90,6 +94,7 @@ def test_ambiguous_or_malformed_durations_are_refused(value):
 
 
 # ── Expiry ───────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.rule("D-18")
 @pytest.mark.asyncio
@@ -191,6 +196,7 @@ async def test_rows_with_no_negotiation_are_not_swept(session_factory):
 
 
 # ── The full pass ────────────────────────────────────────────────────────────
+
 
 class _RecordingEdc:
     def __init__(self, fail: bool = False):

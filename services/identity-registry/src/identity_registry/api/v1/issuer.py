@@ -25,6 +25,7 @@ Same reasoning as the invite-gated intake in `onboarding.py`, one step later.
 error is an oracle: which codes exist, which organisations are verified, which
 DIDs are already enrolled. The operator's log carries the real reason.
 """
+
 from __future__ import annotations
 
 import logging
@@ -161,9 +162,7 @@ async def request_credentials(
         )
     holder_pid = body.get("holderPid")
     if not isinstance(holder_pid, str) or not holder_pid:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST, detail="holderPid is required"
-        )
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="holderPid is required")
 
     requested = [
         entry.get("id")

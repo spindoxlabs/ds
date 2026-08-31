@@ -28,6 +28,7 @@ only because every service pins ``--workers 1``. With more workers each holds it
 own counters and a scrape returns whichever one answered. If a service ever needs
 more, this needs a shared store, not a bigger worker count.
 """
+
 from __future__ import annotations
 
 import threading
@@ -45,7 +46,17 @@ UNMATCHED = "<unmatched>"
 #: HTTP: sub-10ms local reads at the bottom, a DSP round trip in the middle, and
 #: `+Inf` catching a crawl that should have timed out.
 DEFAULT_BUCKETS: tuple[float, ...] = (
-    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+    0.005,
+    0.01,
+    0.025,
+    0.05,
+    0.1,
+    0.25,
+    0.5,
+    1.0,
+    2.5,
+    5.0,
+    10.0,
 )
 
 

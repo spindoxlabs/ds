@@ -130,9 +130,7 @@ def test_an_unclassified_path_is_reported():
 
 def test_a_path_mounted_on_the_wrong_role_is_reported():
     problems = audit(PARTICIPANT, ["/admin/participants"])
-    assert any(
-        "/admin/participants" in p and "restricts it to" in p for p in problems
-    )
+    assert any("/admin/participants" in p and "restricts it to" in p for p in problems)
 
 
 def test_a_classified_router_that_is_not_mounted_is_reported():
@@ -179,9 +177,7 @@ def test_a_stale_classification_entry_is_visible():
     next reader trusts a rule that governs nothing.
     """
     served = {
-        roles._strip_converters(path)
-        for spec in ROUTERS
-        for path in spec.paths()
+        roles._strip_converters(path) for spec in ROUTERS for path in spec.paths()
     } | set(roles.APP_PATHS)
 
     unused = [
@@ -203,9 +199,7 @@ def test_longest_prefix_wins():
 
 
 def test_converters_do_not_change_the_classification():
-    assert roles_for_path("/sts/{did:path}/token") == roles_for_path(
-        "/sts/{did}/token"
-    )
+    assert roles_for_path("/sts/{did:path}/token") == roles_for_path("/sts/{did}/token")
     assert roles_for_path("/{did_path:path}/did.json") is not None
 
 

@@ -1,8 +1,9 @@
 """EDC webhook receivers."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ds_obs import correlate_agreement
 from fastapi import APIRouter, Depends, Request
@@ -142,7 +143,9 @@ async def contract_negotiation_event(
     """
     log.info(
         "Contract-negotiation webhook: %s negotiation=%s agreement=%s",
-        event.type, event.negotiation_id, event.agreement_id,
+        event.type,
+        event.negotiation_id,
+        event.agreement_id,
     )
 
     # **The shared id, not the local one** (`EDCL-06`). Every span from here on —
@@ -167,7 +170,7 @@ async def contract_negotiation_event(
             # every agreement the *consumer* connector records as its own.
             provider_id=event.payload.get("providerId") or settings.participant_id,
             policy_snapshot=event.payload.get("policy") or {},
-            agreed_at=datetime.now(timezone.utc),
+            agreed_at=datetime.now(UTC),
             # The id the counterparty will name — see migration 0008, and the
             # module docstring in `ds_edc/webhooks.py` for why the two ids are
             # distinct. Read through the model rather than out of the raw

@@ -9,6 +9,7 @@ have been shown a promise the platform could not enforce.
 Like ``checks.py``, nothing is specific to a deployment or a domain: the
 taxonomy, the offers and the owners registry are all inputs.
 """
+
 from __future__ import annotations
 
 from typing import Iterable
@@ -409,7 +410,9 @@ def _check_offer_codes(result: ValidationResult, offer: SharingOffer) -> None:
         )
     for measure in offer.measures:
         if not measure.strip():
-            result.error("offer-codes", f"Offer '{offer.id}' declares an empty measure code")
+            result.error(
+                "offer-codes", f"Offer '{offer.id}' declares an empty measure code"
+            )
 
 
 def _check_offer_hash_stability(

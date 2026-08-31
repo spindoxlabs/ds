@@ -1,4 +1,5 @@
 """Shared fixtures for federated-catalog tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -33,7 +34,9 @@ def sample_dcat_catalog() -> dict:
                                     "odrl:action": {"@id": "odrl:use"},
                                     "odrl:constraint": [
                                         {
-                                            "odrl:leftOperand": {"@id": "https://w3id.org/dsp/policy/Membership"},
+                                            "odrl:leftOperand": {
+                                                "@id": "https://w3id.org/dsp/policy/Membership"
+                                            },
                                             "odrl:operator": {"@id": "odrl:eq"},
                                             "odrl:rightOperand": {
                                                 "@value": "active",

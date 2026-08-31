@@ -23,6 +23,7 @@ The flow deliberately **does not** re-prove DSP mechanics — `smoke` does that.
 It proves that those mechanics stay correct when there is more than one of
 everything.
 """
+
 from __future__ import annotations
 
 import logging
@@ -85,9 +86,12 @@ class TwoProvidersFlow(BaseFlow):
         """
         s = self.settings
         try:
-            body = self.http.get(
-                f"{s.identity_registry_url}/admin/participants", headers=headers
-            ) or {}
+            body = (
+                self.http.get(
+                    f"{s.identity_registry_url}/admin/participants", headers=headers
+                )
+                or {}
+            )
         except Exception as exc:
             result.fail_step("both providers registered", str(exc))
             return False
@@ -112,7 +116,9 @@ class TwoProvidersFlow(BaseFlow):
 
     # ── governance separation ────────────────────────────────────────────────
 
-    def _check_governance_is_its_own(self, result: FlowResult, headers: dict[str, str]) -> None:
+    def _check_governance_is_its_own(
+        self, result: FlowResult, headers: dict[str, str]
+    ) -> None:
         """Each provider publishes **its own** datasets and offers.
 
         The failure this catches is not exotic: both connectors are the same
@@ -184,8 +190,7 @@ class TwoProvidersFlow(BaseFlow):
         if held:
             result.fail_step(
                 "no members",
-                "the grid operator holds credentials for a person it never "
-                "onboarded",
+                "the grid operator holds credentials for a person it never onboarded",
                 credentials=held,
             )
             return
@@ -205,14 +210,17 @@ class TwoProvidersFlow(BaseFlow):
         headers = {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
 
         try:
-            catalog = self.http.post(
-                f"{s.consumer_connector_url}/consumer/catalog",
-                {
-                    "counter_party_address": s.grid_operator_counter_party_address,
-                    "counter_party_id": s.grid_operator_did,
-                },
-                headers=headers,
-            ) or {}
+            catalog = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/catalog",
+                    {
+                        "counter_party_address": s.grid_operator_counter_party_address,
+                        "counter_party_id": s.grid_operator_did,
+                    },
+                    headers=headers,
+                )
+                or {}
+            )
         except Exception as exc:
             result.fail_step("catalog of the second provider", str(exc))
             return
@@ -259,21 +267,24 @@ class TwoProvidersFlow(BaseFlow):
         offer_id = str(policy.get("@id") or f"{s.grid_operator_asset_id}#offer")
 
         try:
-            negotiated = self.http.post(
-                f"{s.consumer_connector_url}/consumer/negotiate",
-                {
-                    "counter_party_address": s.grid_operator_counter_party_address,
-                    "offer_id": offer_id,
-                    "asset_id": s.grid_operator_asset_id,
-                    # **The whole point.** With one provider this field is a
-                    # formality; with two it decides who the agreement is with.
-                    "assigner": s.grid_operator_did,
-                    "odrl_policy": policy or None,
-                    "declared_purpose": ["GridMonitoring"],
-                    "justification_ref": "e2e-two-providers",
-                },
-                headers=headers,
-            ) or {}
+            negotiated = (
+                self.http.post(
+                    f"{s.consumer_connector_url}/consumer/negotiate",
+                    {
+                        "counter_party_address": s.grid_operator_counter_party_address,
+                        "offer_id": offer_id,
+                        "asset_id": s.grid_operator_asset_id,
+                        # **The whole point.** With one provider this field is a
+                        # formality; with two it decides who the agreement is with.
+                        "assigner": s.grid_operator_did,
+                        "odrl_policy": policy or None,
+                        "declared_purpose": ["GridMonitoring"],
+                        "justification_ref": "e2e-two-providers",
+                    },
+                    headers=headers,
+                )
+                or {}
+            )
             negotiation_id = negotiated["negotiation_id"]
         except Exception as exc:
             result.fail_step("negotiate with the DSO", str(exc))
@@ -282,8 +293,10 @@ class TwoProvidersFlow(BaseFlow):
         encoded = urllib.parse.quote(negotiation_id, safe="")
         negotiation = self.http.poll_until(
             f"{s.consumer_connector_url}/consumer/negotiations/{encoded}",
-            lambda p: p.get("state") in FINAL_NEGOTIATION_STATES
-            and bool(p.get("contractAgreementId")),
+            lambda p: (
+                p.get("state") in FINAL_NEGOTIATION_STATES
+                and bool(p.get("contractAgreementId"))
+            ),
             headers=headers,
         )
         agreement_id = negotiation.get("contractAgreementId")
@@ -300,9 +313,12 @@ class TwoProvidersFlow(BaseFlow):
             agreement_id=agreement_id,
         )
 
-        requests = self.http.get(
-            f"{s.consumer_connector_url}/consumer/requests", headers=headers
-        ) or []
+        requests = (
+            self.http.get(
+                f"{s.consumer_connector_url}/consumer/requests", headers=headers
+            )
+            or []
+        )
         recorded = next(
             (r for r in requests if r.get("negotiation_id") == negotiation_id), None
         )
@@ -334,10 +350,13 @@ class TwoProvidersFlow(BaseFlow):
         try:
             headers = self.http.bearer_headers()
             email = urllib.parse.quote(s.consumer_email, safe="")
-            body = self.http.get(
-                f"{s.identity_registry_url}/users/resolve?email={email}",
-                headers=headers,
-            ) or {}
+            body = (
+                self.http.get(
+                    f"{s.identity_registry_url}/users/resolve?email={email}",
+                    headers=headers,
+                )
+                or {}
+            )
             vc: str | None = body.get("vc_jws")
             if not vc:
                 result.fail_step(
@@ -349,4 +368,3 @@ class TwoProvidersFlow(BaseFlow):
         except Exception as exc:
             result.fail_step("consumer credential", str(exc))
             return None
-

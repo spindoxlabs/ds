@@ -1,8 +1,8 @@
 """Tests for HttpClient (unit tests with mocked responses)."""
+
 from __future__ import annotations
 
 import json
-import time
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -24,7 +24,9 @@ def client(settings):
     c.close()
 
 
-def _mock_response(status: int = 200, json_data: dict | list | None = None, text: str = ""):
+def _mock_response(
+    status: int = 200, json_data: dict | list | None = None, text: str = ""
+):
     resp = MagicMock(spec=httpx.Response)
     resp.status_code = status
     resp.text = json.dumps(json_data) if json_data is not None else text

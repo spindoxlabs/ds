@@ -7,6 +7,7 @@ here deleted every contract definition and policy from both providers' EDCs.
 The client is now injected, and `conftest.py` refuses any socket in this suite
 so the next such path fails loudly instead of succeeding quietly.
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -52,7 +53,9 @@ def test_cleanup_truncates_databases():
     mock_conn.cursor.return_value.__exit__ = MagicMock(return_value=False)
 
     edc = fake_edc_client()
-    with patch("ds_e2e.cleanup.psycopg.connect", return_value=mock_conn) as mock_connect:
+    with patch(
+        "ds_e2e.cleanup.psycopg.connect", return_value=mock_conn
+    ) as mock_connect:
         run_cleanup(settings, http, edc_client=edc)
 
     # One connection per application database it truncates, plus one to the
@@ -74,6 +77,7 @@ def test_cleanup_continues_on_db_error():
     http.post.return_value = {}
 
     import psycopg
+
     with patch(
         "ds_e2e.cleanup.psycopg.connect",
         side_effect=psycopg.Error("connection refused"),
@@ -89,6 +93,7 @@ def test_cleanup_continues_on_db_error():
 
 # ── E2E-07 · the EDC control plane is configuration, not a constant ──────────
 
+
 def test_the_edc_key_and_urls_come_from_settings():
     """Module constants until now, so a stack whose EDC key or ports differed
     could not be cleaned — and the clean said it had succeeded, because a 401 on
@@ -97,14 +102,20 @@ def test_the_edc_key_and_urls_come_from_settings():
 
     settings = E2ESettings(_env_file=None)
     assert edc_headers(settings)["x-api-key"] == settings.edc_api_key
-    assert set(edc_management_urls(settings)) == {"provider", "consumer", "grid-operator"}
+    assert set(edc_management_urls(settings)) == {
+        "provider",
+        "consumer",
+        "grid-operator",
+    }
 
 
 def test_overriding_the_edc_key_reaches_the_headers(monkeypatch):
     monkeypatch.setenv("EDC_API_KEY", "a-real-generated-key")
     from ds_e2e.cleanup import edc_headers
 
-    assert edc_headers(E2ESettings(_env_file=None))["x-api-key"] == "a-real-generated-key"
+    assert (
+        edc_headers(E2ESettings(_env_file=None))["x-api-key"] == "a-real-generated-key"
+    )
 
 
 def test_every_management_url_is_on_the_host_gateway():
@@ -145,8 +156,12 @@ def test_a_clean_that_could_not_finish_raises():
     http = MagicMock()
     http.bearer_headers.return_value = {}
 
-    with patch("ds_e2e.cleanup.psycopg.connect"), patch(
-        "ds_e2e.cleanup._clear_edc", side_effect=RuntimeError("control plane refused")
+    with (
+        patch("ds_e2e.cleanup.psycopg.connect"),
+        patch(
+            "ds_e2e.cleanup._clear_edc",
+            side_effect=RuntimeError("control plane refused"),
+        ),
     ):
         with pytest.raises(CleanupIncomplete) as exc:
             run_cleanup(settings, http)

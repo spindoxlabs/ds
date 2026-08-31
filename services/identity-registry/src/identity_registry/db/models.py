@@ -45,9 +45,7 @@ class Key(Base):
         String, primary_key=True, default=lambda: str(uuid.uuid4())
     )
     owner_did: Mapped[str] = mapped_column(Text, nullable=False, index=True)
-    algorithm: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="ES256"
-    )
+    algorithm: Mapped[str] = mapped_column(String(16), nullable=False, default="ES256")
     #: **Nullable, and that is the decentralization** (`DID-09`). A trust anchor
     #: records the *public* key of every participant it has enrolled — it needs
     #: one to verify their signatures and to bind an issued credential — and must
@@ -114,9 +112,7 @@ class Credential(Base):
     #: is withheld exactly as a revoked one is — the difference is that it can
     #: come back. `revoked_at` is stamped only by revocation; a suspension is
     #: not an ending and does not claim to be one.
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="active"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     status_list_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     issued_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -136,14 +132,10 @@ class Credential(Base):
 class Participant(Base):
     __tablename__ = "participants"
 
-    did: Mapped[str] = mapped_column(
-        Text, ForeignKey("dids.did"), primary_key=True
-    )
+    did: Mapped[str] = mapped_column(Text, ForeignKey("dids.did"), primary_key=True)
     dsp_address: Mapped[str | None] = mapped_column(Text, nullable=True)
     roles: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
-    allowed_scopes: Mapped[list] = mapped_column(
-        JsonType, nullable=False, default=list
-    )
+    allowed_scopes: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
     sts_client_secret: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     registered_at: Mapped[datetime] = mapped_column(
@@ -170,9 +162,7 @@ class KeycloakMapping(Base):
         ),
     )
 
-    did: Mapped[str] = mapped_column(
-        Text, ForeignKey("dids.did"), primary_key=True
-    )
+    did: Mapped[str] = mapped_column(Text, ForeignKey("dids.did"), primary_key=True)
     keycloak_realm: Mapped[str] = mapped_column(Text, nullable=False)
     keycloak_user_id: Mapped[str] = mapped_column(Text, nullable=False)
     # Keycloak's `preferred_username`. Downstream systems that key on the person
@@ -213,9 +203,7 @@ class Owner(Base):
     did: Mapped[str | None] = mapped_column(Text, nullable=True)
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     aliases: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
-    organization_config: Mapped[dict | None] = mapped_column(
-        JsonType, nullable=True
-    )
+    organization_config: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
     # ── Gaia-X-shaped legal identity (Block D) ────────────────────────
     # Shape-compatible with gx:LegalParticipant; not full GXDCH compliance.
     registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -320,7 +308,9 @@ class OnboardingInvite(Base):
     id: Mapped[str] = mapped_column(
         String, primary_key=True, default=lambda: str(uuid.uuid4())
     )
-    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    code_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True
+    )
     # Free-text note for the operator: who this was sent to, and why.
     label: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -404,13 +394,9 @@ class OrganizationMembership(Base):
     user_did: Mapped[str] = mapped_column(
         Text, ForeignKey("dids.did"), primary_key=True
     )
-    organization_alias: Mapped[str] = mapped_column(
-        String, primary_key=True
-    )
+    organization_alias: Mapped[str] = mapped_column(String, primary_key=True)
     role: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="active"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
@@ -527,9 +513,7 @@ class CredentialRequest(Base):
     holder_did: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     owner_alias: Mapped[str | None] = mapped_column(Text, nullable=True)
     #: RECEIVED | REJECTED | ISSUED, exactly the CIP vocabulary.
-    status: Mapped[str] = mapped_column(
-        String(16), nullable=False, default="RECEIVED"
-    )
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="RECEIVED")
     #: What was asked for: the `credentials[].id` values, resolved against the
     #: Issuer Metadata.
     requested: Mapped[list | None] = mapped_column(JsonType, nullable=True)

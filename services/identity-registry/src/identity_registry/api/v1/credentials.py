@@ -3,6 +3,7 @@
 Replaces the per-participant ds-vc-wallet service. All routes are scoped
 under /credentials/ for clear provenance.
 """
+
 from __future__ import annotations
 
 import logging
@@ -244,9 +245,7 @@ async def store_credentials(
             did,
             issuer.did,
         )
-        raise HTTPException(
-            status.HTTP_403_FORBIDDEN, detail="Not a trusted issuer"
-        )
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail="Not a trusted issuer")
 
     local = (
         await db.execute(select(Did).where(Did.did == did, Did.active.is_(True)))

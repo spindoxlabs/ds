@@ -21,6 +21,7 @@ The message matters as much as the block: a test that trips this has found a
 code path that talks to a real service, and the fix is to inject the client, not
 to add an exemption here.
 """
+
 from __future__ import annotations
 
 import socket
@@ -52,6 +53,7 @@ def _no_network(monkeypatch):
 
     An opt-in marker would protect only the tests someone remembered to mark,
     which is the same shape as the defect."""
+
     def _connect(self, address, *args, **kwargs):
         raise _refuse(address)
 

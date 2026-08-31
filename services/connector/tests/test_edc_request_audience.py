@@ -13,11 +13,13 @@ repository has existed, and no suite noticed, because the EDC's demo identity
 fallback accepted any self-issued token with `iss == sub` and never looked at the
 audience. Found the moment that fallback was switched off.
 """
+
 from __future__ import annotations
 
 import pytest
-from connector.registry.participants import Participant, UnknownParticipantError
 from ds_edc.schemas import CatalogRequest, NegotiationRequest
+
+from connector.registry.participants import Participant, UnknownParticipantError
 
 PROVIDER = "did:web:rec.dataspaces.localhost"
 ADDRESS = "http://172.17.0.1:19194/protocol/2025-1"

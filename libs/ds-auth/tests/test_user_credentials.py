@@ -11,6 +11,7 @@ afterwards will cheerfully verify a stranger's signature against the stranger's
 own key and then reject it — which passes every "bad issuer is refused" test
 while being a live SSRF against any URL an attacker chooses.
 """
+
 from __future__ import annotations
 
 import base64

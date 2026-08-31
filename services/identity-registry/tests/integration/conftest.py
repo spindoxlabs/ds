@@ -52,6 +52,7 @@ Two consequences worth stating, because both are load-bearing here:
 Requires Postgres. `task -d services/identity-registry test:integration` runs
 it; plain `test` does not, so the unit suite stays fast and dependency-free.
 """
+
 from __future__ import annotations
 
 import base64
@@ -75,7 +76,8 @@ UNIT_DIR = Path(__file__).resolve().parents[2]
 REPO_ROOT = Path(__file__).resolve().parents[4]
 
 ADMIN_DB_URL = os.environ.get(
-    "IDENTITY_REGISTRY_TEST_PG", "postgresql://postgres:postgres@172.17.0.1:35432/postgres"
+    "IDENTITY_REGISTRY_TEST_PG",
+    "postgresql://postgres:postgres@172.17.0.1:35432/postgres",
 )
 MEMBERSHIP_SCOPE = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"
 
@@ -163,8 +165,16 @@ def _await_health(url: str, process: subprocess.Popen, timeout: float = 45.0) ->
 def _serve(database: str, port: int, env: dict) -> subprocess.Popen:
     return subprocess.Popen(
         [
-            "uv", "run", "uvicorn", "identity_registry.main:app",
-            "--host", "127.0.0.1", "--port", str(port), "--log-level", "warning",
+            "uv",
+            "run",
+            "uvicorn",
+            "identity_registry.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+            "--log-level",
+            "warning",
         ],
         cwd=UNIT_DIR,
         env=env,
@@ -223,8 +233,17 @@ class Anchor(Instance):
         having enrolled nothing, so the failure surfaces three tests later as a
         missing credential.
         """
-        args = ["uv", "run", "ir-cli", "org", "enrolment-token",
-                "--alias", alias, "--roles", roles]
+        args = [
+            "uv",
+            "run",
+            "ir-cli",
+            "org",
+            "enrolment-token",
+            "--alias",
+            alias,
+            "--roles",
+            roles,
+        ]
         for scope in ENROLMENT_SCOPES:
             args += ["--scope", scope]
         code = _run(args, self.env).strip()
@@ -326,12 +345,21 @@ def _register_owner(anchor: Anchor, alias: str) -> None:
     """
     _run(
         [
-            "uv", "run", "ir-cli", "owner", "add",
-            "--id", alias,
-            "--name", f"Integration {alias}",
-            "--status", "verified",
-            "--verified-by", "integration-harness",
-            "--evidence-ref", "tests/integration/conftest.py",
+            "uv",
+            "run",
+            "ir-cli",
+            "owner",
+            "add",
+            "--id",
+            alias,
+            "--name",
+            f"Integration {alias}",
+            "--status",
+            "verified",
+            "--verified-by",
+            "integration-harness",
+            "--evidence-ref",
+            "tests/integration/conftest.py",
         ],
         anchor.env,
     )
@@ -496,7 +524,9 @@ def _governance_controllers() -> list[str]:
     producer in CI did.
     """
     aliases: set[str] = set()
-    for offers in sorted(REPO_ROOT.glob("services/connector/governance-*/sharing-offers.yaml")):
+    for offers in sorted(
+        REPO_ROOT.glob("services/connector/governance-*/sharing-offers.yaml")
+    ):
         raw = yaml.safe_load(offers.read_text(encoding="utf-8")) or {}
         for offer in raw.get("sharing_offers") or []:
             alias = (offer.get("recipients") or {}).get("controller")

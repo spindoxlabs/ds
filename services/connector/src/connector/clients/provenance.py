@@ -1,4 +1,5 @@
 """Async httpx client for the ds-provenance service."""
+
 from __future__ import annotations
 
 import logging

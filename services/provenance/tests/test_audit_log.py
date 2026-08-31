@@ -9,6 +9,7 @@ The event that already arrives *is* the query audit — the connector's PEP rout
 is `POST /internal/audit/query` and it emits `QueryExecuted` — so the log row is
 derived from it. `POST /audit/log` stays for a data plane that reports directly.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -52,7 +53,9 @@ async def test_the_summary_counts_real_queries(client):
         json=dict(QUERY_EVENT, event_id="audit-q-2", consumer_did="did:web:other.test"),
     )
 
-    summary = (await client.get("/audit/log/summary?dataset_id=urn:dataset:meters")).json()
+    summary = (
+        await client.get("/audit/log/summary?dataset_id=urn:dataset:meters")
+    ).json()
     assert summary["total_queries"] == 2
     assert summary["unique_consumers"] == 2
     assert summary["unique_subjects"] == 2

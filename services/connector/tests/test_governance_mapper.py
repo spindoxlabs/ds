@@ -1,12 +1,23 @@
 """Tests for ConnectorGovernanceMapper."""
-import pytest
 
-from connector.services.governance import ConnectorGovernanceMapper, load_exposed_datasets
-from ds.governance.models import GovernanceOwner, GovernanceRuleV2, DataspaceSpec, DataspaceDataAddress
+import pytest
+from ds.governance.models import (
+    DataspaceDataAddress,
+    DataspaceSpec,
+    GovernanceOwner,
+    GovernanceRuleV2,
+)
+
+from connector.services.governance import (
+    ConnectorGovernanceMapper,
+    load_exposed_datasets,
+)
 
 
 def _mapper(**kwargs):
-    return ConnectorGovernanceMapper("provider", "https://rec.dataspaces.localhost", **kwargs)
+    return ConnectorGovernanceMapper(
+        "provider", "https://rec.dataspaces.localhost", **kwargs
+    )
 
 
 def _rule(**kwargs) -> GovernanceRuleV2:
@@ -51,24 +62,36 @@ def test_asset_data_address_query_params():
 
 def test_policy_create_has_odrl_set():
     mapper = _mapper()
-    rule = _rule(access_level="internal", classification="green", dataspace=DataspaceSpec(expose=True))
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        dataspace=DataspaceSpec(expose=True),
+    )
     policy = mapper.to_policy_create("datasets.gold.test", rule)
     assert "odrl:Set" in str(policy.policy.get("@type", ""))
 
 
 def test_contract_definition_links_asset():
     mapper = _mapper()
-    rule = _rule(access_level="internal", classification="green", dataspace=DataspaceSpec(expose=True))
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        dataspace=DataspaceSpec(expose=True),
+    )
     asset = mapper.to_asset_create("datasets.gold.test", rule)
     policy = mapper.to_policy_create("datasets.gold.test", rule)
-    contract = mapper.to_contract_definition("datasets.gold.test", rule, policy.id, asset.id)
+    contract = mapper.to_contract_definition(
+        "datasets.gold.test", rule, policy.id, asset.id
+    )
     assert len(contract.assets_selector) == 1
     assert contract.assets_selector[0]["operandRight"] == asset.id
 
 
 def test_policy_assigner_uses_owner_did():
     owner_did = "did:web:example-org.dataspaces.localhost"
-    mapper = _mapper(owner_did_resolver=lambda name: owner_did if name == "example-org" else None)
+    mapper = _mapper(
+        owner_did_resolver=lambda name: owner_did if name == "example-org" else None
+    )
     rule = _rule(
         access_level="internal",
         classification="green",
@@ -104,8 +127,10 @@ def test_policy_assigner_unknown_owner_falls_back():
 
 def test_load_exposed_datasets(tmp_path):
     import textwrap
+
     yaml_path = tmp_path / "governance.yaml"
-    yaml_path.write_text(textwrap.dedent("""
+    yaml_path.write_text(
+        textwrap.dedent("""
         defaults:
           access_level: internal
           classification: green
@@ -122,7 +147,8 @@ def test_load_exposed_datasets(tmp_path):
             access_level: secret
             dataspace:
               expose: true
-    """))
+    """)
+    )
     result = load_exposed_datasets(str(yaml_path))
     assert "datasets.gold.exposed" in result
     assert "datasets.gold.hidden" not in result

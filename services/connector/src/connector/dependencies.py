@@ -1,4 +1,5 @@
 """FastAPI dependency providers for ds-connector."""
+
 from __future__ import annotations
 
 import json
@@ -12,9 +13,8 @@ from ds_auth import Principal
 from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
 from ds_auth.user_credentials import verify_user_vc_jwt
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from fastapi import Header, Request
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
 from .db.engine import get_session_factory
@@ -71,7 +71,9 @@ def get_prov(request: Request):
 # forbids `*.admin` on one; the guard existed, was declared by no route, and its
 # presence invited exactly that.
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
-require_provider_write = require_permission("connector.provider.write", "connector.admin")
+require_provider_write = require_permission(
+    "connector.provider.write", "connector.admin"
+)
 
 
 def _asset_owner(properties: dict) -> str:
@@ -116,7 +118,7 @@ def _owner_aliases(raw: str) -> dict[str, str]:
     except (TypeError, ValueError) as exc:
         log.error(
             "CONNECTOR_OWNER_ALIASES is not valid JSON (%s) — no owner aliases "
-            "applied. Expected {\"foreign-org\": \"ds-owner-id\"}.",
+            'applied. Expected {"foreign-org": "ds-owner-id"}.',
             exc,
         )
         return {}
@@ -397,9 +399,7 @@ require_consent_provision = require_permission(
 # permission because it is the *only* one a party outside this participant is
 # meant to hold, and what it grants is a boolean and a timestamp keyed by an
 # unguessable correlation id — never a subject, a count, or a decision.
-require_consent_read = require_permission(
-    "connector.consent.read", "connector.admin"
-)
+require_consent_read = require_permission("connector.consent.read", "connector.admin")
 # "Who consents to this offer" — the cross-subject read, and the counterpart to
 # `connector.consent.provision` beside it: onboarding can write a standing
 # consent and needs to read one back before it exports against it.
@@ -514,9 +514,7 @@ async def require_consumer_catalog_caller(
             is_service=False,
         )
 
-    principal = await require_consumer_read(
-        request, get_oidc_config_for(request)
-    )
+    principal = await require_consumer_read(request, get_oidc_config_for(request))
     return CatalogCaller(subject_id=None, actor=principal.subject, is_service=True)
 
 

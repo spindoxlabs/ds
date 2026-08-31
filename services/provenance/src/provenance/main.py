@@ -1,4 +1,5 @@
 """ds-provenance — FastAPI application factory."""
+
 import logging
 from contextlib import asynccontextmanager
 

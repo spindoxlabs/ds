@@ -31,6 +31,7 @@ service provider derives authority *from* an anchor, many services may serve one
 anchor and one service may serve many. A nested tree would make the common case
 tidy and the specified case unrepresentable.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -158,9 +159,7 @@ async def add_issuer(
     return entry
 
 
-async def revoke_issuer(
-    db: AsyncSession, did: str, *, reason: str
-) -> TrustedIssuer:
+async def revoke_issuer(db: AsyncSession, did: str, *, reason: str) -> TrustedIssuer:
     """Mark an entry revoked. **Never deletes it** — `TRF-05`."""
     entry = (
         await db.execute(select(TrustedIssuer).where(TrustedIssuer.did == did))
@@ -178,8 +177,10 @@ async def revoke_issuer(
 
 async def entries(db: AsyncSession) -> list[Entry]:
     rows = (
-        await db.execute(select(TrustedIssuer).order_by(TrustedIssuer.did))
-    ).scalars().all()
+        (await db.execute(select(TrustedIssuer).order_by(TrustedIssuer.did)))
+        .scalars()
+        .all()
+    )
     return [
         Entry(
             did=r.did,

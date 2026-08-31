@@ -1,4 +1,5 @@
 """Tests for domain event ingest and PROV-O materialisation."""
+
 import pytest
 
 
@@ -32,7 +33,6 @@ TRANSFER_EVENT = {
     "consumer_did": "did:web:third-party.dataspaces.localhost",
     "bytes_transferred": 4096,
 }
-
 
 
 @pytest.mark.asyncio

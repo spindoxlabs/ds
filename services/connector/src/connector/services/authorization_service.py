@@ -1,7 +1,8 @@
 """Authorization query — consented subjects per dataset."""
+
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -58,13 +59,15 @@ async def get_authorized_datasets(
                 for consent in latest_by_subject.values()
                 if consent.status == "granted"
             ),
-            default=datetime.now(timezone.utc),
+            default=datetime.now(UTC),
         )
 
-        datasets.append({
-            "dataset_id": dataset_id,
-            "consented_subjects": sorted(consented),
-            "updated_at": latest_update.isoformat(),
-        })
+        datasets.append(
+            {
+                "dataset_id": dataset_id,
+                "consented_subjects": sorted(consented),
+                "updated_at": latest_update.isoformat(),
+            }
+        )
 
     return datasets

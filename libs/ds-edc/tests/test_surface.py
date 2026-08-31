@@ -8,6 +8,7 @@ the `"ERROR"` state, which is in neither of EDC's state enums.
 EDCL-06 settles the agreement-id vocabulary — see the module docstring in
 `ds_edc/webhooks.py` for which id correlates and why.
 """
+
 from __future__ import annotations
 
 import ds_edc
@@ -23,15 +24,40 @@ from ds_edc.webhooks import ContractNegotiationEvent, TransferProcessEvent
 #: EDC 0.16.0 `ContractNegotiationStates` / `TransferProcessStates`. A state
 #: this client names that is not here can never match.
 EDC_NEGOTIATION_STATES = {
-    "INITIAL", "REQUESTING", "REQUESTED", "OFFERING", "OFFERED", "ACCEPTING",
-    "ACCEPTED", "AGREEING", "AGREED", "VERIFYING", "VERIFIED", "FINALIZING",
-    "FINALIZED", "TERMINATING", "TERMINATED",
+    "INITIAL",
+    "REQUESTING",
+    "REQUESTED",
+    "OFFERING",
+    "OFFERED",
+    "ACCEPTING",
+    "ACCEPTED",
+    "AGREEING",
+    "AGREED",
+    "VERIFYING",
+    "VERIFIED",
+    "FINALIZING",
+    "FINALIZED",
+    "TERMINATING",
+    "TERMINATED",
 }
 EDC_TRANSFER_STATES = {
-    "INITIAL", "PROVISIONING", "PROVISIONING_REQUESTED", "PROVISIONED",
-    "REQUESTING", "REQUESTED", "STARTING", "STARTED", "SUSPENDING", "SUSPENDED",
-    "COMPLETING", "COMPLETED", "TERMINATING", "TERMINATED",
-    "DEPROVISIONING", "DEPROVISIONING_REQUESTED", "DEPROVISIONED",
+    "INITIAL",
+    "PROVISIONING",
+    "PROVISIONING_REQUESTED",
+    "PROVISIONED",
+    "REQUESTING",
+    "REQUESTED",
+    "STARTING",
+    "STARTED",
+    "SUSPENDING",
+    "SUSPENDED",
+    "COMPLETING",
+    "COMPLETED",
+    "TERMINATING",
+    "TERMINATED",
+    "DEPROVISIONING",
+    "DEPROVISIONING_REQUESTED",
+    "DEPROVISIONED",
 }
 
 
@@ -57,8 +83,12 @@ def test_error_is_not_treated_as_a_state():
 def test_timeout_is_not_a_state_either():
     """It was synthesised, not matched — the other half of the same confusion.
     `EdcPollTimeout` replaced it; see `test_polling.py`."""
-    every = (_FINALIZED_STATES | _TERMINAL_STATES
-             | _ACTIVE_TRANSFER_STATES | _TERMINAL_TRANSFER_STATES)
+    every = (
+        _FINALIZED_STATES
+        | _TERMINAL_STATES
+        | _ACTIVE_TRANSFER_STATES
+        | _TERMINAL_TRANSFER_STATES
+    )
     assert "TIMEOUT" not in every
 
 
@@ -112,7 +142,8 @@ def test_they_are_distinct_and_the_test_would_notice_if_they_were_aliased():
 
 def test_a_negotiation_with_no_agreement_yet_has_neither():
     event = ContractNegotiationEvent(
-        id="evt-0", type="ContractNegotiationRequested",
+        id="evt-0",
+        type="ContractNegotiationRequested",
         payload={"contractNegotiationId": "neg-1"},
     )
     assert event.agreement_id is None
@@ -121,9 +152,13 @@ def test_a_negotiation_with_no_agreement_yet_has_neither():
 
 def test_a_transfer_names_the_agreement_it_was_started_with():
     event = TransferProcessEvent(
-        id="evt-2", type="TransferProcessStarted",
-        payload={"transferProcessId": "t-1", "contractId": "local-entity-id",
-                 "assetId": "energy.meter_readings"},
+        id="evt-2",
+        type="TransferProcessStarted",
+        payload={
+            "transferProcessId": "t-1",
+            "contractId": "local-entity-id",
+            "assetId": "energy.meter_readings",
+        },
     )
     assert event.transfer_id == "t-1"
     assert event.agreement_id == "local-entity-id"

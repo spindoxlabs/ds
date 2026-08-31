@@ -20,6 +20,7 @@ consumers, and both owe the same two mandatory properties:
 The shapes live here rather than in either caller so the two catalogues cannot
 drift into two different readings of the same requirement.
 """
+
 from __future__ import annotations
 
 from typing import Any

@@ -5,6 +5,7 @@ Requires the optional ``fastapi`` extra: ``pip install ds-auth[fastapi]``.
 Each service stores an :class:`~ds_auth.config.OidcConfig` on
 ``app.state.oidc_config`` at startup; the dependency reads it from the request.
 """
+
 from __future__ import annotations
 
 import inspect

@@ -27,6 +27,7 @@ implementations of this surface, a run exercises whichever holds the port, and
 a seam implemented on one and missing on the other would otherwise pass or fail
 depending on which was up — with nothing in the output saying which it was.
 """
+
 from __future__ import annotations
 
 import logging
@@ -364,7 +365,9 @@ class SemanticModelFlow(BaseFlow):
         rows = (
             body.get("dcat:dataset") or body.get("datasets") or []
             if isinstance(body, dict)
-            else body if isinstance(body, list) else []
+            else body
+            if isinstance(body, list)
+            else []
         )
         if isinstance(rows, dict):
             rows = [rows]

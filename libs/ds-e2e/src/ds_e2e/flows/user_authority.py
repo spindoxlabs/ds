@@ -35,6 +35,7 @@ verification (`oidc_insecure_dev`). The tokens here are genuinely issued by
 Keycloak, but the assertions are about *authorisation*, not about JWKS or
 audience handling — that path is covered by `libs/ds-auth/tests/test_verify.py`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -260,7 +261,8 @@ class UserAuthorityFlow(BaseFlow):
 
         # A refused DELETE mutates nothing, so this is safe to assert in place.
         status, body = self.http.raw(
-            "DELETE", f"{s.connector_url}/provider/assets/{s.asset_id}",
+            "DELETE",
+            f"{s.connector_url}/provider/assets/{s.asset_id}",
             headers=other_owner,
         )
         if status in _REFUSED:
@@ -311,7 +313,8 @@ class UserAuthorityFlow(BaseFlow):
             )
         except Exception as exc:
             result.fail_step(
-                "aliased seat", f"could not obtain a token for {s.legacy_operator_email}: {exc}"
+                "aliased seat",
+                f"could not obtain a token for {s.legacy_operator_email}: {exc}",
             )
             return result
 

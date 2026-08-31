@@ -10,6 +10,7 @@ Before the fix neither bound existed. The query's scope was never read and no
 grant existed, so the empty presentation definition EDC sends returned every
 active credential the participant held.
 """
+
 from __future__ import annotations
 
 import base64
@@ -149,9 +150,7 @@ async def test_the_grant_bounds_an_unrestricted_request(
 async def test_a_revoked_credential_is_never_presented(
     client, db_session, resolver, holder_with_two_credentials
 ):
-    cred = await db_session.get(
-        Credential, f"urn:uuid:MembershipCredential-{HOLDER}"
-    )
+    cred = await db_session.get(Credential, f"urn:uuid:MembershipCredential-{HOLDER}")
     cred.status = "revoked"
     await db_session.commit()
     r = await _query_as_verifier(

@@ -14,6 +14,7 @@ module exists because of a defect of exactly that kind.
 Resolution rules follow the DCP specification, §Validating Self-Issued ID Tokens
 (`base.protocol.md`) and the did:web method.
 """
+
 from __future__ import annotations
 
 import logging
@@ -42,7 +43,7 @@ def did_web_url(did: str, *, use_https: bool = True) -> str:
     if not did.startswith(DID_WEB_PREFIX):
         raise DidResolutionError(f"Only did:web is supported, got: {did}")
 
-    identifier = did[len(DID_WEB_PREFIX):]
+    identifier = did[len(DID_WEB_PREFIX) :]
     if not identifier:
         raise DidResolutionError("did:web with no identifier")
 
@@ -75,7 +76,7 @@ def normalize_did_web(did: str) -> str:
     """
     if not did.startswith(DID_WEB_PREFIX):
         return did
-    segments = did[len(DID_WEB_PREFIX):].split(":")
+    segments = did[len(DID_WEB_PREFIX) :].split(":")
     if len(segments) >= 2 and segments[1].isdigit():
         segments[0] = f"{segments[0]}%3A{segments[1]}"
         del segments[1]

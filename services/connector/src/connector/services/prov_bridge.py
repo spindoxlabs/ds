@@ -1,8 +1,9 @@
 """Maps connector events to PROV-O domain events and emits them."""
+
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from ds_auth import Principal
 
@@ -12,7 +13,7 @@ log = logging.getLogger(__name__)
 
 
 def acting_principal(
-    principal: "Principal | None", *, on_behalf_of: str | None = None
+    principal: Principal | None, *, on_behalf_of: str | None = None
 ) -> dict | None:
     """Render a verified caller as the `acted_by` block of a provenance event.
 
@@ -47,9 +48,8 @@ def acting_principal(
     }
 
 
-
 def _now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _did(value: str | None) -> str | None:
@@ -73,16 +73,18 @@ class ProvBridge:
         event_id: str | None = None,
         acted_by: dict | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "CataloguePublished",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "data_product_id": data_product_id,
-            "provider_did": _did(self._participant_id),
-            "title": title,
-            "description": description,
-            "acted_by": acted_by,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "CataloguePublished",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "data_product_id": data_product_id,
+                "provider_did": _did(self._participant_id),
+                "title": title,
+                "description": description,
+                "acted_by": acted_by,
+            }
+        )
 
     async def catalog_viewed(
         self,
@@ -93,16 +95,18 @@ class ProvBridge:
         dataset_count: int | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "CatalogViewed",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-            "counter_party_address": counter_party_address,
-            "dataset_count": dataset_count,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "CatalogViewed",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+                "counter_party_address": counter_party_address,
+                "dataset_count": dataset_count,
+            }
+        )
 
     async def access_requested(
         self,
@@ -126,22 +130,26 @@ class ProvBridge:
         Every field here stays codes, IRIs and references — ``justification_ref``
         is an opaque external id, never the justification text itself.
         """
-        await self._prov.emit_event({
-            "event_type": "AccessRequested",
-            "event_id": event_id or f"access-request:{request_id}",
-            "occurred_at": _now(),
-            "request_id": request_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-            "purpose": purpose or [],
-            "offer_id": offer_id,
-            "declared_purpose": declared_purpose or [],
-            "declared_from": declared_from.isoformat() if declared_from else None,
-            "declared_until": declared_until.isoformat() if declared_until else None,
-            "justification_ref": justification_ref,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "AccessRequested",
+                "event_id": event_id or f"access-request:{request_id}",
+                "occurred_at": _now(),
+                "request_id": request_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+                "purpose": purpose or [],
+                "offer_id": offer_id,
+                "declared_purpose": declared_purpose or [],
+                "declared_from": declared_from.isoformat() if declared_from else None,
+                "declared_until": declared_until.isoformat()
+                if declared_until
+                else None,
+                "justification_ref": justification_ref,
+            }
+        )
 
     async def negotiation_started(
         self,
@@ -153,17 +161,19 @@ class ProvBridge:
         offer_id: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "NegotiationStarted",
-            "event_id": event_id or f"negotiation-started:{negotiation_id}",
-            "occurred_at": _now(),
-            "negotiation_id": negotiation_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-            "offer_id": offer_id,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "NegotiationStarted",
+                "event_id": event_id or f"negotiation-started:{negotiation_id}",
+                "occurred_at": _now(),
+                "negotiation_id": negotiation_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+                "offer_id": offer_id,
+            }
+        )
 
     async def negotiation_finalized(
         self,
@@ -175,17 +185,19 @@ class ProvBridge:
         user_id: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "NegotiationFinalized",
-            "event_id": event_id or f"negotiation-finalized:{negotiation_id}",
-            "occurred_at": _now(),
-            "negotiation_id": negotiation_id,
-            "agreement_id": agreement_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "NegotiationFinalized",
+                "event_id": event_id or f"negotiation-finalized:{negotiation_id}",
+                "occurred_at": _now(),
+                "negotiation_id": negotiation_id,
+                "agreement_id": agreement_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+            }
+        )
 
     async def negotiation_terminated(
         self,
@@ -197,17 +209,19 @@ class ProvBridge:
         reason: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "NegotiationTerminated",
-            "event_id": event_id or f"negotiation-terminated:{negotiation_id}",
-            "occurred_at": _now(),
-            "negotiation_id": negotiation_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-            "reason": reason,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "NegotiationTerminated",
+                "event_id": event_id or f"negotiation-terminated:{negotiation_id}",
+                "occurred_at": _now(),
+                "negotiation_id": negotiation_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+                "reason": reason,
+            }
+        )
 
     async def contract_agreement_signed(
         self,
@@ -218,16 +232,18 @@ class ProvBridge:
         policy_hash: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "ContractAgreementSigned",
-            "event_id": event_id or agreement_id,
-            "occurred_at": _now(),
-            "agreement_id": agreement_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "policy_hash": policy_hash,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "ContractAgreementSigned",
+                "event_id": event_id or agreement_id,
+                "occurred_at": _now(),
+                "agreement_id": agreement_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "policy_hash": policy_hash,
+            }
+        )
 
     async def transfer_started(
         self,
@@ -239,17 +255,19 @@ class ProvBridge:
         user_id: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "TransferStarted",
-            "event_id": event_id or f"transfer-started:{transfer_id}",
-            "occurred_at": _now(),
-            "transfer_id": transfer_id,
-            "agreement_id": agreement_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "TransferStarted",
+                "event_id": event_id or f"transfer-started:{transfer_id}",
+                "occurred_at": _now(),
+                "transfer_id": transfer_id,
+                "agreement_id": agreement_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+            }
+        )
 
     async def data_transfer_completed(
         self,
@@ -262,18 +280,20 @@ class ProvBridge:
         derived_dataset_iri: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "DataTransferCompleted",
-            "event_id": event_id or transfer_id,
-            "occurred_at": _now(),
-            "transfer_id": transfer_id,
-            "agreement_id": agreement_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "bytes_transferred": bytes_transferred,
-            "derived_dataset_iri": derived_dataset_iri,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "DataTransferCompleted",
+                "event_id": event_id or transfer_id,
+                "occurred_at": _now(),
+                "transfer_id": transfer_id,
+                "agreement_id": agreement_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "bytes_transferred": bytes_transferred,
+                "derived_dataset_iri": derived_dataset_iri,
+            }
+        )
 
     async def query_executed(
         self,
@@ -288,20 +308,22 @@ class ProvBridge:
         authorized_subject_ids: list[str] | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "QueryExecuted",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "user_did": _did(user_id),
-            "subject_id": subject_id,
-            "agreement_id": agreement_id,
-            "transfer_id": transfer_id,
-            "row_count": row_count,
-            "authorized_subject_ids": authorized_subject_ids,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "QueryExecuted",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "user_did": _did(user_id),
+                "subject_id": subject_id,
+                "agreement_id": agreement_id,
+                "transfer_id": transfer_id,
+                "row_count": row_count,
+                "authorized_subject_ids": authorized_subject_ids,
+            }
+        )
 
     async def access_revoked(
         self,
@@ -314,18 +336,20 @@ class ProvBridge:
         reason: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "AccessRevoked",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "agreement_id": agreement_id,
-            "transfer_id": transfer_id,
-            "data_product_id": data_product_id,
-            "provider_did": _did(provider_id),
-            "consumer_did": _did(consumer_id),
-            "subject_id": subject_id,
-            "reason": reason,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "AccessRevoked",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "agreement_id": agreement_id,
+                "transfer_id": transfer_id,
+                "data_product_id": data_product_id,
+                "provider_did": _did(provider_id),
+                "consumer_did": _did(consumer_id),
+                "subject_id": subject_id,
+                "reason": reason,
+            }
+        )
 
     # ── Consent & disclosure (Block C) ────────────────────────────────────────
     #
@@ -345,19 +369,21 @@ class ProvBridge:
         legal_basis: dict | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "ConsentGranted",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "subject_id": _did(subject_id),
-            "dataset_id": dataset_id,
-            "consumer_did": consumer_id,
-            "offer_id": offer_id,
-            "purpose": purpose or [],
-            "controller": controller,
-            "controller_role": controller_role,
-            "legal_basis": legal_basis,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "ConsentGranted",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "subject_id": _did(subject_id),
+                "dataset_id": dataset_id,
+                "consumer_did": consumer_id,
+                "offer_id": offer_id,
+                "purpose": purpose or [],
+                "controller": controller,
+                "controller_role": controller_role,
+                "legal_basis": legal_basis,
+            }
+        )
 
     async def consent_revoked(
         self,
@@ -371,19 +397,21 @@ class ProvBridge:
         reason: str | None = None,
         event_id: str | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "ConsentRevoked",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "subject_id": _did(subject_id),
-            "dataset_id": dataset_id,
-            "consumer_did": consumer_id,
-            "offer_id": offer_id,
-            "purpose": purpose or [],
-            "controller": controller,
-            "controller_role": controller_role,
-            "reason": reason,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "ConsentRevoked",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "subject_id": _did(subject_id),
+                "dataset_id": dataset_id,
+                "consumer_did": consumer_id,
+                "offer_id": offer_id,
+                "purpose": purpose or [],
+                "controller": controller,
+                "controller_role": controller_role,
+                "reason": reason,
+            }
+        )
 
     async def data_ingested(
         self,
@@ -396,18 +424,20 @@ class ProvBridge:
         event_id: str | None = None,
         acted_by: dict | None = None,
     ) -> None:
-        await self._prov.emit_event({
-            "event_type": "DataIngested",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "dataset_id": dataset_id,
-            "provider_did": _did(provider_id),
-            "source_ref": source_ref,
-            "record_count": record_count,
-            "consent_snapshot_hash": consent_snapshot_hash,
-            "agreement_ref": agreement_ref,
-            "acted_by": acted_by,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "DataIngested",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "dataset_id": dataset_id,
+                "provider_did": _did(provider_id),
+                "source_ref": source_ref,
+                "record_count": record_count,
+                "consent_snapshot_hash": consent_snapshot_hash,
+                "agreement_ref": agreement_ref,
+                "acted_by": acted_by,
+            }
+        )
 
     async def data_disclosed(
         self,
@@ -436,20 +466,22 @@ class ProvBridge:
         holding a session over it. Defaulting it to ``None`` here would put the
         one field the rule is about behind a keyword nobody has to pass.
         """
-        await self._prov.emit_event({
-            "event_type": "DataDisclosed",
-            "event_id": event_id,
-            "occurred_at": _now(),
-            "dataset_id": dataset_id,
-            "recipient_ref": recipient_ref,
-            "purpose": purpose or [],
-            "columns": columns or [],
-            "subject_count": subject_count,
-            "source_ref": source_ref,
-            "disclosed_by": _did(disclosed_by),
-            "consent_snapshot_hash": consent_snapshot_hash,
-            "agreement_ref": agreement_ref,
-        })
+        await self._prov.emit_event(
+            {
+                "event_type": "DataDisclosed",
+                "event_id": event_id,
+                "occurred_at": _now(),
+                "dataset_id": dataset_id,
+                "recipient_ref": recipient_ref,
+                "purpose": purpose or [],
+                "columns": columns or [],
+                "subject_count": subject_count,
+                "source_ref": source_ref,
+                "disclosed_by": _did(disclosed_by),
+                "consent_snapshot_hash": consent_snapshot_hash,
+                "agreement_ref": agreement_ref,
+            }
+        )
 
     # **There is no `UsageObligationFulfilled`, and that is a decision**
     # (2026-08-09). It had a schema, a materialiser and no emitter anywhere, and

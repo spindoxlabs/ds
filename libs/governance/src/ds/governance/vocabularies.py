@@ -26,6 +26,7 @@ Editing is a code change, like every other vocabulary in this platform
 (rulebook `data-models.md` §5.1). That is what lets this close the browse half of
 `M-11` without touching §5.1 or `M-12`.
 """
+
 from __future__ import annotations
 
 import logging
@@ -206,7 +207,9 @@ def _read(path: Path) -> VocabularyRegistry:
     with path.open("r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
     if not isinstance(raw, dict):
-        raise VocabularyError(f"{path.name} must be a mapping with a 'vocabularies' key")
+        raise VocabularyError(
+            f"{path.name} must be a mapping with a 'vocabularies' key"
+        )
     registry = VocabularyRegistry.model_validate(raw)
     for vocab in registry.vocabularies:
         if vocab.definition:

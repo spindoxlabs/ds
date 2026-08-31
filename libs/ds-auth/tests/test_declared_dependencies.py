@@ -16,6 +16,7 @@ clean production image that ``ImportError``s on the first request that needs a
 service token — which is what makes this a startup invariant (`T-4`) rather than
 a packaging tidy-up.
 """
+
 from __future__ import annotations
 
 import ast
@@ -37,7 +38,9 @@ def _declared() -> set[str]:
     names = set()
     for spec in meta["project"]["dependencies"]:
         # "pyjwt[crypto]>=2.9" -> "pyjwt"
-        names.add(spec.split("[")[0].split(">")[0].split("=")[0].split("<")[0].strip().lower())
+        names.add(
+            spec.split("[")[0].split(">")[0].split("=")[0].split("<")[0].strip().lower()
+        )
     return names
 
 
@@ -60,10 +63,7 @@ def _module_level_imports(path: Path) -> set[str]:
 
 
 def _third_party(names: set[str]) -> set[str]:
-    return {
-        n for n in names
-        if n not in sys.stdlib_module_names and n != "ds_auth"
-    }
+    return {n for n in names if n not in sys.stdlib_module_names and n != "ds_auth"}
 
 
 MODULES = sorted(SRC.glob("*.py"))

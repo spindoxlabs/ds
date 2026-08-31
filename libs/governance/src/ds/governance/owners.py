@@ -6,6 +6,7 @@ Provides:
 - ``load_owners_yaml``: Loads a YAML seed file into an ``OwnersRegistry``.
 - ``HttpOwnersRegistry``: HTTP-backed async client with TTL cache (calls IR).
 """
+
 from __future__ import annotations
 
 import logging
@@ -84,9 +85,7 @@ class HttpOwnersRegistry:
         self._cache: dict[str, OwnerEntry] = {}
         self._cache_times: dict[str, float] = {}
         self._token_provider = token_provider
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url, timeout=10.0
-        )
+        self._client = httpx.AsyncClient(base_url=self._base_url, timeout=10.0)
 
     async def _get_headers(self) -> dict[str, str]:
         if self._token_provider:

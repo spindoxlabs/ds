@@ -1,4 +1,5 @@
 """In-memory catalog cache with atomic swap on each crawl cycle."""
+
 from __future__ import annotations
 
 import threading
@@ -128,9 +129,7 @@ class CatalogCache:
         with self._lock:
             return {
                 source_id: [
-                    iri
-                    for ds in datasets
-                    if (iri := ds.get("@id") or ds.get("id"))
+                    iri for ds in datasets if (iri := ds.get("@id") or ds.get("id"))
                 ]
                 for source_id, datasets in self._datasets_by_provider.items()
             }

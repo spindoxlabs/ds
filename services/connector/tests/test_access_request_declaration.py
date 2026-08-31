@@ -9,6 +9,7 @@ Two properties are under test, and they fail in opposite directions:
   A declaration recorded without that check is an unverified claim sitting in an
   audit record, which later reads as a verified one.
 """
+
 from __future__ import annotations
 
 import pytest
@@ -143,9 +144,7 @@ def test_narrower_purpose_than_the_offer_names_is_accepted():
     """
     req = _request(
         declared_purpose=["FlexibilityResearch"],
-        odrl_policy=_policy(
-            "odrl:isA", {"@id": f"{IRI}EnergyCommunityOperation"}
-        ),
+        odrl_policy=_policy("odrl:isA", {"@id": f"{IRI}EnergyCommunityOperation"}),
     )
     assert _validated_declaration(req) == ["FlexibilityResearch"]
 

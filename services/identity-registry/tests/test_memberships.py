@@ -1,9 +1,8 @@
 """Tests for organization membership API."""
+
 from __future__ import annotations
 
 import pytest
-import pytest_asyncio
-
 from conftest import make_headers
 
 
@@ -37,7 +36,11 @@ class TestMembershipCRUD:
         await _create_did(client, SUBJECT_DID, admin_headers)
         resp = await client.post(
             "/admin/memberships",
-            json={"user_did": SUBJECT_DID, "organization_alias": ORG_ALIAS, "role": "consumer"},
+            json={
+                "user_did": SUBJECT_DID,
+                "organization_alias": ORG_ALIAS,
+                "role": "consumer",
+            },
             headers=admin_headers,
         )
         assert resp.status_code == 201
