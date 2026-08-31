@@ -21,7 +21,7 @@ from pathlib import Path
 import typer
 
 from .assess import assess
-from .report import Verdict, judge_all, render, summarise
+from .report import Verdict, judge_all, measurement_of, render, summarise
 from .rulebook import sort_key
 
 app = typer.Typer(add_completion=False, help=__doc__)
@@ -118,7 +118,12 @@ def status(
 
     if check:
         current = target.read_text(encoding="utf-8") if target.exists() else ""
-        if current != page:
+        # The measurement, not the provenance header. The header names the commit
+        # the render ran at, which for a committed page is always the one before
+        # it — comparing it would make this check unsatisfiable rather than
+        # informative. `measurement_of` is defined beside the code that writes
+        # the line; see the comment there.
+        if measurement_of(current) != measurement_of(page):
             typer.echo(f"{target} is stale — run `task rulebook:status`", err=True)
             raise typer.Exit(1)
         typer.echo(f"{target} is up to date")

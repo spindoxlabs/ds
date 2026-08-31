@@ -123,8 +123,10 @@ bootstrap:
   seedConfigMap: ""
   seedMountPath: /seed
   # `ir-cli org apply` walks owners.yaml entries that carry a `dataspace:` block
-  # all the way to a promoted participant. Set secrets.orgStsSecret below to
-  # hand them a real STS secret instead of the dev default.
+  # all the way to a promoted participant. It hands them **no STS secret**
+  # (`D-51`): how a party authenticates to its own STS is not the anchor's to
+  # decide, so there is nothing to configure here. Each organisation sets its
+  # own at its own bootstrap, from the bundle `ir-cli org bundle` renders.
 
 # Externally reachable base URL of this registry, written into provisioning
 # bundles. Defaults to https://<trust-anchor domain>.
@@ -166,8 +168,6 @@ secrets:
   dbPassword: ""
   keycloakAdminUsername: ""
   keycloakAdminPassword: ""
-  # Optional. STS client secret for organisations seeded by `ir-cli org apply`.
-  orgStsSecret: ""
   # `role: participant` only. The secret this participant's **own** connector
   # presents to this instance's STS. Its own to choose — the trust anchor mints
   # none (`D-51`), which is why it is a per-release secret and not derived.

@@ -172,4 +172,12 @@ marker, or the manifest — the same discipline
   is why `X-8` — *a query result is bounded* — reads `unevidenced`: it is
   enforced by the celine `dataset-api`, which lives outside this repository. The
   report says so rather than borrowing the mock's tests to look complete.
+- **`--check` compares the measurement, not the header.** The page's `Generated
+  … from …` line names the commit the render ran at, which for a committed page
+  is always the commit *before* it — and writing the page dirties the tree, so a
+  re-render at the same `HEAD` says `X-dirty` against the `X` on disk. Comparing
+  that line made the check unsatisfiable in both directions rather than strict
+  ([#18](https://github.com/spindoxlabs/ds/issues/18)); it is excluded, and the
+  header stays for a reader who wants to know roughly how old the numbers are.
+  Everything else on the page is compared byte for byte.
 - **It is a report, not a gate.** `--strict` exists and nothing runs it yet.

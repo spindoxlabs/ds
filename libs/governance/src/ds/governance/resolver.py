@@ -362,3 +362,39 @@ def _merge_models(base, override, model_cls):
             override.model_dump(exclude_unset=True),
         )
     )
+
+
+def exposed_owner_aliases(path: Path) -> list[str]:
+    """The owner aliases named by every dataset a governance file **exposes**.
+
+    The set of organisations a deployment has to onboard is derivable rather than
+    listed: they are the ones that own data published into the dataspace, which is
+    what `ownership[].name` on an exposed dataset says. Deriving it means it cannot
+    drift from the governance it was derived from — a listed set can.
+
+    **Resolved rules, not raw sources.** `ownership` is frequently declared once in
+    `defaults:` and never repeated per dataset — `services/connector/governance-rec/
+    governance.yaml` is exactly that shape — so reading `config.sources` directly
+    finds no owner at all. `resolve()` merges the defaults in, which is also what
+    decides the ODRL assigner, so this reads the same rule the mapper does.
+
+    **Exposed only.** `dataspace.expose: false` is the default, and an unexposed
+    dataset publishes nothing into the dataspace: its owner has no data here to be
+    the owner of. `compliance.checks` already treats ownership as a property of the
+    exposed set for the same reason.
+
+    Order is the file's own, deduplicated — a caller reporting one alias per line
+    gets a stable list rather than a set's arbitrary order.
+    """
+    config = GovernanceResolver.from_file(path).config
+    aliases: list[str] = []
+    seen: set[str] = set()
+    for dataset_name in config.sources:
+        rule = GovernanceResolver(config).resolve(dataset_name)
+        if not rule.dataspace.expose:
+            continue
+        for owner in rule.ownership:
+            if owner.name and owner.name not in seen:
+                seen.add(owner.name)
+                aliases.append(owner.name)
+    return aliases

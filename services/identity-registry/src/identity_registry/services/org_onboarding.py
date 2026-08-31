@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -687,6 +688,116 @@ _ENTRY_OWNER_FIELDS = ("type", "url")
 
 
 @dataclass(slots=True)
+class RunEvidence:
+    """Verification evidence supplied once per invocation, not per entry.
+
+    A deployment's `owners.yaml` is celine-domain and carries no ds `dataspace:`
+    block; the evidence for the organisations in it is *this file at this
+    revision*, which is a fact about the run and not about any one entry. That is
+    the same claim `seed/owners.dev.yaml` already records for itself
+    (`verified_by: dev-seed, evidence_ref: owners.dev.yaml`), so the DB CHECK that
+    a verified owner carries its evidence is satisfied without weakening it.
+
+    A per-entry `dataspace:` block still wins wherever one exists.
+    """
+
+    verified_by: str
+    evidence_ref: str | None = None
+
+
+@dataclass(slots=True)
+class Selection:
+    """Which entries an `org apply` run will attempt, and why the rest are out."""
+
+    entries: list[dict] = field(default_factory=list)
+    #: Reasons a selector refused, one per line, all of them — the caller reports
+    #: every one and then exits non-zero rather than stopping at the first.
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.errors
+
+
+def select_entries(
+    entries: list[dict],
+    *,
+    governance_paths: list[Path] | None = None,
+) -> Selection:
+    """Choose the owners.yaml entries to onboard.
+
+    Two selectors, and **both preserve the property the `dataspace:` skip
+    provides**: they pick out the organisations that operate in the dataspace and
+    leave the rest of the file — attribution metadata for open data, upstream
+    sources with no connector — alone.
+
+    - **Given governance files**, the set is derived: every owner alias named by an
+      exposed dataset, resolved through the registry's existing id/alias swap. An
+      organisation is onboarded because it owns data published here, so the set
+      cannot drift from the governance that produced it.
+    - **Given none**, every entry carrying a `did`. A DID is what
+      `GET /owners/resolve` exists to answer with, and an entry without one cannot
+      be the recipient of anything.
+
+    An alias that resolves to no entry, and an entry carrying no `did`, are both
+    **errors** rather than quiet omissions: a governance file naming an owner the
+    deployment does not declare is a broken deployment, and reporting it as a skip
+    is how it reaches production. Every one is collected so a fourteen-owner file
+    is fixed in one pass.
+    """
+    # `ds-governance` ships no `py.typed`, so mypy skips it. Silenced here rather
+    # than adding the marker: that would make every other consumer start type-
+    # checking against it in the same change, which is a bigger move than this.
+    from ds.governance import (  # type: ignore[import-untyped]
+        OwnerEntry,
+        OwnersRegistry,
+        exposed_owner_aliases,
+    )
+
+    if not governance_paths:
+        return Selection(entries=[e for e in entries if e.get("did")])
+
+    selection = Selection()
+    known: list[OwnerEntry] = []
+    for entry in entries:
+        if not entry.get("id"):
+            selection.errors.append("owners.yaml entry with no id")
+            continue
+        known.append(OwnerEntry(**entry))
+    registry = OwnersRegistry(known)
+
+    chosen: dict[str, dict] = {}
+    by_id = {e["id"]: e for e in entries if e.get("id")}
+    for path in governance_paths:
+        for alias in exposed_owner_aliases(path):
+            owner = registry.by_id(alias)
+            if owner is None:
+                selection.errors.append(
+                    f"{path}: governance names owner '{alias}', which is neither an "
+                    f"id nor an alias in the owners file"
+                )
+                continue
+            if not owner.did:
+                selection.errors.append(
+                    f"{path}: governance names owner '{alias}' ({owner.id}), which "
+                    f"carries no did — an owner with no DID cannot be resolved by "
+                    f"the services that need it"
+                )
+                continue
+            chosen.setdefault(owner.id, by_id[owner.id])
+
+    if not chosen and not selection.errors:
+        selection.errors.append(
+            "no exposed dataset in "
+            + ", ".join(str(p) for p in governance_paths)
+            + " names an owner — nothing would be onboarded, which is not the "
+            "same answer as 'no organisations needed'"
+        )
+    selection.entries = list(chosen.values())
+    return selection
+
+
+@dataclass(slots=True)
 class ApplyStep:
     """What one lifecycle stage did for one entry."""
 
@@ -752,6 +863,7 @@ async def apply_owner_entry(
     db: AsyncSession,
     settings: Settings,
     entry: dict,
+    evidence: RunEvidence | None = None,
 ) -> ApplyOutcome:
     """Walk register → verify → agreement → issue-credential → promote for one entry.
 
@@ -764,18 +876,32 @@ async def apply_owner_entry(
     outcome = ApplyOutcome(alias=alias)
 
     block = entry.get("dataspace")
+    per_run_evidence = False
     if not block:
-        outcome.applied = False
-        outcome.steps.append(
-            ApplyStep("entry", "skipped", "no dataspace: block")
-        )
-        return outcome
+        # Without run evidence this is the old behaviour exactly: the entry is not
+        # ours and is left alone. With it, the entry is onboarded as far as the
+        # evidence honestly supports — application and verification, no agreement,
+        # no credential, no promotion, because a run flag cannot assert those.
+        if evidence is None:
+            outcome.applied = False
+            outcome.steps.append(
+                ApplyStep("entry", "skipped", "no dataspace: block")
+            )
+            return outcome
+        block = {
+            "verified_by": evidence.verified_by,
+            "evidence_ref": evidence.evidence_ref,
+        }
+        per_run_evidence = True
     if not isinstance(block, dict):
         outcome.error = f"{alias}: dataspace must be a mapping"
         return outcome
 
     try:
-        await _apply_steps(db, settings, entry, block, alias, outcome)
+        await _apply_steps(
+            db, settings, entry, block, alias, outcome,
+            per_run_evidence=per_run_evidence,
+        )
     except OrgOnboardingError as exc:
         outcome.error = f"{alias}: {exc.message}"
     return outcome
@@ -788,6 +914,8 @@ async def _apply_steps(
     block: dict,
     alias: str,
     outcome: ApplyOutcome,
+    *,
+    per_run_evidence: bool = False,
 ) -> None:
     legal_name = block.get("legal_name") or entry.get("name") or alias
     did = block.get("did") or entry.get("did")
@@ -839,25 +967,45 @@ async def _apply_steps(
         )
 
     # ── 1. application ────────────────────────────────────────────
-    fields = {
-        "legal_name": legal_name,
-        "registration_number": block.get("registration_number"),
-        "registration_type": registration_type,
-        "hq_country_code": block.get("hq_country_code"),
-        "legal_country_code": block.get("legal_country_code"),
-        "parent_organizations": block.get("parent_organizations"),
-        "sub_organizations": block.get("sub_organizations"),
-        "roles": roles,
-        "did": did,
-        "dsp_address": dsp_address,
-    }
+    app_defaults: dict | None = None
+    if per_run_evidence:
+        # **Only what the file actually says.** A deployment's owners.yaml carries
+        # no registration number, no country codes and no participant role, and a
+        # synthesised block reports them as ``None`` — which `upsert_application`
+        # would write as *"clear this"*, blanking the legal identity of an
+        # organisation registered properly. It refuses outright once the
+        # application is verified (`409`, the credential asserts the old values),
+        # so this path could not even run against an organisation ds already knows.
+        #
+        # Omitting a key leaves the stored value alone, and `defaults` applies on
+        # create only, so a first run still writes a complete row. `did` stays in
+        # `fields` because it is the one fact this file is authoritative about; a
+        # DID that has changed still meets the verified-application guard, which is
+        # right — re-minting is not decided here.
+        fields = {"did": did}
+        app_defaults = {"legal_name": legal_name, "roles": roles}
+    else:
+        fields = {
+            "legal_name": legal_name,
+            "registration_number": block.get("registration_number"),
+            "registration_type": registration_type,
+            "hq_country_code": block.get("hq_country_code"),
+            "legal_country_code": block.get("legal_country_code"),
+            "parent_organizations": block.get("parent_organizations"),
+            "sub_organizations": block.get("sub_organizations"),
+            "roles": roles,
+            "did": did,
+            "dsp_address": dsp_address,
+        }
     before = await resolve_application(db, alias)
     unchanged = before is not None and all(
         getattr(before, name) == value for name, value in fields.items()
     )
     # Same intake as the HTTP route and `org register`, so a seed cannot edit a
     # verified organisation's legal identity behind its issued credential.
-    app_row, created_app = await upsert_application(db, alias, fields)
+    app_row, created_app = await upsert_application(
+        db, alias, fields, defaults=app_defaults
+    )
     if created_app:
         action = "created"
     else:
@@ -869,12 +1017,29 @@ async def _apply_steps(
     owner_before = existing.scalar_one_or_none()
     was_verified = owner_before is not None and owner_before.status == "verified"
 
+    # Per-run evidence must never overwrite a claim the entry itself made. The
+    # flags say "this deployment's owner registry at this revision", which is true
+    # and generic; an owner ds verified properly carries a DPA reference or a
+    # registration extract, and rewriting that to the generic string would
+    # silently downgrade the evidence behind an issued credential. Free
+    # verification is the state T30 closed, and this is the same hole from the
+    # other side. A per-entry `dataspace:` block is not per-run and still wins.
+    retained_evidence = (
+        per_run_evidence
+        and app_row.verified_by is not None
+        and app_row.verified_by != str(verified_by)
+    )
+    if retained_evidence:
+        verified_by = app_row.verified_by
+        evidence_ref = None
+
     if app_row.status != "verified":
         app_row.status = "verified"
         app_row.verified_at = datetime.now(UTC)
-    app_row.verified_by = str(verified_by)
-    if evidence_ref is not None:
-        app_row.evidence_ref = evidence_ref
+    if not retained_evidence:
+        app_row.verified_by = str(verified_by)
+        if evidence_ref is not None:
+            app_row.evidence_ref = evidence_ref
     await db.flush()
 
     owner = await upsert_owner_from_application(
@@ -893,13 +1058,16 @@ async def _apply_steps(
         owner.organization_config = entry["organization"]
     await db.flush()
 
-    if was_verified:
+    if retained_evidence:
         verification = "unchanged"
+        detail = f"kept existing evidence: verified by {verified_by}"
+    elif was_verified:
+        verification = "unchanged"
+        detail = f"verified by {verified_by}"
     else:
         verification = "advanced" if owner_before else "created"
-    outcome.steps.append(
-        ApplyStep("verification", verification, f"verified by {verified_by}")
-    )
+        detail = f"verified by {verified_by}"
+    outcome.steps.append(ApplyStep("verification", verification, detail))
 
     # ── 3. agreement acceptance ───────────────────────────────────
     if not accepted:

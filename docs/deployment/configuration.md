@@ -146,7 +146,9 @@ Bootstrap is idempotent by design — every command has upsert semantics — so 
 pod start. It runs `agreement import` → `owner import` → `org apply` **in that order**, because
 an organisation inherits its capacity by accepting an agreement version, so the agreements must
 exist first. `org apply` walks the full onboarding chain for every owner entry carrying a
-dataspace block; entries without one are skipped rather than guessed at.
+dataspace block; entries without one are skipped rather than guessed at. A deployment whose
+`owners.yaml` carries no such block onboards its organisations by passing `--verified-by` and
+`--governance` instead — see [the identity-registry service page](../services/identity-registry.md).
 
 ## `participants` — one release group each
 

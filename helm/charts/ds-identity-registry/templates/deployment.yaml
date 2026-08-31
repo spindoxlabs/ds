@@ -96,11 +96,10 @@ spec:
                 # Entries carrying a `dataspace:` block are walked all the way to
                 # a promoted participant; the rest are skipped. Idempotent, so a
                 # chart re-run is a no-op.
-                {{- if .Values.secrets.orgStsSecret }}
-                ir-cli org apply --file "$SEED/owners.yaml" --sts-secret "$ORG_STS_SECRET"
-                {{- else }}
+                # No STS secret is passed: the trust anchor mints none (`D-51`),
+                # so a promoted organisation's row carries none and the secret
+                # its connector presents to its own STS is that party's to choose.
                 ir-cli org apply --file "$SEED/owners.yaml"
-                {{- end }}
               fi
               if [ -f "$SEED/bootstrap.sh" ]; then
                 sh "$SEED/bootstrap.sh"
@@ -108,13 +107,6 @@ spec:
               echo "identity bootstrap complete"
           env:
             {{- include "ir.env" . | nindent 12 }}
-            {{- if .Values.secrets.orgStsSecret }}
-            - name: ORG_STS_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "ds.secretName" . }}
-                  key: ORG_STS_SECRET
-            {{- end }}
           securityContext:
             {{- include "ds.containerSecurityContext" . | nindent 12 }}
           volumeMounts:

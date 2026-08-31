@@ -318,7 +318,24 @@ database-touching command verifies the schema revision first, and every command 
 | `keycloak` | `org-sync`, `map-user` |
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
-reports each entry's outcome, rolling back only the failures. The `merge` and `mirror`
+reports each entry's outcome, rolling back only the failures.
+
+**A deployment's owners.yaml has no `dataspace:` block on any entry, and should not** — that
+file is the deployment's own domain registry and its schema forbids ds fields, so the block
+cannot be what selects the entries there. Given `--verified-by`, entries without one become
+eligible, and two flags decide the rest:
+
+| Flag | What it does |
+|---|---|
+| `--governance` (repeatable) | Selects the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `set-distribuzione` here. The onboarded set is derived from the data actually published rather than listed a second time |
+| `--verified-by`, `--evidence-ref` | The run's verification evidence, applied to entries that supply none. Never to entries that do: a per-entry block's claim is left alone and reported as `verification unchanged`, because overwriting a DPA reference with a generic run string would downgrade the evidence behind an issued credential |
+
+Without `--governance` the selector is *carrying a `did`*. Either way the chain stops after
+verification — a verified owner holding its `did` and `aliases`, which is the whole of what
+`GET /owners/resolve` needs. An agreement acceptance, a credential and a participant promotion
+are legal and topological facts a run flag must not assert, so they stay with the per-entry
+block. An alias governance names that the owners file does not declare, and a selected owner
+carrying no `did`, are **errors** rather than skips, all of them reported in one pass. The `merge` and `mirror`
 commands that used to sit beside it are gone, and ds generates no YAML:
 `celine-policies keycloak sync` takes every file that declares the realm and merges them
 itself, so a host realm mounts [`services/keycloak/clients.yaml`](keycloak.md) directly.

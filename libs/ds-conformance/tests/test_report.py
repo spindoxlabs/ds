@@ -1,7 +1,7 @@
 from datetime import date
 
 from ds_conformance.model import Assessment, Disposition, Evidence, Layer, Rule, State
-from ds_conformance.report import Verdict, judge, render, summarise
+from ds_conformance.report import Verdict, judge, measurement_of, render, summarise
 
 
 def rule(rule_id: str, status: str | None) -> Rule:
@@ -103,3 +103,40 @@ def test_a_covered_requirement_whose_rule_is_unevidenced_says_no() -> None:
     assessment.evidence = []
     page = render(assessment, generated_on=date(2026, 8, 10), commit="abc1234")
     assert "**no** — `A-1`" in page
+
+
+# ── What `--check` compares ───────────────────────────────────────
+#
+# The page is committed, so it is rendered before the commit that carries it and
+# its provenance line names the parent — forever. These pin that the comparison
+# ignores that line and nothing else.
+
+
+def test_the_same_measurement_at_two_commits_compares_equal() -> None:
+    # The defect: this is the clean-tree case, and it made `--check` red on a
+    # tree where nothing measured had changed.
+    committed = render(build(), generated_on=date(2026, 8, 10), commit="abc1234")
+    rendered = render(build(), generated_on=date(2026, 8, 31), commit="def5678-dirty")
+    assert committed != rendered
+    assert measurement_of(committed) == measurement_of(rendered)
+
+
+def test_a_changed_measurement_still_compares_unequal() -> None:
+    # The half that says the check still does its job. Same commit, same date —
+    # only the evidence differs, and that must survive the exclusion.
+    committed = render(build(), generated_on=date(2026, 8, 10), commit="abc1234")
+    without = build()
+    without.evidence = []
+    rendered = render(without, generated_on=date(2026, 8, 10), commit="abc1234")
+    assert measurement_of(committed) != measurement_of(rendered)
+
+
+def test_only_the_provenance_line_is_dropped() -> None:
+    page = render(build(), generated_on=date(2026, 8, 10), commit="abc1234")
+    stripped = measurement_of(page)
+    assert "abc1234" not in stripped
+    assert "2026-08-10" not in stripped
+    # Everything else the page says is still there to be compared.
+    assert "Do not edit" in stripped
+    assert "`DSSC-AUP-01`" in stripped
+    assert stripped.count("\n") == page.count("\n")

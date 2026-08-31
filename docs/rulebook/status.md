@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-08-31 from `6166056`.
+Generated 2026-08-31 from `37ce696-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 116 |
 | …of those, **evidenced by a test that names them** | 116 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 788 |
+| Test nodes declaring a rule | 790 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -103,10 +103,10 @@ None. Every rule claiming enforcement names at least one test node.
 
 | Rule | Claimed | Verdict | Layers | Evidence |
 |---|---|---|---|---|
-| `P-1` | Enforced | ✅ evidenced | e2e×1, unit×11 | `org-onboarding`, `services/identity-registry/tests/test_agreements_current.py::test_owner_without_an_accepted_agreement_is_not_found`, `services/identity-registry/tests/test_agreements_current.py::test_owner_not_verified_is_not_found` +9 more |
+| `P-1` | Enforced | ✅ evidenced | e2e×1, unit×12 | `org-onboarding`, `services/identity-registry/tests/test_agreements_current.py::test_owner_without_an_accepted_agreement_is_not_found`, `services/identity-registry/tests/test_agreements_current.py::test_owner_not_verified_is_not_found` +10 more |
 | `P-2` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×1 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_credential_is_signed_by_the_trust_anchor`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` |
 | `P-3` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×2 | `dcp-trust`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_presentation_carries_the_membership_credential`, `services/identity-registry/tests/test_api.py::test_issue_membership_credential` +1 more |
-| `P-4` | Enforced | ✅ evidenced | e2e×1, unit×9 | `org-onboarding`, `services/connector/tests/test_consent_provisioning.py::test_admin_shares_is_idempotent`, `services/identity-registry/tests/test_cip_conformance.py::test_bootstrapping_again_republishes_the_service_entry` +7 more |
+| `P-4` | Enforced | ✅ evidenced | e2e×1, unit×10 | `org-onboarding`, `services/connector/tests/test_consent_provisioning.py::test_admin_shares_is_idempotent`, `services/identity-registry/tests/test_cip_conformance.py::test_bootstrapping_again_republishes_the_service_entry` +8 more |
 | `P-5` | Declared | · consistent | — | — |
 | `P-6` | Enforced | ✅ evidenced | integration×2, unit×10 | `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_each_registry_publishes_its_did_at_the_well_known_path`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_the_published_document_carries_a_usable_key`, `services/identity-registry/tests/test_auth.py::test_public_did_without_auth` +9 more |
 | `P-7` | Enforced | ✅ evidenced | unit×11 | `services/identity-registry/tests/test_custody.py::test_an_anchor_holding_only_its_own_key_is_clean`, `services/identity-registry/tests/test_custody.py::test_an_enrolled_participants_public_key_is_not_custody`, `services/identity-registry/tests/test_custody.py::test_a_participant_instance_holds_its_own` +8 more |
