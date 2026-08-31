@@ -189,6 +189,7 @@ jobs:
             -e CELINE_KEYCLOAK_BASE_URL="$KC_URL" \
             -e CELINE_KEYCLOAK_REALM=dataspaces \
             -e CELINE_KEYCLOAK_SECRETS_FILE=/tmp/.secrets.yaml \
+            -e ENV=dev \
             -e KEYCLOAK_ADMIN_USERNAME="$KEYCLOAK_ADMIN_USERNAME" \
             -e KEYCLOAK_ADMIN_PASSWORD="$KEYCLOAK_ADMIN_PASSWORD" \
             -e SVC_DS_IDENTITY_REGISTRY_SECRET=svc-ds-identity-registry \

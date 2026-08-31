@@ -550,6 +550,18 @@ services:
       # An OUTPUT path: `keycloak sync` writes the secrets it applied here. It is
       # not how secrets get in — that is the block below.
       CELINE_KEYCLOAK_SECRETS_FILE: /tmp/.secrets.yaml
+      # `celine-policies` refuses to sync a client whose secret equals its own
+      # client id — guessable from the client list alone — unless it is told the
+      # realm is a development one. Every secret below deliberately falls back to
+      # exactly that, so without this the dev stack does not sync at all: it stops
+      # before authenticating with "N client(s) have a placeholder secret and ENV
+      # is not a development environment".
+      #
+      # **Dev and CI only.** A deployment that sets real `SVC_…_SECRET` values must
+      # not carry this: the check is the thing that catches a production realm
+      # started with the defaults still in place, and `ENV=dev` switches it off.
+      # Production is Helm, which does not run this sync at all.
+      ENV: dev
       # ── The client secrets the realm is given ────────────────────────────────
       #
       # The mounted files carry each one as `${SVC_…_SECRET:-<client-id>}`
