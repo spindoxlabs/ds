@@ -78,8 +78,8 @@ scopes:
   # and a long-lived process should not hold one. ds applies that rule to its own
   # service clients, and it is why `identity-registry.admin` is granted here
   # rather than in the file that crosses: a realm ds owns may hand its operator
-  # the superset, a realm ds is a guest in is not ds's to widen. This replaces
-  # the transformation `keycloak_mirror.py` used to perform on the way across.
+  # the superset, a realm ds is a guest in is not ds's to widen. A generator used
+  # to strip these on the way across; the split states it instead.
   - name: identity-registry.admin
     description: Admin access to dataspace identity-registry API
   - name: connector.admin

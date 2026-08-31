@@ -1,16 +1,16 @@
-"""What a Keycloak client must carry to be usable, at both places ds states it.
+"""What a Keycloak client must carry to be usable.
 
-Two surfaces, one requirement — a client that authenticates as itself needs a
-service account, and a token is only accepted where its `aud` names the
-recipient:
+A client that authenticates as itself needs a service account, and a token is
+only accepted where its `aud` names the recipient. `keycloak_admin.ensure_service_client`
+is where ds states that — the client it creates itself when it owns the realm and
+promotes a third party. It dropped part of it once, and the client is created
+successfully and fails later, somewhere else, in a way that reads like a
+permissions bug.
 
-* `keycloak_mirror.build_mirror` — the fragment a **host** realm must carry when
-  ds is a guest in it;
-* `keycloak_admin.ensure_service_client` — the client ds creates itself when it
-  owns the realm and promotes a third party.
-
-Both dropped part of that, and in both cases the client is created successfully
-and fails later, somewhere else, in a way that reads like a permissions bug.
+The other surface this file used to cover was `keycloak_mirror.build_mirror`, the
+fragment a host realm had to carry when ds is a guest in it. There is no fragment
+now: the host mounts `services/keycloak/clients.yaml` itself, so what crosses is a
+file boundary and `libs/ds-auth/tests/test_vocabulary.py` asserts it there.
 """
 
 from __future__ import annotations
@@ -18,79 +18,6 @@ from __future__ import annotations
 import pytest
 
 from identity_registry.services.keycloak_admin import KeycloakAdminClient
-from identity_registry.services.keycloak_mirror import build_mirror
-
-# ── The mirror hands the host a usable client ─────────────────────
-
-
-def test_the_mirror_preserves_service_account_enabled():
-    """Dropped, a host realm creates the client with no service account and
-    every client_credentials grant against it fails."""
-    mirror = build_mirror(
-        {
-            "scopes": [],
-            "clients": [
-                {
-                    "client_id": "svc-ds-portal",
-                    "name": "Dataspace Portal",
-                    "secret": "x",
-                    "service_account_enabled": True,
-                    "default_scopes": ["dataset.query"],
-                }
-            ],
-        }
-    )
-    assert mirror["clients"][0]["service_account_enabled"] is True
-
-
-def test_the_mirror_omits_the_flag_where_it_was_not_declared():
-    """Absent stays absent — the mirror reports ds's declaration, it does not
-    invent a posture the authority file never took."""
-    mirror = build_mirror(
-        {
-            "scopes": [],
-            "clients": [
-                {
-                    "client_id": "svc-ds-provenance",
-                    "name": "Dataspace Provenance",
-                    "secret": "x",
-                    "default_scopes": [],
-                }
-            ],
-        }
-    )
-    assert "service_account_enabled" not in mirror["clients"][0]
-
-
-def test_the_real_declaration_mirrors_every_service_account():
-    """Against `clients.yaml` itself, so this cannot pass on a fixture while the
-    file it exists to mirror says something else."""
-    import pathlib
-
-    import yaml
-
-    repo = pathlib.Path(__file__).resolve().parents[3]
-    path = repo / "services" / "keycloak" / "clients.yaml"
-    if not path.is_file():
-        pytest.skip(f"authority file not present: {path}")
-
-    source = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-    expected = {
-        c["client_id"]
-        for c in source.get("clients") or []
-        if c.get("service_account_enabled")
-    }
-    mirrored = {
-        c["client_id"]
-        for c in build_mirror(source)["clients"]
-        if c.get("service_account_enabled")
-    }
-    # Some declaring clients are deliberately excluded from the mirror; none
-    # that survives may lose the flag.
-    surviving = {c["client_id"] for c in build_mirror(source)["clients"]}
-    assert mirrored == (expected & surviving)
-    assert expected, "clients.yaml declares no service accounts — fixture is stale"
-
 
 # ── The client ds creates itself carries its audiences ────────────
 

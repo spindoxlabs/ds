@@ -52,20 +52,9 @@ def _core_scopes() -> set[str]:
     return scopes
 
 
-#: Generated artefacts that sit beside the overlays and match the same glob.
-#: Excluded deliberately: counting one as a source would make every assertion
-#: below tautological — a permission declared nowhere would still appear
-#: "declared", since the mirror is rendered *from* the files above.
-_GENERATED = {"clients.host.generated.yaml"}
-
-
 def _overlay_paths() -> list[Path]:
     """Domain overlays only — a backend deployed *beside* ds, never ds itself."""
-    return sorted(
-        p
-        for p in KEYCLOAK.glob("clients.*.yaml")
-        if p.name not in _GENERATED and p.name not in _DS_FILES
-    )
+    return sorted(p for p in KEYCLOAK.glob("clients.*.yaml") if p.name not in _DS_FILES)
 
 
 def _all_scopes() -> set[str]:
@@ -295,66 +284,60 @@ def test_the_taskfile_never_mints_a_service_side_client_secret():
     )
 
 
-# ── The host-realm mirror ────────────────────────────────────────────────────
+# ── What crosses into a host realm ───────────────────────────────────────────
 #
-# Where ds is a guest, the host realm's `clients.yaml` must carry the same clients
-# and scopes. That copy was hand-maintained, and every row of drift found so far —
-# `svc-edc` missing `connector.internal`, `svc-ds-provenance` declared in neither
-# file, `svc-ds-portal` holding `connector.admin` — is a symptom of two files
-# edited by hand and compared by eye. It is generated now; this is the gate.
+# Where ds is a guest, the host realm mounts `clients.yaml` itself. That copy used
+# to be hand-maintained, and every row of drift found while it was — `svc-edc`
+# missing `connector.internal`, `svc-ds-provenance` declared in neither file,
+# `svc-ds-portal` holding `connector.admin` — came from two files edited by hand
+# and compared by eye. A generator replaced the hand, and the Phase 2 split
+# replaced the generator: what crosses is now a file boundary, so the file is the
+# thing to assert against. These are the generator's guards, kept.
 
 
-def _mirror_module():
-    """The generator, imported normally — it lives in the identity-registry package
-    because `ir-cli` already owns the `keycloak` command surface."""
-    import sys
-
-    src = REPO / "services" / "identity-registry" / "src"
-    if str(src) not in sys.path:
-        sys.path.insert(0, str(src))
-    from identity_registry.services import keycloak_mirror
-
-    return keycloak_mirror
+def _crossing() -> dict:
+    """`clients.yaml` — ds's declaration, and the only file that crosses."""
+    return yaml.safe_load((KEYCLOAK / "clients.yaml").read_text(encoding="utf-8"))
 
 
-def test_the_generated_mirror_is_not_stale():
-    """If this fails, `clients.yaml` changed and the mirror did not — run
-    `task keycloak:mirror` and commit the result."""
-    mirror = _mirror_module()
-    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
-    assert mirror.TARGET.exists(), "mirror missing — run `task keycloak:mirror`"
-    assert mirror.TARGET.read_text(encoding="utf-8") == mirror.render(source), (
-        "mirror is stale — run `task keycloak:mirror`"
+def _owned_realm_only() -> dict:
+    """`clients.dataspaces.yaml` — what a realm ds *owns* adds, and never crosses."""
+    return yaml.safe_load(
+        (KEYCLOAK / "clients.dataspaces.yaml").read_text(encoding="utf-8")
     )
 
 
-def test_the_mirror_carries_no_admin_grant():
+def test_no_admin_grant_crosses():
     """Admin is an *operator* grant and a superset over every `{service}.*`. A
-    long-lived process should not hold one, and a copy must not quietly widen what
-    the original granted."""
-    mirror = _mirror_module()
-    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
-    built = mirror.build_mirror(source)
-    for client in built["clients"]:
-        leaked = [s for s in client["default_scopes"] if s.endswith(".admin")]
+    long-lived process should not hold one, and a host realm must not be handed
+    one by mounting ds's file — so the file that crosses neither declares the
+    `*.admin` scopes nor grants them."""
+    crossing = _crossing()
+    for client in crossing["clients"]:
+        leaked = [s for s in client.get("default_scopes", []) if s.endswith(".admin")]
         assert not leaked, f"{client['client_id']} crosses with {leaked}"
-    assert not [s for s in built["scopes"] if s["name"].endswith(".admin")]
+    assert not [
+        s for s in crossing.get("scopes", []) if s["name"].endswith(".admin")
+    ], "an admin scope is declared in the file that crosses"
 
 
 def test_the_test_identity_never_crosses():
     """`svc-ds-e2e` is dev/CI only and deliberately over-granted. A test identity
-    in a production realm is a permanent credential nobody audits."""
-    mirror = _mirror_module()
-    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
-    ids = {c["client_id"] for c in mirror.build_mirror(source)["clients"]}
-    assert "svc-ds-e2e" not in ids
+    in a production realm is a permanent credential nobody audits, so it is
+    declared in the file a host never mounts — and it must still be declared
+    *somewhere*, or the e2e suite loses its identity to a silent deletion."""
+    assert "svc-ds-e2e" not in {c["client_id"] for c in _crossing()["clients"]}
+    assert "svc-ds-e2e" in {c["client_id"] for c in _owned_realm_only()["clients"]}
 
 
 def test_every_other_client_does_cross():
     """Provisioned-but-unused is harmless; missing is a 403 at the worst moment.
-    So a client whose grants are *entirely* admin still crosses, with none."""
-    mirror = _mirror_module()
-    source = yaml.safe_load(mirror.SOURCE.read_text(encoding="utf-8"))
-    declared = {c["client_id"] for c in source["clients"]} - {"svc-ds-e2e"}
-    crossed = {c["client_id"] for c in mirror.build_mirror(source)["clients"]}
+    So every client ds declares crosses except the test identity — including one
+    whose grants are *entirely* admin, which crosses carrying none of them."""
+    declared = {
+        c["client_id"]
+        for doc in (_crossing(), _owned_realm_only())
+        for c in doc["clients"]
+    } - {"svc-ds-e2e"}
+    crossed = {c["client_id"] for c in _crossing()["clients"]}
     assert declared == crossed

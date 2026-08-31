@@ -1609,14 +1609,9 @@ tasks:
         # declares, silently: a check that finds fewer clients still passes.
         #
         # A glob, so a new overlay is covered by existing rather than by editing
-        # this. `clients.host.generated.yaml` is rendered *from* these files and
-        # would only ever contribute duplicates, so it is skipped — it is the last
-        # generated artefact, and this line goes with it.
+        # this. ds generates no YAML, so every file the glob finds is a source.
         clients_files=""
         for f in services/keycloak/clients.yaml services/keycloak/clients.*.yaml; do
-          case "$f" in
-            *.generated.yaml) continue ;;
-          esac
           [ -f "$f" ] && clients_files="$clients_files $f"
         done
         if [ -n "$clients_files" ]; then
@@ -1887,16 +1882,6 @@ tasks:
         {{if eq .REFRESH "true"}}--refresh{{end}}
     vars:
       REFRESH: '{{.REFRESH | default "false"}}'
-
-  keycloak:mirror:
-    desc: Regenerate the ds section a host realm's clients.yaml must carry
-    cmds:
-      - cd services/identity-registry && uv run ir-cli keycloak mirror
-
-  keycloak:mirror:diff:
-    desc: "Report what a host realm is missing: HOST=<path to its clients.yaml>"
-    cmds:
-      - cd services/identity-registry && uv run ir-cli keycloak mirror --diff {{.HOST}}
 
   # ── Release ─────────────────────────────────────────────────────────────────
   #

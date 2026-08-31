@@ -160,8 +160,8 @@ clients:
   # This is not an orphan, and the grants below must not be "cleaned up" because
   # `grep` finds no caller — removing them breaks organisation onboarding in a
   # deployment this repository cannot test. That ds and the domain platform can
-  # share one realm is the whole point of `clients.host.generated.yaml`, which
-  # exists for "a deployment where ds is a guest rather than the realm's owner".
+  # share one realm is the whole point of *this file*: it is the one the host
+  # realm mounts as an overlay when ds is a guest rather than the realm's owner.
   - client_id: svc-ds-onboarding
     name: Dataspace Onboarding
     secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}
@@ -254,8 +254,8 @@ clients:
   # `svc-ds-e2e` is declared in `clients.dataspaces.yaml`. It is dev/CI only and
   # deliberately over-granted, and a test identity in a realm ds does not own is a
   # permanent credential nobody audits — so it lives in the file posture B never
-  # mounts. That was a rule inside `keycloak_mirror.py` until 2026-08-28; it is a
-  # file boundary now, which is why the generator could go.
+  # mounts. That was a rule inside a generator until 2026-08-28; it is a file
+  # boundary now, which is why the generator is gone.
 
   - client_id: svc-ds-connector
     name: Dataspace Connector
