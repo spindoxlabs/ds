@@ -62,6 +62,7 @@ jobs:
           #
           # Re-measured 2026-08-31, after `ruff format` + `ruff check --fix`:
           #   libs/ds-auth               0   AUTH-05 — cleared 2026-08-06
+          #   libs/ds-conformance        0   clean since it was written
           #   libs/ds-e2e               40   E2E-11 — `mypy --strict` on src/ is
           #                                    clear (2026-08-28, issue #8) and now
           #                                    runs in that unit's `lint`; ruff, and
@@ -69,9 +70,14 @@ jobs:
           #   libs/governance            0   cleared 2026-08-31, now `lint: true`
           #   services/connector        61
           #   services/federated-catalog 0   cleared 2026-08-31, now `lint: true`
-          #   services/identity-registry 9
+          #   services/identity-registry 0   cleared 2026-08-31, now `lint: true`
           # Flip a unit to `lint: true` in the same commit that clears it.
           - unit: libs/ds-auth
+            lint: true
+          # The tool that measures the rulebook, gated by nothing until
+          # 2026-08-31 — the `EDC-09` shape this file's header names, in the one
+          # unit whose job is to report on the others.
+          - unit: libs/ds-conformance
             lint: true
           - unit: libs/ds-e2e
             lint: false
@@ -90,7 +96,7 @@ jobs:
           - unit: services/federated-catalog
             lint: true
           - unit: services/identity-registry
-            lint: false
+            lint: true
           - unit: services/provenance
             lint: true
     steps:

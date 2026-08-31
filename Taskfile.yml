@@ -1829,8 +1829,19 @@ tasks:
       - cd libs/ds-conformance && uv run ds-conformance status --repo ../..
 
   rulebook:check:
-    desc: Fail if docs/rulebook/status.md is stale, or if the rulebook has a structural defect
+    desc: Fail if docs/rulebook/status.md no longer matches the tree it measures
     cmds:
+      # Staleness only. A **structural defect** is reported in the output and in
+      # the page, and fails nothing here — `problems` gates under `--strict`
+      # alone (`cli.py`), which by decision nothing runs. The description used to
+      # claim otherwise; a defect introduced and then committed alongside a
+      # regenerated page would have passed this check while the wording said it
+      # could not.
+      #
+      # The comparison **excludes the `Generated … from …` header** (issue #18):
+      # a committed page is rendered before the commit that carries it, so that
+      # line always names the parent and comparing it made the check
+      # unsatisfiable. See `docs/development/conformance.md`.
       - cd libs/ds-conformance && uv run ds-conformance status --repo ../.. --check
 
   rulebook:summary:

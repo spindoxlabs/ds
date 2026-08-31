@@ -1,11 +1,11 @@
 """What a Keycloak client must carry to be usable.
 
 A client that authenticates as itself needs a service account, and a token is
-only accepted where its `aud` names the recipient. `keycloak_admin.ensure_service_client`
-is where ds states that — the client it creates itself when it owns the realm and
-promotes a third party. It dropped part of it once, and the client is created
-successfully and fails later, somewhere else, in a way that reads like a
-permissions bug.
+only accepted where its `aud` names the recipient.
+`keycloak_admin.ensure_service_client` is where ds states that — the client it
+creates itself when it owns the realm and promotes a third party. It dropped
+part of it once, and the client is created successfully and fails later,
+somewhere else, in a way that reads like a permissions bug.
 
 The other surface this file used to cover was `keycloak_mirror.build_mirror`, the
 fragment a host realm had to carry when ds is a guest in it. There is no fragment

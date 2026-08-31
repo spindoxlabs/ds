@@ -195,10 +195,14 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
     result = runner.invoke(
         cli,
         [
-            "org", "apply",
-            "--file", str(owners),
-            "--governance", str(gov),
-            "--verified-by", "demo3-deployment",
+            "org",
+            "apply",
+            "--file",
+            str(owners),
+            "--governance",
+            str(gov),
+            "--verified-by",
+            "demo3-deployment",
         ],
     )
 

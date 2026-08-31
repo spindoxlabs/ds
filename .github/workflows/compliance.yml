@@ -9,6 +9,40 @@ on:
   workflow_dispatch:
 
 jobs:
+  # The rulebook status page is committed so that drift shows up in a diff — and
+  # until 2026-08-31 nothing checked it, because `--check` could not pass: it
+  # compared a provenance header naming the commit *before* the one carrying the
+  # page (issue #18). It was red in every commit that ever carried the page, so
+  # wiring it in would have meant a permanently-failing gate.
+  #
+  # Fixed, so gated. This is evidence about the repository rather than a unit
+  # suite, which is why it sits here and not in `tests.yml`: a reader asking
+  # whether the conformance evidence is current looks at this workflow.
+  rulebook-current:
+    name: Rulebook status page is current
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - uses: go-task/setup-task@v1
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      # The unit's own task, not a hand-copied command — the rule `tests.yml`
+      # states, for the same reason: CI must not drift from what a developer
+      # types. Fails with "run `task rulebook:status`", which is the fix.
+      - name: docs/rulebook/status.md matches the tree
+        run: task rulebook:check
+
   offline-evidence:
     name: Governance validation and audit evidence
     runs-on: ubuntu-latest

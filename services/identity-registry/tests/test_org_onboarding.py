@@ -337,7 +337,8 @@ async def test_full_lifecycle_and_suspend(client, db_session):
     from urllib.parse import quote
 
     check = await client.get(
-        f"/admin/participants/check?did={quote(ORG_DID, safe='')}&scope=dataspaces.query",
+        f"/admin/participants/check?did={quote(ORG_DID, safe='')}"
+        "&scope=dataspaces.query",
         headers=HEADERS,
     )
     assert check.json()["allowed"] is True
@@ -365,7 +366,8 @@ async def test_full_lifecycle_and_suspend(client, db_session):
     assert all(c["status"] != "revoked" for c in held)
 
     check2 = await client.get(
-        f"/admin/participants/check?did={quote(ORG_DID, safe='')}&scope=dataspaces.query",
+        f"/admin/participants/check?did={quote(ORG_DID, safe='')}"
+        "&scope=dataspaces.query",
         headers=HEADERS,
     )
     assert check2.json()["allowed"] is False
@@ -386,7 +388,8 @@ async def test_full_lifecycle_and_suspend(client, db_session):
     assert all(c["status"] == "active" for c in back)
 
     check3 = await client.get(
-        f"/admin/participants/check?did={quote(ORG_DID, safe='')}&scope=dataspaces.query",
+        f"/admin/participants/check?did={quote(ORG_DID, safe='')}"
+        "&scope=dataspaces.query",
         headers=HEADERS,
     )
     assert check3.json()["allowed"] is True

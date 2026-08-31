@@ -158,6 +158,11 @@ shows up in a diff. Regenerate it in the same commit as any change to a rule, a
 marker, or the manifest — the same discipline
 [the rulebook already asks for](../rulebook/index.md#changing-a-rule).
 
+**`rulebook:check` runs in CI** as the `rulebook-current` job of
+`.github/workflows/compliance.yml`, so forgetting that regeneration is now a red
+build rather than a silent drift. It gates on **staleness only** — see the
+`--strict` limit below.
+
 ## Limits, stated rather than hidden
 
 - **A marker means a node exists, not that it passes.** A marker on a skipped or
@@ -180,4 +185,9 @@ marker, or the manifest — the same discipline
   ([#18](https://github.com/spindoxlabs/ds/issues/18)); it is excluded, and the
   header stays for a reader who wants to know roughly how old the numbers are.
   Everything else on the page is compared byte for byte.
-- **It is a report, not a gate.** `--strict` exists and nothing runs it yet.
+- **Staleness is a gate; the findings are not.** `rulebook:check` fails CI when
+  the page no longer matches the tree, which is a question with one right
+  answer. `--strict` — which fails on an unevidenced or contradicted rule, or a
+  structural problem — still runs nowhere, deliberately: those are findings to
+  read and argue with, and a rule honestly marked `Declared` must never be
+  something CI pushes an author to downgrade.

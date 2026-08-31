@@ -1200,7 +1200,6 @@ def owner_import(
 
     async def _import():
         import yaml
-
         from sqlalchemy import select
 
         entries: dict[str, dict] = {}
