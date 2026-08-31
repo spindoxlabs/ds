@@ -117,11 +117,23 @@ services:
   # **Ports are shifted, like every other dev port here.** Postgres is 35432 and
   # Keycloak is 9080 for the same reason: 4318 and 16686 are the ports any other
   # collector on this machine would also want.
+  #
+  # **`MEMORY_MAX_TRACES` is not a tuning knob, it is the thing that stops this
+  # container from eating the machine.** `--memory.max-traces` defaults to
+  # *unbounded* — the in-memory store keeps every trace it is ever sent, and
+  # `restart: unless-stopped` means it is sent them for as long as the laptop is
+  # up. Left at the default it reached **37 GB RSS** here. The failure is quiet
+  # until it is not: nothing degrades, the UI stays fast, and then the host
+  # starts swapping or the OOM killer takes a service that is not Jaeger.
+  # 10 000 traces is roughly a working day of poking at the exchange by hand and
+  # costs a few hundred MB; the store evicts oldest-first, so the traces you just
+  # produced — the only ones anyone debugs — are the ones that survive.
   jaeger:
     image: jaegertracing/all-in-one:1.76.0
     restart: unless-stopped
     environment:
       COLLECTOR_OTLP_ENABLED: "true"
+      MEMORY_MAX_TRACES: "10000"
     ports:
       # OTLP/HTTP in. `172.17.0.1:34318` resolves identically from the host and
       # from a container, which is what lets a service be moved between `dev:*`
