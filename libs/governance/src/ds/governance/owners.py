@@ -1,74 +1,66 @@
-"""Owner registry — lookup owners by id, alias, or URI.
+"""Owner registry — the shared shape from upstream, ds's live resolution on top.
 
-Provides:
-- ``OwnerEntry``: Pydantic model matching the identity-registry Owner schema.
-- ``OwnersRegistry``: In-memory registry for tooling/CLI (loaded from YAML).
-- ``load_owners_yaml``: Loads a YAML seed file into an ``OwnersRegistry``.
+**The record and the in-memory registry are `celine.governance.owners`'** — phase 4
+of `ADR-0013`. There were five copies of them before that module consolidated them
+(`celine-utils`, `dataset-api`, `celine-superset`, `celine-policies`, ds), and its
+docstring names what ds's copy got wrong rather than leaving it to be rediscovered:
+
+- **The Keycloak block was named after a database column.** ds declared
+  `organization_config`, which is the identity-registry's column and therefore the
+  key in its API responses — but `owners.yaml` says `organization`. So the model
+  read an IR response correctly and **silently dropped the block when loading a
+  YAML**, which is the only place a human writes it. `services/identity-registry`
+  passes those files to `OwnerEntry(**entry)` when it decides which organisations
+  to onboard. Upstream declares `organization` with an `AliasChoices` accepting
+  both, so one model reads both sources.
+- **Ids and aliases shared one map**, so an alias could shadow an owner id
+  depending on file order, and nothing said so. Upstream keeps them apart, gives
+  ids precedence, and warns on a collision.
+- **`by_uri` was a linear scan** over every entry on every call.
+
+Provides here:
+
 - ``HttpOwnersRegistry``: HTTP-backed async client with TTL cache (calls IR).
+
+Re-exported, defined upstream:
+
+- ``OwnerEntry``, ``OwnersRegistry``, ``load_owners_yaml``.
+
+`HttpOwnersRegistry` stays, and the split is the same one the whole ADR draws:
+the *shape* of an owner is the ecosystem's, while resolving an alias against a
+live identity registry — with a token provider, a TTL cache and a fallback to the
+last good answer — is ds's concern and nobody else's.
+
+**One behaviour changes, deliberately: a missing owners file now raises.** ds's
+loader returned an empty registry; upstream's raises `FileNotFoundError` unless the
+caller passes `missing_ok=True`, and it takes that parameter precisely because the
+two implementations disagreed. ds takes the raise, because the empty registry is
+the `CI-02` shape and this repository has the receipts for it —
+`resolver.from_file` deleted the same behaviour twice, most recently after every
+`task dev:*` provider had run with no governance at all, starting clean and logging
+nothing. The one caller is `cli.py`, and it passes a path only when `--owners` named
+one; an owners file that was asked for and is not there would otherwise leave every
+owner check resolving nothing and reporting a pass it did not make — which is
+exactly what the CLI already refuses to do for `--identity-registry-url`.
 """
 
 from __future__ import annotations
 
 import logging
 import time
-from pathlib import Path
 
 import httpx
-import yaml
-from pydantic import BaseModel
+
+# Re-exported under their own names — `X as X` is the explicit-re-export form, and
+# it is what tells a linter these are the module's public surface rather than dead
+# imports. `ds.governance.OwnerEntry` is imported by `services/identity-registry`
+# and by `compliance/runtime.py`; keeping the names here means neither changed.
+from celine.governance.owners import OwnerEntry as OwnerEntry
+from celine.governance.owners import OwnerOrganization as OwnerOrganization
+from celine.governance.owners import OwnersRegistry as OwnersRegistry
+from celine.governance.owners import load_owners_yaml as load_owners_yaml
 
 log = logging.getLogger(__name__)
-
-
-class OwnerEntry(BaseModel, extra="ignore"):
-    id: str
-    type: str = "schema:Organization"
-    name: str = ""
-    did: str | None = None
-    url: str | None = None
-    aliases: list[str] = []
-    organization_config: dict | None = None
-
-    @property
-    def canonical_uri(self) -> str | None:
-        return self.did or self.url or None
-
-
-class OwnersRegistry:
-    """In-memory owner registry for tooling and CLI use."""
-
-    def __init__(self, entries: list[OwnerEntry] | None = None):
-        self._by_id: dict[str, OwnerEntry] = {}
-        self._by_alias: dict[str, OwnerEntry] = {}
-        for entry in entries or []:
-            self._by_id[entry.id] = entry
-            for alias in entry.aliases:
-                self._by_alias[alias] = entry
-
-    def by_id(self, owner_id: str) -> OwnerEntry | None:
-        return self._by_id.get(owner_id) or self._by_alias.get(owner_id)
-
-    def by_uri(self, uri: str) -> OwnerEntry | None:
-        for entry in self._by_id.values():
-            if entry.did == uri or entry.url == uri:
-                return entry
-        return None
-
-    def canonical_uri(self, alias: str) -> str | None:
-        entry = self.by_id(alias)
-        return entry.canonical_uri if entry else None
-
-    def all(self) -> list[OwnerEntry]:
-        return list(self._by_id.values())
-
-
-def load_owners_yaml(path: Path) -> OwnersRegistry:
-    if not path.exists():
-        return OwnersRegistry()
-    with path.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    entries = [OwnerEntry(**e) for e in raw.get("owners", [])]
-    return OwnersRegistry(entries)
 
 
 class HttpOwnersRegistry:

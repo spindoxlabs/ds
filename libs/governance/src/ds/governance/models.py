@@ -156,9 +156,14 @@ class DataspaceSpec(DataspaceConfig):
     **`purpose`, `consent_required` and `contract_required` are carried here and
     read from `policy`.** `_canonical_policy` copies them across at parse time and
     ds's readers all go through `policy`; this model now holds them too because it
-    inherits them. `resolver._merge_dataspace` applies the same union/OR rules the
-    policy merge applies, so the two cannot come apart — but the duplication is
-    real and temporary, and phase 2 of the migration decides which one survives.
+    inherits them. `celine.governance.merge.merge_dataspace` applies the same
+    union/OR rules `resolver._merge_policy` applies, so the two cannot come apart.
+
+    **The duplication is settled rather than temporary.** The migration's phase 2
+    asked whether ds's `policy` view survives, and it does: `DataspacePolicy` also
+    holds `audience`, `obligations` and `consent`, which upstream does not model, so
+    it is not a synonym for this class. The same three facts therefore live on two
+    models, and they agree by construction because both merges state the same rules.
 
     Added here, and staying here: the EDC-specific sub-objects. That is not ds
     asserting a boundary — it is the one upstream drew, in `DataspaceConfig`'s own
@@ -228,13 +233,13 @@ class GovernanceRuleV2(GovernanceRule):
     `urn_template` resolves an empty device set, which the FIWARE adapter reads as
     *deny*.
 
-    `expose` is inherited and populated, and **nothing reads it yet**. Phase 3 of
-    `ADR-0013`'s migration is what calls `effective_expose` / `exposure_conflict` at
-    sync time and closes
-    [#20](https://github.com/spindoxlabs/ds/issues/20); until then the only gate in
-    force is `dataspace.expose`, exactly as before. Carrying the value is still
-    strictly better than sweeping it into `extra`: it is now visible to a reader
-    and to a test, which is what the ADR is about.
+    `expose` is inherited, populated **and read**: `compliance/checks.py` and the
+    connector's provider sync both call `celine.governance.exposure.exposure_conflict`,
+    which is what closed [#20](https://github.com/spindoxlabs/ds/issues/20) by adopting
+    the rule rather than writing a fourth copy of it. Before the field existed here,
+    `expose: false` beside `dataspace.expose: true` validated as exposed: the connector
+    published the asset, a consumer negotiated and concluded a contract, and the
+    transfer failed at a data plane that was never going to serve it.
     """
 
     # `type: ignore[assignment]` — mypy applies the Liskov rule to a mutable

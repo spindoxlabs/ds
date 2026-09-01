@@ -42,14 +42,29 @@ tasks:
       - uv run pytest tests/tests/test_characterisation.py -q
 
   schema:refresh:
-    desc: Re-fetch the cached governance schema from celine-utils
-    vars:
-      SCHEMA_URL: https://celine-eu.github.io/schema/governance.schema.json
+    desc: Copy the governance schema out of the installed celine-utils
     cmds:
-      # governance.yaml is the ONE shape celine-utils defines; the published
-      # document is its source of truth and `../../schemas/` only caches it so
-      # the conformance test can run offline. Never edit the cached copy.
-      - curl -fsSL "{{ .SCHEMA_URL }}" -o ../../schemas/governance.schema.json
+      # governance.yaml is the ONE shape celine-utils defines, and `../../schemas/`
+      # holds a copy only so ds can **publish** it for producers to author against.
+      # Never edit that copy.
+      #
+      # **From the installed wheel, not from the network** (`ADR-0013`, phase 5).
+      # This used to `curl` https://celine-eu.github.io/schema/governance.schema.json,
+      # which is the same document but not the same *version*: the published site
+      # tracks upstream's main, the dependency is pinned, and by the time phase 5
+      # looked they had come apart by three root properties with nothing failing.
+      # Copying from `celine-utils` makes the schema ds serves the schema ds
+      # validates against, and `uv sync` is the only way to move it.
+      #
+      # The bytes, not a re-serialisation: `load_schema` parses, and dumping the
+      # result back would make the published file differ from upstream's in
+      # whitespace and key order for no reason. A copy should be a copy.
+      - >-
+        uv run python -c "import pathlib;
+        from importlib import resources;
+        pathlib.Path('../../schemas/governance.schema.json').write_text(
+        resources.files('celine.governance.schema')
+        .joinpath('governance.schema.json').read_text('utf-8'), encoding='utf-8')"
       - uv run pytest tests/tests/test_schema_conformance.py -q
 
   schema:generate:

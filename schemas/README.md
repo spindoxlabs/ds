@@ -18,9 +18,9 @@ discovering a problem when a sync refuses it.
 | `vocabularies.schema.json` | **ds** (`Vocabulary`) | generated — do not edit |
 | `odrl-profile.schema.json` | **ds** (`OdrlProfile`) | generated — do not edit |
 | `purpose-vocabulary.json` | **ds** (the active ODRL profile) | generated — do not edit |
-| `governance.schema.json` | **celine-utils** | **cache** — do not edit |
+| `governance.schema.json` | **celine-utils** | **copied from the dependency** — do not edit |
 
-That rule is what makes the cache/generated split legible rather than arbitrary,
+That rule is what makes the copied/generated split legible rather than arbitrary,
 and it is the answer to "why is one of these read-only". `governance.yaml` is the
 only shape celine-utils defines; everything else here, ds defines.
 
@@ -51,21 +51,31 @@ structure. Both are built from the profile, so they cannot disagree —
 **regenerate this file whenever the profile changes.** The alignment behind each
 entry's `dpv` IRI is documented in `docs/taxonomies/dpv-2.3.md`.
 
-## The cached one
+## The copied one
 
-`governance.schema.json` is a copy of
-<https://celine-eu.github.io/schema/governance.schema.json>, not a fork and not a
-second definition. Changing that shape means changing it in celine-utils and
-refreshing here:
+`governance.schema.json` is a copy of the schema `celine-utils` ships inside its
+wheel — not a fork and not a second definition. Changing that shape means changing
+it in celine-utils, releasing, bumping `libs/governance/pyproject.toml`, and:
 
 ```bash
 task -d libs/governance schema:refresh
 ```
 
-A copy exists because the conformance test
-(`libs/governance/tests/tests/test_schema_conformance.py`) has to run in CI and
-offline. A test that fetches over the network either fails when the network is
-down — noise — or skips, which enforces nothing at exactly the moment it matters.
+**A copy exists so ds can publish it**, and that is now its only job: a producer
+authoring a `governance.yaml` points `$schema` at ds's docs site and validates
+before ds ever sees the file.
+
+It used to be a *cache*, fetched with `curl` from
+<https://celine-eu.github.io/schema/governance.schema.json>, so that the
+conformance test could run offline. `celine.governance.validation.load_schema()`
+answers that better — the schema is in the installed package, so the test needs no
+network *and* checks against the same version as the parser, which a cache cannot
+promise. It did not: when this changed, the cached copy was three root-level
+properties behind the package with nothing failing.
+
+`test_the_published_copy_matches_the_pinned_dependency` now holds the published
+file and the dependency together, so bumping one without refreshing the other
+fails a test rather than publishing a schema that disagrees with the platform.
 
 ## Not covered
 

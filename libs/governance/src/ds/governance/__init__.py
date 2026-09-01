@@ -52,6 +52,7 @@ from .mapper import GovernanceMapper, requires_consent
 from .owners import (
     HttpOwnersRegistry,
     OwnerEntry,
+    OwnerOrganization,
     OwnersRegistry,
     load_owners_yaml,
 )
@@ -103,6 +104,7 @@ __all__ = [
     "GovernanceMapper",
     "requires_consent",
     "OwnerEntry",
+    "OwnerOrganization",
     "OwnersRegistry",
     "HttpOwnersRegistry",
     "load_owners_yaml",

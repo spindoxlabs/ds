@@ -18,7 +18,20 @@ dependencies = [
     # same file meant. The core is `pydantic` + `pyyaml` + `jsonschema`, and a
     # dedicated upstream CI job installs it bare and imports `celine.governance` so
     # that a regained dependency fails there rather than here.
-    "celine-utils>=2.4.0",
+    #
+    # **`>=2.5.0`, and the floor is load-bearing.** 2.4 modelled the shared shape
+    # but every entry point into it named a class: `parse_rule` validated into
+    # `GovernanceRule`, `merge_rules` and `merge_dataspace` validated back into
+    # `GovernanceRule` / `DataspaceConfig`. Since those models are `extra="ignore"`
+    # — which is what *lets* ds subclass them — passing a `GovernanceRuleV2`
+    # through any of them returned a rule with `policy`, the EDC sub-objects and
+    # `sharing_offers` silently dropped. Against 2.4 ds had to restate the parse
+    # and the three merges to keep its own fields; 2.5 takes the model class from
+    # its operands, so the restatements are gone and only ds's `policy` overlay
+    # remains. Installing 2.4 under this code would not fail to import — it would
+    # drop ds's fields on every merge, which is the exact defect ADR-0013 exists
+    # to end.
+    "celine-utils>=2.5.0",
     "httpx>=0.27",
     "pydantic>=2.7",
     "pyyaml>=6.0",
@@ -46,19 +59,12 @@ packages = ["src/ds"]
 [tool.mypy]
 strict = true
 
-# `celine-utils` ships no `py.typed` marker, so mypy would treat every name in
-# `celine.governance` as `Any` — and under `strict` that cascades: "class cannot
-# subclass DataspaceConfig (has type Any)" for each of the three subclasses in
-# `models.py`, plus `no-any-return` wherever a merge hands one back. Following the
-# installed source recovers the real signatures; the package is pure Python and
-# fully annotated, it just does not advertise it.
-#
-# Worth fixing upstream rather than here — a package published for consumers to
-# import should ship the marker. Until it does, this is the difference between
-# checking the subclasses and not checking them.
-[[tool.mypy.overrides]]
-module = ["celine.*"]
-follow_untyped_imports = true
+# A `[[tool.mypy.overrides]]` for `celine.*` with `follow_untyped_imports` stood
+# here: 2.4 shipped no `py.typed`, so mypy read every name in `celine.governance`
+# as `Any`, and under `strict` that cascaded into "cannot subclass DataspaceConfig
+# (has type Any)" for each subclass in `models.py`. **2.5 ships the marker**, so
+# the override is not merely unnecessary — it was suppressing the checking of the
+# subclasses, and the `>=2.5.0` floor above is what makes removing it safe.
 
 [tool.pytest.ini_options]
 # `rule` names the rulebook rule a test is evidence for. `ds-conformance`

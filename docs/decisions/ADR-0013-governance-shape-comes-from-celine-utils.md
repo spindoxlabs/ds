@@ -96,3 +96,27 @@ collapses into celine's `DataspaceConfig` is an implementation question for the 
 a boundary question. Neither is whether the cached `schemas/governance.schema.json` stays once
 `celine.governance.validation` is available — it probably should, because it is what lets the
 schema conformance test run with no network.
+
+### Settled by the migration, 2026-09-01
+
+Both, and the second differently than expected. Recorded here because this section asked the
+questions, not because an ADR is a progress log.
+
+**`policy` survives.** `DataspacePolicy` carries `audience`, `obligations` and `consent`,
+which celine does not model, so it is not a synonym for `DataspaceConfig`. It is a subclass's
+extra field, merged by ds after `merge_rules` has done the rest.
+
+**The schema file stays, and the reason it stays changed.** `celine-utils` ships the schema
+inside the wheel, so the conformance test reads it from the installed package — which is not
+merely offline but *version-locked to the parser*, which a cache never was. The copy under
+`schemas/` remains because ds **publishes** it for producers, and it is now refreshed from
+the dependency rather than fetched from celine's docs site. Its staleness was not
+hypothetical: when this was settled it was three root properties behind, and nothing had
+failed.
+
+The minimum version is `2.5.0`, and that is a consequence worth naming here rather than only
+at the pin. This ADR argued from `extra="ignore"` making subclassing safe; in 2.4 that same
+setting made every shared merge lossy for a subclass, because each one validated its result
+into the base class by name. 2.5 takes the class from its operands. **Installing 2.4 under
+this code would not fail to import — it would silently drop the fields the subclass exists to
+carry**, which is the defect this decision was taken to end.

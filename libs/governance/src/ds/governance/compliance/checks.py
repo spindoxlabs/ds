@@ -26,14 +26,29 @@ from typing import Any, Protocol
 from urllib.parse import urlparse
 
 from celine.governance.exposure import exposure_conflict
+from celine.governance.levels import DataClassification, GovernanceAccessLevel
 
 from ..mapper import GovernanceMapper
 from ..models import GovernanceRuleV2
 from ..resolver import GovernanceResolver
 from ..vocabularies import VocabularyRegistry
 
-ACCESS_LEVELS = {"open", "internal", "restricted", "secret"}
-CLASSIFICATIONS = {"pii", "green", "yellow", "red"}
+#: The vocabulary a governance file may use for ``access_level``.
+#:
+#: **Derived from upstream's enum, not restated beside it** (`ADR-0013`, phase 4).
+#: These were two hand-written sets, and a hand-written copy of a *shared*
+#: vocabulary is the same defect the models had: a value celine adds is one ds
+#: rejects, and the file that used it was valid everywhere else in the ecosystem.
+#:
+#: ``secret`` is the exception and it is ds's own. Upstream does not model it as a
+#: level — ``normalize_access_level`` maps it to ``restricted`` as a legacy
+#: spelling — but ds *reads* it: ``check_declared_not_enforced`` and
+#: ``compliance/validator.py`` both treat ``access_level: secret`` as a statement
+#: that a dataset is withheld, alongside ``expose: false``. Accepting it here is
+#: what keeps those two checks reachable; normalising it away would silently
+#: reclassify a withheld dataset as merely restricted.
+ACCESS_LEVELS = {level.value for level in GovernanceAccessLevel} | {"secret"}
+CLASSIFICATIONS = {c.value for c in DataClassification}
 
 CHECKS = (
     "governance-file",

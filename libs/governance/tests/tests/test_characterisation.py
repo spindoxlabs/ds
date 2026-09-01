@@ -379,14 +379,22 @@ class TestDeclaredDivergences:
         assert exposure_conflict(ds_rule) is None
 
     def test_the_ds_policy_block_is_unknown_upstream(self, tmp_path):
-        """`policy:` is ds's own, and upstream's parser sweeps it into `extra`.
+        """`policy:` is ds's own, so upstream's *base* grammar sweeps it into `extra`.
 
-        The trap for Phase 1: `celine.governance.parse_rule` splits a block against
-        the module-level `KNOWN_KEYS`, and `policy` is not in it. Subclassing
-        `GovernanceRule` is not enough on its own — a subclass that adds the field
-        and reuses that parser gets a `GovernanceRuleV2` whose `policy` is empty and
-        whose `extra` holds the block, which is the *same* silent-drop shape this
-        migration exists to end, pointed the other way.
+        This was the trap phase 0 found for phase 1, and it is closed. In
+        `celine-utils` 2.4 `parse_rule` split a block against the module-level
+        `KNOWN_KEYS` and validated into `GovernanceRule` by name, so subclassing was
+        not enough on its own: a subclass that added `policy` and reused that parser
+        got a `GovernanceRuleV2` whose field was empty and whose `extra` held the
+        block — the *same* silent-drop shape this migration exists to end, pointed
+        the other way. ds worked around it with its own split over
+        `KNOWN_KEYS | {"policy"}`.
+
+        2.5 takes the model class and reads the keys off *its* fields, so ds passes
+        `GovernanceRuleV2` and the workaround is gone. The assertion below is
+        unchanged and still true, because it is not about the workaround: parsed as
+        the shared shape, `policy` **is** an unknown key, and that is the honest
+        answer. `extra` is where a consumer can still see what the file said.
 
         Deployed ds files still use `policy:` — `_canonical_policy` reads it as the
         fallback — so this is not hypothetical for the corpus this platform runs on.
@@ -495,27 +503,33 @@ class TestDeclaredDivergences:
         assert celine_rule.ontology.spec is None
         assert celine_rule.ontology.spec_file == "./local.yaml"
 
-    def test_a_missing_file_raises_here_and_returns_empty_upstream(self, tmp_path):
-        """**The one divergence ds must keep, and a finding for upstream.**
+    def test_a_missing_file_raises_in_both(self, tmp_path):
+        """**The divergence phase 0 reported upstream, and upstream took it.**
 
-        `from_file` on an absent path returns an empty config upstream. That is the
-        `CI-02` shape and the exact behaviour ds deleted twice: `GOV-15` removed
-        `auto_discover` for it, and the fix landed in `from_file` on 2026-08-07
+        This test used to be `..._raises_here_and_returns_empty_upstream`. `from_file`
+        on an absent path returned an empty config in `celine-utils` 2.4 — the
+        `CI-02` shape, and the exact behaviour ds deleted twice: `GOV-15` removed
+        `auto_discover` for it, and the fix landed in ds's `from_file` on 2026-08-07
         after every `task dev:*` provider since `245ae53` had run with *no
         governance* — no datasets, no sharing offers — starting clean and logging
         nothing.
 
-        So Phase 2 cannot delegate `from_file` wholesale. *Nothing was asked for*
+        2.5 raises, and cites that incident where it does. *Nothing was asked for*
         and *what you asked for is not there* are different states, and only the
-        first is a supported mode; ds is always handed a path, so it is always the
-        second. Callers that legitimately tolerate absence check first and say so.
+        first is a supported mode; a caller handing over a path is always in the
+        second. `auto_discover` still returns empty, which is the first.
+
+        The assertion is kept rather than deleted: it is what would notice a
+        regression, in either implementation, and the reason the behaviour exists is
+        the same reason it is worth pinning.
         """
         missing = tmp_path / "nope.yaml"
 
         with pytest.raises(FileNotFoundError):
             GovernanceResolver.from_file(missing)
 
-        assert CelineResolver.from_file(missing).config.sources == {}
+        with pytest.raises(FileNotFoundError):
+            CelineResolver.from_file(missing)
 
     def test_a_scalar_set_to_null_in_an_override(self):
         """**Closed by phase 2, and it is the one behaviour this migration changed.**

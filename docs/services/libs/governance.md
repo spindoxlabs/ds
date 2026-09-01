@@ -289,4 +289,4 @@ The repository publishes the shapes it *defines* under `schemas/`:
 | `sharing-offers.schema.json` | generated from the `SharingOffer` model |
 | `odrl-profile.schema.json` | generated from the `OdrlProfile` model |
 | `purpose-vocabulary.json` | generated from the active profile |
-| `governance.schema.json` | **cached**, not generated — defined outside this repository |
+| `governance.schema.json` | **copied from `celine-utils`**, not generated — defined outside this repository |

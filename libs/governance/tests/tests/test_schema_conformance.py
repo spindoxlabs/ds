@@ -18,18 +18,32 @@ from pathlib import Path
 
 import pytest
 import yaml
+from celine.governance.validation import load_schema
 from jsonschema import Draft202012Validator
 
 REPO = Path(__file__).resolve().parents[4]
 
-# A **cache** of https://celine-eu.github.io/schema/governance.schema.json —
-# celine-utils is the only source of truth. Refresh with
-# `task -d libs/governance schema:refresh`; see schema/README.md for why a copy
-# exists at all (a test that needs the network enforces nothing when there is
-# none).
-SCHEMA = json.loads(
-    (REPO / "schemas/governance.schema.json").read_text(encoding="utf-8")
-)
+# **From the installed package, not from `schemas/`** (`ADR-0013`, phase 5).
+#
+# The copy under `schemas/` was fetched over the network from
+# https://celine-eu.github.io/schema/governance.schema.json, and it earned its keep
+# by letting this test run offline — a test that needs the network either fails
+# when there is none, which is noise, or skips, which enforces nothing at exactly
+# the moment it matters. `celine-utils` ships the schema inside the wheel and reads
+# it through `importlib.resources`, so the dependency this library already declares
+# answers the offline question better than a copy does: **the schema that checks a
+# file is now the same version as the code that parses it**, which no cache can
+# promise.
+#
+# It could not promise it here either. When this changed, the cached copy was three
+# root-level properties behind the package — `depends_on`, `active` and
+# `$defs/dependency`, added upstream and never refreshed. Nothing failed, which is
+# the point: a cache goes stale silently, and a pinned dependency cannot.
+#
+# `schemas/governance.schema.json` still exists, because ds *publishes* it for
+# producers to author against. It is now generated from this same package and
+# `test_the_published_copy_matches_the_pinned_dependency` holds the two together.
+SCHEMA = load_schema()
 
 # The producer fixtures the stack actually syncs. **Kept separate and guarded
 # separately**, because they were unchecked here for as long as this test has
@@ -47,6 +61,31 @@ GOVERNANCE_FILES = PRODUCER_FILES + sorted(
 def test_governance_files_were_found():
     """A glob that matches nothing would make every test below vacuously pass."""
     assert GOVERNANCE_FILES, "no governance.yaml found — the glob is wrong"
+
+
+@pytest.mark.rule("M-9")
+def test_the_published_copy_matches_the_pinned_dependency():
+    """`schemas/governance.schema.json` is what ds serves; this is what ds uses.
+
+    ds publishes the schema at <https://spindoxlabs.github.io/ds/schemas/> so a
+    producer can validate a `governance.yaml` before ds ever sees it. That is the
+    only reason the file exists — it is not a second definition, and `schemas/`
+    says so.
+
+    Serving a copy is a promise that it says the same thing as the parser on the
+    other end. This is that promise, checked: refresh with
+    `task -d libs/governance schema:refresh`, which copies it out of the installed
+    `celine-utils` rather than fetching it over the network. Bumping the dependency
+    without refreshing fails here instead of publishing a schema that accepts files
+    the platform rejects, or rejects files it accepts.
+    """
+    published = json.loads(
+        (REPO / "schemas/governance.schema.json").read_text(encoding="utf-8")
+    )
+    assert published == SCHEMA, (
+        "the published governance schema is behind the installed celine-utils — "
+        "run `task -d libs/governance schema:refresh`"
+    )
 
 
 def test_the_producer_fixtures_are_among_them():

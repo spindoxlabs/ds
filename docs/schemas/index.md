@@ -43,8 +43,10 @@ sharing_offers:
 `governance.yaml` is the only shape celine-utils defines; everything else here, ds
 defines. That rule is what makes the split legible rather than arbitrary, and it is
 the answer to "why is one of these read-only in the repo": `governance.schema.json`
-is a cached copy of the upstream document, kept in-tree so the conformance test
-runs offline in CI. The rest are generated from the Pydantic models in
+is copied out of the `celine-utils` version `ds-governance` depends on, so the
+schema published here and the code that parses a `governance.yaml` are the same
+release. A test fails if the two come apart. The rest are generated from the
+Pydantic models in
 `ds-governance` — the models are the definition, and a schema maintained by hand
 beside a live model drifts until both look authoritative.
 
