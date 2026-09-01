@@ -10,11 +10,13 @@
           "content_type": "application/json",
           "id": "datasets.gold.grid_capacity"
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api-rec:30002/query",
           "proxy_path": false,
@@ -24,6 +26,11 @@
         },
         "expose": true,
         "medallion": "gold",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "GridMonitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -37,8 +44,10 @@
       },
       "description": "Available headroom per substation, hourly. Published by the distribution system operator so that flexibility can be planned against real limits.",
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": "CC-BY-4.0",
+      "ontology": null,
       "ownership": [
         [
           "grid-operator",
@@ -95,11 +104,13 @@
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api-rec:30002/query",
           "proxy_path": false,
@@ -109,6 +120,11 @@
         },
         "expose": true,
         "medallion": "gold",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "GridMonitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -122,8 +138,10 @@
       },
       "description": "29 ML features for energy consumption forecasting.",
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": "CC-BY-4.0",
+      "ontology": null,
       "ownership": [
         [
           "example-org",
@@ -178,11 +196,13 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
         },
+        "consent_required": true,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api-rec:30002/query",
           "proxy_path": true,
@@ -192,6 +212,12 @@
         },
         "expose": true,
         "medallion": "silver",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "FlexibilityResearch",
+          "IncentiveCalculation"
+        ],
         "sharing_offers": [
           "household-energy-flexibility",
           "grid-operations-planning",
@@ -209,8 +235,10 @@
       },
       "description": "Aggregated smart meter readings at 15-minute intervals.",
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": "CC-BY-4.0",
+      "ontology": null,
       "ownership": [
         [
           "example-org",
@@ -276,11 +304,13 @@
           "content_type": "application/json",
           "id": "datasets.gold.weather"
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002/query",
           "proxy_path": true,
@@ -290,6 +320,10 @@
         },
         "expose": true,
         "medallion": "gold",
+        "odrl_action": "use",
+        "purpose": [
+          "GridMonitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -303,8 +337,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "example-org",
@@ -357,11 +393,13 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters"
         },
+        "consent_required": true,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002/query",
           "proxy_path": true,
@@ -371,6 +409,12 @@
         },
         "expose": true,
         "medallion": "silver",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "FlexibilityResearch",
+          "IncentiveCalculation"
+        ],
         "sharing_offers": [
           "test-flexibility",
           "test-incentives",
@@ -388,8 +432,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "example-org",
@@ -447,11 +493,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -461,6 +509,11 @@
         },
         "expose": false,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -480,8 +533,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -538,11 +593,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -552,6 +609,11 @@
         },
         "expose": false,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -571,8 +633,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -630,11 +694,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -644,6 +710,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -663,8 +734,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -720,11 +793,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -734,6 +809,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -753,8 +833,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -809,11 +891,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -823,6 +907,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -842,8 +931,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -899,11 +990,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -913,6 +1006,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -932,8 +1030,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -989,11 +1089,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1003,6 +1105,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1022,8 +1129,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1079,11 +1188,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1093,6 +1204,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1112,8 +1228,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1169,11 +1287,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1183,6 +1303,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1202,8 +1327,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1259,11 +1386,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1273,6 +1402,11 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1292,8 +1426,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1350,11 +1486,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1364,6 +1502,11 @@
         },
         "expose": false,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1383,8 +1526,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1441,11 +1586,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1455,6 +1602,11 @@
         },
         "expose": false,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring",
+          "grid-resilience"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1474,8 +1626,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "dso",
@@ -1535,11 +1689,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1549,6 +1705,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1568,8 +1728,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -1629,11 +1791,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1643,6 +1807,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1662,8 +1830,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -1717,11 +1887,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1731,6 +1903,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1750,8 +1926,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -1812,11 +1990,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1826,6 +2006,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1845,8 +2029,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -1906,11 +2092,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -1920,6 +2108,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -1939,8 +2131,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -1993,11 +2187,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2007,6 +2203,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2026,8 +2226,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2087,11 +2289,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2101,6 +2305,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2120,8 +2328,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2182,11 +2392,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2196,6 +2408,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2215,8 +2431,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2277,11 +2495,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2291,6 +2511,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2310,8 +2534,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2374,11 +2600,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2388,6 +2616,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2407,8 +2639,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "gse",
@@ -2464,11 +2698,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2478,6 +2714,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2497,8 +2737,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2552,11 +2794,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2566,6 +2810,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2585,8 +2833,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2640,11 +2890,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2654,6 +2906,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2673,8 +2929,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2735,11 +2993,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2749,6 +3009,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2768,8 +3032,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2832,11 +3098,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2846,6 +3114,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2865,8 +3137,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -2927,11 +3201,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -2941,6 +3217,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -2960,8 +3240,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -3022,11 +3304,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -3036,6 +3320,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "energy-monitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -3055,8 +3343,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "rec",
@@ -3119,11 +3409,13 @@
           "content_type": "application/json",
           "id": null
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api:30002",
           "proxy_path": true,
@@ -3133,6 +3425,10 @@
         },
         "expose": true,
         "medallion": null,
+        "odrl_action": "use",
+        "purpose": [
+          "GridMonitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -3146,8 +3442,10 @@
       },
       "description": null,
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": null,
+      "ontology": null,
       "ownership": [
         [
           "deployment-org",
@@ -3199,11 +3497,13 @@
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
         },
+        "consent_required": false,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://172.17.0.1:30002/query",
           "proxy_path": false,
@@ -3213,6 +3513,12 @@
         },
         "expose": true,
         "medallion": "gold",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "FlexibilityResearch",
+          "GridMonitoring"
+        ],
         "sharing_offers": []
       },
       "dcat": {
@@ -3226,8 +3532,10 @@
       },
       "description": "29 ML features for energy consumption forecasting.",
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": "CC-BY-4.0",
+      "ontology": null,
       "ownership": [
         [
           "deployment-org",
@@ -3284,11 +3592,13 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
         },
+        "consent_required": true,
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
           "contract_policy_id": null
         },
+        "contract_required": false,
         "data_address": {
           "base_url": "http://dataset-api-rec:30002/query",
           "proxy_path": true,
@@ -3298,6 +3608,12 @@
         },
         "expose": false,
         "medallion": "silver",
+        "odrl_action": "use",
+        "purpose": [
+          "EnergyCommunityOperation",
+          "FlexibilityResearch",
+          "IncentiveCalculation"
+        ],
         "sharing_offers": [
           "household-energy-flexibility",
           "grid-operations-planning",
@@ -3315,8 +3631,10 @@
       },
       "description": "Aggregated smart meter readings at 15-minute intervals.",
       "documentation_url": null,
+      "expose": null,
       "extra": {},
       "license": "CC-BY-4.0",
+      "ontology": null,
       "ownership": [
         [
           "deployment-org",

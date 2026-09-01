@@ -8,6 +8,17 @@ version = "0.1.0"
 description = "Shared governance models, ODRL mapper, and resolver for the dataspaces platform"
 requires-python = ">=3.12"
 dependencies = [
+    # **The governance shape is defined upstream and imported, not restated**
+    # (ADR-0013). `celine.governance` is the reference implementation of
+    # `governance.yaml`; `ds.governance.models` subclasses it and adds what is ds's.
+    #
+    # Core only — **never an extra**. `[pipelines]` drags in dbt, Meltano, Prefect
+    # and a Keycloak client, and needing that to parse a YAML file is the reason
+    # four consumers each wrote their own parser and then disagreed about what the
+    # same file meant. The core is `pydantic` + `pyyaml` + `jsonschema`, and a
+    # dedicated upstream CI job installs it bare and imports `celine.governance` so
+    # that a regained dependency fails there rather than here.
+    "celine-utils>=2.4.0",
     "httpx>=0.27",
     "pydantic>=2.7",
     "pyyaml>=6.0",
@@ -27,15 +38,6 @@ dev = [
     # schema (see schema/README.md). A dev dependency, not a runtime one: the
     # library parses governance, the test suite is what asserts the shape.
     "jsonschema>=4.19",
-    # The reference implementation of the governance shape, run as a **second
-    # implementation over the same corpus** by `tests/tests/test_characterisation.py`
-    # (ADR-0013, phase 0). A dev dependency only while the migration is in flight:
-    # phase 1 moves it to `dependencies` and the library imports it for real.
-    #
-    # Core only, no extras. `pipelines` is what used to drag in dbt, Meltano,
-    # Prefect and Keycloak, and is the reason four parsers of one file format
-    # exist.
-    "celine-utils>=2.4.0",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -43,6 +45,20 @@ packages = ["src/ds"]
 
 [tool.mypy]
 strict = true
+
+# `celine-utils` ships no `py.typed` marker, so mypy would treat every name in
+# `celine.governance` as `Any` — and under `strict` that cascades: "class cannot
+# subclass DataspaceConfig (has type Any)" for each of the three subclasses in
+# `models.py`, plus `no-any-return` wherever a merge hands one back. Following the
+# installed source recovers the real signatures; the package is pure Python and
+# fully annotated, it just does not advertise it.
+#
+# Worth fixing upstream rather than here — a package published for consumers to
+# import should ship the marker. Until it does, this is the difference between
+# checking the subclasses and not checking them.
+[[tool.mypy.overrides]]
+module = ["celine.*"]
+follow_untyped_imports = true
 
 [tool.pytest.ini_options]
 # `rule` names the rulebook rule a test is evidence for. `ds-conformance`

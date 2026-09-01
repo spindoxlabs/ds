@@ -10,9 +10,12 @@ from __future__ import annotations
 import fnmatch
 import os
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 import yaml
+
+from celine.governance.models import KNOWN_KEYS, OntologyConfig
+from pydantic import BaseModel
 
 from .models import (
     DataspacePolicy,
@@ -23,6 +26,12 @@ from .models import (
     RowFilter,
     RowFilterArgs,
 )
+
+
+#: The merge helpers are generic over the model they merge — annotated so a caller
+#: gets the model back rather than `Any`, which under `strict` is the difference
+#: between checking `_merge_dataspace` and rubber-stamping it.
+_M = TypeVar("_M", bound=BaseModel)
 
 
 class GovernanceConfig:
@@ -131,22 +140,19 @@ class GovernanceResolver:
             for o in owners_raw
         ]
 
-        v1_keys = {
-            "title",
-            "description",
-            "license",
-            "attribution",
-            "ownership",
-            "access_level",
-            "access_requirements",
-            "classification",
-            "tags",
-            "retention_days",
-            "documentation_url",
-            "source_system",
-            "user_filter_column",
-            "row_filters",
-        }
+        # **Upstream's key set, plus ds's one extra block.** This was a hand-kept
+        # list of fourteen names, and a hand-kept list of what a *shared* grammar
+        # defines is a list that goes stale silently: it omitted `expose` and
+        # `ontology`, so both landed in `extra` and read as absent while the schema
+        # validated them happily. That is the same failure mode upstream documents
+        # beside `KNOWN_KEYS` — "when a field is added to `GovernanceRule` and not
+        # added here, the key parses into `extra` and the field reads as absent".
+        #
+        # `policy` is ds's own and is **not** in upstream's set, so it has to be
+        # added here or ds's own deployed files lose their policy block to `extra`
+        # — the silent-drop shape this migration exists to end, pointed the other
+        # way. `dataspace` and `dcat` are already in `KNOWN_KEYS`.
+        known_keys = KNOWN_KEYS | {"policy"}
 
         policy_raw = dict(block.get("policy") or {})
         dataspace_raw = block.get("dataspace") or {}
@@ -196,11 +202,24 @@ class GovernanceResolver:
                 and f.get("handler")
                 and isinstance(f.get("args"), dict)
             ],
-            extra={
-                k: v
-                for k, v in block.items()
-                if k not in v1_keys | {"policy", "dataspace", "dcat"}
-            },
+            extra={k: v for k, v in block.items() if k not in known_keys},
+            # The catalogue gate. Tri-state: `None` is *not stated*, and the
+            # resolved gate then falls back to `dataspace.expose`
+            # (`celine.governance.exposure.effective_expose`).
+            #
+            # **Carried, not yet enforced.** Nothing reads this until phase 3 wires
+            # `exposure_conflict` into the sync, so `dataspace.expose` remains the
+            # only gate in force and behaviour is unchanged. What changes today is
+            # that the value stops sitting in `extra` where no reader and no test
+            # could see it — which is the whole of `#20`'s cause.
+            expose=block.get("expose"),
+            # `spec` XOR `spec_file`, enforced by the schema. ds resolves neither —
+            # that means importing the ontology stack — but modelling it is what
+            # keeps the merge honest: whole replacement, because two bindings for
+            # one dataset is two answers to what one column means.
+            ontology=OntologyConfig.model_validate(block["ontology"])
+            if block.get("ontology")
+            else None,
             policy=DataspacePolicy.model_validate(policy_raw)
             if policy_raw
             else DataspacePolicy(),
@@ -283,8 +302,21 @@ class GovernanceResolver:
             # consent-gated dataset with no purpose, which then denies every
             # query for want of a stated reason.
             policy=_merge_policy(base.policy, override.policy),
-            dataspace=_merge_models(base.dataspace, override.dataspace, DataspaceSpec),
+            dataspace=_merge_dataspace(base.dataspace, override.dataspace),
             dcat=_merge_models(base.dcat, override.dcat, DcatSpec),
+            # Carried through the merge for the same reason it is carried through
+            # the parse: so it is visible rather than dropped. `pick` is the
+            # tri-state rule — an overlay that does not mention `expose` inherits,
+            # one that says `false` withdraws.
+            expose=pick(base.expose, override.expose),
+            # **Whole replacement, never field-wise.** Its two fields are
+            # alternatives, so overlaying them per key could produce a rule
+            # declaring both — which the schema forbids and a mapping resolver
+            # rejects as two answers to what one column means. Upstream's
+            # `merge_rules` states the same rule for the same reason.
+            ontology=override.ontology
+            if override.ontology is not None
+            else base.ontology,
         )
         return merged
 
@@ -320,6 +352,38 @@ def _canonical_policy(dataspace_raw: dict, policy_raw: dict) -> dict:
     return merged
 
 
+def _merge_dataspace(base: DataspaceSpec, override: DataspaceSpec) -> DataspaceSpec:
+    """Field-wise overlay, then the three rules that are not "override wins".
+
+    The same three as `_merge_policy`, and **that is the point**: since
+    `ADR-0013` `DataspaceSpec` inherits `purpose`, `consent_required` and
+    `contract_required` from upstream, so the same three facts are now on two
+    models at once. ds's readers all go through `policy`, so a plain field-wise
+    merge here would leave `dataspace.purpose` saying something different from
+    `policy.purpose` on the same rule — an inconsistency nobody would notice
+    until somebody read the field a reader does not currently use.
+
+    - `purpose` is a **union**. An overlay adds a reason for processing; it does
+      not silently retract the ones the base declared.
+    - `consent_required` and `contract_required` are **OR**. Once something is
+      required it cannot be un-required by a file layered on top: an overlay may
+      tighten, never loosen.
+
+    `expose` is deliberately **not** in that list. OR-ing it would mean *once
+    offered, always offered* — a loosening, and the bug the `exclude_unset` merge
+    was written to remove.
+
+    Duplication with `_merge_policy` is temporary and deliberate: phase 2 decides
+    whether ds's `policy` view survives at all, and until it does, having the two
+    agree by construction beats having them agree by review.
+    """
+    merged = _merge_models(base, override, DataspaceSpec)
+    merged.purpose = sorted(set(base.purpose) | set(override.purpose))
+    merged.consent_required = base.consent_required or override.consent_required
+    merged.contract_required = base.contract_required or override.contract_required
+    return merged
+
+
 def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> DataspacePolicy:
     """Merge the way `dataset-api` merges the same fields.
 
@@ -347,7 +411,7 @@ def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> Dataspace
     return merged
 
 
-def _merge_models(base, override, model_cls):
+def _merge_models(base: _M, override: _M, model_cls: type[_M]) -> _M:
     """Override's explicitly-set fields on top of base, recursively.
 
     **`exclude_unset`, not `exclude_defaults`** (`GOV-06`). Both drop a field the
@@ -373,7 +437,7 @@ def _merge_models(base, override, model_cls):
     flag on and never off.
     """
 
-    def deep_merge(a: dict, b: dict) -> dict:
+    def deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         out = dict(a)
         for key, value in b.items():
             if isinstance(value, dict) and isinstance(out.get(key), dict):

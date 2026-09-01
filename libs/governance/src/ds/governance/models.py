@@ -1,7 +1,27 @@
-"""Governance v2 Pydantic models.
+"""Governance models — the shared shape from upstream, ds's own on top of it.
 
-Fully backward-compatible with the legacy GovernanceRule (v1).
-New fields are optional with safe defaults — v1 YAML files load unchanged.
+**`celine.governance` defines the grammar of `governance.yaml`; this module adds
+what is ds's** (`ADR-0013`). Until 2026-09-01 it restated the whole shape, and the
+restatement was a subset: pydantic drops what a model does not declare, so a field
+ds did not know about lost its meaning rather than being carried. `expose`,
+`ontology` and `dataspace.odrl_action` were all being received and dropped.
+
+The split follows the rule the cached `schemas/governance.schema.json` already
+follows — *the shape lives where it is defined, the use lives where it is used*:
+
+| From `celine.governance` | Here |
+|---|---|
+| `GovernanceRule`, `DataspaceConfig`, `DcatConfig`, `OntologyConfig`, `GovernanceOwner`, `TemporalCoverage` | the ODRL profile and its purpose taxonomy, the `policy` view, the EDC sub-objects, `RowFilter` |
+
+**Subclassing, not forking, and that is upstream's own design.**
+`DataspaceConfig`'s docstring says the EDC sub-objects "are `ds`'s concern and are
+carried in its own `DataspaceSpec` subclass"; `GovernanceRule`'s says "`ds` extends
+this". Both are `extra="ignore"`, so a file may carry ds's fields without upstream's
+model rejecting it, and ds's subclass sees every field upstream models.
+
+Nothing here may import `celine.utils`. `celine.governance` is deliberately thin —
+`pydantic`, `pyyaml`, `jsonschema` — and that thinness is the reason ds can take the
+dependency at all; see the ADR.
 """
 
 from __future__ import annotations
@@ -9,20 +29,24 @@ from __future__ import annotations
 import logging
 from datetime import date
 from pathlib import Path
-from typing import Any
 
 import yaml
+from celine.governance.models import (
+    DataspaceConfig,
+    DcatConfig,
+)
+
+# Re-exported under their own names — `X as X` is the explicit-re-export form, and
+# it is what tells a linter these are the module's public surface rather than dead
+# imports. Every one was declared in this file, field for field, until `ADR-0013`.
+# Keeping the names here means no consumer of `ds.governance` had to change.
+from celine.governance.models import GovernanceOwner as GovernanceOwner
+from celine.governance.models import GovernanceRule as GovernanceRule
+from celine.governance.models import OntologyConfig as OntologyConfig
+from celine.governance.models import TemporalCoverage as TemporalCoverage
 from pydantic import BaseModel, ConfigDict, Field
 
 logger = logging.getLogger(__name__)
-
-
-# ── v1 (unchanged) ────────────────────────────────────────────────────────────
-
-
-class GovernanceOwner(BaseModel):
-    name: str
-    type: str = "OWNER"
 
 
 class RowFilterArgs(BaseModel):
@@ -48,33 +72,16 @@ class RowFilter(BaseModel):
     args: RowFilterArgs
 
 
-class GovernanceRule(BaseModel):
-    """v1 governance rule — mirrors the legacy GovernanceRule exactly."""
-
-    title: str | None = None
-    description: str | None = None
-    license: str | None = None
-    attribution: str | None = None
-    ownership: list[GovernanceOwner] = Field(default_factory=list)
-    access_level: str | None = None  # open | internal | restricted | secret
-    access_requirements: str | None = None  # kept for backward compat
-    classification: str | None = None  # pii | green | yellow | red
-    tags: list[str] = Field(default_factory=list)
-    retention_days: int | None = None
-    documentation_url: str | None = None
-    source_system: str | None = None
-    # **Legacy.** `celine-utils/schema/governance.schema.json` — the canonical
-    # authoring schema — defines `row_filters` and *not* this field. The real
-    # dataset-api agrees: `row_filters/specs.py` documents `userFilterColumn`
-    # as legacy and migrates it into `{handler: direct_user_match, args: {column}}`.
-    #
-    # Kept because deployed governance files still use it. Never read it
-    # directly — call `subject_column(rule)`, which normalises both spellings.
-    # Reading one spelling is how a correctly-configured dataset gets refused
-    # (or, worse, served unfiltered).
-    user_filter_column: str | None = None
-    row_filters: list["RowFilter"] = Field(default_factory=list)
-    extra: dict[str, Any] = Field(default_factory=dict)
+# `GovernanceRule` — upstream's, imported above. The class that stood here
+# declared the same fields **minus `expose` and `ontology`**, which is the whole
+# defect `ADR-0013` describes: a subset model does not fail to read a field, it
+# makes the field unsayable.
+#
+# Two of its comments were load-bearing and now live upstream, on the fields
+# themselves: `user_filter_column` is legacy and superseded by `row_filters` (never
+# read it directly — call `subject_column`, which normalises both spellings and
+# lets the canonical one win, `GOV-05`), and `expose` is tri-state with `None`
+# meaning *not stated*.
 
 
 # ── v2 extensions ─────────────────────────────────────────────────────────────
@@ -138,9 +145,26 @@ class DataspaceContract(BaseModel):
     contract_definition_id: str | None = None
 
 
-class DataspaceSpec(BaseModel):
-    expose: bool = False
-    medallion: str | None = None  # bronze | silver | gold — inferred from key if None
+class DataspaceSpec(DataspaceConfig):
+    """The dataspace block — upstream's fields, plus the EDC ones that are ds's.
+
+    Inherited and no longer restated: `expose`, `medallion`, `purpose`,
+    `consent_required`, `contract_required`, `odrl_action`. The last four ds used
+    to drop outright — `dataspace` is excluded from `extra`, so a file could state
+    `odrl_action` and ds could not even see that it had been said.
+
+    **`purpose`, `consent_required` and `contract_required` are carried here and
+    read from `policy`.** `_canonical_policy` copies them across at parse time and
+    ds's readers all go through `policy`; this model now holds them too because it
+    inherits them. `resolver._merge_dataspace` applies the same union/OR rules the
+    policy merge applies, so the two cannot come apart — but the duplication is
+    real and temporary, and phase 2 of the migration decides which one survives.
+
+    Added here, and staying here: the EDC-specific sub-objects. That is not ds
+    asserting a boundary — it is the one upstream drew, in `DataspaceConfig`'s own
+    docstring.
+    """
+
     asset: DataspaceAsset = Field(default_factory=DataspaceAsset)
     data_address: DataspaceDataAddress = Field(default_factory=DataspaceDataAddress)
     contract: DataspaceContract = Field(default_factory=DataspaceContract)
@@ -159,58 +183,66 @@ class DataspaceSpec(BaseModel):
     sharing_offers: list[str] = Field(default_factory=list)
 
 
-class TemporalCoverage(BaseModel):
-    """`dct:temporal` — the period the data covers, not the period it is offered."""
-
-    start: str | None = None
-    end: str | None = None
-
-
-class DcatSpec(BaseModel):
+class DcatSpec(DcatConfig):
     """DCAT-AP metadata for catalogue exposition — the canonical `dcat:` block.
 
-    **This mirrors `dcatConfig` in `schemas/governance.schema.json` field for
-    field, and that is a constraint rather than a coincidence.** That schema is
-    defined by celine-utils and only cached here (`schemas/README.md`), so a
-    field added on this side would be one this platform reads and no producer can
-    validate against before authoring. Extending the shape means extending it
-    upstream first.
+    **Upstream's `DcatConfig`, with nothing added, and the empty body is the
+    point.** This class used to mirror `dcatConfig` field for field with a comment
+    saying the mirroring was a constraint: celine-utils defines the shape
+    (`schemas/README.md`), so a field added on this side would be one ds reads and
+    no producer could validate against before authoring. A subclass enforces what
+    the comment could only ask for.
 
-    Every one of these was **received and never read** until this model existed.
-    The schema has declared the block since before ds read any of it, and
-    `GovernanceRuleV2` carried no `dcat` field — so the resolver swept it into
-    `extra`, where it survived as an untyped dict that nothing looked at, and
-    `compliance/evidence.py` emitted a DCAT dataset missing all of it. A producer
-    authoring against the published schema got a valid file and no effect, which
-    is worse than a rejection: a rejection is a message.
+    Kept as a name rather than replaced by `DcatConfig` at every call site because
+    `ds.governance.DcatSpec` is part of this library's public surface and
+    `services/connector` constructs it by name.
 
-    Worth being precise about, because *"the data was lost"* would suggest the fix
-    is to stop dropping it. It was never dropped. `extra` is the catch-all for
-    keys ds does not model, and the defect was modelling nothing — so the fix is a
-    typed field plus a reader, and `extra` correctly stops carrying it.
+    Every one of these fields was **received and never read** until ds modelled the
+    block at all: the resolver swept `dcat:` into `extra`, where it survived as an
+    untyped dict nothing looked at, and `compliance/evidence.py` emitted a DCAT
+    dataset missing all of it. A producer authoring against the published schema
+    got a valid file and no effect, which is worse than a rejection — a rejection
+    is a message.
 
-    ``conforms_to`` is a **single string** because that is what the canonical
-    schema says (*"URI of a standard or specification the dataset conforms to"*).
-    A dataset conforming to several models is a real case and a real limitation;
-    widening it to a list is a celine-utils change, not a divergence to ship
-    here.
+    `conforms_to` is a **single string** because that is what the canonical schema
+    says. A dataset conforming to several models is a real case and a real
+    limitation; widening it is a celine-utils change, not a divergence to ship here.
+    Now that this is a subclass, that is enforced rather than merely intended.
     """
-
-    publisher_uri: str | None = None
-    themes: list[str] = Field(default_factory=list)
-    language_uris: list[str] = Field(default_factory=list)
-    spatial_uris: list[str] = Field(default_factory=list)
-    accrual_periodicity: str | None = None
-    # The payload semantic model — SAREF, CIM, COSEM. Resolved against the
-    # vocabulary registry (`vocabularies.py`) and served from `/ns/{slug}` when a
-    # local copy exists. Rulebook `M-4`, `M-7`.
-    conforms_to: str | None = None
-    temporal: TemporalCoverage | None = None
 
 
 class GovernanceRuleV2(GovernanceRule):
-    """v2 governance rule — extends v1 with ODRL policy and EDC dataspace config."""
+    """Upstream's rule, extended with ds's ODRL policy view and EDC config.
 
+    `GovernanceRule` already carries every field of the shape, `expose` and
+    `ontology` included. What is added here is what upstream deliberately does not
+    model — see its docstring: "`ds` extends this with `policy` (ODRL/EDC) and its
+    richer `DataspaceSpec`".
+
+    **`row_filters` is re-typed, and that is the one narrowing worth stating.**
+    Upstream keeps `list[dict]`, because a handler defines its own arguments and
+    governance is not the place that knows them. ds parses them into `RowFilter` /
+    `RowFilterArgs` because the data-plane decision contract puts them on the wire
+    (`dataplane.py`), and `RowFilterArgs` is `extra="allow"` precisely so the
+    narrowing does not truncate a handler's arguments — dropping `rec_registry`'s
+    `urn_template` resolves an empty device set, which the FIWARE adapter reads as
+    *deny*.
+
+    `expose` is inherited and populated, and **nothing reads it yet**. Phase 3 of
+    `ADR-0013`'s migration is what calls `effective_expose` / `exposure_conflict` at
+    sync time and closes
+    [#20](https://github.com/spindoxlabs/ds/issues/20); until then the only gate in
+    force is `dataspace.expose`, exactly as before. Carrying the value is still
+    strictly better than sweeping it into `extra`: it is now visible to a reader
+    and to a test, which is what the ADR is about.
+    """
+
+    # `type: ignore[assignment]` — mypy applies the Liskov rule to a mutable
+    # attribute and `list[RowFilter]` is not `list[dict]`. The narrowing is the
+    # point (see the docstring) and pydantic re-validates on assignment, so the
+    # unsoundness mypy is guarding against cannot occur here. There is no way to
+    # express a covariant model-field override; the alternative is not narrowing.
+    row_filters: list[RowFilter] = Field(default_factory=list)  # type: ignore[assignment]
     policy: DataspacePolicy = Field(default_factory=DataspacePolicy)
     dataspace: DataspaceSpec = Field(default_factory=DataspaceSpec)
     dcat: DcatSpec = Field(default_factory=DcatSpec)

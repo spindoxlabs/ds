@@ -138,6 +138,12 @@ def ds_view(rule: Any) -> dict[str, Any]:
         "dcat": rule.dcat.model_dump(mode="json"),
         "dataspace": rule.dataspace.model_dump(mode="json"),
         "policy": rule.policy.model_dump(mode="json"),
+        # Inherited from upstream's `GovernanceRule` at phase 1. Listed here the
+        # day the field arrived: a field the model carries and this projection does
+        # not is a field the snapshot cannot report, which would make the harness
+        # blind to exactly the class of change it exists to catch.
+        "expose": rule.expose,
+        "ontology": rule.ontology.model_dump(mode="json") if rule.ontology else None,
     }
 
 
@@ -316,20 +322,25 @@ class TestDeclaredDivergences:
     anybody deciding that.
     """
 
-    def test_expose_is_tri_state_upstream_and_absent_here(self, tmp_path):
-        """[#20](https://github.com/spindoxlabs/ds/issues/20), reproduced.
+    def test_expose_is_carried_since_phase_1_and_still_unenforced(self, tmp_path):
+        """[#20](https://github.com/spindoxlabs/ds/issues/20) — **half closed.**
 
         The canonical schema has **two** exposure gates: `expose` gates the
         catalogue and the query API, `dataspace.expose` gates the dataspace offer,
-        and they are ANDed. ds models only the second, so `expose: false` lands in
-        `extra` where nothing reads it — the rule resolves as exposed, the
-        connector publishes the asset, a consumer negotiates and concludes a
-        contract, and the transfer fails at a data plane that was never going to
-        serve it.
+        and they are ANDed. Before phase 1, ds modelled only the second and
+        `expose: false` landed in `extra` where no reader and no test could see it.
 
-        Upstream calls the same file a contradiction and says so by name. Phase 3
-        closes #20 by adopting `expose` and calling `exposure_conflict` at sync
-        time — not by writing a fourth copy of the rule.
+        Phase 1 changed the first half of that: the field is inherited from
+        upstream's `GovernanceRule` and populated by the parser, so the value is now
+        on the rule. **Nothing reads it yet**, which is why this test still belongs
+        in this class — the resolved offer gate is `dataspace.expose`, unchanged,
+        and the failure #20 describes is still reachable: the connector publishes,
+        a consumer negotiates and concludes a contract, and the transfer fails at a
+        data plane that was never going to serve it.
+
+        Phase 3 is what calls `exposure_conflict` at sync time, alongside the other
+        checks that report every violation in one pass. When it does, the last two
+        assertions here become the assertion that the sync refused.
         """
         path = tmp_path / "governance.yaml"
         path.write_text(
@@ -337,10 +348,14 @@ class TestDeclaredDivergences:
         )
 
         ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert ds_rule.dataspace.expose is True
-        assert ds_rule.extra == {"expose": False}, (
-            "ds carries the catalogue gate in `extra`, unread"
-        )
+        assert ds_rule.expose is False, "phase 1: carried on the model"
+        assert ds_rule.extra == {}, "phase 1: no longer swept into `extra`"
+        assert ds_rule.dataspace.expose is True, "the only gate in force, unchanged"
+
+        # And the check that is not wired up yet — it already answers correctly on
+        # ds's own rule, because the rule is upstream's shape now.
+        assert effective_expose(ds_rule) is False
+        assert exposure_conflict(ds_rule) is not None
 
         celine_rule = CelineResolver.from_file(path).resolve("a")
         assert celine_rule.expose is False
@@ -400,41 +415,50 @@ class TestDeclaredDivergences:
         rule = GovernanceResolver.from_file(path).resolve("a")
         assert rule.policy.purpose == ["FromDataspace"]
 
-    def test_odrl_action_is_dropped_here_and_carried_upstream(self, tmp_path):
-        """A third dropped field, and `ADR-0013` names only two.
+    def test_odrl_action_was_dropped_and_is_now_carried(self, tmp_path):
+        """**Closed by phase 1**, and it was a third dropped field nobody had named.
 
         `dataspace.odrl_action` is in the canonical schema and in every demo3 file
-        in the corpus. `DataspaceSpec` has no such field and `dataspace` is excluded
-        from `extra`, so ds does not merely fail to read it — it cannot see that it
-        was said. Harmless today because nothing here would act on it; recorded
-        because "ds's model is a subset" is a claim whose extent nobody had measured.
+        in the corpus. Before phase 1, `DataspaceSpec` had no such field and
+        `dataspace` is excluded from `extra`, so ds did not merely fail to read it —
+        it could not see that it had been said. `ADR-0013` names `expose` and
+        `ontology` as the cost of the subset model; phase 0 found this one by
+        measuring instead of predicting.
+
+        Nothing reads it today and nothing needs to. It is carried because
+        `DataspaceSpec` subclasses `DataspaceConfig`, which is the whole argument of
+        the ADR working as intended: **a field ds does not read is carried by
+        upstream's model instead of being dropped**, so the next reader has it.
         """
         path = tmp_path / "governance.yaml"
         path.write_text("sources:\n  a:\n    dataspace:\n      odrl_action: transfer\n")
 
         ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert "odrl_action" not in ds_rule.dataspace.model_dump()
-        assert ds_rule.extra == {}, (
-            "not even in extra — `dataspace` is excluded from it"
-        )
-
+        assert ds_rule.dataspace.odrl_action == "transfer"
         assert (
             CelineResolver.from_file(path).resolve("a").dataspace.odrl_action
             == "transfer"
         )
 
-    def test_ontology_does_not_actually_dict_merge(self, tmp_path):
-        """The latent divergence `ADR-0013` predicts is **not reproducible**.
+    def test_ontology_never_dict_merged_and_is_now_typed(self, tmp_path):
+        """**The cost `ADR-0013` states here was overstated, and phase 1 closes it.**
 
         The ADR says ds dict-merges `ontology` per key and so can produce a rule
-        declaring both `spec` and `spec_file`, which the schema forbids. It cannot:
-        `extra` merges shallowly (`{**base.extra, **override.extra}`), so the
-        override's whole `ontology` dict replaces the base's — the same outcome
-        upstream reaches deliberately with `merge_rules`' whole replacement.
+        declaring both `spec` and `spec_file`, which the schema forbids. It never
+        could: `extra` merges shallowly (`{**base.extra, **override.extra}`), so the
+        override's whole `ontology` dict replaced the base's — the same outcome
+        upstream reaches deliberately with `merge_rules`' whole replacement. Worth
+        recording where it cannot go stale, because an overstated cost is still a
+        wrong fact, and the argument for the migration does not need it.
 
-        The real difference is smaller and worth stating accurately: ds has no typed
-        field and reads it nowhere, upstream models it. Recorded here rather than
-        left in the ADR as a cost, because an overstated cost is still a wrong fact.
+        The real difference was smaller: ds had no typed field. Phase 1 inherits
+        `OntologyConfig` and `_merge` states the whole-replacement rule explicitly
+        rather than getting it by accident from a shallow dict merge — which is the
+        difference between a behaviour and a coincidence.
+
+        ds still resolves neither `spec` nor `spec_file`. That means importing the
+        ontology stack, and upstream keeps resolution in the consumer for the same
+        reason.
         """
         path = tmp_path / "governance.yaml"
         path.write_text(
@@ -448,7 +472,9 @@ class TestDeclaredDivergences:
         )
 
         ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert ds_rule.extra == {"ontology": {"spec_file": "./local.yaml"}}
+        assert ds_rule.extra == {}
+        assert ds_rule.ontology.spec is None, "whole replacement, not field-wise"
+        assert ds_rule.ontology.spec_file == "./local.yaml"
 
         celine_rule = CelineResolver.from_file(path).resolve("a")
         assert celine_rule.ontology.spec is None

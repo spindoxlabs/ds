@@ -163,6 +163,7 @@ name = "ds-governance"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "celine-utils" },
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyyaml" },
@@ -171,7 +172,6 @@ dependencies = [
 
 [package.optional-dependencies]
 dev = [
-    { name = "celine-utils" },
     { name = "jsonschema" },
     { name = "mypy" },
     { name = "pytest" },
@@ -181,7 +181,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "celine-utils", marker = "extra == 'dev'", specifier = ">=2.4.0" },
+    { name = "celine-utils", specifier = ">=2.4.0" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jsonschema", marker = "extra == 'dev'", specifier = ">=4.19" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.11" },
