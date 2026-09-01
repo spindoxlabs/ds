@@ -6,6 +6,15 @@ import logging
 from pathlib import Path
 
 import httpx
+
+# The exposure rule is upstream's and is **called, not reimplemented** — the
+# catalogue gate and the dataspace gate are ANDed, so `expose: false` beside
+# `dataspace.expose: true` cannot be honoured by a consumer that reaches the asset
+# through the catalogue entry describing it. See `ADR-0013` and
+# `libs/governance`'s `check_exposure_conflict`, which reports the same rule
+# offline so a producer hears it from `validate` rather than from a failed
+# transfer (https://github.com/spindoxlabs/ds/issues/20).
+from celine.governance.exposure import exposure_conflict
 from ds.governance.models import GovernanceRuleV2
 from ds.governance.purposes import purpose_failure
 from ds.governance.sharing import (
@@ -94,7 +103,7 @@ def _reject_unpublishable(
 ) -> set[str]:
     """Datasets that must not be published, with every reason reported at once.
 
-    Two rules, one gate:
+    Three rules, one gate:
 
     - **Purpose** — an empty or unresolvable ``policy.purpose[]`` would be
       published with *no purpose constraint at all* (`_purpose_iris` drops what it
@@ -103,9 +112,14 @@ def _reject_unpublishable(
       the sync used to report success.
     - **Sharing offers** — an id that does not resolve means the dataset is not
       shared.
+    - **Exposure** — ``expose: false`` with ``dataspace.expose: true`` is a
+      contradiction, not a narrower grant.
 
-    Both say the same thing: a dataset missing a fact the platform enforces on is
-    not published, rather than published without the enforcement.
+    The first two say the same thing: a dataset missing a fact the platform
+    enforces on is not published, rather than published without the enforcement.
+    The third is the other shape — a dataset saying two things that cannot both
+    hold — and it lands in the same gate because the outcome a producer needs is
+    the same: told, in one pass, before anything ships.
 
     **Every failure is collected before anything is published**, mirroring
     `ProductionGuard`, which logs all violations and only then refuses. Ingest is
@@ -127,6 +141,7 @@ def _reject_unpublishable(
             for reason in (
                 purpose_failure(rule, mapper.profile),
                 _offer_failure(rule, catalogue),
+                exposure_conflict(rule),
                 (
                     "declares sharing offer "
                     + ", ".join(repr(o) for o in stale)

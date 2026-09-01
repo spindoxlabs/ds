@@ -291,6 +291,60 @@ class TestConsentCoherence:
         assert "consent-coherence" in codes(run(path).errors)
 
 
+class TestExposureConflict:
+    """`expose: false` beside `dataspace.expose: true` — #20.
+
+    Deliberately **untagged**. A test here declares the rulebook rule it evidences,
+    and no current rule states the two-gate AND: `A-6` is `access_level: secret`,
+    `C-9` is a missing mandatory field, `C-21` is visibility restricted to a subset.
+    A contradiction between two exposure gates is none of those. Tagging it with the
+    nearest one would report enforcement of something else — see the note in the
+    work log; either the rulebook gains a rule or `C-9` widens, and that is a
+    decision, not a test-file edit.
+    """
+
+    def test_offered_but_unlisted_is_an_error(self, tmp_path: Path):
+        """The #20 file, end to end through `validate`.
+
+        This validated **PASS** until ds modelled `expose`: the flag landed in
+        `extra`, nothing read it, and the first sign of trouble was a transfer
+        failing after a contract had already been concluded.
+        """
+        path = write_governance(
+            tmp_path,
+            {"sources": {"a": exposed_dataset(expose=False)}},
+        )
+        result = run(path)
+        assert "exposure-conflict" in codes(result.errors)
+        assert "expose: true" in " ".join(f.message for f in result.errors)
+
+    def test_listed_and_offered_is_clean(self, tmp_path: Path):
+        path = write_governance(
+            tmp_path, {"sources": {"a": exposed_dataset(expose=True)}}
+        )
+        assert "exposure-conflict" not in codes(run(path).errors)
+
+    def test_stating_nothing_is_clean(self, tmp_path: Path):
+        """`expose` unstated falls back to `dataspace.expose`, so there is no
+        contradiction to report — which is what keeps every unmigrated file quiet."""
+        path = write_governance(tmp_path, {"sources": {"a": exposed_dataset()}})
+        assert "exposure-conflict" not in codes(run(path).errors)
+
+    def test_withheld_from_both_never_reaches_the_check(self, tmp_path: Path):
+        """Not offered, not listed: consistent, and not exposed either.
+
+        `load_exposed` filters on `dataspace.expose`, so such a dataset is not in
+        the checked set at all. Asserted because "no conflict reported" would
+        otherwise be true for the uninteresting reason.
+        """
+        rule = exposed_dataset(expose=False)
+        rule["dataspace"] = {**rule["dataspace"], "expose": False}
+        path = write_governance(tmp_path, {"sources": {"a": rule}})
+        result = run(path)
+        assert "exposure-conflict" not in codes(result.errors)
+        assert result.datasets_checked == 0
+
+
 class TestRetention:
     @pytest.mark.parametrize("value", [0, -1])
     def test_non_positive_retention_is_an_error(self, tmp_path: Path, value: int):

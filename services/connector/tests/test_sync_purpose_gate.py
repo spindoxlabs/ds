@@ -36,11 +36,14 @@ def _mapper() -> ConnectorGovernanceMapper:
 
 
 def _rule(
-    purposes: list[str] | None, sharing_offers: list[str] | None = None
+    purposes: list[str] | None,
+    sharing_offers: list[str] | None = None,
+    expose: bool | None = None,
 ) -> GovernanceRuleV2:
     return GovernanceRuleV2(
         access_level="open",
         classification="green",
+        expose=expose,
         dataspace=DataspaceSpec(expose=True, sharing_offers=sharing_offers or []),
         policy=DataspacePolicy(purpose=purposes or []),
     )
@@ -249,4 +252,85 @@ async def test_both_problems_on_one_dataset_are_both_reported(
     joined = " ".join(e["error"] for e in result.errors)
     assert "nope" in joined
     assert "also-missing" in joined
+    assert len(result.errors) == 2
+
+
+# ── Exposure ─────────────────────────────────────────────────────────────────
+#
+# The third rule in the same gate, added with `ADR-0013` phase 3
+# (https://github.com/spindoxlabs/ds/issues/20). The first two refuse a dataset
+# **missing** a fact the platform enforces on; this one refuses a dataset stating
+# two facts that cannot both hold.
+
+
+@pytest.mark.asyncio
+async def test_offered_but_unlisted_is_not_published(datasets):
+    """`expose: false` with `dataspace.expose: true` must not reach EDC.
+
+    The two gates are ANDed: a consumer reaches a dataspace asset through the
+    catalogue entry describing it, so offering something unlisted cannot be
+    honoured. Publishing anyway is what let a consumer negotiate and **conclude a
+    contract** for data the plane was never going to serve — a failure that looked
+    like an agreement until the transfer.
+
+    The rule is `celine.governance.exposure.exposure_conflict`, called rather than
+    copied.
+    """
+    datasets({"datasets.gold.unlisted": _rule(["GridMonitoring"], expose=False)})
+    edc = _RecordingEdc()
+
+    result = await _sync(edc)
+
+    assert edc.created_assets == [], "an unlisted dataset was offered to the dataspace"
+    assert len(result.errors) == 1
+    assert result.errors[0]["dataset"] == "datasets.gold.unlisted"
+    assert "expose: true" in result.errors[0]["error"]
+    assert result.synced == []
+
+
+@pytest.mark.asyncio
+async def test_listed_and_offered_still_publishes(datasets):
+    datasets({"datasets.gold.ok": _rule(["GridMonitoring"], expose=True)})
+    edc = _RecordingEdc()
+
+    result = await _sync(edc)
+
+    assert len(edc.created_assets) == 1
+    assert result.errors == []
+
+
+@pytest.mark.asyncio
+async def test_unstated_expose_still_publishes(datasets):
+    """The unmigrated case, and the reason this was shippable ahead of the files.
+
+    `expose` unstated means *not stated*, and the resolved catalogue gate falls back
+    to `dataspace.expose`. Every governance file written against the old grammar —
+    which is all of them; the corpus states `expose` nowhere — keeps behaving
+    exactly as it did.
+    """
+    datasets({"datasets.gold.legacy": _rule(["GridMonitoring"], expose=None)})
+    edc = _RecordingEdc()
+
+    result = await _sync(edc)
+
+    assert len(edc.created_assets) == 1
+    assert result.errors == []
+
+
+@pytest.mark.asyncio
+async def test_an_exposure_conflict_is_reported_beside_the_other_reasons(datasets):
+    """One dataset, two independent faults, both named in one pass.
+
+    The gate collects every reason before publishing anything; a dataset that is
+    both unlisted and purposeless must not report only whichever check ran first.
+    """
+    datasets({"datasets.gold.both": _rule([], expose=False)})
+    edc = _RecordingEdc()
+
+    result = await _sync(edc)
+
+    assert edc.created_assets == []
+    messages = " ".join(e["error"] for e in result.errors)
+    assert "declares no purpose" in messages
+    assert "expose: true" in messages
     assert len(result.errors) == 2

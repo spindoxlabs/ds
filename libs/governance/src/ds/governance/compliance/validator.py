@@ -21,6 +21,7 @@ from .checks import (
     OwnerLookup,
     ValidationResult,
     check_consent_coherence,
+    check_exposure_conflict,
     check_data_address,
     check_dcat_ap,
     check_policy_contract_id_collision,
@@ -181,6 +182,7 @@ def validate(
     check_dcat_ap(result, exposed)
     check_data_address(result, exposed)
     check_consent_coherence(result, exposed)
+    check_exposure_conflict(result, exposed)
     check_retention(result, exposed)
     check_validity_window(result, exposed)
     check_owners(result, exposed, owners, participant_dids)

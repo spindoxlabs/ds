@@ -6,6 +6,7 @@ from .checks import (
     Finding,
     OwnerLookup,
     ValidationResult,
+    check_exposure_conflict,
     load_exposed,
 )
 from .consent_checks import (
@@ -34,6 +35,7 @@ __all__ = [
     "OwnerLookup",
     "ControllerLookup",
     "ValidationResult",
+    "check_exposure_conflict",
     "load_exposed",
     "check_dataset_purposes",
     "check_purpose_taxonomy",

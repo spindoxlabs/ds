@@ -1,4 +1,4 @@
-"""Tests for governance overlay merge (from_file_with_override, _merge_configs, _merge_rule)."""
+"""Tests for governance overlay merge (from_file_with_override, _merge_configs, _merge)."""
 
 from __future__ import annotations
 
@@ -109,27 +109,43 @@ class TestMergeRuleSemantics:
             {"ownership": [{"name": "old-org"}], "tags": ["a"]}
         )
         override = GovernanceResolver._parse_rule({"ownership": [{"name": "new-org"}]})
-        merged = GovernanceResolver._merge_rule(base, override)
+        merged = GovernanceResolver._merge(base, override)
         assert len(merged.ownership) == 1
         assert merged.ownership[0].name == "new-org"
 
     def test_empty_lists_preserve_base(self, tmp_path):
         base = GovernanceResolver._parse_rule({"ownership": [{"name": "org-a"}]})
         override = GovernanceResolver._parse_rule({})
-        merged = GovernanceResolver._merge_rule(base, override)
+        merged = GovernanceResolver._merge(base, override)
         assert len(merged.ownership) == 1
         assert merged.ownership[0].name == "org-a"
 
-    def test_none_scalars_preserve_base(self):
+    def test_unstated_scalars_preserve_base(self):
+        """**Unstated**, which is not the same as stated `null`.
+
+        Renamed in phase 2 of `ADR-0013`, because the merge changed underneath it
+        and the old name now describes the opposite case. `_parse_rule({})` declares
+        nothing, so `access_level` is absent from `model_fields_set` and the base
+        survives — that is this test, and it is unchanged.
+
+        An override that states `access_level: null` is a different statement and now
+        gets a different answer: it withdraws the value. Under the old `pick()` merge
+        the two were indistinguishable and both inherited.
+        `test_characterisation.py::test_a_scalar_set_to_null_in_an_override` pins
+        that half.
+        """
         base = GovernanceResolver._parse_rule({"access_level": "internal"})
         override = GovernanceResolver._parse_rule({})
-        merged = GovernanceResolver._merge_rule(base, override)
+        merged = GovernanceResolver._merge(base, override)
         assert merged.access_level == "internal"
+
+        withdrawn = GovernanceResolver._parse_rule({"access_level": None})
+        assert GovernanceResolver._merge(base, withdrawn).access_level is None
 
     def test_tags_union(self):
         base = GovernanceResolver._parse_rule({"tags": ["a", "b"]})
         override = GovernanceResolver._parse_rule({"tags": ["b", "c"]})
-        merged = GovernanceResolver._merge_rule(base, override)
+        merged = GovernanceResolver._merge(base, override)
         assert sorted(merged.tags) == ["a", "b", "c"]
 
 

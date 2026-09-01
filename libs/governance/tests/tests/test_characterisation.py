@@ -322,25 +322,25 @@ class TestDeclaredDivergences:
     anybody deciding that.
     """
 
-    def test_expose_is_carried_since_phase_1_and_still_unenforced(self, tmp_path):
-        """[#20](https://github.com/spindoxlabs/ds/issues/20) — **half closed.**
+    def test_expose_is_carried_and_now_enforced(self, tmp_path):
+        """[#20](https://github.com/spindoxlabs/ds/issues/20) — **closed.**
 
-        The canonical schema has **two** exposure gates: `expose` gates the
-        catalogue and the query API, `dataspace.expose` gates the dataspace offer,
-        and they are ANDed. Before phase 1, ds modelled only the second and
-        `expose: false` landed in `extra` where no reader and no test could see it.
+        The canonical schema has **two** exposure gates, ANDed: `expose` gates the
+        catalogue and the query API, `dataspace.expose` gates the dataspace offer.
+        ds modelled only the second, so `expose: false` landed in `extra` where no
+        reader and no test could see it — the connector published, a consumer
+        negotiated and concluded a contract, and the transfer failed at a data plane
+        that was never going to serve it.
 
-        Phase 1 changed the first half of that: the field is inherited from
-        upstream's `GovernanceRule` and populated by the parser, so the value is now
-        on the rule. **Nothing reads it yet**, which is why this test still belongs
-        in this class — the resolved offer gate is `dataspace.expose`, unchanged,
-        and the failure #20 describes is still reachable: the connector publishes,
-        a consumer negotiates and concludes a contract, and the transfer fails at a
-        data plane that was never going to serve it.
+        Phase 1 carried the field. Phase 3 wired the rule, in the two places the
+        defect names: `compliance.checks.check_exposure_conflict` so `validate` stops
+        reporting PASS, and `provider_service._reject_unpublishable` so the sync
+        refuses rather than publishing. Both **call**
+        `celine.governance.exposure.exposure_conflict`; neither reimplements it,
+        which is `ADR-0013` doing the job it was written for.
 
-        Phase 3 is what calls `exposure_conflict` at sync time, alongside the other
-        checks that report every violation in one pass. When it does, the last two
-        assertions here become the assertion that the sync refused.
+        This stays in the divergence class as the record of what the divergence was
+        and what it cost. The assertion is now that the two implementations agree.
         """
         path = tmp_path / "governance.yaml"
         path.write_text(
@@ -348,20 +348,35 @@ class TestDeclaredDivergences:
         )
 
         ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert ds_rule.expose is False, "phase 1: carried on the model"
-        assert ds_rule.extra == {}, "phase 1: no longer swept into `extra`"
-        assert ds_rule.dataspace.expose is True, "the only gate in force, unchanged"
+        assert ds_rule.expose is False
+        assert ds_rule.extra == {}
+        assert ds_rule.dataspace.expose is True
 
-        # And the check that is not wired up yet — it already answers correctly on
-        # ds's own rule, because the rule is upstream's shape now.
+        # Upstream's rule, answering on ds's own rule object because the rule *is*
+        # upstream's shape now.
         assert effective_expose(ds_rule) is False
+        assert dataspace_expose(ds_rule) is True
         assert exposure_conflict(ds_rule) is not None
 
         celine_rule = CelineResolver.from_file(path).resolve("a")
-        assert celine_rule.expose is False
-        assert effective_expose(celine_rule) is False
-        assert dataspace_expose(celine_rule) is True
-        assert exposure_conflict(celine_rule) is not None
+        assert exposure_conflict(ds_rule) == exposure_conflict(celine_rule)
+
+    def test_an_unstated_expose_is_not_a_conflict(self, tmp_path):
+        """What keeps phase 3 shippable ahead of the files.
+
+        `None` means *not stated* and the catalogue gate falls back to
+        `dataspace.expose`, so a file written against the old grammar cannot
+        contradict itself. Measured in phase 0 and still true: **no file in the
+        corpus states `expose` at all**, so nothing that ships today changes
+        behaviour.
+        """
+        path = tmp_path / "governance.yaml"
+        path.write_text("sources:\n  a:\n    dataspace:\n      expose: true\n")
+
+        ds_rule = GovernanceResolver.from_file(path).resolve("a")
+        assert ds_rule.expose is None
+        assert effective_expose(ds_rule) is True
+        assert exposure_conflict(ds_rule) is None
 
     def test_the_ds_policy_block_is_unknown_upstream(self, tmp_path):
         """`policy:` is ds's own, and upstream's parser sweeps it into `extra`.
@@ -503,21 +518,29 @@ class TestDeclaredDivergences:
         assert CelineResolver.from_file(missing).config.sources == {}
 
     def test_a_scalar_set_to_null_in_an_override(self):
-        """ds cannot clear a scalar; upstream can.
+        """**Closed by phase 2, and it is the one behaviour this migration changed.**
 
-        ds's merge is `pick(base, override)` — *override wins unless it is `None`* —
-        so an overlay stating `license: null` inherits the base's licence instead of
-        withdrawing it. Upstream merges on `exclude_unset`, which distinguishes
-        *silent* from *said no*, and the null wins.
+        ds's merge was `pick(base, override)` — *override wins unless it is `None`* —
+        so an overlay stating `license: null` inherited the base's licence instead of
+        withdrawing it. There was no way to clear a scalar. Upstream merges on
+        `exclude_unset`, which distinguishes *silent* from *said no*, and the null
+        wins.
 
-        Not reachable from the corpus: `license: null` and `documentation_url: null`
-        appear in every demo3 file's `defaults`, but no overlay states one. Latent,
-        and adopting upstream's merge changes it — which is a behaviour change to
-        declare rather than to discover.
+        Phase 0 declared this before it was made rather than discovering it
+        afterwards, which is the only reason it is a decision and not a regression.
+        It is unreachable from the corpus — `license: null` and
+        `documentation_url: null` appear in every demo3 file's `defaults`, but no
+        overlay states one — so the snapshot did not move by a single field when the
+        merge changed underneath it.
+
+        The change is not free-standing: `_parse_rule` had to start going through
+        `model_validate` in the same phase, because `exclude_unset` is only
+        meaningful if `model_fields_set` is honest, and keyword construction marks
+        every field as set.
         """
         base = GovernanceResolver._parse_rule({"title": "T"})
         override = GovernanceResolver._parse_rule({"title": None})
-        assert GovernanceResolver._merge(base, override).title == "T"
+        assert GovernanceResolver._merge(base, override).title is None
 
         assert (
             merge_rules(parse_rule({"title": "T"}), parse_rule({"title": None})).title

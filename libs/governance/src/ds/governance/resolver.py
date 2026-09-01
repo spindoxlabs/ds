@@ -14,24 +14,35 @@ from typing import Any, TypeVar
 
 import yaml
 
-from celine.governance.models import KNOWN_KEYS, OntologyConfig
+from celine.governance.merge import merge_models
 from pydantic import BaseModel
+from celine.governance.models import KNOWN_KEYS
 
 from .models import (
     DataspacePolicy,
     DataspaceSpec,
     DcatSpec,
-    GovernanceOwner,
     GovernanceRuleV2,
-    RowFilter,
-    RowFilterArgs,
 )
 
 
-#: The merge helpers are generic over the model they merge — annotated so a caller
-#: gets the model back rather than `Any`, which under `strict` is the difference
-#: between checking `_merge_dataspace` and rubber-stamping it.
 _M = TypeVar("_M", bound=BaseModel)
+
+
+def _merged(value: _M | None) -> _M:
+    """Narrow upstream's optional merge result where both operands were non-None.
+
+    `celine.governance.merge.merge_models` is `Optional` in and `Optional` out —
+    it has to be, because upstream's `dcat`, `ontology` and `dataspace` are all
+    optional fields and merging *absent* with *present* is a real case. None of
+    ds's call sites can pass one: `GovernanceRuleV2` gives `policy`, `dataspace`
+    and `dcat` a `default_factory`, so they are always models.
+
+    Upstream states the same fact as `assert merged is not None  # both operands
+    are non-None by signature`. This is that, once, instead of at three call sites.
+    """
+    assert value is not None, "both merge operands were non-None"
+    return value
 
 
 class GovernanceConfig:
@@ -128,106 +139,84 @@ class GovernanceResolver:
 
     @staticmethod
     def _parse_rule(data: dict[str, Any]) -> GovernanceRuleV2:
+        """Build a rule from one raw block — the same shape as upstream's `parse_rule`.
+
+        **Goes through `model_validate` on a dict of only the keys the block
+        actually declared, and that is not a style choice.** Pydantic records those
+        keys in `model_fields_set`, and every merge below reads it to tell *unset*
+        from *set to a falsy value*. Constructing with keyword arguments — which is
+        what this did until phase 2 of `ADR-0013` — marks **every** field as set, so
+        an `exclude_unset` merge degrades to "override always wins" and
+        `expose: false` becomes inexpressible.
+
+        ds got away with it only because its own merge was `pick()` on the top-level
+        scalars, which reads `None` rather than the set. Adopting upstream's merge
+        makes the honest field set load-bearing, so this had to change in the same
+        phase.
+
+        Not a call to `celine.governance.parse_rule` because that function validates
+        into `GovernanceRule` by name, and ds needs its subclass — see `_merge`.
+        The split it performs is the same, over the same `KNOWN_KEYS`.
+        """
         block: dict[str, Any] = (
             data.get("governance") if "governance" in data else data
         ) or {}
-
-        owners_raw = block.get("ownership") or []
-        owners = [
-            GovernanceOwner(**o)
-            if isinstance(o, dict)
-            else GovernanceOwner(name=str(o))
-            for o in owners_raw
-        ]
 
         # **Upstream's key set, plus ds's one extra block.** This was a hand-kept
         # list of fourteen names, and a hand-kept list of what a *shared* grammar
         # defines is a list that goes stale silently: it omitted `expose` and
         # `ontology`, so both landed in `extra` and read as absent while the schema
         # validated them happily. That is the same failure mode upstream documents
-        # beside `KNOWN_KEYS` — "when a field is added to `GovernanceRule` and not
-        # added here, the key parses into `extra` and the field reads as absent".
+        # beside `KNOWN_KEYS`.
         #
         # `policy` is ds's own and is **not** in upstream's set, so it has to be
         # added here or ds's own deployed files lose their policy block to `extra`
         # — the silent-drop shape this migration exists to end, pointed the other
-        # way. `dataspace` and `dcat` are already in `KNOWN_KEYS`.
+        # way. `dataspace`, `dcat`, `expose` and `ontology` are already in it.
         known_keys = KNOWN_KEYS | {"policy"}
 
-        policy_raw = dict(block.get("policy") or {})
-        dataspace_raw = block.get("dataspace") or {}
-        # The canonical DCAT-AP block. It used to fall through to `extra` — kept,
-        # but untyped and read by nothing, so a producer's publisher, themes,
-        # spatial and temporal coverage and `conforms_to` reached the resolver and
-        # stopped there. `extra` is for keys ds does not model; this one it does.
-        dcat_raw = block.get("dcat") or {}
+        payload: dict[str, Any] = {k: v for k, v in block.items() if k in known_keys}
+        unknown = {k: v for k, v in block.items() if k not in known_keys}
+        if unknown:
+            payload["extra"] = unknown
 
-        # ── Canonical placement wins ────────────────────────────────────────
-        # `celine-utils/schema/governance.schema.json` puts these under
-        # `dataspace:`; ds historically kept them under its own `policy:` block.
-        # Everything authored outside this repo — the producer pipelines — uses
-        # the canonical location, so reading only `policy:` means a dataset
-        # arrives with **no purpose**, its ODRL policy carries no purpose
-        # constraint, and every consent check then denies for want of a stated
-        # reason. Fail-closed, invisible, and wrong.
+        # **A malformed filter is dropped, not raised on.** Upstream keeps
+        # `list[dict]` and lets pydantic refuse a non-dict entry; ds types the list,
+        # so validating the raw value would turn one bad entry into a file that does
+        # not load at all. Filtering here keeps the tolerance ds has always had.
         #
-        # `policy:` stays readable because deployed ds files still use it, but
-        # it is the fallback now, not the source.
-        policy_raw = _canonical_policy(dataspace_raw, policy_raw)
-
-        return GovernanceRuleV2(
-            title=block.get("title"),
-            description=block.get("description"),
-            license=block.get("license"),
-            attribution=block.get("attribution"),
-            ownership=owners,
-            access_level=block.get("access_level"),
-            access_requirements=block.get("access_requirements"),
-            classification=block.get("classification"),
-            tags=block.get("tags") or [],
-            retention_days=block.get("retention_days"),
-            documentation_url=block.get("documentation_url"),
-            source_system=block.get("source_system"),
-            user_filter_column=block.get("user_filter_column"),
-            row_filters=[
-                RowFilter(
-                    handler=f["handler"],
-                    # Every argument, not just `column` — the handler named here
-                    # is the only thing that knows which of them it needs, and it
-                    # runs in the data plane. See `RowFilterArgs`.
-                    args=RowFilterArgs.model_validate(f["args"]),
-                )
-                for f in (block.get("row_filters") or [])
+        # Every argument survives, not just `column` — the handler named in the
+        # entry is the only thing that knows which of them it needs, and it runs in
+        # the data plane. `RowFilterArgs` is `extra="allow"` for that reason.
+        if "row_filters" in payload:
+            payload["row_filters"] = [
+                f
+                for f in (payload["row_filters"] or [])
                 if isinstance(f, dict)
                 and f.get("handler")
                 and isinstance(f.get("args"), dict)
-            ],
-            extra={k: v for k, v in block.items() if k not in known_keys},
-            # The catalogue gate. Tri-state: `None` is *not stated*, and the
-            # resolved gate then falls back to `dataspace.expose`
-            # (`celine.governance.exposure.effective_expose`).
-            #
-            # **Carried, not yet enforced.** Nothing reads this until phase 3 wires
-            # `exposure_conflict` into the sync, so `dataspace.expose` remains the
-            # only gate in force and behaviour is unchanged. What changes today is
-            # that the value stops sitting in `extra` where no reader and no test
-            # could see it — which is the whole of `#20`'s cause.
-            expose=block.get("expose"),
-            # `spec` XOR `spec_file`, enforced by the schema. ds resolves neither —
-            # that means importing the ontology stack — but modelling it is what
-            # keeps the merge honest: whole replacement, because two bindings for
-            # one dataset is two answers to what one column means.
-            ontology=OntologyConfig.model_validate(block["ontology"])
-            if block.get("ontology")
-            else None,
-            policy=DataspacePolicy.model_validate(policy_raw)
-            if policy_raw
-            else DataspacePolicy(),
-            dataspace=DataspaceSpec.model_validate(dataspace_raw)
-            if dataspace_raw
-            else DataspaceSpec(),
-            dcat=DcatSpec.model_validate(dcat_raw) if dcat_raw else DcatSpec(),
+            ]
+
+        # ── Canonical placement wins ────────────────────────────────────────
+        # `celine-utils/schema/governance.schema.json` puts purpose, consent and
+        # contract under `dataspace:`; ds historically kept them under its own
+        # `policy:` block. Everything authored outside this repo — the producer
+        # pipelines — uses the canonical location, so reading only `policy:` means a
+        # dataset arrives with **no purpose**, its ODRL policy carries no purpose
+        # constraint, and every consent check then denies for want of a stated
+        # reason. Fail-closed, invisible, and wrong.
+        #
+        # `policy:` stays readable because deployed ds files still use it, but it is
+        # the fallback now, not the source.
+        policy_raw = _canonical_policy(
+            payload.get("dataspace") or {}, dict(payload.get("policy") or {})
         )
+        if policy_raw:
+            payload["policy"] = policy_raw
+        else:
+            payload.pop("policy", None)
+
+        return GovernanceRuleV2.model_validate(payload)
 
     @classmethod
     def from_file_with_override(
@@ -250,74 +239,81 @@ class GovernanceResolver:
     def _merge_configs(
         cls, base: GovernanceConfig, override: GovernanceConfig
     ) -> GovernanceConfig:
-        defaults = cls._merge_rule(base.defaults, override.defaults)
+        """Overlay a whole governance file onto another — a deployer override.
+
+        Defaults merge with defaults; a source present in both merges rule-wise; a
+        source only the overlay declares is added as-is.
+
+        `celine.governance.merge.merge_configs` is the same three rules, and is not
+        called for the same reason `merge_rules` is not: it constructs upstream's
+        `GovernanceConfig`, a pydantic model carrying `active` and `depends_on`,
+        where ds's is a plain holder of `defaults` and `sources`. ds reads neither
+        of those two fields — they describe a *pipeline*, which is celine's side of
+        the boundary, not a dataspace connector's.
+
+        `_merge_rule` used to sit between this and `_merge` and did nothing but call
+        it. Deleted with the rest of the merge layer in phase 2 of `ADR-0013`.
+        """
+        defaults = cls._merge(base.defaults, override.defaults)
         sources = dict(base.sources)
         for key, rule in override.sources.items():
-            if key in sources:
-                sources[key] = cls._merge_rule(sources[key], rule)
-            else:
-                sources[key] = rule
+            sources[key] = cls._merge(sources[key], rule) if key in sources else rule
         return GovernanceConfig(defaults=defaults, sources=sources)
-
-    @classmethod
-    def _merge_rule(
-        cls, base: GovernanceRuleV2, override: GovernanceRuleV2
-    ) -> GovernanceRuleV2:
-        return cls._merge(base, override)
 
     @staticmethod
     def _merge(base: GovernanceRuleV2, override: GovernanceRuleV2) -> GovernanceRuleV2:
-        def pick(a: Any, b: Any) -> Any:
-            return b if b is not None else a
+        """Overlay `override` onto `base`.
 
-        # v1 merge
-        merged = GovernanceRuleV2(
-            title=pick(base.title, override.title),
-            description=pick(base.description, override.description),
-            license=pick(base.license, override.license),
-            attribution=pick(base.attribution, override.attribution),
-            ownership=override.ownership or base.ownership,
-            access_level=pick(base.access_level, override.access_level),
-            access_requirements=pick(
-                base.access_requirements, override.access_requirements
-            ),
-            classification=pick(base.classification, override.classification),
-            tags=sorted(set(base.tags) | set(override.tags)),
-            retention_days=pick(base.retention_days, override.retention_days),
-            documentation_url=pick(base.documentation_url, override.documentation_url),
-            source_system=pick(base.source_system, override.source_system),
-            user_filter_column=pick(
-                base.user_filter_column, override.user_filter_column
-            ),
-            row_filters=override.row_filters
-            if override.row_filters
-            else base.row_filters,
-            extra={**base.extra, **override.extra},
-            # v2: merged **field by field**, not wholesale.
-            #
-            # Replacing the whole block loses defaults the source did not
-            # restate — and that is exactly the real-world layout: a producer
-            # puts `purpose` in `defaults.dataspace` and `consent_required` on
-            # the dataset. Setting the second used to discard the first, leaving a
-            # consent-gated dataset with no purpose, which then denies every
-            # query for want of a stated reason.
-            policy=_merge_policy(base.policy, override.policy),
-            dataspace=_merge_dataspace(base.dataspace, override.dataspace),
-            dcat=_merge_models(base.dcat, override.dcat, DcatSpec),
-            # Carried through the merge for the same reason it is carried through
-            # the parse: so it is visible rather than dropped. `pick` is the
-            # tri-state rule — an overlay that does not mention `expose` inherits,
-            # one that says `false` withdraws.
-            expose=pick(base.expose, override.expose),
-            # **Whole replacement, never field-wise.** Its two fields are
-            # alternatives, so overlaying them per key could produce a rule
-            # declaring both — which the schema forbids and a mapping resolver
-            # rejects as two answers to what one column means. Upstream's
-            # `merge_rules` states the same rule for the same reason.
-            ontology=override.ontology
-            if override.ontology is not None
-            else base.ontology,
+        **The generic part is upstream's** — `merge_models` is the `exclude_unset`
+        deep merge, and it is the subtle half. ds had its own copy of it; upstream's
+        docstring records that the copy *was* the copy upstream ported, so this is
+        the fork ending rather than a new dependency.
+
+        What is restated below are the fields whose semantics are not "override
+        wins". `celine.governance.merge.merge_rules` states the same rules for the
+        same reasons and is the reference for every line of it —
+        **but it cannot be called.** It validates into `GovernanceRule` by name, and
+        `merge_dataspace` / the `dcat` merge name `DataspaceConfig` and `DcatConfig`,
+        so handing it a `GovernanceRuleV2` returns a rule with `policy`, the EDC
+        sub-objects and `sharing_offers` dropped — those models are `extra="ignore"`.
+        A `model_cls` parameter upstream, exactly as `merge_models` already takes
+        one, would let this function be four lines. Worth asking for: upstream's own
+        docstrings name ds as the consumer that subclasses these models.
+
+        Until then the restatement is deliberate and its cost is bounded: nine lines
+        that a reader can diff against upstream, rather than a second implementation
+        of the merge itself.
+
+        Top-level scalars now merge on `exclude_unset` rather than ds's old
+        `pick()` — *override wins unless it is `None`*. The two differ on a field an
+        overlay states as `null`: `pick` inherited the base's value, this withdraws
+        it. Upstream is right — it can tell *silent* from *said no* — and phase 0
+        declared the change before it was made.
+        """
+        merged = _merged(merge_models(base, override, GovernanceRuleV2))
+
+        # An overlay adds keywords; it does not retract them.
+        merged.tags = sorted(set(base.tags) | set(override.tags))
+        # Whole replacement when non-empty — a partial owner list is not a
+        # meaningful statement.
+        merged.ownership = override.ownership or base.ownership
+        # Whole replacement when non-empty. **Not** field-wise: filters are a set of
+        # independent gates, and interleaving two lists by position would silently
+        # build a filter that neither file declared.
+        merged.row_filters = override.row_filters or base.row_filters
+        # Dict merge, override wins per key. Shallow, deliberately — a key ds does
+        # not model is a value it cannot merge meaningfully.
+        merged.extra = {**base.extra, **override.extra}
+        # Whole replacement. Its two fields are alternatives (`spec` XOR
+        # `spec_file`), so a field-wise overlay could produce a rule declaring both
+        # — which the schema forbids and a mapping resolver rejects as two answers
+        # to what one column means.
+        merged.ontology = (
+            override.ontology if override.ontology is not None else base.ontology
         )
+        merged.dcat = _merged(merge_models(base.dcat, override.dcat, DcatSpec))
+        merged.dataspace = _merge_dataspace(base.dataspace, override.dataspace)
+        merged.policy = _merge_policy(base.policy, override.policy)
         return merged
 
 
@@ -377,7 +373,7 @@ def _merge_dataspace(base: DataspaceSpec, override: DataspaceSpec) -> DataspaceS
     whether ds's `policy` view survives at all, and until it does, having the two
     agree by construction beats having them agree by review.
     """
-    merged = _merge_models(base, override, DataspaceSpec)
+    merged = _merged(merge_models(base, override, DataspaceSpec))
     merged.purpose = sorted(set(base.purpose) | set(override.purpose))
     merged.consent_required = base.consent_required or override.consent_required
     merged.contract_required = base.contract_required or override.contract_required
@@ -402,7 +398,7 @@ def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> Dataspace
 
     Everything else is field-wise override, as before.
     """
-    merged = _merge_models(base, override, DataspacePolicy)
+    merged = _merged(merge_models(base, override, DataspacePolicy))
     merged.purpose = sorted(set(base.purpose) | set(override.purpose))
     merged.consent.required = base.consent.required or override.consent.required
     merged.obligations.contract_required = (
@@ -411,47 +407,16 @@ def _merge_policy(base: DataspacePolicy, override: DataspacePolicy) -> Dataspace
     return merged
 
 
-def _merge_models(base: _M, override: _M, model_cls: type[_M]) -> _M:
-    """Override's explicitly-set fields on top of base, recursively.
-
-    **`exclude_unset`, not `exclude_defaults`** (`GOV-06`). Both drop a field the
-    source never mentioned — which is the point, so an unmentioned field cannot
-    overwrite an inherited value with a default. They differ on a field the
-    source *did* mention whose value happens to equal the default, and
-    `exclude_defaults` drops that too: it cannot tell "silent" from "said no".
-
-    That made one instruction unexpressible. `DataspaceSpec.expose` defaults to
-    `False`, so an overlay saying `expose: false` — the obvious way to withdraw a
-    dataset in one environment — dumped to nothing and the base's `expose: true`
-    survived. The dataset stayed in the catalogue, and the overlay that withdrew
-    it validated clean. The documented workaround was `access_level: secret`,
-    which is a different statement about a different thing.
-
-    Pydantic tracks this per instance in `model_fields_set`, populated by
-    `model_validate` — which is how `_parse_rule` builds every one of these — and
-    `model_validate` on the merged dict carries the set forward, so a chain of
-    overlays keeps working.
-
-    Generalises past `expose`: every boolean defaulting to `False` and every
-    optional defaulting to `None` had the same hole, so an overlay could turn a
-    flag on and never off.
-    """
-
-    def deep_merge(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
-        out = dict(a)
-        for key, value in b.items():
-            if isinstance(value, dict) and isinstance(out.get(key), dict):
-                out[key] = deep_merge(out[key], value)
-            else:
-                out[key] = value
-        return out
-
-    return model_cls.model_validate(
-        deep_merge(
-            base.model_dump(exclude_unset=True),
-            override.model_dump(exclude_unset=True),
-        )
-    )
+# `_merge_models` was here. It is `celine.governance.merge.merge_models` now, and
+# upstream's docstring says where it came from: *"Ported from `ds`
+# `libs/governance/resolver.py::_merge_models`, which was the only correct
+# implementation of the four that existed."*
+#
+# So this deletion is the round trip closing, not a capability lost. Everything the
+# docstring here used to explain — `exclude_unset` rather than `exclude_defaults`
+# because the latter cannot tell *silent* from *said no*, and the `expose: false`
+# overlay that was inexpressible until it did — is stated upstream, once, for all
+# four consumers.
 
 
 def exposed_owner_aliases(path: Path) -> list[str]:

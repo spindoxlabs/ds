@@ -25,6 +25,8 @@ from datetime import datetime, timezone
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
+from celine.governance.exposure import exposure_conflict
+
 from ..mapper import GovernanceMapper
 from ..models import GovernanceRuleV2
 from ..resolver import GovernanceResolver
@@ -44,6 +46,7 @@ CHECKS = (
     "dcat-ap",
     "data-address",
     "consent-coherence",
+    "exposure-conflict",
     "retention",
     "validity-window",
     "owner-declared",
@@ -410,6 +413,39 @@ def check_consent_coherence(
                     f"row_filter '{row_filter.handler}' has an empty column",
                     item.key,
                 )
+
+
+def check_exposure_conflict(
+    result: ValidationResult, exposed: list[DatasetEvidence]
+) -> None:
+    """A dataset offered into the dataspace but withheld from the catalogue.
+
+    [#20](https://github.com/spindoxlabs/ds/issues/20). There are **two** exposure
+    gates and they are ANDed: `expose` gates the catalogue and the query API,
+    `dataspace.expose` gates the dataspace offer. A consumer reaches a dataspace
+    asset *through* the catalogue entry that describes it, so offering something
+    that is not listed cannot be honoured.
+
+    Until ds modelled `expose` at all, such a file validated **PASS**: the flag
+    landed in `extra` where nothing read it, the connector published the asset, a
+    consumer negotiated and **concluded a contract**, and the transfer then failed
+    at a data plane that was never going to serve it. A contract concluded over data
+    that will never be served is worse than a refusal, because it looks like an
+    agreement.
+
+    **The rule is `celine.governance.exposure.exposure_conflict`, called rather than
+    reimplemented.** That is `ADR-0013` working: writing a fourth copy of a rule that
+    already exists upstream is the thing this repository stopped doing.
+
+    An **error**, not a warning. Resolving it silently either way is the one outcome
+    that must not happen — granting would publish data the catalogue never
+    advertised, withholding would drop an offer somebody deliberately made. The
+    producer says which they meant.
+    """
+    for item in exposed:
+        conflict = exposure_conflict(item.rule)
+        if conflict:
+            result.error("exposure-conflict", conflict, item.key)
 
 
 def check_retention(result: ValidationResult, exposed: list[DatasetEvidence]) -> None:
