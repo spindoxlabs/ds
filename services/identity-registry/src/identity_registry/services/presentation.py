@@ -20,7 +20,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import get_settings
 from ..db.models import Credential, Key
-from .crypto import create_jws, decrypt_private_jwk, load_private_key
+from .crypto import (
+    create_jws,
+    decrypt_private_jwk,
+    load_private_key,
+    require_private_jwk,
+)
 
 #: The scope alias DCP implementations agree on. Upstream's
 #: `EdcScopeToCriterionTransformer` rejects anything else, so accepting a second
@@ -135,7 +140,12 @@ async def build_presentation_response(
     ]
 
     settings = get_settings()
-    raw_jwk = decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+    raw_jwk = decrypt_private_jwk(
+        require_private_jwk(
+            key.private_jwk, kid=key.kid, purpose="sign a verifiable presentation"
+        ),
+        settings.encryption_key,
+    )
     private_key = load_private_key(raw_jwk)
     now = int(time.time())
 

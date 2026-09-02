@@ -40,6 +40,8 @@ import urllib.parse
 import uuid
 from typing import Any
 
+import psycopg
+
 from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
@@ -112,6 +114,10 @@ class OnboardingSeamFlow(BaseFlow):
 
         offer = self._check_public_offer_projection(result)
         if offer is None:
+            return result
+
+        # Preconditions before provisioning, not tidiness — see the method.
+        if not self._clear_prior_decisions(result, offer):
             return result
 
         if not self._provision_the_decision(result, onboarding, offer):
@@ -273,6 +279,68 @@ class OnboardingSeamFlow(BaseFlow):
             dataset_count=offer["dataset_count"],
         )
         return offer
+
+    # ── Preconditions ────────────────────────────────────────────────────────
+
+    def _clear_prior_decisions(self, result: FlowResult, offer: dict[str, Any]) -> bool:
+        """Drop this subject's explicit per-consumer decisions for the offer.
+
+        **This flow shares its data subject with eight others** and `ds-e2e clean`
+        runs once per `e2e:prepare`, never between flows — so by the time this one
+        runs inside `--flow all`, `consent-request` has already taken the same
+        subject through request → approve → withdraw and left an explicit
+        *revoked* row for the same consumer and offer.
+
+        That row is not stale state the product should ignore. `resolve_decision`
+        ranks *"specific revoked/rejected > wildcard → deny (explicit opt-out
+        wins)"*, so the standing wildcard grant this flow provisions is correctly
+        overridden, `read the audience` correctly returns nobody, and the flow
+        fails on a true answer to a question another flow had already changed.
+        **The connector is right; the suite was order-dependent.**
+
+        So this asserts the precondition the flow actually needs — that the
+        subject holds no explicit per-party decision about this offer — rather
+        than granting one, which would make the audience prove a specific grant
+        instead of the provisioned wildcard it is here to test.
+
+        Deletes rather than revokes, because an opt-out cannot be un-said through
+        the API and should not be: this is the harness removing its own fixture
+        state, which is what `cleanup.py` is for. Wildcard rows are left alone —
+        they are what this flow provisions and withdraws itself.
+
+        `fail-closed` clears prior access requests for the same reason and in the
+        same position. A flow that shares a fixture establishes its own start.
+        """
+        s = self.settings
+        dsn = f"{s.database_url.rstrip('/')}/connector_rec"
+        try:
+            with psycopg.connect(dsn) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "DELETE FROM consent_requests "
+                        "WHERE subject_id = %s AND consumer_id = %s "
+                        "AND offer_id = %s",
+                        (s.data_subject_id, s.consumer_did, offer["id"]),
+                    )
+                    removed = cur.rowcount
+                conn.commit()
+        except psycopg.Error as exc:
+            result.fail_step(
+                "prior decisions cleared",
+                "could not reach the connector database to clear this subject's "
+                "earlier per-consumer decisions, so the audience read below would "
+                "answer about another flow's state rather than this one's.",
+                error=str(exc),
+            )
+            return False
+
+        result.pass_step(
+            "prior decisions cleared",
+            f"the subject holds no explicit per-consumer decision about "
+            f"{offer['id']} ({removed} removed), so the provisioned wildcard "
+            f"grant is what the audience read answers from",
+        )
+        return True
 
     # ── The person's decision, provisioned by the service ────────────────────
 

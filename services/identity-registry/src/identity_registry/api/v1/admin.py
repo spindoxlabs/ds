@@ -51,6 +51,7 @@ from ...services.crypto import (
     generate_credential_id,
     generate_key_pair,
     next_key_index,
+    require_private_jwk,
 )
 from ...services.did import (
     SubjectNamespaceError,
@@ -504,7 +505,12 @@ async def issue_membership_credential(
     )
 
     ta_raw_jwk = decrypt_private_jwk(
-        trust_anchor_key.private_jwk, settings.encryption_key
+        require_private_jwk(
+            trust_anchor_key.private_jwk,
+            kid=trust_anchor_key.kid,
+            purpose="sign as the trust anchor",
+        ),
+        settings.encryption_key,
     )
     signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
@@ -620,7 +626,12 @@ async def issue_data_subject_credential(
     )
 
     ta_raw_jwk = decrypt_private_jwk(
-        trust_anchor_key.private_jwk, settings.encryption_key
+        require_private_jwk(
+            trust_anchor_key.private_jwk,
+            kid=trust_anchor_key.kid,
+            purpose="sign as the trust anchor",
+        ),
+        settings.encryption_key,
     )
     signed_vc = sign_credential(vc, ta_raw_jwk, trust_anchor_key.kid)
 
@@ -646,23 +657,39 @@ async def issue_data_subject_credential(
     custodian = data.linked_participant_did
     delivered_to: str | None = None
     delivery_error: str | None = None
-    try:
-        delivered_to = await deliver_to_custodian(
-            db,
-            settings,
-            custodian_did=custodian,
-            credentials=[("DataSubjectCredential", signed_vc)],
-            issuer_pid=cred.id,
-            holder_pid=data.subject_id,
+    if custodian is None:
+        # `linked_participant_did` is optional on the request, and without one
+        # there is no organisation to deliver to. Previously this passed `None`
+        # into the custody lookup, which found no participant and surfaced as a
+        # generic `IssuanceError` — the same outcome by accident, described as if
+        # the custodian existed and could not be reached. Reported through the
+        # existing channel so the credential row still stands for a retry once a
+        # custodian is named.
+        delivery_error = (
+            "no linked_participant_did was given, so the credential was issued "
+            "and recorded but delivered to nobody — name the organisation that "
+            "holds this person and re-deliver"
         )
-        await db.commit()
-    except IssuanceError as exc:
-        # Reported, never swallowed, and the credential row **stays**: it is what
-        # a retry re-delivers. A person whose REC does not hold their credential
-        # is a person the REC cannot answer for, and that has to be visible at
-        # the call that caused it rather than at the first query that fails.
-        delivery_error = exc.message
-        log.error("member credential %s not delivered: %s", cred.id, exc.message)
+        log.error("member credential %s not delivered: no custodian named", cred.id)
+    else:
+        try:
+            delivered_to = await deliver_to_custodian(
+                db,
+                settings,
+                custodian_did=custodian,
+                credentials=[("DataSubjectCredential", signed_vc)],
+                issuer_pid=cred.id,
+                holder_pid=data.subject_id,
+            )
+            await db.commit()
+        except IssuanceError as exc:
+            # Reported, never swallowed, and the credential row **stays**: it is
+            # what a retry re-delivers. A person whose REC does not hold their
+            # credential is a person the REC cannot answer for, and that has to
+            # be visible at the call that caused it rather than at the first
+            # query that fails.
+            delivery_error = exc.message
+            log.error("member credential %s not delivered: %s", cred.id, exc.message)
 
     return DataSubjectCredentialResponse(
         subjectDid=subject_did,

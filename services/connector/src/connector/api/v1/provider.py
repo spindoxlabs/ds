@@ -30,6 +30,11 @@ class SyncRequest(BaseModel):
 
 @router.post("/sync")
 async def sync(
+    # First, because it takes no default: FastAPI injects it by type regardless
+    # of position, and Python will not accept a bare parameter after a defaulted
+    # one. It was declared `request: Request = None`, which typed a value the
+    # framework always supplies as one it might not.
+    request: Request,
     req: SyncRequest | None = None,
     settings: Settings = Depends(get_settings_dep),
     edc=Depends(get_provider_edc),
@@ -41,7 +46,6 @@ async def sync(
     # carry the hash and version they were written with, so the sync can tell an
     # edit from a revision.
     db: AsyncSession = Depends(get_db),
-    request: Request = None,
 ):
     from ds.governance.models import load_odrl_profile
 

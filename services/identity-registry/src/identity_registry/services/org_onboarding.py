@@ -32,6 +32,7 @@ from ..db.models import (
 from .crypto import (
     decrypt_private_jwk,
     generate_credential_id,
+    require_private_jwk,
 )
 from .status_list import (
     SUSPENSION_LIST_ID,
@@ -374,7 +375,14 @@ async def issue_organization_credential(
         credential_id=cred_id,
         ttl_days=ttl,
     )
-    ta_raw_jwk = decrypt_private_jwk(ta_key.private_jwk, settings.encryption_key)
+    ta_raw_jwk = decrypt_private_jwk(
+        require_private_jwk(
+            ta_key.private_jwk,
+            kid=ta_key.kid,
+            purpose="sign the trust anchor's onboarding credential",
+        ),
+        settings.encryption_key,
+    )
     signed_vc = sign_credential(vc, ta_raw_jwk, ta_key.kid)
 
     cred = Credential(
@@ -506,6 +514,13 @@ def suspension_index(credential_json: dict) -> int | None:
             continue
         if entry.get("statusPurpose") == "suspension":
             raw = entry.get("statusListIndex")
+            # `None` checked rather than caught. `int(None)` does raise
+            # `TypeError`, so the behaviour was already right — but relying on
+            # the exception meant the absent case and a malformed one ("abc", a
+            # dict) were indistinguishable to a reader, and mypy could not see
+            # that absence was handled at all. The except still covers malformed.
+            if raw is None:
+                return None
             try:
                 return int(raw)
             except (TypeError, ValueError):

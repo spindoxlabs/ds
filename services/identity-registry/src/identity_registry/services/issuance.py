@@ -38,7 +38,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
 from ..db.models import Credential, Did, Owner, Participant
-from .crypto import decrypt_private_jwk, generate_credential_id
+from .crypto import (
+    decrypt_private_jwk,
+    generate_credential_id,
+    require_private_jwk,
+)
 from .did import subject_id_of
 from .enrolment import CREDENTIAL_SERVICE_TYPE, endpoint_of, service_endpoints
 from .org_onboarding import OrgOnboardingError, get_trust_anchor_key
@@ -120,7 +124,14 @@ async def issue_for_participant(
         # exception surface as an opaque 500 three layers up.
         raise IssuanceError(f"this instance cannot issue: {exc.message}") from exc
     anchor_did = settings.trust_anchor_did
-    anchor_jwk = decrypt_private_jwk(anchor_key.private_jwk, settings.encryption_key)
+    anchor_jwk = decrypt_private_jwk(
+        require_private_jwk(
+            anchor_key.private_jwk,
+            kid=anchor_key.kid,
+            purpose="issue a credential as the trust anchor",
+        ),
+        settings.encryption_key,
+    )
     ttl = min(settings.default_credential_ttl_days, settings.max_credential_ttl_days)
 
     signed: list[tuple[str, dict]] = []

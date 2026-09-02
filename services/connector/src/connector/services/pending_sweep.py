@@ -114,7 +114,12 @@ async def expire_pending_asks(
 
     by_negotiation: dict[str, list[ConsentRequestORM]] = {}
     for row in rows:
-        by_negotiation.setdefault(row.negotiation_id, []).append(row)
+        # The column is nullable — a consent row not raised by a negotiation has
+        # none — but the query above filters `negotiation_id IS NOT NULL`, so
+        # every row here has one. Stated where it is relied on.
+        negotiation_id = row.negotiation_id
+        assert negotiation_id is not None, "query filters IS NOT NULL"
+        by_negotiation.setdefault(negotiation_id, []).append(row)
 
     dead = {
         negotiation_id: [row.id for row in group]

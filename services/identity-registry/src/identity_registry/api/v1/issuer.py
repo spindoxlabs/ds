@@ -164,10 +164,15 @@ async def request_credentials(
     if not isinstance(holder_pid, str) or not holder_pid:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail="holderPid is required")
 
+    # The walrus binds what the `isinstance` narrows. Calling `.get("id")` twice —
+    # once to test and once to take — gave a `list[Any | None]` that then spread
+    # through `sorted`, `join` and both issuance calls as five separate errors,
+    # while the code was already correct. One binding, and the list is `list[str]`
+    # where every reader assumed it was.
     requested = [
-        entry.get("id")
+        credential_id
         for entry in body.get("credentials") or []
-        if isinstance(entry, dict) and isinstance(entry.get("id"), str)
+        if isinstance(entry, dict) and isinstance(credential_id := entry.get("id"), str)
     ]
     unknown = sorted(set(requested) - SUPPORTED_IDS)
     if unknown:

@@ -224,8 +224,20 @@ def _verify_user(
     x_subject_id: str | None,
     settings: Settings,
     roles: set[str],
-):
-    return verify_user_vc_jwt(
+) -> str:
+    """Verify the caller's user credential and return the subject it names.
+
+    **Returns the id so callers stop re-deriving it from the header.** Both
+    arrivals are `str | None` — that is what a missing header looks like — and
+    `verify_user_vc_jwt` refuses either with a 401 before this returns. Every
+    caller then passed the *header* on to a service typed `str`, so eight call
+    sites each carried an `Optional` that could not occur, and the guarantee
+    lived only in the reader's head.
+
+    Handing back the verified value puts it in the signature instead. No caller
+    used the previous return (the claims), so nothing loses anything.
+    """
+    verify_user_vc_jwt(
         x_user_vc,
         x_subject_id,
         settings.trust_anchor_did,
@@ -237,6 +249,10 @@ def _verify_user(
         credential_status_url=settings.credential_status_url,
         insecure_dev=settings.vc_insecure_dev,
     )
+    # Unreachable when `x_subject_id` is None — the call above raises 401 first.
+    # Asserted rather than cast so the guarantee is checked, not asserted twice.
+    assert x_subject_id is not None
+    return x_subject_id
 
 
 # ── Provider-local request seeding ────────────────────────────────────────────
@@ -431,7 +447,9 @@ async def get_consent_status(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    _verify_user(x_user_vc, x_subject_id, settings, {"ConsumerUser", "DataSubject"})
+    x_subject_id = _verify_user(
+        x_user_vc, x_subject_id, settings, {"ConsumerUser", "DataSubject"}
+    )
     # The `subject_id` query parameter is caller-supplied; without this check any
     # authenticated holder could enumerate another subject's consent decisions.
     if subject_id != x_subject_id:
@@ -569,7 +587,9 @@ async def list_my_consents(
 ):
     """List all consent records for the authenticated data subject."""
     subject_id = x_subject_id
-    _verify_user(x_user_vc, subject_id, settings, {"DataSubject", "ConsumerUser"})
+    subject_id = _verify_user(
+        x_user_vc, subject_id, settings, {"DataSubject", "ConsumerUser"}
+    )
 
     consents = await consent_service.list_subject_consents(
         session=db,
@@ -591,7 +611,7 @@ async def list_my_data_shares(
 ):
     """List standing sharing decisions for the authenticated data subject."""
     subject_id = x_subject_id
-    _verify_user(x_user_vc, subject_id, settings, {"DataSubject"})
+    subject_id = _verify_user(x_user_vc, subject_id, settings, {"DataSubject"})
 
     consents = await consent_service.list_subject_consents(
         session=db,
@@ -628,7 +648,7 @@ async def set_my_data_share(
     Naming a ``dataset_id`` directly remains available for a subject managing
     one dataset from ``/my-data``.
     """
-    _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
 
     if not body.offer_id and not body.dataset_id:
         raise HTTPException(422, "Either offer_id or dataset_id is required")
@@ -677,11 +697,19 @@ async def set_my_data_share(
             await _emit_consent_events(prov, consents)
             return [ConsentResponse.model_validate(c) for c in consents]
 
+        # Reached only when `offer_id` is absent, and the 422 at the top of this
+        # handler already refused a body naming neither — so a dataset id is
+        # present here. Bound so that guarantee is visible at the call rather
+        # than forty lines above it.
+        target_dataset_id = body.dataset_id
+        assert target_dataset_id is not None, (
+            "the 422 above requires offer_id or dataset_id"
+        )
         async with db.begin():
             consent = await consent_service.set_subject_data_sharing(
                 session=db,
                 subject_id=x_subject_id,
-                dataset_id=body.dataset_id,
+                dataset_id=target_dataset_id,
                 consumer_id=consumer_id,
                 enabled=body.enabled,
                 purpose=body.purpose,
@@ -1017,7 +1045,9 @@ async def get_my_consent(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject", "ConsumerUser"})
+    x_subject_id = _verify_user(
+        x_user_vc, x_subject_id, settings, {"DataSubject", "ConsumerUser"}
+    )
     consent = await consent_service.get_consent_request(db, consent_id)
     if not consent or consent.subject_id != x_subject_id:
         raise HTTPException(404, "Consent request not found")
@@ -1035,7 +1065,7 @@ async def approve_consent(
     notifier: ConsentNotifier = Depends(get_notifier),
     prov: ProvBridge | None = Depends(get_prov),
 ):
-    _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.approve_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -1092,7 +1122,7 @@ async def reject_consent(
     settings: Settings = Depends(get_settings_dep),
     notifier: ConsentNotifier = Depends(get_notifier),
 ):
-    _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.reject_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -1148,7 +1178,7 @@ async def revoke_consent(
     notifier: ConsentNotifier = Depends(get_notifier),
     prov: ProvBridge | None = Depends(get_prov),
 ):
-    _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.revoke_consent(
             db, consent_id, x_subject_id, notifier=notifier

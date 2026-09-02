@@ -47,6 +47,7 @@ from .crypto import (
     decrypt_private_jwk,
     load_private_key,
     load_public_key,
+    require_private_jwk,
     verify_es256,
 )
 from .did_resolver import DidResolutionError, DidResolver, verification_key
@@ -214,7 +215,12 @@ async def create_access_token(
     key, _participant = await get_participant_key(db, holder_did)
     settings = get_settings()
     private_key = load_private_key(
-        decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+        decrypt_private_jwk(
+            require_private_jwk(
+                key.private_jwk, kid=key.kid, purpose="issue a self-issued token"
+            ),
+            settings.encryption_key,
+        )
     )
     now = int(time.time())
     claims = {
@@ -258,7 +264,12 @@ async def create_self_signed_token(
             f"This instance holds no private key for {did} — it cannot sign as it."
         )
     private_key = load_private_key(
-        decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+        decrypt_private_jwk(
+            require_private_jwk(
+                key.private_jwk, kid=key.kid, purpose="issue a self-issued token"
+            ),
+            settings.encryption_key,
+        )
     )
     now = int(time.time())
     claims: dict[str, Any] = {
@@ -296,7 +307,12 @@ async def create_si_token(
     key, _participant = await get_participant_key(db, participant_did)
 
     settings = get_settings()
-    raw_jwk = decrypt_private_jwk(key.private_jwk, settings.encryption_key)
+    raw_jwk = decrypt_private_jwk(
+        require_private_jwk(
+            key.private_jwk, kid=key.kid, purpose="sign a bearer access token"
+        ),
+        settings.encryption_key,
+    )
     private_key = load_private_key(raw_jwk)
     now = int(time.time())
 

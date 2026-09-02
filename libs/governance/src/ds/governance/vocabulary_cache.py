@@ -18,6 +18,7 @@ import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import httpx
 
@@ -77,7 +78,7 @@ def status(cache_dir: Path | str, registry: VocabularyRegistry) -> list[CacheSta
     ]
 
 
-def read_cached(cache_dir: Path | str, vocab: Vocabulary) -> dict | None:
+def read_cached(cache_dir: Path | str, vocab: Vocabulary) -> dict[str, Any] | None:
     """The cached JSON-LD document, or ``None`` if there is no local copy.
 
     ``None`` rather than an exception: a missing copy is a 404 with the canonical
@@ -88,7 +89,8 @@ def read_cached(cache_dir: Path | str, vocab: Vocabulary) -> dict | None:
     if not path.is_file():
         return None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
+        document: dict[str, Any] = json.loads(path.read_text(encoding="utf-8"))
+        return document
     except (OSError, json.JSONDecodeError) as exc:
         raise VocabularyFetchError(
             f"cached vocabulary '{vocab.slug}' at {path} is not readable JSON: {exc}"
@@ -170,6 +172,10 @@ def _copy_definition(cache_dir: Path | str, vocab: Vocabulary) -> Path:
     not exist or escapes the registry's directory, so by here it is a readable
     file inside a config directory.
     """
+    # Same optional as `vocabularies._resolve_definition`: only vocabularies
+    # that ship a local copy reach here, and the docstring above says so.
+    if not vocab.definition:
+        raise ValueError(f"vocabulary '{vocab.slug}' declares no definition to publish")
     source = Path(vocab.definition)
     written = _write_document(cache_dir, vocab, source.read_bytes(), str(source))
     logger.info("Published vocabulary '%s' from %s", vocab.slug, source)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -44,7 +45,7 @@ from .consent_checks import (
 )
 
 
-def _read_participants(path: Path | None) -> list[dict] | None:
+def _read_participants(path: Path | None) -> list[dict[str, Any]] | None:
     """Load the ``participants:`` list from a seed, or ``None`` if none was asked for.
 
     **A path that was given and cannot be read is an error, not an absence.**

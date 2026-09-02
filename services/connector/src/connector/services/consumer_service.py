@@ -6,7 +6,7 @@ import inspect
 import logging
 
 from ..clients.edc_management import EdcManagementClient
-from ..registry.participants import ParticipantRegistry, UnknownParticipantError
+from ..registry.participants import ParticipantLookup, UnknownParticipantError
 from ..schemas.edc import (
     CatalogRequest,
     EdrResponse,
@@ -57,7 +57,7 @@ def _normalise_odrl(value: object) -> object:
     for key, item in value.items():
         if key == "@context":
             continue
-        out_key = key_map.get(key, key)
+        out_key = key_map[key] if key in key_map else str(key)
         if out_key == "@type" and isinstance(item, str):
             normalised[out_key] = _strip_prefix(item)
         else:
@@ -69,7 +69,7 @@ class ConsumerService:
     def __init__(
         self,
         consumer_edc: EdcManagementClient,
-        registry: ParticipantRegistry,
+        registry: ParticipantLookup,
         prov: ProvBridge,
         # One interval per phase, because they are not the same wait. A
         # negotiation can park for as long as a data subject takes to answer; a

@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Awaitable
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 import yaml
@@ -23,6 +24,26 @@ class Participant(BaseModel):
 
 class UnknownParticipantError(ValueError):
     pass
+
+
+class ParticipantLookup(Protocol):
+    """What a consumer needs of a participant registry — either implementation.
+
+    There are two, and they are **not** related by inheritance: `ParticipantRegistry`
+    reads a file and answers synchronously; `HttpParticipantRegistry` asks the
+    identity-registry and answers with a coroutine. `ConsumerService` bridges them
+    at the call — `await result if inspect.isawaitable(result) else result` — so it
+    genuinely accepts both, and the union return type here is that fact rather than
+    a widening for the checker's benefit.
+
+    It was typed as `ParticipantRegistry` and handed the HTTP one, which type-checked
+    as three separate errors in `main.py` and would have misled anyone reading the
+    signature to call `validate` without awaiting it.
+    """
+
+    def validate(
+        self, counter_party_address: str
+    ) -> Participant | Awaitable[Participant]: ...
 
 
 class ParticipantRegistry:

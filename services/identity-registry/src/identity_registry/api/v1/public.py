@@ -9,7 +9,7 @@ from ...config import Settings
 from ...db.models import Did, StatusList
 from ...dependencies import get_db, get_settings_dep
 from ...services import trust_list
-from ...services.crypto import decrypt_private_jwk
+from ...services.crypto import decrypt_private_jwk, require_private_jwk
 from ...services.did import build_did_document
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import build_status_list_credential, encode_bitstring
@@ -161,7 +161,12 @@ async def get_status_list(
 
     signed = sign_credential(
         credential,
-        decrypt_private_jwk(key.private_jwk, settings.encryption_key),
+        decrypt_private_jwk(
+            require_private_jwk(
+                key.private_jwk, kid=key.kid, purpose="sign the public DID proof"
+            ),
+            settings.encryption_key,
+        ),
         key.kid,
     )
     return PlainTextResponse(

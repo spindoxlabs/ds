@@ -279,6 +279,16 @@ async def record_disclosure(
                     "was disclosed under it and there is nothing to record",
                 )
         else:
+            # Neither form was given. No model validator enforces one-of, so
+            # without this the `None` reached `resolve_dataset` and surfaced as
+            # whatever that made of it — a 422 about a dataset id the caller
+            # never sent, or worse a lookup for the key `None`.
+            if not body.dataset_id:
+                raise HTTPException(
+                    422,
+                    "name either offer_id or dataset_id — a disclosure record "
+                    "has to say what was disclosed",
+                )
             vocab.resolve_dataset(body.dataset_id)
             dataset_ids = [body.dataset_id]
     except vocab.VocabularyError as exc:

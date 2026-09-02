@@ -99,8 +99,15 @@ def _verify_consumer_user(
     x_user_vc: str | None,
     x_subject_id: str | None,
     settings: Settings,
-):
-    return verify_user_vc_jwt(
+) -> str:
+    """Verify the consumer user's credential and return the subject it names.
+
+    Same shape as `consent._verify_user`, and for the same reason:
+    `verify_user_vc_jwt` refuses a missing `X-Subject-Id` with a 401, so every
+    caller below was passing an `Optional` that could not occur into a service
+    typed `str`. Returning the verified value states the guarantee once.
+    """
+    verify_user_vc_jwt(
         x_user_vc,
         x_subject_id,
         settings.trust_anchor_did,
@@ -112,6 +119,9 @@ def _verify_consumer_user(
         credential_status_url=settings.credential_status_url,
         insecure_dev=settings.vc_insecure_dev,
     )
+    # Unreachable when `x_subject_id` is None — the call above raises 401.
+    assert x_subject_id is not None
+    return x_subject_id
 
 
 @router.post("/catalog")
@@ -173,7 +183,7 @@ async def start_negotiation(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     # Before any EDC call: a refused declaration must not leave a live
     # negotiation behind that the record then fails to describe.
     declared_purpose = _validated_declaration(req)
@@ -268,7 +278,7 @@ async def list_access_requests(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     result = await db.execute(
         select(ConsumerAccessRequestORM)
         .where(ConsumerAccessRequestORM.subject_id == x_subject_id)
@@ -408,7 +418,7 @@ async def revoke_access_request(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     result = await db.execute(
         select(ConsumerAccessRequestORM).where(
             ConsumerAccessRequestORM.id == request_id,
@@ -477,7 +487,7 @@ async def get_negotiation(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     try:
         data = await svc._edc.get_negotiation(negotiation_id)
         agreement_id = data.get("contractAgreementId")
@@ -552,7 +562,7 @@ async def start_transfer(
     x_user_vc: str | None = Header(default=None),
 ):
     subject_id = x_subject_id
-    _verify_consumer_user(x_user_vc, subject_id, settings)
+    subject_id = _verify_consumer_user(x_user_vc, subject_id, settings)
     duplicate = await _find_blocking_transfer(db, svc, subject_id, req.asset_id)
     if duplicate:
         raise HTTPException(
@@ -614,7 +624,7 @@ async def list_transfers(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     owned_result = await db.execute(
         select(ConsumerTransferORM).where(
             ConsumerTransferORM.subject_id == x_subject_id
@@ -670,7 +680,7 @@ async def get_transfer(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     if not await _subject_owns_transfer(db, transfer_id, x_subject_id):
         raise HTTPException(404, "Transfer not found")
     try:
@@ -702,7 +712,7 @@ async def get_edr(
     is what makes the declaration mean something at query time instead of only
     in an audit record.
     """
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     if not await _subject_owns_transfer(db, transfer_id, x_subject_id):
         raise HTTPException(404, "Transfer not found")
     try:
@@ -744,7 +754,7 @@ async def run_flow(
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
 ):
-    _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
     try:
         return await svc.run_flow(req)
     except UnknownParticipantError as exc:

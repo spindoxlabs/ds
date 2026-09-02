@@ -11,6 +11,7 @@ Nothing is hardcoded to a participant, deployment, or dataset naming scheme.
 """
 
 from __future__ import annotations
+from typing import Any
 
 import json
 import sys
@@ -89,9 +90,9 @@ def _resolve_registries(
     participants_path: Path | None,
     identity_registry_url: str | None,
     token: str | None,
-) -> tuple[OwnerLookup | None, set[str] | None, list]:
+) -> tuple[OwnerLookup | None, set[str] | None, list[Any]]:
     """Build owner/participant lookups from a live registry or YAML seeds."""
-    closers: list = []
+    closers: list[Any] = []
     if identity_registry_url:
         lookup = RuntimeOwnerLookup(identity_registry_url, token=token)
         closers.append(lookup.close)
@@ -183,7 +184,7 @@ def validate(
         "text", "--format", help="text | json | markdown"
     ),
     strict: bool = typer.Option(False, help="Treat warnings as failures"),
-):
+) -> None:
     """Validate a governance file before importing it into a connector."""
     owner_lookup, participant_dids, closers = _resolve_registries(
         owners, participants, identity_registry_url, token
@@ -248,7 +249,7 @@ def evidence(
     overlay: str = OverlayOpt,
     sharing_offers: Path = SharingOffersOpt,
     deny_key: list[str] = DenyKeyOpt,
-):
+) -> None:
     """Validate, then write DCAT-AP catalog and ODRL offers as audit evidence."""
     odrl_profile = load_odrl_profile(profile) if profile else None
     owner_lookup, participant_dids, closers = _resolve_registries(
@@ -308,7 +309,7 @@ def collect_offers(
         ..., "--out-dir", "-o", help="Target directory (e.g. sharing-offers.d/)"
     ),
     verbose: bool = typer.Option(False, "--verbose", "-v"),
-):
+) -> None:
     """Collect sharing-offers.yaml from pipeline apps into sharing-offers.d/.
 
     Scans for sharing-offers.yaml files matching PATTERN (use recursive globs),

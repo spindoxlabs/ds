@@ -258,7 +258,8 @@ def _check_dataset_offer_references(
                     "offer-dataset-purpose",
                     f"Dataset declares offer '{offer_id}', whose purpose "
                     f"'{offer_slug}' it does not list in policy.purpose[] "
-                    f"(declares: {sorted(declared_slugs)}) — the negotiated offer "
+                    f"(declares: {sorted(s for s in declared_slugs if s)}) — the negotiated "
+                    f"offer "
                     "would deny the very use the person agreed to",
                     item.key,
                 )

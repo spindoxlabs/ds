@@ -47,6 +47,11 @@ dev = [
     "pytest-cov>=5",
     "ruff>=0.6",
     "mypy>=1.11",
+    # Stubs for `pyyaml`, which ships none. Without them mypy reads every
+    # `yaml.safe_load` as `Any` and stops checking what is done with the result —
+    # in a repository whose central shape is parsed from YAML, that is the
+    # checking that matters most.
+    "types-PyYAML>=6.0",
     # Validates this repo's governance files against the vendored canonical
     # schema (see schema/README.md). A dev dependency, not a runtime one: the
     # library parses governance, the test suite is what asserts the shape.

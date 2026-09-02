@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Coroutine
+from typing import Any
 
 import httpx
 from ds.governance.dcat import DSP_PROTOCOL_IRI
@@ -132,7 +134,11 @@ async def crawl_all(
     results: dict[str, list[dict]] = {}
     errors: list[CrawlError] = []
 
-    tasks: list[asyncio.Task] = []
+    # **Coroutines, not Tasks.** `asyncio.gather` accepts either and wraps a bare
+    # coroutine itself, so nothing here was ever scheduled early — the annotation
+    # simply named the wrong thing and mypy believed it. Typed as what the list
+    # actually holds, so `gather`'s return type flows through to the loop below.
+    tasks: list[Coroutine[Any, Any, tuple[str, list[dict[str, Any]]]]] = []
     source_ids: list[str] = []
 
     for p in providers:
@@ -157,7 +163,13 @@ async def crawl_all(
     outcomes = await asyncio.gather(*tasks, return_exceptions=True)
 
     for source_id, outcome in zip(source_ids, outcomes):
-        if isinstance(outcome, Exception):
+        # `BaseException`, not `Exception`: that is what `return_exceptions=True`
+        # is typed to hand back, and narrowing on the wrong one left the else
+        # branch still holding an exception as far as mypy was concerned — which
+        # is why unpacking it read as "BaseException object is not iterable".
+        # A `KeyboardInterrupt` or `CancelledError` mid-crawl now takes the same
+        # recorded-error path as any other failure rather than escaping the loop.
+        if isinstance(outcome, BaseException):
             err_msg = str(outcome) or type(outcome).__name__
             log.warning("Crawl failed for source %s: %s", source_id, err_msg)
             errors.append(CrawlError(provider_id=source_id, message=err_msg))

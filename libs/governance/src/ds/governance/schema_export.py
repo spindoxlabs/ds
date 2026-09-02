@@ -26,6 +26,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+from pydantic import BaseModel
+
 from .models import OdrlProfile, load_odrl_profile
 from .sharing import SharingOffer
 from .vocabularies import Vocabulary
@@ -37,8 +39,11 @@ _DIALECT = "https://json-schema.org/draft/2020-12/schema"
 _BASE_URI = "https://spindoxlabs.github.io/ds/schemas"
 
 
-def _titled(model: type, title: str, description: str) -> dict[str, Any]:
-    schema = model.model_json_schema()
+# `type[BaseModel]`, not bare `type`: `model_json_schema` is a pydantic method
+# and a bare `type` does not have it, so the call was unchecked and its result
+# was `Any` — which then flowed out of a function declaring `dict[str, Any]`.
+def _titled(model: type[BaseModel], title: str, description: str) -> dict[str, Any]:
+    schema: dict[str, Any] = model.model_json_schema()
     schema["title"] = title
     schema["description"] = description
     return schema

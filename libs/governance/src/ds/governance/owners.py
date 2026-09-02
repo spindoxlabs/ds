@@ -45,6 +45,7 @@ exactly what the CLI already refuses to do for `--identity-registry-url`.
 """
 
 from __future__ import annotations
+from collections.abc import Awaitable, Callable
 
 import logging
 import time
@@ -70,7 +71,7 @@ class HttpOwnersRegistry:
         self,
         identity_registry_url: str,
         cache_ttl: float = 60.0,
-        token_provider=None,
+        token_provider: Callable[[], Awaitable[str | None]] | None = None,
     ):
         self._base_url = identity_registry_url.rstrip("/")
         self._cache_ttl = cache_ttl

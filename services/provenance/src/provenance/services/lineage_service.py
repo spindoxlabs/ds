@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from ..db.models import ProvNodeORM, ProvRelationORM
 
@@ -61,6 +62,12 @@ async def get_lineage(
         if not frontier:
             break
 
+        # Annotated because the three branches produce two different SQLAlchemy
+        # types — `BinaryExpression[bool]` for a single `in_`, `BooleanClauseList`
+        # for the `|` — and mypy otherwise pins the variable to whichever branch
+        # it reads first. `ColumnElement[bool]` is the base both satisfy and is
+        # what `select().where()` actually takes.
+        reach: ColumnElement[bool]
         if direction == "upstream":
             reach = ProvRelationORM.subject_id.in_(frontier)
         elif direction == "downstream":

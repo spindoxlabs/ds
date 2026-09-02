@@ -9,6 +9,30 @@ from ds_e2e.config import E2ESettings
 from ds_e2e.http import HttpClient
 from ds_e2e.models import FlowResult
 
+#: Services whose failure has a known cause the message should name.
+#:
+#: `task docker:restart` recreates the ds Postgres and takes celine's `datasets`
+#: and `rec_registry` databases with it — `docker-compose.dataset-api.yml` is a
+#: separate compose project that `task build` deliberately skips, and
+#: `e2e:prepare` does not re-seed it. So `docker:restart` followed by `e2e:all`
+#: is an **incomplete sequence**, and it fails five flows at once.
+#:
+#: Without this hint the failure reads as "the data plane is down", which sends a
+#: reader to the wrong stack: the container is up and its `/docs` answers. It is
+#: the *database* that is missing, and a missing database is why `/health` 404s
+#: rather than 500s. Seeding is idempotent and safe to re-run.
+_REMEDIES = {
+    "dataset-api": (
+        "\n  → the real celine dataset-api loses its `datasets` database to "
+        "`task docker:restart`. Re-seed it:\n"
+        "      ./services/dataset-api-mock/fixtures/seed.sh"
+    ),
+}
+
+
+def _remedy(name: str) -> str:
+    return _REMEDIES.get(name, "")
+
 
 class BaseFlow(ABC):
     name: str
@@ -52,7 +76,7 @@ class BaseFlow(ABC):
             try:
                 self.http.get(f"{url}/health")
             except Exception as exc:
-                result.fail_step("health", f"{name} unreachable: {exc}")
+                result.fail_step("health", f"{name} unreachable: {exc}{_remedy(name)}")
                 return False
         result.pass_step("health", "all services reachable")
         return True

@@ -283,4 +283,9 @@ class Settings(BaseSettings):
 
 @lru_cache(maxsize=1)
 def get_settings() -> Settings:
-    return Settings()
+    # `role` is `Field(...)` — required, and supplied by `CONNECTOR_ROLE` from the
+    # environment rather than by this call. `BaseSettings` populates it during
+    # `__init__`, which mypy cannot model, so it reads the required field as a
+    # missing argument. Ignored narrowly, by code, so a genuinely missing
+    # argument to `Settings` still fails here.
+    return Settings()  # type: ignore[call-arg]

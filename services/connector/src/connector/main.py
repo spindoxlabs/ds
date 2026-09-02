@@ -25,7 +25,11 @@ from .clients.provenance import ProvenanceClient
 from .config import get_settings
 from .db.engine import get_session_factory, verify_schema
 from .notifications.factory import build_notifier
-from .registry.participants import HttpParticipantRegistry, ParticipantRegistry
+from .registry.participants import (
+    HttpParticipantRegistry,
+    ParticipantLookup,
+    ParticipantRegistry,
+)
 from .services.consumer_service import ConsumerService
 from .services.pending_sweep import parse_duration, run_sweeper
 from .services.prov_bridge import ProvBridge
@@ -197,6 +201,10 @@ async def lifespan(app: FastAPI):
     # Participant registry
     http_registry = None
     if settings.identity_registry_url:
+        # Annotated to the protocol, not to whichever branch runs first: the three
+        # assignments below produce two unrelated classes and mypy otherwise pins
+        # the variable to `HttpParticipantRegistry`.
+        registry: ParticipantLookup
         http_registry = HttpParticipantRegistry(
             settings.identity_registry_url,
             cache_ttl=settings.participant_registry_cache_ttl,

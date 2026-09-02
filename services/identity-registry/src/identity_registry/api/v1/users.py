@@ -248,7 +248,11 @@ async def credentials_held_for(
     Takes the DID rather than an email because this instance has no Keycloak
     mappings: those are registry data. Two calls, two questions, two owners.
     """
-    if subject_id_of(subject_did) is None:
+    # Bound, not re-derived. The guard below already establishes that this is a
+    # subject DID; calling `subject_id_of` again at the response left mypy with
+    # `str | None` for a value this function has refused to proceed without.
+    subject_id = subject_id_of(subject_did)
+    if subject_id is None:
         raise HTTPException(
             status_code=422,
             detail=(
@@ -289,7 +293,7 @@ async def credentials_held_for(
     newest = presentable[0] if presentable else None
     return UserResolveResponse(
         did=subject_did,
-        subject_id=subject_id_of(subject_did),
+        subject_id=subject_id,
         roles=[c.role for c in credentials if c.role],
         credentials=credentials,
         role=newest.role if newest else None,

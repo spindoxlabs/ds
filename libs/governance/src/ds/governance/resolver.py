@@ -289,7 +289,9 @@ class GovernanceResolver:
         return merged
 
 
-def _canonical_policy(dataspace_raw: dict, policy_raw: dict) -> dict:
+def _canonical_policy(
+    dataspace_raw: dict[str, Any], policy_raw: dict[str, Any]
+) -> dict[str, Any]:
     """Merge the canonical `dataspace:` fields into ds's `policy:` shape.
 
     | canonical (`dataspace.*`)  | ds (`policy.*`)              |

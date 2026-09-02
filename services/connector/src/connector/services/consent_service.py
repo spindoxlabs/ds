@@ -929,7 +929,11 @@ async def get_granted_subjects(
 
     granted: list[GrantedSubject] = []
     for subject_id in sorted(by_subject):
-        allowed, reason, row = decide_for_subject(
+        # `deciding_row`, not `row`: the loop above binds `row` to a
+        # `ConsentRequestORM` while this one is the optional row that *decided*,
+        # and reusing the name made the two indistinguishable to a reader and to
+        # the checker.
+        allowed, reason, deciding_row = decide_for_subject(
             by_subject[subject_id],
             purpose,
             controller_role,
@@ -940,7 +944,9 @@ async def get_granted_subjects(
             granted.append(
                 GrantedSubject(
                     subject_id=subject_id,
-                    decided_at=row.decided_at if row is not None else None,
+                    decided_at=deciding_row.decided_at
+                    if deciding_row is not None
+                    else None,
                 )
             )
         else:

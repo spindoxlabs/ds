@@ -415,7 +415,9 @@ def profile_path_is_missing(path: Path | str | None) -> bool:
     the fallback below is silent by design at import time, and a deployment that
     set the path wants to know at boot rather than at the first sync.
     """
-    return bool(path) and not Path(path).exists()
+    # `bool(path)` already excludes None; mypy does not carry that into the
+    # second operand, so the narrowing is written where it is used.
+    return path is not None and not Path(path).exists()
 
 
 def load_odrl_profile(path: Path | str | None = None) -> OdrlProfile:

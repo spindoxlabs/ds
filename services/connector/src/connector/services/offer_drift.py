@@ -20,7 +20,7 @@ happened, and it is refused.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 
 from ds.governance.sharing import SharingOffer, SharingOfferCatalogue
 from sqlalchemy import select
@@ -99,7 +99,7 @@ def drift_failure(
 async def offers_with_drift(
     session: AsyncSession,
     catalogue: SharingOfferCatalogue,
-    hash_of: callable[[SharingOffer], str],
+    hash_of: Callable[[SharingOffer], str],
 ) -> dict[str, str]:
     """offer id → failure message, for every offer whose meaning drifted.
 

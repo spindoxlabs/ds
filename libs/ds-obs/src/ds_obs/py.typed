@@ -1,0 +1,15 @@
+# PEP 561 — this package ships type information.
+#
+# Without this file every consumer running mypy reads `ds_auth`, `ds_obs`,
+# `ds_edc` and `ds.governance` as `Any`: `import-untyped` at the import, and
+# then no checking at all of the calls that follow. That was 57 of the 136
+# type errors across this repository, and worse than the count suggests —
+# the silence was mistaken for cleanliness.
+#
+# Every one of these packages is annotated already. The marker is the
+# declaration that they are, and hatchling ships it because it lives inside
+# the package directory.
+#
+# ds asked celine-utils for exactly this (see the celine store,
+# `governance-api-admits-subclasses`); shipping it here is the same argument
+# applied to our own libraries.

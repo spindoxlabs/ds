@@ -28,6 +28,7 @@ Editing is a code change, like every other vocabulary in this platform
 """
 
 from __future__ import annotations
+from collections.abc import Iterable
 
 import logging
 import os
@@ -235,6 +236,14 @@ def _resolve_definition(registry_path: Path, vocab: Vocabulary) -> Path:
     hand — not later from a cache filler that only knows a slug.
     """
     base = registry_path.parent.resolve()
+    # `definition` is optional on the model — a vocabulary may name an IRI it
+    # does not ship a local copy of — and this function is only called for the
+    # ones that do. Checked rather than assumed, because the alternative is a
+    # `Path / None` TypeError several frames from the registry entry at fault.
+    if not vocab.definition:
+        raise VocabularyError(
+            f"vocabulary '{vocab.slug}' has no definition path to resolve"
+        )
     resolved = (base / vocab.definition).resolve()
     if not resolved.is_relative_to(base):
         raise VocabularyError(
@@ -284,7 +293,7 @@ def load_vocabularies(
     return VocabularyRegistry(vocabularies=list(entries.values()))
 
 
-def _check_unique_iris(vocabularies) -> None:
+def _check_unique_iris(vocabularies: Iterable[Vocabulary]) -> None:
     """Two slugs for one IRI is ambiguous, and silently so.
 
     `resolve()` indexes by IRI, so the loser would simply never be reachable from

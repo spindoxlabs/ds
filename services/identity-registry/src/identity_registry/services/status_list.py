@@ -317,9 +317,13 @@ async def find_duplicate_indices(db: AsyncSession) -> list[DuplicateIndex]:
 
     grouped: dict[int, DuplicateIndex] = {}
     for cred in rows:
-        entry = grouped.setdefault(
-            cred.status_list_index, DuplicateIndex(index=cred.status_list_index)
-        )
+        # The column is nullable — a credential that was never allocated an index
+        # has none — but SQL `IN` cannot match NULL, so the `.in_(colliding)`
+        # filter above has already excluded those rows. Bound and asserted rather
+        # than ignored, so the invariant is stated where it is relied on.
+        index = cred.status_list_index
+        assert index is not None, "IN (...) cannot match a NULL index"
+        entry = grouped.setdefault(index, DuplicateIndex(index=index))
         entry.credential_ids.append(cred.id)
         entry.subject_dids.append(cred.subject_did)
     return [grouped[i] for i in sorted(grouped)]

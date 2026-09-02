@@ -152,6 +152,36 @@ def encrypt_private_jwk(jwk: dict, encryption_key: str) -> dict:
 _LEGACY_FERNET_SALT = b"ds-identity-registry-v1"
 
 
+class PrivateKeyNotHeld(LookupError):
+    """This instance knows the key but does not hold its private half.
+
+    Not an error condition in the data — it is `DID-09` working. A trust anchor
+    records the **public** key of every participant it enrols, because it needs
+    one to verify their signatures and to bind an issued credential, and holds
+    the private half of none of them (`Key.private_jwk` is nullable precisely so
+    that row can exist, and `DID-12` asserts the anchor holds no other kind).
+
+    So a `NULL` here means *a signing operation was routed to the wrong
+    instance*, and it deserves to say that. Before this existed, eight call sites
+    passed the column straight to :func:`decrypt_private_jwk`, which does
+    ``"_enc" not in stored`` — on ``None`` that is a ``TypeError`` about argument
+    types, several frames from anything that names a key or a DID.
+    """
+
+
+def require_private_jwk(stored: dict | None, *, kid: str, purpose: str) -> dict:
+    """The stored private JWK, or a refusal that says which key and what for."""
+    if stored is None:
+        raise PrivateKeyNotHeld(
+            f"cannot {purpose}: this instance holds no private key for {kid!r}. "
+            "It records the public half of keys it has enrolled and the private "
+            "half of its own only — so this signing request reached the wrong "
+            "instance, or the key belongs to a participant that must sign for "
+            "itself."
+        )
+    return stored
+
+
 def decrypt_private_jwk(stored: dict, encryption_key: str) -> dict:
     if "_enc" not in stored:
         return stored
