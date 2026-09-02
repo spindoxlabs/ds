@@ -873,3 +873,73 @@ def test_governance_without_verified_by_is_refused(tmp_path):
 
     assert result.exit_code == 2
     assert "--verified-by" in result.output
+
+
+# ── The skip reason names the selector's decision ─────────────────
+
+
+def test_the_governance_selector_reports_its_own_reason(tmp_path):
+    """A skip that reports the wrong reason sends the reader to the wrong file.
+
+    Every entry here also lacks a `dataspace:` block, so "no dataspace: block" is
+    *true* of each of them and is the reason for none. The entry that proves the
+    difference is `greenland`: it carries a DID, it is perfectly registerable, and
+    it is out purely because nothing exposed names it.
+    """
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.silver.meters_15m:
+            ownership:
+              - name: dso
+            dataspace:
+              expose: true
+    """,
+    )
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert selection.skipped_reason == "governance does not name it"
+    assert [e["id"] for e in selection.entries] == ["set-distribuzione"]
+
+
+def test_the_did_selector_reports_its_own_reason():
+    selection = ops.select_entries(_owners(), governance_paths=None)
+
+    assert selection.skipped_reason == "carries no did"
+
+
+@pytest.mark.asyncio
+async def test_run_evidence_skip_names_the_selector_not_the_missing_block(
+    db_session, tmp_path
+):
+    settings = await _seed(db_session, tmp_path)
+    entry = {"id": "greenland", "name": "Greenland", "did": "did:web:g.example.org"}
+
+    outcome = await ops.apply_owner_entry(
+        db_session,
+        settings,
+        entry,
+        None,
+        skip_reason="governance does not name it",
+    )
+
+    assert outcome.applied is False
+    assert [s.detail for s in outcome.steps] == ["governance does not name it"]
+
+
+@pytest.mark.asyncio
+async def test_without_run_evidence_the_missing_block_is_still_the_reason(
+    db_session, tmp_path
+):
+    """The flagless invocation every current caller uses. Without evidence a
+    `dataspace:` block is the only way in, so its absence really is the reason —
+    and passing no `skip_reason` must leave that message exactly as it was."""
+    settings = await _seed(db_session, tmp_path)
+    entry = {"id": "other-consumer", "name": "Someone Else"}
+
+    outcome = await ops.apply_owner_entry(db_session, settings, entry)
+
+    assert outcome.applied is False
+    assert [s.detail for s in outcome.steps] == ["no dataspace: block"]

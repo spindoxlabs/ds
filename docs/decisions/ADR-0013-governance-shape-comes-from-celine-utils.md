@@ -139,3 +139,27 @@ setting made every shared merge lossy for a subclass, because each one validated
 into the base class by name. 2.5 takes the class from its operands. **Installing 2.4 under
 this code would not fail to import — it would silently drop the fields the subclass exists to
 carry**, which is the defect this decision was taken to end.
+
+### The two narrowings, and the rule they must obey — 2026-09-02
+
+Subclassing is safe in one direction and not the other. Adding a field upstream does not
+model is free; **narrowing one upstream does model is not**, and `GovernanceRuleV2` does it
+twice — `dataspace` and `dcat`, both `Optional[...] = None` upstream and both a non-optional
+subclass with a default here. Nothing else is narrowed.
+
+The narrowing earns its keep: every reader in ds says `rule.dataspace.expose` and
+`rule.dcat.themes` with no None check, and an always-present empty block is what makes that
+safe across the connector, the compliance checks and the catalogue.
+
+**What it must never do is change which files are valid, and it did.** An explicit
+`dcat: null` is what the published shape permits and what producers write — all seventeen
+`celine-pipelines` app files carry it in `defaults:`. ds rejected thirteen of the seventeen
+outright while `celine.governance` parsed every one. A narrowing that turns a valid producer
+file into a validation error is a fork, whatever the annotation says, and it is exactly the
+divergence this ADR claims subclassing makes impossible.
+
+The rule, therefore: **a narrowed field accepts everything upstream accepts, and an explicit
+`null` means "unset".** Enforced by a `mode="before"` validator mapping `None` to `{}` so
+the subclass's own defaults still apply, and pinned by tests — including one asserting that
+a *wrong* value is still an error, so the fix restores upstream's contract rather than
+widening past it. Any future narrowing carries the same obligation.

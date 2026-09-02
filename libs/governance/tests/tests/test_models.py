@@ -4,8 +4,11 @@ import logging
 
 import pytest
 
+from pydantic import ValidationError
+
 from ds.governance.models import (
     DataspaceSpec,
+    DcatSpec,
     GovernanceRule,
     GovernanceRuleV2,
     load_odrl_profile,
@@ -202,3 +205,40 @@ def test_profile_path_is_missing_only_flags_configured_paths():
     assert profile_path_is_missing("/nonexistent/path.yaml") is True
     assert profile_path_is_missing(None) is False
     assert profile_path_is_missing("") is False
+
+
+# ── An explicit null means "unset" ────────────────────────────────
+
+
+def test_explicit_null_dcat_is_accepted_as_unset():
+    """`dcat: null` is the published shape — upstream declares
+    `Optional[DcatConfig] = None` — and every `celine-pipelines` producer file
+    writes it in `defaults:`. ds narrows the field to a non-optional subclass so
+    every reader can say `rule.dcat.themes` without a None check; the narrowing
+    must not change which *files* are valid, and before the validator it did:
+    13 of 17 live producer files were rejected outright while
+    `celine.governance` parsed all 17."""
+    rule = GovernanceRuleV2.model_validate({"dcat": None})
+
+    assert isinstance(rule.dcat, DcatSpec)
+    assert rule.dcat.themes == []
+    assert rule.dcat.conforms_to is None
+
+
+def test_explicit_null_dataspace_is_accepted_as_unset():
+    """The same narrowing, on the block everything else now hinges on. A
+    producer writing `dataspace: null` means "no dataspace opinion", and the
+    default `expose` is False either way — so the file is readable and the
+    dataset is simply not published."""
+    rule = GovernanceRuleV2.model_validate({"dataspace": None})
+
+    assert isinstance(rule.dataspace, DataspaceSpec)
+    assert rule.dataspace.expose is False
+
+
+def test_a_null_block_is_not_the_same_as_a_wrong_one():
+    """The validator maps `None` and nothing else. A scalar where a mapping
+    belongs is still a validation error — otherwise this would have widened the
+    model rather than restored upstream's contract."""
+    with pytest.raises(ValidationError):
+        GovernanceRuleV2.model_validate({"dcat": "not-a-mapping"})

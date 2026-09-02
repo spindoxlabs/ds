@@ -2001,11 +2001,17 @@ def org_apply(
         outcomes: list[ops.ApplyOutcome] = []
         async with factory() as session:
             for entry in entries:
+                chosen = id(entry) in selected
                 outcome = await ops.apply_owner_entry(
                     session,
                     settings,
                     entry,
-                    evidence if id(entry) in selected else None,
+                    evidence if chosen else None,
+                    # Only meaningful when this run had evidence to offer: without
+                    # it every entry is skipped for the same, correct, reason.
+                    skip_reason=(
+                        None if chosen or evidence is None else selection.skipped_reason
+                    ),
                 )
                 outcomes.append(outcome)
                 if not outcome.ok:

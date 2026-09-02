@@ -44,7 +44,7 @@ from celine.governance.models import GovernanceOwner as GovernanceOwner
 from celine.governance.models import GovernanceRule as GovernanceRule
 from celine.governance.models import OntologyConfig as OntologyConfig
 from celine.governance.models import TemporalCoverage as TemporalCoverage
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -294,6 +294,25 @@ class GovernanceRuleV2(GovernanceRule):
     row_filters: list[RowFilter] = Field(default_factory=list)  # type: ignore[assignment]
     dataspace: DataspaceSpec = Field(default_factory=DataspaceSpec)
     dcat: DcatSpec = Field(default_factory=DcatSpec)
+
+    # **An explicit `null` means "unset", because upstream says it does.**
+    #
+    # These are the only two fields ds narrows from upstream's `Optional[...]` to a
+    # non-optional subclass with a default. The narrowing is deliberate — every
+    # reader here says `rule.dataspace.expose` and `rule.dcat.themes` without a None
+    # check, and an always-present empty block is what makes that safe. What it must
+    # not do is change which *files* are valid, and it did: `dcat: null` is the
+    # published shape (`Optional[DcatConfig] = None`), 17 of 17 `celine-pipelines`
+    # producer files write it in `defaults:`, and ds rejected 13 of them outright
+    # while `celine.governance` parsed all 17. A narrowing that turns a valid file
+    # into a validation error is a fork, whatever the type annotation says.
+    #
+    # `mode="before"` so it runs on the raw `None` ahead of model validation, and
+    # `{}` rather than the model so the subclass's own defaults still apply.
+    @field_validator("dataspace", "dcat", mode="before")
+    @classmethod
+    def _null_is_unset(cls, value: object) -> object:
+        return {} if value is None else value
 
 
 # ── ODRL Profile ─────────────────────────────────────────────────────────────

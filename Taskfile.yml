@@ -1179,6 +1179,14 @@ tasks:
         # "grid-operator did not serve its assets". A healthy management API
         # answers 401 to an unkeyed POST; 000 is not up, 405 is up and not
         # serving this API. Both are "not ready", and only one of them was.
+        #
+        # Measured on a healthy stack 2026-09-02, all three EDCs: **401** to the
+        # unkeyed POST this function sends, and 400 only when a key is supplied
+        # and the body is empty. So the healthy answer here is always 401 — the
+        # predicate names the two codes that mean *not ready* rather than the one
+        # that means ready, deliberately, because a gate that waits for one exact
+        # success code turns any new-but-healthy answer into a four-minute hang
+        # and then a false failure.
         ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
         # **All three, not two.** The grid-operator EDC (39193) is the second
         # provider (`DID-15`) and was never in this gate, though `semantic-model`,

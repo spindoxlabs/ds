@@ -343,7 +343,15 @@ recorded provenance, where correcting it destroys the evidence. `DS_ENV` default
 production when unset, so forgetting the variable refuses rather than permits; in dev the
 check is silent, because the dev DIDs *are* `.localhost` and that is correct there.
 
-Without `--governance` the selector is *carrying a `did`*. Either way the chain stops after
+Without `--governance` the selector is *carrying a `did`*. **An entry a selector leaves out
+is reported with that selector's own reason** — `governance does not name it`, or
+`carries no did` — not with whatever else the entry happens to lack. The distinction is not
+cosmetic: an organisation that carries a DID and is simply not named by any exposed dataset
+is correctly out, and a message about a missing `dataspace:` block sends the reader to the
+wrong file. Without run evidence the block really is the only way in, and the reason reported
+is still `no dataspace: block`.
+
+Either way the chain stops after
 verification — a verified owner holding its `did` and `aliases`, which is the whole of what
 `GET /owners/resolve` needs. An agreement acceptance, a credential and a participant promotion
 are legal and topological facts a run flag must not assert, so they stay with the per-entry

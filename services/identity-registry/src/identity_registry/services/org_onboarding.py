@@ -728,6 +728,11 @@ class Selection:
     #: Reasons a selector refused, one per line, all of them — the caller reports
     #: every one and then exits non-zero rather than stopping at the first.
     errors: list[str] = field(default_factory=list)
+    #: Why the entries this selector did *not* pick are out. One string, because
+    #: each selector has one reason: governance did not name them, or they carry
+    #: no DID. Reported per entry so a skip says what the selector decided rather
+    #: than what the entry happens to lack.
+    skipped_reason: str = "no dataspace: block"
 
     @property
     def ok(self) -> bool:
@@ -770,9 +775,12 @@ def select_entries(
     )
 
     if not governance_paths:
-        return Selection(entries=[e for e in entries if e.get("did")])
+        return Selection(
+            entries=[e for e in entries if e.get("did")],
+            skipped_reason="carries no did",
+        )
 
-    selection = Selection()
+    selection = Selection(skipped_reason="governance does not name it")
     known: list[OwnerEntry] = []
     for entry in entries:
         if not entry.get("id"):
@@ -879,6 +887,7 @@ async def apply_owner_entry(
     settings: Settings,
     entry: dict,
     evidence: RunEvidence | None = None,
+    skip_reason: str | None = None,
 ) -> ApplyOutcome:
     """Walk register → verify → agreement → issue-credential → promote for one entry.
 
@@ -899,7 +908,14 @@ async def apply_owner_entry(
         # no credential, no promotion, because a run flag cannot assert those.
         if evidence is None:
             outcome.applied = False
-            outcome.steps.append(ApplyStep("entry", "skipped", "no dataspace: block"))
+            # **Whose reason this is.** Without run evidence a `dataspace:` block is
+            # the only way in, so its absence *is* the reason and the default holds.
+            # With run evidence the entry was reachable and the selector still left
+            # it out — `skip_reason` is that selector's answer, and reporting the
+            # block instead names a fact that had nothing to do with the decision.
+            outcome.steps.append(
+                ApplyStep("entry", "skipped", skip_reason or "no dataspace: block")
+            )
             return outcome
         block = {
             "verified_by": evidence.verified_by,
