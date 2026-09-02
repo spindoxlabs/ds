@@ -8,16 +8,29 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 # pointing at a /build that no longer exists there.
 COPY libs/ds-auth/ /build/ds-auth/
 COPY libs/ds-obs/ /build/ds-obs/
+# `ds-governance` joined this list when the owner registry started resolving
+# participants from governance ownership. The Dockerfile was not updated with it,
+# and the failure is invisible outside a container build: `[tool.uv.sources]`
+# points at ../../libs so every host-run install resolves it, while the install
+# below passes --no-sources and cannot. So `task dev:*` was green throughout and
+# `task build` had been failing on this image since `6e6d231` with
+# "ds-governance was not found in the package registry".
+COPY libs/governance/ /build/governance/
 RUN uv venv /opt/venv && \
-    uv pip install --python /opt/venv/bin/python /build/ds-auth '/build/ds-obs[tracing]'
+    uv pip install --python /opt/venv/bin/python \
+        /build/ds-auth '/build/ds-obs[tracing]' /build/governance
 
 COPY services/identity-registry/pyproject.toml ./
 COPY services/identity-registry/src/ src/
 
 # The project and its declared dependencies, from pyproject.toml and nowhere
-# else. --no-sources makes uv treat ds-auth as a plain requirement instead of
-# following [tool.uv.sources] to ../../libs; the install above satisfies it, and
-# without it uv reinstalls it editable and breaks the runtime stage.
+# else. --no-sources makes uv treat ds-auth, ds-obs and ds-governance as plain
+# requirements instead of following [tool.uv.sources] to ../../libs; the install
+# above satisfies them, and without it uv reinstalls them editable and breaks the
+# runtime stage.
+#
+# The corollary is the trap above: a path dependency added to pyproject.toml and
+# not to the COPY list resolves everywhere except here.
 RUN uv pip install --python /opt/venv/bin/python --no-sources .
 
 # ---- Runtime ----

@@ -205,6 +205,20 @@ services:
       identity-registry-db-create:
         condition: service_completed_successfully
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      #
+      # `identity-registry` above has carried this since DS_ENV started
+      # defaulting to production. The four containers built from the *same
+      # image* did not, and one of them proved it: `identity-registry-bootstrap`
+      # imports a seed of `did:web:*.dataspaces.localhost` organisations, and
+      # `did.py`'s dev-host classifier refuses every one of them under
+      # DS_ENV=production — so `task docker:restart` aborted at
+      # `identity:bootstrap` and the whole stack never came up. Invisible in
+      # `dev:*`, which runs these as host processes off `.env.local`.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
     networks: [dataspaces]
 
@@ -291,6 +305,20 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      #
+      # `identity-registry` above has carried this since DS_ENV started
+      # defaulting to production. The four containers built from the *same
+      # image* did not, and one of them proved it: `identity-registry-bootstrap`
+      # imports a seed of `did:web:*.dataspaces.localhost` organisations, and
+      # `did.py`'s dev-host classifier refuses every one of them under
+      # DS_ENV=production — so `task docker:restart` aborted at
+      # `identity:bootstrap` and the whole stack never came up. Invisible in
+      # `dev:*`, which runs these as host processes off `.env.local`.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # This container is what *issues* the credentials, so the StatusList URL
@@ -367,6 +395,20 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      #
+      # `identity-registry` above has carried this since DS_ENV started
+      # defaulting to production. The four containers built from the *same
+      # image* did not, and one of them proved it: `identity-registry-bootstrap`
+      # imports a seed of `did:web:*.dataspaces.localhost` organisations, and
+      # `did.py`'s dev-host classifier refuses every one of them under
+      # DS_ENV=production — so `task docker:restart` aborted at
+      # `identity:bootstrap` and the whole stack never came up. Invisible in
+      # `dev:*`, which runs these as host processes off `.env.local`.
+      DS_ENV: ${DS_ENV:-dev}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
@@ -646,6 +688,20 @@ services:
     volumes:
       - ./services/keycloak/organizations.yaml:/app/organizations.yaml:ro
     environment:
+      # Compose IS the development topology, so it declares the unsafe mode
+      # explicitly. ProductionGuard defaults to `production`; a service that
+      # never hears about DS_ENV now refuses to start on a dev default
+      # instead of quietly accepting one.
+      #
+      # `identity-registry` above has carried this since DS_ENV started
+      # defaulting to production. The four containers built from the *same
+      # image* did not, and one of them proved it: `identity-registry-bootstrap`
+      # imports a seed of `did:web:*.dataspaces.localhost` organisations, and
+      # `did.py`'s dev-host classifier refuses every one of them under
+      # DS_ENV=production — so `task docker:restart` aborted at
+      # `identity:bootstrap` and the whole stack never came up. Invisible in
+      # `dev:*`, which runs these as host processes off `.env.local`.
+      DS_ENV: ${DS_ENV:-dev}
       # Same two variables as `keycloak-sync` above, for the same reason.
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}
