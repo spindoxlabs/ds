@@ -11,7 +11,7 @@ follows — *the shape lives where it is defined, the use lives where it is used
 
 | From `celine.governance` | Here |
 |---|---|
-| `GovernanceRule`, `DataspaceConfig`, `DcatConfig`, `OntologyConfig`, `GovernanceOwner`, `TemporalCoverage` | the ODRL profile and its purpose taxonomy, the `policy` view, the EDC sub-objects, `RowFilter` |
+| `GovernanceRule`, `DataspaceConfig`, `DcatConfig`, `OntologyConfig`, `GovernanceOwner`, `TemporalCoverage` | the ODRL profile and its purpose taxonomy, the ODRL view on `DataspaceSpec`, the EDC sub-objects, `RowFilter` |
 
 **Subclassing, not forking, and that is upstream's own design.**
 `DataspaceConfig`'s docstring says the EDC sub-objects "are `ds`'s concern and are
@@ -88,36 +88,51 @@ class RowFilter(BaseModel):
 
 
 class PolicyObligations(BaseModel):
+    """Duties an offer carries. ds's own — upstream models none of these.
+
+    `contract_required` was a fifth field here and is now
+    `DataspaceSpec.contract_required`, inherited from upstream. It was one of the
+    three facts the `policy:` block held a second copy of; keeping it here beside
+    the inherited one would have rebuilt, one level down, the duplication the fold
+    exists to remove.
+
+    Still named `Policy*` after being re-parented onto `DataspaceSpec`, and
+    deliberately: these are ODRL policy obligations, and the block they sit in is
+    now the policy block. The name is also this library's published surface.
+    """
+
     attribution: bool = False
     delete_after_days: int | None = None  # overrides retention_days for ODRL
     notify_on_access: bool = False
     anonymize_before_use: bool = False
-    contract_required: bool = False  # auto True when access_level=restricted
 
 
 class PolicyAudience(BaseModel):
+    """Who the offer is addressed to. ds's own, and genuinely nested.
+
+    Re-parented onto `DataspaceSpec` with `PolicyObligations`. Neither flattened,
+    because nothing upstream models either one — there is no inherited field for a
+    sub-object to shadow, which is the only reason `consent` had to go.
+    """
+
     membership: str | None = "dataspaces.localhost"
     required_role: str | None = None
     required_scope: str = "dataspaces.query"
 
 
-class PolicyConsent(BaseModel):
-    required: bool = False  # auto True when user_filter_column is set
-    scope: str = "per_subject"  # per_subject | per_dataset
-    on_revocation: str = "terminate"  # terminate | suspend
-
-
-class DataspacePolicy(BaseModel):
-    permitted_actions: list[str] | None = None  # None = auto-derive from access_level
-    prohibited_actions: list[str] | None = (
-        None  # None = auto-derive from classification
-    )
-    purpose: list[str] = Field(default_factory=list)
-    valid_from: date | None = None
-    valid_until: date | None = None
-    obligations: PolicyObligations = Field(default_factory=PolicyObligations)
-    audience: PolicyAudience = Field(default_factory=PolicyAudience)
-    consent: PolicyConsent = Field(default_factory=PolicyConsent)
+# `PolicyConsent` was here, and it is the one sub-object the fold did not keep.
+# `required` is `DataspaceSpec.consent_required`, upstream's field; `scope` and
+# `on_revocation` are `consent_scope` and `consent_on_revocation` beside it. A
+# `consent:` object keeping its own `required` next to an inherited
+# `consent_required` would have been the same duplication one level down —
+# **whether** consent is needed is upstream's statement and **how** it behaves is
+# ds's, and flattened they read as siblings rather than as a shadowed pair.
+#
+# `DataspacePolicy` was here too, and it was the second container for one concern.
+# Everything it held is on `DataspaceSpec` now. It existed because ds restructured
+# purpose, consent and contract into a block of its own before the canonical
+# placement settled; `DataspaceConfig`'s docstring — *"Dataspace exposure and ODRL
+# policy hints"* — says the canonical block was always meant to carry them.
 
 
 class DataspaceAsset(BaseModel):
@@ -146,28 +161,34 @@ class DataspaceContract(BaseModel):
 
 
 class DataspaceSpec(DataspaceConfig):
-    """The dataspace block — upstream's fields, plus the EDC ones that are ds's.
+    """The dataspace block: exposure, the EDC wiring, and the whole ODRL view.
 
     Inherited and no longer restated: `expose`, `medallion`, `purpose`,
     `consent_required`, `contract_required`, `odrl_action`. The last four ds used
     to drop outright — `dataspace` is excluded from `extra`, so a file could state
     `odrl_action` and ds could not even see that it had been said.
 
-    **`purpose`, `consent_required` and `contract_required` are carried here and
-    read from `policy`.** `_canonical_policy` copies them across at parse time and
-    ds's readers all go through `policy`; this model now holds them too because it
-    inherits them. `celine.governance.merge.merge_dataspace` applies the same
-    union/OR rules `resolver._merge_policy` applies, so the two cannot come apart.
+    **One block, not two.** `purpose`, `consent_required` and `contract_required`
+    sat here *and* on a `DataspacePolicy` for one release, held in step by two
+    merges stating the same union/OR rules. That was safe and it was still two
+    containers for one concern: every field the `policy:` block held is an ODRL
+    hint about a dataset offered into the dataspace, and so is every field here.
+    Upstream says as much — `DataspaceConfig`'s docstring is *"Dataspace exposure
+    **and ODRL policy hints**"*. ds invented the second block only because it
+    restructured these fields before the canonical placement settled.
 
-    **The duplication is settled rather than temporary.** The migration's phase 2
-    asked whether ds's `policy` view survives, and it does: `DataspacePolicy` also
-    holds `audience`, `obligations` and `consent`, which upstream does not model, so
-    it is not a synonym for this class. The same three facts therefore live on two
-    models, and they agree by construction because both merges state the same rules.
+    So the ODRL view moved in whole: `permitted_actions`, `prohibited_actions`, the
+    validity window, `obligations`, `audience`, and consent's *how*. Two shapes of
+    it did not survive the move, both to avoid re-creating what was removed —
+    `consent.required` (upstream's `consent_required` says it) and
+    `obligations.contract_required` (upstream's `contract_required` does).
 
-    Added here, and staying here: the EDC-specific sub-objects. That is not ds
-    asserting a boundary — it is the one upstream drew, in `DataspaceConfig`'s own
-    docstring.
+    `policy:` **stays readable in YAML**, as a deprecated spelling folded in at
+    parse time by `resolver._fold_legacy_policy` — the one place that knows it. No
+    governance file has to change for this model to.
+
+    The EDC-specific sub-objects were added here and stay. That is not ds asserting
+    a boundary — it is the one upstream drew, in `DataspaceConfig`'s own docstring.
     """
 
     asset: DataspaceAsset = Field(default_factory=DataspaceAsset)
@@ -186,6 +207,26 @@ class DataspaceSpec(DataspaceConfig):
     # sharing offer" and "not shared" are the same statement, and publishing it
     # with a dangling reference would advertise a consent gate that can never open.
     sharing_offers: list[str] = Field(default_factory=list)
+
+    # ── the ODRL view, until 2026-09-02 a `policy:` block of its own ───────────
+
+    permitted_actions: list[str] | None = None  # None = auto-derive from access_level
+    prohibited_actions: list[str] | None = (
+        None  # None = auto-derive from classification
+    )
+    valid_from: date | None = None
+    valid_until: date | None = None
+
+    #: How consent is scoped, and what a withdrawal does. **Not whether it is
+    #: required** — that is `consent_required`, upstream's, inherited above.
+    #: Flattened out of a `consent:` sub-object for exactly that reason: a
+    #: `required` field beside an inherited `consent_required` is one fact with two
+    #: spellings, which is what this whole change removes.
+    consent_scope: str = "per_subject"  # per_subject | per_dataset
+    consent_on_revocation: str = "terminate"  # terminate | suspend
+
+    obligations: PolicyObligations = Field(default_factory=PolicyObligations)
+    audience: PolicyAudience = Field(default_factory=PolicyAudience)
 
 
 class DcatSpec(DcatConfig):
@@ -217,12 +258,15 @@ class DcatSpec(DcatConfig):
 
 
 class GovernanceRuleV2(GovernanceRule):
-    """Upstream's rule, extended with ds's ODRL policy view and EDC config.
+    """Upstream's rule, with ds's richer `DataspaceSpec` and typed row filters.
 
     `GovernanceRule` already carries every field of the shape, `expose` and
     `ontology` included. What is added here is what upstream deliberately does not
     model — see its docstring: "`ds` extends this with `policy` (ODRL/EDC) and its
-    richer `DataspaceSpec`".
+    richer `DataspaceSpec`". **Only the second half of that is still true.** The
+    `policy` field is gone: its contents are `DataspaceSpec`'s, which is where
+    upstream's own docstring says ODRL hints belong, so ds extends one model here
+    instead of two.
 
     **`row_filters` is re-typed, and that is the one narrowing worth stating.**
     Upstream keeps `list[dict]`, because a handler defines its own arguments and
@@ -248,7 +292,6 @@ class GovernanceRuleV2(GovernanceRule):
     # unsoundness mypy is guarding against cannot occur here. There is no way to
     # express a covariant model-field override; the alternative is not narrowing.
     row_filters: list[RowFilter] = Field(default_factory=list)  # type: ignore[assignment]
-    policy: DataspacePolicy = Field(default_factory=DataspacePolicy)
     dataspace: DataspaceSpec = Field(default_factory=DataspaceSpec)
     dcat: DcatSpec = Field(default_factory=DcatSpec)
 

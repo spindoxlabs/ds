@@ -5,11 +5,9 @@ import logging
 import pytest
 
 from ds.governance.models import (
-    DataspacePolicy,
     DataspaceSpec,
     GovernanceRule,
     GovernanceRuleV2,
-    PolicyConsent,
     load_odrl_profile,
     profile_path_is_missing,
 )
@@ -25,19 +23,27 @@ def test_v1_rule_loads_with_defaults():
 
 def test_v2_rule_has_safe_defaults():
     rule = GovernanceRuleV2()
-    assert rule.policy == DataspacePolicy()
     assert rule.dataspace == DataspaceSpec()
-    assert rule.policy.consent.required is False
+    assert rule.dataspace.consent_required is False
 
 
-def test_v2_consent_auto_schema():
-    """Consent model fields are correct."""
-    consent = PolicyConsent(
-        required=True, scope="per_subject", on_revocation="terminate"
+def test_v2_consent_fields_are_one_block():
+    """Consent is three fields on `dataspace`, and only one of them is upstream's.
+
+    `whether` is `consent_required`, inherited from `DataspaceConfig`; `how` is
+    `consent_scope` and `consent_on_revocation`, ds's own. They were a
+    `PolicyConsent` sub-object with a `required` field of its own, which put the
+    same fact on two models — the duplication
+    `the-dataspace-block-is-the-policy-block` removes.
+    """
+    spec = DataspaceSpec(
+        consent_required=True,
+        consent_scope="per_subject",
+        consent_on_revocation="terminate",
     )
-    assert consent.required is True
-    assert consent.scope == "per_subject"
-    assert consent.on_revocation == "terminate"
+    assert spec.consent_required is True
+    assert spec.consent_scope == "per_subject"
+    assert spec.consent_on_revocation == "terminate"
 
 
 def test_v2_rule_inherits_v1_fields():

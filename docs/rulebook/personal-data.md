@@ -51,7 +51,7 @@ determines the user interface.**
 
 **The purpose vocabulary is the mechanism, and it is deliberately narrow.**
 
-`policy.purpose[]` on a dataset is the **only** runtime declaration of what that dataset may
+`dataspace.purpose[]` on a dataset is the **only** runtime declaration of what that dataset may
 be used for. `tags` are DCAT-AP keywords: a topic is not a reason for processing. One meter
 dataset serves incentive calculation, flexibility research and cost optimisation, so
 mapping `meters → <a purpose>` is a category error, and `tag_to_purpose` exists only as an

@@ -38,22 +38,27 @@ sources:
     row_filters:
       - handler: rec_registry
         args: {column: device_id}
-    policy:
-      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
-      consent:
-        required: true
     dataspace:
       expose: true
       sharing_offers: [household-energy-flexibility]
+      purpose: [EnergyCommunityOperation, IncentiveCalculation, FlexibilityResearch]
+      consent_required: true
 ```
 
-Three blocks matter:
+Two blocks matter:
 
 | Block | Decides |
 |---|---|
 | top level | *what the dataset is* — title, ownership, access level, classification, retention, row filters, tags |
-| `policy:` | *how it may be used* — purposes, permitted and prohibited actions, obligations, consent |
-| `dataspace:` | *how it is published* — exposure, medallion, asset id, data address, contract ids, which sharing offers cover it |
+| `dataspace:` | *how it is published and how it may be used* — exposure, medallion, purposes, permitted and prohibited actions, obligations, consent, asset id, data address, contract ids, which sharing offers cover it |
+
+**`policy:` is a deprecated spelling of the same block.** ds carried its purposes,
+consent and obligations in a `policy:` block of its own until 2026-09-02, before the
+canonical placement settled; everything it held is on `dataspace:` now, which is where
+the canonical schema puts it (*"Dataspace exposure and ODRL policy hints"*). A file
+still using `policy:` is folded into `dataspace:` when it is read, so no governance
+file has to change — but new ones should be written the canonical way, and a file
+stating both gets the canonical value.
 
 A dataset points at its offers; an offer never lists its datasets.
 
@@ -68,22 +73,33 @@ A dataset points at its offers; an offer never lists its datasets.
 
 | Field | Rule | Why |
 |---|---|---|
-| `policy.purpose` | **union** | an overlay adds a reason for processing; it does not retract one |
-| `policy.consent.required` | **OR** | once consent is required, a layer on top cannot un-require it |
-| `policy.obligations.contract_required` | **OR** | same |
+| `dataspace.purpose` | **union** | an overlay adds a reason for processing; it does not retract one |
+| `dataspace.consent_required` | **OR** | once consent is required, a layer on top cannot un-require it |
+| `dataspace.contract_required` | **OR** | same |
 | `tags` | union | |
-| everything else | field-wise override; `None` preserves the base | |
+| everything else | field-wise override on the fields a document **states**; an unstated field inherits, and a field stated as `null` withdraws | |
 
-A consequence worth knowing: an overlay **cannot un-expose** a dataset by setting
-`dataspace.expose: false`, because `false` is the default and defaults are excluded from the
-merge. Use `access_level: secret` instead — which produces an offer with zero permissions.
+Two consequences worth knowing, and both are about the difference between *unstated* and
+*stated as a falsy value*. The merge is `exclude_unset`, so it can tell them apart.
+
+An overlay **can un-expose** a dataset with `dataspace.expose: false`, and that is the
+supported way to withdraw one in a single environment. It could not until 2026-08-06: the
+merge excluded *defaults* rather than *unset* fields, so `false` — being the default —
+dumped to nothing and the base's `true` survived, and this page recommended
+`access_level: secret` as the workaround. That is a different statement about a different
+thing (an offer with zero permissions, not an absent one), and it is no longer needed.
+
+An overlay **can also clear a scalar** by stating it as `null`: `license: null` withdraws an
+inherited licence rather than inheriting it. This page said the opposite until 2026-09-02,
+when the top-level merge moved off a `None`-means-unstated rule onto the same
+`exclude_unset` the nested blocks already used.
 
 ## The ODRL a rule becomes
 
 One permission per permitted action, all carrying the same constraint list (constraints inside
 a permission are ANDed).
 
-**Permitted actions**, unless `policy.permitted_actions` overrides them:
+**Permitted actions**, unless `dataspace.permitted_actions` overrides them:
 
 | `access_level` | Actions |
 |---|---|
@@ -92,7 +108,7 @@ a permission are ANDed).
 | `restricted` | query |
 | `secret` | *none* — the offer carries no permission at all |
 
-**Prohibitions**, unless `policy.prohibited_actions` overrides them:
+**Prohibitions**, unless `dataspace.prohibited_actions` overrides them:
 
 | `classification` | Prohibited |
 |---|---|

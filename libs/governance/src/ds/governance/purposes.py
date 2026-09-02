@@ -32,13 +32,13 @@ def unresolved_purposes(purposes: list[str], profile: OdrlProfile) -> list[str]:
 def purpose_failure(rule: GovernanceRuleV2, profile: OdrlProfile) -> str | None:
     """Why this rule's purposes are unusable, or ``None`` when they are fine.
 
-    An **empty** ``policy.purpose[]`` fails as surely as an unresolvable one.
+    An **empty** ``dataspace.purpose[]`` fails as surely as an unresolvable one.
     `_build_permission` emits a purpose constraint only for a non-empty list, so
     both end as an offer published with no purpose limitation whatsoever — and
     the empty case used to pass every check in this repo, because the checks
     iterated the entries and an empty list has none.
     """
-    declared = rule.policy.purpose
+    declared = rule.dataspace.purpose
     if not declared:
         return (
             "declares no purpose — it would be published with no purpose "

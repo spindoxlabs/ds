@@ -1171,17 +1171,34 @@ tasks:
         # /consumer/catalog and reads as a product failure.
         probe() { curl -so /dev/null -w '%{http_code}' -m 3 -X POST "$1" \
           -H 'Content-Type: application/json' -d '{}' 2>/dev/null; }
+        # **Routed, not merely listening.** This tested `!= 000` — connection
+        # refused — which is a weaker claim than the comment above makes, and it
+        # let through the state that actually cost a flow: an EDC whose port was
+        # open and whose management context had only partly registered answered
+        # **405**, the gate passed, and `semantic-model` then failed on
+        # "grid-operator did not serve its assets". A healthy management API
+        # answers 401 to an unkeyed POST; 000 is not up, 405 is up and not
+        # serving this API. Both are "not ready", and only one of them was.
+        ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
+        # **All three, not two.** The grid-operator EDC (39193) is the second
+        # provider (`DID-15`) and was never in this gate, though `semantic-model`,
+        # `two-providers` and the `chain-*` flows all read its published assets.
+        # A slow one therefore failed a flow instead of being waited for, and the
+        # failure read as a data problem — "grid-operator did not serve its
+        # assets" — rather than as a connector that was not up yet. Added after
+        # exactly that, 2026-09-02; see trap 4 in `playbooks/testing.md`.
         for i in $(seq 1 120); do
           p=$(probe http://172.17.0.1:19193/management/v3/assets/request)
           c=$(probe http://172.17.0.1:29193/management/v3/assets/request)
-          [ "$p" != "000" ] && [ "$c" != "000" ] && break
+          g=$(probe http://172.17.0.1:39193/management/v3/assets/request)
+          ready "$p" && ready "$c" && ready "$g" && break
           sleep 2
         done
-        if [ "$p" = "000" ] || [ "$c" = "000" ]; then
-          echo "EDCs did not become ready (provider=$p consumer=$c)" >&2
+        if ! ready "$p" || ! ready "$c" || ! ready "$g"; then
+          echo "EDCs did not become ready (provider=$p consumer=$c grid-operator=$g)" >&2
           exit 1
         fi
-        echo "EDCs ready (provider=$p consumer=$c)"
+        echo "EDCs ready (provider=$p consumer=$c grid-operator=$g)"
 
         # The catalogue is crawled on a timer, so an empty one right after a
         # restart means "not yet", not "broken".

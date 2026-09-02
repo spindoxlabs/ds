@@ -20,10 +20,9 @@ import pytest
 
 from ds.governance.mapper import GovernanceMapper, requires_consent
 from ds.governance.models import (
-    DataspacePolicy,
+    DataspaceSpec,
     GovernanceRuleV2,
     OdrlProfile,
-    PolicyConsent,
     RowFilter,
     RowFilterArgs,
 )
@@ -55,7 +54,7 @@ def _consent_constraints(offer: dict) -> list[dict]:
     "rule,expected",
     [
         (_rule(), False),
-        (_rule(policy=DataspacePolicy(consent=PolicyConsent(required=True))), True),
+        (_rule(dataspace=DataspaceSpec(consent_required=True)), True),
         (_rule(user_filter_column="subject_did"), True),
         (
             _rule(
@@ -78,7 +77,7 @@ def test_predicate(rule, expected):
     "rule,expected",
     [
         (_rule(), False),
-        (_rule(policy=DataspacePolicy(consent=PolicyConsent(required=True))), True),
+        (_rule(dataspace=DataspaceSpec(consent_required=True)), True),
         (_rule(user_filter_column="subject_did"), True),
         (_rule(classification="pii"), True),
     ],
@@ -111,7 +110,7 @@ def test_the_consent_operand_comes_from_the_profile():
     )
     offer = _mapper(profile=other).to_odrl_offer(
         "datasets.gold.meters",
-        _rule(policy=DataspacePolicy(consent=PolicyConsent(required=True))),
+        _rule(dataspace=DataspaceSpec(consent_required=True)),
     )
     operands = {
         c.get("odrl:leftOperand", {}).get("@id")

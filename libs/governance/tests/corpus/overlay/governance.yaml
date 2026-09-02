@@ -20,7 +20,7 @@ sources:
     tags: [weather, gold, features]
     source_system: Open-Meteo
 
-    # `policy.purpose[]` is the only runtime declaration of which purposes a
+    # `dataspace.purpose[]` is the only runtime declaration of which purposes a
     # dataset may serve. `tags` are DCAT-AP catalogue keywords and carry no
     # policy meaning.
     dataspace:

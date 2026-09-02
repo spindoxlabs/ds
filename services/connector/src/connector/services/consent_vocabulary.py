@@ -148,7 +148,7 @@ def resolve_dataset(dataset_id: str) -> GovernanceRuleV2:
 def requires_consent(rule: GovernanceRuleV2) -> bool:
     """Whether this dataset's rows are gated on a data subject's consent."""
     return bool(
-        rule.policy.consent.required
+        rule.dataspace.consent_required
         or rule.user_filter_column
         or rule.row_filters
         or rule.classification == "pii"

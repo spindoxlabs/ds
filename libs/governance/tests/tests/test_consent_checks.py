@@ -388,7 +388,7 @@ class TestSharingOffers:
     def test_broader_declaration_does_not_satisfy_a_narrower_offer(
         self, tmp_path: Path
     ):
-        """policy.purpose[] is matched exactly — a dataset offered for the parent
+        """dataspace.purpose[] is matched exactly — a dataset offered for the parent
         purpose has not been declared for this specific child."""
         result = run(
             tmp_path,

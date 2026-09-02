@@ -136,7 +136,7 @@ def validate(
     runs against any governance file in any deployment.
 
     When *sharing_offers_path* is given, the consent vocabulary is validated
-    too: the purpose taxonomy, each dataset's ``policy.purpose[]``, and every
+    too: the purpose taxonomy, each dataset's ``dataspace.purpose[]``, and every
     offer's purpose, datasets, controller, legal basis and codes.
     """
     result = ValidationResult(governance_path=str(governance_path))

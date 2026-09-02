@@ -5,7 +5,6 @@ import pytest
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import (
     DataspaceAsset,
-    DataspacePolicy,
     DataspaceSpec,
     GovernanceOwner,
     GovernanceRuleV2,
@@ -37,8 +36,8 @@ _ENERGY_PROFILE = OdrlProfile(
 )
 
 
-def _policy(**kwargs) -> DataspacePolicy:
-    return DataspacePolicy(**kwargs)
+def _space(**kwargs) -> DataspaceSpec:
+    return DataspaceSpec(**kwargs)
 
 
 def _mapper(**kwargs) -> GovernanceMapper:
@@ -163,7 +162,7 @@ def test_purpose_comes_from_policy_declaration():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=["GridMonitoring"]),
+        dataspace=_space(purpose=["GridMonitoring"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     assert any("GridMonitoring" in iri for iri in _purpose_iris(offer))
@@ -174,7 +173,7 @@ def test_purpose_uses_profile_namespace():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=["GridMonitoring"]),
+        dataspace=_space(purpose=["GridMonitoring"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     iris = _purpose_iris(offer)
@@ -199,7 +198,7 @@ def test_unknown_declared_purpose_is_dropped():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=["GridMonitoring", "NotAPurpose"]),
+        dataspace=_space(purpose=["GridMonitoring", "NotAPurpose"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     assert _purpose_iris(offer) == [_P.purpose_iri("GridMonitoring")] * len(
@@ -212,7 +211,7 @@ def test_declared_purpose_accepts_full_iri():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=[_P.purpose_iri("GridMonitoring")]),
+        dataspace=_space(purpose=[_P.purpose_iri("GridMonitoring")]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     assert _P.purpose_iri("GridMonitoring") in _purpose_iris(offer)
@@ -275,7 +274,7 @@ def test_attribution_obligation_uses_attribute_to():
         access_level="open",
         classification="green",
         attribution="https://provider.example/credit",
-        policy=DataspacePolicy(obligations=PolicyObligations(attribution=True)),
+        dataspace=_space(obligations=PolicyObligations(attribution=True)),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     obligations = offer["odrl:obligation"]
@@ -635,7 +634,7 @@ def test_several_purposes_stay_one_multi_valued_isanyof():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=["EnergyBalancing", "GridMonitoring"]),
+        dataspace=_space(purpose=["EnergyBalancing", "GridMonitoring"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
 
@@ -654,7 +653,7 @@ def test_multiple_declared_purposes_are_deduplicated():
         access_level="open",
         classification="green",
         # slug and full IRI of the same concept, plus a second concept
-        policy=_policy(
+        dataspace=_space(
             purpose=[
                 "EnergyBalancing",
                 _P.purpose_iri("EnergyBalancing"),
@@ -687,7 +686,7 @@ def test_single_declared_purpose_uses_is_a():
     rule = _rule(
         access_level="open",
         classification="green",
-        policy=_policy(purpose=["GridMonitoring"]),
+        dataspace=_space(purpose=["GridMonitoring"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     for constraint in _purpose_constraints(offer):
@@ -708,7 +707,7 @@ def test_tags_never_become_purposes(_p=_ENERGY_PROFILE):
 
     What replaces it is the assertion that matters: tags the profile knows how to
     map are present on the rule, and the offer still carries **no** purpose
-    constraint, because `policy.purpose[]` is empty. A dataset gets a purpose
+    constraint, because `dataspace.purpose[]` is empty. A dataset gets a purpose
     because someone declared a reason for processing, never because it was
     tagged.
     """
@@ -719,7 +718,7 @@ def test_tags_never_become_purposes(_p=_ENERGY_PROFILE):
         access_level="open",
         classification="green",
         tags=["rec", "grid", "meters"],
-        policy=_policy(purpose=[]),
+        dataspace=_space(purpose=[]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
     assert _purpose_constraints(offer) == []
@@ -782,7 +781,7 @@ def test_manufacturing_profile_produces_correct_purposes():
         access_level="internal",
         classification="green",
         tags=["quality", "logistics"],
-        policy=_policy(purpose=["QualityAssurance", "SupplyChain"]),
+        dataspace=_space(purpose=["QualityAssurance", "SupplyChain"]),
     )
     offer = mapper.to_odrl_offer("ds", rule)
 

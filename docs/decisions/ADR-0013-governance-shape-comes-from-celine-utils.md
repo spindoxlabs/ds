@@ -106,6 +106,25 @@ questions, not because an ADR is a progress log.
 which celine does not model, so it is not a synonym for `DataspaceConfig`. It is a subclass's
 extra field, merged by ds after `merge_rules` has done the rest.
 
+### Superseded, 2026-09-02: `policy` did not survive
+
+The paragraph above is kept because it is what was decided and it was decided on a real
+reading of the call sites — the ODRL view is genuinely ds's and genuinely unmodelled
+upstream. What it got wrong was the conclusion drawn from that: **a container is not the
+same thing as its contents.** Everything `DataspacePolicy` held is still ds's and is still
+carried; it is carried on `DataspaceSpec`, which is where `DataspaceConfig`'s own docstring
+— *"Dataspace exposure **and ODRL policy hints**"* — says it belongs.
+
+The evidence for changing it was already in the same migration: phase 1 put `purpose`,
+`consent_required` and `contract_required` on both models, and keeping the two in step took
+two merge functions stating identical rules. Agreeing by construction is better than
+agreeing by review, and not being two things is better than either.
+
+`policy:` stays readable in YAML as a deprecated spelling, folded into `dataspace:` at parse
+time, so no governance file changed. `DataspacePolicy` and `PolicyConsent` left this
+library's public surface; `PolicyObligations` and `PolicyAudience` were re-parented and
+kept theirs. The reasoning is in the store, `plans/the-dataspace-block-is-the-policy-block.md`.
+
 **The schema file stays, and the reason it stays changed.** `celine-utils` ships the schema
 inside the wheel, so the conformance test reads it from the installed package — which is not
 merely offline but *version-locked to the parser*, which a cache never was. The copy under

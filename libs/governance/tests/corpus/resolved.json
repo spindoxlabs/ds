@@ -10,7 +10,14 @@
           "content_type": "application/json",
           "id": "datasets.gold.grid_capacity"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -26,12 +33,22 @@
         },
         "expose": true,
         "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "GridMonitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -54,33 +71,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "GridMonitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "DSO SCADA export",
@@ -104,7 +94,14 @@
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -120,12 +117,22 @@
         },
         "expose": true,
         "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "GridMonitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -148,33 +155,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "GridMonitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "Open-Meteo",
@@ -196,7 +176,14 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": true,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -212,7 +199,15 @@
         },
         "expose": true,
         "medallion": "silver",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "FlexibilityResearch",
@@ -222,7 +217,9 @@
           "household-energy-flexibility",
           "grid-operations-planning",
           "community-incentive-calculation"
-        ]
+        ],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -245,34 +242,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": true,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "FlexibilityResearch",
-          "IncentiveCalculation"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -304,7 +273,14 @@
           "content_type": "application/json",
           "id": "datasets.gold.weather"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -320,11 +296,21 @@
         },
         "expose": true,
         "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "GridMonitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -347,32 +333,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "GridMonitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": null,
       "row_filters": [],
       "source_system": null,
@@ -393,7 +353,14 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": true,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -409,7 +376,15 @@
         },
         "expose": true,
         "medallion": "silver",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "FlexibilityResearch",
@@ -419,7 +394,9 @@
           "test-flexibility",
           "test-incentives",
           "test-grid-planning"
-        ]
+        ],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -442,34 +419,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": true,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "FlexibilityResearch",
-          "IncentiveCalculation"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": null,
       "row_filters": [],
       "source_system": null,
@@ -493,7 +442,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -509,12 +465,22 @@
         },
         "expose": false,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -543,33 +509,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -593,7 +532,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -609,12 +555,22 @@
         },
         "expose": false,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -643,33 +599,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -694,7 +623,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -710,12 +646,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -744,33 +690,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -793,7 +712,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -809,12 +735,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -843,33 +779,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -891,7 +800,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -907,12 +823,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -941,33 +867,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -990,7 +889,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1006,12 +912,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1040,33 +956,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1089,7 +978,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1105,12 +1001,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1139,33 +1045,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1188,7 +1067,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1204,12 +1090,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1238,33 +1134,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1287,7 +1156,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1303,12 +1179,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1337,33 +1223,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1386,7 +1245,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1402,12 +1268,22 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1436,33 +1312,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1486,7 +1335,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1502,12 +1358,22 @@
         },
         "expose": false,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1536,33 +1402,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1586,7 +1425,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1602,12 +1448,22 @@
         },
         "expose": false,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring",
           "grid-resilience"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/DAILY",
@@ -1636,33 +1492,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring",
-          "grid-resilience"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "grid-pipeline",
@@ -1689,7 +1518,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1705,11 +1541,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -1738,32 +1584,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -1791,7 +1611,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1807,11 +1634,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -1840,32 +1677,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "rec-flexibility",
@@ -1887,7 +1698,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -1903,11 +1721,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -1936,32 +1764,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -1990,7 +1792,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2006,11 +1815,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2039,32 +1858,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2092,7 +1885,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2108,11 +1908,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2141,32 +1951,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "rec-flexibility",
@@ -2187,7 +1971,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2203,11 +1994,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2236,32 +2037,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2289,7 +2064,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2305,11 +2087,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2338,32 +2130,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2392,7 +2158,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2408,11 +2181,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2441,32 +2224,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2495,7 +2252,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2511,11 +2275,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2544,32 +2318,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2600,7 +2348,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2616,11 +2371,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2649,32 +2414,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "rec-it",
@@ -2698,7 +2437,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2714,11 +2460,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2747,32 +2503,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "rec-it",
@@ -2794,7 +2524,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2810,11 +2547,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2843,32 +2590,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "rec-it",
@@ -2890,7 +2611,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -2906,11 +2634,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -2939,32 +2677,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -2993,7 +2705,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3009,11 +2728,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -3042,32 +2771,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -3098,7 +2801,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3114,11 +2824,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -3147,32 +2867,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -3201,7 +2895,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3217,11 +2918,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -3250,32 +2961,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -3304,7 +2989,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3320,11 +3012,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "energy-monitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": "http://publications.europa.eu/resource/authority/frequency/IRREG",
@@ -3353,32 +3055,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "energy-monitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {
@@ -3409,7 +3085,14 @@
           "content_type": "application/json",
           "id": null
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3425,11 +3108,21 @@
         },
         "expose": true,
         "medallion": null,
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "GridMonitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -3452,32 +3145,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "GridMonitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": null,
@@ -3497,7 +3164,14 @@
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": false,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3513,13 +3187,23 @@
         },
         "expose": true,
         "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "FlexibilityResearch",
           "GridMonitoring"
         ],
-        "sharing_offers": []
+        "sharing_offers": [],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -3542,34 +3226,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": false,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "FlexibilityResearch",
-          "GridMonitoring"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [],
       "source_system": "Open-Meteo",
@@ -3592,7 +3248,14 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
         },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
         "consent_required": true,
+        "consent_scope": "per_subject",
         "contract": {
           "access_policy_id": null,
           "contract_definition_id": null,
@@ -3608,7 +3271,15 @@
         },
         "expose": false,
         "medallion": "silver",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
         "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
         "purpose": [
           "EnergyCommunityOperation",
           "FlexibilityResearch",
@@ -3618,7 +3289,9 @@
           "household-energy-flexibility",
           "grid-operations-planning",
           "community-incentive-calculation"
-        ]
+        ],
+        "valid_from": null,
+        "valid_until": null
       },
       "dcat": {
         "accrual_periodicity": null,
@@ -3641,34 +3314,6 @@
           "DATA_OWNER"
         ]
       ],
-      "policy": {
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
-        "consent": {
-          "on_revocation": "terminate",
-          "required": true,
-          "scope": "per_subject"
-        },
-        "obligations": {
-          "anonymize_before_use": false,
-          "attribution": false,
-          "contract_required": false,
-          "delete_after_days": null,
-          "notify_on_access": false
-        },
-        "permitted_actions": null,
-        "prohibited_actions": null,
-        "purpose": [
-          "EnergyCommunityOperation",
-          "FlexibilityResearch",
-          "IncentiveCalculation"
-        ],
-        "valid_from": null,
-        "valid_until": null
-      },
       "retention_days": 365,
       "row_filters": [
         {

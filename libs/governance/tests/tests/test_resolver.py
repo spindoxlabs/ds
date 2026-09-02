@@ -10,7 +10,7 @@ from ds.governance.resolver import (
     GovernanceResolver,
     exposed_owner_aliases,
 )
-from ds.governance.models import GovernanceRuleV2, DataspacePolicy
+from ds.governance.models import GovernanceRuleV2, DataspaceSpec
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -89,10 +89,17 @@ def test_from_file_v1_yaml(tmp_path):
     assert rule.classification == "pii"
     assert rule.user_filter_column == "sub"
     # v2 fields still present with defaults
-    assert rule.policy == DataspacePolicy()
+    assert rule.dataspace == DataspaceSpec()
 
 
-def test_from_file_v2_yaml(tmp_path):
+def test_from_file_reads_the_deprecated_policy_spelling(tmp_path):
+    """`policy:` still parses, and lands where the canonical block keeps it.
+
+    The block folded into `dataspace:` in
+    `the-dataspace-block-is-the-policy-block`; deployed files that still spell it
+    the old way must not change meaning, which is the whole reason
+    `_fold_legacy_policy` exists rather than the field just being deleted.
+    """
     yaml_path = _write_yaml(
         tmp_path,
         """
@@ -112,7 +119,7 @@ def test_from_file_v2_yaml(tmp_path):
     )
     resolver = GovernanceResolver.from_file(yaml_path)
     rule = resolver.resolve("datasets.gold.grid")
-    assert rule.policy.obligations.delete_after_days == 90
+    assert rule.dataspace.obligations.delete_after_days == 90
     assert rule.dataspace.expose is True
     assert "grid" in rule.tags
 

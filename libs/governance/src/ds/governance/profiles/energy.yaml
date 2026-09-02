@@ -15,8 +15,8 @@ query_action: Query
 purpose_base: "purpose/"
 
 # Authoring default only — `ds-governance scaffold` uses this to suggest a
-# starting `policy.purpose[]` for a new dataset.  It is NOT runtime truth:
-# the mapper reads `policy.purpose[]` and nothing else.  A tag is a DCAT-AP
+# starting `dataspace.purpose[]` for a new dataset.  It is NOT runtime truth:
+# the mapper reads `dataspace.purpose[]` and nothing else.  A tag is a DCAT-AP
 # catalogue keyword (a topic); a purpose is a reason for processing.  One
 # meter dataset can serve incentive calculation, flexibility research or cost
 # optimisation, so mapping `meters -> <a purpose>` is a category error.

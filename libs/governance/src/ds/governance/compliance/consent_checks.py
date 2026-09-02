@@ -238,11 +238,11 @@ def _check_dataset_offer_references(
                 continue
             reached.add(offer_id)
 
-            if rule.classification == "pii" and not rule.policy.consent.required:
+            if rule.classification == "pii" and not rule.dataspace.consent_required:
                 result.error(
                     "offer-consent-required",
                     f"PII dataset declares offer '{offer_id}' but does not set "
-                    "policy.consent.required — the offer promises a control that is "
+                    "dataspace.consent_required — the offer promises a control that "
                     "not enforced",
                     item.key,
                 )
@@ -251,13 +251,13 @@ def _check_dataset_offer_references(
             if offer_slug is None:
                 continue  # already reported by _check_offer_purpose
             declared_slugs = {
-                profile.purpose_slug(entry) for entry in rule.policy.purpose
+                profile.purpose_slug(entry) for entry in rule.dataspace.purpose
             } - {None}
             if offer_slug not in declared_slugs:
                 result.error(
                     "offer-dataset-purpose",
                     f"Dataset declares offer '{offer_id}', whose purpose "
-                    f"'{offer_slug}' it does not list in policy.purpose[] "
+                    f"'{offer_slug}' it does not list in dataspace.purpose[] "
                     f"(declares: {sorted(s for s in declared_slugs if s)}) — the negotiated "
                     f"offer "
                     "would deny the very use the person agreed to",

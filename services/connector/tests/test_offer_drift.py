@@ -91,7 +91,6 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
     published, and republishing it leaves stored consent attesting to text
     nobody agreed to."""
     from ds.governance.models import (
-        DataspacePolicy,
         DataspaceSpec,
         GovernanceRuleV2,
         load_odrl_profile,
@@ -106,8 +105,11 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
     rule = GovernanceRuleV2(
         access_level="open",
         classification="green",
-        dataspace=DataspaceSpec(expose=True, sharing_offers=[offer.id]),
-        policy=DataspacePolicy(purpose=["FlexibilityResearch"]),
+        dataspace=DataspaceSpec(
+            expose=True,
+            sharing_offers=[offer.id],
+            purpose=["FlexibilityResearch"],
+        ),
     )
     mapper = ConnectorGovernanceMapper(
         "provider", "https://provider.test", profile=load_odrl_profile()
@@ -130,7 +132,6 @@ def test_a_drifted_offer_blocks_the_datasets_that_declare_it():
 def test_an_unaffected_dataset_still_publishes_when_another_offer_drifted():
     """Drift is per offer — one bad edit must not empty the catalogue."""
     from ds.governance.models import (
-        DataspacePolicy,
         DataspaceSpec,
         GovernanceRuleV2,
         load_odrl_profile,
@@ -145,8 +146,11 @@ def test_an_unaffected_dataset_still_publishes_when_another_offer_drifted():
     rule = GovernanceRuleV2(
         access_level="open",
         classification="green",
-        dataspace=DataspaceSpec(expose=True, sharing_offers=[offer.id]),
-        policy=DataspacePolicy(purpose=["FlexibilityResearch"]),
+        dataspace=DataspaceSpec(
+            expose=True,
+            sharing_offers=[offer.id],
+            purpose=["FlexibilityResearch"],
+        ),
     )
     mapper = ConnectorGovernanceMapper(
         "provider", "https://provider.test", profile=load_odrl_profile()

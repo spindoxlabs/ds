@@ -136,8 +136,14 @@ def ds_view(rule: Any) -> dict[str, Any]:
         ],
         "extra": rule.extra,
         "dcat": rule.dcat.model_dump(mode="json"),
+        # `"policy": rule.policy.model_dump(...)` was the line below this one until
+        # `the-dataspace-block-is-the-policy-block` folded the block into
+        # `dataspace`. Deleting it here in the same change is the rule this
+        # projection exists to follow: a `model_dump()` would have dropped the
+        # block from the snapshot silently, and the whole point is that the move
+        # shows up as a diff naming every field that moved and every value that
+        # did not.
         "dataspace": rule.dataspace.model_dump(mode="json"),
-        "policy": rule.policy.model_dump(mode="json"),
         # Inherited from upstream's `GovernanceRule` at phase 1. Listed here the
         # day the field arrived: a field the model carries and this projection does
         # not is a field the snapshot cannot report, which would make the harness
@@ -149,11 +155,13 @@ def ds_view(rule: Any) -> dict[str, Any]:
 
 #: The fields both implementations model, in the spelling each one uses.
 #:
-#: ds restructured `purpose`, `consent_required` and `contract_required` out of
-#: `dataspace:` into its own `policy:` block before the canonical placement
-#: settled (`resolver._canonical_policy`). They are the same three facts, so they
-#: are compared here as facts rather than as fields — otherwise the comparison
-#: would report a disagreement that is only a spelling.
+#: The two spellings converged: ds restructured `purpose`, `consent_required` and
+#: `contract_required` into a `policy:` block of its own before the canonical
+#: placement settled, and `the-dataspace-block-is-the-policy-block` folded them
+#: back. The projections are kept separate anyway — `row_filters` is typed on one
+#: side and `list[dict]` on the other, and `expose` is tri-state here and coerced
+#: there — so this compares facts, not field paths, exactly as it did when the
+#: three were spelled differently.
 def shared_view(rule: Any, *, celine: bool) -> dict[str, Any]:
     if celine:
         space = rule.dataspace
@@ -203,9 +211,9 @@ def shared_view(rule: Any, *, celine: bool) -> dict[str, Any]:
         "dcat": rule.dcat.model_dump(mode="json"),
         "expose": rule.dataspace.expose,
         "medallion": rule.dataspace.medallion,
-        "purpose": sorted(rule.policy.purpose),
-        "consent_required": rule.policy.consent.required,
-        "contract_required": rule.policy.obligations.contract_required,
+        "purpose": sorted(rule.dataspace.purpose),
+        "consent_required": rule.dataspace.consent_required,
+        "contract_required": rule.dataspace.contract_required,
     }
 
 
@@ -278,9 +286,10 @@ def test_celine_resolves_the_corpus_identically(label: str):
     """`celine.governance` over the same file must reach the same conclusions.
 
     This is the measurement `ADR-0013` rests on. The two implementations were
-    maintained in parallel — ds's `_merge_policy` docstring names `dataset-api`'s
+    maintained in parallel — ds's `_merge_policy` docstring named `dataset-api`'s
     `_merge_dataspace`, a *third* copy, as its reference — and the finding is that
     the parallel maintenance held: over 34 dataset keys, every shared field agrees.
+    ds's copies are both gone now; upstream's is the one that runs.
 
     Every difference that does exist is below, named and asserted. A failure here
     is one nobody has named yet, which makes it the interesting kind.
@@ -396,8 +405,12 @@ class TestDeclaredDivergences:
         the shared shape, `policy` **is** an unknown key, and that is the honest
         answer. `extra` is where a consumer can still see what the file said.
 
-        Deployed ds files still use `policy:` — `_canonical_policy` reads it as the
-        fallback — so this is not hypothetical for the corpus this platform runs on.
+        Deployed ds files still use `policy:` — `_fold_legacy_policy` reads it and
+        folds it into `dataspace:` — so this is not hypothetical for the corpus this
+        platform runs on. What changed with the fold is only where the facts land on
+        ds's side; upstream still sees an unknown key, and still keeps it in `extra`
+        rather than dropping it, which is what makes the deprecated spelling
+        readable by both.
         """
         path = tmp_path / "governance.yaml"
         path.write_text(
@@ -410,8 +423,8 @@ class TestDeclaredDivergences:
         )
 
         ds_rule = GovernanceResolver.from_file(path).resolve("a")
-        assert ds_rule.policy.purpose == ["P1"]
-        assert ds_rule.policy.consent.required is True
+        assert ds_rule.dataspace.purpose == ["P1"]
+        assert ds_rule.dataspace.consent_required is True
         assert ds_rule.extra == {}
 
         celine_rule = CelineResolver.from_file(path).resolve("a")
@@ -436,7 +449,7 @@ class TestDeclaredDivergences:
             "      purpose: [FromDataspace]\n"
         )
         rule = GovernanceResolver.from_file(path).resolve("a")
-        assert rule.policy.purpose == ["FromDataspace"]
+        assert rule.dataspace.purpose == ["FromDataspace"]
 
     def test_odrl_action_was_dropped_and_is_now_carried(self, tmp_path):
         """**Closed by phase 1**, and it was a third dropped field nobody had named.
@@ -475,9 +488,9 @@ class TestDeclaredDivergences:
         wrong fact, and the argument for the migration does not need it.
 
         The real difference was smaller: ds had no typed field. Phase 1 inherits
-        `OntologyConfig` and `_merge` states the whole-replacement rule explicitly
-        rather than getting it by accident from a shallow dict merge — which is the
-        difference between a behaviour and a coincidence.
+        `OntologyConfig` and `merge_rules` states the whole-replacement rule
+        explicitly rather than getting it by accident from a shallow dict merge —
+        which is the difference between a behaviour and a coincidence.
 
         ds still resolves neither `spec` nor `spec_file`. That means importing the
         ontology stack, and upstream keeps resolution in the consumer for the same
@@ -554,7 +567,7 @@ class TestDeclaredDivergences:
         """
         base = GovernanceResolver._parse_rule({"title": "T"})
         override = GovernanceResolver._parse_rule({"title": None})
-        assert GovernanceResolver._merge(base, override).title is None
+        assert merge_rules(base, override).title is None
 
         assert (
             merge_rules(parse_rule({"title": "T"}), parse_rule({"title": None})).title

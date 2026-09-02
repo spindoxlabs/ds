@@ -90,7 +90,8 @@ under this participant's contract.
 It also could not carry the material required to do so. DCAT-AP supplies the descriptive
 half — title, description, keywords, publisher, `dct:temporal`, `dct:conformsTo`, a
 distribution `accessURL` — which maps onto `governance.yaml`'s `dcat:` block. It supplies
-none of `policy.audience`, `policy.consent`, `policy.purpose`, `dataspace.sharing_offers` or
+none of `dataspace.audience`, `dataspace.consent_required`, `dataspace.purpose`,
+`dataspace.sharing_offers` or
 `dataspace.data_address`, which are decisions of the importing participant rather than facts
 of the source catalogue.
 

@@ -258,25 +258,25 @@ def check_policy_contract_id_collision(
 #: work. Wiring one is what closes its line here.
 UNENFORCED_DECLARATIONS: tuple[tuple[str, str, str], ...] = (
     (
-        "policy.valid_from",
-        "policy.valid_from",
+        "dataspace.valid_from",
+        "dataspace.valid_from",
         "no ODRL constraint is emitted for it and no enforcement point reads it; "
         "the value is order-checked against valid_until and nothing else",
     ),
     (
-        "policy.valid_until",
-        "policy.valid_until",
+        "dataspace.valid_until",
+        "dataspace.valid_until",
         "no ODRL constraint is emitted for it and no enforcement point reads it; "
         "an offer does not expire",
     ),
     (
-        "policy.obligations.notify_on_access",
-        "policy.obligations.notify_on_access",
+        "dataspace.obligations.notify_on_access",
+        "dataspace.obligations.notify_on_access",
         "no notification is sent on access",
     ),
     (
-        "policy.obligations.anonymize_before_use",
-        "policy.obligations.anonymize_before_use",
+        "dataspace.obligations.anonymize_before_use",
+        "dataspace.obligations.anonymize_before_use",
         "no anonymisation is applied; the data plane returns the rows the row "
         "filter selects, unchanged",
     ),
@@ -408,10 +408,10 @@ def check_consent_coherence(
     for item in exposed:
         rule = item.rule
         has_filter = bool(rule.user_filter_column or rule.row_filters)
-        if rule.policy.consent.required and not has_filter:
+        if rule.dataspace.consent_required and not has_filter:
             result.warning(
                 "consent-coherence",
-                "consent.required is set but no user_filter_column or row_filters "
+                "consent_required is set but no user_filter_column or row_filters "
                 "are declared — consent cannot be enforced per subject",
                 item.key,
             )
@@ -468,8 +468,8 @@ def check_retention(result: ValidationResult, exposed: list[DatasetEvidence]) ->
         for label, value in (
             ("retention_days", item.rule.retention_days),
             (
-                "policy.obligations.delete_after_days",
-                item.rule.policy.obligations.delete_after_days,
+                "dataspace.obligations.delete_after_days",
+                item.rule.dataspace.obligations.delete_after_days,
             ),
         ):
             if value is not None and value <= 0:
@@ -482,16 +482,16 @@ def check_validity_window(
     result: ValidationResult, exposed: list[DatasetEvidence]
 ) -> None:
     for item in exposed:
-        policy = item.rule.policy
+        space = item.rule.dataspace
         if (
-            policy.valid_from
-            and policy.valid_until
-            and policy.valid_from > policy.valid_until
+            space.valid_from
+            and space.valid_until
+            and space.valid_from > space.valid_until
         ):
             result.error(
                 "validity-window",
-                f"policy.valid_from ({policy.valid_from}) is after "
-                f"policy.valid_until ({policy.valid_until})",
+                f"dataspace.valid_from ({space.valid_from}) is after "
+                f"dataspace.valid_until ({space.valid_until})",
                 item.key,
             )
 

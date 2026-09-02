@@ -5,8 +5,13 @@ in the producer pipelines is written to. ds historically kept the same facts
 in its own `policy:` block, and the two never met — until a dataset authored
 elsewhere had to be exposed through this connector.
 
+There is one block now, and it is the canonical one; `policy:` survives as a
+deprecated spelling folded into it at parse time. So these tests read
+`dataspace.*` throughout, and the two below that state the legacy spelling are
+what says the folding still happens.
+
 The failure that motivates these tests is quiet: a canonical file declares
-`dataspace.purpose`, ds reads `policy.purpose`, finds nothing, publishes an ODRL
+`dataspace.purpose`, ds read `policy.purpose`, found nothing, published an ODRL
 policy with **no purpose constraint**, and every consent check then denies for
 want of a stated reason. Nothing errors. Nothing logs. The dataset simply never
 returns a row.
@@ -60,12 +65,12 @@ CANONICAL = {
 @pytest.mark.rule("C-6")
 def test_purpose_is_read_from_the_canonical_location():
     rule = _resolve(CANONICAL, "datasets.raw.meters_data")
-    assert rule.policy.purpose == ["EnergyCommunityOperation"]
+    assert rule.dataspace.purpose == ["EnergyCommunityOperation"]
 
 
 def test_consent_required_is_read_from_the_canonical_location():
     rule = _resolve(CANONICAL, "datasets.raw.meters_data")
-    assert rule.policy.consent.required is True
+    assert rule.dataspace.consent_required is True
 
 
 def test_row_filters_survive_and_name_the_column():
@@ -82,11 +87,17 @@ def test_contract_required_is_read_from_the_canonical_location():
             "d": {"dataspace": {"contract_required": True}},
         }
     }
-    assert _resolve(doc, "d").policy.obligations.contract_required is True
+    assert _resolve(doc, "d").dataspace.contract_required is True
 
 
 def test_the_legacy_policy_block_still_works():
-    """Deployed ds files use `policy:`; they must not break on this change."""
+    """Deployed ds files use `policy:`; they must not break on this change.
+
+    Written for the migration *into* the canonical block, and still the test for
+    it now that the block is the only one: `_fold_legacy_policy` folds the old
+    spelling in at parse time, so what a legacy file says arrives where every
+    reader looks.
+    """
     doc = {
         "sources": {
             "d": {
@@ -98,8 +109,8 @@ def test_the_legacy_policy_block_still_works():
         }
     }
     rule = _resolve(doc, "d")
-    assert rule.policy.purpose == ["GridMonitoring"]
-    assert rule.policy.consent.required is True
+    assert rule.dataspace.purpose == ["GridMonitoring"]
+    assert rule.dataspace.consent_required is True
 
 
 def test_canonical_wins_when_a_file_says_both():
@@ -117,7 +128,7 @@ def test_canonical_wins_when_a_file_says_both():
             }
         }
     }
-    assert _resolve(doc, "d").policy.purpose == ["EnergyCommunityOperation"]
+    assert _resolve(doc, "d").dataspace.purpose == ["EnergyCommunityOperation"]
 
 
 # ── The `dcat:` block ─────────────────────────────────────────────────────────

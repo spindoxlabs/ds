@@ -36,10 +36,15 @@ def write_governance(
 def exposed_dataset(**overrides) -> dict:
     """A minimal, valid, exposed dataset rule.
 
-    `policy.purpose` is part of "minimal": an exposed dataset that declares no
+    `dataspace.purpose` is part of "minimal": an exposed dataset that declares no
     purpose is published with no purpose constraint, so `purpose-declared` now
     rejects it. Before that check covered the empty case, this fixture was
     "valid" while describing a dataset nothing would have limited the use of.
+
+    **A `dataspace` override merges key-wise rather than replacing the block.**
+    Everything a test wants to say about a dataset now lives in that one block, so
+    wholesale replacement would silently drop `expose` and the purpose and make
+    half these tests assert the wrong failure. Callers state the one key they mean.
 
     `title` and `description` joined it for the same reason (`GOV-07`): they are
     DCAT-AP **mandatory** on a `dcat:Dataset`, and the emitter has a fallback for
@@ -48,17 +53,19 @@ def exposed_dataset(**overrides) -> dict:
     governance file in this repository already declares both; it was only this
     fixture that treated them as optional.
     """
+    dataspace = {
+        "purpose": ["GridMonitoring"],
+        "expose": True,
+        "data_address": {"base_url": "http://dataset-api:30002"},
+    }
     rule = {
         "access_level": "open",
         "title": "Test dataset",
         "description": "A dataset used by the compliance-check tests.",
-        "policy": {"purpose": ["GridMonitoring"]},
-        "dataspace": {
-            "expose": True,
-            "data_address": {"base_url": "http://dataset-api:30002"},
-        },
     }
+    dataspace.update(overrides.pop("dataspace", {}))
     rule.update(overrides)
+    rule["dataspace"] = dataspace
     return rule
 
 
@@ -234,19 +241,7 @@ class TestConsentCoherence:
     def test_consent_required_without_filter_warns(self, tmp_path: Path):
         path = write_governance(
             tmp_path,
-            # `policy` replaces the fixture's block wholesale, so the purpose has
-            # to be restated — without it this asserts the consent warning while
-            # also tripping purpose-declared, and `passed` would be False.
-            {
-                "sources": {
-                    "a": exposed_dataset(
-                        policy={
-                            "purpose": ["GridMonitoring"],
-                            "consent": {"required": True},
-                        }
-                    )
-                }
-            },
+            {"sources": {"a": exposed_dataset(dataspace={"consent_required": True})}},
         )
         result = run(path)
         assert result.passed
@@ -260,7 +255,7 @@ class TestConsentCoherence:
                 "sources": {
                     "a": exposed_dataset(
                         user_filter_column="subject_id",
-                        policy={"consent": {"required": True}},
+                        dataspace={"consent_required": True},
                     )
                 }
             },
@@ -365,7 +360,7 @@ class TestRetention:
             {
                 "sources": {
                     "a": exposed_dataset(
-                        policy={"obligations": {"delete_after_days": -5}}
+                        dataspace={"obligations": {"delete_after_days": -5}}
                     )
                 }
             },
@@ -380,7 +375,10 @@ class TestValidityWindow:
             {
                 "sources": {
                     "a": exposed_dataset(
-                        policy={"valid_from": "2026-06-01", "valid_until": "2026-01-01"}
+                        dataspace={
+                            "valid_from": "2026-06-01",
+                            "valid_until": "2026-01-01",
+                        }
                     )
                 }
             },
@@ -393,7 +391,10 @@ class TestValidityWindow:
             {
                 "sources": {
                     "a": exposed_dataset(
-                        policy={"valid_from": "2026-01-01", "valid_until": "2026-06-01"}
+                        dataspace={
+                            "valid_from": "2026-01-01",
+                            "valid_until": "2026-06-01",
+                        }
                     )
                 }
             },
@@ -630,15 +631,64 @@ class TestOverlay:
     def test_the_tightening_rules_survive_the_unset_fix(self, tmp_path: Path):
         """The risk `GOV-06`'s fix introduced, pinned.
 
-        `consent.required` and `contract_required` are deliberately **OR**-ed by
-        `_merge_policy`: *a deployer override may tighten, never loosen*, mirroring
-        `dataset-api`'s own `_merge_dataspace` so that both tools reading the same
-        files reach the same conclusion. Making explicit `false` meaningful is
-        exactly the change that could have turned those into "override wins" and
-        let an overlay un-gate a consent-gated dataset.
+        `consent_required` and `contract_required` are deliberately **OR**-ed by
+        `celine.governance.merge.merge_dataspace`: *a deployer override may tighten,
+        never loosen*, which is the rule `dataset-api` applies to the same files so
+        that both tools reach the same conclusion. Making explicit `false`
+        meaningful is exactly the change that could have turned those into "override
+        wins" and let an overlay un-gate a consent-gated dataset.
 
         `expose` is not in that set, and should not be: withdrawing a dataset is
         the tightening direction.
+
+        ds stated these rules a second time, in `resolver._merge_policy`, for as
+        long as the same three facts sat on a `policy` block as well. One block
+        cannot come apart, so there is one statement of them left and it is
+        upstream's.
+        """
+        from ds.governance.resolver import GovernanceResolver
+
+        write_governance(
+            tmp_path,
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        dataspace={"consent_required": True, "contract_required": True}
+                    )
+                }
+            },
+        )
+        write_governance(
+            tmp_path,
+            {
+                "sources": {
+                    "a": {
+                        "dataspace": {
+                            "consent_required": False,
+                            "contract_required": False,
+                        }
+                    }
+                }
+            },
+            name="governance.prod.yaml",
+        )
+        rule = GovernanceResolver.from_file_with_override(
+            tmp_path / "governance.yaml", overlay_name="prod"
+        ).resolve("a")
+        assert rule.dataspace.consent_required is True
+        assert rule.dataspace.contract_required is True
+
+    def test_the_tightening_rules_hold_across_the_deprecated_spelling(
+        self, tmp_path: Path
+    ):
+        """A base written the old way, an overlay written the new way, still ORs.
+
+        `policy:` is folded into `dataspace:` **per block, at parse time**
+        (`resolver._fold_legacy_policy`), so by the time the merge runs there is
+        one spelling and the two files cannot disagree about which block a fact was
+        in. This is what makes the deprecated form safe to keep rather than merely
+        readable: a deployment can migrate its overlay without migrating the file
+        it overlays, and the tightening rules do not care.
         """
         from ds.governance.resolver import GovernanceResolver
 
@@ -661,9 +711,9 @@ class TestOverlay:
             {
                 "sources": {
                     "a": {
-                        "policy": {
-                            "consent": {"required": False},
-                            "obligations": {"contract_required": False},
+                        "dataspace": {
+                            "consent_required": False,
+                            "contract_required": False,
                         }
                     }
                 }
@@ -673,8 +723,8 @@ class TestOverlay:
         rule = GovernanceResolver.from_file_with_override(
             tmp_path / "governance.yaml", overlay_name="prod"
         ).resolve("a")
-        assert rule.policy.consent.required is True
-        assert rule.policy.obligations.contract_required is True
+        assert rule.dataspace.consent_required is True
+        assert rule.dataspace.contract_required is True
 
 
 class TestResultSerialization:

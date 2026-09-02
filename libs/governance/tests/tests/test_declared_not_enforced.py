@@ -21,7 +21,6 @@ from ds.governance.compliance.checks import UNENFORCED_DECLARATIONS
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import (
     DataspaceContract,
-    DataspacePolicy,
     DataspaceSpec,
     GovernanceRuleV2,
     PolicyObligations,
@@ -107,16 +106,14 @@ def test_a_collision_reintroduced_by_configuration_fails_the_gate(tmp_path: Path
         tmp_path,
         {
             "sources": {
-                "a": {
-                    **exposed_dataset(),
-                    "dataspace": {
-                        "expose": True,
+                "a": exposed_dataset(
+                    dataspace={
                         "contract": {
                             "access_policy_id": "same-id",
                             "contract_definition_id": "same-id",
-                        },
-                    },
-                }
+                        }
+                    }
+                )
             }
         },
     )
@@ -145,7 +142,7 @@ def test_every_unenforced_field_is_still_unenforced(label, dotted, _c):
     rule = GovernanceRuleV2(
         access_level="open",
         classification="green",
-        policy=DataspacePolicy(
+        dataspace=DataspaceSpec(
             obligations=PolicyObligations(
                 notify_on_access=True, anonymize_before_use=True
             ),
@@ -167,14 +164,12 @@ def test_a_validity_window_is_reported_rather_than_silently_ignored(tmp_path: Pa
         tmp_path,
         {
             "sources": {
-                "a": {
-                    **exposed_dataset(),
-                    "policy": {
-                        "purpose": ["GridMonitoring"],
+                "a": exposed_dataset(
+                    dataspace={
                         "valid_from": "2026-01-01",
                         "valid_until": "2026-12-31",
-                    },
-                }
+                    }
+                )
             }
         },
     )
@@ -183,8 +178,8 @@ def test_a_validity_window_is_reported_rather_than_silently_ignored(tmp_path: Pa
         w for w in result.asdict()["warnings"] if w["check"] == "declared-not-enforced"
     ]
     assert {w["message"].split(" is declared")[0] for w in warnings} == {
-        "policy.valid_from",
-        "policy.valid_until",
+        "dataspace.valid_from",
+        "dataspace.valid_until",
     }
     assert result.passed, "an unimplemented platform feature is not an invalid file"
 
@@ -197,16 +192,14 @@ def test_unenforced_obligations_are_reported(tmp_path: Path):
         tmp_path,
         {
             "sources": {
-                "a": {
-                    **exposed_dataset(),
-                    "policy": {
-                        "purpose": ["GridMonitoring"],
+                "a": exposed_dataset(
+                    dataspace={
                         "obligations": {
                             "notify_on_access": True,
                             "anonymize_before_use": True,
-                        },
-                    },
-                }
+                        }
+                    }
+                )
             }
         },
     )
@@ -273,8 +266,8 @@ def test_a_dataset_missing_a_mandatory_dcat_property_fails(tmp_path: Path):
             "sources": {
                 "a": {
                     "access_level": "open",
-                    "policy": {"purpose": ["GridMonitoring"]},
                     "dataspace": {
+                        "purpose": ["GridMonitoring"],
                         "expose": True,
                         "data_address": {"base_url": "http://dataset-api:30002"},
                     },

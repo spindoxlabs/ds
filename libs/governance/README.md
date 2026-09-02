@@ -24,11 +24,15 @@ This library provides the EDC side of that shared contract. It is fully backward
 
 `GovernanceRuleV2` extends `GovernanceRule` (v1) with:
 
-- `DataspacePolicy` — permitted/prohibited actions, purpose, validity dates, obligations, audience, and consent requirements
 - `DataspaceAsset` — asset ID and content type for EDC
 - `DataspaceDataAddress` — HTTP data address for the EDC data plane proxy
 - `DataspaceContract` — policy and contract definition IDs for EDC
-- `DataspaceConfig` — the `dataspace:` block: `contract_required`, `consent_required`, `odrl_action`, `purpose`, `medallion`, `asset`, `data_address`, `contract`
+- `DataspaceSpec` — the `dataspace:` block, and it is the whole of it: exposure and
+  medallion, `purpose`, `consent_required` / `contract_required` / `odrl_action`, the EDC
+  `asset` / `data_address` / `contract`, `sharing_offers`, and the ODRL view —
+  permitted and prohibited actions, validity dates, obligations, audience, consent scope
+  and revocation behaviour. A `policy:` block held that last group until 2026-09-02 and is
+  now a deprecated spelling folded into this one when a file is read
 
 `DcatConfig` and `DataspaceConfig` are parsed from the YAML but `DcatConfig` is primarily consumed by dataset-api, not by this library.
 

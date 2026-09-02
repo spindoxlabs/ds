@@ -13,7 +13,6 @@ from pathlib import Path
 
 import pytest
 from ds.governance.models import (
-    DataspacePolicy,
     DataspaceSpec,
     GovernanceRuleV2,
     load_odrl_profile,
@@ -44,8 +43,11 @@ def _rule(
         access_level="open",
         classification="green",
         expose=expose,
-        dataspace=DataspaceSpec(expose=True, sharing_offers=sharing_offers or []),
-        policy=DataspacePolicy(purpose=purposes or []),
+        dataspace=DataspaceSpec(
+            expose=True,
+            sharing_offers=sharing_offers or [],
+            purpose=purposes or [],
+        ),
     )
 
 

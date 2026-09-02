@@ -96,7 +96,7 @@ files ended up describing one mechanism differently. The site is the source:
 | Topic | Page |
 |---|---|
 | How `governance.yaml` becomes an ODRL offer — actions, prohibitions, constraints, obligations | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
-| Why purposes come from `policy.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
+| Why purposes come from `dataspace.purpose[]` and never from `tags` | [Governance & ODRL](https://spindoxlabs.github.io/ds/rulebook/policies/) |
 | Consent lifecycle, the circle, material-change rules, the enforcement matrix | [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) |
 | Revocation — why EDC's policy monitor terminates transfers and this service does not | [Personal data](https://spindoxlabs.github.io/ds/rulebook/personal-data/) |
 | Subject identity, the identifier cascade, unbound subjects | [this service's page](https://spindoxlabs.github.io/ds/services/connector/) |

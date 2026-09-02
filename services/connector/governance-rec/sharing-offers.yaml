@@ -11,7 +11,7 @@
 #
 # Validated by `task compliance:validate` — an offer whose purpose is not in
 # the ODRL profile, whose datasets do not resolve, or whose datasets do not
-# declare the offer's purpose in policy.purpose[] fails the gate.
+# declare the offer's purpose in dataspace.purpose[] fails the gate.
 
 # The controller functions each named controller is unbundled into — the
 # vocabulary `recipients.controller_role` is checked against, and the only

@@ -84,7 +84,7 @@ def requires_consent(rule: GovernanceRuleV2) -> bool:
     while the warning names what is missing.
     """
     return bool(
-        rule.policy.consent.required
+        rule.dataspace.consent_required
         or rule.row_filters
         or rule.user_filter_column
         or rule.classification == "pii"
@@ -165,23 +165,23 @@ class GovernanceMapper:
     def to_odrl_offer(self, dataset_key: str, rule: GovernanceRuleV2) -> dict[str, Any]:
         """Return a full ODRL Offer dict for the given dataset."""
         p = self.profile
-        policy = rule.policy
+        space = rule.dataspace
         access_level = rule.access_level or "internal"
 
-        action_keys = policy.permitted_actions or _LEVEL_ACTION_KEYS.get(
+        action_keys = space.permitted_actions or _LEVEL_ACTION_KEYS.get(
             access_level, ["{query}"]
         )
         permitted = self._resolve_actions(action_keys)
-        prohibited = policy.prohibited_actions or _CLASS_PROHIBITIONS.get(
+        prohibited = space.prohibited_actions or _CLASS_PROHIBITIONS.get(
             rule.classification or "green", []
         )
-        purposes = self._purpose_iris(policy.purpose)
+        purposes = self._purpose_iris(space.purpose)
 
         offer_id = f"urn:offer:{self.participant_id}:{dataset_key.replace('.', ':')}"
 
         permissions = [
             self._build_permission(
-                action, access_level, rule.access_requirements, purposes, policy, rule
+                action, access_level, rule.access_requirements, purposes, rule
             )
             for action in permitted
         ]
@@ -226,10 +226,10 @@ class GovernanceMapper:
         access_level: str,
         access_requirements: str | None,
         purposes: list[str],
-        policy: Any,
         rule: GovernanceRuleV2,
     ) -> dict[str, Any]:
         p = self.profile
+        space = rule.dataspace
         constraints: list[dict[str, Any]] = []
 
         # Membership constraint — driven by access_requirements when set, else by access_level
@@ -239,7 +239,7 @@ class GovernanceMapper:
             "restricted",
         )
         if needs_membership:
-            scope = policy.audience.required_scope
+            scope = space.audience.required_scope
             if rule.ownership:
                 owner_alias = rule.ownership[0].name
                 if reqs == "partner":
@@ -255,7 +255,7 @@ class GovernanceMapper:
             )
 
         # Contract gate — `access_requirements: contract`, `access_level:
-        # restricted`, or an explicit `obligations.contract_required`. The EDC
+        # restricted`, or an explicit `dataspace.contract_required`. The EDC
         # extension evaluates this as the explicit policy acknowledgement
         # performed by negotiation.
         #
@@ -271,7 +271,7 @@ class GovernanceMapper:
         if (
             reqs == "contract"
             or access_level == "restricted"
-            or policy.obligations.contract_required
+            or space.contract_required
         ):
             constraints.append(
                 {
@@ -365,7 +365,7 @@ class GovernanceMapper:
 
     def _build_obligations(self, rule: GovernanceRuleV2) -> list[dict[str, Any]]:
         obligations: list[dict[str, Any]] = []
-        ob = rule.policy.obligations
+        ob = rule.dataspace.obligations
 
         delete_days = ob.delete_after_days or rule.retention_days
         if delete_days:
@@ -401,9 +401,9 @@ class GovernanceMapper:
         return obligations
 
     def _purpose_iris(self, declared: list[str]) -> list[str]:
-        """Expand ``policy.purpose[]`` to full profile IRIs, order-preserving.
+        """Expand ``dataspace.purpose[]`` to full profile IRIs, order-preserving.
 
-        ``policy.purpose[]`` is the *only* runtime source of a dataset's
+        ``dataspace.purpose[]`` is the *only* runtime source of a dataset's
         purposes.  Entries may be written as slugs or as full IRIs; anything
         that is neither a known slug nor an absolute IRI is dropped here and
         reported by the ``purpose-declared`` compliance check, so a typo cannot
@@ -431,7 +431,7 @@ class GovernanceMapper:
     # It is worth being clear why it does not come back rather than only that it
     # went. The unit's own rule is *purposes are declared, never derived from
     # tags*: a tag is a topic, a purpose is a reason for processing, and
-    # `policy.purpose[]` is the only runtime source. A helper that turns the
+    # `dataspace.purpose[]` is the only runtime source. A helper that turns the
     # first into the second is the wrong shape to have lying around next to the
     # emitter, however carefully its docstring disclaims itself — the next reader
     # sees a supported conversion. `OdrlProfile.tag_to_purpose` stays: it is

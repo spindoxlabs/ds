@@ -105,7 +105,7 @@ def _reject_unpublishable(
 
     Three rules, one gate:
 
-    - **Purpose** — an empty or unresolvable ``policy.purpose[]`` would be
+    - **Purpose** — an empty or unresolvable ``dataspace.purpose[]`` would be
       published with *no purpose constraint at all* (`_purpose_iris` drops what it
       cannot resolve; `_build_permission` emits the constraint only for a
       non-empty list). Nothing would limit what a consumer may use it for, and

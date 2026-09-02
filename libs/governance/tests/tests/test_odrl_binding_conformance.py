@@ -46,12 +46,10 @@ import pytest
 
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import (
-    DataspacePolicy,
+    DataspaceSpec,
     GovernanceOwner,
     GovernanceRuleV2,
     OdrlProfile,
-    PolicyConsent,
-    PolicyObligations,
     PurposeConcept,
 )
 
@@ -76,7 +74,7 @@ _PROFILE = OdrlProfile(
 # emitting the term — but it is how `ds:accessScope` sat in the enforcement
 # surface for as long as it did, so each one is listed with its reason.
 _ALLOWED_UNEMITTED = {
-    # ODRL's default action. Selectable through `policy.permitted_actions`, and
+    # ODRL's default action. Selectable through `dataspace.permitted_actions`, and
     # EDC's own ContractCoreExtension binds it in these scopes regardless.
     "odrl:use",
     "http://www.w3.org/ns/odrl/2/use",
@@ -200,12 +198,10 @@ def _emitted_terms() -> set[str]:
                         access_requirements=access_requirements,
                         classification="pii" if consent_required else "green",
                         ownership=[GovernanceOwner(name="rec")],
-                        policy=DataspacePolicy(
+                        dataspace=DataspaceSpec(
                             purpose=["EnergyCommunityOperation", "GridMonitoring"],
-                            consent=PolicyConsent(required=consent_required),
-                            obligations=PolicyObligations(
-                                contract_required=contract_required
-                            ),
+                            consent_required=consent_required,
+                            contract_required=contract_required,
                         ),
                     )
                     offer = mapper.to_odrl_offer("datasets.silver.meters_15m", rule)
@@ -219,7 +215,7 @@ def _emitted_terms() -> set[str]:
     # the same operand — asserted here so a change to that branch is covered.
     single = GovernanceRuleV2(
         access_level="open",
-        policy=DataspacePolicy(purpose=["GridMonitoring"]),
+        dataspace=DataspaceSpec(purpose=["GridMonitoring"]),
     )
     for permission in mapper.to_odrl_offer("d", single)["odrl:permission"]:
         for constraint in permission.get("odrl:constraint", []):

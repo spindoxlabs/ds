@@ -49,7 +49,7 @@ space follows the stricter statement.
 | # | Rule | Status |
 |---|---|---|
 | C-5 | Access and usage control of offerings are expressed as ODRL policies (`DSSC-PUB-38`) | **Enforced** |
-| C-6 | `dcat:keyword` carries no policy meaning. A dataset's permitted purposes come from `policy.purpose[]` and nowhere else | **Enforced** — `tag_to_purpose` is an authoring default used by scaffolding only |
+| C-6 | `dcat:keyword` carries no policy meaning. A dataset's permitted purposes come from `dataspace.purpose[]` and nowhere else | **Enforced** — `tag_to_purpose` is an authoring default used by scaffolding only |
 | C-7 | A catalogue includes at least one `dcat:DataService` referencing the service that provides its datasets (`DSSC-PUB-41`) | **Enforced** — shape in `ds.governance.dcat`, emitted by both catalogues this platform publishes. The federated index names **each crawled source's** endpoint, not its own: it provides nothing and is advisory (`C-2`), so the service a consumer needs is the provider's |
 | C-8 | A catalogue response references its entries via `dcat:record` rather than inlining them (`DSSC-PUB-45`) | **Enforced, with a declared deviation** — every entry now carries a `dcat:CatalogRecord` (`foaf:primaryTopic`, `dct:modified` = crawl time, `dct:source` = originating catalogue). `dcat:dataset` stays inlined alongside; `PUB-45` says *rather than*. **The deviation is now a decision, not a gap** (2026-08-09): DSP's catalogue spec says a Catalog **MUST** have zero to many Datasets, so `PUB-45`'s form would break a protocol MUST on the surface a counterparty actually reads. See [scope-and-deviations](scope-and-deviations.md) §3.6 |
 

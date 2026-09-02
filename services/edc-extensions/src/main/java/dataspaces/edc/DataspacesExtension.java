@@ -117,7 +117,7 @@ public class DataspacesExtension implements ServiceExtension {
      * that produced it — see {@code EDC-13}.
      *
      * <p>{@code odrl:use} is bound although the mapper does not emit it: it is
-     * ODRL's default action, selectable through {@code policy.permitted_actions},
+     * ODRL's default action, selectable through {@code dataspace.permitted_actions},
      * and EDC's own core binds it in these scopes anyway.
      */
     static final List<String> ACTIONS = List.of(

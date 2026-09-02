@@ -1,7 +1,15 @@
-"""Tests for governance overlay merge (from_file_with_override, _merge_configs, _merge)."""
+"""Tests for governance overlay merge (from_file_with_override, _merge_configs).
+
+`GovernanceResolver._merge` was here too, and it is `celine.governance.merge`'s
+`merge_rules` now — the function the resolver calls directly since ds's `policy`
+block folded into `dataspace:` and left it with nothing of its own to add. These
+tests still parse through `_parse_rule`, which is ds's, because that is what
+decides `model_fields_set` and every rule below turns on it.
+"""
 
 from __future__ import annotations
 
+from celine.governance.merge import merge_rules
 
 from ds.governance.resolver import GovernanceResolver
 
@@ -109,14 +117,14 @@ class TestMergeRuleSemantics:
             {"ownership": [{"name": "old-org"}], "tags": ["a"]}
         )
         override = GovernanceResolver._parse_rule({"ownership": [{"name": "new-org"}]})
-        merged = GovernanceResolver._merge(base, override)
+        merged = merge_rules(base, override)
         assert len(merged.ownership) == 1
         assert merged.ownership[0].name == "new-org"
 
     def test_empty_lists_preserve_base(self, tmp_path):
         base = GovernanceResolver._parse_rule({"ownership": [{"name": "org-a"}]})
         override = GovernanceResolver._parse_rule({})
-        merged = GovernanceResolver._merge(base, override)
+        merged = merge_rules(base, override)
         assert len(merged.ownership) == 1
         assert merged.ownership[0].name == "org-a"
 
@@ -136,16 +144,16 @@ class TestMergeRuleSemantics:
         """
         base = GovernanceResolver._parse_rule({"access_level": "internal"})
         override = GovernanceResolver._parse_rule({})
-        merged = GovernanceResolver._merge(base, override)
+        merged = merge_rules(base, override)
         assert merged.access_level == "internal"
 
         withdrawn = GovernanceResolver._parse_rule({"access_level": None})
-        assert GovernanceResolver._merge(base, withdrawn).access_level is None
+        assert merge_rules(base, withdrawn).access_level is None
 
     def test_tags_union(self):
         base = GovernanceResolver._parse_rule({"tags": ["a", "b"]})
         override = GovernanceResolver._parse_rule({"tags": ["b", "c"]})
-        merged = GovernanceResolver._merge(base, override)
+        merged = merge_rules(base, override)
         assert sorted(merged.tags) == ["a", "b", "c"]
 
 
