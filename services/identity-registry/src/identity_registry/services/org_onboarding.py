@@ -175,10 +175,20 @@ async def upsert_owner_from_application(
     app: OrganizationApplication,
     *,
     verified_by: str | None = None,
+    keep_evidence_ref: bool = False,
 ) -> Owner:
     """Promote a verified application's legal identity into an ``Owner`` row.
 
     Idempotent: re-running updates the existing owner. Sets ``status=verified``.
+
+    ``keep_evidence_ref`` leaves the owner's existing ``evidence_ref`` alone. It
+    exists for one caller — ``_apply_steps`` retaining an owner's own verification
+    against a run's generic evidence ([#26]) — because the copy below is
+    unconditional, and on an owner seeded by ``owner import`` the application it
+    copies from is a row this run just created. Default ``False``, so every other
+    caller keeps the promotion it had.
+
+    [#26]: https://github.com/spindoxlabs/ds/issues/26
     """
     now = datetime.now(UTC)
     result = await db.execute(select(Owner).where(Owner.id == app.alias))
@@ -220,7 +230,8 @@ async def upsert_owner_from_application(
         owner.verified_at = now
     owner.status = "verified"
     owner.verified_by = verified_by or app.verified_by
-    owner.evidence_ref = app.evidence_ref
+    if not keep_evidence_ref:
+        owner.evidence_ref = app.evidence_ref
     owner.updated_at = now
     await db.flush()
     return owner
@@ -734,6 +745,15 @@ class Selection:
     #: no DID. Reported per entry so a skip says what the selector decided rather
     #: than what the entry happens to lack.
     skipped_reason: str = "no dataspace: block"
+    #: Owner id to the reason *that* owner is out, for the entries the selector
+    #: reached and still left out. Different statement from `skipped_reason`,
+    #: which answers for everything the selector never looked at.
+    #:
+    #: [#23](https://github.com/spindoxlabs/ds/issues/23). An owner named by
+    #: governance and carrying no canonical id used to be an **error** that failed
+    #: the whole run; a weather dataset whose consortium has no DID is not a broken
+    #: deployment, and reporting it as one is how a correct deployment gets stuck.
+    skips: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -760,16 +780,48 @@ def select_entries(
       `GET /owners/resolve` exists to answer with, and an entry without one cannot
       be the recipient of anything.
 
-    An alias that resolves to no entry, and an entry carrying no `did`, are both
-    **errors** rather than quiet omissions: a governance file naming an owner the
-    deployment does not declare is a broken deployment, and reporting it as a skip
-    is how it reaches production. Every one is collected so a fourteen-owner file
-    is fixed in one pass.
+    An alias that resolves to no entry is an **error** rather than a quiet
+    omission: a governance file naming an owner the deployment does not declare is
+    a broken deployment, and reporting it as a skip is how it reaches production.
+    Every one is collected so a fourteen-owner file is fixed in one pass.
+
+    **An owner carrying no canonical id is a skip, not an error**
+    ([#23](https://github.com/spindoxlabs/ds/issues/23)). This demanded a `did`
+    from every `ownership[].name` on an exposed dataset, and failed the whole run
+    when one did not have it. But `ownership[]` is not a list of participants — it
+    is a list of **owners**, and the entries carry a `type` saying which kind:
+    `organization` for the participant that operates the connector, `consortium`
+    for the consortium it belongs to, which is attribution. Three real instances
+    hit this, all the same root: `gse` (`type: DATA_OWNER`), `celine`
+    (`type: consortium`, co-owner of every derived weather product), and the open
+    data attribution owners `dwd` / `copernicus` / `openstreetmap` /
+    `overture_maps` / `pat`. The assumption that attribution owners are excluded
+    holds only while their datasets are not exposed, and exposing open data is a
+    normal thing to do.
+
+    **`canonical_uri`, not `did`, is the test.** `OwnerEntry` carries `did` **or**
+    `url` and resolves `canonical_uri` as `self.did or self.url`; the schema says
+    `did` *"takes priority over `url` as the canonical @id once set"*, i.e. `url`
+    is the canonical id until one does. `seed/owners.dev.yaml`'s
+    `open-data-provider` is exactly that shape — a verified owner, a `url`, no DID —
+    and `owner import` has always accepted it. So the selector now asks the
+    question the registry can answer (*do we have a canonical id for this owner?*)
+    instead of one `ownership[]` cannot (*is this one a participant?*).
+
+    **Registered, not promoted.** Nothing further is needed to produce that: the
+    apply chain gates agreement, credential and promotion on `dataspace.accepted`
+    and `dataspace.dsp_address`, which a deployment `owners.yaml` entry never
+    carries, so a url-only owner already stops after register → verify.
+    `_ENTRY_OWNER_FIELDS` copies its `url` onto the owner row, so
+    `GET /owners/resolve` answers for it.
     """
-    # `ds-governance` ships no `py.typed`, so mypy skips it. Silenced here rather
-    # than adding the marker: that would make every other consumer start type-
-    # checking against it in the same change, which is a bigger move than this.
-    from ds.governance import (  # type: ignore[import-untyped]
+    # `ds-governance` ships `py.typed` since
+    # [#24](https://github.com/spindoxlabs/ds/issues/24), so this import is
+    # type-checked like any other. The suppression that stood here was deferred on
+    # the grounds that the marker would make every consumer start checking against
+    # the library at once — which was true, and cost one error across the three of
+    # them (this file's, in `_apply_steps`).
+    from ds.governance import (
         OwnerEntry,
         OwnersRegistry,
         exposed_owner_aliases,
@@ -813,16 +865,25 @@ def select_entries(
                     f"id nor an alias in the owners file"
                 )
                 continue
-            if not owner.did:
-                selection.errors.append(
-                    f"{path}: governance names owner '{alias}' ({owner.id}), which "
-                    f"carries no did — an owner with no DID cannot be resolved by "
-                    f"the services that need it"
+            if not owner.canonical_uri:
+                # Neither a `did` nor a `url`: there is no identifier to publish
+                # for this owner, so onboarding it would register a row nothing
+                # can resolve. A skip with its reason rather than an error —
+                # see the docstring; the run stays green and the operator is
+                # told which owner was left out and why.
+                selection.skips.setdefault(
+                    owner.id,
+                    "governance names it, and it carries neither did nor url — "
+                    "nothing to resolve it by",
                 )
                 continue
             chosen.setdefault(owner.id, by_id[owner.id])
 
-    if not chosen and not selection.errors:
+    # `selection.skips` counts here: a run whose every named owner was skipped for
+    # a stated reason has already told the operator what happened, and adding
+    # "nothing would be onboarded" on top would turn a reported skip back into the
+    # run failure #23 removed.
+    if not chosen and not selection.errors and not selection.skips:
         selection.errors.append(
             "no exposed dataset in "
             + ", ".join(str(p) for p in governance_paths)
@@ -1071,13 +1132,37 @@ async def _apply_steps(
     # silently downgrade the evidence behind an issued credential. Free
     # verification is the state T30 closed, and this is the same hole from the
     # other side. A per-entry `dataspace:` block is not per-run and still wins.
+    #
+    # **Read from the owner as well as the application**
+    # ([#26](https://github.com/spindoxlabs/ds/issues/26)). This checked `app_row`
+    # alone, and the plan that added the guard said *"an owner already verified by
+    # something other than this run's evidence-ref must be left alone"* — the
+    # subject of that sentence is the **owner**. An owner created by
+    # `ir-cli owner import` has no `OrganizationApplication` at all, so `app_row`
+    # was created fresh in this run carrying `verified_by = None`, the guard never
+    # fired, and the run's generic string was written over the seed's own claim.
+    # That is the chart bootstrap's own sequence — `owner import` then `org apply`
+    # — so any deployment setting `bootstrap.orgApply.verifiedBy` rewrote the
+    # evidence of every owner its seed had already verified.
+    #
+    # `app_row` is still consulted, and first: where both exist it is the row this
+    # command maintains, and an application verified by something other than this
+    # run is the case the guard was written for.
+    prior_verified_by = app_row.verified_by or (
+        owner_before.verified_by if owner_before is not None else None
+    )
     retained_evidence = (
         per_run_evidence
-        and app_row.verified_by is not None
-        and app_row.verified_by != str(verified_by)
+        and prior_verified_by is not None
+        and prior_verified_by != str(verified_by)
     )
     if retained_evidence:
-        verified_by = app_row.verified_by
+        verified_by = prior_verified_by
+        # `None` means *do not write* — for the application below, and for the
+        # owner via `app_row.evidence_ref`. Left unguarded, a retained
+        # `verified_by` was paired with the run's own `evidence_ref`, so the two
+        # halves of one claim came from different runs: the guard kept the name
+        # and the write replaced what it rested on.
         evidence_ref = None
 
     if app_row.status != "verified":
@@ -1090,7 +1175,15 @@ async def _apply_steps(
     await db.flush()
 
     owner = await upsert_owner_from_application(
-        db, app_row, verified_by=str(verified_by)
+        db,
+        app_row,
+        verified_by=str(verified_by),
+        # Retained evidence keeps the owner's own `evidence_ref` too. The promotion
+        # writes `owner.evidence_ref = app.evidence_ref` unconditionally, and on
+        # the `owner import` shape that application is this run's fresh row — so
+        # guarding `verified_by` alone left the name kept and the reference behind
+        # it replaced. #26 names both fields.
+        keep_evidence_ref=retained_evidence,
     )
 
     # The owner's presentation and lookup keys come from the entry itself, so
@@ -1110,7 +1203,13 @@ async def _apply_steps(
         detail = f"kept existing evidence: verified by {verified_by}"
     elif was_verified:
         verification = "unchanged"
-        detail = f"verified by {verified_by}"
+        # The **stored** claim, not this run's. This printed `verified_by`, which
+        # on a run that changed nothing is the run's own flag — so the output read
+        # `unchanged  verified by <this run>` while the database said something
+        # else, and the one line an operator checks was the line that hid the
+        # overwrite (#26).
+        stored = owner_before.verified_by if owner_before is not None else None
+        detail = f"verified by {stored or verified_by}"
     else:
         verification = "advanced" if owner_before else "created"
         detail = f"verified by {verified_by}"

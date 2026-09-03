@@ -36,6 +36,29 @@ class Settings(BaseSettings):
     #: gets a check that refuses to run rather than one that passes everybody.
     conformity_criteria_path: str = "seed/conformity.dev.yaml"
 
+    #: Refuse a machine-local `did:web` on the HTTP write paths.
+    #:
+    #: [#25](https://github.com/spindoxlabs/ds/issues/25). `services/did.py`
+    #: classifies a DID whose host resolves only on one machine — `localhost`,
+    #: loopback, `.localhost` (RFC 6761), `.local` (RFC 6762) — and the CLI
+    #: refuses one under `DS_ENV=production` on both seed entry points. No HTTP
+    #: route did, so a production registry accepted over the API exactly what it
+    #: refused from a file. The row is not dangerous, it is *dead*: nobody outside
+    #: that machine can fetch the document, so `GET /owners/resolve` answers with a
+    #: DID that resolves nowhere.
+    #:
+    #: **Off by default, and deliberately not keyed on `DS_ENV`.** The CLI's
+    #: posture — production unless told otherwise — is right for a seed applied at
+    #: bootstrap and wrong for a live API: a failed bootstrap is a deploy an
+    #: operator retries, an API that refuses is an operator locked out of their own
+    #: registry if the classifier ever misjudges a host that genuinely serves. Off
+    #: by default also means nothing changes for any deployment when this lands.
+    #:
+    #: Not ANDed with `DS_ENV` either, so the refusal is reachable in the only
+    #: environments where dev DIDs exist. A guard whose first real execution is in
+    #: production has not been tested.
+    refuse_dev_dids: bool = False
+
     oidc_issuer_url: str | None = Field(
         default=None,
         description="OIDC issuer URL for JWT verification on admin endpoints",

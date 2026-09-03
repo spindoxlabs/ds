@@ -281,6 +281,30 @@ prefixed form does not work.
 | `IDENTITY_REGISTRY_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-identity-registry` | own credentials; the id is the expected JWT audience. The secret is **refused at its dev default in production** |
 | `IDENTITY_REGISTRY_OIDC_GROUP_ALIASES` | `""` | JSON map: foreign group → ds role bundle |
 
+### Machine-local DIDs
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `IDENTITY_REGISTRY_REFUSE_DEV_DIDS` | `false` | refuse a `did:web` whose host resolves only on one machine — `localhost`, loopback, `.localhost` (RFC 6761), `.local` (RFC 6762) — on the five HTTP routes that write a DID. `422`, naming the route and the field |
+
+A `did:web` is a URL, so the host **is** the identity, and one that resolves nowhere produces
+a *dead* owner row: `GET /owners/resolve` answers with a DID nothing can fetch. `ir-cli`
+already refuses one from a seed file under `DS_ENV=production` (`owner import`, `org apply`),
+and until [#25](https://github.com/spindoxlabs/ds/issues/25) no HTTP route did — a production
+registry accepted over the API exactly what it refused from a file.
+
+**Off by default, and not keyed on `DS_ENV`.** The CLI's production-by-default posture is
+right for a seed applied at bootstrap and wrong for a live API: a failed bootstrap is a deploy
+an operator retries, an API that refuses is an operator locked out of their own registry if
+the classifier misjudges a host that genuinely serves. Off by default means enabling it is a
+deployment's decision; not keyed on `DS_ENV` means the refusal is reachable in the
+environments where dev DIDs actually exist, so it is tested before it first runs in production
+— and a staging deployment that wants it can have it.
+
+The routes: `POST /admin/owners`, `PUT /admin/owners/{owner_id}`,
+`POST /onboarding/applications`, `PATCH /admin/organizations/applications/{id}`,
+`PATCH /admin/owners/{alias}`.
+
 ### Keycloak (no prefix)
 
 | Variable | Default | Meaning |

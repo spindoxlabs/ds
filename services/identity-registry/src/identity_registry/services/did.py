@@ -189,3 +189,48 @@ def dev_only_did_reason(did: str) -> str | None:
                 "and resolves nowhere else"
             )
     return None
+
+
+def refuse_dev_only_did(
+    did: str | None, *, route: str, field: str = "did", settings=None
+) -> None:
+    """Refuse a machine-local ``did:web`` on an HTTP write path, if enabled.
+
+    [#25](https://github.com/spindoxlabs/ds/issues/25). The classifier above is
+    shape-only and says nothing about whether a dev DID is allowed; this is the
+    HTTP caller that decides, and it decides by one setting —
+    ``IDENTITY_REGISTRY_REFUSE_DEV_DIDS``, off by default. See the setting's own
+    comment for why it is a flag rather than ``DS_ENV``, and why nothing changes
+    for a deployment that does not set it.
+
+    ``route`` and ``field`` are **not** decoration. The CLI guard writes to stderr
+    beside the file it was reading; an operator here gets a ``422`` out of a client
+    with none of that context, so the message has to carry which call was refused
+    and which field carried the value. It names the flag too — a refusal that does
+    not say how to lift it is a support ticket.
+
+    ``422`` rather than ``400``: a well-formed request whose content is refused,
+    which is what this service answers ``422`` for throughout
+    (``OrgOnboardingError`` carries ``status_code=422``).
+    """
+    if not did:
+        return
+    from ..config import get_settings
+
+    settings = settings or get_settings()
+    if not getattr(settings, "refuse_dev_dids", False):
+        return
+    reason = dev_only_did_reason(did)
+    if reason is None:
+        return
+
+    from fastapi import HTTPException
+
+    raise HTTPException(
+        status_code=422,
+        detail=(
+            f"{did!r} cannot be registered: {reason}. Refused on {route} "
+            f"(field: {field}). Unset IDENTITY_REGISTRY_REFUSE_DEV_DIDS to "
+            f"allow it."
+        ),
+    )

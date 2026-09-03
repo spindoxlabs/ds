@@ -12,9 +12,16 @@ time the wrong DID is in issued credentials and recorded provenance.
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
+from conftest import make_headers
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import async_sessionmaker
 from typer.testing import CliRunner
 
 from identity_registry.cli.main import app as cli
+from identity_registry.config import Settings
+from identity_registry.dependencies import get_db, get_settings_dep
+from identity_registry.main import create_app
 from identity_registry.services.did import dev_only_did_reason, did_web_host
 
 runner = CliRunner()
@@ -207,3 +214,191 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
     )
 
     assert "greenland.dataspaces.localhost" not in result.output
+
+
+# ── The HTTP write paths ──────────────────────────────────────────
+#
+# [#25](https://github.com/spindoxlabs/ds/issues/25). The classifier above served
+# one caller — the CLI, on the two seed entry points — so a production registry
+# accepted over the API exactly what it refused from a file. The row is not
+# dangerous, it is *dead*: nobody outside that machine can fetch the document, so
+# `GET /owners/resolve` answers with a DID that resolves nowhere, which is the
+# failure the owner-registry chain exists to prevent arriving through the other
+# door.
+#
+# **The flag is the whole switch, and it is off by default.** Not keyed on
+# `DS_ENV`, unlike the CLI guard: a failed bootstrap is a deploy an operator
+# retries, an API that refuses is an operator locked out of their own registry if
+# the classifier ever misjudges a host that genuinely serves. Off by default also
+# means no deployment's behaviour changed when this landed — which is what the
+# `_allowed` half of every pair below asserts, and it is the more important half.
+
+DEV_DID = "did:web:greenland.dataspaces.localhost"
+REAL_DID = "did:web:greenland.celine.example.eu"
+
+
+@pytest_asyncio.fixture
+async def refusing_client(engine):
+    """A client whose registry has the refusal turned on."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with factory() as session:
+            yield session
+
+    settings = Settings(
+        database_url="sqlite+aiosqlite:///:memory:",
+        oidc_issuer_url=None,
+        refuse_dev_dids=True,
+    )
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_settings_dep] = lambda: settings
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac
+
+
+def _owner_body(did: str, owner_id: str = "greenland") -> dict:
+    return {"id": owner_id, "type": "schema:Organization", "name": "G", "did": did}
+
+
+@pytest.mark.asyncio
+async def test_create_owner_refuses_a_dev_did_when_enabled(refusing_client):
+    r = await refusing_client.post(
+        "/admin/owners", json=_owner_body(DEV_DID), headers=make_headers()
+    )
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    # The route and the field, because an operator gets this out of a client with
+    # none of the context the CLI's stderr had — and the flag, because a refusal
+    # that does not say how to lift it is a support ticket.
+    assert "POST /admin/owners" in detail
+    assert "field: did" in detail
+    assert "IDENTITY_REGISTRY_REFUSE_DEV_DIDS" in detail
+
+
+@pytest.mark.asyncio
+async def test_create_owner_allows_a_dev_did_by_default(client):
+    """The half that matters most: nothing changed for anyone who did not opt in."""
+    r = await client.post(
+        "/admin/owners", json=_owner_body(DEV_DID), headers=make_headers()
+    )
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_a_real_did_is_accepted_even_when_the_guard_is_on(refusing_client):
+    """The guard refuses machine-local hosts, not DIDs. A `.eu` host under the
+    same flag goes through, which is what stops this being an off switch for the
+    route."""
+    r = await refusing_client.post(
+        "/admin/owners", json=_owner_body(REAL_DID), headers=make_headers()
+    )
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_update_owner_refuses_a_dev_did_when_enabled(refusing_client):
+    created = await refusing_client.post(
+        "/admin/owners", json=_owner_body(REAL_DID), headers=make_headers()
+    )
+    assert created.status_code == 201
+
+    r = await refusing_client.put(
+        "/admin/owners/greenland",
+        json={"did": DEV_DID},
+        headers=make_headers(),
+    )
+    assert r.status_code == 422
+    assert "PUT /admin/owners/greenland" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_patch_owner_refuses_a_dev_did_when_enabled(refusing_client):
+    created = await refusing_client.post(
+        "/admin/owners", json=_owner_body(REAL_DID), headers=make_headers()
+    )
+    assert created.status_code == 201
+
+    r = await refusing_client.patch(
+        "/admin/owners/greenland",
+        json={"did": DEV_DID},
+        headers=make_headers(),
+    )
+    assert r.status_code == 422
+    assert "PATCH /admin/owners/greenland" in r.json()["detail"]
+
+
+# The two routes above are the ones a person reaches. These are the other three
+# write paths #25 lists, and they need a little setup each — an invite for the
+# public intake, an application row for the PATCH — which is why they are last
+# rather than absent.
+
+
+async def _invite(client) -> str:
+    r = await client.post(
+        "/admin/onboarding/invites",
+        headers=make_headers(scope="identity-registry.organizations.write"),
+        json={},
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["code"]
+
+
+def _application(code: str, did: str) -> dict:
+    return {
+        "invite_code": code,
+        "alias": "acme-energy",
+        "legal_name": "Acme Energy",
+        "roles": ["consumer"],
+        "evidence_ref": "ticket-4711",
+        "did": did,
+    }
+
+
+@pytest.mark.asyncio
+async def test_public_intake_refuses_a_dev_did_when_enabled(refusing_client):
+    """The one unauthenticated write on this service, and the route D.7's portal
+    onboarding will drive — which is #25's own tiebreak for guarding at all."""
+    code = await _invite(refusing_client)
+
+    r = await refusing_client.post(
+        "/onboarding/applications", json=_application(code, DEV_DID)
+    )
+
+    assert r.status_code == 422
+    assert "POST /onboarding/applications" in r.json()["detail"]
+
+
+@pytest.mark.asyncio
+async def test_public_intake_allows_a_dev_did_by_default(client):
+    code = await _invite(client)
+
+    r = await client.post("/onboarding/applications", json=_application(code, DEV_DID))
+
+    assert r.status_code == 201
+
+
+@pytest.mark.asyncio
+async def test_patch_application_refuses_a_dev_did_when_enabled(refusing_client):
+    code = await _invite(refusing_client)
+    created = await refusing_client.post(
+        "/onboarding/applications", json=_application(code, REAL_DID)
+    )
+    assert created.status_code == 201
+    queue = await refusing_client.get(
+        "/admin/organizations/applications",
+        headers=make_headers(scope="identity-registry.organizations.read"),
+    )
+    application_id = queue.json()[0]["id"]
+
+    r = await refusing_client.patch(
+        f"/admin/organizations/applications/{application_id}",
+        json={"did": DEV_DID},
+        headers=make_headers(),
+    )
+
+    assert r.status_code == 422
+    assert application_id in r.json()["detail"]

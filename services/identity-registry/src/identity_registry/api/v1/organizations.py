@@ -35,6 +35,7 @@ from ...schemas.responses import (
 )
 from ...services import org_onboarding as ops
 from ...services import provisioning, trust_list
+from ...services.did import refuse_dev_only_did
 from ...services.enrolment import EnrolmentError
 from ...services.keycloak_admin import KeycloakAdminClient
 from ...services.registry_notify import invalidate_participant_caches
@@ -204,6 +205,7 @@ async def update_application(
     data: UpdateOrganizationApplicationRequest,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_org_write),
+    settings: Settings = Depends(get_settings_dep),
 ):
     result = await db.execute(
         select(OrganizationApplication).where(
@@ -216,6 +218,13 @@ async def update_application(
 
     fields = data.model_dump(exclude_unset=True)
     verifying = fields.get("status") == "verified" and app.status != "verified"
+
+    if "did" in fields:
+        refuse_dev_only_did(
+            fields["did"],
+            route=f"PATCH /admin/organizations/{application_id}",
+            settings=settings,
+        )
 
     for key in (
         "legal_name",
@@ -304,6 +313,7 @@ async def patch_owner(
     data: PatchOwnerRequest,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_org_write),
+    settings: Settings = Depends(get_settings_dep),
 ):
     owner = await ops.resolve_owner(db, alias)
     if not owner:
@@ -311,6 +321,11 @@ async def patch_owner(
 
     fields = data.model_dump(exclude_unset=True)
     new_status = fields.get("status")
+
+    if "did" in fields:
+        refuse_dev_only_did(
+            fields["did"], route=f"PATCH /admin/owners/{alias}", settings=settings
+        )
 
     for key in (
         "name",

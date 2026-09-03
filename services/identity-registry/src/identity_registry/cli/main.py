@@ -1156,9 +1156,11 @@ def _refuse_dev_dids(pairs: list[tuple[str, str]]) -> None:
     is fixed in one pass, the same shape as `ProductionGuard` and the selection
     errors beside it.
     """
-    # `ds-auth` ships no `py.typed`, so mypy skips it — the same silence the
-    # other `ds_auth` imports in this tree carry.
-    from ds_auth.production import is_production  # type: ignore[import-untyped]
+    # `ds-auth` ships `py.typed` (`libs/ds-auth/src/ds_auth/py.typed`), so this is
+    # type-checked like any other import. The comment that stood here said the
+    # opposite and the suppression with it was stale —
+    # [#24](https://github.com/spindoxlabs/ds/issues/24).
+    from ds_auth.production import is_production
 
     from ..services.did import dev_only_did_reason
 
@@ -1984,6 +1986,14 @@ def org_apply(
         )
         for problem in selection.errors:
             typer.echo(f"ERROR  {problem}", err=True)
+        # Skips are reported and do **not** fail the run
+        # ([#23](https://github.com/spindoxlabs/ds/issues/23)): an owner named by
+        # governance that carries no canonical id is attribution — a consortium, an
+        # upstream open-data source — and a weather dataset whose consortium has no
+        # DID is not a broken deployment. Printed before the outcomes so the
+        # operator reads what was left out before what was done.
+        for owner_id, reason in selection.skips.items():
+            typer.echo(f"SKIP   {owner_id}: {reason}", err=True)
         if not selection.ok:
             raise typer.Exit(1)
         # Without run evidence the selection changes nothing: an entry it picks

@@ -13,6 +13,8 @@ the same function.
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 import pytest
 from conftest import make_headers, register_enrolled
 from sqlalchemy import func, select
@@ -480,9 +482,17 @@ def _owners() -> list[dict]:
             "did": "did:web:rec.dataspaces.localhost",
             "aliases": ["rec"],
         },
-        # Attribution metadata for open data: no connector, no DID, and it must
-        # never be registered as an organisation.
-        {"id": "openstreetmap", "name": "OpenStreetMap"},
+        # Attribution metadata for open data: no connector, no DID. It carries a
+        # `url`, which `OwnerEntry.canonical_uri` resolves as the canonical id
+        # until a DID is set — the `seed/owners.dev.yaml` shape that
+        # `owner import` has always accepted (#23).
+        {
+            "id": "openstreetmap",
+            "name": "OpenStreetMap",
+            "url": "https://www.openstreetmap.org",
+        },
+        # Neither a did nor a url: nothing to resolve it by at all.
+        {"id": "nameless-consortium", "name": "A Consortium With No Identifiers"},
     ]
 
 
@@ -588,24 +598,85 @@ def test_an_owner_governance_names_and_the_file_does_not_declare_is_an_error(tmp
     assert selection.entries == []
 
 
-def test_a_selected_owner_carrying_no_did_is_an_error(tmp_path):
-    """The whole point of the run is a resolvable owner. An entry with its `did`
-    still commented out — the state every deployment file starts in — must fail
-    review rather than register an organisation nothing can resolve."""
+def test_an_owner_with_a_url_and_no_did_is_selected(tmp_path):
+    """#23. `ownership[]` is a list of **owners**, not of participants: the entries
+    carry a `type` — `organization` for the participant that operates the
+    connector, `consortium` or `DATA_OWNER` for attribution — and demanding a DID
+    from every one of them failed the whole run on a weather dataset whose
+    co-owner is a consortium.
+
+    `OwnerEntry.canonical_uri` is `did or url`, and `governance.schema.json` says
+    `did` *"takes priority over `url` as the canonical @id once set"* — so a `url`
+    is a canonical id, not the absence of one. `seed/owners.dev.yaml` ships exactly
+    this shape (`open-data-provider`, verified, no DID) and `owner import` accepts
+    it."""
     gov = _governance(
         tmp_path,
         """
         sources:
           datasets.gold.a:
-            ownership: [{name: openstreetmap}]
+            ownership: [{name: openstreetmap, type: open_source}]
             dataspace: {expose: true}
     """,
     )
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
-    assert not selection.ok
-    assert any("carries no did" in e for e in selection.errors)
+    assert selection.ok
+    assert [e["id"] for e in selection.entries] == ["openstreetmap"]
+    assert selection.skips == {}
+
+
+def test_an_owner_with_neither_did_nor_url_is_skipped_not_failed(tmp_path):
+    """#23. There is nothing to resolve this owner by, so it is not onboarded —
+    but a weather dataset whose consortium has no identifier is not a broken
+    deployment, and failing the run is how a correct deployment gets stuck.
+
+    The skip carries its reason, so the operator is told which owner was left out
+    and why rather than reading a green run and assuming everything was done."""
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.gold.a:
+            ownership:
+              - {name: greenland, type: organization}
+              - {name: nameless-consortium, type: consortium}
+            dataspace: {expose: true}
+    """,
+    )
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert selection.ok
+    assert selection.errors == []
+    assert [e["id"] for e in selection.entries] == ["greenland"]
+    assert "nameless-consortium" in selection.skips
+    assert "neither did nor url" in selection.skips["nameless-consortium"]
+
+
+def test_a_run_whose_every_owner_is_skipped_does_not_report_an_empty_selection(
+    tmp_path,
+):
+    """The "nothing would be onboarded" error exists so a silent empty selection
+    is not read as "no organisations needed". A run that skipped every owner *for a
+    stated reason* has already answered that question, and adding the error on top
+    would turn the reported skip back into the run failure #23 removed."""
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.gold.a:
+            ownership: [{name: nameless-consortium, type: consortium}]
+            dataspace: {expose: true}
+    """,
+    )
+
+    selection = ops.select_entries(_owners(), governance_paths=[gov])
+
+    assert selection.ok
+    assert selection.entries == []
+    assert list(selection.skips) == ["nameless-consortium"]
 
 
 def test_every_error_is_reported_in_one_pass(tmp_path):
@@ -617,7 +688,7 @@ def test_every_error_is_reported_in_one_pass(tmp_path):
             ownership: [{name: nobody-here}]
             dataspace: {expose: true}
           datasets.gold.b:
-            ownership: [{name: openstreetmap}]
+            ownership: [{name: also-not-here}]
             dataspace: {expose: true}
     """,
     )
@@ -686,6 +757,11 @@ def test_an_unparseable_governance_file_is_reported_alongside_a_readable_one(
 
 
 def test_without_governance_the_selector_is_carrying_a_did():
+    """Unchanged by #23, and that is the point of asserting it here. The
+    governance selector now accepts a `url` as a canonical id; this one still
+    selects on `did` alone, because without a governance file there is nothing
+    saying an owner is *named* by the deployment — `openstreetmap` carries a url
+    and is still not onboarded."""
     selection = ops.select_entries(_owners(), governance_paths=None)
 
     assert selection.ok
@@ -784,6 +860,76 @@ async def test_run_evidence_never_overwrites_the_entrys_own_evidence(
     verification = next(s for s in second.steps if s.step == "verification")
     assert verification.action == "unchanged"
     assert "kept existing evidence" in verification.detail
+
+
+@pytest.mark.asyncio
+async def test_run_evidence_does_not_overwrite_an_owner_seeded_by_owner_import(
+    db_session, tmp_path
+):
+    """#26 — the same guard, on the shape the test above cannot reach.
+
+    `test_run_evidence_never_overwrites_the_entrys_own_evidence` creates the owner
+    through `apply_owner_entry`, so it always has an `OrganizationApplication` and
+    the guard reading `app_row.verified_by` fires. An owner created by
+    `ir-cli owner import` has **no application at all**: `app_row` was created
+    fresh in the run carrying `verified_by = None`, the guard never fired, and the
+    run's generic string was written over the seed's own claim.
+
+    **This is the chart bootstrap's own sequence** — `owner import`, then
+    `org apply` — so every deployment setting `bootstrap.orgApply.verifiedBy`
+    rewrote the evidence of every owner its seed had already verified.
+
+    Both fields are asserted: `evidence_ref` was not guarded at all, so keeping
+    `verified_by` alone left the name kept and the reference behind it replaced —
+    the two halves of one claim coming from different runs.
+    """
+    settings = await _seed(db_session, tmp_path)
+
+    # The `owner import` shape: an Owner row and no application beside it.
+    db_session.add(
+        Owner(
+            id=ALIAS,
+            type="schema:Organization",
+            name="Example Community Cooperative",
+            did=ORG_DID,
+            status="verified",
+            verified_by="dev-seed",
+            evidence_ref="owners.dev.yaml",
+            verified_at=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+    )
+    await db_session.commit()
+    assert (
+        await db_session.execute(
+            select(func.count()).select_from(OrganizationApplication)
+        )
+    ).scalar() == 0
+
+    outcome = await ops.apply_owner_entry(
+        db_session,
+        settings,
+        {"id": ALIAS, "name": "Example Community", "did": ORG_DID},
+        ops.RunEvidence(
+            verified_by="demo3-dataspace-prod", evidence_ref="env/prod/owners.yaml"
+        ),
+    )
+    await db_session.commit()
+
+    assert outcome.ok
+    owner = (
+        (await db_session.execute(select(Owner).where(Owner.id == ALIAS)))
+        .scalars()
+        .one()
+    )
+    assert owner.verified_by == "dev-seed"
+    assert owner.evidence_ref == "owners.dev.yaml"
+
+    # And the report agrees with the database. `unchanged` printed this run's own
+    # flag, so the one line an operator checks was the line that hid the overwrite.
+    verification = next(s for s in outcome.steps if s.step == "verification")
+    assert verification.action == "unchanged"
+    assert "dev-seed" in verification.detail
+    assert "demo3-dataspace-prod" not in verification.detail
 
 
 @pytest.mark.rule("P-4")

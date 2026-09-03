@@ -10,8 +10,39 @@ consequential, so they are stated at more length than elsewhere.
 
 ## 1. Scope
 
-**Decision: `classification: pii` on a dataset is the switch.** A dataset carrying that
-classification is subject to everything on this page; one that does not, is not.
+**Decision: four declarations gate a dataset, and any one of them alone is enough.**
+
+`classification: pii` is one of them and it is the one with a second consequence, which is
+why this page used to name it as *the* switch. It is not, and the page said so for months
+while the connector implemented something else. `connector.services.consent_vocabulary.requires_consent`
+resolves the gate as the **disjunction** of four declarations
+(`ds.governance.consent.consent_gate`):
+
+| Declaration | Also does |
+|---|---|
+| `dataspace.consent_required: true` | nothing else — it is the explicit statement |
+| `classification: pii` | drives the automatic ODRL prohibitions in [Policies](policies.md) §3 |
+| `row_filters[]` | names the column rows are narrowed by |
+| `user_filter_column` | the legacy spelling of the same, superseded by `row_filters` (`GOV-05`) |
+
+Those are two different consequences of `classification: pii` — gating the dataset, and
+emitting the prohibitions — and this page previously read as though they were one.
+
+**Why the disjunction matters to a reader.** Auditing *"which datasets in this deployment
+are consent-gated?"* by grepping for `classification: pii` gives the wrong answer. Measured
+across `celine-eu/celine-pipelines` on 2026-09-02: **zero** datasets carried
+`classification: pii`, `dataspace.consent_required` was unset everywhere, and fifteen
+personal datasets were gated solely by `row_filters`. By the rule this page used to state,
+none of them were personal; by the rule the connector implements, all fifteen were gated.
+
+**And to a producer.** Adding `row_filters` to a dataset silently makes it consent-gated;
+removing them silently un-gates it, and the file looks *cleaner* afterwards. That direction
+is now an **error** in `check_consent_coherence` — filters present with neither
+`consent_required` nor `pii` is a file asserting per-subject access control while declaring
+the data impersonal — so the un-gating cannot happen quietly any more.
+
+A dataset gated by any of the four is subject to everything on this page; one gated by none
+of them, is not.
 
 `DSSC-XCT-02` requires pseudonymised data and personal data without direct identifiers to
 be treated as personal data. This platform goes further in one direction and must be
@@ -22,10 +53,41 @@ honest about a limit in another:
 | D-1 | Pseudonymised data is personal data. A dataset keyed by device id or subject DID rather than by name is still `pii` | **Declared** — classification is the producer's declaration; nothing detects a misclassification |
 | D-2 | Provenance records carry **codes, pseudonymous DIDs and hashes only — never PII** | **Enforced** by construction across all sixteen event types |
 | D-3 | A dataset may not be reclassified downward (from `pii`) without a documented assessment | **Declared** — no mechanism |
+| D-3a | Any one of the four declarations above gates a dataset; they are ORed, never required together | **Enforced** — `ds.governance.consent.consent_gate`, one predicate for the ODRL offer, the PDP verdict and the compliance report |
+| D-3b | A dataset declaring row-level filtering must also declare that it is personal | **Enforced** — an error in `check_consent_coherence`. Both directions of the coherence check are guarded now; until 2026-09-03 only the unenforceable one was, and a file could rest its whole protection on `row_filters` and pass |
+
+### What a bare `ALLOW` means
+
+`POST /internal/dataplane/authorize` answers `ALLOW` with no row filter when
+`consent_gate` finds **none** of the four declarations. That verdict is reached by
+*absence*, not by assertion: nothing in the file said "this data is impersonal" — nothing
+said anything, and the gate found nothing to object with.
+
+That is worth knowing when reading a decision, because it means the verdict cannot
+distinguish *a producer who considered this and declared it impersonal* from *a producer who
+never filled the fields in*. Making the open path positive — requiring an explicit
+`consent_required: false` before the unfiltered path is taken — would turn silence into a
+refusal instead of a permission, which is the rule `DataplaneRowFilter`'s `extra="forbid"`
+already applies one layer down. It is **not** implemented: it is a fail-closed change that
+refuses datasets which pass today and needs every deployment's governance updated first, so
+it is a decision this page has to take before it is code
+([#21](https://github.com/spindoxlabs/ds/issues/21), direction 3). Open.
+
+Which declaration gated a dataset is recorded at the decision point — `consent_gate` names
+its signals and the authorize path logs them — so a verdict can be traced back to the line
+in `governance.yaml` that produced it. The verdict's own `reason` is a token a PEP matches
+on and does not carry them.
 
 **The limit worth stating plainly:** classification is asserted, not derived. If a producer
 declares a personal dataset `green`, none of the protections on this page apply and nothing
 in the platform will notice.
+
+**One narrow exception, since 2026-09-03.** A dataset carrying a subject-keyed row filter is
+evidence the platform *could* notice, and `check_consent_coherence` now does — not by
+deriving the classification, which stays the producer's declaration, but by refusing the
+combination as incoherent. Whether `classification` should be derivable at all is a separate
+question and is deliberately still open
+([#21](https://github.com/spindoxlabs/ds/issues/21), direction 4).
 
 ## 2. Legal bases
 

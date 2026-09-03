@@ -431,11 +431,14 @@ async def _authorize_dataset(
     # rest on exactly one of them —
     # https://github.com/spindoxlabs/ds/issues/21.
     log.info(
-        "dataplane authorize: %s is %s", dataset_id, gate.reason, extra={
+        "dataplane authorize: %s is %s",
+        dataset_id,
+        gate.reason,
+        extra={
             "dataset_id": dataset_id,
             "consent_gated": gate.gated,
             "consent_signals": list(gate.signals),
-        }
+        },
     )
 
     if not gate:

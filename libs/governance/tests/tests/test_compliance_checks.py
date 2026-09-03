@@ -269,6 +269,101 @@ class TestConsentCoherence:
         )
         assert "consent-coherence" in codes(run(path).warnings)
 
+    # ── the direction the guard was not covering — #21 ────────────
+    #
+    # The two warnings above guard *gated but unenforceable*: consent is declared
+    # and no column can narrow rows by subject. The arm below is the opposite and
+    # was missing, and it is the load-bearing one: `requires_consent` ORs four
+    # signals, so `row_filters` **alone** gates a dataset. Measured across
+    # `celine-eu/celine-pipelines` on 2026-09-02, all 20 `rec`-owned gold datasets
+    # were `classification: green` with `consent_required` unset and fifteen
+    # declared `row_filters` — one arm of the OR gating every personal dataset in
+    # the deployment, and the arm a refactor of the data model reaches for.
+
+    @pytest.mark.rule("D-3b")
+    @pytest.mark.rule("C-10a")
+    def test_filters_without_a_personal_declaration_is_an_error(self, tmp_path: Path):
+        """An **error**, not a warning: the file asserts per-subject access control
+        while declaring the data impersonal, and those cannot both be true."""
+        path = write_governance(
+            tmp_path,
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        classification="green",
+                        row_filters=[
+                            {"handler": "by_subject", "args": {"column": "device_id"}}
+                        ],
+                    )
+                }
+            },
+        )
+        result = run(path)
+
+        assert not result.passed
+        assert "consent-coherence" in codes(result.errors)
+
+    @pytest.mark.rule("D-3b")
+    @pytest.mark.rule("C-10a")
+    def test_the_legacy_filter_spelling_is_caught_too(self, tmp_path: Path):
+        """`user_filter_column` is superseded by `row_filters` and is still one of
+        the four signals, so it gates a dataset on its own and has to be checked on
+        its own."""
+        path = write_governance(
+            tmp_path,
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        classification="green", user_filter_column="device_id"
+                    )
+                }
+            },
+        )
+        assert "consent-coherence" in codes(run(path).errors)
+
+    @pytest.mark.rule("D-3b")
+    @pytest.mark.rule("C-10a")
+    @pytest.mark.parametrize(
+        "declaration",
+        [
+            {"classification": "pii"},
+            {"dataspace": {"consent_required": True}},
+        ],
+        ids=["pii", "consent_required"],
+    )
+    def test_either_declaration_makes_the_filters_coherent(
+        self, tmp_path: Path, declaration
+    ):
+        """Both halves of *declares personal* clear it. Requiring `consent_required`
+        specifically would make `classification: pii` — the rulebook's own switch —
+        insufficient on its own, which is the opposite of what the page says."""
+        path = write_governance(
+            tmp_path,
+            {
+                "sources": {
+                    "a": exposed_dataset(
+                        row_filters=[
+                            {"handler": "by_subject", "args": {"column": "device_id"}}
+                        ],
+                        **declaration,
+                    )
+                }
+            },
+        )
+        assert "consent-coherence" not in codes(run(path).errors)
+
+    @pytest.mark.rule("D-3b")
+    @pytest.mark.rule("C-10a")
+    def test_a_dataset_with_no_filters_at_all_is_not_caught_by_this_arm(
+        self, tmp_path: Path
+    ):
+        """The check fires on a **contradiction**, not on the absence of consent
+        machinery. An ordinary impersonal dataset declares neither and is fine."""
+        path = write_governance(
+            tmp_path, {"sources": {"a": exposed_dataset(classification="green")}}
+        )
+        assert "consent-coherence" not in codes(run(path).errors)
+
     @pytest.mark.rule("C-9")
     def test_empty_row_filter_column_is_an_error(self, tmp_path: Path):
         path = write_governance(

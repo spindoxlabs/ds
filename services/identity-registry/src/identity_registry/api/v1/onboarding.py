@@ -24,8 +24,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...config import Settings
 from ...db.models import EnrolmentToken, OnboardingInvite, OrganizationApplication
-from ...dependencies import get_db, require_org_read, require_org_write
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_org_read,
+    require_org_write,
+)
 from ...schemas.requests import (
     CreateEnrolmentTokenRequest,
     CreateInviteRequest,
@@ -39,6 +45,7 @@ from ...schemas.responses import (
     PublicApplicationResponse,
 )
 from ...services import enrolment
+from ...services.did import refuse_dev_only_did
 
 # Operator-facing: issuing and listing invites.
 admin_router = APIRouter(prefix="/admin/onboarding", tags=["onboarding"])
@@ -193,6 +200,7 @@ async def list_invites(
 async def submit_application(
     data: PublicOrganizationApplicationRequest,
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
 ):
     """File an organisation application against a valid invite code.
 
@@ -227,6 +235,10 @@ async def submit_application(
         raise HTTPException(
             status_code=409, detail=f"Alias '{data.alias}' is already taken"
         )
+
+    refuse_dev_only_did(
+        data.did, route="POST /onboarding/applications", settings=settings
+    )
 
     application = OrganizationApplication(
         alias=data.alias,

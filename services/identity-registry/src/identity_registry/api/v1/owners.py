@@ -6,15 +6,18 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from ...config import Settings
 from ...db.models import Owner
 from ...dependencies import (
     get_db,
+    get_settings_dep,
     require_org_read,
     require_org_write,
     require_owner_resolve,
 )
 from ...schemas.requests import CreateOwnerRequest, UpdateOwnerRequest
 from ...schemas.responses import OwnerResponse
+from ...services.did import refuse_dev_only_did
 from ...services.org_onboarding import resolve_owner as ops_resolve_owner
 
 router = APIRouter(tags=["owners"])
@@ -61,10 +64,13 @@ async def create_owner(
     data: CreateOwnerRequest,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_org_write),
+    settings: Settings = Depends(get_settings_dep),
 ):
     existing = await db.execute(select(Owner).where(Owner.id == data.id))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Owner already exists")
+
+    refuse_dev_only_did(data.did, route="POST /admin/owners", settings=settings)
 
     status = data.status or "pending"
     verified_by = data.verified_by
@@ -128,6 +134,7 @@ async def update_owner(
     data: UpdateOwnerRequest,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_org_write),
+    settings: Settings = Depends(get_settings_dep),
 ):
     result = await db.execute(select(Owner).where(Owner.id == owner_id))
     owner = result.scalar_one_or_none()
@@ -139,6 +146,9 @@ async def update_owner(
     if data.name is not None:
         owner.name = data.name
     if data.did is not None:
+        refuse_dev_only_did(
+            data.did, route=f"PUT /admin/owners/{owner_id}", settings=settings
+        )
         owner.did = data.did
     if data.url is not None:
         owner.url = data.url
