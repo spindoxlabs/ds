@@ -202,3 +202,43 @@ which is the thing `D-47` exists to rule out.
 {{- printf "%s.%s" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+The flags the bootstrap invokes `ir-cli org apply` with.
+
+Empty by default, and that default is the invocation this chart has always made:
+entries carrying a `dataspace:` block are walked to a promoted participant and the
+rest are skipped. Against a **deployment's** owners.yaml — whose schema forbids that
+block, deliberately — it applies nothing and exits zero, which is a silent no-op.
+
+`orgApply.governance` is the way out: the run onboards the owners that a governance
+file names as owning a dataset exposed into the dataspace, and `verifiedBy` is the
+run-level evidence that makes an entry with no `dataspace:` block eligible at all.
+The CLI refuses the two apart with exit 2; refusing here as well moves that refusal
+from a CrashLoopBackOff into the diff, which is where `ir.role` already puts its own.
+*/}}
+{{- define "ir.orgApplyFlags" -}}
+{{- $cfg := .Values.bootstrap.orgApply | default dict -}}
+{{- $governance := $cfg.governance | default list -}}
+{{- if and (or $governance $cfg.evidenceRef) (not $cfg.verifiedBy) -}}
+{{- fail "ds-identity-registry: bootstrap.orgApply.governance and .evidenceRef require .verifiedBy — without it every selected entry is skipped for want of evidence and the run reports success having onboarded nobody" -}}
+{{- end -}}
+{{- $mount := .Values.bootstrap.governanceMountPath | default "/governance" -}}
+{{- $flags := list -}}
+{{- range $governance -}}
+{{- $path := ternary (toString .) (printf "%s/%s" $mount (toString .)) (hasPrefix "/" (toString .)) -}}
+{{- $flags = append $flags (printf "--governance %s" ($path | quote)) -}}
+{{- end -}}
+{{- with $cfg.verifiedBy -}}
+{{- $flags = append $flags (printf "--verified-by %s" (. | quote)) -}}
+{{- end -}}
+{{- with $cfg.evidenceRef -}}
+{{- $flags = append $flags (printf "--evidence-ref %s" (. | quote)) -}}
+{{- end -}}
+{{- if $cfg.dryRun -}}
+{{- $flags = append $flags "--dry-run" -}}
+{{- end -}}
+{{- if $flags -}}
+{{- printf " %s" (join " " $flags) -}}
+{{- end -}}
+{{- end -}}

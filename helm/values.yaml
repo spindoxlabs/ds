@@ -205,6 +205,19 @@ authority:
       # Empty → the image's baked-in defaults are used.
       seedConfigMap: "" # owners.yaml / participants.yaml / memberships
       seedMountPath: /seed
+      # A deployment's own governance, as a ConfigMap. Its keys become flat
+      # filenames under the mount — a ConfigMap key cannot contain `/`.
+      governanceConfigMap: ""
+      governanceMountPath: /governance
+      # How `org apply` chooses what to onboard, and on what evidence. All
+      # empty is the historical invocation: a deployment's owners.yaml carries
+      # no `dataspace:` block on any entry, so nothing is applied and the run
+      # exits zero. See docs/deployment/configuration.md.
+      orgApply:
+        governance: [] # paths under governanceMountPath, or absolute
+        verifiedBy: "" # required by governance/evidenceRef; refused at render
+        evidenceRef: ""
+        dryRun: false
 
 # ==============================================================================
 # Participants — one release group per participant

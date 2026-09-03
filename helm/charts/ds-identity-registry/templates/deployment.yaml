@@ -99,7 +99,10 @@ spec:
                 # No STS secret is passed: the trust anchor mints none (`D-51`),
                 # so a promoted organisation's row carries none and the secret
                 # its connector presents to its own STS is that party's to choose.
-                ir-cli org apply --file "$SEED/owners.yaml"
+                # `bootstrap.orgApply` adds the selection and the run evidence a
+                # deployment's own owners.yaml needs to be applied at all — with
+                # none set this is the invocation it has always been.
+                ir-cli org apply --file "$SEED/owners.yaml"{{ include "ir.orgApplyFlags" . }}
               fi
               if [ -f "$SEED/bootstrap.sh" ]; then
                 sh "$SEED/bootstrap.sh"
@@ -114,6 +117,11 @@ spec:
             {{- if .Values.bootstrap.seedConfigMap }}
             - name: seed
               mountPath: {{ .Values.bootstrap.seedMountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.bootstrap.governanceConfigMap }}
+            - name: governance
+              mountPath: {{ .Values.bootstrap.governanceMountPath }}
               readOnly: true
             {{- end }}
           resources:
@@ -179,6 +187,11 @@ spec:
         - name: seed
           configMap:
             name: {{ .Values.bootstrap.seedConfigMap }}
+        {{- end }}
+        {{- if .Values.bootstrap.governanceConfigMap }}
+        - name: governance
+          configMap:
+            name: {{ .Values.bootstrap.governanceConfigMap }}
         {{- end }}
         {{- if .Values.keycloak.sync.enabled }}
         - name: keycloak-config

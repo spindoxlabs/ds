@@ -404,10 +404,44 @@ def check_data_address(
 def check_consent_coherence(
     result: ValidationResult, exposed: list[DatasetEvidence]
 ) -> None:
-    """A dataset's consent declarations must agree with its row-filtering setup."""
+    """A dataset's consent declarations must agree with its row-filtering setup.
+
+    **Three arms, and they guard two different directions.**
+    [#21](https://github.com/spindoxlabs/ds/issues/21).
+
+    The first two are *gated but unenforceable*: a dataset says consent is needed
+    and names no column to narrow rows by, so the gate is a gate in name. Warnings,
+    because the declaration is honest and the file is incomplete.
+
+    The third is *enforced but undeclared*, and it was missing. `requires_consent`
+    ORs four signals, so `row_filters` **alone** gates a dataset — and until this
+    check existed, a file could rest the whole of its protection on that one arm
+    while declaring the data impersonal. Deleting the filters then un-gates the
+    dataset silently, the connector returns a bare `ALLOW`, the data plane serves
+    every row to any counterparty holding an agreement, and the file looks *cleaner*
+    afterwards. Measured across `celine-eu/celine-pipelines` on 2026-09-02: fifteen
+    personal datasets were gated by nothing else.
+
+    An **error** rather than a warning, because it is not an omission — it is a
+    contradiction. A file declaring per-subject access control while declaring the
+    data impersonal is asserting two things that cannot both be true, and the
+    producer is the one who knows which they meant.
+    """
     for item in exposed:
         rule = item.rule
         has_filter = bool(rule.user_filter_column or rule.row_filters)
+        declares_personal = bool(
+            rule.dataspace.consent_required or rule.classification == "pii"
+        )
+        if has_filter and not declares_personal:
+            result.error(
+                "consent-coherence",
+                "row-level filtering is declared but neither "
+                "dataspace.consent_required nor classification: pii is — the file "
+                "asserts per-subject access control while declaring the data "
+                "impersonal, and the filters are then the only thing gating it",
+                item.key,
+            )
         if rule.dataspace.consent_required and not has_filter:
             result.warning(
                 "consent-coherence",

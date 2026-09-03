@@ -91,6 +91,23 @@ class GovernanceResolver:
             )
         with path.open("r", encoding="utf-8") as f:
             raw = yaml.safe_load(f) or {}
+        # Valid YAML that is not a governance file is the same class of mistake
+        # as a path that does not resolve, and it deserves the same answer: the
+        # file named, in one sentence. Without these it surfaced as an
+        # `AttributeError` from a dict comprehension, which tells the operator
+        # who mistyped a path nothing about which path they mistyped.
+        if not isinstance(raw, dict):
+            raise ValueError(
+                f"{path}: not a governance file — its top level is "
+                f"{type(raw).__name__}, and a governance file is a mapping with "
+                "`defaults:` and/or `sources:`."
+            )
+        for section in ("defaults", "sources"):
+            value = raw.get(section)
+            if value is not None and not isinstance(value, dict):
+                raise ValueError(
+                    f"{path}: `{section}:` is {type(value).__name__}, not a mapping."
+                )
         defaults = cls._parse_rule(raw.get("defaults") or {})
         sources = {
             pattern: cls._parse_rule(rule_data or {})

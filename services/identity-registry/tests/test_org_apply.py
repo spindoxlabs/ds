@@ -646,6 +646,45 @@ def test_a_governance_file_exposing_nothing_is_an_error_not_an_empty_run(tmp_pat
     assert selection.entries == []
 
 
+def test_a_governance_path_that_does_not_resolve_is_reported_not_raised(tmp_path):
+    """These paths come from chart values now — `bootstrap.orgApply.governance` —
+    so a typo in a deployment's values must read like every other selection error
+    and reach the operator through the one-pass report, not as a traceback out of
+    an init container."""
+    missing = tmp_path / "typo.yaml"
+
+    selection = ops.select_entries(_owners(), governance_paths=[missing])
+
+    assert not selection.ok
+    assert selection.entries == []
+    assert any(str(missing) in e for e in selection.errors)
+
+
+def test_an_unparseable_governance_file_is_reported_alongside_a_readable_one(
+    tmp_path,
+):
+    """One bad file does not hide the rest: the run collects both and the
+    operator fixes them in one pass, which is what every other error here does."""
+    broken = tmp_path / "broken.yaml"
+    broken.write_text("sources: [this is a list, not a mapping]\n")
+    gov = _governance(
+        tmp_path,
+        """
+        sources:
+          datasets.gold.grid:
+            ownership: [{name: nobody-declares-this}]
+            dataspace: {expose: true}
+    """,
+    )
+
+    selection = ops.select_entries(_owners(), governance_paths=[broken, gov])
+
+    assert not selection.ok
+    assert len(selection.errors) == 2
+    assert any("broken.yaml" in e for e in selection.errors)
+    assert any("nobody-declares-this" in e for e in selection.errors)
+
+
 def test_without_governance_the_selector_is_carrying_a_did():
     selection = ops.select_entries(_owners(), governance_paths=None)
 

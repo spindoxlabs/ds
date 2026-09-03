@@ -363,3 +363,29 @@ def test_a_governance_file_exposing_nothing_names_no_owner(tmp_path):
     )
 
     assert exposed_owner_aliases(path) == []
+
+
+def test_yaml_that_is_not_a_governance_file_names_the_file(tmp_path):
+    """A path that does not resolve already answers in one sentence; valid YAML
+    that is not governance is the same mistake and used to answer with an
+    `AttributeError` from a dict comprehension. The operator who mistyped a path
+    needs to be told which path."""
+    path = tmp_path / "owners.yaml"
+    path.write_text("- id: greenland\n- id: set-distribuzione\n")
+
+    with pytest.raises(ValueError) as exc:
+        GovernanceResolver.from_file(path)
+
+    assert "owners.yaml" in str(exc.value)
+    assert "not a governance file" in str(exc.value)
+
+
+def test_a_sources_section_that_is_not_a_mapping_names_the_section(tmp_path):
+    path = tmp_path / "governance.yaml"
+    path.write_text("sources: [datasets.gold.grid]\n")
+
+    with pytest.raises(ValueError) as exc:
+        GovernanceResolver.from_file(path)
+
+    assert "`sources:`" in str(exc.value)
+    assert "governance.yaml" in str(exc.value)

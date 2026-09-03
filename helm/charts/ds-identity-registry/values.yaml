@@ -127,6 +127,42 @@ bootstrap:
   # (`D-51`): how a party authenticates to its own STS is not the anchor's to
   # decide, so there is nothing to configure here. Each organisation sets its
   # own at its own bootstrap, from the bundle `ir-cli org bundle` renders.
+  #
+  # Governance files the bootstrap selects organisations with. A deployment's
+  # own governance is not this chart's to carry, so it arrives as a ConfigMap
+  # the deployment builds — the same shape `seedConfigMap` already uses.
+  governanceConfigMap: ""
+  governanceMountPath: /governance
+  orgApply:
+    # Empty is the pre-existing invocation and stays the default: a
+    # deployment's owners.yaml carries no `dataspace:` block on any entry, so
+    # `org apply` reads it and applies nothing. That is a silent no-op, and the
+    # three settings below are how a deployment stops it being one.
+    #
+    # Paths are relative to `governanceMountPath` unless they start with `/`.
+    # Each names one governance file; the owners it onboards are those owning a
+    # dataset that file exposes into the dataspace (`dataspace.expose: true`),
+    # resolved through the owners file's own id/alias swap. Derived rather than
+    # listed, so the onboarded set cannot drift from the data published.
+    governance: []
+    # Who verified this run's entries, and what that verification rests on. An
+    # entry with no `dataspace:` block is not eligible without them, so
+    # `governance` and `evidenceRef` both require `verifiedBy` — enforced at
+    # render time, because the failure without it is a successful-looking run
+    # that onboarded nobody.
+    #
+    # It is **run-level** evidence: it applies only where the entry supplies
+    # none of its own, and an owner already verified by something else is left
+    # alone. A deployment's owners file at a known revision is the honest claim
+    # here — e.g. verifiedBy: demo3-dataspace-prod,
+    # evidenceRef: env/prod/owners.yaml.
+    verifiedBy: ""
+    evidenceRef: ""
+    # Report what would change and roll back. For a review or a CI release that
+    # applies the committed files without writing to the registry, so a
+    # governance file naming an owner that carries no DID fails review rather
+    # than deploy.
+    dryRun: false
 
 # Externally reachable base URL of this registry, written into provisioning
 # bundles. Defaults to https://<trust-anchor domain>.

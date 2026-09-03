@@ -356,7 +356,15 @@ verification — a verified owner holding its `did` and `aliases`, which is the 
 `GET /owners/resolve` needs. An agreement acceptance, a credential and a participant promotion
 are legal and topological facts a run flag must not assert, so they stay with the per-entry
 block. An alias governance names that the owners file does not declare, and a selected owner
-carrying no `did`, are **errors** rather than skips, all of them reported in one pass. The `merge` and `mirror`
+carrying no `did`, are **errors** rather than skips, all of them reported in one pass — and so
+is a `--governance` path that does not resolve or is not a governance file, which joins that
+same report rather than raising. Those paths come from
+[chart values](../deployment/configuration.md#onboarding-a-deployments-own-organisations) at a
+deployment's bootstrap, and a mistyped one has to name itself.
+
+**The chart runs this.** `bootstrap.orgApply.{governance,verifiedBy,evidenceRef,dryRun}` are the
+three flags plus the dry run, and with none of them set the bootstrap makes the invocation it
+always has. The `merge` and `mirror`
 commands that used to sit beside it are gone, and ds generates no YAML:
 `celine-policies keycloak sync` takes every file that declares the realm and merges them
 itself, so a host realm mounts [`services/keycloak/clients.yaml`](keycloak.md) directly.

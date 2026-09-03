@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from .consent import requires_consent as requires_consent
 from .models import GovernanceRuleV2, OdrlProfile, subject_column
 
 # No module-level tag→purpose mapping — deployers configure this via
@@ -60,35 +61,16 @@ _CLASS_PROHIBITIONS: dict[str, list[str]] = {
 }
 
 
-def requires_consent(rule: GovernanceRuleV2) -> bool:
-    """Whether this dataset may only be accessed with the subject's consent.
-
-    **One predicate, because there are two readers.** The mapper decides whether
-    the published offer carries a consent constraint; `matrix.py` decides whether
-    the compliance report says the dataset is consent-gated. They disagreed:
-    the matrix included `classification == "pii"` and the mapper did not, so a
-    `pii` dataset with no filter and no `consent.required` was **reported gated
-    and published ungated** — the divergence pointing the wrong way, since the
-    report is what an auditor reads.
-
-    `pii` is in, and it is the rulebook's own switch: *"`classification: pii` on
-    a dataset is the switch. A dataset carrying that classification is subject to
-    everything on this page"* (Rulebook · Personal data). A producer that
-    classifies a dataset `pii` has declared it personal data; publishing it
-    without a consent term would say the opposite on the wire.
-
-    A `pii` dataset with no row filter is a **separate** defect and stays one:
-    `check_consent_coherence` warns *"classified 'pii' but declares no row-level
-    filtering"*, because a gate no column can evaluate per subject is a gate in
-    name. Gating it here does not fix that; it stops the offer under-claiming
-    while the warning names what is missing.
-    """
-    return bool(
-        rule.dataspace.consent_required
-        or rule.row_filters
-        or rule.user_filter_column
-        or rule.classification == "pii"
-    )
+# `requires_consent` was defined here, in full, and the connector then grew a
+# byte-identical second copy of it (`connector.services.consent_vocabulary`). It
+# now lives in `consent.py` and both spellings delegate to it —
+# [#21](https://github.com/spindoxlabs/ds/issues/21). Re-exported here because
+# `from ds.governance.mapper import requires_consent` is what the tests and
+# `__init__` already say, and because this module is still one of its readers.
+#
+# Reach for `consent_gate` instead wherever the *reason* matters: it names which
+# of the four declarations asserted the gate, which is the half that was
+# unrecoverable at the point of use.
 
 
 class GovernanceMapper:

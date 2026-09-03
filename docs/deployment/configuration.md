@@ -141,14 +141,65 @@ Treat that as containment, not authentication.
 | `authority.identityRegistry.bootstrap.enabled` | `true` | run the bootstrap and seed import as an init container |
 | `authority.identityRegistry.bootstrap.seedConfigMap` | `""` | a ConfigMap with `agreements.yaml` / `owners.yaml`; empty → the image's baked-in defaults |
 | `authority.identityRegistry.bootstrap.seedMountPath` | `/seed` | |
+| `authority.identityRegistry.bootstrap.governanceConfigMap` | `""` | a ConfigMap of governance files for `orgApply.governance`; its keys become flat filenames under the mount |
+| `authority.identityRegistry.bootstrap.governanceMountPath` | `/governance` | |
+| `authority.identityRegistry.bootstrap.orgApply.governance` | `[]` | governance files that choose which organisations to onboard; paths are relative to the mount unless absolute |
+| `authority.identityRegistry.bootstrap.orgApply.verifiedBy` | `""` | who verified this run's entries. **Required** by the two keys around it |
+| `authority.identityRegistry.bootstrap.orgApply.evidenceRef` | `""` | what that verification rests on, e.g. `env/prod/owners.yaml` |
+| `authority.identityRegistry.bootstrap.orgApply.dryRun` | `false` | report and roll back instead of writing |
 
 Bootstrap is idempotent by design — every command has upsert semantics — so it is safe on every
 pod start. It runs `agreement import` → `owner import` → `org apply` **in that order**, because
 an organisation inherits its capacity by accepting an agreement version, so the agreements must
 exist first. `org apply` walks the full onboarding chain for every owner entry carrying a
-dataspace block; entries without one are skipped rather than guessed at. A deployment whose
-`owners.yaml` carries no such block onboards its organisations by passing `--verified-by` and
-`--governance` instead — see [the identity-registry service page](../services/identity-registry.md).
+dataspace block; entries without one are skipped rather than guessed at.
+
+### Onboarding a deployment's own organisations
+
+**A deployment's `owners.yaml` carries no `dataspace:` block on any entry, and its schema
+forbids one** — that file is the deployment's domain registry, not a ds seed. So with
+`orgApply` unset the bootstrap reads it, applies nothing and exits zero: a silent no-op, and
+the default only because it is what this chart has always done.
+
+`orgApply` is how a deployment stops it being one:
+
+```yaml
+authority:
+  identityRegistry:
+    bootstrap:
+      governanceConfigMap: ds-governance
+      orgApply:
+        governance: [grid.yaml, rec_it.yaml]
+        verifiedBy: demo3-dataspace-prod
+        evidenceRef: env/prod/owners.yaml
+```
+
+`governance` decides **which** organisations: those owning a dataset the named files expose
+into the dataspace (`dataspace.expose: true`), resolved to owners through the owners file's own
+id/alias swap. Derived rather than listed, so the onboarded set cannot drift from the data
+actually published. With `verifiedBy` alone and no `governance`, the selector is instead every
+entry carrying a `did`.
+
+`verifiedBy` / `evidenceRef` are **run-level** evidence — one claim for the whole invocation,
+honest because what it rests on is this deployment's owners file at this revision. They apply
+only where an entry supplies no evidence of its own: an owner already verified by something
+else keeps its claim and is reported `verification: unchanged`, so re-running the bootstrap
+never downgrades a real verification to a generic one.
+
+The chain deliberately stops at a **verified owner holding its `did` and `aliases`** — which is
+the whole of what `GET /owners/resolve` needs. No agreement is accepted, no credential issued
+and no participant promoted: those are legal and topological facts a run-level flag must not
+assert. See [the identity-registry service page](../services/identity-registry.md).
+
+Two failure modes are made loud rather than silent:
+
+- **`governance` or `evidenceRef` without `verifiedBy` fails at render**, before anything is
+  applied. Without evidence every selected entry would be skipped and the run would report
+  success having onboarded nobody.
+- **A governance file naming an owner the deployment does not declare, or one that carries no
+  DID, fails the whole run** — every such owner reported in one pass, so a fourteen-owner file
+  is fixed once. Set `dryRun: true` to get that report against the committed files without
+  writing, which is what makes a deployment reviewable before it is applied.
 
 ## `participants` — one release group each
 

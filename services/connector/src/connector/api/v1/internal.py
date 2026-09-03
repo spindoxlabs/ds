@@ -421,7 +421,24 @@ async def _authorize_dataset(
     except vocab.VocabularyError:
         return verdict(DENY, "dataset_unknown")
 
-    if not vocab.requires_consent(rule):
+    gate = vocab.consent_gate(rule)
+    # **Which declaration gated it, at the point it is used.** The verdict's
+    # `reason` is a token a PEP matches on and cannot carry this; without the log
+    # line the answer is invisible here and unrecoverable afterwards, so a
+    # recorded *deny, no consent* never said whether the dataset was gated by a
+    # producer's explicit `consent_required` or by a `row_filters` block added for
+    # an unrelated reason. Four signals are ORed and a dataset's protection can
+    # rest on exactly one of them —
+    # https://github.com/spindoxlabs/ds/issues/21.
+    log.info(
+        "dataplane authorize: %s is %s", dataset_id, gate.reason, extra={
+            "dataset_id": dataset_id,
+            "consent_gated": gate.gated,
+            "consent_signals": list(gate.signals),
+        }
+    )
+
+    if not gate:
         # No data subject behind these rows, so nothing to filter on. The
         # agreement gates it and the agreement said yes.
         return verdict(ALLOW)

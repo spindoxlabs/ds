@@ -15,6 +15,9 @@ import logging
 from functools import lru_cache
 from pathlib import Path
 
+from ds.governance.consent import ConsentGate as ConsentGate
+from ds.governance.consent import consent_gate as consent_gate
+from ds.governance.consent import requires_consent as requires_consent
 from ds.governance.models import GovernanceRuleV2, OdrlProfile, load_odrl_profile
 from ds.governance.resolver import GovernanceResolver
 from ds.governance.sharing import (
@@ -145,14 +148,22 @@ def resolve_dataset(dataset_id: str) -> GovernanceRuleV2:
     return get_resolver().resolve(dataset_id)
 
 
-def requires_consent(rule: GovernanceRuleV2) -> bool:
-    """Whether this dataset's rows are gated on a data subject's consent."""
-    return bool(
-        rule.dataspace.consent_required
-        or rule.user_filter_column
-        or rule.row_filters
-        or rule.classification == "pii"
-    )
+# `requires_consent` and `consent_gate` are `ds.governance.consent`'s, re-exported
+# here so every `vocab.requires_consent(...)` call site in this service keeps
+# reading the way it did.
+#
+# **This module used to define its own copy**, byte-identical to the one in
+# `ds.governance.mapper`, and that is what
+# [#21](https://github.com/spindoxlabs/ds/issues/21) is about. The gate is
+# load-bearing in three places — the ODRL offer on the wire, the PDP verdict at
+# `POST /internal/dataplane/authorize`, and the compliance report — and two of
+# them were held in step by nothing but the two functions happening to be typed
+# the same way. That arrangement has already failed once, between the mapper and
+# a since-deleted `matrix.py`, and the divergence pointed at the auditor rather
+# than at the wire.
+#
+# Use `consent_gate` where the *reason* is going into a verdict or a log: it names
+# which of the four declarations gated the dataset, which the boolean cannot.
 
 
 # ── Purposes ─────────────────────────────────────────────────────────────────

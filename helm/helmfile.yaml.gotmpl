@@ -119,6 +119,13 @@ releases:
           enabled: {{ .Values.authority.identityRegistry.bootstrap.enabled }}
           seedConfigMap: {{ .Values.authority.identityRegistry.bootstrap.seedConfigMap | quote }}
           seedMountPath: {{ .Values.authority.identityRegistry.bootstrap.seedMountPath | quote }}
+          governanceConfigMap: {{ .Values.authority.identityRegistry.bootstrap.governanceConfigMap | quote }}
+          governanceMountPath: {{ .Values.authority.identityRegistry.bootstrap.governanceMountPath | quote }}
+          # Passed through whole rather than key by key: a forgotten key here is
+          # a flag that silently stops reaching the bootstrap, which is the
+          # `PT-11` shape — a supply path that omits what was added last.
+          orgApply:
+            {{- toYaml .Values.authority.identityRegistry.bootstrap.orgApply | nindent 12 }}
         keycloak:
           sync:
             enabled: {{ .Values.global.keycloak.sync.enabled }}

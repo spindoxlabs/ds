@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import yaml
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -792,7 +793,19 @@ def select_entries(
     chosen: dict[str, dict] = {}
     by_id = {e["id"]: e for e in entries if e.get("id")}
     for path in governance_paths:
-        for alias in exposed_owner_aliases(path):
+        try:
+            aliases = exposed_owner_aliases(path)
+        except (OSError, ValueError, yaml.YAMLError) as exc:
+            # A path that does not resolve, a file that is not YAML, or one that
+            # is not governance: all three join the other errors instead of
+            # raising. These paths are values now — the chart's
+            # `bootstrap.orgApply.governance` — and a mistyped one should read
+            # like the owner errors below, in the same one-pass report, not as a
+            # traceback out of an init container. `ValueError` covers pydantic's
+            # `ValidationError`, which is what an unparseable rule raises.
+            selection.errors.append(f"{path}: {exc}")
+            continue
+        for alias in aliases:
             owner = registry.by_id(alias)
             if owner is None:
                 selection.errors.append(
