@@ -2002,8 +2002,22 @@ def org_apply(
         selected = {id(e) for e in selection.entries}
         # Only what this run would write. A dev-only DID on an entry the file
         # keeps for its other consumers is not this command's business.
+        #
+        # Selection is not that boundary on its own
+        # ([#27](https://github.com/spindoxlabs/ds/issues/27)): an entry carrying
+        # a `dataspace:` block is applied whether or not the selector picked it,
+        # and that is precisely how a **consumer** is onboarded — `--governance`
+        # names the owners of exposed datasets, so a party that owns no data is
+        # never selected and comes in by its block. Guarding the selection alone
+        # left that entry unguarded, so the set is what reaches
+        # `apply_owner_entry` with a block to apply: the selected ones, plus
+        # every entry that carries its own.
         _refuse_dev_dids(
-            [(e.get("id") or "?", e.get("did") or "") for e in selection.entries]
+            [
+                (e.get("id") or "?", e.get("did") or "")
+                for e in entries
+                if id(e) in selected or e.get("dataspace")
+            ]
         )
 
         settings = get_settings()

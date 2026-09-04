@@ -216,6 +216,56 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
     assert "greenland.dataspaces.localhost" not in result.output
 
 
+def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
+    tmp_path, monkeypatch
+):
+    """The third door on this guard
+    ([#27](https://github.com/spindoxlabs/ds/issues/27)). `apply_owner_entry`
+    skips an entry only when it carries **no** `dataspace:` block, so an entry
+    with one is written whether the selector picked it or not — and that is how a
+    **consumer** is onboarded, since `--governance` selects the owners of exposed
+    datasets and a party that owns no data is never among them. Guarding the
+    selection alone let a machine-local DID through on exactly the entry a
+    deployment's consumer arrives on."""
+    monkeypatch.setenv("DS_ENV", "production")
+    owners = tmp_path / "owners.yaml"
+    owners.write_text(
+        "owners:\n"
+        "  - id: dso\n    did: did:web:dso.ds.celine.example.eu\n"
+        "  - id: spxl\n"
+        "    did: did:web:spxl.dataspaces.localhost\n"
+        "    dataspace:\n"
+        "      legal_name: Spindox Labs S.r.l.\n"
+        "      roles: [consumer]\n"
+    )
+    gov = tmp_path / "governance.yaml"
+    gov.write_text(
+        "sources:\n"
+        "  datasets.gold.a:\n"
+        "    ownership: [{name: dso}]\n"
+        "    dataspace: {expose: true}\n"
+    )
+
+    result = runner.invoke(
+        cli,
+        [
+            "org",
+            "apply",
+            "--file",
+            str(owners),
+            "--governance",
+            str(gov),
+            "--verified-by",
+            "demo3-deployment",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "spxl.dataspaces.localhost" in result.output
+    # The selected entry is servable, and is not reported as a violation.
+    assert "dso.ds.celine.example.eu" not in result.output
+
+
 # ── The HTTP write paths ──────────────────────────────────────────
 #
 # [#25](https://github.com/spindoxlabs/ds/issues/25). The classifier above served
