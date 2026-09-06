@@ -106,7 +106,7 @@ participants through the vocabulary or catalogue services.
 | ODRL | 2.2 core plus this data space's profile | offers, policy definitions |
 | Decentralized Claims Protocol | EDC 0.16.0 implementation | `/sts/*`, `/credentials/*` |
 | W3C Verifiable Credentials | **1.1**, JWT serialisation — superseded upstream, see below | credential issuance |
-| StatusList2021 | **no version; the specification has been withdrawn** — see below | `/status/{list_id}` |
+| StatusList2021 | **no released version** — a 2023 W3C First Public Working Draft, superseded; see below | `/status/{list_id}` |
 | W3C PROV-O | — | provenance events and lineage |
 | DPV | 2.3 | purpose alignment, legal-basis IRIs |
 | OpenID Connect | Keycloak realm | human and service authentication |
@@ -114,8 +114,10 @@ participants through the vocabulary or catalogue services.
 **Two rows are behind their upstream, deliberately and with the cost written down.**
 W3C published [VCDM 2.0](https://www.w3.org/TR/vc-data-model-2.0/) and
 [Bitstring Status List v1.0](https://www.w3.org/TR/vc-bitstring-status-list/) as
-Recommendations on 15 May 2025; ds emits the 1.1 data model and StatusList2021, whose
-own specification text is no longer published at any URL. What each would cost to move,
+Recommendations on 15 May 2025; ds emits the 1.1 data model and StatusList2021, which
+never got past a First Public Working Draft in 2023 and whose undated W3C URL now
+redirects to its successor. In DCP's own terms ds implements the `vc11-sl2021/jwt`
+profile and the target is `vc20-bssl/jwt`. What each would cost to move,
 which parts of the pinned EDC 0.16.0 verifier already support the target, and what must
 be re-proved rather than assumed, are in
 [Standards · VCDM 2.0 and Bitstring Status List](../standards/vcdm-2.0.md). Nothing is

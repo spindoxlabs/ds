@@ -59,9 +59,10 @@ Verifiable Credentials, and exchange follows DCP.**
 | Credential exchange | Decentralized Claims Protocol — self-issued token to `/sts/{did}/token`, presentation query to `/credentials/{did}/presentations/query` |
 | Revocation | StatusList2021, published at `GET /status/{list_id}` |
 
-Both of those name a **superseded** document: VCDM 2.0 and Bitstring Status List v1.0
-have been W3C Recommendations since 15 May 2025, and StatusList2021's own specification
-text is no longer published anywhere. The position is deliberate and its cost is
+Together those two are DCP's **`vc11-sl2021/jwt`** profile, and both of its halves are
+superseded: VCDM 2.0 and Bitstring Status List v1.0 have been W3C Recommendations since
+15 May 2025, while StatusList2021 never got past a 2023 First Public Working Draft. The
+successor profile is `vc20-bssl/jwt`. The position is deliberate and its cost is
 measured in [Standards · VCDM 2.0 and Bitstring Status List](../standards/vcdm-2.0.md) —
 including the one consequence that bites here: the model's own mechanisms for a
 credential whose claims have *changed* are the ones ds does not implement.

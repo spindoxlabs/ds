@@ -24,24 +24,28 @@ assumed** — so the decision in
 | | Verifiable Credentials Data Model | Status list |
 |---|---|---|
 | **Current** | [VCDM 2.0](https://www.w3.org/TR/vc-data-model-2.0/) — **W3C Recommendation, 15 May 2025** | [Bitstring Status List v1.0](https://www.w3.org/TR/vc-bitstring-status-list/) — **W3C Recommendation, 15 May 2025** |
-| **ds emits** | VCDM 1.1 — `@context: https://www.w3.org/2018/credentials/v1` | StatusList2021 — `type: StatusList2021Entry` |
+| **ds emits** | VCDM 1.1 — `@context: https://www.w3.org/2018/credentials/v1` | StatusList2021 — `type: StatusList2021Entry`; normative text frozen at [W3C FPWD, 27 April 2023](https://www.w3.org/TR/2023/WD-vc-status-list-20230427/) |
 | **Context IRI** | `https://www.w3.org/ns/credentials/v2` | in the v2 context; no second context needed |
 | **In force since** | 2025-05-15 | 2025-05-15 |
 
-**The status list document ds cites has been withdrawn.** Checked on 2026-09-06:
-`https://w3c-ccg.github.io/vc-status-list-2021/` redirects to
-`https://w3c.github.io/vc-status-list-2021/`, which returns **404**. The only artefact
-that survives is its JSON-LD context, and even that is now served out of the *Bitstring
-Status List* repository:
+**The status list document ds cites was never more than a First Public Working
+Draft, and its editor's draft is gone.** Checked on 2026-09-06:
 
-```
-https://w3id.org/vc/status-list/2021/v1
-  → https://w3c.github.io/vc-bitstring-status-list/contexts/2021/v1.jsonld   (200)
-```
+| URL | Result |
+|---|---|
+| `https://www.w3.org/TR/2023/WD-vc-status-list-20230427/` | **200** — *Verifiable Credentials Status List v2021*, W3C **First Public Working Draft**, 27 April 2023. The dated snapshot, archived and citable |
+| `https://www.w3.org/TR/vc-status-list/` | **302 → the Bitstring Status List Recommendation** — W3C's own way of saying "superseded" |
+| `https://w3c-ccg.github.io/vc-status-list-2021/` → `https://w3c.github.io/vc-status-list-2021/` | **404** — the editor's draft the CCG page points at is gone |
+| `https://w3id.org/vc/status-list/2021/v1` | **200**, served from `w3c.github.io/vc-bitstring-status-list/contexts/2021/v1.jsonld` — the JSON-LD context survives, inside its successor's repository |
 
-So `build_status_list_credential` publishes a credential against a context that
-resolves, describing a format whose normative text a counterparty cannot read. That is
-a weaker position than "we are on an old version": there is no version to point at.
+So there *is* a version to cite, and it is the weakest kind W3C publishes: a first
+public draft, frozen in 2023, whose "latest published version" link now resolves to a
+different specification. The DCP profile registry names it in exactly those terms —
+see §4a.
+
+**Cite the dated URL, never the undated one.** `https://www.w3.org/TR/vc-status-list/`
+now serves Bitstring Status List, so a reference written that way silently starts
+describing the format ds does *not* implement.
 
 ---
 
@@ -142,6 +146,50 @@ is a knob a format migration should confirm rather than inherit.
 
 ---
 
+## 4a. The migration has a name: the DCP profile
+
+This is not an ad-hoc format change. The **Decentralized Claims Protocol** defines
+exactly two profiles, and each names a data model, a status list and a proof format as
+one bundle (`specifications/dcp.profiles.md`):
+
+| Profile alias | Data model | Status list | Proofs |
+|---|---|---|---|
+| `vc11-sl2021/jwt` | VC Data Model 1.1 | StatusList2021 — cited as the **2023 Working Draft** | external proofs using JWT |
+| `vc20-bssl/jwt` | VC Data Model 2.0 | Bitstring Status List | enveloped proofs using JWT/JOSE (`vc-jose-cose`), *"ignore `ttl`, use `validUntil`"* |
+
+**ds implements `vc11-sl2021/jwt`.** "Phase 4" of the reissue plan is, precisely,
+moving to `vc20-bssl/jwt` — and framing it that way is worth more than the property
+list in §7, because a counterparty negotiates on the profile alias, not on our
+individual choices. DCP's DSP profile document makes `profiles` a **REQUIRED** array in
+the connector's discovery response, so the alias is something ds publishes, not just
+something it happens to satisfy.
+
+EDC registers both profiles — `DcpCoreExtension` in IdentityHub 0.18.0:
+
+```java
+registry.registerProfile(new DcpProfile(VC_20_BSSL_JWT, CredentialFormat.VC2_0_JOSE, BitstringStatusListStatus.TYPE));
+registry.registerProfile(new DcpProfile(VC_11_SL_2021_JWT, CredentialFormat.VC1_0_JWT, StatusList2021Status.TYPE));
+```
+
+so both remain interoperable and nothing forces a move. ds's connector configuration
+already carries the field — `edc.iam.dcp.scopes.membership.profile=*` — set to the
+wildcard, which is why the choice has never had to be made explicitly.
+
+**Where the reference implementation has got to.** EDC 0.18.0 (ds pins 0.16.0):
+
+- the connector gained `Vcdm20JosePresentationVerifier`, a **VCDM 2.0 presentation
+  verifier**, dispatched alongside the 1.1 one — `canHandle` returns false when the JWT
+  carries the 1.1 `vp` claim, so both are accepted
+- IdentityHub gained `JoseVcdm20CredentialGenerator`, which **issues** VCDM 2.0
+  (`@context: https://www.w3.org/ns/credentials/v2`, `validFrom`, `validUntil`)
+- IdentityHub's issuer registers **only** `BitstringStatusListEntry` as a status-list
+  factory; there is no StatusList2021 issuance path in it at all
+
+The direction is unambiguous, and the 1.1 profile is still registered, so this is
+schedule pressure rather than a deadline.
+
+---
+
 ## 5. `refreshService` — what it is, and what it is not for
 
 VCDM 2.0 §5.4 defines `refreshService`, and the wording bounds it more tightly than the
@@ -198,8 +246,9 @@ airtight, cite the absence and §5.4, not "the spec says credentials are immutab
 
 ## 7. The migration, and what it would cost
 
-Everything below is one change, because **the v2 context is `@protected` and does not
-define the 1.1 terms.** `issuanceDate`, `expirationDate` and `StatusList2021Entry` are
+This is the `vc11-sl2021/jwt` → `vc20-bssl/jwt` profile switch of §4a, expressed as
+properties. Everything below is one change, because **the v2 context is `@protected` and
+does not define the 1.1 terms.** `issuanceDate`, `expirationDate` and `StatusList2021Entry` are
 absent from `https://www.w3.org/ns/credentials/v2` (verified by fetching it). There is
 no half-migrated credential that is valid JSON-LD: a document cannot carry the v2
 context and 1.1 property names.
@@ -269,6 +318,8 @@ needs no format migration at all.**
 | **VCDM 2.1** | **W3C Working Draft, 05 September 2026** — <https://www.w3.org/TR/vc-data-model-2.1/> |
 | Substantive changes since 2.0 | editorial clarifications, aligned error-condition fields between WG specifications, and clarified requirements around self-asserted credentials (per its own Revision History) |
 | Effect on this analysis | **none.** No property ds uses changes, and the context IRI is unchanged. 2.1 is not a reason to delay a 2.0 move, nor a reason to make one |
+| **EDC 0.18.0** | released; ds pins 0.16.0. Adds VCDM 2.0 verification and issuance (§4a). The `statusSize = 1` restriction is **unchanged** — 0.18.0 only deleted the `//todo: support more statusSize entries in the future` comment beside it |
+| Effect on this analysis | the migration target gets better-supported with each release and the 1.1 profile stays registered. Upgrading EDC is tracked separately, in the store plan `edc-0-18-upgrade` |
 
 ---
 
@@ -288,9 +339,11 @@ print({k: k in c for k in ['BitstringStatusListEntry','issuanceDate','StatusList
 unzip -l services/edc-connector/build/libs/connector.jar | grep -i bitstring
 ```
 
-For the withdrawn StatusList2021 document, `curl -sIL https://w3c-ccg.github.io/vc-status-list-2021/`
-should be re-run before quoting §1: a 404 becoming a 200 would mean the claim has
-expired.
+For §1, re-run `curl -sIL https://www.w3.org/TR/vc-status-list/` — it must still
+redirect to the Bitstring Status List Recommendation — and confirm the dated
+`WD-vc-status-list-20230427` URL still answers 200. Those two together are the claim;
+the 404 on the CCG editor's draft is the weakest of the three and the least worth
+quoting.
 
 ---
 
@@ -301,7 +354,9 @@ expired.
 - VCDM 2.1 — <https://www.w3.org/TR/vc-data-model-2.1/> (Working Draft, 05 September 2026)
 - Bitstring Status List v1.0 — <https://www.w3.org/TR/vc-bitstring-status-list/> (Recommendation, 15 May 2025)
 - The v2 JSON-LD context — <https://www.w3.org/ns/credentials/v2>
-- StatusList2021 context (all that remains) — <https://w3id.org/vc/status-list/2021/v1>
+- Verifiable Credentials Status List v2021 — <https://www.w3.org/TR/2023/WD-vc-status-list-20230427/> (W3C First Public Working Draft, 27 April 2023; the dated URL is the only stable one)
+- StatusList2021 JSON-LD context — <https://w3id.org/vc/status-list/2021/v1>
+- DCP profiles — `specifications/dcp.profiles.md` in <https://github.com/eclipse-edc/decentralized-claims-protocol>
 - 1EdTech VC Refresh Service — <https://www.imsglobal.org/spec/vccr/v1p0>
 - The issuing code — `services/identity-registry/src/identity_registry/services/vc.py`,
   `…/services/status_list.py`, `…/services/presentation.py`
