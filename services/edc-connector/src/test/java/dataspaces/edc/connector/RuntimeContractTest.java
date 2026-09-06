@@ -8,13 +8,14 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
-import java.util.TreeSet;
+import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
@@ -46,6 +47,9 @@ class RuntimeContractTest {
     private static final List<String> PARTICIPANTS = List.of("rec", "third-party", "grid-operator");
 
     private static final String API_CONTEXT = "org/eclipse/edc/web/spi/configuration/ApiContext";
+
+    /** The production render of the same settings — see chartSettingsByKey(). */
+    private static final String CHART_CONFIGMAP = "helm/charts/ds-edc/templates/configmap.yaml";
 
     private static PackagedRuntime runtime;
     private static Path repoRoot;
@@ -99,10 +103,70 @@ class RuntimeContractTest {
     @Test
     @DisplayName("every non-web setting in the participant configs is read by some packaged class")
     void everySettingIsReadBySomeClass() throws IOException {
-        // EDC declares a repeated setting as a config group with a placeholder segment —
-        // "edc.datasource.<name>", "edc.iam.trusted-issuer.<issuerAlias>.". A key under
-        // one of those is read even though its full literal appears nowhere.
-        var groupPrefixes = new TreeSet<String>();
+        reportUnread(unreadSettings(settingsByKey()));
+    }
+
+    @Test
+    @DisplayName("every non-web setting in the Helm chart is read by some packaged class")
+    void everyChartSettingIsReadBySomeClass() throws IOException {
+        // The chart renders the same properties file for production and was covered by
+        // nothing, so it could — and did — carry keys the participant configs had already
+        // been fixed for. It is the one copy no developer ever starts a runtime against.
+        reportUnread(unreadSettings(chartSettingsByKey()));
+    }
+
+    /**
+     * The configured keys that no packaged class reads.
+     *
+     * <p>EDC declares a repeated setting as a config group with a placeholder segment —
+     * {@code edc.datasource.<name>}, {@code edc.iam.trusted-issuer.<issuerAlias>.}. A key
+     * under one of those is read even though its full literal appears nowhere, so a group
+     * match has to be allowed.
+     *
+     * <p>What it must not do is allow the <em>whole</em> key on the strength of its
+     * prefix. That is how three connection-pool settings survived: EDC has read
+     * {@code pool.connections.max-idle} since well before the pinned version, ds set
+     * {@code pool.maxIdleConnections}, and every ds connector ran on library defaults
+     * while this test — whose entire purpose is to say so — passed, because the key
+     * started with {@code edc.datasource.} and nothing looked further. So under a group,
+     * the instance segment is dropped ({@code default}, {@code 0}, {@code membership})
+     * and the remainder must be a string constant of a class that declares that group.
+     */
+    private static Map<String, Set<String>> unreadSettings(Map<String, Set<String>> settings) {
+        var groups = configGroups();
+
+        var unread = new TreeMap<String, Set<String>>();
+        for (var entry : settings.entrySet()) {
+            String key = entry.getKey();
+            if (key.startsWith("web.http.")) {
+                continue; // covered by the context test above
+            }
+            if (runtime.anyClassDeclares(key)) {
+                continue;
+            }
+            // Longest match wins: a key can sit under two declared prefixes, and only the
+            // longer one names the module that actually owns it.
+            String group = groups.keySet().stream()
+                    .filter(key::startsWith)
+                    .max(Comparator.comparingInt(String::length))
+                    .orElse(null);
+            if (group == null) {
+                unread.put(key, entry.getValue());
+                continue;
+            }
+            String rest = key.substring(group.length());
+            int instanceEnd = rest.indexOf('.');
+            String suffix = instanceEnd < 0 ? null : rest.substring(instanceEnd + 1);
+            if (suffix == null || !groups.get(group).contains(suffix)) {
+                unread.put(key, entry.getValue());
+            }
+        }
+        return unread;
+    }
+
+    /** Declared config-group prefix → the string constants of the module that declares it. */
+    private static Map<String, Set<String>> configGroups() {
+        var groups = new TreeMap<String, Set<String>>();
         for (String declared : runtime.allStrings()) {
             int placeholder = declared.indexOf('<');
             if (placeholder <= 0) {
@@ -110,30 +174,21 @@ class RuntimeContractTest {
             }
             String prefix = declared.substring(0, placeholder);
             if (prefix.endsWith(".") && prefix.indexOf('.') != prefix.length() - 1) {
-                groupPrefixes.add(prefix);
+                groups.computeIfAbsent(prefix, runtime::stringsOfClassesDeclaringGroup);
             }
         }
+        return groups;
+    }
 
-        var unread = new TreeMap<String, Set<String>>();
-        for (var entry : settingsByKey().entrySet()) {
-            String key = entry.getKey();
-            if (key.startsWith("web.http.")) {
-                continue; // covered by the context test above
-            }
-            boolean read = runtime.anyClassDeclares(key)
-                    || groupPrefixes.stream().anyMatch(key::startsWith);
-            if (!read) {
-                unread.put(key, entry.getValue());
-            }
+    private static void reportUnread(Map<String, Set<String>> unread) {
+        if (unread.isEmpty()) {
+            return;
         }
-
-        if (!unread.isEmpty()) {
-            var report = new StringBuilder("settings are configured that no class in connector.jar reads.\n"
-                    + "EDC ignores an unknown key silently, so these look like configuration and are not.\n"
-                    + "Either package the module that reads the key, or delete the line.\n");
-            unread.forEach((key, files) -> report.append("  ").append(key).append("  in: ").append(files).append('\n'));
-            fail(report.toString());
-        }
+        var report = new StringBuilder("settings are configured that no class in connector.jar reads.\n"
+                + "EDC ignores an unknown key silently, so these look like configuration and are not.\n"
+                + "Package the module that reads the key, correct the key, or delete the line.\n");
+        unread.forEach((key, files) -> report.append("  ").append(key).append("  in: ").append(files).append('\n'));
+        fail(report.toString());
     }
 
     @Test
@@ -197,6 +252,32 @@ class RuntimeContractTest {
             }
         }
         assertTrue(keys.size() > 10, () -> "only " + keys.size() + " settings read — the configs did not parse");
+        return keys;
+    }
+
+    /**
+     * setting key → the single source that sets it, for the chart's rendered properties.
+     *
+     * <p>The template is Helm, not properties: the assignments live inside
+     * `edc.properties: |`, and the only other lines carrying an `=` are the
+     * `{{- $x := ... -}}` assignments at the top. Matching a line that *starts* with a bare
+     * key excludes those and every comment, without rendering the chart. The count
+     * assertion below is what says the match still finds anything at all.
+     */
+    private static Map<String, Set<String>> chartSettingsByKey() throws IOException {
+        Path template = repoRoot.resolve(CHART_CONFIGMAP);
+        assertTrue(Files.isRegularFile(template), () -> template + " does not exist");
+
+        var keys = new TreeMap<String, Set<String>>();
+        var assignment = Pattern.compile("^([a-z][a-zA-Z0-9._-]*)=");
+        for (var line : Files.readAllLines(template)) {
+            var matcher = assignment.matcher(line.trim());
+            if (matcher.find()) {
+                keys.computeIfAbsent(matcher.group(1), k -> new LinkedHashSet<>()).add(CHART_CONFIGMAP);
+            }
+        }
+        assertTrue(keys.size() > 10,
+                () -> "only " + keys.size() + " settings read from " + CHART_CONFIGMAP + " — it did not parse");
         return keys;
     }
 

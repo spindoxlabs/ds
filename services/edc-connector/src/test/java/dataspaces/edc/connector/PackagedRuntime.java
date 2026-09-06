@@ -104,6 +104,25 @@ final class PackagedRuntime {
     }
 
     /**
+     * The string constants of every class that declares the config group {@code prefix} —
+     * that is, carries a string like {@code edc.datasource.<name>}.
+     *
+     * <p>Keys under a group are declared as bare suffixes ({@code pool.connections.max-idle}),
+     * so the only way to tell a real one from a typo is to ask the module that owns the
+     * group. Asking the whole runtime instead would match {@code url} and {@code user}
+     * against any class that happens to carry those words, which is no check at all.
+     */
+    Set<String> stringsOfClassesDeclaringGroup(String prefix) {
+        var all = new HashSet<String>();
+        for (var strings : stringsByClass.values()) {
+            if (strings.stream().anyMatch(s -> s.startsWith(prefix) && s.indexOf('<') == prefix.length())) {
+                all.addAll(strings);
+            }
+        }
+        return all;
+    }
+
+    /**
      * CONSTANT_Utf8 entries of a class file.
      *
      * <p>Only the constant pool is walked; everything after it is irrelevant here and is

@@ -105,7 +105,7 @@ data:
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}
-    edc.datasource.default.pool.maxIdleConnections=3
-    edc.datasource.default.pool.maxTotalConnections=10
-    edc.datasource.default.pool.testConnectionOnReturn=true
+    edc.datasource.default.pool.connections.max-idle=3
+    edc.datasource.default.pool.connections.max-total=10
+    edc.datasource.default.pool.connection.test.on-return=true
     edc.sql.schema.autocreate={{ .Values.sqlSchemaAutocreate }}

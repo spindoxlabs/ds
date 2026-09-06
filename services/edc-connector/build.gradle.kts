@@ -102,6 +102,7 @@ tasks.withType<Test>().configureEach {
     // time a config was edited to check that these tests can fail.
     inputs.files(
         fileTree(rootDir.resolve("services/connector/config")) { include("*.properties") },
+        rootDir.resolve("helm/charts/ds-edc/templates/configmap.yaml"),
         rootDir.resolve("gradle.properties"),
         rootDir.resolve("Taskfile.yml"),
         rootDir.resolve("services/edc-connector/Dockerfile"),
