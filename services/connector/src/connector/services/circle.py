@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 from ds.governance.sharing import SharingOffer
@@ -157,7 +158,7 @@ async def _satisfies_admitted_by(
 
 async def _check_constraint(
     kind: str,
-    value: str,
+    value: Any,
     requester_did: str,
     identity_registry_url: str,
     token_provider=None,
@@ -170,9 +171,81 @@ async def _check_constraint(
         return await _holds_credential(
             identity_registry_url, requester_did, value, token_provider
         )
+    if kind == "credential_claim":
+        return await _holds_credential_claim(
+            identity_registry_url, requester_did, value, token_provider
+        )
     # An unknown constraint kind cannot be evaluated, so it cannot be satisfied.
     log.warning("Unknown admitted_by constraint '%s' — treating as unsatisfied", kind)
     return False
+
+
+async def _holds_credential_claim(
+    identity_registry_url: str,
+    subject_did: str,
+    spec: Any,
+    token_provider=None,
+) -> bool:
+    """Whether *subject_did* holds a credential asserting a particular claim.
+
+    ``admitted_by: [{credential_claim: {type: DataSubjectCredential, claim:
+    communityRole, value: prosumer}}]`` — an offer restricted to prosumers.
+
+    `credential_type` cannot express this. A community role is a *claim* on a
+    person's `DataSubjectCredential`, not a credential type of its own, so that
+    one person keeps one credential per protocol role rather than accumulating
+    one per role they have ever held. The kinds are siblings: one asks what
+    somebody holds, the other what it says.
+
+    A malformed spec is **unsatisfied, not an error**, for the same reason an
+    unknown kind is: a constraint this connector cannot evaluate must not admit
+    anyone. It is logged, because silently admitting nobody is the failure that
+    looks like a working deny.
+    """
+    if not isinstance(spec, dict):
+        log.warning(
+            "admitted_by credential_claim expects a mapping with type/claim/value, "
+            "got %r — treating as unsatisfied",
+            spec,
+        )
+        return False
+    credential_type = spec.get("type") or "DataSubjectCredential"
+    claim = spec.get("claim")
+    value = spec.get("value")
+    if not claim or value is None:
+        log.warning(
+            "admitted_by credential_claim needs both 'claim' and 'value' (got %r) "
+            "— treating as unsatisfied",
+            spec,
+        )
+        return False
+    try:
+        async with httpx.AsyncClient(
+            base_url=identity_registry_url.rstrip("/"), timeout=10.0
+        ) as client:
+            resp = await client.get(
+                "/credentials/check",
+                params={
+                    "subject_did": subject_did,
+                    "type": credential_type,
+                    "claim": claim,
+                    "value": value,
+                },
+                headers=await _headers(token_provider),
+            )
+            if resp.status_code != 200:
+                log.warning(
+                    "Claim check for %s (%s=%s) answered %s — not admitted",
+                    subject_did,
+                    claim,
+                    value,
+                    resp.status_code,
+                )
+                return False
+            return bool(resp.json().get("holds", False))
+    except httpx.HTTPError as exc:
+        log.error("Claim check failed for %s: %s", subject_did, exc)
+        return False
 
 
 async def _headers(token_provider) -> dict[str, str]:

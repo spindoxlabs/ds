@@ -76,13 +76,21 @@ revoked one.
 
 **There are two registers, and the difference between them is a state.** `/status/1` is
 published with `statusPurpose: revocation` and `/status/2` with `statusPurpose: suspension`.
-A `MembershipCredential` or `OrganizationCredential` names both, on the one index they share;
-a `DataSubjectCredential` names only the first, because a natural person's credential is
-revoked or it is not. A revocation bit is terminal and is never cleared. A suspension bit is
-held while the organisation does not currently qualify and is cleared when it is reinstated —
-the same signed credential, valid again, never re-issued. EDC checks every `credentialStatus`
-entry a credential carries and rejects it while either bit is set, reporting which, so
-"suspended" and "revoked" are different answers at the verifier and not only in this database.
+**Every credential names both**, on the one index they share. A revocation bit is terminal and
+is never cleared. A suspension bit is held while the holder does not currently qualify and is
+cleared when it is lifted — the same signed credential, valid again, never re-issued. EDC
+checks every `credentialStatus` entry a credential carries and rejects it while either bit is
+set, reporting which, so "suspended" and "revoked" are different answers at the verifier and
+not only in this database.
+
+A `DataSubjectCredential` named the revocation register alone until 2026-09-06, on the
+argument that a person's credential is revoked or it is not. That argument holds for
+*withdrawing* an attestation and not for *superseding* one: when a claim about somebody stops
+being true — a consumer commissions generation and becomes a prosumer — a credential cannot be
+edited, so the answer is a successor credential and a retired predecessor. Retired has to mean
+suspended, because the attestation was not withdrawn. Consequently `credentialStatus` on a
+person's credential is a JSON **array**, which `ds_auth._verify_credential_status` accepts
+alongside the single-object form every credential issued before that date carries.
 
 Both registers exist from the moment a credential names them. A suspension register created
 lazily on first use would 404 for every credential issued before anyone was suspended, and a
@@ -108,6 +116,34 @@ and `ds-vc-wallet` processes — the EDC connectors point at this service for bo
 with their legal identity), memberships (which person acts for which organisation), and
 service agreements with their acceptances. The connector and the federated catalogue read
 these; the connector's cache is invalidated by a push from here on change.
+
+**A role change is a reissue.** A consumer commissions generation equipment and becomes a
+prosumer. Nothing in the credential model updates a claim in place — VCDM 2.0 defines no
+such property, algorithm or section, which is why there is no `PATCH` here and why the
+missing verb is the model refusing a shape it does not have rather than a gap in this API.
+`POST /admin/credentials/data-subject/transition` **suspends the superseded credential and
+issues its successor, in one transaction**:
+
+```
+DataSubjectCredential                    DataSubjectCredential
+  communityRole: consumer        →         communityRole: prosumer
+  status: suspended  ────────┐             status: active
+  /status/2 bit set          └── same person, same DID, same protocol role
+```
+
+Suspended, never revoked: revocation says the attestation was *withdrawn* and is terminal,
+and this one was **replaced**. The two halves are one transaction because separating them
+leaves a person holding two credentials that disagree about them, or none. Delivery to the
+custodian is deliberately outside it — it is a call to somebody else's service and fails
+independently, exactly as for a first issuance, and the successor stands either way for a
+retry. See [Standards · VCDM 2.0](../standards/vcdm-2.0.md) for what the specifications
+actually provide here, and `services/role_transition.py` for the reasoning in full.
+
+Because the role is a claim, an offer can gate on it:
+`admitted_by: [{credential_claim: {claim: communityRole, value: prosumer}}]`. The
+connector asks `GET /credentials/check?claim=…&value=…`, which compares behind the
+`status == "active"` filter — so a superseded credential, whose signed JSON still says
+`consumer`, admits nobody.
 
 **Organisation onboarding.** A five-gate chain, identical whether it runs over HTTP or
 through the CLI:
@@ -466,7 +502,7 @@ refuse to run against a schema that is not at head.
 | `enrolment_tokens` | single-use, hashed enrolment codes, and which DID redeemed each one |
 | `credential_requests` | CIP credential-request state: `RECEIVED` / `REJECTED` / `ISSUED` |
 | `agreements` / `agreement_acceptances` | agreement versions (path + SHA-256 of the text, never the prose) and who accepted which |
-| `organization_memberships` | person → organisation, with a role |
+| `organization_memberships` | person → organisation. **No role column** — it was written by three paths and read by none, so it went stale invisibly and no sharing offer could gate on it. What somebody *is* in their community is a `communityRole` claim on their credential (migration 0017) |
 | `keycloak_mappings` | `(realm, user_id)` → DID, plus username and email |
 | `status_lists` | the revocation bitstring |
 

@@ -76,6 +76,34 @@ class IssueDataSubjectRequest(BaseModel):
     verification_method: str | None = None
 
 
+class TransitionCommunityRoleRequest(BaseModel):
+    """A change to what a person *is* in their energy community.
+
+    There is no `from_role`: the predecessor is whichever active
+    `DataSubjectCredential` carries this protocol `role`, and requiring the
+    caller to also state its current community role would let a stale caller
+    address a credential that has already moved on.
+    """
+
+    subject_id: str
+    #: The community role the person is becoming — `prosumer`, say. The
+    #: dataspace does not enumerate these; the community does.
+    to_role: str
+    #: Which of the person's credentials is superseded. A person holds one per
+    #: *protocol* role (`DataSubject`, `ConsumerUser`) and a community role
+    #: change concerns one of them, not all of them.
+    role: str | None = None
+    linked_participant_did: str | None = None
+    allowed_actions: list[str] | None = None
+    ttl_days: int | None = None
+    #: Who established the fact behind the change, and how (`D-53`).
+    #: Commissioning a meter is something the REC establishes, not the
+    #: dataspace, and this is where that attestation is recorded — the same
+    #: fields a first issuance carries, for the same reason.
+    verified_by: str | None = None
+    verification_method: str | None = None
+
+
 class KeycloakSyncRequest(BaseModel):
     did: str
     keycloak_realm: str
@@ -121,9 +149,14 @@ class UpdateOwnerRequest(BaseModel):
 
 
 class CreateMembershipRequest(BaseModel):
+    """A membership is a fact about *where* somebody belongs, not *what* they
+    are there. `role` was accepted here and stored in a column nothing read; a
+    caller that still sends it now has it ignored, which is what it amounted to
+    before. To say what somebody is, transition their credential
+    (`POST /admin/credentials/data-subject/transition`)."""
+
     user_did: str
     organization_alias: str
-    role: str | None = None
 
 
 # ── Organisation onboarding (Block D) ─────────────────────────────

@@ -395,7 +395,10 @@ class OrganizationMembership(Base):
         Text, ForeignKey("dids.did"), primary_key=True
     )
     organization_alias: Mapped[str] = mapped_column(String, primary_key=True)
-    role: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # No `role`. It was written and never read, so it could not be trusted to be
+    # current — see migration 0017. A person's community role is a
+    # `communityRole` claim on their `DataSubjectCredential`, changed by reissue
+    # (`services/role_transition.py`), which is both checkable and current.
     status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

@@ -46,7 +46,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 - `organization_applications` — pre-verification org registration data, promoted into `owners` on verify (Block D)
 - `agreements` — service-agreement definitions (id + version, capacity, per-locale text path + SHA-256) (Block D)
 - `agreement_acceptances` — an org's acceptance of an agreement version (capacity, locale, text SHA-256) (Block D)
-- `organization_memberships` — user-DID → owner-alias memberships
+- `organization_memberships` — user-DID → owner-alias memberships (no role: it is a credential claim)
 - `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose: `1` is `revocation` (terminal), `2` is `suspension` (cleared on reinstatement)
 
 ---
@@ -89,7 +89,8 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `GET` | `/admin/dids/{did}` | Get DID details |
 | `DELETE` | `/admin/dids/{did}` | Deactivate DID + revoke credentials |
 | `POST` | `/admin/credentials/membership` | Issue MembershipCredential |
-| `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential |
+| `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential (idempotent per role) |
+| `POST` | `/admin/credentials/data-subject/transition` | Change a `communityRole`: suspend the superseded credential, issue its successor |
 | `POST` | `/admin/credentials/organization` | Issue OrganizationCredential (gate: verified + agreement) |
 | `POST` | `/admin/organizations/applications` | Register an organisation application |
 | `GET` | `/admin/organizations/applications` | List applications (`?status=&alias=`) |

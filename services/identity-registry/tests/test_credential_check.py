@@ -43,6 +43,7 @@ async def issue(engine):
         status: str = "active",
         expires_at: datetime | None = None,
         cred_id: str | None = None,
+        subject_claims: dict | None = None,
     ):
         async with factory() as session:
             if not await session.get(Did, subject):
@@ -54,7 +55,10 @@ async def issue(engine):
                     credential_type=credential_type,
                     issuer_did=ISSUER,
                     subject_did=subject,
-                    credential_json={"type": ["VerifiableCredential", credential_type]},
+                    credential_json={
+                        "type": ["VerifiableCredential", credential_type],
+                        "credentialSubject": {"id": subject, **(subject_claims or {})},
+                    },
                     status=status,
                     expires_at=expires_at,
                 )
@@ -168,3 +172,115 @@ async def test_it_is_not_open(client, issue):
         "/credentials/check", params={"subject_did": SUBJECT, "type": TYPE}
     )
     assert r.status_code in (401, 403)
+
+
+# ── claim filtering: an offer restricted to prosumers ─────────────
+#
+# A community role is a claim on a person's `DataSubjectCredential`, not a
+# credential type, so `admitted_by: [{credential_claim: ...}]` needs the
+# comparison done here — where `status` says which credential is *current*.
+
+
+async def _check_claim(client, headers, *, claim=None, value=None, type=TYPE):
+    params = {"subject_did": SUBJECT, "type": type}
+    if claim is not None:
+        params["claim"] = claim
+    if value is not None:
+        params["value"] = value
+    return await client.get("/credentials/check", params=params, headers=headers)
+
+
+@pytest.mark.asyncio
+@pytest.mark.rule("D-55")
+async def test_a_matching_claim_is_held(client, headers, issue):
+    await issue(subject_claims={"communityRole": "prosumer"})
+    body = (
+        await _check_claim(client, headers, claim="communityRole", value="prosumer")
+    ).json()
+    assert body["holds"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.rule("D-55")
+async def test_a_different_claim_value_is_not_held(client, headers, issue):
+    await issue(subject_claims={"communityRole": "consumer"})
+    body = (
+        await _check_claim(client, headers, claim="communityRole", value="prosumer")
+    ).json()
+    assert body["holds"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.rule("D-55")
+async def test_a_credential_without_the_claim_is_not_held(client, headers, issue):
+    """An absent claim is not a wildcard. Defaulting it in the admitting
+    direction is the exact class of the defect this endpoint was built to
+    replace."""
+    await issue()
+    body = (
+        await _check_claim(client, headers, claim="communityRole", value="prosumer")
+    ).json()
+    assert body["holds"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.rule("D-55")
+async def test_a_suspended_credential_does_not_satisfy_a_claim(client, headers, issue):
+    """**What makes a role transition work.** A superseded credential still says
+    `communityRole: consumer` in signed JSON nobody can alter; the register is
+    what says it is no longer current, and `status` is how that verdict reaches
+    this query."""
+    await issue(
+        status="suspended",
+        cred_id="superseded",
+        subject_claims={"communityRole": "prosumer"},
+    )
+    body = (
+        await _check_claim(client, headers, claim="communityRole", value="prosumer")
+    ).json()
+    assert body["holds"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.rule("D-55")
+async def test_the_successor_answers_and_the_predecessor_does_not(
+    client, headers, issue
+):
+    """The pair, as a transition leaves them: one suspended `consumer`, one
+    active `prosumer`. Both claims are asked and only the current one holds."""
+    await issue(
+        status="suspended", cred_id="old", subject_claims={"communityRole": "consumer"}
+    )
+    await issue(
+        status="active", cred_id="new", subject_claims={"communityRole": "prosumer"}
+    )
+    prosumer = (
+        await _check_claim(client, headers, claim="communityRole", value="prosumer")
+    ).json()
+    consumer = (
+        await _check_claim(client, headers, claim="communityRole", value="consumer")
+    ).json()
+    assert prosumer["holds"] is True
+    assert consumer["holds"] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("claim", "value"), [("communityRole", None), (None, "prosumer")]
+)
+@pytest.mark.rule("D-55")
+async def test_a_half_specified_claim_filter_is_refused(
+    client, headers, issue, claim, value
+):
+    """Not ignored. Reading a lone `claim` as "any value" turns a narrow question
+    into a broad one, at the endpoint that decides admission."""
+    await issue(subject_claims={"communityRole": "prosumer"})
+    r = await _check_claim(client, headers, claim=claim, value=value)
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_no_claim_filter_still_answers_the_type_question(client, headers, issue):
+    """Every existing caller sends neither parameter and must be unaffected."""
+    await issue(subject_claims={"communityRole": "prosumer"})
+    assert (await _check(client, headers)).json()["holds"] is True

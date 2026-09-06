@@ -39,6 +39,10 @@ class TestMembershipCRUD:
             json={
                 "user_did": SUBJECT_DID,
                 "organization_alias": ORG_ALIAS,
+                # Still sent, deliberately: a caller written before migration
+                # 0017 must not start failing. The field is ignored, which is
+                # what it amounted to before — the column was written and read
+                # by nothing.
                 "role": "consumer",
             },
             headers=admin_headers,
@@ -47,8 +51,10 @@ class TestMembershipCRUD:
         data = resp.json()
         assert data["user_did"] == SUBJECT_DID
         assert data["organization_alias"] == ORG_ALIAS
-        assert data["role"] == "consumer"
         assert data["status"] == "active"
+        # What somebody *is* in their community is a `communityRole` claim on
+        # their credential (`D-54`), not a membership field.
+        assert "role" not in data
 
     @pytest.mark.asyncio
     async def test_create_duplicate_membership(self, client, admin_headers):

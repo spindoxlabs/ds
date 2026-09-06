@@ -31,6 +31,7 @@ from ...schemas.requests import (
     IssueDataSubjectRequest,
     IssueMembershipRequest,
     KeycloakSyncRequest,
+    TransitionCommunityRoleRequest,
     UpdateParticipantRequest,
 )
 from ...schemas.responses import (
@@ -43,6 +44,7 @@ from ...schemas.responses import (
     ParticipantCheckResponse,
     ParticipantDetailResponse,
     ParticipantResponse,
+    RoleTransitionResponse,
 )
 from ...services import conformity
 from ...services.crypto import (
@@ -59,11 +61,18 @@ from ...services.did import (
     subject_did_for,
     subject_id_of,
 )
-from ...services.issuance import IssuanceError, deliver_to_custodian
+from ...services.issuance import (
+    IssuanceError,
+    active_data_subject_credential,
+    deliver_to_custodian,
+)
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
+from ...services.role_transition import (
+    RoleTransitionError,
+    transition_community_role,
+)
 from ...services.status_list import (
     SUSPENSION_LIST_ID,
-    allocate_status_list_index,
     allocate_suspendable_index,
     revoke_status_list_index,
 )
@@ -535,6 +544,53 @@ async def issue_membership_credential(
     )
 
 
+async def _redeliver_data_subject_credential(
+    db: AsyncSession,
+    settings: Settings,
+    *,
+    data: IssueDataSubjectRequest,
+    subject_did: str,
+    cred: Credential,
+) -> DataSubjectCredentialResponse:
+    """The response for a call that issued nothing.
+
+    Same shape as a fresh issuance, naming the credential the subject already
+    holds. A caller cannot tell whether it minted or matched, and does not need
+    to — what it asked for is true either way, which is what idempotent means.
+    """
+    custodian = data.linked_participant_did
+    delivered_to: str | None = None
+    delivery_error: str | None = None
+    if custodian is None:
+        delivery_error = (
+            "no linked_participant_did was given, so the existing credential "
+            "was not re-delivered — name the organisation that holds this person"
+        )
+    else:
+        try:
+            delivered_to = await deliver_to_custodian(
+                db,
+                settings,
+                custodian_did=custodian,
+                credentials=[("DataSubjectCredential", cred.credential_json)],
+                issuer_pid=cred.id,
+                holder_pid=data.subject_id,
+            )
+            await db.commit()
+        except IssuanceError as exc:
+            delivery_error = exc.message
+            log.error("member credential %s not re-delivered: %s", cred.id, exc.message)
+
+    return DataSubjectCredentialResponse(
+        subjectDid=subject_did,
+        credentialId=cred.id,
+        generatedAt=cred.issued_at,
+        custodianDid=custodian,
+        deliveredTo=delivered_to,
+        deliveryError=delivery_error,
+    )
+
+
 @router.post(
     "/credentials/data-subject",
     status_code=201,
@@ -573,6 +629,21 @@ async def issue_data_subject_credential(
         )
         subject_did = existing
 
+    # **Already holds one for this role? Re-deliver, do not re-mint** (ds#30).
+    # The CLI has always done this and the endpoint an external application
+    # actually calls did not, so a member who opened the page twice got two
+    # credentials and spent two status-list indices — and an index is never
+    # recovered. Re-delivery rather than an early return, because signing is
+    # local and delivery is a call to somebody else's service: the state a
+    # re-run has to repair is a credential the anchor issued and the custodian
+    # never received, and the holder's Storage API is idempotent on credential
+    # id, which is what makes re-delivering free.
+    existing_cred = await active_data_subject_credential(db, subject_did, data.role)
+    if existing_cred is not None:
+        return await _redeliver_data_subject_credential(
+            db, settings, data=data, subject_did=subject_did, cred=existing_cred
+        )
+
     did_result = await db.execute(select(Did).where(Did.did == subject_did))
     did_record = did_result.scalar_one_or_none()
 
@@ -604,7 +675,11 @@ async def issue_data_subject_credential(
         db.add(did_record)
         await db.flush()
 
-    sl_index = await allocate_status_list_index(db)
+    # `allocate_suspendable_index`, not `allocate_status_list_index`: the
+    # credential names the suspension register, so that register has to exist
+    # before the credential does. A credential pointing at a `/status/2` that
+    # 404s is rejected by any verifier that fails closed.
+    sl_index = await allocate_suspendable_index(db)
 
     cred_id = generate_credential_id()
     vc = build_data_subject_credential(
@@ -616,6 +691,7 @@ async def issue_data_subject_credential(
         credentials_context_url=settings.credentials_context_url,
         dataspace_uri=settings.dataspace_uri,
         status_list_credential_url=status_list_url,
+        suspension_list_credential_url=settings.status_list_url(SUSPENSION_LIST_ID),
         status_list_index=sl_index,
         credential_id=cred_id,
         ttl_days=ttl,
@@ -695,6 +771,121 @@ async def issue_data_subject_credential(
         subjectDid=subject_did,
         credentialId=cred.id,
         generatedAt=cred.issued_at,
+        custodianDid=custodian,
+        deliveredTo=delivered_to,
+        deliveryError=delivery_error,
+    )
+
+
+@router.post(
+    "/credentials/data-subject/transition",
+    status_code=201,
+    response_model=RoleTransitionResponse,
+)
+async def transition_data_subject_role(
+    data: TransitionCommunityRoleRequest,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    # **The issuance scope, not a new one.** A transition *is* an issuance —
+    # that is the whole argument of this design — and a caller trusted to
+    # attest that somebody is a data subject is trusted to attest that they
+    # have become a prosumer. A separate scope would suggest the second is a
+    # stronger claim than the first, and it is not.
+    _claims: dict = Depends(require_credentials_write),
+):
+    """Change what a person is in their community, by reissuing their credential.
+
+    A credential is immutable, so this is not an update: the superseded
+    credential is **suspended** and a successor is issued, both in one
+    transaction. `services/role_transition.py` explains why suspension rather
+    than revocation, and why the two halves cannot be separated.
+    """
+    trust_anchor_key = await _get_trust_anchor_key(db, settings)
+    trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
+
+    existing = await _existing_subject_did(db, data.subject_id)
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"No dataspace identity for subject {data.subject_id!r}. A "
+                "transition changes a claim about somebody this registry "
+                "already knows."
+            ),
+        )
+
+    try:
+        result = await transition_community_role(
+            db,
+            settings,
+            subject_did=existing,
+            vc_role=data.role,
+            to_role=data.to_role,
+            trust_anchor_did=trust_anchor_did,
+            trust_anchor_key=trust_anchor_key,
+            linked_participant_did=data.linked_participant_did,
+            allowed_actions=data.allowed_actions,
+            ttl_days=data.ttl_days,
+            verified_by=data.verified_by,
+            verification_method=data.verification_method,
+        )
+    except RoleTransitionError as exc:
+        # Nothing was written — the service raises before it adds anything —
+        # so the rollback is about the flush, not about undoing half a
+        # transition.
+        await db.rollback()
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
+    await db.commit()
+    cred = await db.get(Credential, result.credential_id)
+
+    # Delivery is outside the transaction, exactly as it is for a first
+    # issuance: it is a call to somebody else's service and fails
+    # independently. The successor exists and is recorded either way, and a
+    # retry re-delivers it.
+    custodian = data.linked_participant_did or (
+        (result.signed_vc.get("credentialSubject") or {}).get("linkedParticipant")
+    )
+    delivered_to: str | None = None
+    delivery_error: str | None = None
+    if custodian is None:
+        delivery_error = (
+            "no linked_participant_did was given and the superseded credential "
+            "named no custodian, so the successor was issued and recorded but "
+            "delivered to nobody"
+        )
+        log.error(
+            "successor %s not delivered: no custodian named", result.credential_id
+        )
+    else:
+        try:
+            delivered_to = await deliver_to_custodian(
+                db,
+                settings,
+                custodian_did=custodian,
+                credentials=[("DataSubjectCredential", result.signed_vc)],
+                issuer_pid=result.credential_id,
+                holder_pid=data.subject_id,
+            )
+            await db.commit()
+        except IssuanceError as exc:
+            # **The transition still stands.** The predecessor is suspended and
+            # the successor exists; what failed is the custodian's copy, and
+            # that is a retry. Rolling the transition back here would leave the
+            # person holding a credential the register says is current while
+            # the community believes their role changed.
+            delivery_error = exc.message
+            log.error(
+                "successor %s not delivered: %s", result.credential_id, exc.message
+            )
+
+    return RoleTransitionResponse(
+        subjectDid=result.subject_did,
+        credentialId=result.credential_id,
+        supersededCredentialId=result.superseded_credential_id,
+        fromRole=result.from_role,
+        toRole=result.to_role,
+        generatedAt=cred.issued_at if cred else datetime.now(UTC),
         custodianDid=custodian,
         deliveredTo=delivered_to,
         deliveryError=delivery_error,

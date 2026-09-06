@@ -253,8 +253,18 @@ def _verify_credential_status(
     credential_status_path: str | None = None,
     credential_status_url: str | None = None,
 ) -> None:
+    # **One entry or several.** A credential naming both the revocation and the
+    # suspension register carries a *list*, which is what every credential this
+    # dataspace issues has done since people became suspendable — and what
+    # StatusList2021 and Bitstring Status List both allow. Requiring a `dict`
+    # here rejected the new shape with "has no credentialStatus", which is a
+    # 401 whose message points at the wrong thing entirely.
+    #
+    # The entries are not read below — the lookup is by credential `id` — so
+    # this checks presence and shape, nothing more.
     status = vc.get("credentialStatus")
-    if not isinstance(status, dict):
+    entries = status if isinstance(status, list) else [status]
+    if not any(isinstance(entry, dict) for entry in entries):
         raise HTTPException(401, "User VC has no credentialStatus")
 
     status_list = _load_credential_status_list(

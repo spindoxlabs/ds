@@ -29,9 +29,9 @@ from ..services.crypto import (
     generate_credential_id,
     generate_key_pair,
 )
+from ..services.issuance import active_data_subject_credential
 from ..services.status_list import (
     SUSPENSION_LIST_ID,
-    allocate_status_list_index,
     allocate_suspendable_index,
     revoke_status_list_index,
 )
@@ -569,44 +569,32 @@ def credential_issue_data_subject(
                     subject_did = known
                     break
 
-            existing_cred = await session.execute(
-                select(Credential).where(
-                    Credential.subject_did == subject_did,
-                    Credential.credential_type == "DataSubjectCredential",
-                    Credential.status == "active",
+            # Idempotent **per role**, not per subject — the rule and the reason
+            # both live in `active_data_subject_credential`, which the HTTP
+            # endpoint now calls too. They had one behaviour and two
+            # implementations, and only this one had it (ds#30).
+            cred = await active_data_subject_credential(session, subject_did, role)
+            if cred is not None:
+                typer.echo(
+                    f"Active DataSubjectCredential with role={role or '-'} "
+                    f"already exists for {subject_did}"
                 )
-            )
-            # Idempotent **per role**, not per subject. One person legitimately
-            # holds several — a data subject about their own consumption who is
-            # also a consumer user acting for an organisation — and keying this
-            # on `credential_type` alone silently skipped the second issuance,
-            # making a dual-role user impossible to create. `credential_type`
-            # cannot carry the role: it is also the VC `type` (services/vc.py)
-            # that DCP presentation matching keys on.
-            for cred in existing_cred.scalars().all():
-                subject = (cred.credential_json or {}).get("credentialSubject") or {}
-                if subject.get("role") == role:
-                    typer.echo(
-                        f"Active DataSubjectCredential with role={role or '-'} "
-                        f"already exists for {subject_did}"
-                    )
-                    # **Re-deliver, do not re-mint.** Returning here left the one
-                    # state a re-run is supposed to repair unrepairable: a
-                    # credential the anchor issued and the custodian never
-                    # received. Signing is local and delivery is a call to
-                    # somebody else's service, so those fail independently — and
-                    # the holder's Storage API is idempotent on credential id,
-                    # which is what makes re-delivery free rather than a
-                    # duplicate.
-                    await _deliver_member_credential(
-                        session,
-                        settings,
-                        custodian_did=linked_participant_did,
-                        signed_vc=cred.credential_json,
-                        credential_id=cred.id,
-                        subject_id=subject_id,
-                    )
-                    return
+                # **Re-deliver, do not re-mint.** Returning here left the one
+                # state a re-run is supposed to repair unrepairable: a
+                # credential the anchor issued and the custodian never
+                # received. Signing is local and delivery is a call to somebody
+                # else's service, so those fail independently — and the holder's
+                # Storage API is idempotent on credential id, which is what
+                # makes re-delivery free rather than a duplicate.
+                await _deliver_member_credential(
+                    session,
+                    settings,
+                    custodian_did=linked_participant_did,
+                    signed_vc=cred.credential_json,
+                    credential_id=cred.id,
+                    subject_id=subject_id,
+                )
+                return
 
             ta_key_result = await session.execute(
                 select(Key).where(Key.owner_did == ta_did, Key.active.is_(True))
@@ -627,7 +615,8 @@ def credential_issue_data_subject(
                 session.add(did_record)
                 await session.flush()
 
-            sl_index = await allocate_status_list_index(session)
+            # Both registers — see the HTTP path in `api/v1/admin.py`.
+            sl_index = await allocate_suspendable_index(session)
             cred_id = generate_credential_id()
 
             from ..services.vc import build_data_subject_credential
@@ -640,6 +629,9 @@ def credential_issue_data_subject(
                 credentials_context_url=settings.credentials_context_url,
                 dataspace_uri=settings.dataspace_uri,
                 status_list_credential_url=settings.status_list_url(),
+                suspension_list_credential_url=settings.status_list_url(
+                    SUSPENSION_LIST_ID
+                ),
                 status_list_index=sl_index,
                 credential_id=cred_id,
                 ttl_days=ttl_days,
@@ -1391,9 +1383,13 @@ def owner_import(
 def membership_add(
     user_did: str = typer.Option(..., help="Member's DID"),
     organization: str = typer.Option(..., help="Owner alias"),
-    role: str = typer.Option(None, help="Role within the org"),
 ):
-    """Register a user as member of an organization (idempotent)."""
+    """Register a user as member of an organization (idempotent).
+
+    No `--role`: it wrote a column nothing read (migration 0017). What somebody
+    *is* in their community is a `communityRole` claim on their credential,
+    changed by reissue.
+    """
 
     async def _add():
         factory = await _ensure_db()
@@ -1415,7 +1411,6 @@ def membership_add(
             membership = OrganizationMembership(
                 user_did=user_did,
                 organization_alias=organization,
-                role=role,
             )
             session.add(membership)
             await session.commit()
@@ -1514,7 +1509,9 @@ def membership_import(
                 if not isinstance(entry, dict):
                     continue
                 user_id = entry.get("user_id", member_id)
-                role = entry.get("role")
+                # A `role:` in the file is read past, not rejected: community
+                # registries already carry one and refusing the file would make
+                # migration 0017 a breaking change to somebody else's YAML.
                 status = entry.get("status", "active")
 
                 if did_prefix:
@@ -1546,7 +1543,6 @@ def membership_import(
                 membership = OrganizationMembership(
                     user_did=user_did_val,
                     organization_alias=organization,
-                    role=role,
                     status=status,
                 )
                 session.add(membership)

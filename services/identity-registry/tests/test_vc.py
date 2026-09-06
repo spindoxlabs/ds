@@ -39,13 +39,19 @@ def test_membership_credential_structure():
     assert vc["id"].startswith("urn:uuid:")
 
 
-@pytest.mark.rule("P-25")
-def test_data_subject_credential_names_only_the_revocation_register():
-    """A natural person's credential is revoked or it is not.
+@pytest.mark.rule("P-25", "P-27")
+def test_data_subject_credential_names_both_registers():
+    """A person's credential is suspendable, on the same mirrored index.
 
-    Suspension is a *participant* lifecycle state; there is no in-between state
-    for a `DataSubjectCredential` to be in. It stays a single object, which is
-    also what `ds_auth._verify_credential_status` requires of it.
+    It named the revocation register alone until a **role change** had to be
+    expressible. A credential is immutable, so a changed claim is a new
+    credential — and the superseded one has to be retired without being
+    *revoked*, because the attestation was not withdrawn, it was replaced. That
+    is what `suspension` means and it needs a register to write to.
+
+    The index is mirrored, not allocated twice: one index means the same
+    credential on both registers, and two counters would drift the moment one
+    register was written to more than the other.
     """
     vc = build_data_subject_credential(
         issuer_did="did:web:trust-anchor.dataspaces.localhost",
@@ -53,10 +59,34 @@ def test_data_subject_credential_names_only_the_revocation_register():
         credentials_context_url="https://dataspaces.localhost/ns/credentials/v1",
         dataspace_uri="https://dataspaces.localhost/dataspace",
         status_list_credential_url="https://trust-anchor.dataspaces.localhost/status/1",
+        suspension_list_credential_url="https://trust-anchor.dataspaces.localhost/status/2",
         status_list_index=3,
     )
-    assert isinstance(vc["credentialStatus"], dict)
-    assert vc["credentialStatus"]["statusPurpose"] == "revocation"
+    purposes = {e["statusPurpose"]: e for e in vc["credentialStatus"]}
+    assert set(purposes) == {"revocation", "suspension"}
+    assert all(e["type"] == "StatusList2021Entry" for e in vc["credentialStatus"])
+    assert all(e["statusListIndex"] == "3" for e in vc["credentialStatus"])
+    assert purposes["revocation"]["statusListCredential"].endswith("/status/1")
+    assert purposes["suspension"]["statusListCredential"].endswith("/status/2")
+
+
+@pytest.mark.rule("P-27")
+def test_a_data_subject_credential_is_readable_by_suspension_index():
+    """`suspension_index` is what a suspend path reads, and it used to answer
+    `None` for every person — which is how `suspend_owner` refuses a credential
+    no verifier would see suspended. It must answer the index now."""
+    from identity_registry.services.org_onboarding import suspension_index
+
+    vc = build_data_subject_credential(
+        issuer_did="did:web:trust-anchor.dataspaces.localhost",
+        subject_did="did:web:rec.dataspaces.localhost:users:email-abc",
+        credentials_context_url="https://dataspaces.localhost/ns/credentials/v1",
+        dataspace_uri="https://dataspaces.localhost/dataspace",
+        status_list_credential_url="https://trust-anchor.dataspaces.localhost/status/1",
+        suspension_list_credential_url="https://trust-anchor.dataspaces.localhost/status/2",
+        status_list_index=7,
+    )
+    assert suspension_index(vc) == 7
 
 
 def test_data_subject_credential_structure():
@@ -69,6 +99,7 @@ def test_data_subject_credential_structure():
         credentials_context_url="https://dataspaces.localhost/ns/credentials/v1",
         dataspace_uri="https://dataspaces.localhost/dataspace",
         status_list_credential_url="https://trust-anchor.dataspaces.localhost/status/1",
+        suspension_list_credential_url="https://trust-anchor.dataspaces.localhost/status/2",
         status_list_index=1,
     )
     assert "DataSubjectCredential" in vc["type"]

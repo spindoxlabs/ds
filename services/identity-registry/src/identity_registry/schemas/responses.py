@@ -42,6 +42,25 @@ class CredentialResponse(BaseModel):
     expiresAt: datetime | None = None
 
 
+class RoleTransitionResponse(BaseModel):
+    """Both halves of a reissue, named.
+
+    `supersededCredentialId` is not decoration: a caller that learns only the
+    new id cannot tell a transition from a first issuance, and anything holding
+    the old credential needs to know which one stopped being current.
+    """
+
+    subjectDid: str
+    credentialId: str
+    supersededCredentialId: str
+    fromRole: str | None = None
+    toRole: str
+    generatedAt: datetime
+    custodianDid: str | None = None
+    deliveredTo: str | None = None
+    deliveryError: str | None = None
+
+
 class DataSubjectCredentialResponse(BaseModel):
     subjectDid: str
     credentialId: str
@@ -108,9 +127,15 @@ class UserResolveResponse(BaseModel):
 
 
 class MembershipResponse(BaseModel):
+    """A membership: who, where, and whether it is live.
+
+    No `role`. It was stored and never read, so the value could go stale with
+    nothing noticing — see migration 0017. A person's community role is a
+    `communityRole` claim on their `DataSubjectCredential`.
+    """
+
     user_did: str
     organization_alias: str
-    role: str | None
     status: str
     created_at: datetime
     updated_at: datetime

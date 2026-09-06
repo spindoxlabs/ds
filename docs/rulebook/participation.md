@@ -149,12 +149,18 @@ no state at all.
 **What made suspension distinct.** It was previously the same operation as revocation with a
 different string written over the top: both revoked every credential, set the one register's
 bit, and deactivated the participant, and nothing transitioned out of either. Two things
-changed. A participant credential now names **two** StatusList2021 registers on the index they
+changed. A credential now names **two** StatusList2021 registers on the index they
 share — `/status/1` published as `revocation`, `/status/2` as `suspension` — and EDC checks
 every `credentialStatus` entry, rejecting the credential while either bit is set and reporting
 which. And a suspension bit is the only bit anything clears, so `reinstate` returns the
 organisation's *existing* credential to service rather than minting a replacement. Revocation
 is unchanged and still terminal: reachable from a suspension, never the reverse.
+
+**This covers people too, since 2026-09-06.** A `DataSubjectCredential` used to name the
+revocation register alone. That was right for withdrawing an attestation and wrong for
+superseding one: a credential is immutable, so a changed claim about a person is a new
+credential plus a retired predecessor, and retiring it by *revocation* would assert the
+original attestation had been withdrawn when it had merely been replaced. See `P-27`.
 
 **Everything unprovable is non-conformant.** A participant whose owner does not resolve, whose
 credential has no recorded expiry, whom no criterion covers — each is reported with its reason,
@@ -166,6 +172,8 @@ did not establish.
 | P-23 | Conformity is **re-checked**, not asserted once at onboarding, against a machine-readable projection of this page (`DSSC-TRF-02`, `-03`, `-04`) | **Enforced** — `ir-cli conformity check`, non-zero on any failure. It found, the first time it ran, that **no dev participant had ever accepted the participation agreement**: `P-1`'s last step had no seed path, which is exactly the kind of gap a check made once at onboarding cannot see |
 | P-24 | A participant that no criterion covers is a **finding**, not a pass | **Enforced** — it was admitted on terms nobody wrote down, which is a finding about the criteria |
 | P-25 | **Suspension is a state, not a slower revocation**: a verifier can tell the two apart, and a suspension can be lifted on the credential the holder already has (`DSSC-TRF-04`) | **Enforced** — `suspend_owner` / `reinstate_owner` / `revoke_owner`, `services/identity-registry/tests/test_suspension.py`, and the `suspend` + `reinstate` steps of the `org-onboarding` e2e flow |
+| P-28 | **A role change is a reissue, not an edit.** Changing what a credential claims about somebody suspends the superseded credential and issues its successor, both in one transaction. There is no `PATCH` because the credential model has no in-place update to expose | **Enforced** — `POST /admin/credentials/data-subject/transition`, `services/identity-registry/src/identity_registry/services/role_transition.py`, `services/identity-registry/tests/test_role_transition.py`. **Suspended, never revoked**: revocation says the attestation was withdrawn and is terminal, and a superseded attestation was replaced, not withdrawn. The two halves are one transaction because the failure mode of separating them is a person holding two credentials that disagree, or none |
+| P-27 | **Every credential this registry issues is suspendable** — people included. A credential naming only the revocation register can be retired in exactly one way, and that way asserts more than the issuer means when a claim has merely been superseded | **Enforced** — `_suspendable_credential_status` is the only status block any builder in `services/vc.py` emits, and both issuance paths for a person allocate through `allocate_suspendable_index`. `services/identity-registry/tests/test_vc.py`. **What this does not yet give you is the transition itself**: nothing suspends a person's credential today, because the operation that would — issue the successor and retire the predecessor in one transaction — is not built. This rule is about the credential being *able* to carry the answer |
 
 ## 6. Leaving, suspension and revocation
 

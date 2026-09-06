@@ -237,6 +237,55 @@ async def _active_credential(
     )
 
 
+def credential_role(credential_json: dict | None) -> str | None:
+    """The role a credential claims, or `None`.
+
+    `credential_type` cannot answer this: it is also the VC `type` that DCP
+    presentation matching keys on, so every role a person holds shares one.
+    """
+    subject = (credential_json or {}).get("credentialSubject") or {}
+    role = subject.get("role")
+    return role if isinstance(role, str) else None
+
+
+async def active_data_subject_credential(
+    db: AsyncSession, subject_did: str, role: str | None
+) -> Credential | None:
+    """The person's live `DataSubjectCredential` **for this role**, or `None`.
+
+    Idempotency is **per role, not per subject**. One person legitimately holds
+    several — a data subject about their own consumption who is also a consumer
+    user acting for an organisation — and keying on `credential_type` alone
+    silently skips the second issuance, making a dual-role user impossible to
+    create.
+
+    This lives here rather than in either caller because it had exactly one
+    implementation and two callers, and only one of them had it: `ir-cli
+    credential issue-data-subject` skipped and re-delivered, while
+    `POST /admin/credentials/data-subject` minted a credential and burned a
+    status-list index on every call (ds#30). An index is not recoverable, so the
+    endpoint an external application calls on demand exhausted register capacity
+    at a rate set by page visits.
+    """
+    rows = (
+        (
+            await db.execute(
+                select(Credential).where(
+                    Credential.subject_did == subject_did,
+                    Credential.credential_type == "DataSubjectCredential",
+                    Credential.status == "active",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for cred in rows:
+        if credential_role(cred.credential_json) == role:
+            return cred
+    return None
+
+
 async def _membership_credentials(
     db: AsyncSession,
     settings: Settings,

@@ -21,7 +21,6 @@ def _to_response(m: OrganizationMembership) -> MembershipResponse:
     return MembershipResponse(
         user_did=m.user_did,
         organization_alias=m.organization_alias,
-        role=m.role,
         status=m.status,
         created_at=m.created_at,
         updated_at=m.updated_at,
@@ -57,7 +56,6 @@ async def create_membership(
     membership = OrganizationMembership(
         user_did=data.user_did,
         organization_alias=data.organization_alias,
-        role=data.role,
     )
     db.add(membership)
     await db.commit()

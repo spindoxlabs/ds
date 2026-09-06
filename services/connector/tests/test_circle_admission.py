@@ -125,3 +125,90 @@ async def test_an_unreachable_registry_does_not_admit():
 async def test_an_unknown_constraint_kind_admits_nobody():
     admitted = await _check_constraint("phase_of_the_moon", "waxing", SUBJECT, REGISTRY)
     assert admitted is False
+
+
+# ── credential_claim: an offer restricted to prosumers ────────────
+#
+# A community role is a *claim* on a person's `DataSubjectCredential`, not a
+# credential type — one person keeps one credential per protocol role rather
+# than accumulating one per role they have ever held. So `credential_type`
+# cannot express "is a prosumer", and this kind is its sibling: one asks what
+# somebody holds, the other what it says.
+
+CLAIM_SPEC = {
+    "type": "DataSubjectCredential",
+    "claim": "communityRole",
+    "value": "prosumer",
+}
+
+
+_DEFAULT = object()
+
+
+async def _claim_admitted(spec=_DEFAULT) -> bool:
+    # A sentinel, not `None`: `None` is one of the malformed specs under test,
+    # and defaulting on it would have silently tested the good spec instead.
+    return await _check_constraint(
+        "credential_claim", CLAIM_SPEC if spec is _DEFAULT else spec, SUBJECT, REGISTRY
+    )
+
+
+@pytest.mark.rule("D-21", "D-54")
+@pytest.mark.asyncio
+@respx.mock
+async def test_the_claim_and_value_reach_the_registry():
+    """The comparison happens where the state lives, for the same reason
+    `credential_type` does: only the issuer knows whether the credential
+    carrying that claim is still current."""
+    captured = {}
+
+    def record(request):
+        captured.update(dict(request.url.params))
+        return httpx.Response(200, json={"holds": True})
+
+    respx.get(f"{REGISTRY}/credentials/check").mock(side_effect=record)
+    assert await _claim_admitted() is True
+    assert captured == {
+        "subject_did": SUBJECT,
+        "type": "DataSubjectCredential",
+        "claim": "communityRole",
+        "value": "prosumer",
+    }
+
+
+@pytest.mark.rule("D-21", "D-54")
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_negative_claim_answer_does_not_admit():
+    respx.get(f"{REGISTRY}/credentials/check").mock(
+        return_value=httpx.Response(200, json={"holds": False})
+    )
+    assert await _claim_admitted() is False
+
+
+@pytest.mark.rule("D-14", "D-54")
+@pytest.mark.asyncio
+@respx.mock
+@pytest.mark.parametrize(
+    "spec",
+    [
+        "communityRole=prosumer",  # the stringly-typed shape somebody will try
+        {"claim": "communityRole"},  # no value
+        {"value": "prosumer"},  # no claim
+        {},
+        None,
+    ],
+)
+async def test_a_malformed_spec_admits_nobody(spec):
+    """Unsatisfied, not an error — a constraint this connector cannot evaluate
+    must not admit anyone, and it must not take down the negotiation either.
+
+    The registry is never asked, which is the part worth pinning: a malformed
+    spec that reached `/credentials/check` with a missing parameter would get
+    whatever that endpoint's default happened to be.
+    """
+    route = respx.get(f"{REGISTRY}/credentials/check").mock(
+        return_value=httpx.Response(200, json={"holds": True})
+    )
+    assert await _claim_admitted(spec) is False
+    assert not route.called

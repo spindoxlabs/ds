@@ -59,6 +59,14 @@ router = APIRouter(prefix="/credentials", tags=["credentials"])
 async def check_credential(
     subject_did: str = Query(...),
     type: str = Query(..., description="Credential type, e.g. OrganizationCredential"),
+    claim: str | None = Query(
+        None,
+        description=(
+            "Restrict to credentials whose credentialSubject carries this claim "
+            "with `value` — e.g. claim=communityRole&value=prosumer"
+        ),
+    ),
+    value: str | None = Query(None),
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_credential_read),
 ):
@@ -77,6 +85,15 @@ async def check_credential(
     accident standing in for a check. Deciding validity where the state lives is
     what stops that recurring.
     """
+    # **A claim without a value is refused, not ignored.** Reading it as "any
+    # value" turns a narrower question into a broader one, and this endpoint
+    # decides admission — the one place where quietly widening a query is worst.
+    if (claim is None) != (value is None):
+        raise HTTPException(
+            status_code=422,
+            detail="`claim` and `value` are given together or not at all",
+        )
+
     now = datetime.now(UTC)
     result = await db.execute(
         select(Credential).where(
@@ -86,12 +103,35 @@ async def check_credential(
         )
     )
     holds = any(
-        cred.expires_at is None or _as_utc(cred.expires_at) > now
+        (cred.expires_at is None or _as_utc(cred.expires_at) > now)
+        and _claims_match(cred.credential_json, claim, value)
         for cred in result.scalars().all()
     )
     return CredentialCheckResponse(
         subject_did=subject_did, credential_type=type, holds=holds
     )
+
+
+def _claims_match(
+    credential_json: dict | None, claim: str | None, value: str | None
+) -> bool:
+    """Whether the credential's subject carries `claim` equal to `value`.
+
+    `status == "active"` above is what makes this answer the current question: a
+    **suspended** credential is excluded there, which is exactly what a role
+    transition relies on. A superseded credential still says
+    `communityRole: consumer` in signed JSON that nobody can alter — the register
+    is what says it is no longer current, and this query reads the register's
+    verdict through the `status` column.
+
+    Comparison is exact and case-sensitive. A community's vocabulary is its own;
+    normalising it here would be this service deciding that `Prosumer` and
+    `prosumer` are the same word on somebody else's behalf.
+    """
+    if claim is None:
+        return True
+    subject = (credential_json or {}).get("credentialSubject") or {}
+    return subject.get(claim) == value
 
 
 def _as_utc(value: datetime) -> datetime:

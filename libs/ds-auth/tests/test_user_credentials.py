@@ -42,6 +42,28 @@ def _int_b64(value: int) -> str:
     return _b64(value.to_bytes(32, "big"))
 
 
+_UNSET = object()
+
+TWO_REGISTERS = [
+    {
+        "id": "https://trust-anchor.example/status/1#3",
+        "type": "StatusList2021Entry",
+        "statusPurpose": "revocation",
+        "statusListIndex": "3",
+        "statusListCredential": "https://trust-anchor.example/status/1",
+    },
+    {
+        "id": "https://trust-anchor.example/status/2#3",
+        "type": "StatusList2021Entry",
+        "statusPurpose": "suspension",
+        "statusListIndex": "3",
+        "statusListCredential": "https://trust-anchor.example/status/2",
+    },
+]
+
+ONE_REGISTER = TWO_REGISTERS[0]
+
+
 class Issuer:
     """A key, the document that publishes it, and the credentials it signs."""
 
@@ -86,6 +108,7 @@ class Issuer:
         linked: str | None = PARTICIPANT,
         kid: str | None = None,
         issuer: str | None = None,
+        status: object = _UNSET,
     ) -> str:
         header = {"alg": "ES256", "typ": "JWT", "kid": kid or self.kid}
         vc = {
@@ -98,6 +121,10 @@ class Issuer:
                 **({"linkedParticipant": linked} if linked else {}),
             },
         }
+        # `_UNSET` rather than `None`: a credential with **no** `credentialStatus`
+        # and one with an explicit null are different cases, and both are tested.
+        if status is not _UNSET:
+            vc["credentialStatus"] = status
         payload = {"iss": issuer or self.did, "sub": subject, "vc": vc}
         signing_input = f"{_b64(json.dumps(header))}.{_b64(json.dumps(payload))}"
         der = self.key.sign(signing_input.encode(), ec.ECDSA(hashes.SHA256()))
@@ -391,3 +418,74 @@ def test_did_web_over_http_is_explicit():
 def test_only_did_web_is_supported():
     with pytest.raises(DidResolutionError):
         did_web_url("did:key:z6Mk")
+
+
+# ── credentialStatus: one entry or several ────────────────────────
+#
+# Every credential the identity-registry issues now names **two** registers —
+# revocation and suspension, on the index they share — because a superseded
+# credential has to be retirable without being revoked. That makes
+# `credentialStatus` a JSON *array*, and this check used to require an object.
+# The failure was a 401 reading "User VC has no credentialStatus" on a
+# credential that had two.
+
+
+def _status_list(tmp_path, status: str = "active"):
+    path = tmp_path / "credential-status.json"
+    path.write_text(
+        json.dumps({"credentials": {"urn:uuid:cred-1": {"status": status}}})
+    )
+    return str(path)
+
+
+@pytest.mark.rule("P-27")
+def test_a_credential_naming_both_registers_is_accepted(anchor, resolver, tmp_path):
+    credential = verify(
+        anchor.credential(status=TWO_REGISTERS),
+        resolver,
+        credential_status_path=_status_list(tmp_path),
+    )
+    assert credential.did == SUBJECT
+
+
+@pytest.mark.rule("P-27")
+def test_a_credential_naming_one_register_is_still_accepted(anchor, resolver, tmp_path):
+    """The shape issued before this change, and by any other issuer. Dropping
+    it would refuse every credential already in a wallet."""
+    credential = verify(
+        anchor.credential(status=ONE_REGISTER),
+        resolver,
+        credential_status_path=_status_list(tmp_path),
+    )
+    assert credential.did == SUBJECT
+
+
+@pytest.mark.parametrize("status", [_UNSET, None, [], "not-an-object", [None]])
+def test_a_credential_with_no_usable_status_entry_is_refused(
+    anchor, resolver, tmp_path, status
+):
+    """An empty array is *not* a status entry, and neither is a list of nulls —
+    which is the case a naive `isinstance(status, list)` would let through."""
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=status),
+            resolver,
+            credential_status_path=_status_list(tmp_path),
+        )
+    assert exc.value.status_code == 401
+    assert "credentialStatus" in exc.value.detail
+
+
+def test_a_suspended_credential_is_refused_whatever_its_shape(
+    anchor, resolver, tmp_path
+):
+    """Suspension is what the second register exists for, and this is the check
+    that reads it — by credential id, not by bit."""
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_path=_status_list(tmp_path, "suspended"),
+        )
+    assert exc.value.status_code == 401
+    assert "not active" in exc.value.detail

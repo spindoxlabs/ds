@@ -20,7 +20,7 @@ def _status_entry(url: str, index: int, purpose: str) -> dict[str, Any]:
     }
 
 
-def _participant_credential_status(
+def _suspendable_credential_status(
     *,
     status_list_credential_url: str,
     suspension_list_credential_url: str,
@@ -28,16 +28,22 @@ def _participant_credential_status(
 ) -> list[dict[str, Any]]:
     """Both registers, on the one index they share.
 
-    A participant credential carries **two** `credentialStatus` entries because
-    suspension and revocation are different answers: one is reversible and one
-    is not, and a verifier can only tell them apart if the credential names both
-    registers. A credential naming only the revocation register can be revoked
-    and nothing else — suspending its holder would set a bit nobody reads.
+    A credential carries **two** `credentialStatus` entries because suspension
+    and revocation are different answers: one is reversible and one is not, and
+    a verifier can only tell them apart if the credential names both registers.
+    A credential naming only the revocation register can be revoked and nothing
+    else — suspending its holder would set a bit nobody reads.
 
     Emitting a list rather than an object is safe for every reader that matters:
     EDC's `BaseRevocationListService` enables Jackson's
     `ACCEPT_SINGLE_VALUE_AS_ARRAY`, so both shapes parse, and
-    `RevocationServiceRegistryImpl` checks each entry it finds.
+    `RevocationServiceRegistryImpl` checks each entry it finds. `ds_auth`'s
+    `_verify_credential_status` accepts both shapes for the same reason.
+
+    **Every credential this registry issues uses this**, people included. It was
+    participants only until a role change had to be expressible: a superseded
+    credential that cannot be suspended leaves two valid credentials making
+    different claims about the same person.
     """
     return [
         _status_entry(status_list_credential_url, status_list_index, "revocation"),
@@ -77,7 +83,7 @@ def build_membership_credential(
             "role": role.capitalize(),
             "allowedScopes": allowed_scopes,
         },
-        "credentialStatus": _participant_credential_status(
+        "credentialStatus": _suspendable_credential_status(
             status_list_credential_url=status_list_credential_url,
             suspension_list_credential_url=suspension_list_credential_url,
             status_list_index=status_list_index,
@@ -90,11 +96,13 @@ def build_data_subject_credential(
     issuer_did: str,
     subject_did: str,
     role: str | None = None,
+    community_role: str | None = None,
     linked_participant_did: str | None = None,
     allowed_actions: list[str] | None = None,
     credentials_context_url: str,
     dataspace_uri: str,
     status_list_credential_url: str,
+    suspension_list_credential_url: str,
     status_list_index: int,
     credential_id: str | None = None,
     ttl_days: int = 365,
@@ -113,6 +121,12 @@ def build_data_subject_credential(
     `DSSC-IAM-14` asks for assurance aligned with KYC practice. Ours is
     *whatever the onboarding wizard checked* — worth stating, and useless unless
     it travels with the credential.
+
+    `community_role` is what a **role change** changes, and it is a claim rather
+    than a credential type so that a person keeps one credential per protocol
+    role instead of accumulating one per community role they have ever held. A
+    credential is immutable, so changing it is a reissue: see
+    `services/role_transition.py`.
     """
     cred_id = credential_id or generate_credential_id()
     now = datetime.now(UTC)
@@ -123,6 +137,15 @@ def build_data_subject_credential(
     }
     if role:
         subject["role"] = role
+    if community_role:
+        # **`communityRole`, not `role`.** `role` is the *VC* role — `DataSubject`
+        # or `ConsumerUser` — and ds-connector and ds-provenance check it as
+        # `required_roles` on every call (`ds_auth.verify_user_vc_jwt`). Writing
+        # a community role such as `prosumer` there would 403 the holder out of
+        # every route they could previously reach. Two different questions, two
+        # claims: what this person may do in the protocol, and what they are in
+        # their energy community.
+        subject["communityRole"] = community_role
     if linked_participant_did:
         subject["linkedParticipant"] = linked_participant_did
     if allowed_actions:
@@ -142,13 +165,19 @@ def build_data_subject_credential(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "credentialSubject": subject,
-        # **One register, deliberately.** Suspension is a *participant*
-        # lifecycle state (`participation.md` §5) — an organisation stops
-        # qualifying and may qualify again. A natural person's credential is
-        # revoked or it is not; there is no state in between for it to be in, so
-        # it names the revocation register only.
-        "credentialStatus": _status_entry(
-            status_list_credential_url, status_list_index, "revocation"
+        # **Both registers**, as an organisation's credential has always
+        # carried. This named the revocation register only, on the argument that
+        # a person's credential is revoked or it is not. That argument does not
+        # survive a *claim* changing: when what a credential says about somebody
+        # stops being true — a consumer commissions generation and becomes a
+        # prosumer — the model's answer is to retire the old credential and
+        # issue its successor, and "retire" here has to mean suspension. A
+        # revocation would say the attestation was withdrawn; it was not, it was
+        # superseded, and the person may hold a successor tomorrow.
+        "credentialStatus": _suspendable_credential_status(
+            status_list_credential_url=status_list_credential_url,
+            suspension_list_credential_url=suspension_list_credential_url,
+            status_list_index=status_list_index,
         ),
     }
 
@@ -218,7 +247,7 @@ def build_organization_credential(
             "%Y-%m-%dT%H:%M:%SZ"
         ),
         "credentialSubject": subject,
-        "credentialStatus": _participant_credential_status(
+        "credentialStatus": _suspendable_credential_status(
             status_list_credential_url=status_list_credential_url,
             suspension_list_credential_url=suspension_list_credential_url,
             status_list_index=status_list_index,
