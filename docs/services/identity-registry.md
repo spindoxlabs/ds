@@ -418,6 +418,32 @@ with the anchor. Idempotent, and it never rotates: a bootstrap that generated a 
 every restart would silently invalidate every credential bound to the old one. Rotation is
 `ir-cli key rotate`, deliberately separate.
 
+Idempotent **with the code too**, which is what makes it safe to run unconditionally from a
+container's entrypoint or an init container. An enrolment code is single-use, so re-presenting
+one is a `401`; before checking, a participant that restarted exited `1` on every start after
+the first. The check asks what this instance *holds* — a credential from the anchor, about
+itself, which is the only local record that a code was ever redeemed — and not whether it has
+a key. An instance keyed by a bootstrap whose enrolment then failed still enrols, with no
+flag. `--force` re-presents a **fresh** code, for an operator who has issued a second one.
+
+`ir-cli participant status` reports those two facts separately: whether this instance holds
+its private key, and whether it is actually enrolled. It reads only — where `init` would
+generate a keypair, `status` reports that none is held. (`ir-cli participant list` is a
+different question again: it reports the rows this *registry* holds, not this instance's own
+enrolment state.)
+
+**Exit `0` means enrolled**, and `--quiet` makes the exit code the whole answer, so a
+bootstrap outside this repository can branch on it:
+
+```sh
+ir-cli participant status --quiet || ir-cli participant init --code "$CODE"
+```
+
+Keyed-but-not-enrolled exits non-zero deliberately. It is a real state and not a rare one:
+on a fresh stack the bootstrap runs before an operator has minted any code, so the instance
+generates its key, exits, and is enrolled only on a later start. A caller that read "has a
+key" as "nothing to do" would leave it holding no credential, silently, forever.
+
 The anchor verifies that enrolment by **fetching the participant's DID document over did:web**,
 so the participant must already be serving *and already be routed* before it enrols. An
 instance that is up but not yet reachable at its `did:web` host fails with a resolution error

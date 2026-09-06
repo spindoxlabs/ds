@@ -427,6 +427,15 @@ services:
         # did not trip on a substitution inside an argument, and `--code ""` took
         # the "no code given" branch — so the bootstrap printed *ready* having
         # enrolled nothing. Observed on the first live run of `DID-05`.
+        #
+        # **Safe on a restart, and the guard is not here.** An enrolment code is
+        # single-use, so this used to exit 1 on every start after the first
+        # (`#28`). `participant init` now checks whether this instance already
+        # holds the anchor's credentials and declines to spend a code when it
+        # does — one check, in the command that owns the question, rather than a
+        # shell probe copied into each of these files. Do not re-add one: a probe
+        # that greps for "Already held" reads *keyed*, and would never enrol an
+        # instance whose key exists and whose enrolment failed.
         CODE="$$(cat /enrolment/consumer-org.code 2>/dev/null || true)"
         if [ -z "$$CODE" ]; then
           echo "No enrolment code at /enrolment/consumer-org.code." >&2

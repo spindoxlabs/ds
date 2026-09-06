@@ -21,6 +21,11 @@ they are separate functions. An instance can hold its identity and serve DCP
 before the anchor knows about it; it cannot prove anything to the anchor without
 first holding a key.
 
+`enrolment_state` reads which of the two has happened, and writes nothing. It
+exists because *keyed* and *enrolled* look identical from outside and are not:
+step 2 spends a single-use code, so a caller that cannot tell them apart either
+re-presents a spent code on every restart or never retries a failed enrolment.
+
 ## The ordering trap this will hit in dev
 
 The anchor verifies the request by resolving the client's DID **over did:web** —
@@ -36,14 +41,15 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..config import Settings
-from ..db.models import Did, Key, Participant
+from ..db.models import Credential, Did, Key, Participant
 from .crypto import encrypt_private_jwk, generate_key_pair, hash_sts_secret
 from .enrolment import CREDENTIAL_SERVICE_TYPE, DSP_ENDPOINT_TYPE
 from .token import create_self_signed_token
@@ -198,6 +204,105 @@ async def ensure_identity(
         created=created,
         service_endpoints=endpoints,
         created_participant=created_participant,
+    )
+
+
+@dataclass(slots=True)
+class HeldCredential:
+    """One credential this instance holds, as `participant status` reports it."""
+
+    credential_type: str
+    status: str
+    issued_at: datetime | None = None
+    expires_at: datetime | None = None
+
+
+@dataclass(slots=True)
+class EnrolmentState:
+    """*Keyed* and *enrolled* are two facts, and only the second spends a code.
+
+    Nothing before this told them apart. `ensure_identity` reports whether it
+    generated a key or found one, and a bootstrap that read "already held" as
+    "already enrolled" would never enrol an instance whose key was generated and
+    whose enrolment then failed — while one that read it as "not enrolled" would
+    re-present a single-use code on every restart and take a 401 (`#28`).
+    """
+
+    did: str
+    anchor_did: str
+    kid: str | None = None
+    #: A private key for `did` is held **here**. False for a public-only row —
+    #: somebody else's key recorded under this DID, which `ensure_identity`
+    #: refuses to build on.
+    keyed: bool = False
+    credentials: list[HeldCredential] = field(default_factory=list)
+
+    @property
+    def enrolled(self) -> bool:
+        """Has an enrolment code already been redeemed for this instance?
+
+        Enrolment issues and delivers in **one** call (`api/v1/issuer.py`), and
+        the holder writes what arrives (`issuance.store_delivered`). So a
+        credential here, from the anchor, about this DID, is the local evidence
+        that a code was spent successfully — and it is the only such evidence:
+        nothing else on this side records the exchange.
+
+        Not filtered by `status` or `expires_at`, deliberately. The question is
+        *was a code redeemed*, not *is this credential currently good*: a revoked
+        or lapsed credential still proves the redemption, and re-presenting the
+        same spent code would not renew it. A fresh code and `--force` would.
+        """
+        return bool(self.credentials)
+
+
+async def enrolment_state(
+    db: AsyncSession, settings: Settings, *, did: str | None = None
+) -> EnrolmentState:
+    """Read what this instance holds. Creates nothing.
+
+    A status command that generated a keypair as a side effect of being asked a
+    question would be a trap, so this never calls `ensure_identity`: where that
+    would generate, this reports `keyed=False`.
+    """
+    did = did or settings.participant_did
+    if not did:
+        raise ParticipantBootstrapError(
+            "No DID configured. Set IDENTITY_REGISTRY_PARTICIPANT_DID to the DID "
+            "this instance holds the key for."
+        )
+
+    key = (
+        await db.execute(select(Key).where(Key.owner_did == did, Key.active.is_(True)))
+    ).scalar_one_or_none()
+
+    anchor_did = settings.trust_anchor_did
+    rows = (
+        (
+            await db.execute(
+                select(Credential).where(
+                    Credential.subject_did == did,
+                    Credential.issuer_did == anchor_did,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    return EnrolmentState(
+        did=did,
+        anchor_did=anchor_did,
+        kid=key.kid if key is not None else None,
+        keyed=key is not None and key.private_jwk is not None,
+        credentials=[
+            HeldCredential(
+                credential_type=row.credential_type,
+                status=row.status,
+                issued_at=row.issued_at,
+                expires_at=row.expires_at,
+            )
+            for row in rows
+        ],
     )
 
 

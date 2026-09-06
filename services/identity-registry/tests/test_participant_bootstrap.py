@@ -21,6 +21,7 @@ from conftest import TEST_DATABASE_URL, StubResolver, make_admin_headers
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from identity_registry.config import Settings, get_settings
 from identity_registry.db.engine import Base
@@ -741,3 +742,395 @@ async def test_a_payload_that_is_not_an_object_is_refused(holder, participant_re
         headers={"Authorization": f"Bearer {anchor.token()}"},
     )
     assert r.status_code == 422
+
+
+# ── Keyed is not enrolled (`#28`) ─────────────────────────────────
+#
+# An enrolment code is single-use. The three compose bootstraps pass `--code`
+# unconditionally on every start, so before this the second start took a `401`
+# and exited 1 — invisible only because those containers had not been re-run.
+#
+# The fix is a check in the command rather than a shell probe in each caller,
+# and what it checks is the point: **a credential from the anchor about this
+# DID**, not whether a key exists. Enrolment issues and delivers in one call, so
+# that row is the local evidence a code was redeemed — and it is the only
+# evidence, which is why an instance that is keyed but not enrolled must still
+# enrol.
+
+
+async def _store_own_credential(db, **overrides):
+    """What the anchor's delivery leaves behind in the participant's store."""
+    row = {
+        "id": "urn:uuid:membership-1",
+        "credential_type": "MembershipCredential",
+        "issuer_did": ANCHOR_DID,
+        "subject_did": REC_DID,
+        "credential_json": {"type": ["VerifiableCredential", "MembershipCredential"]},
+    }
+    row.update(overrides)
+    db.add(Credential(**row))
+    await db.flush()
+
+
+@pytest.mark.asyncio
+async def test_an_instance_with_nothing_is_neither_keyed_nor_enrolled(participant_db):
+    state = await boot.enrolment_state(participant_db, participant_settings())
+
+    assert state.did == REC_DID
+    assert state.anchor_did == ANCHOR_DID
+    assert state.kid is None
+    assert not state.keyed
+    assert not state.enrolled
+
+
+@pytest.mark.asyncio
+async def test_a_keyed_instance_is_not_yet_enrolled(participant_db):
+    """The case the compose probe in `#28` would have got wrong.
+
+    `ensure_identity` has run and `participant init` prints *Already held* — but
+    nothing has been issued, so a code still has to be spent.
+    """
+    settings = participant_settings()
+    identity = await boot.ensure_identity(participant_db, settings)
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, settings)
+
+    assert state.keyed
+    assert state.kid == identity.kid
+    assert not state.enrolled
+
+
+@pytest.mark.asyncio
+async def test_a_delivered_credential_is_what_makes_it_enrolled(participant_db):
+    settings = participant_settings()
+    await boot.ensure_identity(participant_db, settings)
+    await _store_own_credential(participant_db)
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, settings)
+
+    assert state.enrolled
+    assert [c.credential_type for c in state.credentials] == ["MembershipCredential"]
+
+
+@pytest.mark.asyncio
+async def test_a_revoked_credential_still_means_the_code_was_spent(participant_db):
+    """`enrolled` answers *was a code redeemed*, not *is this credential good*.
+
+    Re-presenting the spent one would not renew anything — renewal needs a fresh
+    code — so treating a revoked credential as "not enrolled" would put the
+    restart failure straight back for any participant that had been suspended.
+    """
+    settings = participant_settings()
+    await boot.ensure_identity(participant_db, settings)
+    await _store_own_credential(participant_db, status="revoked")
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, settings)
+
+    assert state.enrolled
+    assert state.credentials[0].status == "revoked"
+
+
+@pytest.mark.asyncio
+async def test_a_credential_about_somebody_else_is_not_this_instances_enrolment(
+    participant_db,
+):
+    """A REC holds its members' credentials too (`DID-11` step 2, `D-49`).
+
+    Those are delivered here and stored here, with the *person* as the subject.
+    Counting one would make an organisation that had onboarded a member look
+    enrolled when it never was.
+    """
+    settings = participant_settings()
+    await boot.ensure_identity(participant_db, settings)
+    member = f"{REC_DID}:users:alice"
+    participant_db.add(Did(did=member, did_type="user", key_id=None))
+    await participant_db.flush()
+    await _store_own_credential(
+        participant_db,
+        id="urn:uuid:member-1",
+        credential_type="ProviderUser",
+        subject_did=member,
+    )
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, settings)
+
+    assert not state.enrolled
+
+
+@pytest.mark.asyncio
+async def test_a_credential_from_another_issuer_is_not_enrolment(participant_db):
+    """Enrolment is with *the anchor*. A credential from a counterparty is not it."""
+    settings = participant_settings()
+    await boot.ensure_identity(participant_db, settings)
+    await _store_own_credential(
+        participant_db, issuer_did="did:web:someone-else.dataspaces.localhost"
+    )
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, settings)
+
+    assert not state.enrolled
+
+
+@pytest.mark.asyncio
+async def test_a_public_only_key_does_not_read_as_keyed(participant_db):
+    """The two-instances-one-database misconfiguration `ensure_identity` refuses.
+
+    `participant status` has to be able to *say* that rather than raise, because
+    it is the command an operator runs to find out.
+    """
+    kp = generate_key_pair(REC_DID)
+    key = Key(owner_did=REC_DID, kid=kp.kid, private_jwk=None, public_jwk=kp.public_jwk)
+    participant_db.add(key)
+    await participant_db.flush()
+    participant_db.add(Did(did=REC_DID, did_type="participant", key_id=key.id))
+    await participant_db.commit()
+
+    state = await boot.enrolment_state(participant_db, participant_settings())
+
+    assert state.kid == kp.kid
+    assert not state.keyed
+
+
+@pytest.mark.asyncio
+async def test_enrolment_state_creates_nothing(participant_db):
+    """`status` reports; it does not bootstrap. A status command that minted a
+    keypair as a side effect of being asked a question would be a trap."""
+    await boot.enrolment_state(participant_db, participant_settings())
+    await participant_db.commit()
+
+    assert (await participant_db.execute(select(Key))).scalars().all() == []
+    assert (await participant_db.execute(select(Did))).scalars().all() == []
+
+
+@pytest.mark.asyncio
+async def test_enrolment_state_with_no_did_configured_is_a_refusal(participant_db):
+    settings = participant_settings(participant_did=None)
+    with pytest.raises(boot.ParticipantBootstrapError) as excinfo:
+        await boot.enrolment_state(participant_db, settings)
+    assert "PARTICIPANT_DID" in str(excinfo.value)
+
+
+# ── The command that spends the code ──────────────────────────────
+
+
+def _participant_engine(path):
+    """`NullPool` because each `ir-cli` command owns its own event loop.
+
+    A pooled connection outlives the `asyncio.run` that opened it and is then
+    held by a loop that has closed, which surfaces as an aiosqlite thread
+    exception at garbage-collection time — in a different test than the one that
+    leaked it. Nothing pooled, nothing left behind.
+    """
+    return create_async_engine(f"sqlite+aiosqlite:///{path}", poolclass=NullPool)
+
+
+@pytest.fixture
+def participant_cli(tmp_path, monkeypatch):
+    """`ir-cli participant …` against a database of this participant's own.
+
+    `_ensure_db` is replaced rather than redirected: the real one runs an Alembic
+    check, and every `ir-cli` command owns its own event loop (`_run` is
+    `asyncio.run`), so the engine has to be built *inside* the call rather than
+    handed in from a fixture's loop.
+    """
+    import asyncio
+
+    from identity_registry.cli import main as cli_main
+
+    path = tmp_path / "participant.db"
+
+    async def _create():
+        engine = _participant_engine(path)
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await engine.dispose()
+
+    asyncio.run(_create())
+
+    settings = participant_settings(database_url=f"sqlite+aiosqlite:///{path}")
+    monkeypatch.setattr(cli_main, "get_settings", lambda: settings)
+
+    async def _factory():
+        return async_sessionmaker(_participant_engine(path), expire_on_commit=False)
+
+    monkeypatch.setattr(cli_main, "_ensure_db", _factory)
+    return path
+
+
+def _seed_delivered_credential(path):
+    """What the anchor's delivery leg leaves in this instance's own store."""
+    import asyncio
+
+    async def _go():
+        factory = async_sessionmaker(_participant_engine(path), expire_on_commit=False)
+        async with factory() as session:
+            session.add(
+                Credential(
+                    id="urn:uuid:membership-1",
+                    credential_type="MembershipCredential",
+                    issuer_did=ANCHOR_DID,
+                    subject_did=REC_DID,
+                    credential_json={"type": ["VerifiableCredential"]},
+                )
+            )
+            await session.commit()
+
+    asyncio.run(_go())
+
+
+@pytest.fixture
+def spied_enrol(monkeypatch):
+    """Records what was presented to the anchor, and never leaves the process."""
+    calls = []
+
+    async def _enrol(session, settings, *, code, did=None, **kwargs):
+        calls.append(code)
+        return boot.EnrolmentResult(
+            issuer_pid="urn:uuid:issuer-pid",
+            holder_pid="urn:uuid:holder-pid",
+            status="ISSUED",
+            location=None,
+        )
+
+    monkeypatch.setattr(boot, "enrol", _enrol)
+    return calls
+
+
+def _invoke(*args):
+    from typer.testing import CliRunner
+
+    from identity_registry.cli.main import app as cli
+
+    return CliRunner().invoke(cli, list(args))
+
+
+def test_a_first_bootstrap_spends_the_code(participant_cli, spied_enrol):
+    result = _invoke("participant", "init", "--code", "first-code")
+
+    assert result.exit_code == 0, result.output
+    assert spied_enrol == ["first-code"]
+    assert "Generated" in result.output
+
+
+def test_a_bootstrap_that_only_keyed_still_enrols(participant_cli, spied_enrol):
+    """`#28`'s known gap in the shell shape, and the reason the check is not it.
+
+    A probe that greps `participant init` for "Already held" reads *keyed*, so an
+    instance whose key was generated and whose enrolment then failed would never
+    be enrolled — it would print *ready* forever.
+    """
+    assert _invoke("participant", "init").exit_code == 0
+    assert spied_enrol == []
+
+    result = _invoke("participant", "init", "--code", "the-code")
+
+    assert result.exit_code == 0, result.output
+    assert "Already held" in result.output
+    assert spied_enrol == ["the-code"]
+
+
+def test_a_restart_does_not_present_the_spent_code(participant_cli, spied_enrol):
+    """The defect: an enrolment code is single-use, so this exited 1 every time."""
+    assert _invoke("participant", "init", "--code", "the-code").exit_code == 0
+    _seed_delivered_credential(participant_cli)
+    spied_enrol.clear()
+
+    result = _invoke("participant", "init", "--code", "the-code")
+
+    assert result.exit_code == 0, result.output
+    assert spied_enrol == []
+    assert "Already enrolled" in result.output
+    assert "MembershipCredential" in result.output
+    # The identity half still runs: the published service endpoints are
+    # refreshed on every start, and that is what makes it a bootstrap.
+    assert "Already held" in result.output
+
+
+def test_force_re_presents_a_fresh_code(participant_cli, spied_enrol):
+    """`POST /issuer/credentials`: the same DID re-presenting a *valid* code
+    refreshes what it publishes. An operator who issues a second token has to be
+    able to spend it."""
+    assert _invoke("participant", "init", "--code", "the-code").exit_code == 0
+    _seed_delivered_credential(participant_cli)
+    spied_enrol.clear()
+
+    result = _invoke("participant", "init", "--code", "a-fresh-code", "--force")
+
+    assert result.exit_code == 0, result.output
+    assert spied_enrol == ["a-fresh-code"]
+
+
+def test_status_reports_keyed_but_not_enrolled(participant_cli):
+    """`#29`'s sequence: the bootstrap ran before the anchor had minted a code.
+
+    The instance holds a key, resolves its DID and serves `/credentials/*` — and
+    has no credential from the anchor. Non-zero, because a caller that read this
+    as "nothing to do" would never enrol it.
+    """
+    assert _invoke("participant", "init").exit_code == 0
+
+    result = _invoke("participant", "status")
+
+    assert result.exit_code == 1, result.output
+    assert "held here" in result.output
+    assert "Enrolled: no" in result.output
+
+
+def test_status_reports_enrolled(participant_cli, spied_enrol):
+    assert _invoke("participant", "init", "--code", "the-code").exit_code == 0
+    _seed_delivered_credential(participant_cli)
+
+    result = _invoke("participant", "status")
+
+    assert result.exit_code == 0, result.output
+    assert "Enrolled: yes" in result.output
+    assert "MembershipCredential" in result.output
+
+
+def test_status_exits_non_zero_when_no_key_is_held(participant_cli):
+    """And it never becomes the thing that creates the identity it was asked
+    about — `init` generates, `status` reports."""
+    result = _invoke("participant", "status")
+
+    assert result.exit_code == 1
+    assert "Key:     none" in result.output
+    assert "Enrolled: no" in result.output
+
+
+def test_quiet_status_is_the_exit_code_alone(participant_cli, spied_enrol):
+    """The shape `#29` asks for:
+
+    ir-cli participant status --quiet || ir-cli participant init --code "$CODE"
+    """
+    assert _invoke("participant", "status", "--quiet").exit_code == 1
+    assert _invoke("participant", "init").exit_code == 0
+    assert _invoke("participant", "status", "--quiet").exit_code == 1
+
+    assert _invoke("participant", "init", "--code", "the-code").exit_code == 0
+    _seed_delivered_credential(participant_cli)
+
+    result = _invoke("participant", "status", "--quiet")
+    assert result.exit_code == 0
+    assert result.output == ""
+
+
+def test_quiet_status_with_no_did_configured_is_non_zero_and_silent(
+    participant_cli, monkeypatch
+):
+    """A bootstrap running `status --quiet ||` on a misconfigured instance must
+    fall through to `init`, which is the command that says what is wrong."""
+    from identity_registry.cli import main as cli_main
+
+    monkeypatch.setattr(
+        cli_main, "get_settings", lambda: participant_settings(participant_did=None)
+    )
+
+    result = _invoke("participant", "status", "--quiet")
+
+    assert result.exit_code == 1
+    assert result.output == ""

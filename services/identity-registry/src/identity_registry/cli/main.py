@@ -157,6 +157,14 @@ def participant_init(
         None,
         help="Enrolment code from the trust anchor. Omit to only generate the key.",
     ),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help=(
+            "Present --code even though this instance is already enrolled. "
+            "Needs a *fresh* code: the one already redeemed stays spent."
+        ),
+    ),
 ):
     """Generate **this instance's own** DID key, then enrol it with the anchor.
 
@@ -164,12 +172,20 @@ def participant_init(
     real: the keypair is generated here, encrypted with this instance's own
     encryption key, and never leaves. The anchor is sent a *signature*, not a key.
 
-    Idempotent. Re-running keeps the existing key — a bootstrap that rotated on
+    **Idempotent with or without a code**, which is what makes it safe as a
+    bootstrap. Re-running keeps the existing key — a bootstrap that rotated on
     every pod start would invalidate every credential bound to the old key,
-    silently. Rotation is `ir-cli key rotate`, deliberately.
+    silently; rotation is `ir-cli key rotate`, deliberately. And re-running
+    *with* the code it already used enrols nothing rather than re-presenting it:
+    an enrolment code is single-use, so a container that spent one on every start
+    exited 1 on every restart after the first (`#28`).
 
-    With no ``--code`` it stops after generating the identity, which is the right
-    thing on a restart: the instance is already enrolled and the code is spent.
+    "Already enrolled" is read from what this instance holds — a credential from
+    the anchor, about itself — and not from whether it has a key. The two are
+    different, and the difference is the case that matters: an instance keyed by
+    a bootstrap whose enrolment then failed still enrols here, with no flag.
+
+    With no ``--code`` it stops after generating the identity.
     """
     from ..services import participant_bootstrap as boot
 
@@ -197,6 +213,16 @@ def participant_init(
                 typer.echo("No --code given; not enrolling.")
                 return
 
+            state = await boot.enrolment_state(session, settings, did=identity.did)
+            if state.enrolled and not force:
+                held = ", ".join(sorted({c.credential_type for c in state.credentials}))
+                typer.echo(
+                    f"Already enrolled with {state.anchor_did} (holds {held}); "
+                    "not spending an enrolment code. Pass --force with a fresh "
+                    "code to re-present one."
+                )
+                return
+
             try:
                 result = await boot.enrol(
                     session, settings, code=code, did=identity.did
@@ -210,6 +236,87 @@ def participant_init(
             )
 
     _run(_init())
+
+
+@participant_app.command("status")
+def participant_status(
+    did: str = typer.Option(None, help="DID to report on (default: PARTICIPANT_DID)"),
+    quiet: bool = typer.Option(
+        False,
+        "--quiet",
+        "-q",
+        help="Print nothing; the exit code is the answer.",
+    ),
+):
+    """What this instance holds: its key, and whether it is actually enrolled.
+
+    Two states matter to a bootstrap and only one of them used to be observable
+    (`#29`). `participant init` says *Generated* or *Already held*, which is
+    about the **key**; nothing said whether the anchor had ever issued to this
+    instance. `participant list` is a third question again — it reports the rows
+    this registry holds, which on a participant is not the same as its own
+    enrolment.
+
+    **Exit `0` means enrolled**, so a bootstrap can branch on it:
+
+        ir-cli participant status --quiet || ir-cli participant init --code "$CODE"
+
+    Reads only. Where `init` would generate a keypair, this reports that none is
+    held — a status command that created an identity as a side effect of being
+    asked about one would be a trap.
+    """
+    from ..services import participant_bootstrap as boot
+
+    async def _status():
+        settings = get_settings()
+        factory = await _ensure_db()
+        async with factory() as session:
+            try:
+                state = await boot.enrolment_state(session, settings, did=did)
+            except boot.ParticipantBootstrapError as exc:
+                if quiet:
+                    raise typer.Exit(1) from exc
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+
+            if quiet:
+                raise typer.Exit(0 if state.enrolled else 1)
+
+            typer.echo(f"DID:     {state.did}")
+            if state.keyed:
+                typer.echo(f"Key:     held here (kid={state.kid})")
+            elif state.kid:
+                # The shape `ensure_identity` refuses to build on: somebody
+                # else's public key recorded under this DID.
+                typer.echo(
+                    f"Key:     public only (kid={state.kid}) — this instance "
+                    "does not hold the private half"
+                )
+            else:
+                typer.echo("Key:     none")
+
+            typer.echo(f"Anchor:  {state.anchor_did}")
+            if state.enrolled:
+                typer.echo("Enrolled: yes")
+                for cred in state.credentials:
+                    expiry = (
+                        f", expires {cred.expires_at.isoformat()}"
+                        if cred.expires_at
+                        else ""
+                    )
+                    typer.echo(f"  {cred.credential_type} ({cred.status}{expiry})")
+            else:
+                typer.echo(
+                    "Enrolled: no — run 'ir-cli participant init --code <code>' "
+                    "with a code from the trust anchor."
+                )
+                # The exit code answers *enrolled*, not *keyed*. Keyed-and-not-
+                # enrolled is the state `#29` was filed about — a bootstrap that
+                # ran before any code existed — and it is exactly the one a
+                # caller must not read as "nothing to do".
+                raise typer.Exit(1)
+
+    _run(_status())
 
 
 @participant_app.command("list")
