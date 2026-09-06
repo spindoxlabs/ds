@@ -49,7 +49,7 @@ only knowable from the profile in force. A producer validates a
 `GET /ns/policy` serves the same taxonomy at runtime with its full SKOS
 structure. Both are built from the profile, so they cannot disagree —
 **regenerate this file whenever the profile changes.** The alignment behind each
-entry's `dpv` IRI is documented in `docs/taxonomies/dpv-2.3.md`.
+entry's `dpv` IRI is documented in `docs/standards/dpv-2.3.md`.
 
 ## The copied one
 

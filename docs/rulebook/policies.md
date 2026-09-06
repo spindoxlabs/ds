@@ -62,7 +62,7 @@ The purpose taxonomy is nine SKOS concepts with a local `broader` hierarchy and 
 | A-2 | Consent to a child purpose does **not** cover its parent | **Enforced** |
 
 Adding a purpose means editing the profile *and* recording the DPV alignment in
-[`docs/taxonomies/dpv-2.3.md`](../taxonomies/dpv-2.3.md), *and* regenerating
+[`docs/standards/dpv-2.3.md`](../standards/dpv-2.3.md), *and* regenerating
 `schemas/purpose-vocabulary.json`, whose `enum` is the active profile's slug list.
 
 ### 2.2 Validation rules (`AUP-46`)

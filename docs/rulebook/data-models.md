@@ -122,7 +122,7 @@ vocabularies and related documentation. CEEDS assigns a **Vocabulary Hub** compo
 | `GET /ns/vocabularies` | the semantic vocabulary registry — slug, title, version, canonical IRI, cached or not | public, unauthenticated |
 | `GET /ns/{slug}` | a **semantic** vocabulary's cached JSON-LD definition — SAREF, CIM, COSEM | public, unauthenticated |
 | `schemas/` | JSON Schema for every YAML shape that crosses a repository boundary, generated from the Pydantic models | in-repo |
-| [`docs/taxonomies/dpv-2.3.md`](../taxonomies/dpv-2.3.md) | the DPV alignment of every purpose, with the reasoning per choice | published |
+| [`docs/standards/dpv-2.3.md`](../standards/dpv-2.3.md) | the DPV alignment of every purpose, with the reasoning per choice | published |
 
 **Two layers are served here and the distinction matters.** `/ns/policy` and
 `/ns/sharing-offers` publish the *policy* vocabulary — the purposes, operands and offer codes
@@ -179,7 +179,7 @@ medallion values, the PROV-O domain profile:
 1. **Change is a code change.** The vocabulary lives in a file in this repository and moves
    through review like any other change.
 2. **A purpose addition requires three things in one commit:** the profile entry, the DPV
-   alignment written up in `docs/taxonomies/dpv-2.3.md`, and a regenerated
+   alignment written up in `docs/standards/dpv-2.3.md`, and a regenerated
    `schemas/purpose-vocabulary.json`. The validation only asserts that the IRI is absolute
    and the relation is a SKOS match property, so **a wrong-but-well-formed IRI passes every
    test in this repository** — the write-up is the actual review gate.

@@ -141,7 +141,7 @@ def test_default_profile_dpv_mappings_are_dpv_iris():
 
     `check_purpose_taxonomy` only asserts the IRI is absolute and the relation is
     a SKOS match property, so a plausible-looking IRI from anywhere passes. The
-    alignments and the reasoning behind each are in `docs/taxonomies/dpv-2.3.md`.
+    alignments and the reasoning behind each are in `docs/standards/dpv-2.3.md`.
     """
     profile = load_odrl_profile()
     for concept in profile.purposes:

@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-01 from `9883d37-dirty`.
+Generated 2026-09-06 from `2d62202-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 37 |
 | …answered **at page level only** | 121 |
 | …**unassessed** | 531 |
-| Rulebook rules | 146 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 116 |
-| …of those, **evidenced by a test that names them** | 116 |
+| Rulebook rules | 150 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 119 |
+| …of those, **evidenced by a test that names them** | 119 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 790 |
+| Test nodes declaring a rule | 803 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -45,6 +45,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-8` | Enforced | ✅ evidenced | unit×6 | `libs/governance/tests/tests/test_dcat_shapes.py::TestCatalogRecord::test_points_at_its_dataset_via_primary_topic`, `libs/governance/tests/tests/test_dcat_shapes.py::test_the_context_defines_foaf`, `services/federated-catalog/tests/test_dcat_shape.py::test_every_entry_carries_a_catalogue_record` +3 more |
 | `C-9` | Enforced | ✅ evidenced | unit×10 | `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_missing_file_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_no_sources_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_valid_file_passes_cleanly` +7 more |
 | `C-10` | Enforced | ✅ evidenced | unit×13 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_consent_required_without_filter_warns`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_consent_required_with_filter_column_is_clean`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_pii_without_row_filtering_warns` +10 more |
+| `C-10a` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +1 more |
 | `C-11` | Enforced | ✅ evidenced | unit×5 | `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_empty_purpose_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_absent_purpose_block_is_an_error`, `services/connector/tests/test_consent_vocabulary.py::TestPurposeEnforcement::test_empty_requested_purpose_is_denied_for_pii` +2 more |
 | `C-12` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_compliance_evidence.py::TestDcatBlock::test_every_dcat_field_is_emitted`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_dataset_missing_a_mandatory_dcat_property_fails`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_complete_dataset_raises_no_dcat_ap_error` |
 | `C-13` | Not enforced | · consistent | — | — |
@@ -78,6 +79,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-13` | Partly enforced | ✅ evidenced | e2e×1 | `api-contract` |
 | `X-14` | Declared | · consistent | — | — |
 | `X-15` | Declared | · consistent | — | — |
+| `X-16` | Declared | · consistent | — | — |
 
 ### `data-models.md`
 
@@ -91,7 +93,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `M-6` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_declaring_no_model_is_not_a_finding`, `services/connector/tests/test_vocabulary_startup.py::test_no_shipped_vocabulary_needs_the_network_at_boot`, `services/connector/tests/test_vocabulary_startup.py::test_no_shipped_vocabulary_imposes_a_real_world_model` |
 | `M-7` | Enforced | ✅ evidenced | e2e×1, unit×7 | `semantic-model`, `libs/governance/tests/test_semantic_model_contract.py::test_the_declaration_is_the_canonical_iri_and_is_shared_across_datasets`, `libs/governance/tests/tests/test_compliance_checks.py::TestSemanticModel::test_a_bare_name_is_an_error` +5 more |
 | `M-8` | Enforced | ✅ evidenced | e2e×1, unit×10 | `semantic-model`, `libs/governance/tests/test_semantic_model_contract.py::test_every_declared_model_is_served_by_this_participant`, `libs/governance/tests/test_semantic_model_contract.py::test_a_participants_own_vocabulary_needs_no_network` +8 more |
-| `M-9` | Enforced | ✅ evidenced | unit×5 | `libs/governance/tests/tests/test_schema_conformance.py::test_conforms_to_the_canonical_schema`, `libs/governance/tests/tests/test_schema_conformance.py::test_purpose_and_consent_live_where_the_schema_puts_them`, `libs/governance/tests/tests/test_schema_export.py::test_schemas_directory_exists` +2 more |
+| `M-9` | Enforced | ✅ evidenced | unit×6 | `libs/governance/tests/tests/test_schema_conformance.py::test_the_published_copy_matches_the_pinned_dependency`, `libs/governance/tests/tests/test_schema_conformance.py::test_conforms_to_the_canonical_schema`, `libs/governance/tests/tests/test_schema_conformance.py::test_purpose_and_consent_live_where_the_schema_puts_them` +3 more |
 | `M-10` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_schema_export.py::test_purpose_vocabulary_lists_exactly_the_active_profile`, `libs/governance/tests/tests/test_schema_export.py::test_purpose_vocabulary_rejects_a_placeholder_term`, `services/connector/tests/test_ns_policy_profile.py::test_ns_policy_follows_a_profile_change_after_reset_caches` +1 more |
 | `M-11` | Partly enforced | ✅ evidenced | unit×5 | `services/connector/tests/test_ns_vocabularies.py::test_the_index_lists_every_surface`, `services/connector/tests/test_ns_vocabularies.py::test_the_index_reports_which_copies_are_missing`, `services/connector/tests/test_ns_vocabularies.py::test_the_registry_projection_carries_the_iri` +2 more |
 | `M-12` | Declared | · consistent | — | — |
@@ -143,6 +145,8 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-1` | Declared | · consistent | — | — |
 | `D-2` | Enforced | ✅ evidenced | unit×7 | `services/connector/tests/test_access_request_declaration.py::test_justification_ref_rejects_an_email`, `services/connector/tests/test_access_request_declaration.py::test_justification_ref_accepts_an_opaque_reference`, `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously` +4 more |
 | `D-3` | Declared | · consistent | — | — |
+| `D-3a` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_consent_gate.py::test_the_mapper_spelling_is_the_same_object_not_a_second_copy`, `libs/governance/tests/tests/test_consent_gate.py::test_each_signal_alone_gates_and_names_itself`, `libs/governance/tests/tests/test_consent_gate.py::test_every_signal_is_collected_not_short_circuited` +1 more |
+| `D-3b` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +1 more |
 | `D-4` | Enforced | ✅ evidenced | unit×2 | `services/connector/tests/test_consent_vocabulary.py::TestSharingOffersEndpoint::test_contract_based_offer_is_flagged_as_disclosure`, `services/connector/tests/test_consent_vocabulary.py::TestOfferDrivenShares::test_contract_based_offer_cannot_be_toggled` |
 | `D-5` | Enforced | ✅ evidenced | e2e×3, unit×3 | `chain-partner`, `chain-unbundling`, `uc1` +3 more |
 | `D-6` | Declared | · consistent | — | — |

@@ -38,7 +38,7 @@ tag_to_purpose:
 # domain-neutral and has NO energy, grid, forecasting or planning purpose, so
 # every concept here is narrower than the DPV term it cites.  Each choice, the
 # two that are weaker than the rest, and the 2.2 → 2.3 re-parenting that
-# prompted two corrections are written up in `docs/taxonomies/dpv-2.3.md`.
+# prompted two corrections are written up in `docs/standards/dpv-2.3.md`.
 # Read it before changing an IRI: `check_purpose_taxonomy` only asserts that the
 # IRI is absolute and the relation is a SKOS match property, so a
 # wrong-but-well-formed IRI passes every test in this repo.

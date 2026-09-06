@@ -67,7 +67,7 @@ entry against the `enum` in that document rather than finding out at sync.
 structure. Both are built from the profile, so they cannot disagree — but the
 published file is a snapshot of *this* repo's profile, and a deployment that
 overlays its own taxonomy is authoritative over it. The alignment behind each
-entry's `dpv` IRI is documented in [DPV 2.3](../taxonomies/dpv-2.3.md).
+entry's `dpv` IRI is documented in [DPV 2.3](../standards/dpv-2.3.md).
 
 ## Not covered
 
