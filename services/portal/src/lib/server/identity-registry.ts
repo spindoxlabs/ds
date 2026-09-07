@@ -86,6 +86,14 @@ export interface ResolvedIdentity {
 	/** Newest credential. Kept for callers with no role preference. */
 	role: string | null;
 	vcJws: string | null;
+	/**
+	 * The person's id **within** their DID — the part after `:users:`, not the
+	 * DID itself. The registry used to return the DID here whenever a Keycloak
+	 * mapping existed (ds#31); it now returns the same kind of value on both
+	 * branches. Nothing the portal sends uses it: `X-Subject-Id` carries
+	 * `session.userDid`, because that is what the credential's
+	 * `credentialSubject.id` is compared against.
+	 */
 	subjectId: string;
 }
 
@@ -139,6 +147,7 @@ export async function resolveUserByEmail(email: string): Promise<ResolvedIdentit
 			vcJws: source.vc_jws ?? null,
 			// The **anchor's**: the subject id is registry data, and the
 			// custodian's copy of the credential does not carry the mapping.
+			// Not the DID — see `ResolvedIdentity.subjectId`.
 			subjectId: data.subject_id,
 		};
 	} catch (e) {

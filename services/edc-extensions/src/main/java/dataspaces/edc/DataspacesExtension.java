@@ -312,7 +312,7 @@ public class DataspacesExtension implements ServiceExtension {
         }
         // The dataset-aware half of the same check, and the one that actually
         // enforces it. A constraint function is handed the Permission, and
-        // `Rule` has no target at 0.16.0 — so the dataset can only be read off
+        // `Rule` has no target at 0.18.0 — so the dataset can only be read off
         // the Policy, which is what a PolicyValidatorRule receives.
         //
         // **This registration is what makes `ds:consentStatus` mean anything at

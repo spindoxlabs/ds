@@ -21,7 +21,7 @@ import java.util.Map;
  *
  * <p>This is the one piece of DSP-adjacent surface this design adds, and it
  * exists because of a gap that was checked rather than assumed: EDC's Management
- * API can <em>terminate</em> a negotiation, but at v0.16.0 it has no way to
+ * API can <em>terminate</em> a negotiation, but at v0.18.0 it has no way to
  * clear {@code pending}. So refusal and TTL expiry reuse the existing
  * {@code terminateNegotiation} endpoint and only the grant path needs code.
  *

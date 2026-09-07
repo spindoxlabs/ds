@@ -214,6 +214,12 @@ keeps one identifier** however many organisations hold credentials about them â€
 role, so deriving it per call would split a dual-role person's consent records and provenance in
 half. Custody, unlike the identifier, follows each credential.
 
+`/users/resolve` returns both halves under separate names and they are not interchangeable:
+`did` is the DID, `subject_id` is the `<id>` inside it â€” the value
+`POST /admin/credentials/data-subject` takes, and the same kind of value on the `derive=true`
+branch, where a person has no DID yet. A `subject_id` that is itself a DID is refused with a
+**422** rather than concatenated into a nested one, which is how one person used to become two.
+
 ## How it works
 
 ### Five ways to authenticate, one service

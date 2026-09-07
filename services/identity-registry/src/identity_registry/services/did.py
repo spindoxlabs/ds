@@ -101,6 +101,44 @@ def subject_did_for(linked_participant_did: str | None, subject_id: str) -> str:
             f"linked_participant_did must be a did:web identifier, got "
             f"{linked_participant_did!r}"
         )
+
+    # **The subject id is validated too, because this line is concatenation.**
+    # `GET /users/resolve` used to return a full DID in `subject_id` when a
+    # Keycloak mapping existed and a short derived id when it did not, and a
+    # caller doing what the docstring told it to — read `subject_id`, pass it
+    # back for issuance — got
+    #
+    #     did:web:rec.example:users:did:web:rec.example:users:member-001
+    #
+    # which is well-formed enough to be stored, resolved and published.
+    # `subject_id_of` splits on the **last** `:users:`, so `_existing_subject_did`
+    # did not recognise the nested DID as the same person: a second `Did` row, a
+    # second credential, two consent states for one human — the outcome
+    # `admin.py`'s *one human, one DID* comment exists to prevent (ds#31).
+    #
+    # `:` is `did:web`'s own path separator, so a subject id carrying one is not
+    # a subject id — it is a caller having pasted something larger. Refusing it
+    # here turns every such mistake into a 422 naming the problem, at the point
+    # the mistake is made, for callers this registry does not own.
+    if not subject_id or not subject_id.strip():
+        raise SubjectNamespaceError(
+            "subject_id is required — a person's DID is built from it, and an "
+            "empty one produces an identifier that resolves to the custodian's "
+            "own users collection rather than to anybody"
+        )
+    if ":" in subject_id:
+        detail = (
+            "it looks like a DID"
+            if subject_id.startswith("did:")
+            else "':' is the did:web path separator"
+        )
+        raise SubjectNamespaceError(
+            f"subject_id must be the person's identifier within their "
+            f"custodian's namespace, not a qualified identifier — {detail}. Got "
+            f"{subject_id!r}; if this came from GET /users/resolve, that "
+            f"response's `did` field is the person's DID and `subject_id` is "
+            f"what belongs here (ds#31)"
+        )
     return f"{linked_participant_did}:{USER_SEGMENT}:{subject_id}"
 
 

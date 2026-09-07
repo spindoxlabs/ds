@@ -1,7 +1,7 @@
 # edc-connector
 
 `services/edc-connector/` contains **no source code**. It is a Gradle Shadow build that
-assembles an Eclipse Dataspace Components runtime — EDC `0.16.0`, DCP-enabled — out of
+assembles an Eclipse Dataspace Components runtime — EDC `0.18.0`, DCP-enabled — out of
 upstream EDC BOMs plus this repository's [`edc-extensions`](edc-extensions.md), and a
 two-stage Dockerfile that packages the resulting `connector.jar` into a JRE image.
 
@@ -178,7 +178,7 @@ Two Dockerfiles, both with the repository root as build context.
 
 | File | Produces |
 |---|---|
-| `Dockerfile.base` | `ds-edc-base:0.16.0` — a `gradle:8.12-jdk21` image with the resolved dependency cache baked in, so a normal build does not re-resolve ~190 modules |
+| `Dockerfile.base` | `ds-edc-base:0.18.0` — a `gradle:8.12-jdk21` image with the resolved dependency cache baked in, so a normal build does not re-resolve ~190 modules |
 | `Dockerfile` | builder stage runs `gradle :edc-connector:shadowJar`; runtime stage is `eclipse-temurin:21-jre-alpine` with uid/gid 10001 and `connector.jar` |
 
 `shadowJar` merges service files (so this repo's extensions register alongside upstream's),

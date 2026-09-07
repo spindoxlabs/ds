@@ -879,7 +879,7 @@ async def _verified_consumer(bearer: str | None) -> str:
     upstream (`data-plane-public-api-v2`, deprecated), so the EDR endpoint we
     hand out *is* this service — there is no proxy in front to check the
     signature. And the token carries no ``exp``
-    (`DataPlaneAuthorizationServiceImpl.createTokenParams` at v0.16.0), so a
+    (`DataPlaneAuthorizationServiceImpl.createTokenParams` at v0.18.0), so a
     leaked one is valid until the agreement behind it is revoked. Verifying it
     here is the only thing standing between a bearer string and somebody's data.
 

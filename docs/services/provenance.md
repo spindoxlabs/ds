@@ -126,7 +126,7 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `PROVENANCE_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS |
 | `PROVENANCE_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
-| `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 source for revocation checks |
+| `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 registers. `_URL` pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. `_PATH` is one local register and answers only for the `statusPurpose` it publishes |
 
 Under `DS_ENV=production` the service refuses to start if the Keycloak issuer, the trust-anchor
 DID or the trust list is unset, or either `*_INSECURE_DEV` flag is true — what keeps

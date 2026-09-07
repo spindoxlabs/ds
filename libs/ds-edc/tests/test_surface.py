@@ -21,8 +21,13 @@ from ds_edc.client import (
 )
 from ds_edc.webhooks import ContractNegotiationEvent, TransferProcessEvent
 
-#: EDC 0.16.0 `ContractNegotiationStates` / `TransferProcessStates`. A state
-#: this client names that is not here can never match.
+#: EDC 0.18.0 `ContractNegotiationStates` / `TransferProcessStates`, complete. A
+#: state this client names that is not here can never match.
+#:
+#: The transfer set was neither complete nor 0.16.0's: seven states were missing,
+#: which made the check accidentally stricter than it claims to be rather than
+#: wrong. It is the whole enum now, so the assertion means what it says. 0.18.0
+#: adds `RESUMING_REQUESTED`; the negotiation enum is unchanged from 0.16.0.
 EDC_NEGOTIATION_STATES = {
     "INITIAL",
     "REQUESTING",
@@ -42,18 +47,26 @@ EDC_NEGOTIATION_STATES = {
 }
 EDC_TRANSFER_STATES = {
     "INITIAL",
+    "PREPARATION_REQUESTED",
     "PROVISIONING",
     "PROVISIONING_REQUESTED",
     "PROVISIONED",
     "REQUESTING",
     "REQUESTED",
     "STARTING",
+    "STARTUP_REQUESTED",
     "STARTED",
     "SUSPENDING",
+    "SUSPENDING_REQUESTED",
     "SUSPENDED",
+    "RESUMING",
+    "RESUMING_REQUESTED",
+    "RESUMED",
     "COMPLETING",
+    "COMPLETING_REQUESTED",
     "COMPLETED",
     "TERMINATING",
+    "TERMINATING_REQUESTED",
     "TERMINATED",
     "DEPROVISIONING",
     "DEPROVISIONING_REQUESTED",

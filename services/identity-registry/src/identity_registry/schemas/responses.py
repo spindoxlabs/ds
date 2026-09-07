@@ -116,8 +116,16 @@ class UserResolveResponse(BaseModel):
     ``role`` and ``vc_jws`` are retained as the newest entry of ``credentials``
     so existing callers keep working; new callers should read ``credentials`` and
     select by role.
+
+    **The two identifier fields are not interchangeable.** ``did`` is the
+    person's DID; ``subject_id`` is their identifier *within* it — the part
+    after ``:users:``, and the value ``subject_did_for`` builds a DID from.
+    ``subject_id`` used to carry the DID whenever a Keycloak mapping existed,
+    so which one a caller got depended on state it could not see (ds#31).
     """
 
+    #: Present only when a mapping exists. Absent on the ``derive=true`` branch,
+    #: where the person has no DID yet — which is the state that branch is for.
     did: str | None = None
     subject_id: str
     roles: list[str] = []

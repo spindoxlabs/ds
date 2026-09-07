@@ -311,7 +311,7 @@ class EdcManagementClient:
         """Clear ``pending`` on a negotiation parked by the consent guard.
 
         Served by ``NegotiationResumeController`` in our EDC extension, because
-        the Management API has no way to clear ``pending`` at EDC 0.16.0. Local
+        the Management API has no way to clear ``pending`` at EDC 0.18.0. Local
         to the provider's own control plane — never a DSP message.
 
         Idempotent, and deliberately not an error when nothing happens: a grant

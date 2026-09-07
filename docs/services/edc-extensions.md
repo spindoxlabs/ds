@@ -94,7 +94,7 @@ belong to the dataspace is settled when the contract is made, not re-litigated p
 
 **At negotiation, consent is decided by a post-validator, not by the constraint function.**
 `ConsentStatusFunction` is handed the `Permission`, and `Rule` carries no target at EDC
-0.16.0, so it cannot learn which dataset is being negotiated. `NegotiationConsentValidator` is
+0.18.0, so it cannot learn which dataset is being negotiated. `NegotiationConsentValidator` is
 a `PolicyValidatorRule`, which receives the whole `Policy` — and EDC targets that policy at
 the asset before evaluating it. The function stays registered because the operand must stay
 *bound*, and a bound operand with no function fails evaluation outright.
@@ -191,5 +191,5 @@ task edc:restart    # rebuild the JAR, rebuild the image, recreate both EDC cont
 task edc:watch-build   # continuous rebuild, used by dev mode
 ```
 
-Java 21, EDC SPI `0.16.0`. Third-party runtime dependencies shaded in: OkHttp and
+Java 21, EDC SPI `0.18.0`. Third-party runtime dependencies shaded in: OkHttp and
 Jackson-databind; everything else compiles against SPIs the runtime provides.

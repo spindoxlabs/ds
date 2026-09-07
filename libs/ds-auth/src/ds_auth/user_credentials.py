@@ -24,13 +24,16 @@ key.
 from __future__ import annotations
 
 import base64
+import gzip
 import json
 import logging
+import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
 
 from cryptography.exceptions import InvalidSignature
@@ -248,57 +251,235 @@ def _credential_type(vc: dict[str, Any]) -> str | None:
     return specific[0] if len(specific) == 1 else None
 
 
+# ── The credential status registers ───────────────────────────────
+#
+# StatusList2021, read the way the specification defines it: a credential names
+# one register per `statusPurpose`, each entry naming the list credential to
+# fetch and the **bit index** inside it that refers to this credential. The
+# register publishes a gzipped, base64 bitstring; the bit at that index is the
+# answer.
+#
+# This used to read its source as a bespoke `{"credentials": {<id>: {"status":
+# …}}}` lookup map, which no issuer anywhere emits — least of all ours. The
+# provisioning bundle hands a new participant `{ir}/status/1`, that endpoint
+# serves a StatusList2021 credential, and the two shapes have nothing in common,
+# so a deployment that wired the value it was handed refused **every** user
+# credential with "not present in credential status list" — a message about an
+# unknown credential when what had happened was that the reader could not
+# understand the document (ds#32). Nothing caught it because the only fixture
+# wrote the bespoke shape by hand: both ends of the assertion were ours, and
+# they agreed with each other and with nothing else.
+#
+# Reading the real format is also what makes the second register worth having.
+# The identity-registry issues every credential with two entries on one mirrored
+# index — revocation and suspension — precisely so a verifier can tell
+# *superseded* from *withdrawn* (`P-27`). A lookup map cannot express that; a
+# bit on the register that was set can.
+
+#: What a set bit means, per `statusPurpose`. A purpose we do not have a phrase
+#: for still refuses — an unrecognised register is not a register to ignore.
+_STATUS_REFUSAL = {
+    "revocation": "User VC has been revoked",
+    "suspension": "User VC is suspended",
+}
+
+
 def _verify_credential_status(
     vc: dict[str, Any],
     credential_status_path: str | None = None,
     credential_status_url: str | None = None,
 ) -> None:
-    # **One entry or several.** A credential naming both the revocation and the
-    # suspension register carries a *list*, which is what every credential this
-    # dataspace issues has done since people became suspendable — and what
-    # StatusList2021 and Bitstring Status List both allow. Requiring a `dict`
-    # here rejected the new shape with "has no credentialStatus", which is a
-    # 401 whose message points at the wrong thing entirely.
-    #
-    # The entries are not read below — the lookup is by credential `id` — so
-    # this checks presence and shape, nothing more.
+    """Refuse a credential whose bit is set on any register it names.
+
+    **One entry or several.** A credential naming both the revocation and the
+    suspension register carries a *list*, which is what every credential this
+    dataspace issues has done since people became suspendable, and what
+    StatusList2021 and Bitstring Status List both allow. Every usable entry is
+    checked, not just the first: a credential is invalid if *any* register says
+    so, which is also what EDC's `RevocationServiceRegistryImpl` does.
+
+    **The entry type is read, not asserted.** `StatusList2021Entry` and
+    `BitstringStatusListEntry` carry the same three fields this needs, so the
+    profile move (`vcdm-2-0-profile-move`) does not have to come back through
+    here.
+    """
     status = vc.get("credentialStatus")
-    entries = status if isinstance(status, list) else [status]
-    if not any(isinstance(entry, dict) for entry in entries):
+    raw = status if isinstance(status, list) else [status]
+    entries = [entry for entry in raw if isinstance(entry, dict)]
+    if not entries:
         raise HTTPException(401, "User VC has no credentialStatus")
 
-    status_list = _load_credential_status_list(
-        credential_status_path, credential_status_url
-    )
+    # One document per URL per credential. A credential naming two registers on
+    # one host is two fetches; naming the same register twice is one.
+    fetched: dict[str, dict[str, Any]] = {}
+    checked = 0
 
-    entry = (status_list.get("credentials") or {}).get(vc.get("id"))
-    if not isinstance(entry, dict):
-        raise HTTPException(401, "User VC is not present in credential status list")
-    if entry.get("status") != "active":
-        raise HTTPException(401, "User VC is not active")
+    for entry in entries:
+        purpose = str(entry.get("statusPurpose") or "revocation")
+        index = _status_list_index(entry)
 
+        if credential_status_url:
+            document = _fetch_status_list(
+                _status_list_url(entry, credential_status_url), fetched
+            )
+            published = _published_purpose(document)
+            # EDC refuses this too, and for the same reason: a register read
+            # under the wrong meaning answers a question nobody asked. A
+            # revocation bit found on a list published as suspension does not
+            # say the holder is suspended, it says the credential points at the
+            # wrong list.
+            if published != purpose:
+                raise HTTPException(
+                    401,
+                    f"User VC names a {purpose!r} register that publishes "
+                    f"{published or 'no'} statusPurpose",
+                )
+        else:
+            # **A file is one register, so it answers for one purpose.** An
+            # entry the file does not publish is left *unchecked* rather than
+            # passed — and the tally below refuses the credential outright if
+            # that was true of every entry. Checking revocation offline with no
+            # local suspension register is a real state; knowing nothing and
+            # returning success is not.
+            document = _read_status_list(credential_status_path)
+            if _published_purpose(document) != purpose:
+                continue
 
-def _load_credential_status_list(
-    credential_status_path: str | None,
-    credential_status_url: str | None,
-) -> dict[str, Any]:
-    if credential_status_url:
-        try:
-            req = Request(credential_status_url, headers={"Accept": "application/json"})
-            with urlopen(req, timeout=5) as response:
-                return json.loads(response.read().decode())
-        except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        if _status_bit(document, index):
             raise HTTPException(
-                503, "Credential status registry is not available"
-            ) from exc
+                401, _STATUS_REFUSAL.get(purpose, f"User VC status {purpose!r} is set")
+            )
+        checked += 1
 
+    if not checked:
+        raise HTTPException(
+            503, "User VC status could not be checked against any known register"
+        )
+
+
+def _status_list_index(entry: dict[str, Any]) -> int:
+    """The bit this credential occupies. A string per the specification, and an
+    integer in the wild; both are accepted and nothing else is.
+
+    Refused rather than defaulted to 0 — index 0 is a real credential, and
+    reading somebody else's bit is worse than refusing to read one.
+    """
+    raw = entry.get("statusListIndex")
+    try:
+        index = int(raw)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        raise HTTPException(
+            401, "User VC credentialStatus has no usable statusListIndex"
+        ) from None
+    if index < 0:
+        raise HTTPException(401, "User VC credentialStatus has a negative index")
+    return index
+
+
+def _status_list_url(entry: dict[str, Any], configured: str) -> str:
+    """Which register to fetch: the configured **origin**, the credential's path.
+
+    A conformant verifier follows `statusListCredential` wherever it points.
+    Doing that unconditionally makes an outbound fetch to a host named inside
+    the token — the same class of mistake the issuer pin at the top of
+    `verify_user_vc_jwt` exists to prevent, which is why that comparison happens
+    *before* anything is resolved. So configuration says which host may answer
+    and the credential says which register and which index, and the two are
+    reconciled here rather than trusted separately.
+
+    This costs a correct deployment nothing: `Settings.public_base_url` in the
+    identity-registry is the single source of both the `statusListCredential`
+    inside the credential and the `credential_status_url` in the provisioning
+    bundle.
+    """
+    named = entry.get("statusListCredential")
+    if not isinstance(named, str) or not named:
+        # Nothing to reconcile. The configured register is the only one this
+        # deployment knows about, and its purpose is checked by the caller.
+        return configured
+    if _origin(named) != _origin(configured):
+        raise HTTPException(
+            401, "User VC names a credential status register on an unexpected host"
+        )
+    return named
+
+
+def _origin(url: str) -> tuple[str, str]:
+    parts = urlsplit(url)
+    return parts.scheme.lower(), parts.netloc.lower()
+
+
+def _published_purpose(document: dict[str, Any]) -> str:
+    subject = document.get("credentialSubject")
+    if not isinstance(subject, dict):
+        return ""
+    return str(subject.get("statusPurpose") or "")
+
+
+def _status_bit(document: dict[str, Any], index: int) -> bool:
+    """The bit at *index* of the register's `encodedList`.
+
+    GZIP per the specification, with the zlib fallback the identity-registry's
+    `status_list.decode_bitstring` documents: lists published before that
+    encoding was fixed are already referenced by issued credentials, and
+    refusing them would revoke everyone at once.
+    """
+    subject = document.get("credentialSubject")
+    encoded = subject.get("encodedList") if isinstance(subject, dict) else None
+    if not isinstance(encoded, str) or not encoded:
+        raise HTTPException(503, "Credential status register publishes no encodedList")
+    try:
+        compressed = base64.b64decode(encoded)
+        try:
+            bitstring = gzip.decompress(compressed)
+        except (OSError, EOFError):
+            bitstring = zlib.decompress(compressed)
+    except Exception as exc:
+        raise HTTPException(
+            503, "Credential status register could not be decoded"
+        ) from exc
+
+    byte_index = index // 8
+    if byte_index >= len(bitstring):
+        # The credential claims a bit the register does not publish, so nothing
+        # here can show it is *un*set. Fail closed, as everywhere else in this
+        # module: a register that cannot answer is not a register saying yes.
+        raise HTTPException(401, "User VC status index is outside its register")
+    return bool(bitstring[byte_index] & (1 << (7 - (index % 8))))
+
+
+def _fetch_status_list(url: str, cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """The register at *url*, as JSON.
+
+    `Accept: application/json` is exact and load-bearing. The identity-registry
+    serves `/status/{id}` as a **signed VC-JWT** by default and takes the JSON
+    branch only for this header — EDC sends `*/*` and parses a JWT, which is the
+    safer default for a caller that asks for nothing in particular.
+    """
+    if url in cache:
+        return cache[url]
+    try:
+        req = Request(url, headers={"Accept": "application/json"})
+        with urlopen(req, timeout=5) as response:
+            document = json.loads(response.read().decode())
+    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise HTTPException(503, "Credential status registry is not available") from exc
+    if not isinstance(document, dict):
+        raise HTTPException(503, "Credential status registry served no credential")
+    cache[url] = document
+    return document
+
+
+def _read_status_list(credential_status_path: str | None) -> dict[str, Any]:
     if not credential_status_path:
         raise HTTPException(503, "Credential status registry is not configured")
-
     path = Path(credential_status_path)
     if not path.exists():
         raise HTTPException(503, "Credential status list is not available")
     try:
-        return json.loads(path.read_text())
+        document = json.loads(path.read_text())
     except Exception as exc:
         raise HTTPException(503, "Credential status list is invalid") from exc
+    if not isinstance(document, dict):
+        raise HTTPException(503, "Credential status list is invalid")
+    return document

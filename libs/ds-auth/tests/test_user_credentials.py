@@ -15,13 +15,17 @@ while being a live SSRF against any URL an attacker chooses.
 from __future__ import annotations
 
 import base64
+import gzip
 import json
+import zlib
+from urllib.error import URLError
 
 import pytest
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from fastapi import HTTPException
 
+from ds_auth import user_credentials
 from ds_auth.did_web import DidResolutionError, DidWebResolver, did_web_url
 from ds_auth.user_credentials import verify_user_vc_jwt
 
@@ -43,25 +47,6 @@ def _int_b64(value: int) -> str:
 
 
 _UNSET = object()
-
-TWO_REGISTERS = [
-    {
-        "id": "https://trust-anchor.example/status/1#3",
-        "type": "StatusList2021Entry",
-        "statusPurpose": "revocation",
-        "statusListIndex": "3",
-        "statusListCredential": "https://trust-anchor.example/status/1",
-    },
-    {
-        "id": "https://trust-anchor.example/status/2#3",
-        "type": "StatusList2021Entry",
-        "statusPurpose": "suspension",
-        "statusListIndex": "3",
-        "statusListCredential": "https://trust-anchor.example/status/2",
-    },
-]
-
-ONE_REGISTER = TWO_REGISTERS[0]
 
 
 class Issuer:
@@ -420,49 +405,160 @@ def test_only_did_web_is_supported():
         did_web_url("did:key:z6Mk")
 
 
-# ── credentialStatus: one entry or several ────────────────────────
+# ── credentialStatus: the registers, read as StatusList2021 ───────
 #
-# Every credential the identity-registry issues now names **two** registers —
-# revocation and suspension, on the index they share — because a superseded
-# credential has to be retirable without being revoked. That makes
-# `credentialStatus` a JSON *array*, and this check used to require an object.
-# The failure was a 401 reading "User VC has no credentialStatus" on a
-# credential that had two.
+# Every credential the identity-registry issues names **two** registers —
+# revocation and suspension, on the index they share — so that a superseded
+# credential can be retired without being revoked (`P-27`).
+#
+# These fixtures build the document `GET /status/{id}` actually serves: a
+# StatusList2021 credential whose `credentialSubject` carries a `statusPurpose`
+# and a gzipped, base64 `encodedList`. The suite used to write a bespoke
+# `{"credentials": {<id>: {"status": …}}}` map by hand instead — a shape no
+# issuer emits — so the reader and the fixture agreed with each other and with
+# nothing else, and every deployment that wired the URL from its provisioning
+# bundle 401'd every credential it was shown (ds#32). A fixture that is not the
+# document the registry serves is not evidence about anything.
+
+STATUS_HOST = "https://trust-anchor.example"
+REVOCATION_LIST = f"{STATUS_HOST}/status/1"
+SUSPENSION_LIST = f"{STATUS_HOST}/status/2"
+INDEX = 3
+
+TWO_REGISTERS = [
+    {
+        "id": f"{REVOCATION_LIST}#{INDEX}",
+        "type": "StatusList2021Entry",
+        "statusPurpose": "revocation",
+        "statusListIndex": str(INDEX),
+        "statusListCredential": REVOCATION_LIST,
+    },
+    {
+        "id": f"{SUSPENSION_LIST}#{INDEX}",
+        "type": "StatusList2021Entry",
+        "statusPurpose": "suspension",
+        "statusListIndex": str(INDEX),
+        "statusListCredential": SUSPENSION_LIST,
+    },
+]
+
+ONE_REGISTER = TWO_REGISTERS[0]
+
+#: 16KB, the size `identity_registry.services.status_list` publishes.
+BITSTRING_SIZE = 16384
 
 
-def _status_list(tmp_path, status: str = "active"):
-    path = tmp_path / "credential-status.json"
-    path.write_text(
-        json.dumps({"credentials": {"urn:uuid:cred-1": {"status": status}}})
+def status_list(purpose: str = "revocation", *, set_bits: tuple[int, ...] = ()) -> dict:
+    """The document `/status/{id}` serves, built the way the registry builds it."""
+    bits = bytearray(BITSTRING_SIZE)
+    for index in set_bits:
+        bits[index // 8] |= 1 << (7 - (index % 8))
+    return {
+        "@context": [
+            "https://www.w3.org/2018/credentials/v1",
+            "https://w3id.org/vc/status-list/2021/v1",
+        ],
+        "id": "urn:uuid:status-list-1",
+        "type": ["VerifiableCredential", "StatusList2021Credential"],
+        "issuer": ANCHOR,
+        "credentialSubject": {
+            "id": "urn:status-list:1",
+            "type": "StatusList2021",
+            "statusPurpose": purpose,
+            "encodedList": base64.b64encode(
+                gzip.compress(bytes(bits), mtime=0)
+            ).decode(),
+        },
+    }
+
+
+class FakeRegisters:
+    """The registers, over HTTP, counting what was fetched.
+
+    Patches `urlopen` in the module under test rather than the reader's own
+    loader, so the `Accept` header and the JSON decode are the production ones.
+    """
+
+    def __init__(self, documents: dict[str, dict]):
+        self.documents = documents
+        self.fetches: list[str] = []
+
+    def __call__(self, request, timeout=None):
+        url = request.full_url
+        self.fetches.append(url)
+        assert request.get_header("Accept") == "application/json", (
+            "the registry serves a signed JWT unless the Accept header is "
+            "exactly application/json"
+        )
+        if url not in self.documents:
+            raise URLError(f"{url} is unreachable")
+        body = json.dumps(self.documents[url]).encode()
+
+        class _Response:
+            def read(self):
+                return body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+        return _Response()
+
+
+@pytest.fixture
+def registers(monkeypatch):
+    """Both registers, clear."""
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list("revocation"),
+            SUSPENSION_LIST: status_list("suspension"),
+        }
     )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    return fake
+
+
+def _status_file(tmp_path, document: dict) -> str:
+    path = tmp_path / "credential-status.json"
+    path.write_text(json.dumps(document))
     return str(path)
 
 
+# ── The shape of the entry ────────────────────────────────────────
+
+
 @pytest.mark.rule("P-27")
-def test_a_credential_naming_both_registers_is_accepted(anchor, resolver, tmp_path):
+def test_a_credential_naming_both_registers_is_accepted(anchor, resolver, registers):
     credential = verify(
         anchor.credential(status=TWO_REGISTERS),
         resolver,
-        credential_status_path=_status_list(tmp_path),
+        credential_status_url=REVOCATION_LIST,
     )
     assert credential.did == SUBJECT
+    assert registers.fetches == [REVOCATION_LIST, SUSPENSION_LIST], (
+        "every register a credential names is read, not just the first"
+    )
 
 
 @pytest.mark.rule("P-27")
-def test_a_credential_naming_one_register_is_still_accepted(anchor, resolver, tmp_path):
-    """The shape issued before this change, and by any other issuer. Dropping
-    it would refuse every credential already in a wallet."""
+def test_a_credential_naming_one_register_is_still_accepted(
+    anchor, resolver, registers
+):
+    """The shape issued before `P-27`, and by any other issuer. Dropping it
+    would refuse every credential already in a wallet."""
     credential = verify(
         anchor.credential(status=ONE_REGISTER),
         resolver,
-        credential_status_path=_status_list(tmp_path),
+        credential_status_url=REVOCATION_LIST,
     )
     assert credential.did == SUBJECT
 
 
 @pytest.mark.parametrize("status", [_UNSET, None, [], "not-an-object", [None]])
 def test_a_credential_with_no_usable_status_entry_is_refused(
-    anchor, resolver, tmp_path, status
+    anchor, resolver, registers, status
 ):
     """An empty array is *not* a status entry, and neither is a list of nulls —
     which is the case a naive `isinstance(status, list)` would let through."""
@@ -470,22 +566,289 @@ def test_a_credential_with_no_usable_status_entry_is_refused(
         verify(
             anchor.credential(status=status),
             resolver,
-            credential_status_path=_status_list(tmp_path),
+            credential_status_url=REVOCATION_LIST,
         )
     assert exc.value.status_code == 401
     assert "credentialStatus" in exc.value.detail
 
 
-def test_a_suspended_credential_is_refused_whatever_its_shape(
-    anchor, resolver, tmp_path
+@pytest.mark.parametrize("index", [None, "", "not-a-number", -1, [3]])
+def test_an_unusable_index_is_refused_rather_than_defaulted(
+    anchor, resolver, registers, index
 ):
-    """Suspension is what the second register exists for, and this is the check
-    that reads it — by credential id, not by bit."""
+    """Index 0 is a real credential's bit. Defaulting to it reads somebody
+    else's status and reports it as this holder's."""
+    entry = {**ONE_REGISTER, "statusListIndex": index}
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "index" in exc.value.detail.lower()
+
+
+def test_an_integer_index_is_accepted(anchor, resolver, registers):
+    """The specification says string; implementations emit both."""
+    entry = {**ONE_REGISTER, "statusListIndex": INDEX}
+    assert (
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        ).did
+        == SUBJECT
+    )
+
+
+# ── The bit ───────────────────────────────────────────────────────
+
+
+@pytest.mark.rule("P-27")
+def test_a_revoked_credential_is_refused(anchor, resolver, monkeypatch):
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list("revocation", set_bits=(INDEX,)),
+            SUSPENSION_LIST: status_list("suspension"),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
     with pytest.raises(HTTPException) as exc:
         verify(
             anchor.credential(status=TWO_REGISTERS),
             resolver,
-            credential_status_path=_status_list(tmp_path, "suspended"),
+            credential_status_url=REVOCATION_LIST,
         )
     assert exc.value.status_code == 401
-    assert "not active" in exc.value.detail
+    assert "revoked" in exc.value.detail
+
+
+@pytest.mark.rule("P-27")
+def test_a_suspended_credential_is_refused_and_says_so(anchor, resolver, monkeypatch):
+    """The whole reason a credential names two registers.
+
+    *Superseded* and *withdrawn* are different answers, and the register that
+    was set is what distinguishes them — which the bespoke lookup map this
+    reader used to expect could not express at all.
+    """
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list("revocation"),
+            SUSPENSION_LIST: status_list("suspension", set_bits=(INDEX,)),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "suspended" in exc.value.detail
+    assert "revoked" not in exc.value.detail
+
+
+def test_a_neighbours_bit_does_not_refuse_this_credential(
+    anchor, resolver, monkeypatch
+):
+    """The index is what makes a register per-credential. A reader that got the
+    bit arithmetic wrong would revoke a whole byte at a time."""
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list(
+                "revocation", set_bits=tuple(i for i in range(16) if i != INDEX)
+            ),
+            SUSPENSION_LIST: status_list("suspension"),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    assert (
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        ).did
+        == SUBJECT
+    )
+
+
+def test_a_zlib_encoded_register_is_still_read(anchor, resolver, monkeypatch):
+    """Lists published before the GZIP fix are referenced by issued
+    credentials; refusing them would revoke everyone at once. Same fallback the
+    registry's `decode_bitstring` documents."""
+    bits = bytearray(BITSTRING_SIZE)
+    bits[INDEX // 8] |= 1 << (7 - (INDEX % 8))
+    legacy = status_list("revocation")
+    legacy["credentialSubject"]["encodedList"] = base64.b64encode(
+        zlib.compress(bytes(bits))
+    ).decode()
+    monkeypatch.setattr(
+        user_credentials, "urlopen", FakeRegisters({REVOCATION_LIST: legacy})
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "revoked" in exc.value.detail
+
+
+def test_an_index_beyond_the_register_is_refused(anchor, resolver, registers):
+    """Nothing here can show a bit the register does not publish is *un*set."""
+    entry = {**ONE_REGISTER, "statusListIndex": str(BITSTRING_SIZE * 8 + 1)}
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "outside" in exc.value.detail
+
+
+# ── Which register answers ────────────────────────────────────────
+
+
+def test_a_register_on_another_host_is_refused_without_fetching(
+    anchor, resolver, registers
+):
+    """`statusListCredential` is a URL inside the token. Following it wherever
+    it points is an outbound fetch to a host of the caller's choosing — the
+    same mistake the issuer pin exists to prevent. Configuration says which
+    host may answer; the credential says which register and which index."""
+    entry = {
+        **ONE_REGISTER,
+        "statusListCredential": "https://elsewhere.example/status/1",
+    }
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "unexpected host" in exc.value.detail
+    assert registers.fetches == []
+
+
+def test_an_entry_naming_no_register_falls_back_to_the_configured_one(
+    anchor, resolver, registers
+):
+    entry = {k: v for k, v in ONE_REGISTER.items() if k != "statusListCredential"}
+    assert (
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        ).did
+        == SUBJECT
+    )
+    assert registers.fetches == [REVOCATION_LIST]
+
+
+def test_a_register_published_under_the_wrong_purpose_is_refused(
+    anchor, resolver, monkeypatch
+):
+    """A revocation bit found on a list published as suspension does not say
+    the holder is suspended — it says the credential points at the wrong list.
+    EDC refuses this too, and for the same reason."""
+    monkeypatch.setattr(
+        user_credentials,
+        "urlopen",
+        FakeRegisters({REVOCATION_LIST: status_list("suspension")}),
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "statusPurpose" in exc.value.detail
+
+
+def test_an_unreachable_register_is_503_not_an_accept(anchor, resolver, monkeypatch):
+    monkeypatch.setattr(user_credentials, "urlopen", FakeRegisters({}))
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 503
+
+
+# ── The file source ───────────────────────────────────────────────
+
+
+def test_a_file_register_refuses_a_revoked_credential(anchor, resolver, tmp_path):
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_path=_status_file(
+                tmp_path, status_list("revocation", set_bits=(INDEX,))
+            ),
+        )
+    assert exc.value.status_code == 401
+    assert "revoked" in exc.value.detail
+
+
+def test_a_file_register_answers_for_the_purpose_it_publishes(
+    anchor, resolver, tmp_path
+):
+    """One file is one register. The suspension entry is left unchecked rather
+    than passed — and the revocation entry it *can* answer is enough."""
+    assert (
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_path=_status_file(tmp_path, status_list("revocation")),
+        ).did
+        == SUBJECT
+    )
+
+
+def test_a_file_answering_no_entry_is_503_rather_than_an_accept(
+    anchor, resolver, tmp_path
+):
+    """Knowing nothing is not the register saying yes."""
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_path=_status_file(tmp_path, status_list("suspension")),
+        )
+    assert exc.value.status_code == 503
+
+
+def test_a_missing_file_is_503(anchor, resolver, tmp_path):
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_path=str(tmp_path / "absent.json"),
+        )
+    assert exc.value.status_code == 503
+
+
+def test_the_bespoke_lookup_map_is_not_a_register(anchor, resolver, tmp_path):
+    """The shape this reader used to expect, and which nothing has ever served.
+
+    It must now fail as the unreadable document it is — a 503 about the source
+    — rather than as "this credential is unknown", which is what sent every
+    deployment looking at the wrong end of the problem (ds#32).
+    """
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_path=_status_file(
+                tmp_path, {"credentials": {"urn:uuid:cred-1": {"status": "active"}}}
+            ),
+        )
+    assert exc.value.status_code == 503

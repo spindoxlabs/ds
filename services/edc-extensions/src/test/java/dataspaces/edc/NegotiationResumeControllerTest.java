@@ -112,6 +112,15 @@ class NegotiationResumeControllerTest {
         public List<ContractNegotiation> nextNotLeased(int max, Criterion... criteria) {
             return List.of();
         }
+
+        // Added to `StateEntityStore` in EDC 0.18.0. The controller under test
+        // never calls it — it takes a lease with `findByIdAndLease` and releases
+        // it by saving — so this is here to satisfy the interface, and says so
+        // rather than pretending to model a lease.
+        @Override
+        public StoreResult<Void> breakLease(ContractNegotiation entity) {
+            return StoreResult.success();
+        }
     }
 
     private static ContractNegotiation negotiation(ContractNegotiationStates state, boolean pending) {

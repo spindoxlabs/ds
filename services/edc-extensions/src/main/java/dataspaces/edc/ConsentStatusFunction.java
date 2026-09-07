@@ -15,7 +15,7 @@ import java.util.List;
  *
  * <p><b>This function is not the negotiation-time enforcement point, and it
  * cannot be.</b> A consent decision needs the dataset; a constraint function is
- * handed the {@link Permission}, and {@code Rule} has no target at EDC 0.16.0.
+ * handed the {@link Permission}, and {@code Rule} has no target at EDC 0.18.0.
  * It therefore reads {@code ds.dataset_id} from the participant attributes —
  * which nothing sets and nothing can, because participant attributes come from
  * the verified claim token and are identity-scoped, while the dataset being
