@@ -466,16 +466,13 @@ services:
           --email dual@example.test
         ir-cli membership add \
           --user-did did:web:rec.dataspaces.localhost:users:data-subject \
-          --organization example-org \
-          --role consumer
+          --organization example-org
         ir-cli membership add \
           --user-did did:web:third-party.dataspaces.localhost:users:consumer-user \
-          --organization example-org \
-          --role consumer
+          --organization example-org
         ir-cli membership add \
           --user-did did:web:rec.dataspaces.localhost:users:dual-user \
-          --organization example-org \
-          --role consumer
+          --organization example-org
         echo "Dev users bootstrapped"
     networks: [dataspaces]
 

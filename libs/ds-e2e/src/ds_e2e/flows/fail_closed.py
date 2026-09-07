@@ -269,10 +269,24 @@ class FailClosedFlow(BaseFlow):
         )
         return proc.returncode, (proc.stdout + proc.stderr).strip()
 
-    def _container_exists(self) -> bool:
+    def _container_is_running(self) -> bool:
+        """The container must be **running**, not merely present.
+
+        This asked `docker ps -a`, so a container that exists and is stopped —
+        which is exactly what `task dev:*` leaves behind, having replaced the
+        connector with a host process on the same port — answered *yes*. The
+        flow then passed *pdp is controllable*, `docker stop` on an
+        already-stopped container returned 0, and the run failed four steps
+        later at `pdp stopped` claiming `E2E_PDP_CONTAINER` named the wrong
+        service. It did not: the port was being served by a process this flow
+        cannot stop, which is the message below and is the true cause.
+
+        Cleanup then made it worse — `docker start` on that container fails to
+        bind :30001 while the host process holds it, so the run ended on a
+        Docker error rather than on the reason it could not run at all.
+        """
         code, out = self._docker(
             "ps",
-            "-a",
             "--filter",
             f"name=^{self.settings.pdp_container}$",
             "--format",
@@ -373,7 +387,7 @@ class FailClosedFlow(BaseFlow):
         result = FlowResult(flow_name=self.name)
         s = self.settings
 
-        if not self._container_exists():
+        if not self._container_is_running():
             # **Fail, do not skip.** A P0 check that silently skips is the
             # defect this whole ledger keeps finding. This flow needs the Docker
             # topology, which is the one `task docker:restart` + `task e2e:all`
@@ -381,7 +395,7 @@ class FailClosedFlow(BaseFlow):
             # cannot be stopped by name.
             result.fail_step(
                 "pdp is controllable",
-                f"container {s.pdp_container!r} not found — this "
+                f"container {s.pdp_container!r} is not running — this "
                 "flow stops the provider connector, so it needs the Docker "
                 "topology (task docker:restart), not the host-process one",
             )
