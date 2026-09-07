@@ -35,16 +35,19 @@ networkPolicy: {egress: []}
 # There is no `public` and no `version` port. Both were configured, published on
 # the Service and — for `public` — routed by the Ingress, and no packaged module
 # registers a resource on either context. `ApiContext` in this runtime declares
-# MANAGEMENT, CONTROL, PROTOCOL and SIGNALING only.
+# MANAGEMENT, CONTROL and PROTOCOL only — the `signaling` context belongs to the
+# DPS modules the connector excludes (see services/edc-connector/build.gradle.kts).
 ports:
   api: 19191 # web.http.port — hosts /api + health
   management: 19193 # PRIVILEGED — never exposed
   protocol: 19194 # DSP — public
   control: 19192 # PRIVILEGED — never exposed, never on the Service
-  # New in EDC 0.18.0: `data-protocols:data-plane-signaling` declares a
-  # `signaling` context that binds port 8182 by default, whether or not it is
-  # configured. Same posture as control — never exposed, never on the Service.
-  signaling: 19195 # PRIVILEGED
+
+# How often the policy monitor re-evaluates running transfers, and therefore the
+# window in which a consent withdrawal tears one down (`D-17`). EDC's own default
+# is PT1H, which at 0.18.0 really is an hour — see the configmap for why that
+# changed. Data stops immediately either way; this bounds the teardown.
+policyMonitorPeriod: PT5S
 
 healthPath: /api/check/health
 
@@ -103,9 +106,6 @@ secrets:
   dbPassword: ""
   edcApiKey: "" # EDC's Management API key — and nothing else
   edcControlApiKey: "" # EDC's control API key. Held by nothing outside the pod
-  edcSignalingApiKey: "" # EDC's data-plane signalling key, likewise pod-local.
-  # EDC 0.18.0 moved that API off the control context, so edcControlApiKey no
-  # longer covers it.
   connectorClientSecret: "" # Keycloak secret for connectorClientId (svc-edc)
   stsClientSecret: "" # matches the participant's sts_client_secret in the registry
   edrSigningPrivateJwk: "" # EDR signing key (NOT a DID key)

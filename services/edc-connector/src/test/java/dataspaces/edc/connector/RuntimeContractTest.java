@@ -13,10 +13,12 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -96,6 +98,54 @@ class RuntimeContractTest {
                     report.append("  web.http.").append(context).append(".*  set by: ").append(keys).append('\n'));
             fail(report.toString());
         }
+    }
+
+    // ── Data-plane signalling ───────────────────────────────────────────────────
+
+    /**
+     * The pre-DPS signalling extension, which provides {@code LegacyDataPlaneSignalingFlowController}
+     * and — because ds embeds its data plane — an {@code EmbeddedDataPlaneClient}.
+     */
+    private static final String LEGACY_SIGNALING_EXTENSION =
+            "org.eclipse.edc.connector.controlplane.transfer.dataplane.TransferDataPlaneSignalingExtension";
+
+    /** Every extension DPS registers lives under this package. */
+    private static final String DPS_PACKAGE = "org.eclipse.edc.signaling.";
+
+    @Test
+    @DisplayName("the connector signals its data plane in-process, not over DPS")
+    void dataPlaneSignallingStaysPreDps() {
+        var extensions = runtime.serviceExtensions();
+        assertFalse(extensions.isEmpty(),
+                () -> "no ServiceExtension registrations found in the JAR — this guard reads "
+                        + "META-INF/services, and if that moved every assertion below is vacuous");
+
+        var dps = extensions.stream().filter(it -> it.startsWith(DPS_PACKAGE)).sorted().toList();
+
+        assertTrue(extensions.contains(LEGACY_SIGNALING_EXTENSION),
+                () -> """
+                        %s is not packaged, so nothing provides a DataFlowController and every transfer \
+                        fails at `prepare data flow`.
+
+                        `services/edc-connector/build.gradle.kts` adds it deliberately: EDC 0.18.0 swapped \
+                        controlplane-base-bom onto DPS (`data-protocols:data-plane-signaling`), whose client \
+                        sends plain JSON over HTTP, while dataplane-base-bom still serves the pre-DPS JSON-LD \
+                        API and EDC ships no DPS data-plane server. If a BOM reshuffle renamed the module, \
+                        the `exclude` and the added dependency both need revisiting — together.
+
+                        Registered DPS extensions: %s""".formatted(LEGACY_SIGNALING_EXTENSION, dps));
+
+        assertTrue(dps.isEmpty(),
+                () -> """
+                        DPS extensions are packaged alongside the pre-DPS one: %s
+
+                        Two DataFlowController providers for a single-valued injection point, and the DPS \
+                        client would talk HTTP+plain-JSON to a JSON-LD endpoint — `Failed to expand JsonObject \
+                        … missing '@context'`, which reads as a data problem and is not one.
+
+                        Either the `exclude` block in services/edc-connector/build.gradle.kts stopped matching \
+                        (coordinates renamed upstream), or DPS was adopted on purpose. Adopting it means a data \
+                        plane that speaks it — a capability decision, not a version bump.""".formatted(dps));
     }
 
     // ── Settings ────────────────────────────────────────────────────────────────
@@ -196,6 +246,29 @@ class RuntimeContractTest {
      *
      * <p>The annotation is authoritative where both name the same prefix.
      */
+    /**
+     * Every suffix a group accepts: those declared on the annotated class (and its nested
+     * records), plus those on the field's own type when the settings record is a separate
+     * top-level class.
+     *
+     * <p>{@code edc.policy.monitor} is the case that forced this. {@code PolicyMonitorExtension}
+     * annotates a field of type {@code PolicyMonitorConfiguration}, and that record — not the
+     * extension, and not a class nested in it — carries {@code @Setting(key = "period")}. Read
+     * from the extension alone, a correctly spelled `edc.policy.monitor.period` is reported as
+     * read by nothing, which is indistinguishable from the typo this test exists to catch.
+     *
+     * <p>Following the declared type is deliberately narrower than matching on the prefix:
+     * the suffix still has to be declared somewhere the runtime actually reads it. Widening
+     * to "anything under the prefix" is what let `pool.maxIdleConnections` pass for two years.
+     */
+    private static Set<String> suffixesOf(PackagedRuntime runtime, PackagedRuntime.GroupDeclaration declaration) {
+        var suffixes = new HashSet<>(runtime.stringsOfClassAndNested(declaration.declaredBy()));
+        if (declaration.settingsClass() != null) {
+            suffixes.addAll(runtime.stringsOfClassAndNested(declaration.settingsClass()));
+        }
+        return suffixes;
+    }
+
     private static Map<String, ConfigGroup> configGroups() {
         var groups = new TreeMap<String, ConfigGroup>();
 
@@ -215,7 +288,7 @@ class RuntimeContractTest {
             groups.merge(
                     declaration.prefix(),
                     new ConfigGroup(declaration.instanced(),
-                            runtime.stringsOfClassAndNested(declaration.declaredBy())),
+                            suffixesOf(runtime, declaration)),
                     // Two modules may declare the same context — the trusted-issuer
                     // extension declares its current and deprecated spellings on separate
                     // fields. Union what they accept rather than letting one win.

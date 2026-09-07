@@ -39,11 +39,20 @@ import java.util.zip.ZipFile;
  */
 final class PackagedRuntime {
 
+    /**
+     * How EDC decides what to load. The shadow JAR merges every module's copy into this one
+     * file, so it is the only honest answer to "which extensions does this runtime have" —
+     * a class being present says nothing, since an unregistered extension is inert.
+     */
+    private static final String SERVICE_EXTENSION_REGISTRATIONS =
+            "META-INF/services/org.eclipse.edc.spi.system.ServiceExtension";
+
     private static final String CONFIGURATION_ANNOTATION =
             "Lorg/eclipse/edc/runtime/metamodel/annotation/Configuration;";
 
     private final Map<String, Set<String>> stringsByClass = new HashMap<>();
     private final List<GroupDeclaration> groupDeclarations = new ArrayList<>();
+    private final Set<String> serviceExtensions = new HashSet<>();
 
     private PackagedRuntime() {
     }
@@ -57,8 +66,15 @@ final class PackagedRuntime {
      *                   between the prefix and the setting suffix. A non-Map field is a
      *                   plain nested settings object, where the suffix follows directly.
      * @param declaredBy the class file that carries the annotation
+     * @param settingsClass the class file of the field's declared type when that type models
+     *                   the group's settings, else {@code null}. EDC declares a group's
+     *                   suffixes on the extension, on a record nested inside it, or — as
+     *                   {@code PolicyMonitorExtension} does for {@code edc.policy.monitor} —
+     *                   on a **separate top-level record**. The first two are reachable from
+     *                   {@code declaredBy}; the third is only reachable by following the
+     *                   field's type, which is what this holds.
      */
-    record GroupDeclaration(String prefix, boolean instanced, String declaredBy) {
+    record GroupDeclaration(String prefix, boolean instanced, String declaredBy, String settingsClass) {
     }
 
     static PackagedRuntime read(Path jar) throws IOException {
@@ -67,7 +83,16 @@ final class PackagedRuntime {
             var entries = zip.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry entry = entries.nextElement();
-                if (entry.isDirectory() || !entry.getName().endsWith(".class")) {
+                if (entry.isDirectory()) {
+                    continue;
+                }
+                if (SERVICE_EXTENSION_REGISTRATIONS.equals(entry.getName())) {
+                    try (InputStream in = zip.getInputStream(entry)) {
+                        runtime.readServiceExtensions(in);
+                    }
+                    continue;
+                }
+                if (!entry.getName().endsWith(".class")) {
                     continue;
                 }
                 try (InputStream in = zip.getInputStream(entry)) {
@@ -86,6 +111,26 @@ final class PackagedRuntime {
 
     int classCount() {
         return stringsByClass.size();
+    }
+
+    /** Every {@code ServiceExtension} the packaged runtime will actually load. */
+    Set<String> serviceExtensions() {
+        return Set.copyOf(serviceExtensions);
+    }
+
+    private void readServiceExtensions(InputStream in) throws IOException {
+        try (var reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(in, java.nio.charset.StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                // ServiceLoader syntax: a `#` comment and surrounding space are not names.
+                int hash = line.indexOf('#');
+                String name = (hash < 0 ? line : line.substring(0, hash)).trim();
+                if (!name.isEmpty()) {
+                    serviceExtensions.add(name);
+                }
+            }
+        }
     }
 
     /** Every string constant in the class at {@code entryName}, or empty if absent. */
@@ -157,6 +202,20 @@ final class PackagedRuntime {
     /** Every {@code @Configuration(context = ...)} declaration in the packaged runtime. */
     List<GroupDeclaration> configGroupDeclarations() {
         return List.copyOf(groupDeclarations);
+    }
+
+    /**
+     * The class file a field descriptor names, or {@code null} for anything that is not a
+     * plain object type.
+     *
+     * <p>Deliberately not resolved against the jar here: a type outside the runtime simply
+     * contributes no strings, which is the same answer as a type that declares none.
+     */
+    private static String settingsClassOf(String descriptor) {
+        if (descriptor == null || !descriptor.startsWith("L") || !descriptor.endsWith(";")) {
+            return null;
+        }
+        return descriptor.substring(1, descriptor.length() - 1) + ".class";
     }
 
     /**
@@ -280,8 +339,9 @@ final class PackagedRuntime {
                 if (CONFIGURATION_ANNOTATION.equals(type) && "context".equals(element) && value != null
                         && !value.isBlank()) {
                     String prefix = value.endsWith(".") ? value : value + ".";
+                    boolean instanced = "Ljava/util/Map;".equals(descriptor);
                     groupDeclarations.add(new GroupDeclaration(
-                            prefix, "Ljava/util/Map;".equals(descriptor), entryName));
+                            prefix, instanced, entryName, instanced ? null : settingsClassOf(descriptor)));
                 }
             }
         }

@@ -45,7 +45,41 @@ dependencies {
     runtimeOnly(project(":edc-extensions"))
 
     // ── Core control plane with DCP ──────────────────────────────────────────
-    runtimeOnly("org.eclipse.edc:controlplane-dcp-bom:${edcVersion}")
+    //
+    // **The DPS modules are excluded, and the pre-DPS flow controller added back.**
+    // This is the one breaking change of 0.18.0 that reaches ds, and it is a packaging
+    // change on both sides of one seam:
+    //
+    //   * `controlplane-base-bom` swapped `transfer-data-plane-signaling` for
+    //     `data-protocols:data-plane-signaling` — the Data Plane Signaling (DPS) client,
+    //     which serialises plain JSON POJOs and always talks HTTP.
+    //   * `dataplane-base-bom` is **byte-identical between 0.17.0 and 0.18.0** and still
+    //     serves the pre-DPS API, whose controller takes `JsonObject` and is JSON-LD
+    //     expanded by the interceptor `ControlApiConfigurationExtension` puts on the
+    //     control context.
+    //
+    // So the two BOMs stopped interoperating: the DPS client's body reaches a JSON-LD
+    // endpoint and fails `Failed to expand JsonObject … missing '@context'`. EDC ships no
+    // DPS data-plane server — its own DPS TCK runtime packages the control plane alone and
+    // the TCK supplies the data plane — which is what the boot warning means by "implement
+    // your own Data Planes".
+    //
+    // `transfer-data-plane-signaling` is still published at 0.18.0 and still carries
+    // `LegacyDataPlaneSignalingFlowController`. With it, `LegacyDataPlaneSignalingClientExtension`
+    // sees an embedded `DataPlaneManager` and returns an **`EmbeddedDataPlaneClient` — the
+    // signalling call stays in-process**, which is what ds ran at 0.16.0 and why no port,
+    // credential or participant context was ever involved.
+    //
+    // Adopting DPS is a capability decision (it needs a data plane that speaks it), not
+    // part of a version bump. Keep these two together: dropping the exclusion without
+    // dropping the added module leaves two `DataFlowController` providers for a
+    // single-valued injection point.
+    runtimeOnly("org.eclipse.edc:controlplane-dcp-bom:${edcVersion}") {
+        exclude(group = "org.eclipse.edc", module = "data-plane-signaling")
+        exclude(group = "org.eclipse.edc", module = "data-plane-signaling-core")
+        exclude(group = "org.eclipse.edc", module = "data-plane-signaling-oauth2")
+    }
+    runtimeOnly("org.eclipse.edc:transfer-data-plane-signaling:${edcVersion}")
 
     // ── Data plane (HTTP proxy for EDR transfers) ─────────────────────────────
     runtimeOnly("org.eclipse.edc:dataplane-base-bom:${edcVersion}")

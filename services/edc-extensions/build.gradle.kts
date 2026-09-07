@@ -37,7 +37,6 @@ dependencies {
     // operands as JsonString/JsonObject, not String — see Purposes.
     compileOnly("jakarta.json:jakarta.json-api:2.1.3")
     compileOnly("org.eclipse.edc:runtime-metamodel:$edcVersion")
-
     // HTTP client for consent check
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")

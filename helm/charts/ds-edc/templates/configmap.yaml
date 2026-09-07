@@ -45,22 +45,18 @@ data:
     # callback. Without a type there is no filter, and `GET /control/v1/dataplanes`
     # answered the full data-plane registry to anything that could reach the port.
     # Safe to enforce because the data-plane client is embedded in this runtime —
-    # the control plane signals its own data plane in-process, not over this port.
+    # `LegacyDataPlaneSignalingClientExtension` returns an `EmbeddedDataPlaneClient`
+    # whenever a `DataPlaneManager` is in the same runtime, so the control plane
+    # signals its own data plane in-process, not over this port. That stays true at
+    # 0.18.0 **because the connector excludes the DPS modules** — see
+    # `services/edc-connector/build.gradle.kts`; adopt DPS and this stops being true.
     # Key from WEB_HTTP_CONTROL_AUTH_KEY, its own secret, not EDC_API_KEY's.
     web.http.control.auth.type=tokenbased
-    # Data-plane signalling. At 0.16.0 this API was registered on the control
-    # context above and so was covered by that filter; EDC 0.18.0's
-    # `data-protocols:data-plane-signaling` gives it a context of its own, which
-    # binds port 8182 by default and has no filter unless one is asked for.
-    # Enforceable for the same reason control is — the data plane is embedded, so
-    # nothing crosses this port. Key from WEB_HTTP_SIGNALING_AUTH_KEY.
-    web.http.signaling.port={{ .Values.ports.signaling }}
-    web.http.signaling.path=/signaling
-    web.http.signaling.auth.type=tokenbased
-    # There is no `public` or `version` context, and adding one back would bind a
-    # port with nothing behind it: `ApiContext` in this runtime declares only
-    # MANAGEMENT, CONTROL, PROTOCOL and SIGNALING, no data-plane public API is
-    # packaged, and the management Version API registers on the default context.
+    # There is no `public`, `version` or `signaling` context, and adding one back
+    # would bind a port with nothing behind it: with the DPS modules excluded,
+    # `ApiContext` in this runtime serves only MANAGEMENT, CONTROL and PROTOCOL,
+    # no data-plane public API is packaged, and the management Version API
+    # registers on the default context.
 
     # ── DSP addressing (what remote participants dial) ────────────────────────
     edc.dsp.callback.address=https://{{ $host }}/protocol
@@ -120,6 +116,17 @@ data:
     # `services/federated-catalog`; this one is off explicitly rather than by
     # relying on the target-node directory staying empty.
     edc.catalog.cache.execution.enabled=false
+
+    # ── Consent revocation: how fast a running transfer is torn down (`D-17`) ──
+    # **0.18.0 made this setting mean what it says.** At 0.16.0 the policy
+    # monitor was a state machine swept on its iteration wait, so a withdrawal
+    # terminated the transfer in ~3s while `edc.policy.monitor.period` (PT1H)
+    # governed nothing. 0.18.0 rewrote it as a watchdog on exactly this period.
+    # Unset, revocation still stops data immediately — the per-query gate reads
+    # the consent table — but the transfer process survives up to an hour, which
+    # is the half of `D-17` that says revocation ends a *running* transfer.
+    # Raise it only with an argument about the Art. 7(3) obligation, not load.
+    edc.policy.monitor.period={{ .Values.policyMonitorPeriod | default "PT5S" }}
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}

@@ -31,7 +31,27 @@ KEYCLOAK=${KEYCLOAK_URL:-http://localhost:9080}
 # away. Both are no-ops when nothing changed.
 echo "→ stack"
 ROOT="$(cd "$HERE/../../.." && pwd)"
-docker compose -f "$ROOT/docker-compose.dataset-api.yml" up -d >/dev/null
+# **`--build`, or this runs current source against a months-old venv.** Every
+# service in that compose file is *built* from the sibling celine checkouts, and
+# `up -d` reuses whatever image exists — built once, on the day this machine
+# first seeded, and never again. Meanwhile the file bind-mounts
+# `dataset-api/src` and `celine-sdk/src` over the image and puts them first on
+# `PYTHONPATH`, so the code is always current and only its dependencies and
+# migrations are frozen. That gap is invisible until it is fatal:
+#
+#   * 2026-09-07, venv 5 weeks old — upstream had added a `celine-utils`
+#     dependency, so the service died on `ModuleNotFoundError: celine.governance`
+#   * the same day, `dataset-api-migrate` (a *separate* image, so rebuilding
+#     only `dataset-api-real` did not cover it) was behind the models and the
+#     catalogue import 500'd on `column datasets_entries.ontology_mapping does
+#     not exist`
+#
+# The compose file already states this rule for its two mounts — "a stale mount
+# silently runs different code from the image the same compose file claims to
+# test, which is the one failure mode a harness must not have". A stale *image*
+# under a fresh mount is that same failure with the halves swapped. Layer
+# caching makes this a no-op when nothing upstream moved.
+docker compose -f "$ROOT/docker-compose.dataset-api.yml" up -d --build >/dev/null
 docker compose -f "$ROOT/docker-compose.dataset-api.yml" restart dataset-api-real >/dev/null
 sleep 8
 

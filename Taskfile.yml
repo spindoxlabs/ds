@@ -131,6 +131,23 @@ tasks:
       # that holds because a later task happens to be slow is not a guarantee.
       # A cross-file `depends_on` cannot express this — `rec:start` passes only
       # `-f docker-compose.rec.yml`.
+      # **Refresh the images this stack does not build.** `task build` runs
+      # `docker compose build`, which touches only services with a `build:`
+      # block — an `image:`-only service is pulled once, on the first `up`, and
+      # then cached for ever. `keycloak-sync` is
+      # `ghcr.io/celine-eu/celine-policies:dev`, a **floating** tag owned by
+      # another repository, so "cached for ever" means the stack silently runs
+      # whatever that tag pointed at the day this machine first started it.
+      #
+      # Measured 2026-09-07: a seven-week-old copy predated `--overlay`, so the
+      # sync died with `No such option: --overlay`, `keycloak-sync` exited 2,
+      # and `docker:start` stopped before any EDC — an error that reads as a ds
+      # defect in ds's own compose command, and is not one.
+      #
+      # `--ignore-buildable` keeps this to exactly the externally-owned images;
+      # the failure is tolerated so that working offline still starts the stack
+      # on what is already cached.
+      - COMPOSE_PROJECT_NAME=dataspaces docker compose pull --quiet --ignore-buildable || echo "could not refresh external images — continuing on the cached copies"
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up data-dirs-init --exit-code-from data-dirs-init
       - COMPOSE_PROJECT_NAME=dataspaces docker compose up -d
 
@@ -525,15 +542,15 @@ tasks:
         # 30022 survived the teardown and the container that wanted the port
         # failed to bind, while 30002 belongs to `docker-compose.dataset-api.yml`,
         # a *different* compose project this task has no business killing.
-        # x9195 is the `signaling` context, and it is here because EDC 0.18.0
-        # made it real. These ports were removed once, correctly, when they named
-        # the `version` and `public` contexts no packaged module registers; then
-        # `data-protocols:data-plane-signaling` arrived with a context that IS
-        # registered, ds gave it x9195, and a teardown that does not name them
-        # leaves a JVM holding four ports — the next start's runtime then dies in
-        # a BindException loop while the stray keeps answering, so the stack looks
-        # up and is running the previous build. Measured, 2026-09-07.
-        DEV_PORTS="19191 19193 19194 19195 29191 29193 29194 29195 39191 39193 39194 39195 30000 30001 30003 30004 30005 30022 31000 31001"
+        # **No x9195 here, and that is current rather than an oversight.** For part
+        # of the 0.18.0 upgrade it was: `data-protocols:data-plane-signaling`
+        # declares a `signaling` context and ds gave it x9195. The connector now
+        # **excludes** those modules (see `services/edc-connector/build.gradle.kts`),
+        # so nothing registers on that context again and the ports go back to
+        # naming only what a packaged module serves — the same rule that removed
+        # the `version` and `public` ports. Re-adopting DPS means putting them back
+        # here and in `edc:restart`, together.
+        DEV_PORTS="19191 19193 19194 29191 29193 29194 39191 39193 39194 30000 30001 30003 30004 30005 30022 31000 31001"
 
         # 1. Kill the local-dev watch loops FIRST, by name.
         #    `tmux kill-session` does not reach them: the loops are re-parented
@@ -797,10 +814,9 @@ tasks:
         docker rm -f dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1 2>/dev/null || true
         # Same set as DEV_PORTS' EDC half, and for the same reason: 19191/29191/
         # 39191 host the health endpoint every wait loop below polls, and were
-        # missing here, and x9195 is now the `signaling` context EDC 0.18.0 added
-        # — a real one, unlike the `version`/`public` pair whose ports were
-        # removed from this list because nothing registered on them.
-        fuser -k 19191/tcp 19193/tcp 19194/tcp 19195/tcp 29191/tcp 29193/tcp 29194/tcp 29195/tcp 39191/tcp 39193/tcp 39194/tcp 39195/tcp 2>/dev/null || true
+        # missing here. No x9195 — see the note on DEV_PORTS: the `signaling`
+        # context belongs to the DPS modules this connector excludes.
+        fuser -k 19191/tcp 19193/tcp 19194/tcp 29191/tcp 29193/tcp 29194/tcp 39191/tcp 39193/tcp 39194/tcp 2>/dev/null || true
         sleep 1
         COMPOSE_IGNORE_ORPHANS=true \
           docker compose --env-file .env.local -f docker-compose.rec.yml up -d --build --force-recreate --no-deps edc-rec
@@ -1253,23 +1269,38 @@ tasks:
       - task: e2e:clean
       - |
         set +e
-        if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q '^dataspaces-edc-rec-1$'; then
-          echo "Restarting EDC containers after the database reset..."
-          # All three: the grid operator's control plane holds connections to a
-          # database `ds-e2e clean` has just dropped and recreated, exactly like
-          # the other two (`DID-15`).
-          docker restart dataspaces-edc-rec-1 dataspaces-edc-third-party-1 \
-            dataspaces-edc-grid-operator-1 >/dev/null 2>&1
-        else
-          # Local dev mode: the EDCs are host JVMs owned by `edc-*:watch` loops,
-          # which restart them on exit. Killing them is the restart.
-          echo "Restarting local EDC JVMs after the database reset..."
-          for port in 19193 29193 39193; do
-            for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
-              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
-            done
+        # **Both, never either/or.** This was an if/else on "is
+        # `dataspaces-edc-rec-1` running", and `dev:*` is not the other branch of
+        # that question — it is a **hybrid**: `rec` and `third-party` are host
+        # JVMs owned by `edc-*:watch`, while the grid operator stays a container
+        # (`DID-15` never got a dev runner). So in dev mode the else-branch killed
+        # the two host JVMs and left the grid operator's control plane running
+        # against a database `ds-e2e clean` had just dropped — it answered its
+        # management API, so `e2e:wait-ready` passed it, and the first write hit
+        # `relation "edc_contract_negotiation" does not exist`. The visible symptom
+        # was `sync-providers` reporting *grid-operator published nothing* and a
+        # 500 from `delete_contract_definition`, which reads as a governance
+        # problem three steps from the cause. Measured 2026-09-07.
+        #
+        # Restarting a container that is not running, or killing a JVM that is not
+        # there, is a no-op — so doing both unconditionally costs nothing and
+        # removes the mode detection that was the defect.
+        echo "Restarting EDC containers (if any) after the database reset..."
+        for name in dataspaces-edc-rec-1 dataspaces-edc-third-party-1 dataspaces-edc-grid-operator-1; do
+          if docker ps --format '{{"{{"}}.Names{{"}}"}}' | grep -q "^${name}$"; then
+            docker restart "$name" >/dev/null 2>&1
+          fi
+        done
+        # Host JVMs owned by `edc-*:watch`, which restart them on exit — killing
+        # them is the restart. The `java` guard matters: in dev the published
+        # container port is held by docker-proxy, and killing that would take out
+        # the port mapping rather than the runtime.
+        echo "Restarting local EDC JVMs (if any) after the database reset..."
+        for port in 19193 29193 39193; do
+          for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
+            [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
           done
-        fi
+        done
         # **Wait for the management API, do not sleep at it.** This was `sleep 5`,
         # and five seconds is not a property of anything — it is how long a JVM
         # happened to take to boot, migrate its schema and bind :x9193 on the
@@ -1282,20 +1313,54 @@ tasks:
         # turned a race that usually passed into one that always failed. The
         # agent did not break this; it stopped hiding it.
         #
-        # **Any HTTP answer counts, including 401** — the management API requires
-        # auth, and "it refused me" is proof it is listening, which is the only
-        # question here. The health endpoint is on a *different* port (x9191), so
-        # a container reporting healthy says nothing about this one.
+        # **The runtime we just stopped can still answer, and that is the trap.**
+        # This waited for the first non-`000` and broke — but the step
+        # above has just killed or restarted these runtimes, so the first answer
+        # is routinely the *dying* one: 401 from a JVM that exits a second later.
+        # The gate passed, `e2e:sync-providers` ran next against nothing, and the
+        # provider connector failed with `httpx.ConnectError: All connection
+        # attempts failed` while the run reported *provider published nothing* —
+        # three tasks from the cause. Measured 2026-09-07 in `dev:*`, where the
+        # kill is asynchronous because `edc-*:watch` owns the restart.
+        #
+        # So: wait for it to go **down** first, then for it to come back, and
+        # require the answer to repeat. Going down is best-effort — a runtime that
+        # was already stopped never will — but coming up is not.
+        #
+        # **405 is not ready either**, the same predicate `e2e:wait-ready` uses and
+        # for the reason recorded there: an EDC whose port is open but whose
+        # management context has only partly registered answers 405, and a flow
+        # that starts then fails on "did not serve its assets". Naming the codes
+        # that mean *not ready* rather than requiring one exact success code keeps
+        # a new-but-healthy answer from turning into a four-minute hang.
+        #
+        # The health endpoint is on a *different* port (x9191), so a container
+        # reporting healthy says nothing about this one.
+        probe() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
+          "http://172.17.0.1:$1/management/v3/assets/request" -X POST 2>/dev/null; }
+        ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
         for port in 19193 29193 39193; do
           echo -n "Waiting for EDC management API on :${port}... "
-          for i in $(seq 1 60); do
-            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-              "http://172.17.0.1:${port}/management/v3/assets/request" -X POST 2>/dev/null)
-            [ "$code" != "000" ] && break
+          # Down first: at most 15s, then carry on regardless.
+          for i in $(seq 1 15); do
+            [ "$(probe "$port")" = "000" ] && break
             sleep 1
           done
-          if [ "$code" = "000" ]; then
-            echo "not listening after 60s" >&2
+          # Then up, and steady — three consecutive good answers, so a runtime on
+          # its way out cannot satisfy the gate.
+          streak=0
+          for i in $(seq 1 90); do
+            code=$(probe "$port")
+            if ready "$code"; then
+              streak=$((streak + 1))
+              [ "$streak" -ge 3 ] && break
+            else
+              streak=0
+            fi
+            sleep 1
+          done
+          if [ "$streak" -lt 3 ]; then
+            echo "not serving its management API after 90s (last: HTTP $code)" >&2
             exit 1
           fi
           echo "ready (HTTP $code)"

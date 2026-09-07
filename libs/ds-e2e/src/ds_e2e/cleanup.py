@@ -200,6 +200,7 @@ def run_cleanup(
       and no amount of care at each call site prevents the next instance.
     """
     base_url = settings.database_url.rstrip("/")
+    failures: list[str] = []
 
     for db_name, tables in DATABASES.items():
         dsn = f"{base_url}/{db_name}"
@@ -211,22 +212,48 @@ def run_cleanup(
                 conn.commit()
             log.info("Truncated %s: %s", db_name, ", ".join(tables))
         except psycopg.Error as exc:
+            # Collected, not merely warned — see `_clear_edc` below, which was
+            # given this treatment first. A state reset that did not happen is
+            # the same result whichever store refused.
             log.warning("Could not truncate %s: %s", db_name, exc)
+            failures.append(f"truncate {db_name}: {exc}")
 
     for edc_db in EDC_DATABASES:
         pg_dsn = f"{base_url}/postgres"
         try:
             with psycopg.connect(pg_dsn, autocommit=True) as conn:
                 with conn.cursor() as cur:
+                    # **Terminate the connectors' sessions first, or the drop
+                    # cannot happen.** The three EDC control planes hold open
+                    # pools against exactly these databases, and PostgreSQL
+                    # refuses `DROP DATABASE` while any session is attached:
+                    # *"database is being accessed by other users … There are 3
+                    # other sessions"*. Without this the drop raised, the
+                    # handler below warned, `run_cleanup` returned normally, and
+                    # every flow then ran against the **previous** run's
+                    # agreements — which is how two flows spent a session
+                    # unattributed: the provider denied them in
+                    # `policy.monitor`, correctly, on a stale agreement whose
+                    # consent row the truncate above had just removed.
+                    #
+                    # Safe because the database is being dropped on the next
+                    # line, and `e2e:prepare` restarts all three EDCs
+                    # immediately afterwards — that restart is not optional and
+                    # says so.
+                    cur.execute(
+                        "SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+                        "WHERE datname = %s AND pid <> pg_backend_pid()",
+                        (edc_db,),
+                    )
                     cur.execute(f"DROP DATABASE IF EXISTS {edc_db}")
                     cur.execute(f"CREATE DATABASE {edc_db}")
             log.info("Reset EDC database %s", edc_db)
         except psycopg.Error as exc:
             log.warning("Could not reset %s: %s", edc_db, exc)
+            failures.append(f"reset {edc_db}: {exc}")
 
     owns_client = edc_client is None
     edc_client = edc_client or httpx.Client(timeout=10)
-    failures: list[str] = []
     try:
         for label, mgmt_url in edc_management_urls(settings).items():
             try:

@@ -13,10 +13,12 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import httpx
+import pytest
 
 from ds_e2e.cleanup import (
     DATABASES,
     EDC_DATABASES,
+    CleanupIncomplete,
     provider_sync_targets,
     run_cleanup,
 )
@@ -61,8 +63,14 @@ def test_cleanup_truncates_databases():
     # One connection per application database it truncates, plus one to the
     # `postgres` database per EDC store it drops and recreates.
     assert mock_connect.call_count == len(DATABASES) + len(EDC_DATABASES)
-    # One TRUNCATE per application database; a DROP and a CREATE per EDC store.
-    assert mock_cursor.execute.call_count == len(DATABASES) + 2 * len(EDC_DATABASES)
+    # One TRUNCATE per application database; a session terminate, a DROP and a
+    # CREATE per EDC store. The terminate is not optional and not incidental:
+    # the three EDC control planes hold pools against those databases, and
+    # without it PostgreSQL refuses the DROP and the clean silently leaves the
+    # previous run's agreements in place.
+    assert mock_cursor.execute.call_count == len(DATABASES) + 3 * len(EDC_DATABASES)
+    executed = [c.args[0] for c in mock_cursor.execute.call_args_list]
+    assert sum("pg_terminate_backend" in sql for sql in executed) == len(EDC_DATABASES)
     # Every provider re-syncs, and the assertion names *which* — a count alone
     # went stale the moment `DID-15` added the second one.
     assert [c.args[0] for c in http.post.call_args_list] == [
@@ -82,13 +90,25 @@ def test_cleanup_continues_on_db_error():
         "ds_e2e.cleanup.psycopg.connect",
         side_effect=psycopg.Error("connection refused"),
     ):
-        run_cleanup(settings, http, edc_client=fake_edc_client())
+        # **Continues, and then reports.** "Continues" is about not
+        # short-circuiting the rest of the clean — it was never about staying
+        # quiet. A reset that did not happen used to warn and return normally,
+        # so `e2e:prepare` went on to run every flow against the previous run's
+        # EDC agreements; two flows were then denied in `policy.monitor`,
+        # correctly, and read as product failures for a session.
+        with pytest.raises(CleanupIncomplete) as excinfo:
+            run_cleanup(settings, http, edc_client=fake_edc_client())
 
     # A database that refused every connection must not stop the provider syncs:
     # the point of the clean is that the *next* run starts from a known state.
     assert [c.args[0] for c in http.post.call_args_list] == [
         f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
     ]
+    # And every store that refused is named, so the failure says what survived
+    # rather than that something did.
+    message = str(excinfo.value)
+    for db_name in (*DATABASES, *EDC_DATABASES):
+        assert db_name in message
 
 
 # ── E2E-07 · the EDC control plane is configuration, not a constant ──────────

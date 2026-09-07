@@ -66,7 +66,6 @@ services:
       # longer behind the control filter. `auth.type=tokenbased` in the
       # .properties file makes this key mandatory — without it the runtime
       # dies in BaseRuntime.boot.
-      WEB_HTTP_SIGNALING_AUTH_KEY: ${EDC_SIGNALING_API_KEY:-insecure-dev-signaling-key}
       # How the EDC authenticates to ds-connector: /internal/* during policy
       # evaluation, /webhooks/contract-negotiation to report negotiation state.
       DS_CONNECTOR_INTERNAL_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
