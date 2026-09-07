@@ -2,7 +2,7 @@ plugins {
     `java-library`
 }
 
-val edcVersion = "0.16.0"
+val edcVersion = "0.18.0"
 
 dependencies {
     api("org.eclipse.edc:policy-engine-spi:$edcVersion")

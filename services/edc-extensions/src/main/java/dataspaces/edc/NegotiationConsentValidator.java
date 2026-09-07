@@ -17,7 +17,7 @@ import java.util.List;
  *
  * <p>A consent decision needs the dataset. An
  * {@code AtomicConstraintRuleFunction} is handed the {@link Permission}, and
- * {@code Rule} carries no target at EDC 0.16.0; the negotiation context carries
+ * {@code Rule} carries no target at EDC 0.18.0; the negotiation context carries
  * only the participant agent:
  *
  * <pre>{@code

@@ -13,7 +13,8 @@ name: EDC base image
 # workflow refuses to build the connector until it exists.
 #
 # The tag is the EDC version, and it moves. Bump `EDC_VERSION` here in the same
-# commit as `edcVersion` in the two build.gradle.kts files.
+# commit as `edcVersion` in `gradle.properties`, which is the source of truth
+# `BuildConsistencyTest` holds every copy to.
 # ==============================================================================
 
 on:
@@ -21,6 +22,11 @@ on:
     branches: [main]
     paths:
       - "**/*.gradle.kts"
+      # `edcVersion` lives here, and a bump that touches only this file has to
+      # publish the matching base image. Without this path a version bump that
+      # edits no `.gradle.kts` leaves `ds-edc-base:<new>` unpublished, and
+      # `release.yml` then fails on a missing base image.
+      - "gradle.properties"
       - "services/edc-connector/Dockerfile.base"
       - ".github/workflows/edc-base.yml"
   workflow_dispatch:
@@ -34,7 +40,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  EDC_VERSION: "0.16.0"
+  EDC_VERSION: "0.18.0"
 
 jobs:
   base:
@@ -50,13 +56,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Assert EDC_VERSION matches the Gradle builds
+      # `gradle.properties` is the source (see its header); the literal in
+      # `edc-extensions/build.gradle.kts` is a copy that `BuildConsistencyTest`
+      # pins to it. Read the source here, and require a non-empty match so a
+      # renamed line fails loudly instead of comparing "" against the version.
+      - name: Assert EDC_VERSION matches gradle.properties
         run: |
-          declared=$(grep -hoP 'val edcVersion = "\K[^"]+' \
-            services/edc-extensions/build.gradle.kts \
-            services/edc-connector/build.gradle.kts | sort -u)
+          declared=$(grep -hoP '^edcVersion=\K.+' gradle.properties | sort -u)
+          if [ -z "$declared" ]; then
+            echo "::error::gradle.properties declares no edcVersion"
+            exit 1
+          fi
           if [ "$declared" != "$EDC_VERSION" ]; then
-            echo "::error::EDC_VERSION=$EDC_VERSION but build.gradle.kts declares: $declared"
+            echo "::error::EDC_VERSION=$EDC_VERSION but gradle.properties declares: $declared"
             exit 1
           fi
 

@@ -16,7 +16,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * FORK OF AN ECLIPSE EDC CLASS — carried deliberately, to be deleted.
  *
- * This is `JsonObjectFromPolicyTransformer` from EDC **v0.16.0**, verbatim except
+ * This is `JsonObjectFromPolicyTransformer` from EDC **v0.18.0**, verbatim except
  * for the `rightOperand` / `literalNode` helpers and the one call site that uses
  * them. It sits under the upstream package so it wins on the shadow JAR
  * classpath — which is assembled in **edc-connector**, not here: see

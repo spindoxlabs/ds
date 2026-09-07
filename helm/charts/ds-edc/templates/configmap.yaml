@@ -24,7 +24,7 @@ data:
   #   DS_CONNECTOR_INTERNAL_CLIENT_SECRET → ds.connector.internal.client.secret
   edc.properties: |
     edc.participant.id={{ $did }}
-    edc.iam.issuer.id={{ $did }}
+    edc.participant.did={{ $did }}
     edc.hostname={{ $host }}
 
     # ── Web contexts ──────────────────────────────────────────────────────────
@@ -48,10 +48,19 @@ data:
     # the control plane signals its own data plane in-process, not over this port.
     # Key from WEB_HTTP_CONTROL_AUTH_KEY, its own secret, not EDC_API_KEY's.
     web.http.control.auth.type=tokenbased
+    # Data-plane signalling. At 0.16.0 this API was registered on the control
+    # context above and so was covered by that filter; EDC 0.18.0's
+    # `data-protocols:data-plane-signaling` gives it a context of its own, which
+    # binds port 8182 by default and has no filter unless one is asked for.
+    # Enforceable for the same reason control is — the data plane is embedded, so
+    # nothing crosses this port. Key from WEB_HTTP_SIGNALING_AUTH_KEY.
+    web.http.signaling.port={{ .Values.ports.signaling }}
+    web.http.signaling.path=/signaling
+    web.http.signaling.auth.type=tokenbased
     # There is no `public` or `version` context, and adding one back would bind a
     # port with nothing behind it: `ApiContext` in this runtime declares only
-    # MANAGEMENT, CONTROL and PROTOCOL, no data-plane public API is packaged, and
-    # the management Version API registers on the default context.
+    # MANAGEMENT, CONTROL, PROTOCOL and SIGNALING, no data-plane public API is
+    # packaged, and the management Version API registers on the default context.
 
     # ── DSP addressing (what remote participants dial) ────────────────────────
     edc.dsp.callback.address=https://{{ $host }}/protocol
@@ -70,7 +79,7 @@ data:
 
     # This participant's ds-connector (in-cluster): /internal/* during ODRL
     # policy evaluation, and /webhooks/contract-negotiation, which the extension
-    # posts to directly. There is no callback-URL setting — EDC 0.16.0 has no
+    # posts to directly. There is no callback-URL setting — EDC 0.18.0 has no
     # `edc.receiver.http.*`, and the static-callback extension would need a
     # fourth shared secret to authenticate.
     ds.connector.internal.url=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}
@@ -94,7 +103,7 @@ data:
     # counterparty finds this participant's credential service through the
     # `CredentialService` entry in its DID document, which identity-registry
     # publishes and the `-dcp` Ingress below routes.
-    edc.iam.trusted-issuer.0.id={{ include "edc.trustAnchorDid" . }}
+    edc.iam.trustedissuer.0.id={{ include "edc.trustAnchorDid" . }}
     edc.iam.dcp.scopes.membership.id=membership
     edc.iam.dcp.scopes.membership.type=default
     edc.iam.dcp.scopes.membership.value=org.eclipse.dspace.dcp.vc.type:MembershipCredential:read
@@ -102,6 +111,15 @@ data:
 
     # did:web resolution over HTTPS — a DID document carries trust keys.
     edc.iam.did.web.use.https={{ .Values.didWebUseHttps }}
+
+    # ── EDC's own federated catalogue crawler — off ───────────────────────────
+    # `controlplane-base-bom` pulls in `catalog-crawler-core` from EDC 0.18.0 and
+    # it defaults to enabled: 2 crawler threads on a 60-second tick, with
+    # in-memory cache and node-directory defaults, so the runtime boots and
+    # crawls rather than failing. ds's federated catalogue is
+    # `services/federated-catalog`; this one is off explicitly rather than by
+    # relying on the target-node directory staying empty.
+    edc.catalog.cache.execution.enabled=false
 
     # ── PostgreSQL ────────────────────────────────────────────────────────────
     edc.datasource.default.url=jdbc:postgresql://{{ ((.Values.global).postgres).host }}:{{ ((.Values.global).postgres).port }}/{{ include "ds.db.edc" . }}?sslmode={{ ((.Values.global).postgres).sslMode | default "require" }}

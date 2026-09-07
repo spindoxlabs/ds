@@ -43,7 +43,7 @@ env:
   REGISTRY: ghcr.io/spindoxlabs
   # The EDC dependency-cache base image, published by edc-base.yml. Keyed to
   # `edcVersion` in services/edc-*/build.gradle.kts — bump both together.
-  EDC_BASE_IMAGE: ghcr.io/spindoxlabs/ds-edc-base:0.16.0
+  EDC_BASE_IMAGE: ghcr.io/spindoxlabs/ds-edc-base:0.18.0
 
 jobs:
   # ── Python and Node services ────────────────────────────────────────────────

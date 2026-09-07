@@ -2,7 +2,7 @@
 # Gradle's local cache (~/.gradle/caches/) is baked in, keyed to the build files.
 #
 # Build (from repo root):
-#   docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.16.0 .
+#   docker build -f services/edc-connector/Dockerfile.base -t ds-edc-base:0.18.0 .
 #
 # Rebuild only when build.gradle.kts files or edcVersion change.
 

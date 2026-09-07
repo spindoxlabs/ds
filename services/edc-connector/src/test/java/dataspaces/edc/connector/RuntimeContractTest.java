@@ -154,19 +154,51 @@ class RuntimeContractTest {
                 unread.put(key, entry.getValue());
                 continue;
             }
+            var owner = groups.get(group);
             String rest = key.substring(group.length());
-            int instanceEnd = rest.indexOf('.');
-            String suffix = instanceEnd < 0 ? null : rest.substring(instanceEnd + 1);
-            if (suffix == null || !groups.get(group).contains(suffix)) {
+            String suffix;
+            if (owner.instanced()) {
+                int instanceEnd = rest.indexOf('.');
+                suffix = instanceEnd < 0 ? null : rest.substring(instanceEnd + 1);
+            } else {
+                suffix = rest;
+            }
+            if (suffix == null || !owner.declared().contains(suffix)) {
                 unread.put(key, entry.getValue());
             }
         }
         return unread;
     }
 
-    /** Declared config-group prefix → the string constants of the module that declares it. */
-    private static Map<String, Set<String>> configGroups() {
-        var groups = new TreeMap<String, Set<String>>();
+    /**
+     * A declared config group: whether its keys carry an instance segment, and the string
+     * constants of the module that declares it.
+     */
+    private record ConfigGroup(boolean instanced, Set<String> declared) {
+    }
+
+    /**
+     * Declared config-group prefix → what the module that declares it accepts under it.
+     *
+     * <p>EDC has two forms, and the runtime carries both.
+     *
+     * <p><strong>The annotation.</strong> {@code @Configuration(context = "edc.datasource")}
+     * on a field. This is how every group ds configures is declared at 0.18.0 —
+     * {@code edc.datasource}, {@code edc.iam.trustedissuer} (and its deprecated spelling),
+     * {@code edc.iam.dcp.scopes}. A {@code Map}-typed field means the key carries an
+     * instance segment; anything else means the suffix follows the prefix directly.
+     *
+     * <p><strong>The placeholder literal.</strong> {@code edc.callback.<cbAlias>.} as a
+     * string constant. Until 0.17 this was the only form and finding a {@code <} was enough;
+     * 0.18.0 moved the groups to the annotation and left two of these behind. Reading only
+     * this form against an 0.18.0 JAR reports every grouped key ds sets as unread, which is
+     * how this was found.
+     *
+     * <p>The annotation is authoritative where both name the same prefix.
+     */
+    private static Map<String, ConfigGroup> configGroups() {
+        var groups = new TreeMap<String, ConfigGroup>();
+
         for (String declared : runtime.allStrings()) {
             int placeholder = declared.indexOf('<');
             if (placeholder <= 0) {
@@ -174,10 +206,33 @@ class RuntimeContractTest {
             }
             String prefix = declared.substring(0, placeholder);
             if (prefix.endsWith(".") && prefix.indexOf('.') != prefix.length() - 1) {
-                groups.computeIfAbsent(prefix, runtime::stringsOfClassesDeclaringGroup);
+                groups.computeIfAbsent(prefix,
+                        p -> new ConfigGroup(true, runtime.stringsOfClassesDeclaringGroup(p)));
             }
         }
+
+        for (var declaration : runtime.configGroupDeclarations()) {
+            groups.merge(
+                    declaration.prefix(),
+                    new ConfigGroup(declaration.instanced(),
+                            runtime.stringsOfClassAndNested(declaration.declaredBy())),
+                    // Two modules may declare the same context — the trusted-issuer
+                    // extension declares its current and deprecated spellings on separate
+                    // fields. Union what they accept rather than letting one win.
+                    (a, b) -> new ConfigGroup(a.instanced() || b.instanced(), union(a.declared(), b.declared())));
+        }
+
+        assertTrue(groups.containsKey("edc.datasource."),
+                () -> "no `edc.datasource` config group found in the JAR — the group declarations this test "
+                        + "reads have moved again, and every grouped key is about to be reported as unread. "
+                        + "Found: " + groups.keySet());
         return groups;
+    }
+
+    private static Set<String> union(Set<String> a, Set<String> b) {
+        var all = new LinkedHashSet<>(a);
+        all.addAll(b);
+        return all;
     }
 
     private static void reportUnread(Map<String, Set<String>> unread) {

@@ -181,8 +181,13 @@ class FilesystemVaultSeederExtensionTest {
             return false;
         }
 
+        // EDC 0.18.0 turned `SettingResolver` inside out: `getConfig()` is the
+        // abstract method and `getConfig(String path)` the default that delegates
+        // to it. Implementing the root is now both required and enough — and it
+        // is stronger than what this stub did before, which returned the whole
+        // map for any path.
         @Override
-        public org.eclipse.edc.spi.system.configuration.Config getConfig(String path) {
+        public org.eclipse.edc.spi.system.configuration.Config getConfig() {
             return org.eclipse.edc.spi.system.configuration.ConfigFactory.fromMap(settings);
         }
 

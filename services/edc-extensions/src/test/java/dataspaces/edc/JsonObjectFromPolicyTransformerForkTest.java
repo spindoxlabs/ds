@@ -41,9 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class JsonObjectFromPolicyTransformerForkTest {
 
     /** The EDC release the fork was taken from. */
-    private static final String FORKED_FROM = "0.16.0";
+    private static final String FORKED_FROM = "0.18.0";
 
-    private static final String UPSTREAM_COPY = "/JsonObjectFromPolicyTransformer.v0.16.0.java.txt";
+    private static final String UPSTREAM_COPY = "/JsonObjectFromPolicyTransformer.v0.18.0.java.txt";
 
     @Test
     @DisplayName("the fork still matches the EDC version we build against")

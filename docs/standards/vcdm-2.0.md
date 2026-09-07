@@ -101,7 +101,7 @@ notice.
 
 ## 4. What the verifier actually supports — measured from the pinned jar
 
-`gradle.properties` pins `edcVersion=0.16.0`. These facts come from reading
+`gradle.properties` pins `edcVersion=0.18.0`. These facts come from reading
 `services/edc-connector/build/libs/connector.jar`, not from release notes:
 
 **Both status types are registered.** `RevocationServiceRegistryExtension` registers
@@ -118,7 +118,7 @@ by *observing a revoked credential get rejected*, not by observing a green suite
 
 **`statusSize > 1` is refused.** `BitstringStatusListRevocationService` fails with
 *"Unsupported statusSize: currently only statusSize = 1 is supported. The VC contained
-statusSize = %d"*. The `message` purpose therefore **cannot be verified by EDC 0.16.0**
+statusSize = %d"*. The `message` purpose therefore **cannot be verified by EDC 0.18.0**
 at all — multi-state-on-one-index is unavailable to this dataspace regardless of what
 the Recommendation permits.
 
@@ -175,18 +175,26 @@ so both remain interoperable and nothing forces a move. ds's connector configura
 already carries the field — `edc.iam.dcp.scopes.membership.profile=*` — set to the
 wildcard, which is why the choice has never had to be made explicitly.
 
-**Where the reference implementation has got to.** EDC 0.18.0 (ds pins 0.16.0):
+**Where the reference implementation has got to — and ds is now on it.** This section
+compared 0.18.0 against a pinned 0.16.0 until the upgrade landed; the comparison has
+collapsed, and what was the far side of it is what ds runs:
 
-- the connector gained `Vcdm20JosePresentationVerifier`, a **VCDM 2.0 presentation
-  verifier**, dispatched alongside the 1.1 one — `canHandle` returns false when the JWT
-  carries the 1.1 `vp` claim, so both are accepted
-- IdentityHub gained `JoseVcdm20CredentialGenerator`, which **issues** VCDM 2.0
-  (`@context: https://www.w3.org/ns/credentials/v2`, `validFrom`, `validUntil`)
+- the connector **has** `Vcdm20JosePresentationVerifier`, a VCDM 2.0 presentation
+  verifier, dispatched alongside the 1.1 one — `canHandle` returns false when the JWT
+  carries the 1.1 `vp` claim, so both are accepted. Measured on both artifacts at the
+  upgrade: 0 occurrences in the 0.16.0 `connector.jar`, packaged in the 0.18.0 one. **ds's
+  verifier accepts VCDM 2.0 presentations today**, which it did not before
+- IdentityHub has `JoseVcdm20CredentialGenerator`, which **issues** VCDM 2.0
+  (`@context: https://www.w3.org/ns/credentials/v2`, `validFrom`, `validUntil`). ds does
+  not package IdentityHub — issuance is `services/identity-registry` — so this is
+  upstream's direction, not a capability ds gained
 - IdentityHub's issuer registers **only** `BitstringStatusListEntry` as a status-list
   factory; there is no StatusList2021 issuance path in it at all
 
-The direction is unambiguous, and the 1.1 profile is still registered, so this is
-schedule pressure rather than a deadline.
+So the *verification* half of the move is now free, and what remains is the issuance
+half, which is ds's own code. The 1.1 profile is still registered, so this is still
+schedule pressure rather than a deadline — but one side of it is no longer blocked on an
+upgrade.
 
 ---
 
@@ -318,8 +326,8 @@ needs no format migration at all.**
 | **VCDM 2.1** | **W3C Working Draft, 05 September 2026** — <https://www.w3.org/TR/vc-data-model-2.1/> |
 | Substantive changes since 2.0 | editorial clarifications, aligned error-condition fields between WG specifications, and clarified requirements around self-asserted credentials (per its own Revision History) |
 | Effect on this analysis | **none.** No property ds uses changes, and the context IRI is unchanged. 2.1 is not a reason to delay a 2.0 move, nor a reason to make one |
-| **EDC 0.18.0** | released; ds pins 0.16.0. Adds VCDM 2.0 verification and issuance (§4a). The `statusSize = 1` restriction is **unchanged** — 0.18.0 only deleted the `//todo: support more statusSize entries in the future` comment beside it |
-| Effect on this analysis | the migration target gets better-supported with each release and the 1.1 profile stays registered. Upgrading EDC is tracked separately, in the store plan `edc-0-18-upgrade` |
+| **EDC 0.18.0** | released, and **ds pins it** since the `edc-0-18-upgrade` plan landed. Adds VCDM 2.0 verification and issuance (§4a). The `statusSize = 1` restriction is **unchanged** — 0.18.0 only deleted the `//todo: support more statusSize entries in the future` comment beside it, so §4's measurement of it still holds word for word |
+| Effect on this analysis | the verifier ds runs now accepts VCDM 2.0, and the 1.1 profile stays registered, so nothing is forced. What is left of the move is issuance, which is ds's own code rather than an upgrade |
 
 ---
 

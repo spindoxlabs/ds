@@ -618,7 +618,7 @@ def test_contract_definition_structure():
 def test_several_purposes_stay_one_multi_valued_isanyof():
     """Do not replace this with a disjunction of scalar `isA` constraints.
 
-    EDC 0.16.0 cannot serialise a multi-valued right operand — it renders it with
+    EDC 0.18.0 cannot serialise a multi-valued right operand — it renders it with
     `toString()` on the way out, so purposes reach every other participant as a
     Java object dump. The obvious fix, `odrl:or` of scalar `isA`, was tried
     against a running EDC and is worse: the OrConstraint is accepted on ingest and

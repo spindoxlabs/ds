@@ -154,3 +154,70 @@ async def test_path_form_resolves_a_user_did(client, db_session):
     body = r.json()
     assert body["id"] == did
     assert "verificationMethod" not in body
+
+
+# ── The subject id is validated, because the DID is concatenation ─
+#
+# `subject_did_for` validated its custodian and not its subject id, so a caller
+# that fed a DID back in produced a nested one — well-formed enough to be
+# stored, resolved and published, and unrecognisable to `subject_id_of`, which
+# splits on the last `:users:`. That is one person becoming two, silently
+# (ds#31).
+
+
+@pytest.mark.parametrize(
+    "subject_id",
+    [
+        "did:web:rec.dataspaces.localhost:users:member-001",
+        "did:web:rec.dataspaces.localhost",
+        "users:alice",
+        "a:b",
+    ],
+)
+def test_a_qualified_subject_id_is_refused(subject_id):
+    from identity_registry.services.did import SubjectNamespaceError, subject_did_for
+
+    with pytest.raises(SubjectNamespaceError) as exc:
+        subject_did_for("did:web:rec.dataspaces.localhost", subject_id)
+    assert "subject_id" in str(exc.value)
+
+
+@pytest.mark.parametrize("subject_id", ["", "   ", "\t"])
+def test_an_empty_subject_id_is_refused(subject_id):
+    """`did:web:rec…:users:` resolves to the custodian's users collection rather
+    than to anybody, and is a DID row nothing can look up."""
+    from identity_registry.services.did import SubjectNamespaceError, subject_did_for
+
+    with pytest.raises(SubjectNamespaceError):
+        subject_did_for("did:web:rec.dataspaces.localhost", subject_id)
+
+
+@pytest.mark.parametrize(
+    "subject_id", ["alice", "member-001", "email-9f2c1ab4d7e60351cc2f8b19"]
+)
+def test_an_unqualified_subject_id_round_trips(subject_id):
+    """Including the shape `derive_email_subject_id` returns, which is the value
+    `/users/resolve` hands a caller for first-time issuance."""
+    from identity_registry.services.did import subject_did_for, subject_id_of
+
+    did = subject_did_for("did:web:rec.dataspaces.localhost", subject_id)
+    assert subject_id_of(did) == subject_id
+
+
+@pytest.mark.asyncio
+async def test_issuing_with_a_did_as_subject_id_is_422(client, anchor_identity):
+    """The refusal a caller actually meets: 422 naming the problem, at the point
+    the mistake is made, rather than 201 and a second identity."""
+    from conftest import make_headers
+
+    r = await client.post(
+        "/admin/credentials/data-subject",
+        json={
+            "subject_id": "did:web:rec.dataspaces.localhost:users:member-001",
+            "role": "DataSubject",
+            "linked_participant_did": "did:web:rec.dataspaces.localhost",
+        },
+        headers=make_headers(),
+    )
+    assert r.status_code == 422
+    assert "subject_id" in r.json()["detail"]

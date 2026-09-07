@@ -151,6 +151,14 @@ async def resolve_user_by_email(
     first-time credential issuance. The derivation is keyed by the registry's
     ``ENCRYPTION_KEY``, keeping the mapping between emails and DID paths inside
     one service.
+
+    **``subject_id`` is the same kind of value on both branches**: the person's
+    identifier within their custodian's namespace, which is what
+    ``POST /admin/credentials/data-subject`` takes. ``did`` is the field that
+    carries the DID, and it is present only on the mapped branch. The two used
+    to be the same string when a mapping existed, which made the documented
+    round trip — resolve, then issue with ``subject_id`` — mint a second
+    identity for a person who already had one (ds#31).
     """
     if not any((email, username, (realm and user_id))):
         raise HTTPException(
@@ -212,9 +220,23 @@ async def resolve_user_by_email(
     presentable = [c for c in credentials if c.vc_jws]
     newest = presentable[0] if presentable else None
 
+    # **`subject_id` means one thing on both branches** — the person's
+    # identifier *within their custodian's namespace*, which is what the derive
+    # branch above returns and what `subject_did_for` takes. It used to be
+    # `mapping.subject_id`, and both write paths store the full DID there, so
+    # this field answered with a DID when a mapping existed and a short id when
+    # it did not. A caller following the docstring — resolve, then reuse
+    # `subject_id` for issuance — minted a second identity for a person who
+    # already had one (ds#31). `did` is the field that carries the DID.
+    #
+    # Derived at the point of reading rather than migrated: the column is the
+    # lookup key of `GET /admin/keycloak/mapping?subject_id=…`, whose callers
+    # pass a DID. The fallback keeps a mapping whose `did` is not a person's DID
+    # at all — nothing writes one, but this route should not reshape it into
+    # `None` if something ever does.
     return UserResolveResponse(
         did=mapping.did,
-        subject_id=mapping.subject_id,
+        subject_id=subject_id_of(mapping.did) or mapping.subject_id,
         roles=[c.role for c in credentials if c.role],
         credentials=credentials,
         role=newest.role if newest else None,

@@ -18,9 +18,12 @@ import pytest
 from conftest import make_headers
 
 from identity_registry.db.models import Credential, Did, KeycloakMapping
+from identity_registry.services.did import subject_did_for
 
 EMAIL = "dual@example.test"
-USER_DID = "did:web:rec.dataspaces.localhost:users:dual-user"
+CUSTODIAN = "did:web:rec.dataspaces.localhost"
+SUBJECT_ID = "dual-user"
+USER_DID = f"{CUSTODIAN}:users:{SUBJECT_ID}"
 
 
 def _headers() -> dict:
@@ -185,7 +188,7 @@ async def test_user_with_no_credential_still_resolves_its_did(client, db_session
 
     body = await _resolve(client)
     assert body["did"] == USER_DID
-    assert body["subject_id"] == USER_DID
+    assert body["subject_id"] == SUBJECT_ID
     assert body["roles"] == []
     assert body["role"] is None
 
@@ -244,4 +247,81 @@ async def test_derive_prefers_existing_mapping(client, db_session):
     assert r.status_code == 200
     body = r.json()
     assert body["did"] == USER_DID
-    assert body["subject_id"] == USER_DID
+    assert body["subject_id"] == SUBJECT_ID
+
+
+# ── One field, one kind of value ─────────────────────────────────
+#
+# `subject_id` used to carry the **DID** whenever a Keycloak mapping existed —
+# both write paths store the DID in that column — and a short derived id when
+# there was none. So which kind of value a caller got depended on state it could
+# not see, and the round trip the docstring documents (resolve, then issue with
+# `subject_id`) minted a second identity for a person who already had one. The
+# stored column still holds the DID, because it is the lookup key of
+# `GET /admin/keycloak/mapping?subject_id=…`; the *response* is derived (ds#31).
+
+
+@pytest.mark.asyncio
+async def test_subject_id_is_the_id_within_the_did_not_the_did(client, db_session):
+    await _seed_user(db_session)
+
+    body = await _resolve(client)
+    assert body["subject_id"] == SUBJECT_ID
+    assert body["subject_id"] != body["did"], (
+        "the two fields exist because they carry different things"
+    )
+    assert body["did"] == subject_did_for(CUSTODIAN, body["subject_id"]), (
+        "what resolve returns must rebuild the DID it returned beside it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_documented_round_trip_does_not_mint_a_second_identity(
+    client, db_session
+):
+    """The issue's reproduce, as an assertion.
+
+    An onboarding application resolves a user, reads `subject_id`, and passes it
+    back as the subject id for issuance. That produced
+
+        did:web:rec…:users:did:web:rec…:users:dual-user
+
+    — well-formed enough to be stored, resolved and published, and invisible to
+    `_existing_subject_did` because `subject_id_of` splits on the last
+    `:users:`. One person, two DIDs, two consent states.
+    """
+    await _seed_user(db_session)
+
+    body = await _resolve(client)
+    assert subject_did_for(CUSTODIAN, body["subject_id"]) == USER_DID
+
+
+@pytest.mark.asyncio
+async def test_the_stored_mapping_still_keys_on_the_did(client, db_session):
+    """The response changed; the column did not.
+
+    `GET /admin/keycloak/mapping?subject_id=…` is looked up by the stored value
+    and its callers pass a DID. Deriving at the point of reading is what lets
+    the API say one thing without a migration this defect does not need.
+    """
+    await _seed_user(db_session)
+
+    r = await client.get(
+        f"/admin/keycloak/mapping?subject_id={USER_DID}",
+        headers=make_headers(),
+    )
+    assert r.status_code == 200
+    assert r.json()["did"] == USER_DID
+
+
+@pytest.mark.asyncio
+async def test_a_derived_subject_id_is_usable_where_a_resolved_one_is(client):
+    """Both branches return something `subject_did_for` accepts. That is the
+    property the field name promised all along."""
+    r = await client.get(
+        "/users/resolve?email=new@example.test&derive=true", headers=_headers()
+    )
+    assert r.status_code == 200
+    derived = r.json()["subject_id"]
+    assert r.json().get("did") is None
+    assert subject_did_for(CUSTODIAN, derived) == f"{CUSTODIAN}:users:{derived}"

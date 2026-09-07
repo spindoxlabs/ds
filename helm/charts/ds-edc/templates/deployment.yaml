@@ -46,6 +46,9 @@ spec:
             - name: WEB_HTTP_CONTROL_AUTH_KEY
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_CONTROL_API_KEY}
+            - name: WEB_HTTP_SIGNALING_AUTH_KEY
+              valueFrom:
+                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_SIGNALING_API_KEY}
             - name: DS_CONNECTOR_INTERNAL_CLIENT_SECRET
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: DS_CONNECTOR_CLIENT_SECRET}

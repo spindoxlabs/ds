@@ -198,7 +198,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `CONNECTOR_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS. False only in dev, where Caddy serves :80 |
 | `CONNECTOR_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
-| `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 source for revocation checks |
+| `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 registers. `_URL` pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. `_PATH` is one local register and answers only for the `statusPurpose` it publishes |
 | `CONNECTOR_OWNER_SCOPING_STRICT` | `false` | refuse a provider write from a caller with no org claims |
 | `CONNECTOR_ALLOW_UNKNOWN_PARTICIPANTS` | `false` | accept a DSP peer absent from the registry |
 | `CONNECTOR_OWNER_ALIASES` | — | JSON map: foreign org alias → ds owner id |

@@ -14,7 +14,7 @@ Covers `DSSC-DEX-01`–`09`, `-18`–`-26`, `-29`–`-39`, `-50`–`-65` and the
 |---|---|---|---|
 | **Control plane** — catalogue, negotiation, transfer initiation | Dataspace Protocol (DSP) | `dataspace-protocol-http:2025-1` | HTTPS |
 | **Data plane** — the transfer itself | HTTP, pull, via an Endpoint Data Reference | — | HTTPS |
-| **Identity** (control plane) | Decentralized Claims Protocol (DCP) | as implemented by EDC 0.16.0 | HTTPS |
+| **Identity** (control plane) | Decentralized Claims Protocol (DCP) | as implemented by EDC 0.18.0 | HTTPS |
 
 `DSSC-DEX-20` requires the Dataspace Protocol between control planes and `CEEDS-STD-19`
 calls it a prerequisite for joining any data space. This platform treats it as mandatory,
@@ -104,7 +104,7 @@ participants through the vocabulary or catalogue services.
 | Dataspace Protocol | `2025-1` | EDC protocol endpoint, `libs/ds-edc` |
 | DCAT-AP | as emitted by the governance mapper | catalogue responses |
 | ODRL | 2.2 core plus this data space's profile | offers, policy definitions |
-| Decentralized Claims Protocol | EDC 0.16.0 implementation | `/sts/*`, `/credentials/*` |
+| Decentralized Claims Protocol | EDC 0.18.0 implementation | `/sts/*`, `/credentials/*` |
 | W3C Verifiable Credentials | **1.1**, JWT serialisation — superseded upstream, see below | credential issuance |
 | StatusList2021 | **no released version** — a 2023 W3C First Public Working Draft, superseded; see below | `/status/{list_id}` |
 | W3C PROV-O | — | provenance events and lineage |
@@ -118,7 +118,7 @@ Recommendations on 15 May 2025; ds emits the 1.1 data model and StatusList2021, 
 never got past a First Public Working Draft in 2023 and whose undated W3C URL now
 redirects to its successor. In DCP's own terms ds implements the `vc11-sl2021/jwt`
 profile and the target is `vc20-bssl/jwt`. What each would cost to move,
-which parts of the pinned EDC 0.16.0 verifier already support the target, and what must
+which parts of the pinned EDC 0.18.0 verifier already support the target, and what must
 be re-proved rather than assumed, are in
 [Standards · VCDM 2.0 and Bitstring Status List](../standards/vcdm-2.0.md). Nothing is
 broken by the position — it is the credential *lifecycle* it forecloses, not
@@ -127,7 +127,7 @@ interoperability with this dataspace's own verifier.
 | # | Rule | Status |
 |---|---|---|
 | X-12 | The inventory above is authoritative and is updated in the same commit as any version change | **Declared** |
-| X-13 | The protocol publishes a machine-readable description of its capabilities and endpoints (`DSSC-DEX-38`) | **Partly enforced.** The *protocol's* capability description is served: the DSP version endpoint (`DspVersionApiExtension`, on the protocol context) answers what protocol versions this connector speaks, which is the description `DSSC-DEX-38` asks a participant to publish. The ds services each serve a FastAPI OpenAPI document. What is absent is an OpenAPI document for EDC's own Management API — and the reason recorded here was wrong: `connector.jar` packages **no** `OpenApiResource` and no OpenAPI document of any kind, so there is nothing "registered on no context". Adding one means packaging an EDC module that is not currently in the BOMs, which is a capability decision rather than a defect fix — and the Management API is a private surface no counterparty reads |
+| X-13 | The protocol publishes a machine-readable description of its capabilities and endpoints (`DSSC-DEX-38`) | **Partly enforced.** The *protocol's* capability description is served: the DSP version endpoint (`DspVersionApiExtension`, on the protocol context) answers what protocol versions this connector speaks, which is the description `DSSC-DEX-38` asks a participant to publish. The ds services each serve a FastAPI OpenAPI document. What is absent is an OpenAPI document for EDC's own Management API. `connector.jar` carries Swagger's `OpenApiResource` class — it arrives transitively with `swagger-jaxrs2-jakarta`, and it did at 0.16.0 too — but **no packaged class registers it**, so no document is served and there is nothing "registered on no context" either. Measured on both JARs at the 0.18.0 upgrade; the earlier wording here said the class was not packaged, which was never true. Adding one means packaging an EDC module that is not currently in the BOMs, which is a capability decision rather than a defect fix — and the Management API is a private surface no counterparty reads |
 | X-16 | A row that names a **superseded or withdrawn** specification says so, and links the analysis of what moving would cost | **Declared** — two rows do today. A version pin that does not say it is behind upstream reads as a current choice, which is the failure this row exists to prevent |
 
 ## 6. Governance of the protocol
