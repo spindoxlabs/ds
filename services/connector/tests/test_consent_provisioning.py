@@ -1081,3 +1081,162 @@ async def test_internal_consent_check_does_not_contradict_itself(client):
     assert named.json()["consent_active"] is True
     assert SUBJECT in listed.json()["subject_ids"]
     assert named.json()["consent_active"] == (SUBJECT in listed.json()["subject_ids"])
+
+
+# ── the member's own decision is wildcard-scoped too (issue #33) ─────────────
+#
+# `POST /consent/my/shares` stamped `controller` from the offer and `consumer_id`
+# from `settings.consumer_participant_did` — the party this connector negotiates
+# against when it *consumes*, which is a transfer fact. Every reader evaluates
+# `{consumer_id, "*"}` and asks about the offer's controller, so the row was in
+# neither set: a consent that was genuinely recorded answered an audience of
+# zero, and the export built on it wrote a well-formed file with no rows.
+#
+# `CONTROLLER` below is what a PEP-side caller passes: the offer's
+# `recipients.controller` resolved to a DID, which is *not* this connector's
+# counterparty. That difference is the whole defect, and it is why the fixture
+# suite could not see it — `CONSUMER` happens to equal the configured setting.
+
+CONTROLLER = "did:web:example-org.dataspaces.localhost"
+
+
+async def _decide_as_member(client, offer: str, enabled: bool, **extra):
+    from tests import make_vc_headers
+
+    r = await client.post(
+        "/consent/my/shares",
+        headers=make_vc_headers(),
+        json={"offer_id": offer, "enabled": enabled, **extra},
+    )
+    assert r.status_code == 200, r.text
+    return r.json()
+
+
+async def _rows(engine, **filters) -> list[ConsentRequestORM]:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        stmt = select(ConsentRequestORM)
+        for column, value in filters.items():
+            stmt = stmt.where(getattr(ConsentRequestORM, column) == value)
+        return list((await session.execute(stmt)).scalars().all())
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_a_members_own_decision_is_in_the_offers_audience(client):
+    """The repro from the issue, and the one assertion that was missing.
+
+    The member decides, the controller asks who consented, and the answer names
+    them. Keyed on the negotiation counterparty the answer was `[]` — a 200 that
+    a caller cannot tell apart from "nobody opted in", which is how a disclosure
+    with an empty subject set got recorded as a `DataDisclosed` event.
+    """
+    await _decide_as_member(client, "test-flexibility", True)
+
+    assert await _audience(client, "test-flexibility", consumer=CONTROLLER) == [SUBJECT]
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_the_two_writers_of_one_offer_record_one_row(engine, client):
+    """The asymmetry the issue is really about: one table, one offer, two answers.
+
+    `POST /consent/admin/shares` writes the wildcard and `POST /consent/my/shares`
+    wrote a per-party row, so an operator recording a member's decision produced
+    a row every audience read finds and the member recording their *own* produced
+    one no audience read could. Now they collide, which is what
+    `get_latest_offer_consent` needs in order to treat the second as a
+    re-decision rather than a second opinion.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    await _decide_as_member(client, "test-flexibility", True)
+
+    rows = await _rows(engine, offer_id="test-flexibility", subject_id=SUBJECT)
+    assert len(rows) == 1, "the member's decision forked a second row"
+    assert rows[0].consumer_id == WILDCARD_CONSUMER
+
+
+@pytest.mark.rule("D-15")
+@pytest.mark.asyncio
+async def test_a_members_withdrawal_reaches_the_row_onboarding_provisioned(client):
+    """The direction that must not be wrong: withdrawal.
+
+    Onboarding records the standing consent as a wildcard row; the member later
+    declines in the portal. Written per-party, that decline sat beside the
+    standing grant instead of on it, and `resolve_decision` gives an explicit
+    *grant* precedence over the wildcard for the named party only — so every
+    other party in the circle went on being authorised by a consent the person
+    had withdrawn.
+    """
+    await _provision_offer(client, "test-flexibility", True)
+    assert await _audience(client, "test-flexibility", consumer=CONTROLLER) == [SUBJECT]
+
+    await _decide_as_member(client, "test-flexibility", False)
+
+    assert await _audience(client, "test-flexibility", consumer=CONTROLLER) == []
+    assert await _audience(client, "test-flexibility") == []
+
+
+@pytest.mark.rule("D-15")
+@pytest.mark.asyncio
+async def test_naming_a_consumer_still_writes_a_per_party_row(engine, client):
+    """The escape hatch stays: an explicit `consumer_id` is a decision about one
+    party, and D-15 is what makes that meaningful.
+
+    Only the *default* moved. `libs/ds-e2e` names a consumer on every one of
+    these calls, and a per-party decision that silently became a standing one
+    would widen a grant nobody widened.
+    """
+    await _decide_as_member(
+        client, "test-flexibility", True, consumer_id=OTHER_CONSUMER
+    )
+
+    rows = await _rows(engine, offer_id="test-flexibility", subject_id=SUBJECT)
+    assert [row.consumer_id for row in rows] == [OTHER_CONSUMER]
+    assert await _audience(client, "test-flexibility", consumer=OTHER_CONSUMER) == [
+        SUBJECT
+    ]
+    # And it stays scoped to the party it named.
+    assert await _audience(client, "test-flexibility", consumer=CONTROLLER) == []
+
+
+@pytest.mark.asyncio
+async def test_my_shares_shows_the_decision_the_member_just_made(client):
+    """The read side is part of the same defect, not adjacent to it.
+
+    `GET /consent/my/shares` filtered on the same single key for the same wrong
+    reason. Left alone, the fix would have hidden the row it had just written
+    from the one person entitled to see it — the page would report "not shared"
+    on a consent the audience read now finds.
+    """
+    from tests import make_vc_headers
+
+    await _decide_as_member(client, "test-flexibility", True)
+
+    rows = (
+        await client.get("/consent/my/shares", headers=make_vc_headers())
+    ).json()
+    by_offer = {row["offer_id"]: row for row in rows}
+    assert by_offer["test-flexibility"]["status"] == "granted"
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
+async def test_my_shares_shows_the_standing_decision_onboarding_recorded(client):
+    """A person can see the consent recorded for them at onboarding.
+
+    It has never been visible on this route: the wildcard rows `admin/shares`
+    writes were outside the single key it filtered on, so the page showed
+    nothing for a subject whose decision was taken in the wizard. Art. 15 asks
+    for the opposite.
+    """
+    from tests import make_vc_headers
+
+    await _provision_offer(client, "test-flexibility", True)
+
+    rows = (
+        await client.get("/consent/my/shares", headers=make_vc_headers())
+    ).json()
+    by_offer = {row["offer_id"]: row for row in rows}
+    assert by_offer["test-flexibility"]["status"] == "granted"
+    assert by_offer["test-flexibility"]["controller"] == "example-org"

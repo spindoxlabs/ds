@@ -150,11 +150,19 @@ class _ChainFlow(BaseFlow):
         """Leave no standing grant behind — the next flow must start from zero.
 
         ``consumer_id`` must match the grant. A consent row is keyed by
-        ``(subject, dataset, consumer)``, so omitting it here falls back to the
-        default consumer DID and withdraws a *different* row — the original grant
-        survives, and the flow that granted to a named third party (the grid
-        operator, in the unbundling chain) then reports its own consent as
-        surviving its own withdrawal.
+        ``(subject, dataset, consumer)``, so omitting it here withdraws a
+        *different* row — the original grant survives, and the flow that granted
+        to a named third party (the grid operator, in the unbundling chain) then
+        reports its own consent as surviving its own withdrawal.
+
+        **Omitting it stopped being harmless on 2026-09-09.** The offer form's
+        default consumer used to be ``CONNECTOR_CONSUMER_PARTICIPANT_DID``, which
+        in the dev topology *is* ``consumer_did`` — so the community and partner
+        chains granted per-party, withdrew with no consumer, and closed the row
+        they meant to by coincidence. That default is now the standing wildcard
+        (issue #33): the withdrawal writes a wildcard revocation, D-15 keeps the
+        per-party grant above it, and the coincidence became the failure the
+        paragraph above predicted. Every call here names its consumer.
         """
         body: dict[str, object] = {"offer_id": offer_id, "enabled": False}
         if consumer_id:
@@ -273,7 +281,7 @@ class ChainCommunityFlow(_ChainFlow):
                 "the consent did not authorise its own purpose",
                 reason=active.get("reason"),
             )
-            self._revoke_share(subject, s.sharing_offer_id)
+            self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
             return result
 
         wider = self._consent_check(
@@ -288,7 +296,7 @@ class ChainCommunityFlow(_ChainFlow):
                 "the consent reached a purpose the member never agreed to",
                 purpose=s.unconsented_purpose,
             )
-            self._revoke_share(subject, s.sharing_offer_id)
+            self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
             return result
         result.pass_step(
             "consent authorises",
@@ -313,7 +321,7 @@ class ChainCommunityFlow(_ChainFlow):
             result.fail_step(
                 "pool is a boundary", f"{outsider} is unexpectedly a member"
             )
-            self._revoke_share(subject, s.sharing_offer_id)
+            self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
             return result
 
         status, body = self.http.raw(
@@ -336,7 +344,7 @@ class ChainCommunityFlow(_ChainFlow):
                 status_code=status,
                 response=body,
             )
-            self._revoke_share(subject, s.sharing_offer_id)
+            self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
             return result
         result.pass_step(
             "pool is a boundary",
@@ -345,7 +353,7 @@ class ChainCommunityFlow(_ChainFlow):
         )
 
         # 5. Leave nothing standing.
-        self._revoke_share(subject, s.sharing_offer_id)
+        self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
         after = self._consent_check(
             svc,
             consumer_id=s.consumer_did,
@@ -530,7 +538,7 @@ class ChainPartnerFlow(_ChainFlow):
                 "given to a different controller",
                 consumer=OUTSIDER_DID,
             )
-            self._revoke_share(subject, s.sharing_offer_id)
+            self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
             return result
         result.pass_step(
             "independent controller is not covered",
@@ -538,7 +546,7 @@ class ChainPartnerFlow(_ChainFlow):
             reason=outsider_check.get("reason"),
         )
 
-        self._revoke_share(subject, s.sharing_offer_id)
+        self._revoke_share(subject, s.sharing_offer_id, consumer_id=s.consumer_did)
         result.pass_step("cleanup", "standing share withdrawn")
         return result
 

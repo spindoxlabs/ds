@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -284,15 +284,26 @@ async def list_subject_consents(
     subject_id: str,
     status: str | None = None,
     dataset_id: str | None = None,
-    consumer_id: str | None = None,
+    consumer_id: str | Collection[str] | None = None,
 ) -> list[ConsentRequestORM]:
+    """One subject's consent rows, newest first.
+
+    ``consumer_id`` takes a **set of keys** as well as one, because a party is
+    never the whole answer about that party: a standing decision is a
+    ``WILDCARD_CONSUMER`` row (§3.1) and authorises whoever is inside the circle,
+    so a caller asking about one consumer wants that row too. :func:`
+    _consent_rows_for` has always unioned the two for the deciding readers; a
+    listing that could not say the same thing forced its callers to pick one and
+    silently lose the other.
+    """
     stmt = select(ConsentRequestORM).where(ConsentRequestORM.subject_id == subject_id)
     if status:
         stmt = stmt.where(ConsentRequestORM.status == status)
     if dataset_id:
         stmt = stmt.where(ConsentRequestORM.dataset_id == dataset_id)
     if consumer_id:
-        stmt = stmt.where(ConsentRequestORM.consumer_id == consumer_id)
+        keys = {consumer_id} if isinstance(consumer_id, str) else set(consumer_id)
+        stmt = stmt.where(ConsentRequestORM.consumer_id.in_(keys))
     stmt = stmt.order_by(ConsentRequestORM.requested_at.desc())
     result = await session.execute(stmt)
     return list(result.scalars().all())

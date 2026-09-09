@@ -161,6 +161,16 @@ The onboarding wizard records a subject's standing consent after approval via
 `POST /consent/admin/shares`, naming an **offer**, not a dataset. The connector expands it
 into `consumer_id = "*"` rows.
 
+**A decision about an offer is wildcard-scoped whoever records it.** The subject's own route,
+`POST /consent/my/shares` with an `offer_id`, writes the same rows — a person deciding in the
+portal and an operator recording that same decision at onboarding are one decision, and they
+are one row. It keyed those rows on the connector's negotiation counterparty until 2026-09-09,
+which is a transfer fact and not the party a member discloses to: every audience read asks
+about the offer's controller and answered `[]`, so an export ran against a consent it could not
+see. Naming a `consumer_id` explicitly is still a decision about one party (D-15); the
+`dataset_id` form names no offer, so it has no controller to scope a wildcard to and keeps the
+configured counterparty.
+
 | # | Rule | Status |
 |---|---|---|
 | D-14 | The wildcard admits any party **inside the circle** for that controller and purpose. It never admits a new controller and never a new purpose | **Enforced**, and since 2026-08-28 the controller is also in the `L-2` consent fingerprint. It was not: the hash tuple carried `controller_role` alone, so a dimension the wildcard refuses to cross was invisible in the evidence proving which consent state authorised a handover. See `L-2` in [Provenance and logging](provenance-and-logging.md) |

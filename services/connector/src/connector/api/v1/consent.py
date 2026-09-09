@@ -609,14 +609,25 @@ async def list_my_data_shares(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    """List standing sharing decisions for the authenticated data subject."""
+    """List standing sharing decisions for the authenticated data subject.
+
+    **The wildcard is always in the key set**, exactly as it is for every reader
+    in `consent_service` (`_consent_rows_for`). A standing offer-scoped decision
+    is a `consumer_id = "*"` row (§3.1) whichever route recorded it, so filtering
+    on a single party hid two things at once: the rows onboarding provisioned for
+    this person, and — once the offer path below started writing the wildcard —
+    the person's own decision, from the person who made it.
+    """
     subject_id = x_subject_id
     subject_id = _verify_user(x_user_vc, subject_id, settings, {"DataSubject"})
 
     consents = await consent_service.list_subject_consents(
         session=db,
         subject_id=subject_id,
-        consumer_id=consumer_id or settings.consumer_participant_did,
+        consumer_id={
+            consumer_id or settings.consumer_participant_did,
+            consent_service.WILDCARD_CONSUMER,
+        },
     )
     # One current decision per *question asked*, not per dataset. Several offers
     # can name the same dataset for different purposes and controllers; collapsing
@@ -647,13 +658,38 @@ async def set_my_data_share(
     controller from it, so the decision cannot drift from what the person read.
     Naming a ``dataset_id`` directly remains available for a subject managing
     one dataset from ``/my-data``.
+
+    **An offer-scoped decision is wildcard-scoped (§3.1), whoever records it.**
+    It used to be keyed on ``settings.consumer_participant_did`` — the party this
+    connector negotiates against when it *consumes*, which is a transfer fact and
+    has no bearing on who a member discloses to. Every reader evaluates
+    ``{consumer_id, WILDCARD_CONSUMER}`` and asks about the offer's *controller*,
+    so a genuinely recorded consent was in neither set and every audience read
+    answered ``[]`` — a well-formed 200 indistinguishable from "nobody
+    consented", and an export built on it wrote a correctly-headed file with zero
+    rows. ``POST /consent/admin/shares``, the operator-facing twin, has always
+    written the wildcard for the same offer; the member's decision is the same
+    decision and is now the same row, which is also what lets a member re-decide
+    an offer onboarding provisioned for them instead of forking a second row.
+
+    D-14 is what bounds it: the wildcard admits any party inside the circle *for
+    that controller and purpose*, both stamped here from the offer, and never a
+    new controller or purpose. A caller that names ``consumer_id`` explicitly
+    still writes a per-party row, which D-15 lets override the standing one.
     """
     x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
 
     if not body.offer_id and not body.dataset_id:
         raise HTTPException(422, "Either offer_id or dataset_id is required")
 
-    consumer_id = body.consumer_id or settings.consumer_participant_did
+    # The `dataset_id` form names no offer, so there is no controller to stamp
+    # and nothing to scope a wildcard to — it keeps the configured counterparty.
+    default_consumer = (
+        consent_service.WILDCARD_CONSUMER
+        if body.offer_id
+        else settings.consumer_participant_did
+    )
+    consumer_id = body.consumer_id or default_consumer
 
     try:
         if body.offer_id:

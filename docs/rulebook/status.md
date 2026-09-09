@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-06 from `02698d3-dirty`.
+Generated 2026-09-07 from `3eb7647-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 123 |
 | …of those, **evidenced by a test that names them** | 123 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 828 |
+| Test nodes declaring a rule | 839 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -137,7 +137,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `P-24` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_conformity.py::test_a_deactivated_participant_is_reported_not_skipped`, `services/identity-registry/tests/test_conformity.py::test_a_participant_no_criterion_covers_is_a_finding` |
 | `P-25` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×12 | `org-onboarding`, `services/identity-registry/tests/integration/test_dcp_roundtrip.py::test_a_presented_credential_names_both_registers`, `services/identity-registry/tests/test_org_onboarding.py::test_full_lifecycle_and_suspend` +11 more |
 | `P-26` | Enforced | ✅ evidenced | e2e×1, unit×6 | `org-onboarding`, `services/identity-registry/tests/test_suspension.py::test_a_suspension_bit_is_the_only_bit_that_can_be_cleared`, `services/identity-registry/tests/test_suspension.py::test_clearing_a_bit_cannot_reach_the_revocation_register` +4 more |
-| `P-27` | Enforced | ✅ evidenced | unit×5 | `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_both_registers_is_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_one_register_is_still_accepted`, `services/identity-registry/tests/test_role_transition.py::test_a_predecessor_naming_no_suspension_register_is_refused` +2 more |
+| `P-27` | Enforced | ✅ evidenced | unit×11 | `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_both_registers_is_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_credential_naming_one_register_is_still_accepted`, `libs/ds-auth/tests/test_user_credentials.py::test_a_revoked_credential_is_refused` +8 more |
 | `P-28` | Enforced | ✅ evidenced | unit×8 | `services/identity-registry/tests/test_role_transition.py::test_a_transition_suspends_the_predecessor_and_issues_a_successor`, `services/identity-registry/tests/test_role_transition.py::test_the_suspension_bit_is_set_and_the_revocation_bit_is_not`, `services/identity-registry/tests/test_role_transition.py::test_the_successor_carries_the_new_claim_and_keeps_the_old_ones` +5 more |
 
 ### `personal-data.md`
@@ -160,8 +160,8 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-11a` | Enforced | ✅ evidenced | e2e×1, unit×5 | `chain-unbundling`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_with_no_declared_vocabulary_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_outside_the_declared_vocabulary_is_an_error` +3 more |
 | `D-12` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_consent_provisioning.py::test_legal_basis_surfaces_in_internal_check`, `services/connector/tests/test_consent_provisioning.py::test_subject_offer_share_records_legal_basis` +5 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
-| `D-14` | Enforced | ✅ evidenced | e2e×3, unit×19 | `chain-community`, `chain-partner`, `uc1` +19 more |
-| `D-15` | Enforced | ✅ evidenced | unit×16 | `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_withdrawing_one_offer_leaves_the_other_granted` +13 more |
+| `D-14` | Enforced | ✅ evidenced | e2e×3, unit×22 | `chain-community`, `chain-partner`, `uc1` +22 more |
+| `D-15` | Enforced | ✅ evidenced | unit×18 | `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_withdrawing_one_offer_leaves_the_other_granted` +15 more |
 | `D-16` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_acting_principal.py::test_the_owner_acted_for_is_recorded`, `services/connector/tests/test_acting_principal.py::test_ingestion_attributes_the_verified_caller_not_the_body`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_rejects_a_bare_subject_header` +1 more |
 | `D-17` | Enforced | ✅ evidenced | e2e×1 | `consent-withdrawal` |
 | `D-18` | Enforced | ✅ evidenced | e2e×1, unit×11 | `consent-request`, `services/connector/tests/test_consent_ask_projection.py::test_consent_gated_dataset_asks_when_capacity_is_unprovable`, `services/connector/tests/test_consent_ask_projection.py::test_pending_ask_is_reported_so_a_retry_reattaches` +9 more |

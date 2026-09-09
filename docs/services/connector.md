@@ -121,6 +121,10 @@ A subject can grant to a **specific consumer** or to `"*"` — a standing decisi
 every consumer. An explicit per-party opt-out overrides the wildcard, so "share with
 everyone except them" is expressible.
 
+A decision that names an **offer** is wildcard-scoped, on both routes that record one:
+`POST /consent/admin/shares`, where a service records it, and `POST /consent/my/shares`,
+where the subject does. Naming a `consumer_id` is what makes either a per-party decision.
+
 ### Parking a negotiation
 
 When a consumer negotiates for a consent-gated dataset and nobody has consented yet, the
