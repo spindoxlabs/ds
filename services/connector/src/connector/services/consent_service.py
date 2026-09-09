@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..db.models import ConsentRequestORM
+from ..db.models import CONSENT_DECIDERS, ConsentRequestORM
 from ..notifications.base import ConsentNotifier
 from . import consent_vocabulary as vocab
 
@@ -24,6 +24,61 @@ log = logging.getLogger(__name__)
 # specific row always overrides it: an explicit grant or an explicit opt-out
 # both beat the standing wildcard.
 WILDCARD_CONSUMER = "*"
+
+
+class ConsentWithdrawalStands(Exception):
+    """A caller tried to lift a withdrawal it has no authority to lift (`D-15c`).
+
+    Raised, not returned, because every other outcome of
+    :func:`set_subject_data_sharing` is a row — and a caller that gets a row back
+    believes it recorded a decision. **A service that believes it recorded a
+    consent and did not is the same defect from the other side** as the one this
+    guard closes, so the refusal has to be unmissable. The route turns it into a
+    ``409`` naming the withdrawal it refused to overwrite.
+    """
+
+    #: **Primitives, never the row.** The raise unwinds out of the route's
+    #: ``async with db.begin()``, which rolls the transaction back and expires
+    #: every instance in the session — so a handler that reached through to
+    #: ``standing.dataset_id`` to write the message would trip
+    #: ``MissingGreenlet`` on a lazy refresh, and turn a deliberate 409 into a
+    #: 500. Everything the caller needs is copied out here, while the row is
+    #: still live.
+    def __init__(self, standing: ConsentRequestORM):
+        self.consent_id = standing.id
+        self.subject_id = standing.subject_id
+        self.dataset_id = standing.dataset_id
+        self.withdrawn_at = standing.revoked_at or standing.decided_at
+        super().__init__(
+            f"the data subject withdrew this share themselves on "
+            f"{self.withdrawn_at or standing.requested_at!s}"
+            " — only the subject can lift it (D-15c)"
+        )
+
+
+def _may_lift(standing: ConsentRequestORM, decided_by: str, override: bool) -> bool:
+    """May ``decided_by`` re-open a standing refusal? (`D-15c`)
+
+    A decision the data subject took themselves is theirs to re-open: a service
+    re-running onboarding over a member who has since withdrawn must not put them
+    back into the audience, and an operator may only do it through the explicit,
+    evidenced override that stamps ``operator`` here.
+
+    A service-provisioned refusal is a different matter — another service holding
+    ``connector.consent.provision`` is *the same authority deciding again*, so it
+    may lift it. That is what makes an onboarding re-run over its own earlier
+    withdrawal work, which is the ordinary case this route exists for.
+
+    ``override`` is the declared operator act, and it is the only thing that
+    lifts a subject's own refusal on anybody else's behalf. It is a separate
+    argument rather than an implication of ``decided_by == "operator"`` because
+    an operator provisioning normally — the console's everyday path — must be
+    refused exactly like a service; what earns the exception is the declaration
+    and the evidence filed with it, not the console the call came from.
+    """
+    if standing.decided_by == "subject":
+        return decided_by == "subject" or override
+    return True
 
 
 def _latest_decision_first():
@@ -343,6 +398,10 @@ async def approve_consent(
         return None
     consent.status = "granted"
     consent.decided_at = datetime.now(UTC)
+    # `/consent/my/{id}/approve` is verified against the subject's own credential
+    # before this is reached, so the person is the decider whatever created the
+    # pending row. Same for the two below.
+    consent.decided_by = "subject"
     if legal_basis is not None:
         consent.legal_basis = legal_basis
     if notifier:
@@ -368,6 +427,7 @@ async def reject_consent(
         return None
     consent.status = "rejected"
     consent.decided_at = datetime.now(UTC)
+    consent.decided_by = "subject"
     if notifier:
         try:
             await notifier.notify_status_changed(consent)
@@ -390,12 +450,36 @@ async def set_subject_data_sharing(
     controller_role: str | None = None,
     offer_id: str | None = None,
     legal_basis: dict | None = None,
+    decided_by: str = "subject",
+    override_subject_withdrawal: bool = False,
 ) -> ConsentRequestORM:
     """Set a data subject's standing sharing decision for a dataset.
 
     This is owner-driven consent: the subject can make their data available or
     unavailable without waiting for a consumer-created pending request.
+
+    ``decided_by`` names the authority taking *this* decision — one of
+    ``CONSENT_DECIDERS``. It is stamped on whatever row this call ends up
+    deciding, including the granted row a withdrawal mutates, so the column
+    always names the authority behind the row's current state rather than
+    whoever created it. That is what :func:`_may_lift` reads: a service
+    withdrawing on a person's behalf leaves a refusal a service can lift, and a
+    person withdrawing a service-provisioned grant leaves one only they can.
+
+    Raises :class:`ConsentWithdrawalStands` when the caller would re-open a
+    refusal it has no authority to re-open (`D-15c`).
     """
+    if decided_by not in CONSENT_DECIDERS:
+        raise ValueError(
+            f"decided_by must be one of {CONSENT_DECIDERS}, not {decided_by!r}"
+        )
+    if override_subject_withdrawal and decided_by != "operator":
+        # The override is a person's deliberate act, on the record. A service
+        # able to set it would be back where issue #34 started, with one more
+        # field to send.
+        raise ValueError(
+            "only an operator may override a data subject's own withdrawal"
+        )
     purposes = _validated(dataset_id, purpose)
 
     # A decision made about an offer is scoped to that offer. Two offers may name
@@ -414,6 +498,16 @@ async def set_subject_data_sharing(
     if enabled:
         if latest and latest.status == "granted":
             return latest
+        # **A standing refusal is not a gap to be filled.** This asked only "is it
+        # already granted?", so a `latest` of `revoked` fell through to the append
+        # below and same-cell recency made the new row the deciding one — a
+        # re-provision silently lifting a withdrawal the person made themselves,
+        # with a fresh evidence record attached to it (issue #34). `rejected` is
+        # the same act reached from a consumer's ask rather than the subject's own
+        # control, and is refused on the same terms.
+        if latest and latest.status in {"revoked", "rejected"}:
+            if not _may_lift(latest, decided_by, override_subject_withdrawal):
+                raise ConsentWithdrawalStands(latest)
         consent = ConsentRequestORM(
             subject_id=subject_id,
             consumer_id=consumer_id,
@@ -425,6 +519,7 @@ async def set_subject_data_sharing(
             legal_basis=legal_basis,
             message=message or "Data owner enabled sharing.",
             status="granted",
+            decided_by=decided_by,
             requested_at=now,
             decided_at=now,
             transfer_ids=[],
@@ -437,9 +532,22 @@ async def set_subject_data_sharing(
         latest.status = "revoked"
         latest.revoked_at = now
         latest.revocation_reason = message or "Data owner disabled sharing."
+        # The row now records *this* decision, so it records who took it. Leaving
+        # the granter's authority here would let a service lift a withdrawal the
+        # subject made over a grant that service had provisioned — the exact case
+        # `D-15c` is about, reached through the mutation rather than the append.
+        latest.decided_by = decided_by
         return latest
 
     if latest and latest.status in {"revoked", "rejected"}:
+        # The refusal already stands, so nothing about the decision changes — but
+        # *whose* refusal it is can. A subject repeating "stop" over a withdrawal
+        # a service made for them makes it theirs, and `_may_lift` then refuses
+        # the next service that would re-provision over it. The escalation is
+        # one-way on purpose: a service re-withdrawing a subject's refusal must
+        # not be able to launder it into one a service may lift.
+        if decided_by == "subject" and latest.decided_by != "subject":
+            latest.decided_by = "subject"
         return latest
 
     consent = ConsentRequestORM(
@@ -453,6 +561,7 @@ async def set_subject_data_sharing(
         legal_basis=legal_basis,
         message=message or "Data owner disabled sharing.",
         status="revoked",
+        decided_by=decided_by,
         requested_at=now,
         revoked_at=now,
         revocation_reason=message or "Data owner disabled sharing.",
@@ -478,6 +587,7 @@ async def revoke_consent(
     consent.status = "revoked"
     consent.revoked_at = datetime.now(UTC)
     consent.revocation_reason = reason
+    consent.decided_by = "subject"
     if notifier:
         try:
             await notifier.notify_status_changed(consent)

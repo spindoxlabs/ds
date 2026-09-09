@@ -109,6 +109,11 @@ class ConsentResponse(BaseModel):
     legal_basis: dict | None = None
     message: str | None = None
     status: str
+    # Which authority took the decision this row records — `subject`, `service`
+    # or `operator`. Projected because a caller reading an audience cannot
+    # otherwise tell a consent the person gave from one a system recorded for
+    # them, and `D-15c` makes that difference decide who may change it.
+    decided_by: str = "subject"
     requested_at: datetime
     decided_at: datetime | None = None
     revoked_at: datetime | None = None
@@ -194,6 +199,51 @@ class AdminShareLegalBasis(BaseModel):
         return v
 
 
+class SubjectWithdrawalOverride(BaseModel):
+    """A deliberate, evidenced lift of a withdrawal the data subject made.
+
+    `D-15c` makes a subject's own withdrawal theirs to lift, so the ordinary
+    provisioning call is refused over one (409). This is the exception, and it is
+    shaped so that taking it is an act on the record rather than a flag: an
+    operator correcting a decision at a person's request — on the phone, at a
+    counter — can, and a re-running onboarding service cannot do it by accident,
+    because supplying this means writing down who authorised it and why.
+
+    The row it produces is stamped ``decided_by="operator"``, and this record is
+    stored inside the row's ``legal_basis`` beside the consent evidence, which is
+    where a later reader asking *how did this consent come back* will look.
+
+    **Opaque references only**, the same contract as `AdminShareLegalBasis`: the
+    connector's database is not a PII store, and an operator's name or the
+    subject's email in here would make it one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    #: Why the withdrawal is being lifted, in the operator's words.
+    reason: str
+    #: Who authorised it — a staff or console identifier, never a name or email.
+    authorized_by: str
+    #: The record of the person asking for it: a ticket, a call reference.
+    instruction_ref: str | None = None
+
+    @field_validator("reason", "authorized_by")
+    @classmethod
+    def _non_empty(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("must not be empty")
+        return v
+
+    @field_validator("authorized_by", "instruction_ref", mode="after")
+    @classmethod
+    def _no_obvious_pii(cls, v: str | None) -> str | None:
+        if v and "@" in v:
+            raise ValueError(
+                "must be an opaque reference, not an email address or other identifier"
+            )
+        return v
+
+
 class AdminShareRequest(BaseModel):
     """A service recording a subject's standing decision.
 
@@ -207,6 +257,9 @@ class AdminShareRequest(BaseModel):
     offer_id: str
     enabled: bool
     legal_basis: AdminShareLegalBasis | None = None
+    #: Present only when the caller means to lift a withdrawal the subject made
+    #: themselves. Absent, that attempt is refused with a 409 (`D-15c`).
+    override_subject_withdrawal: SubjectWithdrawalOverride | None = None
 
     @model_validator(mode="after")
     def _evidence_required_to_grant(self) -> AdminShareRequest:
@@ -215,6 +268,15 @@ class AdminShareRequest(BaseModel):
                 "legal_basis is required when enabling a share: a service cannot "
                 "assert that someone consented without evidence of what they were "
                 "shown"
+            )
+        if self.override_subject_withdrawal is not None and not self.enabled:
+            # Withdrawing needs no override: a person may always stop, and the
+            # guard this overrides only stands in front of *re-opening*. Accepting
+            # it here would file an override record against an act that never
+            # needed one, which is evidence of a decision nobody took.
+            raise ValueError(
+                "override_subject_withdrawal applies to enabling a share; a "
+                "withdrawal overrides nothing"
             )
         return self
 
@@ -740,6 +802,7 @@ async def set_my_data_share(
                             controller_role=offer.recipients.controller_role,
                             offer_id=offer.id,
                             legal_basis=legal_basis,
+                            decided_by="subject",
                         )
                     )
             await _emit_consent_events(prov, consents)
@@ -761,6 +824,7 @@ async def set_my_data_share(
                 consumer_id=consumer_id,
                 enabled=body.enabled,
                 purpose=body.purpose,
+                decided_by="subject",
             )
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
@@ -771,7 +835,11 @@ async def set_my_data_share(
 # ── Service-provisioned shares (onboarding) ───────────────────────────────────
 
 
-def _offer_legal_basis_record(offer, caller: AdminShareLegalBasis | None) -> dict:
+def _offer_legal_basis_record(
+    offer,
+    caller: AdminShareLegalBasis | None,
+    override: SubjectWithdrawalOverride | None = None,
+) -> dict:
     """Assemble the stored legal-basis evidence for a provisioned share.
 
     The connector, not the caller, is authoritative for anything that ties the
@@ -796,6 +864,15 @@ def _offer_legal_basis_record(offer, caller: AdminShareLegalBasis | None) -> dic
         "user_visible_hash": vocab.offer_user_visible_hash(offer),
         "accepted_at": sent.get("accepted_at"),
         "submission_ref": sent.get("submission_ref"),
+        # Present only on the exceptional path, and then it is the most important
+        # thing in the record: this consent came back over a withdrawal the person
+        # made themselves, and here is who said so. Absent on every ordinary
+        # provision, so its presence is the signal (`D-15c`).
+        **(
+            {"subject_withdrawal_override": override.model_dump(exclude_none=True)}
+            if override
+            else {}
+        ),
     }
 
 
@@ -835,6 +912,18 @@ async def admin_provision_share(
     Only consent-based offers can be provisioned — a contract-based offer is
     disclosed, not consented, so provisioning one would manufacture a choice
     that does not exist.  Idempotent: a re-run returns the existing rows.
+
+    **It will not re-open a withdrawal the person made themselves** (`D-15c`).
+    A re-run over a member who has since withdrawn is refused with a ``409``
+    naming the withdrawal, rather than appending a fresh ``granted`` row that
+    same-cell recency would make the deciding one — which is what it did, with a
+    caller-supplied evidence record attached, at a moment when that person had
+    already said stop (issue #34). A withdrawal a *service* made is a different
+    matter and is lifted as before: the same authority is deciding again.
+
+    An operator who has a person's instruction to restore it sends
+    ``override_subject_withdrawal``, which stamps the row ``operator`` and files
+    the authority for the act inside its evidence record.
     """
     try:
         offer = vocab.resolve_offer(body.offer_id)
@@ -865,7 +954,18 @@ async def admin_provision_share(
                 f"organisation '{offer.recipients.controller}'",
             )
 
-    legal_basis = _offer_legal_basis_record(offer, body.legal_basis)
+    override = body.override_subject_withdrawal
+    legal_basis = _offer_legal_basis_record(offer, body.legal_basis, override)
+
+    # **Two callers, and the column has to say which.** `service` is the ordinary
+    # one — onboarding, re-running over its own records. `operator` is a person at
+    # a console who has declared an override, and the declaration is the only
+    # thing that distinguishes them here: a client-credentials token and an
+    # operator's token both arrive holding `connector.consent.provision`, so
+    # inferring the difference from the claims would be guessing. Stamping what
+    # the caller *asserted* is honest, and it is also the value `D-15c` needs,
+    # because only the asserted act may lift a person's own withdrawal.
+    decided_by = "operator" if override else "service"
 
     try:
         consents = []
@@ -883,10 +983,34 @@ async def admin_provision_share(
                         controller_role=offer.recipients.controller_role,
                         offer_id=offer.id,
                         legal_basis=legal_basis,
+                        decided_by=decided_by,
+                        override_subject_withdrawal=bool(override),
+                        message=(
+                            f"Operator override of the data subject's withdrawal: "
+                            f"{override.reason}"
+                            if override and body.enabled
+                            else None
+                        ),
                     )
                 )
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except consent_service.ConsentWithdrawalStands as exc:
+        # 409, not 403: the caller holds the permission this route requires and is
+        # not being told it may not provision. It is being told the cell already
+        # holds a decision it cannot overwrite — a conflict with the state, which
+        # is what 409 means, and what the caller has to reconcile before asking
+        # again. The transaction rolls back, so a multi-dataset offer provisions
+        # all of its rows or none: a partial audience is not a state anyone asked
+        # for and not one the caller could detect from a 409.
+        raise HTTPException(
+            409,
+            f"Subject '{body.subject_id}' withdrew this share themselves "
+            f"(dataset '{exc.dataset_id}', consent '{exc.consent_id}', "
+            f"{exc.withdrawn_at}). Only the subject can lift it — or an operator, "
+            "by sending override_subject_withdrawal with the authority for it "
+            "(D-15c).",
+        ) from exc
     await _emit_consent_events(prov, consents)
     return [ConsentResponse.model_validate(c) for c in consents]
 

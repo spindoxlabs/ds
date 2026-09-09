@@ -388,12 +388,23 @@ class FailClosedFlow(BaseFlow):
         s = self.settings
 
         if not self._container_is_running():
-            # **Fail, do not skip.** A P0 check that silently skips is the
-            # defect this whole ledger keeps finding. This flow needs the Docker
-            # topology, which is the one `task docker:restart` + `task e2e:all`
-            # documents; under `task dev:*` the connector is a host process and
-            # cannot be stopped by name.
-            result.fail_step(
+            # **Skip, loudly.** This read *"fail, do not skip — a P0 check that
+            # silently skips is the defect this whole ledger keeps finding"*, and
+            # the objection is right about the word **silently**. It was written
+            # when a step could only pass or fail, and under `task dev:*` the
+            # provider connector is a host process this flow cannot stop by name,
+            # so the FAIL was permanent: `e2e:all` in dev could never be green,
+            # a suite with a standing red line is one people stop reading, and a
+            # real regression hid inside it (issue #35).
+            #
+            # `SKIP` is not the silent skip that comment refuses. It carries the
+            # reason and the target that *can* run this, it is counted apart from
+            # passes in the summary, the run prints that it is not evidence about
+            # what it skipped, and it is declared **before** any check runs —
+            # never in place of one that failed. What the flow must never do is
+            # skip because the PDP misbehaved; that is this flow's subject and
+            # stays a FAIL below.
+            result.skip_step(
                 "pdp is controllable",
                 f"container {s.pdp_container!r} is not running — this "
                 "flow stops the provider connector, so it needs the Docker "

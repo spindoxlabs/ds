@@ -169,6 +169,12 @@ which is a transfer fact and not the party a member discloses to: every audience
 about the offer's controller and answered `[]`, so an export ran against a consent it could not
 see. Naming a `consumer_id` explicitly is still a decision about one party (D-15).
 
+**The same cell, and still not the same authority.** Because both routes write the same
+row, a service provisioning an offer and a person deciding it in the portal land in one
+cell — where the later decision has always won. That is right for two decisions by the same
+authority and wrong across authorities, which is what D-15c settles: `decided_by` records
+who took each decision, and a service cannot re-open one the person took (issue #34).
+
 **On the `dataset_id` form, grants and withdrawals part company — deliberately.** *Stopping*
 names no party, so it is a statement about every party and is written against the wildcard:
 `/my-data`'s "Stop" is the blanket control, and pinning it to the negotiation counterparty made
@@ -184,6 +190,7 @@ spread (D-15a, D-15b).
 | D-15 | A per-party row overrides the wildcard. An explicit grant and an explicit **opt-out** both win | **Enforced** |
 | D-15a | **A grant applies only within the scope it names; a withdrawal applies to everything it covers, and between the two the later decision wins.** So a blanket "stop sharing" closes a per-party grant made before it, and a per-party grant made after it stands. Ties resolve to the withdrawal | **Enforced** since 2026-09-09. D-15 alone gave a per-party grant precedence *whenever* it was written, so a targeted grant from March outranked a withdrawal made today and the blanket control was the weakest one on the page — which Art. 7(3) rules out, withdrawal being no easier than the grant it undoes. Recency enters only between a withdrawal and a grant at a wider scope: an older per-party **grant** still outranks a newer wildcard grant (`decided_at` on the audience read depends on it) |
 | D-15b | An explicit per-party **opt-out** is never revived by a broader grant, whenever that grant was made. Only a later decision naming that same party can lift it | **Enforced** — the sticky half of D-15a, and the reason the rule is not simply "the newest row wins". Grants are aimed; withdrawals spread |
+| D-15c | **A withdrawal may only be lifted by the authority that made it.** A decision the data subject took themselves is theirs to re-open; a service or an operator that would overwrite one is refused (`409`), naming the withdrawal. A service-provisioned withdrawal may be lifted by any service holding `connector.consent.provision`, because that is the same authority deciding again. The one exception is an operator sending `override_subject_withdrawal` — a declared act with its own evidence, stored on the row and stamped `decided_by="operator"` | **Enforced** since 2026-09-09. D-15a/b are about **scope** — which of two rows at different scopes wins. This is about **authority**, and it is a different question with a different answer: inside one cell the later row has always won, so `POST /consent/admin/shares` appended a fresh `granted` row over a person's withdrawal and nothing refused, warned or recorded it — with a caller-supplied evidence record attached, which made the provenance trail read as a consent proven at a moment the person had already said stop (issue #34). `ConsentRequestORM.decided_by` is what the rule reads; it defaults to `subject` for rows written before it, which over-protects a service's own historical withdrawals and never a person's |
 
 ## 5. Asking, granting and revoking
 

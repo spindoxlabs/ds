@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from collections import Counter
 from enum import StrEnum
 from typing import Annotated
 
@@ -74,17 +75,26 @@ def _setup_logging(verbose: bool, quiet: bool) -> None:
     logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 
+#: How each of the three outcomes prints. `SKIP` is yellow rather than green on
+#: purpose — it is not a pass, and a reader scanning the summary for colour must
+#: not take it for one (see `FlowResult.skipped`).
+_MARKUP = {
+    "PASS": "[green]PASS[/green]",
+    "FAIL": "[red]FAIL[/red]",
+    "SKIP": "[yellow]SKIP[/yellow]",
+}
+
+
 def _print_result(result: FlowResult, fmt: Format) -> None:
     if fmt == Format.json:
         console.print_json(result.to_json())
     elif fmt == Format.markdown:
         console.print(result.to_markdown())
     else:
-        status = "[green]PASS[/green]" if result.passed else "[red]FAIL[/red]"
-        console.print(f"\n{result.flow_name}: {status}")
+        console.print(f"\n{result.flow_name}: {_MARKUP[result.status]}")
         for step in result.steps:
-            icon = "[green]PASS[/green]" if step.status == "PASS" else "[red]FAIL[/red]"
             detail = f" — {step.detail}" if step.detail else ""
+            icon = _MARKUP.get(step.status, _MARKUP["FAIL"])
             console.print(f"  {icon} {step.name}{detail}")
 
 
@@ -119,9 +129,30 @@ def _print_summary(
     console.print(f"  [dim]data plane:[/dim] {settings.data_plane_label}")
     for r in results:
         failed = [s.name for s in r.steps if s.status == "FAIL"]
-        status = "[green]PASS[/green]" if r.passed else "[red]FAIL[/red]"
-        suffix = f" — first failure: {failed[0]}" if failed else ""
-        console.print(f"  {status} {r.flow_name}{suffix}")
+        if failed:
+            suffix = f" — first failure: {failed[0]}"
+        elif r.skipped:
+            # The reason, not just the word: a skipped flow's whole value is
+            # telling the reader which target does cover it.
+            reason = next((s.detail for s in r.steps if s.detail), "")
+            suffix = f" — {reason}" if reason else ""
+        else:
+            suffix = ""
+        console.print(f"  {_MARKUP[r.status]} {r.flow_name}{suffix}")
+
+    tally = Counter(r.status for r in results)
+    console.print(
+        f"  [dim]{tally['PASS']} passed, {tally['FAIL']} failed, "
+        f"{tally['SKIP']} skipped[/dim]"
+    )
+    if tally["SKIP"]:
+        # **A count is not a pass.** The line above reads as a clean run when the
+        # skips are ignored, so the run says out loud that it did not cover
+        # everything, and where the missing coverage lives.
+        console.print(
+            "  [yellow]note:[/yellow] skipped flows asserted nothing — this run "
+            "is not evidence about them"
+        )
 
 
 @app.command()
@@ -159,15 +190,19 @@ def run(
     if flow in aggregates:
         names = aggregates[flow]
         results = run_all(settings) if names is None else run_selected(names, settings)
-        all_passed = all(r.passed for r in results)
+        # **`not failed`, not `passed`.** A flow that could not run in this
+        # topology reports SKIP, and a skip is not a failure — that is the whole
+        # point of the third status, and `e2e:all` in `dev:*` is the case it was
+        # added for. It is not a pass either: the summary above says so, and
+        # `FlowResult.failed` still fails a flow that recorded nothing at all.
         for r in results:
             _print_result(r, fmt)
         _print_summary(results, fmt, settings)
-        raise typer.Exit(code=0 if all_passed else 1)
+        raise typer.Exit(code=1 if any(r.failed for r in results) else 0)
     else:
         result = run_flow(flow.value, settings)
         _print_result(result, fmt)
-        raise typer.Exit(code=0 if result.passed else 1)
+        raise typer.Exit(code=1 if result.failed else 0)
 
 
 @app.command()

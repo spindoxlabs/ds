@@ -125,6 +125,15 @@ A decision that names an **offer** is wildcard-scoped, on both routes that recor
 `POST /consent/admin/shares`, where a service records it, and `POST /consent/my/shares`,
 where the subject does. Naming a `consumer_id` is what makes either a per-party decision.
 
+**Who decided is recorded, and it decides who may change it.** Every consent row carries
+`decided_by` — `subject`, `service` or `operator` — and a withdrawal may only be lifted by
+the authority that made it (`D-15c`). So a service re-running onboarding over a member who
+has since withdrawn is refused with a `409` naming the withdrawal, rather than appending a
+grant that would win the cell on recency; a withdrawal that same service made earlier it
+lifts as before. An operator with the person's instruction sends
+`override_subject_withdrawal` on `POST /consent/admin/shares`, which records who authorised
+it inside the row's evidence and stamps the row `operator`.
+
 ### Parking a negotiation
 
 When a consumer negotiates for a consent-gated dataset and nobody has consented yet, the

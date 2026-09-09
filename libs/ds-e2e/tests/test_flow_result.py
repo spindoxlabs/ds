@@ -43,6 +43,61 @@ def test_the_empty_flow_serialises_as_failed():
     assert FlowResult(flow_name="empty").as_dict()["status"] == "FAIL"
 
 
+# ── The third status ─────────────────────────────────────────────────────────
+#
+# Issue #35: `fail-closed` stops a container the `dev:*` topology does not have,
+# so it could never pass there and `e2e:all` in dev carried a permanent FAIL —
+# which is how a suite teaches people to ignore red. These pin the properties
+# that make a skip safe to have at all.
+
+
+def test_a_skipped_flow_is_neither_passed_nor_failed():
+    result = FlowResult(flow_name="f")
+    result.skip_step("pdp is controllable", "needs the docker topology")
+    assert result.skipped is True
+    assert result.passed is False, "a skip is not evidence, so it is not a pass"
+    assert result.failed is False, "and it is not a regression either"
+    assert result.as_dict()["status"] == "SKIP"
+
+
+def test_a_failure_outranks_a_skip():
+    """A flow that checked something and failed is a failure, whatever it skipped."""
+    result = FlowResult(flow_name="f")
+    result.skip_step("optional probe", "no second provider")
+    result.fail_step("perimeter", "a public route answered 401")
+    assert result.failed is True
+    assert result.skipped is False
+    assert result.as_dict()["status"] == "FAIL"
+
+
+def test_a_pass_outranks_a_skip():
+    """A flow that skipped one probe and asserted the rest still passed."""
+    result = FlowResult(flow_name="f")
+    result.skip_step("optional probe", "no second provider")
+    result.pass_step("perimeter", "refused")
+    assert result.passed is True
+    assert result.skipped is False
+
+
+def test_the_empty_flow_is_still_a_failure_not_a_skip():
+    """`E2E-01` survives the third status.
+
+    The obvious wrong definition of `skipped` — *no step passed* — would make a
+    flow that recorded nothing at all report SKIP, turning the one guard this
+    module exists for into a shrug.
+    """
+    empty = FlowResult(flow_name="empty")
+    assert empty.skipped is False
+    assert empty.failed is True
+
+
+def test_a_skip_carries_its_reason_into_the_report():
+    result = FlowResult(flow_name="f")
+    result.skip_step("pdp is controllable", "needs the docker topology")
+    assert "needs the docker topology" in result.to_markdown()
+    assert result.as_dict()["steps"][0]["detail"] == "needs the docker topology"
+
+
 # ── E2E-14 ───────────────────────────────────────────────────────────────────
 
 

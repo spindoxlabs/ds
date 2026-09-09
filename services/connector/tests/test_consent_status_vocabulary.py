@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from connector.db.models import CONSENT_STATUSES
+from connector.db.models import CONSENT_DECIDERS, CONSENT_STATUSES
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "connector"
 
@@ -36,6 +36,21 @@ WRITERS = (
 # `status="granted"`, `row.status = EXPIRED`, `consent.status = "revoked"`.
 _ASSIGN = re.compile(
     r"(?:^|[\s.(])status\s*=\s*(?P<value>\"[^\"]*\"|'[^']*'|[A-Z_][A-Z0-9_]*)"
+)
+
+# The same sweep for `decided_by`, whose writers include the routes: the value is
+# assigned there as a plain literal (`decided_by="subject"`) and as a conditional
+# (`decided_by = "operator" if override else "service"`), so this one reads every
+# string on the right-hand side rather than the first.
+_DECIDER_ASSIGN = re.compile(r"(?:^|[\s.(])decided_by\s*=\s*(?P<rhs>[^\n]*)")
+_STRING = re.compile(r"\"([^\"]*)\"|'([^']*)'")
+
+# Everything that writes the column. The routes are in the list because that is
+# where two of the three values are decided — a sweep of the service alone would
+# report `operator` as written nowhere and miss a route inventing a fourth.
+DECIDER_WRITERS = (
+    SRC / "services" / "consent_service.py",
+    SRC / "api" / "v1" / "consent.py",
 )
 
 
@@ -101,3 +116,49 @@ def test_the_scan_sees_the_sweep():
 def test_declared_statuses_are_unique_and_ordered_by_lifecycle():
     assert len(set(CONSENT_STATUSES)) == len(CONSENT_STATUSES)
     assert CONSENT_STATUSES[0] == "pending", "the column's default leads the list"
+
+
+def _deciders_written(path: Path) -> set[str]:
+    """Every literal assigned to `decided_by` in one module.
+
+    A right-hand side naming no string at all — `decided_by=decided_by`, the
+    route passing its own local through — contributes nothing, which is correct:
+    the value it carries is written where the local was assigned, and that
+    assignment is in this same sweep.
+    """
+    body = _strip_comments_and_docstrings(path.read_text())
+    written: set[str] = set()
+    for match in _DECIDER_ASSIGN.finditer(body):
+        for a, b in _STRING.findall(match.group("rhs")):
+            written.add(a or b)
+    return written
+
+
+@pytest.mark.parametrize("path", DECIDER_WRITERS, ids=lambda p: p.name)
+def test_every_written_decider_is_declared(path: Path):
+    undeclared = sorted(_deciders_written(path) - set(CONSENT_DECIDERS))
+    assert not undeclared, (
+        f"{path.name} writes decided_by value(s) {undeclared} that "
+        f"CONSENT_DECIDERS does not declare. `D-15c` reads this column to decide "
+        f"who may lift a withdrawal, so an undeclared value is an authority "
+        f"nobody has ruled on."
+    )
+
+
+def test_the_decider_scan_sees_both_branches_of_the_route():
+    """Guards this scan the way `test_the_scan_sees_the_sweep` guards the other.
+
+    `service` and `operator` are written on the same line, in a conditional. A
+    regex that stopped at the first string would find `operator`, pass, and never
+    look at the branch that runs on almost every call.
+    """
+    written = _deciders_written(SRC / "api" / "v1" / "consent.py")
+    assert {"service", "operator", "subject"} <= written
+
+
+def test_declared_deciders_are_unique_and_lead_with_the_default():
+    assert len(set(CONSENT_DECIDERS)) == len(CONSENT_DECIDERS)
+    assert CONSENT_DECIDERS[0] == "subject", (
+        "the column's default leads the list, and it is the fail-closed one: an "
+        "unclassified withdrawal is treated as the person's own"
+    )

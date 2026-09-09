@@ -35,6 +35,24 @@ CONSENT_STATUSES: tuple[str, ...] = (
     "expired",
 )
 
+#: Every authority that can write a consent decision, and the one declaration of
+#: them. Same shape and same reason as `CONSENT_STATUSES` above: a `Text` column,
+#: so a type change would have to migrate rows already written.
+#:
+#: This is not decoration on the audit trail — `set_subject_data_sharing` reads it
+#: to decide who may lift a standing withdrawal (`D-15c`). `subject` is the person
+#: whose data it is, deciding through `POST /consent/my/shares`; `service` is a
+#: system provisioning on their behalf through `POST /consent/admin/shares`;
+#: `operator` is a human at a participant's console doing the same thing
+#: deliberately, and is written only when that caller declares an override.
+#: `tests/test_consent_status_vocabulary.py` fails on a value written but not
+#: declared here.
+CONSENT_DECIDERS: tuple[str, ...] = (
+    "subject",
+    "service",
+    "operator",
+)
+
 
 class ContractAgreementORM(Base):
     """Persisted EDC contract agreement for PEP + audit."""
@@ -88,6 +106,24 @@ class ConsentRequestORM(Base):
     message: Mapped[str | None] = mapped_column(Text)
     # One of `CONSENT_STATUSES` above — which is the declaration, not this line.
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pending")
+    # Which authority took this decision — one of `CONSENT_DECIDERS` above.
+    #
+    # **A rule reads this column, so it is not free-text and it is not nullable.**
+    # `D-15c`: a withdrawal may only be lifted by the authority that made it, and
+    # before this existed the only thing telling the two apart was
+    # `legal_basis["source"]` — required on the service path, absent on the
+    # subject's own, and absent altogether on the bare-dataset path, which
+    # therefore had no answer to give. Inferring authority from an evidence field
+    # whose job is something else is how a service came to overwrite a person's
+    # withdrawal with nothing refusing it (issue #34).
+    #
+    # Rows written before the column default to `subject`, which is the
+    # fail-closed direction: an old withdrawal of unknown provenance is treated
+    # as the person's own, so a provisioning call is refused rather than allowed
+    # to lift it.
+    decided_by: Mapped[str] = mapped_column(
+        Text, nullable=False, default="subject", server_default="subject"
+    )
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

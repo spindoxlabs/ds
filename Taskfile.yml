@@ -697,7 +697,18 @@ tasks:
         tmux send-keys -t ds:consumer-connector       'task consumer:connector:run' Enter
         tmux new-window -t ds -n consumer-provenance
         tmux send-keys -t ds:consumer-provenance      'task consumer:provenance:run' Enter
-        tmux attach -t ds
+        # **The attach is the last thing, and it is not the task's outcome.**
+        # `tmux attach` needs a terminal; without one it exits non-zero with
+        # `open terminal failed: not a terminal`, and `task` then reports
+        # `Failed to run task "dev:start"` **after** bringing the whole stack up
+        # correctly. Anything scripted or CI-driven reads a healthy start as a
+        # failed one (issue #35).
+        if [ -t 1 ]; then
+          tmux attach -t ds
+        else
+          echo "Stack started in tmux session 'ds' (no terminal here to attach to)."
+          echo "Attach with:  tmux attach -t ds"
+        fi
 
   dev:restart:
     desc: "Local dev: full restart (BUILD=false to skip the image rebuild)"
@@ -920,29 +931,108 @@ tasks:
         trap cleanup INT TERM EXIT
 
         conf="{{.ROOT_DIR}}/services/connector/config/rec.properties"
+        PORTS="19191 19192 19193 19194"
 
         # An EDC that outlived its watcher still holds the ports, so every boot
         # after it fails to bind and the loop spins — 200+ restarts with nothing
         # in the log but BindException. Reap our own strays before starting.
+        #
+        # **A dead pid is not a free port, and the pattern is not the only way to
+        # hold one.** This reaped by `pgrep -f edc.fs.config=$conf` and then slept
+        # a flat second, which is a guess about how long a JVM takes to release
+        # its sockets. When the guess was short the boot below lost the race,
+        # failed to bind, died — and *the survivor was the old runtime*, which
+        # then answered the readiness gate and served the whole run (issue #35).
+        # So: reap by port as well, and wait for the sockets themselves.
+        #
+        # The `java` filter is load-bearing. In `docker:*` the published port is
+        # held by docker-proxy, and killing that would take out the port mapping
+        # rather than a runtime.
+        # **`-sTCP:LISTEN`, and it is the whole correctness of this function.**
+        # `lsof -i tcp:19194` matches a socket with that port on *either* end, so
+        # without the state filter this returned the **consumer's** JVM — which
+        # holds an outbound DSP connection to the provider's protocol port — and
+        # the reaper below killed it. Both loops did it to each other: measured
+        # 2026-09-09, the two runtimes killed each other in a loop and neither
+        # could stay up. A listener is what "holds the port" means; a client
+        # connected to it holds nothing.
+        ports_held() {
+          for p in $PORTS; do
+            for pid in $(lsof -nP -t -iTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
+              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
+              [ "$pid" = "$PID" ] && continue
+              echo "$pid"
+            done
+          done
+        }
+
         kill_stale() {
-          for stale in $(pgrep -f "edc.fs.config=$conf" 2>/dev/null); do
+          # Deduplicated: `ports_held` reports a listener once per port, so the
+          # same pid arrived four times and the log read as four failed reaps.
+          for stale in $(printf '%s\n' $(pgrep -f "edc.fs.config=$conf" 2>/dev/null) $(ports_held) | sort -u); do
             [ "$stale" = "$PID" ] && continue
             echo "Reaping stale EDC provider JVM $stale (it still holds the ports)"
-            kill -9 "$stale" 2>/dev/null
+            # **Not `2>/dev/null`.** A reaper that reports success whatever
+            # happens is the same defect as a gate that passes on the wrong
+            # runtime: the loop below spent five boots failing to bind while this
+            # line claimed to have cleared the port every time.
+            kill -9 "$stale" || echo "could not kill $stale — it still holds the port" >&2
           done
-          sleep 1
+          i=0
+          while [ $i -lt 20 ]; do
+            [ -z "$(ports_held)" ] && return 0
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC provider: $PORTS still held after 10s — the next boot cannot bind" >&2
+        }
+
+        # **Never run the file Gradle is writing.** `edc:watch-build` replaces
+        # `connector.jar` in place while this JVM has it open, so classes not yet
+        # loaded vanish underneath it — `NoClassDefFoundError: okhttp3/…`,
+        # `ClassNotFoundException: org.apache.commons.pool2.…` — and the runtime
+        # then keeps its ports while answering nothing, which is worse than
+        # crashing because it looks like a slow one (issue #35).
+        #
+        # Gradle `--continuous` owns its output path, so the swap has to happen
+        # at this end: run a private copy, taken while no JVM holds it, and let
+        # the rebuild replace a file nobody has open. Under `./data/`, which is
+        # gitignored in full (ADR-0008).
+        run_jar="{{.ROOT_DIR}}/data/edc-run/rec-connector.jar"
+        mkdir -p "$(dirname "$run_jar")"
+
+        # A copy of a half-written JAR is a JAR that will not boot, and the crash
+        # loop that follows reads as a code problem. Wait for the file to stop
+        # changing first — size as well as mtime, because a multi-second write
+        # inside one clock second moves only the size.
+        copy_jar() {
+          i=0
+          while [ $i -lt 60 ]; do
+            a=$(stat -c '%Y %s' "$jar" 2>/dev/null)
+            sleep 1
+            b=$(stat -c '%Y %s' "$jar" 2>/dev/null)
+            [ -n "$a" ] && [ "$a" = "$b" ] && break
+            i=$((i + 1))
+          done
+          cp "$jar" "$run_jar.partial" && mv "$run_jar.partial" "$run_jar"
         }
 
         FAILS=0
         while true; do
           kill_stale
+          # In this order: the copy waits for the build to settle, so reading the
+          # mtime afterwards records the JAR this JVM is actually running. Read
+          # first and a rebuild that landed during the copy looks like a change
+          # the moment the loop starts watching, restarting a runtime that is
+          # already current.
+          copy_jar
           MTIME=$(stat -c %Y "$jar" 2>/dev/null)
           STARTED=$(date +%s)
           echo "Starting EDC provider (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
             -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
-            -jar "$jar" &
+            -jar "$run_jar" &
           PID=$!
 
           while true; do
@@ -1022,29 +1112,108 @@ tasks:
         trap cleanup INT TERM EXIT
 
         conf="{{.ROOT_DIR}}/services/connector/config/third-party.properties"
+        PORTS="29191 29192 29193 29194"
 
         # An EDC that outlived its watcher still holds the ports, so every boot
         # after it fails to bind and the loop spins — 200+ restarts with nothing
         # in the log but BindException. Reap our own strays before starting.
+        #
+        # **A dead pid is not a free port, and the pattern is not the only way to
+        # hold one.** This reaped by `pgrep -f edc.fs.config=$conf` and then slept
+        # a flat second, which is a guess about how long a JVM takes to release
+        # its sockets. When the guess was short the boot below lost the race,
+        # failed to bind, died — and *the survivor was the old runtime*, which
+        # then answered the readiness gate and served the whole run (issue #35).
+        # So: reap by port as well, and wait for the sockets themselves.
+        #
+        # The `java` filter is load-bearing. In `docker:*` the published port is
+        # held by docker-proxy, and killing that would take out the port mapping
+        # rather than a runtime.
+        # **`-sTCP:LISTEN`, and it is the whole correctness of this function.**
+        # `lsof -i tcp:19194` matches a socket with that port on *either* end, so
+        # without the state filter this returned the **consumer's** JVM — which
+        # holds an outbound DSP connection to the provider's protocol port — and
+        # the reaper below killed it. Both loops did it to each other: measured
+        # 2026-09-09, the two runtimes killed each other in a loop and neither
+        # could stay up. A listener is what "holds the port" means; a client
+        # connected to it holds nothing.
+        ports_held() {
+          for p in $PORTS; do
+            for pid in $(lsof -nP -t -iTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
+              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
+              [ "$pid" = "$PID" ] && continue
+              echo "$pid"
+            done
+          done
+        }
+
         kill_stale() {
-          for stale in $(pgrep -f "edc.fs.config=$conf" 2>/dev/null); do
+          # Deduplicated: `ports_held` reports a listener once per port, so the
+          # same pid arrived four times and the log read as four failed reaps.
+          for stale in $(printf '%s\n' $(pgrep -f "edc.fs.config=$conf" 2>/dev/null) $(ports_held) | sort -u); do
             [ "$stale" = "$PID" ] && continue
             echo "Reaping stale EDC consumer JVM $stale (it still holds the ports)"
-            kill -9 "$stale" 2>/dev/null
+            # **Not `2>/dev/null`.** A reaper that reports success whatever
+            # happens is the same defect as a gate that passes on the wrong
+            # runtime: the loop below spent five boots failing to bind while this
+            # line claimed to have cleared the port every time.
+            kill -9 "$stale" || echo "could not kill $stale — it still holds the port" >&2
           done
-          sleep 1
+          i=0
+          while [ $i -lt 20 ]; do
+            [ -z "$(ports_held)" ] && return 0
+            sleep 0.5
+            i=$((i + 1))
+          done
+          echo "EDC consumer: $PORTS still held after 10s — the next boot cannot bind" >&2
+        }
+
+        # **Never run the file Gradle is writing.** `edc:watch-build` replaces
+        # `connector.jar` in place while this JVM has it open, so classes not yet
+        # loaded vanish underneath it — `NoClassDefFoundError: okhttp3/…`,
+        # `ClassNotFoundException: org.apache.commons.pool2.…` — and the runtime
+        # then keeps its ports while answering nothing, which is worse than
+        # crashing because it looks like a slow one (issue #35).
+        #
+        # Gradle `--continuous` owns its output path, so the swap has to happen
+        # at this end: run a private copy, taken while no JVM holds it, and let
+        # the rebuild replace a file nobody has open. Under `./data/`, which is
+        # gitignored in full (ADR-0008).
+        run_jar="{{.ROOT_DIR}}/data/edc-run/third-party-connector.jar"
+        mkdir -p "$(dirname "$run_jar")"
+
+        # A copy of a half-written JAR is a JAR that will not boot, and the crash
+        # loop that follows reads as a code problem. Wait for the file to stop
+        # changing first — size as well as mtime, because a multi-second write
+        # inside one clock second moves only the size.
+        copy_jar() {
+          i=0
+          while [ $i -lt 60 ]; do
+            a=$(stat -c '%Y %s' "$jar" 2>/dev/null)
+            sleep 1
+            b=$(stat -c '%Y %s' "$jar" 2>/dev/null)
+            [ -n "$a" ] && [ "$a" = "$b" ] && break
+            i=$((i + 1))
+          done
+          cp "$jar" "$run_jar.partial" && mv "$run_jar.partial" "$run_jar"
         }
 
         FAILS=0
         while true; do
           kill_stale
+          # In this order: the copy waits for the build to settle, so reading the
+          # mtime afterwards records the JAR this JVM is actually running. Read
+          # first and a rebuild that landed during the copy looks like a change
+          # the moment the loop starts watching, restarting a runtime that is
+          # already current.
+          copy_jar
           MTIME=$(stat -c %Y "$jar" 2>/dev/null)
           STARTED=$(date +%s)
           echo "Starting EDC consumer (JAR mtime: $MTIME)..."
           java -Xms256m -Xmx512m \
             -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
             -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
-            -jar "$jar" &
+            -jar "$run_jar" &
           PID=$!
 
           while true; do
@@ -1296,6 +1465,25 @@ tasks:
         # container port is held by docker-proxy, and killing that would take out
         # the port mapping rather than the runtime.
         echo "Restarting local EDC JVMs (if any) after the database reset..."
+        # **Remember which runtime we are replacing.** The gate below has to be
+        # able to tell the new one from the old, and the pid holding the
+        # management port is the only handle that exists before the runtime is
+        # up. Recorded per port, empty where a container holds it — see the gate.
+        # `-sTCP:LISTEN`: the pid *serving* the port, never a pid connected to
+        # it. Without the filter this could compare the old listener against a
+        # client socket and call a healthy restart stale — see `ports_held` in
+        # the `edc-*:watch` tasks, where the same omission had the two runtimes
+        # killing each other.
+        java_on_port() {
+          for pid in $(lsof -nP -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null); do
+            [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
+            echo "$pid"
+            return 0
+          done
+        }
+        OLD_19193=$(java_on_port 19193)
+        OLD_29193=$(java_on_port 29193)
+        OLD_39193=$(java_on_port 39193)
         for port in 19193 29193 39193; do
           for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
             [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
@@ -1336,10 +1524,25 @@ tasks:
         #
         # The health endpoint is on a *different* port (x9191), so a container
         # reporting healthy says nothing about this one.
+        # **Steady is not the same as new, and the gate was hit from that side.**
+        # Three consecutive good answers stop a *dying* runtime satisfying the
+        # gate. They do not stop a **stale** one: a JVM that outlived its watcher
+        # kept :x9193 and answered 401 steadily for the whole gate, so readiness
+        # passed on a runtime nobody had just started — and three tasks later the
+        # run failed with `delete_contract_definition 500` and *provider published
+        # nothing*, which reads as a governance defect (issue #35). So the gate
+        # also asks **who is answering**: the pid holding the management port
+        # must not be the pid that held it before the restart.
+        #
+        # Where no java pid holds the port — `docker:*`, where docker-proxy
+        # publishes it — there is nothing to compare and the streak stands alone,
+        # which is what it was before. The identity check is exactly the extra
+        # claim the source-run topology needs and the container one cannot make.
         probe() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
           "http://172.17.0.1:$1/management/v3/assets/request" -X POST 2>/dev/null; }
         ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
         for port in 19193 29193 39193; do
+          eval "old_pid=\$OLD_${port}"
           echo -n "Waiting for EDC management API on :${port}... "
           # Down first: at most 15s, then carry on regardless.
           for i in $(seq 1 15); do
@@ -1347,10 +1550,19 @@ tasks:
             sleep 1
           done
           # Then up, and steady — three consecutive good answers, so a runtime on
-          # its way out cannot satisfy the gate.
+          # its way out cannot satisfy the gate — and, where the answer comes from
+          # a host JVM, not the one we just killed.
           streak=0
           for i in $(seq 1 90); do
             code=$(probe "$port")
+            now_pid=$(java_on_port "$port")
+            if [ -n "$old_pid" ] && [ "$now_pid" = "$old_pid" ]; then
+              # The old JVM is still the one holding the port. Answering is not
+              # evidence of anything; it is the trap.
+              streak=0
+              sleep 1
+              continue
+            fi
             if ready "$code"; then
               streak=$((streak + 1))
               [ "$streak" -ge 3 ] && break
@@ -1360,10 +1572,15 @@ tasks:
             sleep 1
           done
           if [ "$streak" -lt 3 ]; then
-            echo "not serving its management API after 90s (last: HTTP $code)" >&2
+            if [ -n "$old_pid" ] && [ "$(java_on_port "$port")" = "$old_pid" ]; then
+              echo "still served by the JVM that was there before the restart " \
+                   "(pid $old_pid) — kill it, or restart its edc-*:watch window" >&2
+            else
+              echo "not serving its management API after 90s (last: HTTP $code)" >&2
+            fi
             exit 1
           fi
-          echo "ready (HTTP $code)"
+          echo "ready (HTTP $code${old_pid:+, new pid $(java_on_port "$port")})"
         done
         exit 0
       # **After the restart, not before** (`E2E-12`). `e2e:clean` syncs as its

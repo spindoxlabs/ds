@@ -104,6 +104,48 @@ def test_a_deduplication_409_fails_the_flow_instead_of_passing_it(settings):
     assert not result.passed
 
 
+def test_the_flow_skips_when_the_container_it_stops_is_absent(settings):
+    """Issue #35 · `dev:*` replaces the provider connector with a host process.
+
+    The flow cannot stop it by name there, so it could never pass — a permanent
+    FAIL in `e2e:all`, which is how a suite trains people to ignore red. It now
+    reports SKIP, which is neither a pass nor a regression, and says which target
+    does run it.
+    """
+    http = MagicMock(spec=HttpClient)
+    flow = _flow(settings, http)
+    flow._container_is_running = MagicMock(return_value=False)
+
+    result = flow.execute()
+
+    assert result.skipped is True
+    assert result.failed is False
+    assert result.passed is False
+    step = result.steps[0]
+    assert step.status == "SKIP"
+    # The reason has to name the target that *can* answer, or the skip is the
+    # silent one `fail_closed.py` refuses.
+    assert "docker" in step.detail
+
+
+def test_a_present_container_still_runs_the_checks(settings):
+    """The guard is about topology, never about a PDP that behaves badly.
+
+    Without this, "the container is not running" and "the container is running
+    and wrong" could drift into one branch, and the flow would skip exactly when
+    it matters most.
+    """
+    http = MagicMock(spec=HttpClient)
+    flow = _flow(settings, http)
+    flow._container_is_running = MagicMock(return_value=True)
+    flow._consumer_headers = MagicMock(return_value=None)
+
+    result = flow.execute()
+
+    assert result.skipped is False
+    assert [s.status for s in result.steps] == ["PASS"]
+
+
 def test_a_terminated_negotiation_is_accepted_as_fail_closed(settings):
     http = MagicMock(spec=HttpClient)
     flow = _flow(settings, http)

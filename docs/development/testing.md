@@ -11,6 +11,23 @@ result from one is routinely mistaken for a result from another.
 | **Docker e2e** | `task docker:restart` then `task e2e:all` | the images, compose env and startup order work |
 | **Portal UI** | `task -d services/portal test:ui` | Playwright journeys against the running stack |
 
+## What a flow can report
+
+`PASS`, `FAIL` and — since 2026-09-09 — `SKIP`. A flow reports `SKIP` when the topology it
+needs is absent: `fail-closed` stops the provider connector's **container**, which `dev:*`
+replaces with a host process, so under `task dev:*` that flow cannot run however healthy the
+platform is. It used to report `FAIL` there, which meant `task e2e:all` in dev could never be
+green — and a suite with a permanent red line is one people learn to scroll past.
+
+A skip is not a pass and is never quiet about it: it carries the reason and the target that
+does cover it, it is counted separately in the summary, the run prints that it is not evidence
+about what it skipped, and it does not enter the exit code in either direction. A flow that
+recorded **no steps at all** is still a `FAIL`, not a skip — that guard is what stops the
+harness reporting a healthy dataspace while asserting nothing.
+
+**`docker:*` remains the mode that answers the whole suite.** Skipping is how dev stays
+usable for iteration, not a reason to stop confirming in docker.
+
 ## The rule these layers exist for
 
 **A green run is only evidence about the thing that actually ran.** Three failures in this
