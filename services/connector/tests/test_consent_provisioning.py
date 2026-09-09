@@ -1008,9 +1008,7 @@ async def test_a_dataset_wide_withdrawal_denies_every_offer(engine, client):
     assert await _audience(client, "test-flexibility") == []
     # And for a party the deployment never negotiates with, which is the half a
     # counterparty-keyed withdrawal could not answer.
-    assert (
-        await _audience(client, "test-flexibility", consumer=OTHER_CONSUMER) == []
-    )
+    assert await _audience(client, "test-flexibility", consumer=OTHER_CONSUMER) == []
 
 
 @pytest.mark.rule("D-14", "D-15")
@@ -1231,9 +1229,7 @@ async def test_my_shares_shows_the_decision_the_member_just_made(client):
 
     await _decide_as_member(client, "test-flexibility", True)
 
-    rows = (
-        await client.get("/consent/my/shares", headers=make_vc_headers())
-    ).json()
+    rows = (await client.get("/consent/my/shares", headers=make_vc_headers())).json()
     by_offer = {row["offer_id"]: row for row in rows}
     assert by_offer["test-flexibility"]["status"] == "granted"
 
@@ -1252,9 +1248,7 @@ async def test_my_shares_shows_the_standing_decision_onboarding_recorded(client)
 
     await _provision_offer(client, "test-flexibility", True)
 
-    rows = (
-        await client.get("/consent/my/shares", headers=make_vc_headers())
-    ).json()
+    rows = (await client.get("/consent/my/shares", headers=make_vc_headers())).json()
     by_offer = {row["offer_id"]: row for row in rows}
     assert by_offer["test-flexibility"]["status"] == "granted"
     assert by_offer["test-flexibility"]["controller"] == "example-org"
@@ -1440,7 +1434,11 @@ async def test_the_blanket_stop_is_not_pinned_to_one_party(engine, client):
     grant = await client.post(
         "/consent/my/shares",
         headers=make_vc_headers(),
-        json={"dataset_id": DATASET, "enabled": True, "purpose": ["FlexibilityResearch"]},
+        json={
+            "dataset_id": DATASET,
+            "enabled": True,
+            "purpose": ["FlexibilityResearch"],
+        },
     )
     assert grant.status_code == 200, grant.text
     assert grant.json()["consumer_id"] == CONSUMER

@@ -50,7 +50,6 @@ def _latest_decision_first():
     )
 
 
-
 def _validated(dataset_id: str, purpose: list[str] | None) -> list[str]:
     """Resolve the dataset and normalise purposes, or raise ``VocabularyError``.
 
