@@ -682,13 +682,25 @@ async def set_my_data_share(
     if not body.offer_id and not body.dataset_id:
         raise HTTPException(422, "Either offer_id or dataset_id is required")
 
-    # The `dataset_id` form names no offer, so there is no controller to stamp
-    # and nothing to scope a wildcard to — it keeps the configured counterparty.
-    default_consumer = (
-        consent_service.WILDCARD_CONSUMER
-        if body.offer_id
-        else settings.consumer_participant_did
-    )
+    # **Grants are aimed; withdrawals spread.**
+    #
+    # An offer-scoped decision is wildcard-scoped either way (§3.1). The
+    # `dataset_id` form is where the two directions part: *stopping* names no
+    # party, so it is a statement about every party and is written against the
+    # wildcard — the `/my-data` "Stop" control is the blanket one, and pinning it
+    # to the negotiation counterparty made it the *weakest* control on the page,
+    # which is the reading Art. 7(3) rules out.
+    #
+    # *Enabling* stays aimed at the configured counterparty. A bare dataset grant
+    # names no offer, so it carries no `controller` and no `controller_role` —
+    # and `consent_satisfies` compares the role only when both sides hold one, so
+    # a wildcard row with neither would authorise any party in any role for the
+    # purpose. That is a widening nobody asked for; it is refused by keeping the
+    # grant narrow rather than by a guard further down.
+    if body.offer_id or not body.enabled:
+        default_consumer = consent_service.WILDCARD_CONSUMER
+    else:
+        default_consumer = settings.consumer_participant_did
     consumer_id = body.consumer_id or default_consumer
 
     try:

@@ -9,7 +9,7 @@ from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import ConsentRequestORM
@@ -24,6 +24,31 @@ log = logging.getLogger(__name__)
 # specific row always overrides it: an explicit grant or an explicit opt-out
 # both beat the standing wildcard.
 WILDCARD_CONSUMER = "*"
+
+
+def _latest_decision_first():
+    """Order rows by newest **decision**, for every reader that says "latest".
+
+    ``requested_at`` alone is the wrong key and was the key here: withdrawing a
+    share *mutates* the granted row rather than appending one, so a share granted
+    in March and withdrawn today still sorts as March. A cell holding that row
+    and a newer grant would hand the newer grant to :func:`decide_for_subject` as
+    "the latest", and the withdrawal would never be seen at all.
+
+    Shared by the four readers so "latest" cannot come to mean two things —
+    the same reason :func:`_consent_rows_for` exists as one loader.
+    """
+    return (
+        func.coalesce(
+            ConsentRequestORM.revoked_at,
+            ConsentRequestORM.decided_at,
+            ConsentRequestORM.requested_at,
+        ).desc(),
+        # A stable tie-break, so two decisions stamped in the same instant do not
+        # swap places between one query and the next.
+        ConsentRequestORM.requested_at.desc(),
+    )
+
 
 
 def _validated(dataset_id: str, purpose: list[str] | None) -> list[str]:
@@ -137,9 +162,7 @@ async def get_latest_consent(
             ConsentRequestORM.consumer_id == consumer_id,
         )
         .order_by(
-            ConsentRequestORM.requested_at.desc(),
-            ConsentRequestORM.revoked_at.desc(),
-            ConsentRequestORM.decided_at.desc(),
+            *_latest_decision_first(),
         )
     )
     return result.scalars().first()
@@ -170,9 +193,7 @@ async def get_latest_offer_consent(
             ConsentRequestORM.offer_id == offer_id,
         )
         .order_by(
-            ConsentRequestORM.requested_at.desc(),
-            ConsentRequestORM.revoked_at.desc(),
-            ConsentRequestORM.decided_at.desc(),
+            *_latest_decision_first(),
         )
     )
     return result.scalars().first()
@@ -532,6 +553,48 @@ def consent_satisfies(
     return True, "consent covers the requested purpose and controller role"
 
 
+def decision_time(row: ConsentRequestORM) -> datetime:
+    """When this row's *decision* was taken — not when the row was created.
+
+    ``set_subject_data_sharing`` **mutates** a granted row to withdraw it: the
+    status flips, ``revoked_at`` is stamped, and ``requested_at`` keeps the value
+    it had when sharing was first enabled. So a share granted in March and
+    withdrawn today still *looks* like March to anything reading
+    ``requested_at``, and every rule below that compares a withdrawal with a
+    grant would get its answer backwards in the one case it exists for.
+
+    ``requested_at`` is the last fallback rather than the first choice for that
+    reason. A row with no decision at all is pending, and pending rows never
+    reach a comparison here — they neither grant nor block.
+    """
+    return row.revoked_at or row.decided_at or row.requested_at
+
+
+def _outranked_by_withdrawal(
+    row: ConsentRequestORM, broader: ConsentRequestORM | None
+) -> bool:
+    """Is this grant overtaken by a withdrawal made at a wider scope?
+
+    **A grant applies only within the scope it names; a withdrawal applies to
+    everything it covers, and the later decision wins.** A person who stops
+    sharing without naming a party is speaking about every party, so a targeted
+    grant made *before* that does not survive it — the alternative is the
+    blanket control being weaker than the precise one, which is what Art. 7(3)
+    forbids: withdrawal must be as easy as giving consent, and it is not easy if
+    it requires knowing the scope taxonomy.
+
+    A *later* targeted grant does survive, because it is the person's newer
+    decision — that is the case this comparison exists to keep working, and the
+    reason the rule is not simply "a withdrawal always wins".
+
+    **Ties deny.** Equal timestamps resolve to the withdrawal: nothing here needs
+    a total order, and a tie is exactly where a clock deserves least trust.
+    """
+    if broader is None or broader.status not in ("revoked", "rejected"):
+        return False
+    return decision_time(broader) >= decision_time(row)
+
+
 def resolve_decision(
     specific: ConsentRequestORM | None,
     wildcard: ConsentRequestORM | None,
@@ -541,10 +604,26 @@ def resolve_decision(
 ) -> tuple[bool, str, ConsentRequestORM | None]:
     """Combine a per-party row with the standing wildcard (§3.1).
 
-    | specific granted           > wildcard | allow (purpose + role must match) |
-    | specific revoked/rejected  > wildcard | deny  (explicit opt-out wins)     |
-    | no specific + wildcard granted        | allow (purpose + role must match) |
-    | no specific + no wildcard             | deny  (fail-closed)               |
+    | specific revoked/rejected  > wildcard        | deny  (opt-out is sticky)  |
+    | specific granted, wildcard revoked **later** | deny  (the blanket stop)   |
+    | specific granted otherwise > wildcard        | allow (purpose + role)     |
+    | no specific + wildcard granted               | allow (purpose + role)     |
+    | no specific + no wildcard                    | deny  (fail-closed)        |
+
+    Row two is the 2026-09-09 rule change, and the rest is unchanged. A per-party
+    grant used to outrank the wildcard *whenever* it was written, so a targeted
+    grant from March survived a blanket withdrawal made today and the person who
+    clicked stop was still disclosed.
+
+    **Recency enters here and nowhere else.** It decides a withdrawal against a
+    grant at a wider scope, never a grant against a grant: a per-party grant from
+    January still outranks a standing wildcard *grant* from June, which is what
+    ``decided_at`` on the audience read reports and what
+    ``test_decided_at_is_the_authorising_row_not_the_latest_one`` pins.
+
+    The opt-out stays sticky in the other direction: a broader grant never
+    revives a party the person specifically refused, however late it is. Grants
+    are aimed, withdrawals spread.
 
     A *pending* specific row is a consumer's unanswered ask, not the subject's
     decision, so it neither grants nor blocks — it falls through to whatever the
@@ -553,6 +632,14 @@ def resolve_decision(
     """
     if specific is not None:
         if specific.status == "granted":
+            if _outranked_by_withdrawal(specific, wildcard):
+                return (
+                    False,
+                    "a later decision withdrew sharing for every party, and this "
+                    "grant names one — it does not survive a withdrawal that "
+                    "covers it",
+                    wildcard,
+                )
             allowed, reason = consent_satisfies(
                 specific, purpose, controller_role, consent_required
             )
@@ -591,9 +678,7 @@ async def _consent_rows_for(
     result = await session.execute(
         stmt.order_by(
             ConsentRequestORM.subject_id.asc(),
-            ConsentRequestORM.requested_at.desc(),
-            ConsentRequestORM.revoked_at.desc(),
-            ConsentRequestORM.decided_at.desc(),
+            *_latest_decision_first(),
         )
     )
     return list(result.scalars().all())
@@ -650,8 +735,16 @@ def decide_for_subject(
     the bare dataset — ``POST /consent/my/shares`` with a ``dataset_id``, or a
     subject rejecting a consumer's ask — carries no ``offer_id``, so revoking it
     is a statement about the dataset rather than about an offer, and it denies
-    whatever any offer-scoped row still says. Fail-closed, and the only direction
-    that can be wrong here without disclosing against a withdrawal.
+    whatever offer-scoped row it is **later than**.
+
+    That last clause is the 2026-09-09 rule change; it used to deny every
+    offer-scoped row unconditionally. Unconditional is the safer-looking reading
+    and it is wrong in one direction that matters: a person who stops sharing a
+    dataset and then turns one offer back on has made a newer decision, and
+    refusing to honour it makes the offer control dead for them with nothing
+    saying so. The same comparison in the other direction is what makes *stop*
+    mean stop — see :func:`_outranked_by_withdrawal`, which both axes share, and
+    which resolves a tie to the withdrawal.
     """
     specific: dict[str | None, ConsentRequestORM] = {}
     wildcard: dict[str | None, ConsentRequestORM] = {}
@@ -672,21 +765,33 @@ def decide_for_subject(
         )
 
     bare_allowed, bare_reason, bare_row = decide(None)
-    if bare_row is not None and bare_row.status in ("revoked", "rejected"):
-        return (
-            False,
-            f"{bare_reason} — the decision names no offer, so it is not scoped to one",
-            bare_row,
-        )
+    bare_withdrawal = (
+        bare_row
+        if bare_row is not None and bare_row.status in ("revoked", "rejected")
+        else None
+    )
+
+    def decide_offer(offer: str | None):
+        """One offer's verdict, unless a later dataset-wide withdrawal covers it."""
+        allowed, reason, row = decide(offer)
+        if allowed and _outranked_by_withdrawal(row, bare_withdrawal):
+            return (
+                False,
+                "a later decision withdrew sharing for this dataset, and this "
+                "grant names one offer — it does not survive a withdrawal that "
+                "covers it",
+                bare_withdrawal,
+            )
+        return allowed, reason, row
 
     if offer_id is not None:
-        return decide(offer_id)
+        return decide_offer(offer_id)
 
     allowed, reason, row = bare_allowed, bare_reason, bare_row
     for offer in sorted(o for o in offers if o):
         if allowed:
             break
-        allowed, reason, row = decide(offer)
+        allowed, reason, row = decide_offer(offer)
     return allowed, reason, row
 
 
@@ -859,9 +964,7 @@ async def latest_granted_rows_for_dataset(
             ConsentRequestORM.subject_id.asc(),
             ConsentRequestORM.consumer_id.asc(),
             ConsentRequestORM.offer_id.asc(),
-            ConsentRequestORM.requested_at.desc(),
-            ConsentRequestORM.revoked_at.desc(),
-            ConsentRequestORM.decided_at.desc(),
+            *_latest_decision_first(),
         )
     )
     latest: dict[tuple[str, str, str | None], ConsentRequestORM] = {}

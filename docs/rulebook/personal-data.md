@@ -167,14 +167,23 @@ portal and an operator recording that same decision at onboarding are one decisi
 are one row. It keyed those rows on the connector's negotiation counterparty until 2026-09-09,
 which is a transfer fact and not the party a member discloses to: every audience read asks
 about the offer's controller and answered `[]`, so an export ran against a consent it could not
-see. Naming a `consumer_id` explicitly is still a decision about one party (D-15); the
-`dataset_id` form names no offer, so it has no controller to scope a wildcard to and keeps the
-configured counterparty.
+see. Naming a `consumer_id` explicitly is still a decision about one party (D-15).
+
+**On the `dataset_id` form, grants and withdrawals part company — deliberately.** *Stopping*
+names no party, so it is a statement about every party and is written against the wildcard:
+`/my-data`'s "Stop" is the blanket control, and pinning it to the negotiation counterparty made
+it the *weakest* control on the page, invisible to every reader asking about anyone else.
+*Enabling* stays aimed at the configured counterparty, because a bare dataset grant names no
+offer and therefore carries no controller and no controller-role — and a wildcard row with
+neither would authorise any party in any role for the purpose. Grants are aimed; withdrawals
+spread (D-15a, D-15b).
 
 | # | Rule | Status |
 |---|---|---|
 | D-14 | The wildcard admits any party **inside the circle** for that controller and purpose. It never admits a new controller and never a new purpose | **Enforced**, and since 2026-08-28 the controller is also in the `L-2` consent fingerprint. It was not: the hash tuple carried `controller_role` alone, so a dimension the wildcard refuses to cross was invisible in the evidence proving which consent state authorised a handover. See `L-2` in [Provenance and logging](provenance-and-logging.md) |
 | D-15 | A per-party row overrides the wildcard. An explicit grant and an explicit **opt-out** both win | **Enforced** |
+| D-15a | **A grant applies only within the scope it names; a withdrawal applies to everything it covers, and between the two the later decision wins.** So a blanket "stop sharing" closes a per-party grant made before it, and a per-party grant made after it stands. Ties resolve to the withdrawal | **Enforced** since 2026-09-09. D-15 alone gave a per-party grant precedence *whenever* it was written, so a targeted grant from March outranked a withdrawal made today and the blanket control was the weakest one on the page — which Art. 7(3) rules out, withdrawal being no easier than the grant it undoes. Recency enters only between a withdrawal and a grant at a wider scope: an older per-party **grant** still outranks a newer wildcard grant (`decided_at` on the audience read depends on it) |
+| D-15b | An explicit per-party **opt-out** is never revived by a broader grant, whenever that grant was made. Only a later decision naming that same party can lift it | **Enforced** — the sticky half of D-15a, and the reason the rule is not simply "the newest row wins". Grants are aimed; withdrawals spread |
 
 ## 5. Asking, granting and revoking
 

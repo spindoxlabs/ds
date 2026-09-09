@@ -645,7 +645,7 @@ async def test_audience_returns_the_provisioned_subjects_per_dataset(client):
     assert dataset["subjects"][0]["decided_at"] is not None
 
 
-@pytest.mark.rule("D-14")
+@pytest.mark.rule("D-14", "D-15a")
 @pytest.mark.asyncio
 async def test_decided_at_is_the_authorising_row_not_the_latest_one(engine, client):
     """`decided_at` evidences *this* release, so it comes from the row that
@@ -695,7 +695,7 @@ async def test_decided_at_is_the_authorising_row_not_the_latest_one(engine, clie
     )
 
 
-@pytest.mark.rule("D-15", "A-10")
+@pytest.mark.rule("D-15", "D-15b", "A-10")
 @pytest.mark.asyncio
 async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, client):
     """The defect this route exists to prevent, asserted end to end.
@@ -704,6 +704,13 @@ async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, c
     only see the wildcard set would disclose to a recipient this person has
     specifically withdrawn from — so the opted-out subject must be **absent**
     for that consumer while the wildcard still authorises every other one.
+
+    **The opt-out carries the offer** (2026-09-09). Without it the row landed in
+    the dataset-wide cell, so what passed here was the *bare* withdrawal rule and
+    not the per-party precedence this test is named for — a distinction with no
+    consequence while scope alone decided, and the difference between two rules
+    once recency entered. It is stated against the offer the audience read asks
+    about, which is what the docstring above always claimed.
     """
     await _provision(client)
 
@@ -713,6 +720,7 @@ async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, c
             session.add(
                 _row(
                     consumer_id=CONSUMER,
+                    offer_id="test-flexibility",
                     status="revoked",
                     requested_at=datetime(2026, 2, 1, tzinfo=UTC),
                     revoked_at=datetime(2026, 2, 1, 1, tzinfo=UTC),
@@ -966,33 +974,43 @@ async def test_withdrawing_the_offer_empties_its_own_audience_only(client):
     assert await _audience(client, "test-grid-planning") == [SUBJECT]
 
 
-@pytest.mark.rule("D-15", "A-10")
+@pytest.mark.rule("D-15a", "A-10")
 @pytest.mark.asyncio
 async def test_a_dataset_wide_withdrawal_denies_every_offer(engine, client):
     """A decision that names no offer is not scoped to one.
 
-    `POST /consent/my/shares` with a bare `dataset_id` — the `/my-data` control —
-    writes a row with no `offer_id`, and revoking it is a statement about the
-    dataset rather than about an offer. Per-offer keying must not let an
-    offer-scoped grant survive it: that would disclose against a withdrawal,
+    `POST /consent/my/shares` with a bare `dataset_id` — the `/my-data` "Stop"
+    control — writes a row with no `offer_id`, and revoking it is a statement
+    about the dataset rather than about an offer. Per-offer keying must not let
+    an offer-scoped grant survive it: that would disclose against a withdrawal,
     which is the one direction this collapse must never get wrong.
+
+    **Taken through the API rather than fixtured** (2026-09-09). The withdrawal
+    used to be a seeded row dated March against a grant provisioned at *now*, so
+    it asserted this rule while standing five months *before* the decision it had
+    to beat. That was invisible while scope alone decided; once the later
+    decision wins, the fixture said the opposite of the flow it stands for —
+    nobody stops sharing before they are asked. Driving the real route also
+    exercises the wildcard scoping the blanket control now writes.
     """
+    from tests import make_vc_headers
+
     await _provision_offer(client, "test-flexibility", True)
     assert await _audience(client, "test-flexibility") == [SUBJECT]
 
-    factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as session:
-        async with session.begin():
-            session.add(
-                _row(
-                    offer_id=None,
-                    status="revoked",
-                    requested_at=datetime(2026, 3, 1, tzinfo=UTC),
-                    revoked_at=datetime(2026, 3, 1, 1, tzinfo=UTC),
-                )
-            )
+    r = await client.post(
+        "/consent/my/shares",
+        headers=make_vc_headers(),
+        json={"dataset_id": DATASET, "enabled": False},
+    )
+    assert r.status_code == 200, r.text
 
     assert await _audience(client, "test-flexibility") == []
+    # And for a party the deployment never negotiates with, which is the half a
+    # counterparty-keyed withdrawal could not answer.
+    assert (
+        await _audience(client, "test-flexibility", consumer=OTHER_CONSUMER) == []
+    )
 
 
 @pytest.mark.rule("D-14", "D-15")
@@ -1240,3 +1258,189 @@ async def test_my_shares_shows_the_standing_decision_onboarding_recorded(client)
     by_offer = {row["offer_id"]: row for row in rows}
     assert by_offer["test-flexibility"]["status"] == "granted"
     assert by_offer["test-flexibility"]["controller"] == "example-org"
+
+
+# ── the rule: a withdrawal outranks what it covers ───────────────────────────
+#
+# Settled with the maintainer 2026-09-09: *"a precise share wins. A generic stop
+# sharing overwrites all grants. Later on a share, even generic, enables sharing
+# again."* `resolve_decision` used to consult the per-party row first and return,
+# so a targeted grant from March outranked a blanket withdrawal made today and
+# the person who clicked stop was still disclosed — the blanket control being
+# weaker than the precise one, which is the reading Art. 7(3) rules out.
+#
+# Recency enters **only** between a withdrawal and a grant at a wider scope. The
+# four tests below pin both directions on both axes; two existing ones pin what
+# must not move with it — `test_decided_at_is_the_authorising_row_not_the_latest_one`
+# (an older per-party *grant* still beats a newer wildcard grant) and
+# `test_audience_omits_a_subject_who_opted_out_of_this_consumer` (an opt-out is
+# never revived).
+
+EARLIER = datetime(2026, 4, 1, 9, tzinfo=UTC)
+LATER = datetime(2026, 5, 1, 9, tzinfo=UTC)
+
+
+def _granted(consumer_id: str, at: datetime, **over) -> ConsentRequestORM:
+    return _row(
+        consumer_id=consumer_id,
+        offer_id="test-flexibility",
+        status="granted",
+        requested_at=at,
+        decided_at=at,
+        **over,
+    )
+
+
+def _withdrawn(consumer_id: str, at: datetime, **over) -> ConsentRequestORM:
+    """A withdrawal stamped at `at`.
+
+    `requested_at` is deliberately *older* than the withdrawal, because that is
+    how a real one looks: `set_subject_data_sharing` mutates the granted row, so
+    the row keeps the moment sharing was enabled and gains `revoked_at`. A rule
+    reading `requested_at` would place this decision before the grant it must
+    beat, which is the trap `decision_time` exists for.
+    """
+    return _row(
+        consumer_id=consumer_id,
+        offer_id="test-flexibility",
+        status="revoked",
+        requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+        decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
+        revoked_at=at,
+        **over,
+    )
+
+
+async def _allows(engine, consumer: str = CONSUMER) -> bool:
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        allowed, _reason = await check_consent(
+            session, SUBJECT, DATASET, consumer, purpose=["FlexibilityResearch"]
+        )
+        return allowed
+
+
+@pytest.mark.rule("D-15a")
+@pytest.mark.asyncio
+async def test_a_blanket_withdrawal_closes_an_earlier_per_party_grant(engine):
+    """The headline: *stop* means stop.
+
+    A grant aimed at one consumer, then a withdrawal aimed at nobody in
+    particular. The withdrawal is the later decision and it covers the grant, so
+    the grant does not survive it. This is the case that used to disclose: the
+    per-party row was consulted first and returned, and the wildcard was never
+    read at all.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(_granted(CONSUMER, EARLIER))
+            session.add(_withdrawn(WILDCARD_CONSUMER, LATER))
+
+    assert await _allows(engine) is False
+
+
+@pytest.mark.rule("D-15a")
+@pytest.mark.asyncio
+async def test_a_later_per_party_grant_survives_an_earlier_blanket_withdrawal(engine):
+    """The direction that keeps consent freely given.
+
+    Someone who has stopped sharing with everyone and then says yes to one named
+    recipient has made a newer decision, and it is the one that counts. Without
+    this the blanket withdrawal would be permanent and the person could never opt
+    back in for anyone — a consent plane that cannot record a yes.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(_withdrawn(WILDCARD_CONSUMER, EARLIER))
+            session.add(_granted(CONSUMER, LATER))
+
+    assert await _allows(engine) is True
+    # And only for the party it names — everyone else is still stopped.
+    assert await _allows(engine, OTHER_CONSUMER) is False
+
+
+@pytest.mark.rule("D-15a")
+@pytest.mark.asyncio
+async def test_a_simultaneous_withdrawal_and_grant_resolve_to_denied(engine):
+    """Ties deny.
+
+    Nothing in the model needs a total order, and a tie is exactly where a clock
+    deserves least trust — two decisions stamped in the same instant are a
+    question the timestamps cannot answer, so the answer is the safe one.
+    """
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            session.add(_granted(CONSUMER, LATER))
+            session.add(_withdrawn(WILDCARD_CONSUMER, LATER))
+
+    assert await _allows(engine) is False
+
+
+@pytest.mark.rule("D-14", "D-15a")
+@pytest.mark.asyncio
+async def test_a_dataset_wide_withdrawal_yields_to_a_later_offer_decision(client):
+    """The offer axis, in the order the old rule could not express.
+
+    Stop sharing the dataset, then turn one offer back on. The offer decision is
+    the newer one and it wins — where a dataset-wide withdrawal used to deny
+    every offer-scoped row for ever, which made the offer control dead for that
+    person with nothing on the page saying so.
+
+    The sibling test above pins the same pair in the other order.
+    """
+    from tests import make_vc_headers
+
+    subject = make_vc_headers()
+    stop = await client.post(
+        "/consent/my/shares",
+        headers=subject,
+        json={"dataset_id": DATASET, "enabled": False},
+    )
+    assert stop.status_code == 200, stop.text
+    assert await _audience(client, "test-flexibility") == []
+
+    resume = await client.post(
+        "/consent/my/shares",
+        headers=subject,
+        json={"offer_id": "test-flexibility", "enabled": True},
+    )
+    assert resume.status_code == 200, resume.text
+
+    assert await _audience(client, "test-flexibility") == [SUBJECT]
+    # The other offer on the same dataset was not turned back on, and stays shut.
+    assert await _audience(client, "test-grid-planning") == []
+
+
+@pytest.mark.rule("D-15a")
+@pytest.mark.asyncio
+async def test_the_blanket_stop_is_not_pinned_to_one_party(engine, client):
+    """`/my-data`'s "Stop" writes the wildcard, not the negotiation counterparty.
+
+    It used to write `settings.consumer_participant_did`, so the widest control
+    on the page was invisible to every reader asking about anyone else — the same
+    shape as issue #33, on the path that issue scoped out. A blanket stop that
+    only one party can see is not a blanket stop.
+    """
+    from tests import make_vc_headers
+
+    r = await client.post(
+        "/consent/my/shares",
+        headers=make_vc_headers(),
+        json={"dataset_id": DATASET, "enabled": False},
+    )
+    assert r.status_code == 200, r.text
+
+    rows = await _rows(engine, subject_id=SUBJECT, dataset_id=DATASET)
+    assert [row.consumer_id for row in rows] == [WILDCARD_CONSUMER]
+    # A grant stays aimed: it carries no controller, so widening it would
+    # authorise any party in any role for the purpose.
+    grant = await client.post(
+        "/consent/my/shares",
+        headers=make_vc_headers(),
+        json={"dataset_id": DATASET, "enabled": True, "purpose": ["FlexibilityResearch"]},
+    )
+    assert grant.status_code == 200, grant.text
+    assert grant.json()["consumer_id"] == CONSUMER
