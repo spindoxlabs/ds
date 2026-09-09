@@ -889,364 +889,21 @@ tasks:
     desc: Run EDC provider locally, auto-restart on fat JAR rebuild
     cmds:
       - docker stop dataspaces-edc-rec-1 2>/dev/null || true
-      - |
-        set +e
-        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
-        if [ ! -f "$jar" ]; then
-          echo "No connector.jar found — building..."
-          task edc:build
-        fi
-        PID=
+      # **`bash`, and it is not a style choice.** `task` runs command blocks in an
+      # embedded Go shell where `$!` yields a job id rather than a pid and `kill`
+      # is an unsupported builtin — so the loop this replaces could not stop or
+      # even detect its own JVM, and started a second one onto held ports (issue
+      # #35). The runner is one script for both roles because they differed only
+      # in four values, and two copies of a lifecycle this subtle is how one of
+      # them drifts.
+      - bash {{.ROOT_DIR}}/services/edc-connector/dev-watch.sh rec
 
-        # Stop the JVM without ever blocking forever.
-        #
-        # The old loop did `kill $PID; wait $PID`. An EDC that is slow to run its
-        # shutdown hooks — or does not act on SIGTERM at all — left `wait`
-        # blocked for good: the watcher printed "restarting", then never
-        # restarted, and the stale JVM kept serving the *old* JAR while every
-        # rebuild appeared to do nothing. Losing a watcher silently is worse
-        # than a hard kill, so escalate and move on.
-        stop_edc() {
-          [ -z "$PID" ] && return 0
-          kill "$PID" 2>/dev/null
-          i=0
-          while [ $i -lt 20 ]; do
-            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC provider ignored SIGTERM for 10s — sending SIGKILL"
-          kill -9 "$PID" 2>/dev/null
-          i=0
-          while [ $i -lt 10 ]; do
-            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC provider survived SIGKILL — port 19191/19193/19194 may still be held" >&2
-          PID=
-        }
-
-        cleanup() { stop_edc; exit 0; }
-        trap cleanup INT TERM EXIT
-
-        conf="{{.ROOT_DIR}}/services/connector/config/rec.properties"
-        PORTS="19191 19192 19193 19194"
-
-        # An EDC that outlived its watcher still holds the ports, so every boot
-        # after it fails to bind and the loop spins — 200+ restarts with nothing
-        # in the log but BindException. Reap our own strays before starting.
-        #
-        # **A dead pid is not a free port, and the pattern is not the only way to
-        # hold one.** This reaped by `pgrep -f edc.fs.config=$conf` and then slept
-        # a flat second, which is a guess about how long a JVM takes to release
-        # its sockets. When the guess was short the boot below lost the race,
-        # failed to bind, died — and *the survivor was the old runtime*, which
-        # then answered the readiness gate and served the whole run (issue #35).
-        # So: reap by port as well, and wait for the sockets themselves.
-        #
-        # The `java` filter is load-bearing. In `docker:*` the published port is
-        # held by docker-proxy, and killing that would take out the port mapping
-        # rather than a runtime.
-        # **`-sTCP:LISTEN`, and it is the whole correctness of this function.**
-        # `lsof -i tcp:19194` matches a socket with that port on *either* end, so
-        # without the state filter this returned the **consumer's** JVM — which
-        # holds an outbound DSP connection to the provider's protocol port — and
-        # the reaper below killed it. Both loops did it to each other: measured
-        # 2026-09-09, the two runtimes killed each other in a loop and neither
-        # could stay up. A listener is what "holds the port" means; a client
-        # connected to it holds nothing.
-        ports_held() {
-          for p in $PORTS; do
-            for pid in $(lsof -nP -t -iTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
-              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
-              [ "$pid" = "$PID" ] && continue
-              echo "$pid"
-            done
-          done
-        }
-
-        kill_stale() {
-          # Deduplicated: `ports_held` reports a listener once per port, so the
-          # same pid arrived four times and the log read as four failed reaps.
-          for stale in $(printf '%s\n' $(pgrep -f "edc.fs.config=$conf" 2>/dev/null) $(ports_held) | sort -u); do
-            [ "$stale" = "$PID" ] && continue
-            echo "Reaping stale EDC provider JVM $stale (it still holds the ports)"
-            # **Not `2>/dev/null`.** A reaper that reports success whatever
-            # happens is the same defect as a gate that passes on the wrong
-            # runtime: the loop below spent five boots failing to bind while this
-            # line claimed to have cleared the port every time.
-            kill -9 "$stale" || echo "could not kill $stale — it still holds the port" >&2
-          done
-          i=0
-          while [ $i -lt 20 ]; do
-            [ -z "$(ports_held)" ] && return 0
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC provider: $PORTS still held after 10s — the next boot cannot bind" >&2
-        }
-
-        # **Never run the file Gradle is writing.** `edc:watch-build` replaces
-        # `connector.jar` in place while this JVM has it open, so classes not yet
-        # loaded vanish underneath it — `NoClassDefFoundError: okhttp3/…`,
-        # `ClassNotFoundException: org.apache.commons.pool2.…` — and the runtime
-        # then keeps its ports while answering nothing, which is worse than
-        # crashing because it looks like a slow one (issue #35).
-        #
-        # Gradle `--continuous` owns its output path, so the swap has to happen
-        # at this end: run a private copy, taken while no JVM holds it, and let
-        # the rebuild replace a file nobody has open. Under `./data/`, which is
-        # gitignored in full (ADR-0008).
-        run_jar="{{.ROOT_DIR}}/data/edc-run/rec-connector.jar"
-        mkdir -p "$(dirname "$run_jar")"
-
-        # A copy of a half-written JAR is a JAR that will not boot, and the crash
-        # loop that follows reads as a code problem. Wait for the file to stop
-        # changing first — size as well as mtime, because a multi-second write
-        # inside one clock second moves only the size.
-        copy_jar() {
-          i=0
-          while [ $i -lt 60 ]; do
-            a=$(stat -c '%Y %s' "$jar" 2>/dev/null)
-            sleep 1
-            b=$(stat -c '%Y %s' "$jar" 2>/dev/null)
-            [ -n "$a" ] && [ "$a" = "$b" ] && break
-            i=$((i + 1))
-          done
-          cp "$jar" "$run_jar.partial" && mv "$run_jar.partial" "$run_jar"
-        }
-
-        FAILS=0
-        while true; do
-          kill_stale
-          # In this order: the copy waits for the build to settle, so reading the
-          # mtime afterwards records the JAR this JVM is actually running. Read
-          # first and a rebuild that landed during the copy looks like a change
-          # the moment the loop starts watching, restarting a runtime that is
-          # already current.
-          copy_jar
-          MTIME=$(stat -c %Y "$jar" 2>/dev/null)
-          STARTED=$(date +%s)
-          echo "Starting EDC provider (JAR mtime: $MTIME)..."
-          java -Xms256m -Xmx512m \
-            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/rec.properties \
-            -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/rec-vault.properties \
-            -jar "$run_jar" &
-          PID=$!
-
-          while true; do
-            sleep 2
-            if ! kill -0 "$PID" 2>/dev/null; then
-              echo "EDC provider exited on its own — restarting..."
-              break
-            fi
-            NOW=$(stat -c %Y "$jar" 2>/dev/null)
-            # An empty mtime means the JAR is mid-write: wait for the new one
-            # rather than restarting onto a file that is not there yet.
-            if [ -n "$NOW" ] && [ "$NOW" != "$MTIME" ]; then
-              echo "JAR changed ($MTIME → $NOW) — restarting EDC provider..."
-              break
-            fi
-          done
-
-          stop_edc
-
-          # Back off when the JVM dies almost immediately. A crash loop is a
-          # configuration problem, not something to retry 200 times a minute —
-          # slow down so the reason stays readable in the log.
-          if [ $(( $(date +%s) - STARTED )) -lt 20 ]; then
-            FAILS=$((FAILS + 1))
-            BACKOFF=$((FAILS * 5))
-            [ $BACKOFF -gt 60 ] && BACKOFF=60
-            echo "EDC provider died after <20s (attempt $FAILS) — waiting ${BACKOFF}s before retrying"
-            sleep $BACKOFF
-          else
-            FAILS=0
-            sleep 1
-          fi
-        done
   edc-third-party:watch:
     desc: Run EDC consumer locally, auto-restart on fat JAR rebuild
     cmds:
       - docker stop dataspaces-edc-third-party-1 2>/dev/null || true
-      - |
-        set +e
-        jar="{{.ROOT_DIR}}/services/edc-connector/build/libs/connector.jar"
-        if [ ! -f "$jar" ]; then
-          echo "No connector.jar found — building..."
-          task edc:build
-        fi
-        PID=
+      - bash {{.ROOT_DIR}}/services/edc-connector/dev-watch.sh third-party
 
-        # Stop the JVM without ever blocking forever.
-        #
-        # The old loop did `kill $PID; wait $PID`. An EDC that is slow to run its
-        # shutdown hooks — or does not act on SIGTERM at all — left `wait`
-        # blocked for good: the watcher printed "restarting", then never
-        # restarted, and the stale JVM kept serving the *old* JAR while every
-        # rebuild appeared to do nothing. Losing a watcher silently is worse
-        # than a hard kill, so escalate and move on.
-        stop_edc() {
-          [ -z "$PID" ] && return 0
-          kill "$PID" 2>/dev/null
-          i=0
-          while [ $i -lt 20 ]; do
-            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC consumer ignored SIGTERM for 10s — sending SIGKILL"
-          kill -9 "$PID" 2>/dev/null
-          i=0
-          while [ $i -lt 10 ]; do
-            kill -0 "$PID" 2>/dev/null || { PID=; return 0; }
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC consumer survived SIGKILL — port 29191/29193/29194 may still be held" >&2
-          PID=
-        }
-
-        cleanup() { stop_edc; exit 0; }
-        trap cleanup INT TERM EXIT
-
-        conf="{{.ROOT_DIR}}/services/connector/config/third-party.properties"
-        PORTS="29191 29192 29193 29194"
-
-        # An EDC that outlived its watcher still holds the ports, so every boot
-        # after it fails to bind and the loop spins — 200+ restarts with nothing
-        # in the log but BindException. Reap our own strays before starting.
-        #
-        # **A dead pid is not a free port, and the pattern is not the only way to
-        # hold one.** This reaped by `pgrep -f edc.fs.config=$conf` and then slept
-        # a flat second, which is a guess about how long a JVM takes to release
-        # its sockets. When the guess was short the boot below lost the race,
-        # failed to bind, died — and *the survivor was the old runtime*, which
-        # then answered the readiness gate and served the whole run (issue #35).
-        # So: reap by port as well, and wait for the sockets themselves.
-        #
-        # The `java` filter is load-bearing. In `docker:*` the published port is
-        # held by docker-proxy, and killing that would take out the port mapping
-        # rather than a runtime.
-        # **`-sTCP:LISTEN`, and it is the whole correctness of this function.**
-        # `lsof -i tcp:19194` matches a socket with that port on *either* end, so
-        # without the state filter this returned the **consumer's** JVM — which
-        # holds an outbound DSP connection to the provider's protocol port — and
-        # the reaper below killed it. Both loops did it to each other: measured
-        # 2026-09-09, the two runtimes killed each other in a loop and neither
-        # could stay up. A listener is what "holds the port" means; a client
-        # connected to it holds nothing.
-        ports_held() {
-          for p in $PORTS; do
-            for pid in $(lsof -nP -t -iTCP:"$p" -sTCP:LISTEN 2>/dev/null); do
-              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
-              [ "$pid" = "$PID" ] && continue
-              echo "$pid"
-            done
-          done
-        }
-
-        kill_stale() {
-          # Deduplicated: `ports_held` reports a listener once per port, so the
-          # same pid arrived four times and the log read as four failed reaps.
-          for stale in $(printf '%s\n' $(pgrep -f "edc.fs.config=$conf" 2>/dev/null) $(ports_held) | sort -u); do
-            [ "$stale" = "$PID" ] && continue
-            echo "Reaping stale EDC consumer JVM $stale (it still holds the ports)"
-            # **Not `2>/dev/null`.** A reaper that reports success whatever
-            # happens is the same defect as a gate that passes on the wrong
-            # runtime: the loop below spent five boots failing to bind while this
-            # line claimed to have cleared the port every time.
-            kill -9 "$stale" || echo "could not kill $stale — it still holds the port" >&2
-          done
-          i=0
-          while [ $i -lt 20 ]; do
-            [ -z "$(ports_held)" ] && return 0
-            sleep 0.5
-            i=$((i + 1))
-          done
-          echo "EDC consumer: $PORTS still held after 10s — the next boot cannot bind" >&2
-        }
-
-        # **Never run the file Gradle is writing.** `edc:watch-build` replaces
-        # `connector.jar` in place while this JVM has it open, so classes not yet
-        # loaded vanish underneath it — `NoClassDefFoundError: okhttp3/…`,
-        # `ClassNotFoundException: org.apache.commons.pool2.…` — and the runtime
-        # then keeps its ports while answering nothing, which is worse than
-        # crashing because it looks like a slow one (issue #35).
-        #
-        # Gradle `--continuous` owns its output path, so the swap has to happen
-        # at this end: run a private copy, taken while no JVM holds it, and let
-        # the rebuild replace a file nobody has open. Under `./data/`, which is
-        # gitignored in full (ADR-0008).
-        run_jar="{{.ROOT_DIR}}/data/edc-run/third-party-connector.jar"
-        mkdir -p "$(dirname "$run_jar")"
-
-        # A copy of a half-written JAR is a JAR that will not boot, and the crash
-        # loop that follows reads as a code problem. Wait for the file to stop
-        # changing first — size as well as mtime, because a multi-second write
-        # inside one clock second moves only the size.
-        copy_jar() {
-          i=0
-          while [ $i -lt 60 ]; do
-            a=$(stat -c '%Y %s' "$jar" 2>/dev/null)
-            sleep 1
-            b=$(stat -c '%Y %s' "$jar" 2>/dev/null)
-            [ -n "$a" ] && [ "$a" = "$b" ] && break
-            i=$((i + 1))
-          done
-          cp "$jar" "$run_jar.partial" && mv "$run_jar.partial" "$run_jar"
-        }
-
-        FAILS=0
-        while true; do
-          kill_stale
-          # In this order: the copy waits for the build to settle, so reading the
-          # mtime afterwards records the JAR this JVM is actually running. Read
-          # first and a rebuild that landed during the copy looks like a change
-          # the moment the loop starts watching, restarting a runtime that is
-          # already current.
-          copy_jar
-          MTIME=$(stat -c %Y "$jar" 2>/dev/null)
-          STARTED=$(date +%s)
-          echo "Starting EDC consumer (JAR mtime: $MTIME)..."
-          java -Xms256m -Xmx512m \
-            -Dedc.fs.config={{.ROOT_DIR}}/services/connector/config/third-party.properties \
-            -Dds.vault.seed.file={{.ROOT_DIR}}/services/connector/config/third-party-vault.properties \
-            -jar "$run_jar" &
-          PID=$!
-
-          while true; do
-            sleep 2
-            if ! kill -0 "$PID" 2>/dev/null; then
-              echo "EDC consumer exited on its own — restarting..."
-              break
-            fi
-            NOW=$(stat -c %Y "$jar" 2>/dev/null)
-            # An empty mtime means the JAR is mid-write: wait for the new one
-            # rather than restarting onto a file that is not there yet.
-            if [ -n "$NOW" ] && [ "$NOW" != "$MTIME" ]; then
-              echo "JAR changed ($MTIME → $NOW) — restarting EDC consumer..."
-              break
-            fi
-          done
-
-          stop_edc
-
-          # Back off when the JVM dies almost immediately. A crash loop is a
-          # configuration problem, not something to retry 200 times a minute —
-          # slow down so the reason stays readable in the log.
-          if [ $(( $(date +%s) - STARTED )) -lt 20 ]; then
-            FAILS=$((FAILS + 1))
-            BACKOFF=$((FAILS * 5))
-            [ $BACKOFF -gt 60 ] && BACKOFF=60
-            echo "EDC consumer died after <20s (attempt $FAILS) — waiting ${BACKOFF}s before retrying"
-            sleep $BACKOFF
-          else
-            FAILS=0
-            sleep 1
-          fi
-        done
   # ── Schema ───────────────────────────────────────────────────────────────
   #
   # Alembic owns every schema. Services verify the revision at startup and
@@ -1484,11 +1141,35 @@ tasks:
         OLD_19193=$(java_on_port 19193)
         OLD_29193=$(java_on_port 29193)
         OLD_39193=$(java_on_port 39193)
-        for port in 19193 29193 39193; do
-          for pid in $(lsof -ti tcp:${port} 2>/dev/null); do
-            [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] && kill "$pid" 2>/dev/null
+        # **Through `bash`, because `task`'s shell cannot kill anything.** Its
+        # embedded interpreter has no working `kill` builtin — it fails with
+        # `kill: unsupported builtin`, and this line discarded that on stderr. So
+        # the JVMs were never stopped, the gate below then found the *same*
+        # runtime still serving, and the run continued against a control plane
+        # whose database had just been dropped (issue #35, items 2-3). This is
+        # the one line that made the whole dev sequence unable to restart
+        # anything.
+        #
+        # LISTEN-only for the reason `java_on_port` above states, and SIGTERM
+        # then SIGKILL: `edc-*:watch` owns the restart, so the kill is the
+        # restart, and one that does not land is indistinguishable from a
+        # runtime that ignored it.
+        bash -c '
+          for port in 19193 29193 39193; do
+            for pid in $(lsof -nP -t -iTCP:"$port" -sTCP:LISTEN 2>/dev/null); do
+              [ "$(ps -p "$pid" -o comm= 2>/dev/null)" = "java" ] || continue
+              kill "$pid" 2>/dev/null
+              for i in $(seq 1 20); do
+                kill -0 "$pid" 2>/dev/null || break
+                sleep 0.5
+              done
+              if kill -0 "$pid" 2>/dev/null; then
+                echo "EDC JVM $pid ignored SIGTERM for 10s — sending SIGKILL"
+                kill -9 "$pid" 2>/dev/null
+              fi
+            done
           done
-        done
+        '
         # **Wait for the management API, do not sleep at it.** This was `sleep 5`,
         # and five seconds is not a property of anything — it is how long a JVM
         # happened to take to boot, migrate its schema and bind :x9193 on the
