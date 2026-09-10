@@ -196,3 +196,147 @@ class TestMembershipAuth:
             headers=read_headers,
         )
         assert resp.status_code == 403
+
+
+class TestOneOrganisationIsOneMembership:
+    """An organisation answers to several names; it must not gain several members.
+
+    ``Owner.aliases`` exists because a realm, a governance file and an owner list
+    routinely spell one organisation differently, and ``/owners/resolve`` has
+    always collapsed them. This table used to compare ``organization_alias`` as a
+    literal string on every route, so the spellings behaved as different
+    organisations: a row written under an alias was invisible to a check made
+    under the owner id, and a member holding an active membership was refused.
+    """
+
+    OWNER = {
+        "id": "example-org",
+        "type": "schema:NGO",
+        "name": "Example Organization",
+        "did": "did:web:rec.dataspaces.localhost",
+        "aliases": ["example", "ex-org"],
+    }
+
+    async def _owner(self, client, admin_headers):
+        await client.post("/admin/owners", json=self.OWNER, headers=admin_headers)
+
+    @pytest.mark.asyncio
+    async def test_a_membership_written_by_alias_is_stored_under_the_owner_id(
+        self, client, admin_headers
+    ):
+        await self._owner(client, admin_headers)
+        await _create_did(client, SUBJECT_DID, admin_headers)
+
+        resp = await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "ex-org"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["organization_alias"] == "example-org"
+
+    @pytest.mark.asyncio
+    async def test_a_check_by_any_spelling_finds_the_same_member(
+        self, client, admin_headers, membership_headers
+    ):
+        await self._owner(client, admin_headers)
+        await _create_did(client, SUBJECT_DID, admin_headers)
+        await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "ex-org"},
+            headers=admin_headers,
+        )
+
+        for spelling in ("example-org", "example", "ex-org"):
+            resp = await client.get(
+                "/memberships/check",
+                params={"user_did": SUBJECT_DID, "organization": spelling},
+                headers=membership_headers,
+            )
+            assert resp.status_code == 200
+            assert resp.json()["member"] is True, spelling
+
+    @pytest.mark.asyncio
+    async def test_a_second_spelling_cannot_create_a_second_membership(
+        self, client, admin_headers
+    ):
+        """Two names, one row — otherwise revocation removes only one of them."""
+        await self._owner(client, admin_headers)
+        await _create_did(client, SUBJECT_DID, admin_headers)
+
+        first = await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "example-org"},
+            headers=admin_headers,
+        )
+        assert first.status_code == 201
+        second = await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "ex-org"},
+            headers=admin_headers,
+        )
+        assert second.status_code == 409
+
+    @pytest.mark.asyncio
+    async def test_a_delete_by_alias_removes_the_row_its_create_wrote(
+        self, client, admin_headers, membership_headers
+    ):
+        """The orphan case: a delete that resolved differently left the row behind.
+
+        Revocation believed it had removed the membership, and the check the
+        connector makes still found one.
+        """
+        await self._owner(client, admin_headers)
+        await _create_did(client, SUBJECT_DID, admin_headers)
+        await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "example-org"},
+            headers=admin_headers,
+        )
+
+        resp = await client.delete(
+            f"/admin/memberships/{SUBJECT_DID}/ex-org", headers=admin_headers
+        )
+        assert resp.status_code == 204
+
+        check = await client.get(
+            "/memberships/check",
+            params={"user_did": SUBJECT_DID, "organization": "example-org"},
+            headers=membership_headers,
+        )
+        assert check.json()["member"] is False
+
+    @pytest.mark.asyncio
+    async def test_a_list_filtered_by_alias_returns_the_same_members(
+        self, client, admin_headers
+    ):
+        await self._owner(client, admin_headers)
+        await _create_did(client, SUBJECT_DID, admin_headers)
+        await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "example-org"},
+            headers=admin_headers,
+        )
+
+        by_alias = await client.get(
+            "/admin/memberships", params={"organization": "ex-org"}, headers=admin_headers
+        )
+        assert [m["user_did"] for m in by_alias.json()] == [SUBJECT_DID]
+
+    @pytest.mark.asyncio
+    async def test_a_name_that_owns_nothing_is_stored_verbatim(
+        self, client, admin_headers
+    ):
+        """A deployment that registers no owners keeps working exactly as before.
+
+        Resolution must not turn an unregistered organisation into a 404 — the
+        literal-string behaviour is the fallback, not an error.
+        """
+        await _create_did(client, SUBJECT_DID, admin_headers)
+        resp = await client.post(
+            "/admin/memberships",
+            json={"user_did": SUBJECT_DID, "organization_alias": "no-such-owner"},
+            headers=admin_headers,
+        )
+        assert resp.status_code == 201
+        assert resp.json()["organization_alias"] == "no-such-owner"

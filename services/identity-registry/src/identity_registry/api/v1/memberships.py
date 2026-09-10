@@ -13,8 +13,39 @@ from ...dependencies import (
 )
 from ...schemas.requests import CreateMembershipRequest
 from ...schemas.responses import MembershipCheckResponse, MembershipResponse
+from ...services.org_onboarding import resolve_owner
 
 router = APIRouter(tags=["memberships"])
+
+
+async def _canonical_org(db: AsyncSession, alias: str) -> str:
+    """The owner id *alias* belongs to, or *alias* itself when it names no owner.
+
+    **An organisation answers to more than one name, and a membership row is
+    worthless under the wrong one.** ``Owner.aliases`` exists precisely because a
+    realm, a governance file and an owner list routinely spell one organisation
+    three ways, and ``/owners/resolve`` has always collapsed them. This table did
+    not: every route compared ``organization_alias`` as a literal string, so a
+    row written under an alias was invisible to a check made under the owner id.
+    Both sides answered exactly what they were asked and the member was refused
+    anyway — a 403 asserting they belonged to nothing, with an active membership
+    one alias away.
+
+    Resolving on **every** route, rather than on the check alone, is what makes
+    the property hold rather than merely usually hold:
+
+    * writing under any spelling stores one row, so two names cannot become two
+      members;
+    * a delete resolves to the row its create wrote, instead of 404ing and
+      leaving a membership behind that revocation believed it had removed;
+    * a list filtered by either spelling returns the same members.
+
+    Unknown names pass through untouched. A deployment that registers no owners
+    keeps the literal-string behaviour it has today, so this cannot turn a
+    working setup into a 404.
+    """
+    owner = await resolve_owner(db, alias)
+    return owner.id if owner else alias
 
 
 def _to_response(m: OrganizationMembership) -> MembershipResponse:
@@ -36,11 +67,12 @@ async def create_membership(
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_memberships_write),
 ):
+    organization_alias = await _canonical_org(db, data.organization_alias)
     existing = await db.execute(
         select(OrganizationMembership).where(
             and_(
                 OrganizationMembership.user_did == data.user_did,
-                OrganizationMembership.organization_alias == data.organization_alias,
+                OrganizationMembership.organization_alias == organization_alias,
             )
         )
     )
@@ -55,7 +87,7 @@ async def create_membership(
 
     membership = OrganizationMembership(
         user_did=data.user_did,
-        organization_alias=data.organization_alias,
+        organization_alias=organization_alias,
     )
     db.add(membership)
     await db.commit()
@@ -76,7 +108,10 @@ async def list_memberships(
 ):
     stmt = select(OrganizationMembership)
     if organization:
-        stmt = stmt.where(OrganizationMembership.organization_alias == organization)
+        stmt = stmt.where(
+            OrganizationMembership.organization_alias
+            == await _canonical_org(db, organization)
+        )
     if user_did:
         stmt = stmt.where(OrganizationMembership.user_did == user_did)
     result = await db.execute(stmt)
@@ -96,7 +131,8 @@ async def delete_membership(
         select(OrganizationMembership).where(
             and_(
                 OrganizationMembership.user_did == user_did,
-                OrganizationMembership.organization_alias == organization_alias,
+                OrganizationMembership.organization_alias
+                == await _canonical_org(db, organization_alias),
             )
         )
     )
@@ -122,7 +158,8 @@ async def check_membership(
         select(OrganizationMembership).where(
             and_(
                 OrganizationMembership.user_did == user_did,
-                OrganizationMembership.organization_alias == organization,
+                OrganizationMembership.organization_alias
+                == await _canonical_org(db, organization),
                 OrganizationMembership.status == "active",
             )
         )

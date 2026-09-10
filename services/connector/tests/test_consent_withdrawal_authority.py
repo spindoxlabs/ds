@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from connector.db.models import ConsentRequestORM
 from connector.services.consent_service import WILDCARD_CONSUMER
+from connector.services.membership_check import Membership
 from tests import make_headers, make_vc_headers
 
 PROVISION = make_headers(scope="connector.consent.provision")
@@ -47,7 +48,7 @@ OVERRIDE = {
 @pytest.fixture(autouse=True)
 def _allow_membership(monkeypatch):
     async def _member(*_args, **_kwargs):
-        return True
+        return Membership.MEMBER
 
     monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _member)
 

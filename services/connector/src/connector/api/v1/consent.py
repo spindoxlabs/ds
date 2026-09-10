@@ -29,7 +29,11 @@ from ...dependencies import (
 from ...notifications.base import ConsentNotifier
 from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
-from ...services.membership_check import check_subject_membership, resolve_dataset_owner
+from ...services.membership_check import (
+    Membership,
+    check_subject_membership,
+    resolve_dataset_owner,
+)
 from ...services.prov_bridge import ProvBridge
 
 log = logging.getLogger(__name__)
@@ -395,13 +399,27 @@ async def create_consent_request(
                 ).replace("trust-anchor.", "users.")
                 subject_did = f"did:web:{users_domain}:{subject_id}"
 
-            is_member = await check_subject_membership(
+            membership = await check_subject_membership(
                 settings.identity_registry_url,
                 user_did=subject_did,
                 organization_alias=owner_alias,
                 token_provider=request.app.state.ir_token_provider,
             )
-            if not is_member:
+            # Unverifiable is not the same as refused, and it gets the same 503
+            # `_reject_unknown_participant` gives an unreachable participant
+            # registry a few lines below. A 403 here would tell the caller the
+            # person is not a member — a claim nothing established — and a caller
+            # that believes it files a permanent failure for an outage.
+            if membership is Membership.UNKNOWN:
+                raise HTTPException(
+                    status_code=503,
+                    detail=(
+                        f"Identity registry unavailable, cannot verify that "
+                        f"'{subject_id}' is a member of dataset owner "
+                        f"organization '{owner_alias}'"
+                    ),
+                )
+            if membership is Membership.NOT_MEMBER:
                 raise HTTPException(
                     status_code=403,
                     detail=(
@@ -941,13 +959,23 @@ async def admin_provision_share(
     # organisation. Enforced whenever a registry is wired; a pure-unit setup with
     # no registry skips it rather than failing on an unreachable host.
     if settings.identity_registry_url:
-        is_member = await check_subject_membership(
+        membership = await check_subject_membership(
             settings.identity_registry_url,
             user_did=body.subject_id,
             organization_alias=offer.recipients.controller,
             token_provider=getattr(request.app.state, "ir_token_provider", None),
         )
-        if not is_member:
+        # Retryable, not refused — see the same split on the consent-request
+        # route. Provisioning is driven by a service working through approved
+        # records, and a 403 is what tells it to stop and file the failure.
+        if membership is Membership.UNKNOWN:
+            raise HTTPException(
+                503,
+                f"Identity registry unavailable, cannot verify that "
+                f"'{body.subject_id}' is a member of controller organisation "
+                f"'{offer.recipients.controller}'",
+            )
+        if membership is Membership.NOT_MEMBER:
             raise HTTPException(
                 403,
                 f"Subject '{body.subject_id}' is not a member of controller "

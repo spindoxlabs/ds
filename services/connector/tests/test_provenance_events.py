@@ -25,6 +25,7 @@ from connector.services.consent_service import (
     consent_snapshot_hash,
     dataset_consent_snapshot,
 )
+from connector.services.membership_check import Membership
 from tests import make_headers, make_vc_headers
 
 DATASET = "datasets.silver.meters"
@@ -67,7 +68,7 @@ class FakeProv:
 @pytest.fixture(autouse=True)
 def _allow_membership(monkeypatch):
     async def _member(*_args, **_kwargs):
-        return True
+        return Membership.MEMBER
 
     monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _member)
 

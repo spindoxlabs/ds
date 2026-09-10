@@ -19,6 +19,7 @@ from connector.services.consent_service import (
     check_consent,
     get_granted_subject_ids,
 )
+from connector.services.membership_check import Membership
 from tests import make_headers
 
 PROVISION = make_headers(scope="connector.consent.provision")
@@ -39,14 +40,14 @@ EVIDENCE = {
 
 @pytest.fixture(autouse=True)
 def _allow_membership(monkeypatch):
-    """The admin endpoint checks org membership against the IR; stub it True.
+    """The admin endpoint checks org membership against the IR; stub it MEMBER.
 
     The membership gate has its own coverage in ``test_membership_check``; here
     we assert the provisioning behaviour, not the network call.
     """
 
     async def _member(*_args, **_kwargs):
-        return True
+        return Membership.MEMBER
 
     monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _member)
 
@@ -69,6 +70,75 @@ def _row(**overrides) -> ConsentRequestORM:
 
 
 # ── §3.2 admin/shares ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_a_registry_that_cannot_be_reached_is_503_not_403(client, monkeypatch):
+    """An outage must not be reported as a fact about the person.
+
+    Provisioning is driven by a service working through approved records. A 403
+    tells it the subject is not a member — settled, not worth retrying — so an
+    unreachable registry answering 403 makes it file a permanent failure for
+    something that would have succeeded a minute later. 503 says what is
+    actually true: nobody has established anything yet.
+    """
+
+    async def _unknown(*_args, **_kwargs):
+        return Membership.UNKNOWN
+
+    monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _unknown)
+
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": {
+                "source": "onboarding",
+                "rec_slug": "example",
+                "consent_text_version": "1.0",
+                "locale": "it",
+                "rendered_text_sha256": "sha-of-shown-text",
+                "submission_ref": "20260101-abc123",
+            },
+        },
+    )
+    assert r.status_code == 503
+    assert "cannot verify" in r.json()["detail"].lower()
+
+
+@pytest.mark.asyncio
+async def test_a_subject_the_registry_disowns_is_still_403(client, monkeypatch):
+    """The denial the 503 must not swallow: a real answer still refuses."""
+
+    async def _not_member(*_args, **_kwargs):
+        return Membership.NOT_MEMBER
+
+    monkeypatch.setattr(
+        "connector.api.v1.consent.check_subject_membership", _not_member
+    )
+
+    r = await client.post(
+        "/consent/admin/shares",
+        headers=PROVISION,
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": True,
+            "legal_basis": {
+                "source": "onboarding",
+                "rec_slug": "example",
+                "consent_text_version": "1.0",
+                "locale": "it",
+                "rendered_text_sha256": "sha-of-shown-text",
+                "submission_ref": "20260101-abc123",
+            },
+        },
+    )
+    assert r.status_code == 403
+    assert "is not a member" in r.json()["detail"]
 
 
 @pytest.mark.rule("D-14")
