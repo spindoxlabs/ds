@@ -319,7 +319,9 @@ class TestOneOrganisationIsOneMembership:
         )
 
         by_alias = await client.get(
-            "/admin/memberships", params={"organization": "ex-org"}, headers=admin_headers
+            "/admin/memberships",
+            params={"organization": "ex-org"},
+            headers=admin_headers,
         )
         assert [m["user_did"] for m in by_alias.json()] == [SUBJECT_DID]
 
