@@ -478,7 +478,7 @@ services:
 
   # ── Keycloak OIDC identity provider ──────────────────────────────────────────
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.0
+    image: quay.io/keycloak/keycloak:26.7.3
     command: ["start-dev", "--import-realm", "--http-port=9080"]
     restart: unless-stopped
     ports:

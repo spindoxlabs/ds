@@ -166,7 +166,7 @@ jobs:
             -e KC_SPI_LOGIN_DEFAULT_REALM_NAME=dataspaces \
             -p 9080:9080 \
             -v "$PWD/services/keycloak/realm-dataspaces-dev.json:/opt/keycloak/data/import/realm-dataspaces-dev.json:ro" \
-            quay.io/keycloak/keycloak:26.6.0 \
+            quay.io/keycloak/keycloak:26.7.3 \
             start-dev --import-realm --http-port=9080
 
       - name: Wait for the realm
