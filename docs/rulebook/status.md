@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-09 from `797cf3e-dirty`.
+Generated 2026-09-12 from `e377d70-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -160,7 +160,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-11a` | Enforced | ✅ evidenced | e2e×1, unit×5 | `chain-unbundling`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_with_no_declared_vocabulary_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_outside_the_declared_vocabulary_is_an_error` +3 more |
 | `D-12` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_consent_provisioning.py::test_legal_basis_surfaces_in_internal_check`, `services/connector/tests/test_consent_provisioning.py::test_subject_offer_share_records_legal_basis` +5 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
-| `D-14` | Enforced | ✅ evidenced | e2e×3, unit×23 | `chain-community`, `chain-partner`, `uc1` +23 more |
+| `D-14` | Partly enforced | ✅ evidenced | e2e×3, unit×23 | `chain-community`, `chain-partner`, `uc1` +23 more |
 | `D-15` | Enforced | ✅ evidenced | unit×17 | `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_withdrawing_one_offer_leaves_the_other_granted` +14 more |
 | `D-15a` | Enforced | ✅ evidenced | unit×7 | `services/connector/tests/test_consent_provisioning.py::test_decided_at_is_the_authorising_row_not_the_latest_one`, `services/connector/tests/test_consent_provisioning.py::test_a_dataset_wide_withdrawal_denies_every_offer`, `services/connector/tests/test_consent_provisioning.py::test_a_blanket_withdrawal_closes_an_earlier_per_party_grant` +4 more |
 | `D-15b` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consent_provisioning.py::test_audience_omits_a_subject_who_opted_out_of_this_consumer` |
