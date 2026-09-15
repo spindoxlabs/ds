@@ -1378,6 +1378,11 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow consent-request
 
+  e2e:wildcard-admission:
+    desc: "E2E: an offer-scoped grant admits the controller, not a second consumer"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow wildcard-admission
+
   e2e:org-onboarding:
     desc: "E2E: organisation onboarding lifecycle and gates"
     cmds:

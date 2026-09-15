@@ -218,35 +218,61 @@ class SmokeFlow(BaseFlow):
             )
             return result
 
-        novel_consumer = "did:web:novel.dataspaces.localhost"
-        wildcard_check = (
-            self.http.get(
-                f"{s.connector_url}/internal/consent/check?"
-                + urllib.parse.urlencode(
-                    {
-                        "dataset_id": s.asset_id,
-                        "consumer_id": novel_consumer,
-                        "subject_id": s.data_subject_id,
-                        "purpose": s.consented_purpose,
-                    }
-                ),
-                headers=svc_headers,
+        def _wildcard_check(consumer: str) -> dict[str, Any]:
+            return (
+                self.http.get(
+                    f"{s.connector_url}/internal/consent/check?"
+                    + urllib.parse.urlencode(
+                        {
+                            "dataset_id": s.asset_id,
+                            "consumer_id": consumer,
+                            "subject_id": s.data_subject_id,
+                            "purpose": s.consented_purpose,
+                        }
+                    ),
+                    headers=svc_headers,
+                )
+                or {}
             )
-            or {}
-        )
-        if not wildcard_check.get("consent_active"):
+
+        # **A novel consumer is refused, and this step used to assert the
+        # opposite.** `did:web:novel…` is registered nowhere — no agreement, no
+        # capacity, no membership — and the assertion here was that the wildcard
+        # authorised it anyway, under the heading "authorises any in-circle
+        # consumer". A party the registry has never heard of is not in the
+        # circle; it is the *new controller* D-14 says the wildcard never
+        # admits, and the word "novel" was already saying so.
+        novel_consumer = "did:web:novel.dataspaces.localhost"
+        novel_check = _wildcard_check(novel_consumer)
+        if novel_check.get("consent_active"):
             result.fail_step(
                 "wildcard consent",
-                "a consumer with no specific row was not authorised by the wildcard",
-                reason=wildcard_check.get("reason"),
+                "a consumer the registry has never heard of was authorised by the "
+                "wildcard — D-14 says it never admits a new controller",
+                novel_consumer=novel_consumer,
+            )
+            return result
+
+        # The positive half, so the step still proves the wildcard *does*
+        # something: the party the offer names as controller reads the rows the
+        # subject consented to share.
+        controller_check = _wildcard_check(s.provider_did)
+        if not controller_check.get("consent_active"):
+            result.fail_step(
+                "wildcard consent",
+                "the offer's own controller was not authorised by the wildcard "
+                "provisioned against that offer",
+                controller=s.provider_did,
+                reason=controller_check.get("reason"),
             )
             return result
         result.pass_step(
             "wildcard consent",
-            "operator-provisioned wildcard authorises any in-circle consumer for the "
-            "consented purpose",
+            "the operator-provisioned wildcard authorises the offer's controller "
+            "and refuses a party outside the circle",
             wildcard_datasets=[r.get("dataset_id") for r in wildcard_rows],
-            novel_consumer=novel_consumer,
+            refused=novel_consumer,
+            admitted=s.provider_did,
         )
 
         # 7. Negotiate

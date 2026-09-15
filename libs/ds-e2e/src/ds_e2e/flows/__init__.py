@@ -24,6 +24,7 @@ from ds_e2e.flows.uc1 import UC1Flow
 from ds_e2e.flows.uc2 import UC2Flow
 from ds_e2e.flows.uc3 import UC3Flow
 from ds_e2e.flows.user_authority import UserAuthorityFlow
+from ds_e2e.flows.wildcard_admission import WildcardAdmissionFlow
 
 # Ordered cheapest-and-most-fundamental first: a failing contract or trust-chain
 # assertion explains most downstream failures, so `--flow all` surfaces it before
@@ -35,6 +36,20 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "dcp-trust": DcpTrustFlow,
     "consent-purpose": ConsentPurposeFlow,
     "consent-request": ConsentRequestFlow,
+    # Beside `consent-request`, which covers the *interactive* path — an ask is
+    # raised and a person decides. This one covers the standing path's blind
+    # spot: who an offer-scoped grant already made admits without anyone being
+    # asked at all.
+    #
+    # **Before `smoke`, and it has to be.** Its cleanup *deletes* its own
+    # `household-energy-flexibility` rows rather than withdrawing them — a
+    # subject withdrawal cannot be re-provisioned over since
+    # `a-withdrawal-is-the-subjects-to-lift`, and leaving one here made
+    # `onboarding-seam` fail with a 409 that had nothing to do with it. The
+    # delete is scoped to this subject, this offer and the two consumer ids this
+    # flow writes, so running it before `smoke` keeps it clear of the standing
+    # wildcard `smoke` leaves for `consent-withdrawal`.
+    "wildcard-admission": WildcardAdmissionFlow,
     "org-onboarding": OrgOnboardingFlow,
     # Beside `org-onboarding` because the two are neighbours by name and by
     # nothing else: that one admits an **organisation** to the dataspace, this one
@@ -95,6 +110,7 @@ FAST_FLOWS: tuple[str, ...] = (
     "dcp-trust",
     "consent-purpose",
     "consent-request",
+    "wildcard-admission",
     "org-onboarding",
     # Needs no EDC and no completed exchange — it asserts a control-plane seam.
     # It does write a consent row and provenance events, and withdraws the row in

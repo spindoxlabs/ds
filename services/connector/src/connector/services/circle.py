@@ -32,6 +32,7 @@ recoverable, a skipped one is not.
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
@@ -89,6 +90,145 @@ async def evaluate(
         return CircleVerdict(False, capacity, detail)
 
     return CircleVerdict(True, capacity, f"admitted as {capacity}")
+
+
+async def admits_wildcard(
+    offer: SharingOffer,
+    requester_did: str,
+    identity_registry_url: str,
+    owners_registry=None,
+    token_provider=None,
+    cache: dict | None = None,
+    cache_ttl: float = 0.0,
+) -> tuple[bool, str]:
+    """Does *offer*'s wildcard grant admit *requester_did*?  (`D-14`)
+
+    A person who consents to an offer rather than to a named counterparty gets a
+    ``consumer_id = "*"`` row.  D-14 says what that row means: it "admits any
+    party **inside the circle** for that controller and purpose", and "never
+    admits a new controller".  Two parties qualify, and no others:
+
+    - **the offer's controller** — the party the person was actually told about,
+      and whose processing they consented to;
+    - **a processor of that controller**, inside the circle, disclosed under
+      Art. 13(1)(e) rather than asked.
+
+    Everyone else is *not consented*, including a joint controller that satisfies
+    ``admitted_by``: EDPB 05/2020 para 65 asks that controllers relying on the
+    original consent "should all be named", and being inside the circle is not
+    being named.  That matches :attr:`CircleVerdict.covered_processor`, which is
+    ``inside and capacity == PROCESSOR`` — this function is the same boundary
+    applied on the path where consent is *present*, which is the path that never
+    consulted it.
+
+    The remedy for a refusal is not a closed door: the guard parks, the person is
+    asked, and a per-party grant (`D-15`) admits them.
+
+    **The controller is an alias and the requester is a DID**, so the comparison
+    goes through the owner registry — `example-org` and
+    ``did:web:rec.dataspaces.localhost`` are the same organisation and compare
+    unequal as strings.  Without a registry the alias cannot be resolved, and an
+    unresolvable controller resolves to *not admitted*: the same safe direction
+    the rest of this module takes, because a redundant question is recoverable
+    and a skipped one is not.
+    """
+    controller_alias = offer.recipients.controller
+    cached = _admission_cached(cache, offer.id, requester_did, cache_ttl)
+    if cached is not None:
+        return cached
+
+    # An unresolvable controller disables **this branch only**. Whether the
+    # requester is a processor is independent evidence — it comes from what that
+    # organisation signed and from the offer's own `admitted_by` — so returning
+    # early here would deny a covered processor for a reason that has nothing to
+    # do with it, and `D-5` says a processor is disclosed rather than asked.
+    controller_did = await _controller_did(controller_alias, owners_registry)
+
+    if controller_did is not None and requester_did == controller_did:
+        return _admission_remember(
+            cache,
+            offer.id,
+            requester_did,
+            cache_ttl,
+            (True, f"the offer's controller ({controller_alias})"),
+        )
+
+    verdict = await evaluate(
+        offer,
+        requester_did=requester_did,
+        identity_registry_url=identity_registry_url,
+        token_provider=token_provider,
+    )
+    if verdict.covered_processor:
+        return _admission_remember(
+            cache,
+            offer.id,
+            requester_did,
+            cache_ttl,
+            (True, f"a processor inside the circle of {controller_alias}"),
+        )
+    return _admission_remember(
+        cache,
+        offer.id,
+        requester_did,
+        cache_ttl,
+        (False, f"not the controller and not its processor: {verdict.reason}"),
+    )
+
+
+async def _controller_did(alias: str, owners_registry) -> str | None:
+    """The DID behind an owner alias, or ``None`` when it cannot be resolved."""
+    if owners_registry is None:
+        log.warning(
+            "No owners registry: controller alias %r cannot be resolved to a DID, "
+            "so the wildcard admits nobody by the controller branch",
+            alias,
+        )
+        return None
+    try:
+        entry = await owners_registry.by_id(alias)
+    except Exception as exc:  # noqa: BLE001 — a registry blip must not admit
+        log.error("Owner lookup failed for controller %r: %s", alias, exc)
+        return None
+    return getattr(entry, "did", None) if entry is not None else None
+
+
+# Admission is read once per dataset per decision, and the circle costs two
+# identity-registry round trips. Cached on the **same clock as the decision it
+# belongs to** (`dataplane_decision_ttl`, 30 s) rather than a clock of its own:
+# `dataset-api` honours that TTL as `cache.ttl_seconds`, so a longer one here
+# would let a data plane keep serving an allow after admission narrowed, and a
+# shorter one would buy nothing the decision cache does not already give away.
+#
+# **The store belongs to the caller, not to this module.** It was a module-level
+# dict, which is one process-wide cache shared by every app built in that
+# process — verdicts leaked between apps, and the suite caught it immediately:
+# a test passed alone and failed in the suite because an earlier test's
+# admission was still cached. `request.app.state` is the same lifetime as the
+# registries this function already reads, and it is thrown away with the app.
+
+
+def _admission_cached(
+    cache: dict | None, offer_id: str, requester_did: str, ttl: float
+) -> tuple[bool, str] | None:
+    if cache is None or ttl <= 0:
+        return None
+    hit = cache.get((offer_id, requester_did))
+    if hit is None or (time.monotonic() - hit[0]) >= ttl:
+        return None
+    return hit[1]
+
+
+def _admission_remember(
+    cache: dict | None,
+    offer_id: str,
+    requester_did: str,
+    ttl: float,
+    answer: tuple[bool, str],
+) -> tuple[bool, str]:
+    if cache is not None and ttl > 0:
+        cache[(offer_id, requester_did)] = (time.monotonic(), answer)
+    return answer
 
 
 async def is_covered_processor(

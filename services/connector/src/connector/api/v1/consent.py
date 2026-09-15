@@ -756,6 +756,15 @@ async def set_my_data_share(
     that controller and purpose*, both stamped here from the offer, and never a
     new controller or purpose. A caller that names ``consumer_id`` explicitly
     still writes a per-party row, which D-15 lets override the standing one.
+
+    **Bounded on the read side, not here.** This route writes one row; who that
+    row admits is decided when it is read, by
+    :func:`connector.services.circle.admits_wildcard` — the offer's controller,
+    resolved from ``recipients.controller`` through the owner registry, or a
+    processor inside its circle. Until 2026-09-15 nothing applied that bound
+    while consent was present, so the sentence above described an intention
+    rather than the code; it is enforced now, and the place to change it is
+    `circle`, never this docstring.
     """
     x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
 

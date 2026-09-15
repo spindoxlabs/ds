@@ -375,6 +375,14 @@ async def dataplane_authorize(
                 purposes=requested,
                 settings=settings,
                 token_provider=getattr(request.app.state, "ir_token_provider", None),
+                admitted_wildcard_offers=await _admitted_wildcard_offers(
+                    request,
+                    settings,
+                    dataset_id=dataset_id,
+                    consumer_id=body.consumer_did,
+                    purposes=requested,
+                    controller_role=None,
+                ),
             )
         )
 
@@ -390,6 +398,69 @@ async def dataplane_authorize(
     }
 
 
+async def _admitted_wildcard_offers(
+    request: Request,
+    settings,
+    *,
+    dataset_id: str,
+    consumer_id: str,
+    purposes: list[str],
+    controller_role: str | None,
+) -> set[str]:
+    """Offers whose wildcard grant admits this consumer (`D-14`).
+
+    **The one place admission is decided.** ``GET /internal/consent/check`` and
+    ``POST /internal/dataplane/authorize`` both call it, so the control plane and
+    the data plane cannot drift about who a standing consent reaches — and
+    ``AgreementConsentFunction``, the in-flight monitor, reads `satisfied` off the
+    first of those, so the EDC inherits the same answer without reimplementing
+    any of it in Java.
+
+    Per offer, because a controller is a property of an offer and not of a
+    dataset: the same consumer can be the controller of one offer on a dataset
+    and a stranger to another.
+
+    Returns only the offers that admit. An offer this consumer is outside is
+    simply absent, and the wildcard row belonging to it then grants nothing —
+    while still denying whatever it outranks, which is `D-15a`'s job and not
+    this one's.
+    """
+    from ...services import circle
+    from ...services import consent_vocabulary as vocab
+
+    offers = vocab.offers_covering(dataset_id, purposes, controller_role)
+    if not offers:
+        return set()
+    # One cache per app, created on first use. Not a module global: that is one
+    # store shared by every app in the process, and verdicts leaked between them.
+    cache = getattr(request.app.state, "wildcard_admission_cache", None)
+    if cache is None:
+        cache = {}
+        request.app.state.wildcard_admission_cache = cache
+
+    admitted: set[str] = set()
+    for offer in offers:
+        ok, why = await circle.admits_wildcard(
+            offer,
+            requester_did=consumer_id,
+            identity_registry_url=settings.identity_registry_url,
+            owners_registry=getattr(request.app.state, "owners_registry", None),
+            token_provider=getattr(request.app.state, "ir_token_provider", None),
+            cache=cache,
+            cache_ttl=settings.dataplane_decision_ttl,
+        )
+        log.debug(
+            "wildcard admission: %s on %s — %s (%s)",
+            consumer_id,
+            offer.id,
+            "admitted" if ok else "refused",
+            why,
+        )
+        if ok:
+            admitted.add(offer.id)
+    return admitted
+
+
 async def _authorize_dataset(
     db: AsyncSession,
     *,
@@ -399,6 +470,7 @@ async def _authorize_dataset(
     purposes: list[str],
     settings,
     token_provider=None,
+    admitted_wildcard_offers: set[str] | None = None,
 ) -> dict:
     """One dataset's verdict, with the row filter that goes with it."""
     from ...services import consent_vocabulary as vocab
@@ -452,7 +524,12 @@ async def _authorize_dataset(
         return verdict(DENY, "purpose_required")
 
     subject_ids = await get_granted_subject_ids(
-        db, dataset_id, consumer_did, purpose=purposes, consent_required=True
+        db,
+        dataset_id,
+        consumer_did,
+        purpose=purposes,
+        consent_required=True,
+        admitted_wildcard_offers=admitted_wildcard_offers,
     )
     if not subject_ids:
         return verdict(DENY, "no_consent")
@@ -595,6 +672,19 @@ async def consent_check(
         consent_required=consent_required,
     )
 
+    # Computed once and used by both branches below, which is the point: the
+    # named-subject verdict and the audience list are the same question asked
+    # about one person and about everybody, and they already share
+    # `decide_for_subject` so they cannot disagree. Admission joins them there.
+    admitted = await _admitted_wildcard_offers(
+        request,
+        settings,
+        dataset_id=dataset_id,
+        consumer_id=consumer_id,
+        purposes=purposes,
+        controller_role=controller_role,
+    )
+
     if subject_id:
         active, reason, row = await check_consent_detail(
             db,
@@ -604,6 +694,7 @@ async def consent_check(
             purpose=purposes,
             controller_role=controller_role,
             consent_required=consent_required,
+            admitted_wildcard_offers=admitted,
         )
         return {
             "subject_id": subject_id,
@@ -626,6 +717,7 @@ async def consent_check(
         purpose=purposes,
         controller_role=controller_role,
         consent_required=consent_required,
+        admitted_wildcard_offers=admitted,
     )
     return {
         "dataset_id": dataset_id,

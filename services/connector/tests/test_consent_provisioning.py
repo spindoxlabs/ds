@@ -14,6 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from connector.db.models import ConsentRequestORM
+from connector.services import circle
 from connector.services.consent_service import (
     WILDCARD_CONSUMER,
     check_consent,
@@ -50,6 +51,35 @@ def _allow_membership(monkeypatch):
         return Membership.MEMBER
 
     monkeypatch.setattr("connector.api.v1.consent.check_subject_membership", _member)
+
+
+@pytest.fixture
+def wildcard_admits(monkeypatch):
+    """Make `CONSUMER` a covered processor of the offer's controller (`D-5`).
+
+    Needed by the route-level tests below since `D-14` started narrowing who a
+    wildcard grant admits: a party that is neither the offer's controller nor a
+    processor inside its circle is no longer authorised by one, and in a unit run
+    nothing resolves either — there is no identity registry and no owner
+    registry, so every party would be refused and these tests would pass or fail
+    for a reason that is not their subject.
+
+    Stubs the three network leaves and lets `circle`'s own logic decide, so this
+    grants no more than a real processor would.
+    """
+
+    async def _capacity(*_args, **_kwargs):
+        return circle.PROCESSOR
+
+    async def _constraint(*_args, **_kwargs):
+        return True
+
+    async def _controller(alias, _registry):
+        return CONTROLLER if alias == "example-org" else None
+
+    monkeypatch.setattr(circle, "_agreement_capacity", _capacity)
+    monkeypatch.setattr(circle, "_check_constraint", _constraint)
+    monkeypatch.setattr(circle, "_controller_did", _controller)
 
 
 def _row(**overrides) -> ConsentRequestORM:
@@ -280,9 +310,21 @@ async def test_admin_shares_is_idempotent(engine, client):
 # ── §3.1 scoped wildcard ──────────────────────────────────────────────────────
 
 
-@pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_wildcard_authorises_any_consumer(engine):
+async def test_the_wildcard_row_matches_any_consumer_id(engine):
+    """Row matching, which is not the same thing as admission.
+
+    A `consumer_id = "*"` row is stored once and matched for whoever asks; that
+    is the storage semantics, and it is what keeps a withdrawal from failing
+    open (`the-members-consent-is-keyed-on-the-counterparty`).
+
+    **This test does not say who D-14 admits, and it used to.** Named
+    `test_wildcard_authorises_any_consumer` and marked `rule("D-14")`, it read
+    as the rule itself — that the wildcard authorises anyone — which is the
+    opposite of what D-14 says. Who a wildcard admits is decided above this
+    function and pinned in `test_wildcard_admission.py`; the marker moved there
+    with it.
+    """
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
@@ -292,7 +334,7 @@ async def test_wildcard_authorises_any_consumer(engine):
             session, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
         )
         assert granted == [SUBJECT]
-        # A different consumer is admitted by the same wildcard.
+        # The same row, matched for a different consumer id.
         granted_other = await get_granted_subject_ids(
             session, DATASET, OTHER_CONSUMER, purpose=["FlexibilityResearch"]
         )
@@ -320,7 +362,8 @@ async def test_specific_revoke_overrides_wildcard(engine):
             session, DATASET, CONSUMER, purpose=["FlexibilityResearch"]
         )
         assert granted == []
-        # Every other consumer still rides the wildcard.
+        # The wildcard row still matches every other consumer id; whether one
+        # of them is *admitted* is D-14's question, not this one's.
         granted_other = await get_granted_subject_ids(
             session, DATASET, OTHER_CONSUMER, purpose=["FlexibilityResearch"]
         )
@@ -380,7 +423,7 @@ async def test_wildcard_controller_role_must_match(engine):
 
 @pytest.mark.rule("D-12")
 @pytest.mark.asyncio
-async def test_legal_basis_surfaces_in_internal_check(client):
+async def test_legal_basis_surfaces_in_internal_check(client, wildcard_admits):
     await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
@@ -409,7 +452,9 @@ async def test_legal_basis_surfaces_in_internal_check(client):
     )
     assert r.status_code == 200
     body = r.json()
-    # The wildcard row decides for a consumer with no specific row of its own.
+    # The wildcard row decides for a consumer with no specific row of its own —
+    # a processor inside the offer's circle, which `wildcard_admits` makes this
+    # one. D-14 is what bounds that; D-12 is what this test is about.
     assert body["consent_active"] is True
     assert body["legal_basis"]["offer_id"] == "test-flexibility"
     assert body["legal_basis"]["submission_ref"] == "20260101-abc123"
@@ -1137,7 +1182,9 @@ async def test_check_consent_agrees_with_the_row_filter(engine, client):
 
 @pytest.mark.rule("D-14", "D-15", "D-20")
 @pytest.mark.asyncio
-async def test_internal_consent_check_does_not_contradict_itself(client):
+async def test_internal_consent_check_does_not_contradict_itself(
+    client, wildcard_admits
+):
     """One route, two branches, and they used to answer differently.
 
     `GET /internal/consent/check` calls `check_consent_detail` when the caller

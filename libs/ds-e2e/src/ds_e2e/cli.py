@@ -35,6 +35,7 @@ class FlowName(StrEnum):
     dcp_trust = "dcp-trust"
     consent_purpose = "consent-purpose"
     consent_request = "consent-request"
+    wildcard_admission = "wildcard-admission"
     org_onboarding = "org-onboarding"
     onboarding_seam = "onboarding-seam"
     uc1 = "uc1"

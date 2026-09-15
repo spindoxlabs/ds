@@ -710,6 +710,7 @@ def resolve_decision(
     purpose: list[str] | None,
     controller_role: str | None,
     consent_required: bool,
+    wildcard_admits: bool = True,
 ) -> tuple[bool, str, ConsentRequestORM | None]:
     """Combine a per-party row with the standing wildcard (§3.1).
 
@@ -738,6 +739,16 @@ def resolve_decision(
     decision, so it neither grants nor blocks — it falls through to whatever the
     subject already decided via the wildcard.  Returns the row that decided, so
     callers can surface its legal-basis evidence.
+
+    ``wildcard_admits`` is `D-14`: whether *this* consumer is inside the circle
+    of the offer this row belongs to — its controller, or a processor of that
+    controller (:func:`circle.admits_wildcard`).  It gates only the direction in
+    which a wildcard row **grants**.  A wildcard row still *denies* whatever it
+    outranks, for everyone: withdrawals spread, and a blanket stop has to close a
+    per-party grant whether or not the wildcard would have admitted that party.
+    Suppressing both directions together would have turned "you are not in this
+    circle" into "your withdrawal does not reach here", which is the same defect
+    pointed the other way.
     """
     if specific is not None:
         if specific.status == "granted":
@@ -763,6 +774,14 @@ def resolve_decision(
         allowed, reason = consent_satisfies(
             wildcard, purpose, controller_role, consent_required
         )
+        if allowed and not wildcard_admits:
+            return (
+                False,
+                "the subject consented to this offer, not to this party: a "
+                "wildcard grant admits the offer's controller and its "
+                "processors, and this consumer is neither (D-14)",
+                wildcard,
+            )
         return allowed, reason, wildcard
     return False, "no consent record", None
 
@@ -799,6 +818,7 @@ def decide_for_subject(
     controller_role: str | None,
     consent_required: bool,
     offer_id: str | None = None,
+    admitted_wildcard_offers: set[str] | None = None,
 ) -> tuple[bool, str, ConsentRequestORM | None]:
     """One subject's verdict over their rows for a dataset, keyed **per offer**.
 
@@ -871,7 +891,31 @@ def decide_for_subject(
             purpose,
             controller_role,
             consent_required,
+            wildcard_admits=_admits(offer),
         )
+
+    def _admits(offer: str | None) -> bool:
+        """`D-14`, per offer — because a controller is a property of an offer.
+
+        One consumer can be the controller of one offer on a dataset and a
+        stranger to another: on the dev fixtures `household-energy-flexibility`
+        is `example-org`'s and `grid-operations-planning` is the grid operator's.
+        A single verdict for the whole call would answer the wrong question for
+        one of them.
+
+        ``None`` means *no narrowing was computed* — the service-layer default,
+        for callers that are not deciding access (and for tests of the storage
+        rules themselves). Every route that decides access passes a set.
+
+        An offer-less wildcard row is never in the set, and that costs nothing:
+        ``POST /consent/my/shares`` writes a bare dataset **grant** to the
+        configured counterparty rather than the wildcard, precisely so it cannot
+        "authorise any party in any role for the purpose". So offer-less wildcard
+        rows are withdrawals, and withdrawals are not gated here.
+        """
+        if admitted_wildcard_offers is None:
+            return True
+        return offer is not None and offer in admitted_wildcard_offers
 
     bare_allowed, bare_reason, bare_row = decide(None)
     bare_withdrawal = (
@@ -935,6 +979,7 @@ async def check_consent_detail(
     controller_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
+    admitted_wildcard_offers: set[str] | None = None,
 ) -> tuple[bool, str, ConsentRequestORM | None]:
     """As :func:`check_consent`, also returning the row that decided.
 
@@ -952,7 +997,12 @@ async def check_consent_detail(
         subject_id=subject_id,
     )
     return decide_for_subject(
-        rows, purpose, controller_role, consent_required, offer_id
+        rows,
+        purpose,
+        controller_role,
+        consent_required,
+        offer_id,
+        admitted_wildcard_offers,
     )
 
 
@@ -1124,6 +1174,7 @@ async def get_granted_subjects(
     controller_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
+    admitted_wildcard_offers: set[str] | None = None,
 ) -> list[GrantedSubject]:
     """Subjects whose latest consent authorises this consumer, purpose and role.
 
@@ -1162,6 +1213,7 @@ async def get_granted_subjects(
             controller_role,
             consent_required,
             offer_id,
+            admitted_wildcard_offers,
         )
         if allowed:
             granted.append(
@@ -1190,6 +1242,7 @@ async def get_granted_subject_ids(
     controller_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
+    admitted_wildcard_offers: set[str] | None = None,
 ) -> list[str]:
     """The subject DIDs of :func:`get_granted_subjects`, in the same order.
 
@@ -1206,5 +1259,6 @@ async def get_granted_subject_ids(
             controller_role,
             consent_required,
             offer_id,
+            admitted_wildcard_offers,
         )
     ]
