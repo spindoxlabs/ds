@@ -623,6 +623,14 @@ services:
       # started with the defaults still in place, and `ENV=dev` switches it off.
       # Production is Helm, which does not run this sync at all.
       ENV: dev
+      # The image's `platform.yaml` declares `loginTheme: rec` / `emailTheme: rec`,
+      # which stock Keycloak does not ship, and `bootstrap` refuses a theme the
+      # server does not list — so the sync stopped there and the whole stack with
+      # it (#36). `null` undeclares the two keys, leaving the realm's themes alone.
+      # The upstream override, not a patched `platform.yaml` mount: ds's realm has
+      # no opinion on themes, and mounting a copy would freeze every other key.
+      CELINE_KEYCLOAK_PLATFORM_LOGIN_THEME: "null"
+      CELINE_KEYCLOAK_PLATFORM_EMAIL_THEME: "null"
       # ── The client secrets the realm is given ────────────────────────────────
       #
       # The mounted files carry each one as `${SVC_…_SECRET:-<client-id>}`
