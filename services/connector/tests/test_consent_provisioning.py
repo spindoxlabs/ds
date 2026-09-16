@@ -727,7 +727,9 @@ async def _provision(
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_audience_returns_the_provisioned_subjects_per_dataset(client):
+async def test_audience_returns_the_provisioned_subjects_per_dataset(
+    client, wildcard_admits
+):
     """The round trip the route exists for: provision, then read back.
 
     The subject sets are keyed per resolved dataset and never flattened. The
@@ -812,7 +814,9 @@ async def test_decided_at_is_the_authorising_row_not_the_latest_one(engine, clie
 
 @pytest.mark.rule("D-15", "D-15b", "A-10")
 @pytest.mark.asyncio
-async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(engine, client):
+async def test_audience_omits_a_subject_who_opted_out_of_this_consumer(
+    engine, client, wildcard_admits
+):
     """The defect this route exists to prevent, asserted end to end.
 
     A per-party opt-out beats the standing wildcard (§3.1). A caller that could
@@ -924,7 +928,7 @@ async def test_audience_rejects_contract_offer(client):
 
 @pytest.mark.rule("D-20")
 @pytest.mark.asyncio
-async def test_audience_reachable_by_connector_admin(client):
+async def test_audience_reachable_by_connector_admin(client, wildcard_admits):
     """Administrative authority over this participant's own consent records.
 
     `require_permission`, not `require_exact_permission` — the same superset
@@ -1026,7 +1030,9 @@ async def _audience(client, offer: str, consumer: str = CONSUMER) -> list[str]:
 
 @pytest.mark.rule("D-14", "D-15", "L-2")
 @pytest.mark.asyncio
-async def test_declining_one_offer_does_not_erase_a_grant_on_another(client):
+async def test_declining_one_offer_does_not_erase_a_grant_on_another(
+    client, wildcard_admits
+):
     """The defect, in the order that used to lose the grant.
 
     `test-flexibility` and `test-grid-planning` are two consent-based offers over
@@ -1044,7 +1050,7 @@ async def test_declining_one_offer_does_not_erase_a_grant_on_another(client):
 
 @pytest.mark.rule("D-14", "D-15")
 @pytest.mark.asyncio
-async def test_the_audience_does_not_depend_on_decision_order(client):
+async def test_the_audience_does_not_depend_on_decision_order(client, wildcard_admits):
     """The same two decisions, made the other way round, answer the same.
 
     Order-dependence was the symptom that proved the collapse was a defect and
@@ -1060,7 +1066,9 @@ async def test_the_audience_does_not_depend_on_decision_order(client):
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_a_grant_on_one_offer_is_not_an_audience_for_another(client):
+async def test_a_grant_on_one_offer_is_not_an_audience_for_another(
+    client, wildcard_admits
+):
     """Keyed on the offer, not merely filtered by its purpose.
 
     Purpose very nearly separates the fixture's two consent offers and does not
@@ -1077,7 +1085,9 @@ async def test_a_grant_on_one_offer_is_not_an_audience_for_another(client):
 
 @pytest.mark.rule("D-15", "A-10")
 @pytest.mark.asyncio
-async def test_withdrawing_the_offer_empties_its_own_audience_only(client):
+async def test_withdrawing_the_offer_empties_its_own_audience_only(
+    client, wildcard_admits
+):
     """Withdrawal stays scoped to the offer it was made about."""
     await _provision_offer(client, "test-flexibility", True)
     await _provision_offer(client, "test-grid-planning", True)
@@ -1091,7 +1101,9 @@ async def test_withdrawing_the_offer_empties_its_own_audience_only(client):
 
 @pytest.mark.rule("D-15a", "A-10")
 @pytest.mark.asyncio
-async def test_a_dataset_wide_withdrawal_denies_every_offer(engine, client):
+async def test_a_dataset_wide_withdrawal_denies_every_offer(
+    engine, client, wildcard_admits
+):
     """A decision that names no offer is not scoped to one.
 
     `POST /consent/my/shares` with a bare `dataset_id` — the `/my-data` "Stop"
@@ -1256,7 +1268,9 @@ async def _rows(engine, **filters) -> list[ConsentRequestORM]:
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_a_members_own_decision_is_in_the_offers_audience(client):
+async def test_a_members_own_decision_is_in_the_offers_audience(
+    client, wildcard_admits
+):
     """The repro from the issue, and the one assertion that was missing.
 
     The member decides, the controller asks who consented, and the answer names
@@ -1291,7 +1305,9 @@ async def test_the_two_writers_of_one_offer_record_one_row(engine, client):
 
 @pytest.mark.rule("D-15")
 @pytest.mark.asyncio
-async def test_a_members_withdrawal_reaches_the_row_onboarding_provisioned(client):
+async def test_a_members_withdrawal_reaches_the_row_onboarding_provisioned(
+    client, wildcard_admits
+):
     """The direction that must not be wrong: withdrawal.
 
     Onboarding records the standing consent as a wildcard row; the member later
@@ -1492,7 +1508,9 @@ async def test_a_simultaneous_withdrawal_and_grant_resolve_to_denied(engine):
 
 @pytest.mark.rule("D-14", "D-15a")
 @pytest.mark.asyncio
-async def test_a_dataset_wide_withdrawal_yields_to_a_later_offer_decision(client):
+async def test_a_dataset_wide_withdrawal_yields_to_a_later_offer_decision(
+    client, wildcard_admits
+):
     """The offer axis, in the order the old rule could not express.
 
     Stop sharing the dataset, then turn one offer back on. The offer decision is

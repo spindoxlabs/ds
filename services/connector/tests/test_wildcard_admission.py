@@ -231,6 +231,37 @@ async def test_the_data_plane_refuses_an_independent_controller_on_a_wildcard(
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
+async def test_the_offer_audience_omits_an_independent_controller_on_a_wildcard(
+    engine, client, monkeypatch
+):
+    """The admin audience read must agree with the check it precedes.
+
+    `GET /consent/admin/shares` is read *before* a disclosure, so listing a
+    subject the data plane will then refuse sends the caller to the wrong party,
+    and the refusal only shows up later as a parked consent request.
+    """
+    _capacity(monkeypatch, circle.INDEPENDENT_CONTROLLER)
+    await _wildcard_grant(engine)
+
+    response = await client.get(
+        "/consent/admin/shares",
+        params={"offer_id": "test-flexibility", "consumer_id": INDEPENDENT},
+        headers=make_headers(scope="connector.consent.audience"),
+    )
+    assert response.status_code == 200, response.text
+    assert [d["subject_ids"] for d in response.json()["datasets"]] == [[]]
+
+    response = await client.get(
+        "/consent/admin/shares",
+        params={"offer_id": "test-flexibility", "consumer_id": CONTROLLER},
+        headers=make_headers(scope="connector.consent.audience"),
+    )
+    assert response.status_code == 200, response.text
+    assert [d["subject_ids"] for d in response.json()["datasets"]] == [[SUBJECT]]
+
+
+@pytest.mark.rule("D-14")
+@pytest.mark.asyncio
 async def test_a_joint_controller_reads_nothing_on_a_wildcard(
     engine, client, monkeypatch
 ):

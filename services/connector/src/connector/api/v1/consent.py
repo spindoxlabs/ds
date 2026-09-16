@@ -35,6 +35,7 @@ from ...services.membership_check import (
     resolve_dataset_owner,
 )
 from ...services.prov_bridge import ProvBridge
+from .internal import _admitted_wildcard_offers
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/consent", tags=["consent"])
@@ -1103,10 +1104,12 @@ class OfferAudience(BaseModel):
 
 @router.get("/admin/shares", response_model=OfferAudience)
 async def admin_read_offer_audience(
+    request: Request,
     offer_id: str = Query(..., min_length=1),
     consumer_id: str = Query(..., min_length=1),
     _claims: dict = Depends(require_consent_audience),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
 ):
     """Who currently consents to this offer, for this consumer.
 
@@ -1164,6 +1167,11 @@ async def admin_read_offer_audience(
     name one purpose with different controllers, and `test-flexibility` in the
     connector's own fixture declares no ``controller_role`` at all.
 
+    **Bounded by `D-14`, as the data plane is.** A wildcard row reaches this
+    consumer only if ``_admitted_wildcard_offers`` admits it — the helper
+    ``GET /internal/consent/check`` uses — so this route cannot list an audience
+    the connector would then refuse to serve.
+
     An unknown offer is a 422 and a contract-based offer is a 409 — the same two
     answers ``POST /consent/admin/shares`` gives, for the same reasons. An offer
     resolving to no dataset is a 422 as well, matching ``POST /admin/disclosure``:
@@ -1210,6 +1218,14 @@ async def admin_read_offer_audience(
         # short-circuit `consent_satisfies` to "allow" for *any* granted row,
         # including one recorded for a different offer's purpose. This is the
         # same assertion `_authorize_dataset` makes on the data plane.
+        admitted = await _admitted_wildcard_offers(
+            request,
+            settings,
+            dataset_id=dataset_id,
+            consumer_id=consumer_id,
+            purposes=[offer.purpose],
+            controller_role=offer.recipients.controller_role,
+        )
         granted = await consent_service.get_granted_subjects(
             db,
             dataset_id,
@@ -1218,6 +1234,7 @@ async def admin_read_offer_audience(
             controller_role=offer.recipients.controller_role,
             consent_required=True,
             offer_id=offer.id,
+            admitted_wildcard_offers=admitted,
         )
         granted = sorted(granted, key=lambda subject: subject.subject_id)
         datasets.append(
