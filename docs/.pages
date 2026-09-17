@@ -6,4 +6,5 @@ nav:
   - Deployment: deployment
   - Blueprints: blueprints
   - Standards: standards
+  - EDC internals: edc
   - Schemas: schemas

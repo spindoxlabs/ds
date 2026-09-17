@@ -471,14 +471,14 @@ def _owners() -> list[dict]:
     """A deployment-shaped owners file: celine fields only, no `dataspace:`."""
     return [
         {
-            "id": "set-distribuzione",
-            "name": "SET Distribuzione S.p.A.",
+            "id": "example-dso",
+            "name": "Example DSO S.p.A.",
             "did": "did:web:dso.dataspaces.localhost",
             "aliases": ["dso"],
         },
         {
-            "id": "greenland",
-            "name": "Greenland Soc. Coop.",
+            "id": "example-rec",
+            "name": "Example REC Soc. Coop.",
             "did": "did:web:rec.dataspaces.localhost",
             "aliases": ["rec"],
         },
@@ -506,7 +506,7 @@ def _governance(tmp_path, body: str, name: str = "governance.yaml"):
 
 def test_governance_selects_the_owners_it_names_by_alias(tmp_path):
     """`dso` is a placeholder alias in the open-source pipelines; the file's own
-    id is `set-distribuzione`. The registry's id/alias swap is what joins them,
+    id is `example-dso`. The registry's id/alias swap is what joins them,
     and it is the reason this selector can read a governance file written by
     somebody who has never seen the deployment's owner registry."""
     gov = _governance(
@@ -524,7 +524,7 @@ def test_governance_selects_the_owners_it_names_by_alias(tmp_path):
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
     assert selection.ok
-    assert [e["id"] for e in selection.entries] == ["set-distribuzione"]
+    assert [e["id"] for e in selection.entries] == ["example-dso"]
 
 
 def test_the_open_data_owners_are_not_selected(tmp_path):
@@ -536,7 +536,7 @@ def test_the_open_data_owners_are_not_selected(tmp_path):
         sources:
           datasets.gold.a:
             ownership:
-              - name: greenland
+              - name: example-rec
             dataspace:
               expose: true
     """,
@@ -544,7 +544,7 @@ def test_the_open_data_owners_are_not_selected(tmp_path):
 
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
-    assert [e["id"] for e in selection.entries] == ["greenland"]
+    assert [e["id"] for e in selection.entries] == ["example-rec"]
 
 
 def test_two_governance_files_select_the_union_once_each(tmp_path):
@@ -574,7 +574,7 @@ def test_two_governance_files_select_the_union_once_each(tmp_path):
 
     selection = ops.select_entries(_owners(), governance_paths=[gov_a, gov_b])
 
-    assert [e["id"] for e in selection.entries] == ["set-distribuzione", "greenland"]
+    assert [e["id"] for e in selection.entries] == ["example-dso", "example-rec"]
 
 
 def test_an_owner_governance_names_and_the_file_does_not_declare_is_an_error(tmp_path):
@@ -640,7 +640,7 @@ def test_an_owner_with_neither_did_nor_url_is_skipped_not_failed(tmp_path):
         sources:
           datasets.gold.a:
             ownership:
-              - {name: greenland, type: organization}
+              - {name: example-rec, type: organization}
               - {name: nameless-consortium, type: consortium}
             dataspace: {expose: true}
     """,
@@ -650,7 +650,7 @@ def test_an_owner_with_neither_did_nor_url_is_skipped_not_failed(tmp_path):
 
     assert selection.ok
     assert selection.errors == []
-    assert [e["id"] for e in selection.entries] == ["greenland"]
+    assert [e["id"] for e in selection.entries] == ["example-rec"]
     assert "nameless-consortium" in selection.skips
     assert "neither did nor url" in selection.skips["nameless-consortium"]
 
@@ -765,7 +765,7 @@ def test_without_governance_the_selector_is_carrying_a_did():
     selection = ops.select_entries(_owners(), governance_paths=None)
 
     assert selection.ok
-    assert [e["id"] for e in selection.entries] == ["set-distribuzione", "greenland"]
+    assert [e["id"] for e in selection.entries] == ["example-dso", "example-rec"]
 
 
 # ── Per-run evidence ──────────────────────────────────────────────
@@ -800,7 +800,7 @@ async def test_run_evidence_onboards_an_entry_with_no_dataspace_block(
     assert steps["participant"] == "skipped"
 
     owner = (await db_session.execute(select(Owner))).scalars().one()
-    assert owner.id == "set-distribuzione"
+    assert owner.id == "example-dso"
     assert owner.did == "did:web:dso.dataspaces.localhost"
     assert owner.aliases == ["dso"]
     assert owner.status == "verified"
@@ -1019,14 +1019,14 @@ async def test_a_first_run_still_writes_a_complete_row(db_session, tmp_path):
         (
             await db_session.execute(
                 select(OrganizationApplication).where(
-                    OrganizationApplication.alias == "greenland"
+                    OrganizationApplication.alias == "example-rec"
                 )
             )
         )
         .scalars()
         .one()
     )
-    assert app.legal_name == "Greenland Soc. Coop."
+    assert app.legal_name == "Example REC Soc. Coop."
     assert app.roles == ["consumer"]
     assert app.did == "did:web:rec.dataspaces.localhost"
 
@@ -1068,7 +1068,7 @@ def test_the_governance_selector_reports_its_own_reason(tmp_path):
 
     Every entry here also lacks a `dataspace:` block, so "no dataspace: block" is
     *true* of each of them and is the reason for none. The entry that proves the
-    difference is `greenland`: it carries a DID, it is perfectly registerable, and
+    difference is `example-rec`: it carries a DID, it is perfectly registerable, and
     it is out purely because nothing exposed names it.
     """
     gov = _governance(
@@ -1086,7 +1086,7 @@ def test_the_governance_selector_reports_its_own_reason(tmp_path):
     selection = ops.select_entries(_owners(), governance_paths=[gov])
 
     assert selection.skipped_reason == "governance does not name it"
-    assert [e["id"] for e in selection.entries] == ["set-distribuzione"]
+    assert [e["id"] for e in selection.entries] == ["example-dso"]
 
 
 def test_the_did_selector_reports_its_own_reason():
@@ -1100,7 +1100,7 @@ async def test_run_evidence_skip_names_the_selector_not_the_missing_block(
     db_session, tmp_path
 ):
     settings = await _seed(db_session, tmp_path)
-    entry = {"id": "greenland", "name": "Greenland", "did": "did:web:g.example.org"}
+    entry = {"id": "example-rec", "name": "Example REC", "did": "did:web:g.example.org"}
 
     outcome = await ops.apply_owner_entry(
         db_session,

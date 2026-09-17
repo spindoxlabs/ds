@@ -1,0 +1,10 @@
+title: EDC 0.18.0
+nav:
+  - index.md
+  - control-plane.md
+  - policy-engine.md
+  - identity-and-trust.md
+  - management-api.md
+  - participant-context.md
+  - data-plane.md
+  - events-and-extensibility.md

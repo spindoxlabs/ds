@@ -61,6 +61,7 @@ provenance store; the **authority** runs one identity registry for the whole dat
 | know what the dataspace has decided | [Rulebook](rulebook/index.md) |
 | know what a dataspace must implement | [Blueprints](blueprints/index.md) |
 | check which external specification we pin, and why | [Standards](standards/index.md) |
+| know what upstream EDC already does before building around it | [EDC internals](edc/index.md) — per pinned EDC version |
 | validate a governance file before syncing it | [Schemas](schemas/index.md) — published JSON Schemas at stable URLs |
 
 ## The five ideas worth knowing first

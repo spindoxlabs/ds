@@ -393,7 +393,7 @@ eligible, and two flags decide the rest:
 
 | Flag | What it does |
 |---|---|
-| `--governance` (repeatable) | Selects the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `set-distribuzione` here. The onboarded set is derived from the data actually published rather than listed a second time |
+| `--governance` (repeatable) | Selects the owners named by a dataset the file **exposes into the dataspace** (`dataspace.expose`), resolved through the registry's id/alias swap — so `dso` in a pipeline written elsewhere reaches `example-dso` here. The onboarded set is derived from the data actually published rather than listed a second time |
 | `--verified-by`, `--evidence-ref` | The run's verification evidence, applied to entries that supply none. Never to entries that do: a per-entry block's claim is left alone and reported as `verification unchanged`, because overwriting a DPA reference with a generic run string would downgrade the evidence behind an issued credential |
 
 **A machine-local DID is refused under `DS_ENV=production`.** Both seed entry points —

@@ -33,13 +33,13 @@ runner = CliRunner()
 @pytest.mark.parametrize(
     "did,host",
     [
-        ("did:web:greenland.dataspaces.localhost", "greenland.dataspaces.localhost"),
+        ("did:web:example-rec.dataspaces.localhost", "example-rec.dataspaces.localhost"),
         # The percent-encoded port is the canonical spelling; the port is not
         # part of the host.
         ("did:web:rec.dataspaces.localhost%3A9010", "rec.dataspaces.localhost"),
         # Path segments name a person, not a host — only the first is the host.
         ("did:web:rec.example.org:users:alice", "rec.example.org"),
-        ("did:web:greenland.celine.example.eu", "greenland.celine.example.eu"),
+        ("did:web:example-rec.example.org", "example-rec.example.org"),
         ("did:key:z6MkjRagNiMu91DduvCvgEsqLZDVzrJzFrwahc4tXLt9DoHd", None),
         ("", None),
     ],
@@ -51,7 +51,7 @@ def test_did_web_host(did, host):
 @pytest.mark.parametrize(
     "did",
     [
-        "did:web:greenland.dataspaces.localhost",
+        "did:web:example-rec.dataspaces.localhost",
         "did:web:provider.dataspaces.localhost",
         "did:web:rec.dataspaces.localhost%3A9010",
         "did:web:localhost",
@@ -68,8 +68,8 @@ def test_machine_local_dids_are_named(did):
     [
         # The shape this deployment is heading for: real subdomains of an
         # infrastructure the organisation actually serves.
-        "did:web:greenland.ds.celine.example.eu",
-        "did:web:dso.ds.celine.example.eu",
+        "did:web:example-rec.ds.example.org",
+        "did:web:dso.ds.example.org",
         "did:web:rec.example.org:users:alice",
         # Not did:web at all — this classifier has nothing to say about it.
         "did:key:z6MkjRagNiMu91DduvCvgEsqLZDVzrJzFrwahc4tXLt9DoHd",
@@ -92,8 +92,8 @@ def _owners_file(tmp_path, did: str, name: str = "owners.yaml"):
     path = tmp_path / name
     path.write_text(
         "owners:\n"
-        "  - id: greenland\n"
-        "    name: Greenland Soc. Coop.\n"
+        "  - id: example-rec\n"
+        "    name: Example REC Soc. Coop.\n"
         f"    did: {did}\n"
         "    aliases: [rec]\n"
     )
@@ -102,12 +102,12 @@ def _owners_file(tmp_path, did: str, name: str = "owners.yaml"):
 
 def test_owner_import_refuses_a_dev_did_in_production(tmp_path, monkeypatch):
     monkeypatch.setenv("DS_ENV", "production")
-    owners = _owners_file(tmp_path, "did:web:greenland.dataspaces.localhost")
+    owners = _owners_file(tmp_path, "did:web:example-rec.dataspaces.localhost")
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
     assert result.exit_code == 1
-    assert "greenland.dataspaces.localhost" in result.output
+    assert "example-rec.dataspaces.localhost" in result.output
     assert "did:web is a URL" in result.output
 
 
@@ -115,7 +115,7 @@ def test_the_same_seed_is_accepted_in_dev(tmp_path, monkeypatch):
     """The dev DIDs *are* `.localhost`, and that is correct there. A guard that
     fired in dev would make the committed dev seed unusable."""
     monkeypatch.setenv("DS_ENV", "dev")
-    owners = _owners_file(tmp_path, "did:web:greenland.dataspaces.localhost")
+    owners = _owners_file(tmp_path, "did:web:example-rec.dataspaces.localhost")
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
@@ -124,7 +124,7 @@ def test_the_same_seed_is_accepted_in_dev(tmp_path, monkeypatch):
 
 def test_a_real_host_passes_the_guard_in_production(tmp_path, monkeypatch):
     monkeypatch.setenv("DS_ENV", "production")
-    owners = _owners_file(tmp_path, "did:web:greenland.ds.celine.example.eu")
+    owners = _owners_file(tmp_path, "did:web:example-rec.ds.example.org")
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
@@ -136,7 +136,7 @@ def test_forgetting_ds_env_refuses_rather_than_permits(tmp_path, monkeypatch):
     chart that drops the variable in a refactor fails loudly instead of writing
     a machine-local identity into a real registry."""
     monkeypatch.delenv("DS_ENV", raising=False)
-    owners = _owners_file(tmp_path, "did:web:greenland.dataspaces.localhost")
+    owners = _owners_file(tmp_path, "did:web:example-rec.dataspaces.localhost")
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
@@ -148,18 +148,18 @@ def test_every_violation_is_reported_in_one_pass(tmp_path, monkeypatch):
     owners = tmp_path / "owners.yaml"
     owners.write_text(
         "owners:\n"
-        "  - id: greenland\n    did: did:web:greenland.dataspaces.localhost\n"
-        "  - id: spxl\n    did: did:web:provider.dataspaces.localhost\n"
-        "  - id: dso\n    did: did:web:dso.ds.celine.example.eu\n"
+        "  - id: example-rec\n    did: did:web:example-rec.dataspaces.localhost\n"
+        "  - id: example-org\n    did: did:web:provider.dataspaces.localhost\n"
+        "  - id: dso\n    did: did:web:dso.ds.example.org\n"
         "  - id: openstreetmap\n    url: https://www.openstreetmap.org\n"
     )
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
     assert result.exit_code == 1
-    assert "greenland" in result.output and "spxl" in result.output
+    assert "example-rec" in result.output and "example-org" in result.output
     # The servable one and the one with no DID at all are not violations.
-    assert "dso.ds.celine.example.eu" not in result.output
+    assert "dso.ds.example.org" not in result.output
     assert "openstreetmap" not in result.output
 
 
@@ -167,7 +167,7 @@ def test_org_apply_refuses_a_dev_did_in_production(tmp_path, monkeypatch):
     """The other seed entry point, and the one a deployment's owners.yaml goes
     through — reached by the `--governance`/`--verified-by` path."""
     monkeypatch.setenv("DS_ENV", "production")
-    owners = _owners_file(tmp_path, "did:web:greenland.dataspaces.localhost")
+    owners = _owners_file(tmp_path, "did:web:example-rec.dataspaces.localhost")
 
     result = runner.invoke(
         cli,
@@ -175,7 +175,7 @@ def test_org_apply_refuses_a_dev_did_in_production(tmp_path, monkeypatch):
     )
 
     assert result.exit_code == 1
-    assert "greenland.dataspaces.localhost" in result.output
+    assert "example-rec.dataspaces.localhost" in result.output
 
 
 def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
@@ -188,8 +188,8 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
     owners = tmp_path / "owners.yaml"
     owners.write_text(
         "owners:\n"
-        "  - id: greenland\n    did: did:web:greenland.dataspaces.localhost\n"
-        "  - id: dso\n    did: did:web:dso.ds.celine.example.eu\n"
+        "  - id: example-rec\n    did: did:web:example-rec.dataspaces.localhost\n"
+        "  - id: dso\n    did: did:web:dso.ds.example.org\n"
     )
     gov = tmp_path / "governance.yaml"
     gov.write_text(
@@ -213,7 +213,7 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
         ],
     )
 
-    assert "greenland.dataspaces.localhost" not in result.output
+    assert "example-rec.dataspaces.localhost" not in result.output
 
 
 def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
@@ -231,9 +231,9 @@ def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
     owners = tmp_path / "owners.yaml"
     owners.write_text(
         "owners:\n"
-        "  - id: dso\n    did: did:web:dso.ds.celine.example.eu\n"
-        "  - id: spxl\n"
-        "    did: did:web:spxl.dataspaces.localhost\n"
+        "  - id: dso\n    did: did:web:dso.ds.example.org\n"
+        "  - id: example-org\n"
+        "    did: did:web:example-org.dataspaces.localhost\n"
         "    dataspace:\n"
         "      legal_name: Spindox Labs S.r.l.\n"
         "      roles: [consumer]\n"
@@ -261,9 +261,9 @@ def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
     )
 
     assert result.exit_code == 1
-    assert "spxl.dataspaces.localhost" in result.output
+    assert "example-org.dataspaces.localhost" in result.output
     # The selected entry is servable, and is not reported as a violation.
-    assert "dso.ds.celine.example.eu" not in result.output
+    assert "dso.ds.example.org" not in result.output
 
 
 # ── The HTTP write paths ──────────────────────────────────────────
@@ -283,8 +283,8 @@ def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
 # means no deployment's behaviour changed when this landed — which is what the
 # `_allowed` half of every pair below asserts, and it is the more important half.
 
-DEV_DID = "did:web:greenland.dataspaces.localhost"
-REAL_DID = "did:web:greenland.celine.example.eu"
+DEV_DID = "did:web:example-rec.dataspaces.localhost"
+REAL_DID = "did:web:example-rec.example.org"
 
 
 @pytest_asyncio.fixture
@@ -310,7 +310,7 @@ async def refusing_client(engine):
         yield ac
 
 
-def _owner_body(did: str, owner_id: str = "greenland") -> dict:
+def _owner_body(did: str, owner_id: str = "example-rec") -> dict:
     return {"id": owner_id, "type": "schema:Organization", "name": "G", "did": did}
 
 
@@ -357,12 +357,12 @@ async def test_update_owner_refuses_a_dev_did_when_enabled(refusing_client):
     assert created.status_code == 201
 
     r = await refusing_client.put(
-        "/admin/owners/greenland",
+        "/admin/owners/example-rec",
         json={"did": DEV_DID},
         headers=make_headers(),
     )
     assert r.status_code == 422
-    assert "PUT /admin/owners/greenland" in r.json()["detail"]
+    assert "PUT /admin/owners/example-rec" in r.json()["detail"]
 
 
 @pytest.mark.asyncio
@@ -373,12 +373,12 @@ async def test_patch_owner_refuses_a_dev_did_when_enabled(refusing_client):
     assert created.status_code == 201
 
     r = await refusing_client.patch(
-        "/admin/owners/greenland",
+        "/admin/owners/example-rec",
         json={"did": DEV_DID},
         headers=make_headers(),
     )
     assert r.status_code == 422
-    assert "PATCH /admin/owners/greenland" in r.json()["detail"]
+    assert "PATCH /admin/owners/example-rec" in r.json()["detail"]
 
 
 # The two routes above are the ones a person reaches. These are the other three

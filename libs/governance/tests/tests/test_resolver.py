@@ -371,7 +371,7 @@ def test_yaml_that_is_not_a_governance_file_names_the_file(tmp_path):
     `AttributeError` from a dict comprehension. The operator who mistyped a path
     needs to be told which path."""
     path = tmp_path / "owners.yaml"
-    path.write_text("- id: greenland\n- id: set-distribuzione\n")
+    path.write_text("- id: example-rec\n- id: example-dso\n")
 
     with pytest.raises(ValueError) as exc:
         GovernanceResolver.from_file(path)

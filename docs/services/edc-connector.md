@@ -9,6 +9,8 @@ One image, deployed once per participant, each with its own configuration file, 
 DID. Everything it serves comes from either upstream EDC or `edc-extensions`; this unit
 contributes the assembly, the packaging and one build-time assertion.
 
+How the upstream runtime works inside is described in [EDC internals](../edc/index.md).
+
 ## Role in the blueprint
 
 | | |
@@ -24,7 +26,7 @@ consumer pulls with. What it may do is decided by [`ds-connector`](connector.md)
 
 | BOM / module | Contributes |
 |---|---|
-| `controlplane-dcp-bom` | the whole control plane: DSP 2025-1 HTTP APIs, Management API v3 and v4beta, contract / transfer / policy state machines, DCP identity, the STS remote client, VC verification, the policy monitor |
+| `controlplane-dcp-bom` | the whole control plane: DSP 2025-1 HTTP APIs, Management API v3 (deprecated) and v4, contract / transfer / policy state machines, DCP identity, the STS remote client, VC verification, the policy monitor |
 | `dataplane-base-bom` | data-plane core, HTTP data source, signalling API and client, data-plane selector and self-registration |
 | `identity-did-web` | `did:web` resolution |
 | `control-plane-sql`, `data-plane-store-sql`, `edr-index-sql`, `policy-monitor-store-sql`, `sql-lease-core`, `sql-pool-apache-commons`, `transaction-local` | PostgreSQL persistence for every store — without the policy-monitor store a restart forgets every watched transfer |
@@ -67,7 +69,7 @@ resource on either. `ApiContext` declares `MANAGEMENT`, `CONTROL` and `PROTOCOL`
 data-plane public API is on the classpath; the management Version API registers on the default
 context. `RuntimeContractTest` fails if either is configured again.
 
-The Management API surface is upstream EDC's v3 and v4beta CRUD over assets, policy
+The Management API surface is upstream EDC's v3 (deprecated) and v4 CRUD over assets, policy
 definitions, contract definitions, negotiations, transfer processes, agreements, EDRs and data
 planes — plus exactly one route this repository adds:
 `POST /management/dataspaces/negotiations/{id}/resume`.
