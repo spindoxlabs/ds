@@ -17,6 +17,65 @@ from identity_registry.services.did_resolver import DidResolutionError
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 
+# ── The unit suite never reaches a real database ──────────────────
+#
+# `Settings.database_url` defaults to `172.17.0.1:35432/identity_registry`, and
+# that is whichever stack happens to publish host port 35432. A test that
+# reached the service's own engine without overriding it (the CLI tests, through
+# `CliRunner`) wrote into that database. The unit suite run on 2026-09-17 did
+# exactly that to a registry of another compose project that published the
+# port: an owner inserted and another owner's DID rewritten, with nothing in the
+# test output to say so.
+#
+# Overriding at each call site cannot prevent the next instance, so the rule is
+# enforced for every test here: the environment names SQLite, the cached
+# settings and engine are dropped before and after, and the engine factory
+# refuses any other URL. A test that trips it has found a path to a real
+# service. The fix is to give that path an injected session, not an exemption.
+#
+# The integration layer opts out by carrying `pytest.mark.integration`, which it
+# declares module-wide. It starts its own processes on databases it creates.
+
+
+class LiveDatabaseInUnitTest(RuntimeError):
+    """A unit test tried to build an engine on a non-SQLite URL."""
+
+
+def _drop_cached_engine() -> None:
+    from identity_registry.config import get_settings
+    from identity_registry.db import engine as engine_module
+
+    get_settings.cache_clear()
+    engine_module._engine = None
+    engine_module._session_factory = None
+
+
+@pytest.fixture(autouse=True)
+def _unit_tests_never_reach_a_real_database(request, monkeypatch):
+    if request.node.get_closest_marker("integration"):
+        yield
+        return
+
+    from identity_registry.db import engine as engine_module
+
+    monkeypatch.setenv("IDENTITY_REGISTRY_DATABASE_URL", TEST_DATABASE_URL)
+    real_factory = engine_module.create_async_engine
+
+    def _sqlite_only(url, *args, **kwargs):
+        if not str(url).startswith("sqlite"):
+            raise LiveDatabaseInUnitTest(
+                f"{request.node.nodeid} tried to open {url!r}. The unit suite "
+                "never reaches a real database: inject a session, or mark the "
+                "test `integration` and run it with `task test:integration`."
+            )
+        return real_factory(url, *args, **kwargs)
+
+    monkeypatch.setattr(engine_module, "create_async_engine", _sqlite_only)
+    _drop_cached_engine()
+    yield
+    _drop_cached_engine()
+
+
 def make_headers(scope: str = "identity-registry.admin") -> dict:
     # `exp` is not decoration. `ds_auth.verify_token` checks expiry even with no
     # issuer configured — signature and audience are the only checks the

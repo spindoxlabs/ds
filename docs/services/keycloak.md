@@ -28,7 +28,6 @@ this*. The two membership systems never query each other, deliberately.
 | `clients.<domain>.yaml` | what a **domain backend** deployed beside ds needs — hand-written overlay |
 | `organizations.yaml` | Keycloak native organisations, their members, and per-organisation group assignments |
 | `realm-dataspaces-dev.json` | the dev realm import — users, groups, the login client |
-| `realm-production.example.json` | a reference for a production realm |
 
 Every file here is hand-written. **ds generates no YAML**: where ds is a guest, the host realm
 mounts `clients.yaml` itself as an overlay, so what crosses is a file boundary rather than a

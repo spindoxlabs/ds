@@ -42,6 +42,8 @@ import jwt as pyjwt
 import pytest
 from conftest import REPO_ROOT
 
+pytestmark = pytest.mark.integration
+
 
 #: `/admin/participants` and `/owners/resolve` both require
 #: `identity-registry.admin` or a read scope, so the runtime path needs a token —

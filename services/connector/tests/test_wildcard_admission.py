@@ -260,6 +260,51 @@ async def test_the_offer_audience_omits_an_independent_controller_on_a_wildcard(
     assert [d["subject_ids"] for d in response.json()["datasets"]] == [[SUBJECT]]
 
 
+@pytest.mark.rule("D-5", "D-14")
+@pytest.mark.asyncio
+async def test_the_offer_audience_omits_a_processor_the_offer_does_not_admit(
+    engine, client, monkeypatch
+):
+    """Capacity is half the circle; the offer's `admitted_by` is the other half.
+
+    The dev consumer holds `capacity: processor` and is not a member of the
+    controller, which `test-flexibility`'s `admitted_by` requires. The live
+    `onboarding-seam` flow read the audience for exactly that party and expected
+    the subject: after #37 the route answers as the data plane does, with nobody.
+    Both readers must agree, so both are asserted on the same rows.
+    """
+    _capacity(monkeypatch, circle.PROCESSOR, admitted=False)
+    await _wildcard_grant(engine)
+
+    assert (await _check(client, PROCESSOR))["subject_ids"] == []
+
+    response = await client.get(
+        "/consent/admin/shares",
+        params={"offer_id": "test-flexibility", "consumer_id": PROCESSOR},
+        headers=make_headers(scope="connector.consent.audience"),
+    )
+    assert response.status_code == 200, response.text
+    assert [d["subject_ids"] for d in response.json()["datasets"]] == [[]]
+
+
+@pytest.mark.rule("D-5", "D-14")
+@pytest.mark.asyncio
+async def test_the_offer_audience_lists_a_processor_the_offer_admits(
+    engine, client, monkeypatch
+):
+    """The regression half: the bound narrows, it does not close the read."""
+    _capacity(monkeypatch, circle.PROCESSOR, admitted=True)
+    await _wildcard_grant(engine)
+
+    response = await client.get(
+        "/consent/admin/shares",
+        params={"offer_id": "test-flexibility", "consumer_id": PROCESSOR},
+        headers=make_headers(scope="connector.consent.audience"),
+    )
+    assert response.status_code == 200, response.text
+    assert [d["subject_ids"] for d in response.json()["datasets"]] == [[SUBJECT]]
+
+
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
 async def test_a_joint_controller_reads_nothing_on_a_wildcard(

@@ -14,6 +14,7 @@ from ds_e2e.config import E2ESettings
 from ds_e2e.flows import CHAIN_FLOWS, FAST_FLOWS, SECURITY_FLOWS
 from ds_e2e.http import HttpClient
 from ds_e2e.models import FlowResult
+from ds_e2e.preflight import REMEDY, data_plane_problems
 from ds_e2e.runner import run_all, run_flow, run_selected
 from ds_e2e.scenario import (
     DEFAULT_SCENARIO,
@@ -204,6 +205,28 @@ def run(
         result = run_flow(flow.value, settings)
         _print_result(result, fmt)
         raise typer.Exit(code=1 if result.failed else 0)
+
+
+@app.command()
+def preflight() -> None:
+    """Refuse early when a data plane the run will query is not there.
+
+    `task e2e:all` runs this before `e2e:prepare`, so a missing real
+    `dataset-api` is one clear message, not two minutes of reset and a red
+    summary. See `ds_e2e.preflight`.
+    """
+    settings = E2ESettings()
+    for label, _ in settings.data_planes:
+        console.print(f"[dim]data plane:[/dim] {label}")
+    problems = data_plane_problems(settings)
+    if not problems:
+        console.print("[green]every configured data plane answers[/green]")
+        return
+    console.print("[red]e2e preflight failed[/red]")
+    for problem in problems:
+        console.print(f"  - {problem}")
+    console.print(REMEDY)
+    raise typer.Exit(code=1)
 
 
 @app.command()

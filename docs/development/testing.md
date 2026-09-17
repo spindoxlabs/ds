@@ -57,9 +57,15 @@ services can be behind it**:
 | celine `dataset-api` | the real, participant-operated data plane. What a deployment runs |
 | `services/dataset-api-mock` | a stand-in, and the **reference implementation** of the PEP contract |
 
-`services/dataset-api-mock/fixtures/seed.sh` puts the real one on `:30002` and moves the mock to `:30022`
-(`DATASET_API_MOCK_PORT`, a committed default). `ds-e2e` reads
-`CONNECTOR_DATASET_API_URL`, default `http://172.17.0.1:30002`.
+`services/dataset-api-mock/fixtures/seed.sh` builds, starts and seeds the real one on `:30002`;
+the mock stays on `:30022`. `ds-e2e` probes `CONNECTOR_DATASET_API_URL` in its health checks and
+queries every plane in `E2E_DATA_PLANES`. The committed `.env.local` sets both to `:30002`.
+
+**`task start` does not start the real plane**, so `task e2e:all` runs `ds-e2e preflight`
+before it resets anything. The preflight refuses when a configured plane does not answer,
+or when the health URL is not one of the queried planes, and prints both remedies: run
+`seed.sh`, or point both variables at `:30022` for a mock-only run, which the summary then
+names.
 
 So **an ordinary `task e2e:all` exercises the real dataset-api and never the mock.** That is
 the right default — a flow that passes only against the mock is evidence about an API nobody
@@ -72,8 +78,9 @@ runs. But it leaves two hazards, and both are live:
    holds `:30002` answers, and *nothing in the run output records which one did*. A suite that
    cannot tell you what it tested cannot be cited as evidence that the two agree.
 
-**Both backends must be run, and each run must name the backend it used.** Until that is
-wired, a change to either data plane needs its own check — see
+**Both backends must be run, and each run must name the backend it used.** Each run prints
+the planes it queries, first and in the summary. A change to either data plane still needs a
+run against that plane — see
 [`docs/services/dataset-api-mock.md`](../services/dataset-api-mock.md).
 
 ## Integration tests: the gap between unit and e2e

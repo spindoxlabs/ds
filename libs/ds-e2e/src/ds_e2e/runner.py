@@ -27,6 +27,24 @@ def run_flow(flow_name: str, settings: E2ESettings) -> FlowResult:
         flow = flow_cls(settings, http)
         log.info("Running flow: %s — %s", flow.name, flow.description)
         return flow.execute()
+    except Exception as exc:
+        # **One flow's exception is that flow's failure, not the run's end.** A
+        # refused connection in `fail-closed` raised out of `run_all`, so
+        # `e2e:all` printed a traceback, no summary and no verdict for the
+        # twenty flows that had already run. `Exception`, not `BaseException`:
+        # Ctrl-C still stops the run, after the cleanup below.
+        #
+        # The steps the flow recorded before raising are lost, because the
+        # result is the flow's local. The step names the exception instead, and
+        # the traceback goes to the log.
+        log.exception("flow %s raised", flow_name)
+        result = FlowResult(flow_name=flow_name)
+        result.fail_step(
+            "unhandled error" if flow is not None else "setup",
+            f"{type(exc).__name__}: {exc}. The flow raised instead of recording "
+            "a failure; the traceback is in the log.",
+        )
+        return result
     finally:
         # `BaseFlow.cleanup` had no caller (`E2E-10` listed it as dead code),
         # and a flow that mutates the stack — `fail-closed` stops a container —

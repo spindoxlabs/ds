@@ -27,13 +27,57 @@ from identity_registry.services.did import dev_only_did_reason, did_web_host
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def cli_database(tmp_path, monkeypatch):
+    """A schema-backed SQLite file for the commands this module invokes.
+
+    These tests used to run `ir-cli` with no database override, so the ones the
+    guard lets through wrote to whatever published `172.17.0.1:35432`. The
+    conftest guard now refuses that. This fixture gives the accepted paths a real
+    database of their own, so they can assert that the import happened instead
+    of asserting only that no refusal was printed.
+    """
+    import asyncio
+
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from sqlalchemy.pool import NullPool
+
+    from identity_registry.config import get_settings
+    from identity_registry.db.engine import Base
+
+    url = f"sqlite+aiosqlite:///{tmp_path / 'registry.db'}"
+
+    async def _create():
+        eng = create_async_engine(url, poolclass=NullPool)
+        async with eng.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        await eng.dispose()
+
+    asyncio.run(_create())
+    monkeypatch.setenv("IDENTITY_REGISTRY_DATABASE_URL", url)
+    # `create_all` builds no `alembic_version`; the schema is this test's own.
+    monkeypatch.setenv("DB_SKIP_SCHEMA_CHECK", "true")
+    get_settings.cache_clear()
+    return url
+
+
+def _owner_ids(url: str) -> set[str]:
+    import sqlite3
+
+    with sqlite3.connect(url.removeprefix("sqlite+aiosqlite:///")) as conn:
+        return {row[0] for row in conn.execute("SELECT id FROM owners")}
+
+
 # ── The classifier ────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
     "did,host",
     [
-        ("did:web:example-rec.dataspaces.localhost", "example-rec.dataspaces.localhost"),
+        (
+            "did:web:example-rec.dataspaces.localhost",
+            "example-rec.dataspaces.localhost",
+        ),
         # The percent-encoded port is the canonical spelling; the port is not
         # part of the host.
         ("did:web:rec.dataspaces.localhost%3A9010", "rec.dataspaces.localhost"),
@@ -111,7 +155,7 @@ def test_owner_import_refuses_a_dev_did_in_production(tmp_path, monkeypatch):
     assert "did:web is a URL" in result.output
 
 
-def test_the_same_seed_is_accepted_in_dev(tmp_path, monkeypatch):
+def test_the_same_seed_is_accepted_in_dev(tmp_path, monkeypatch, cli_database):
     """The dev DIDs *are* `.localhost`, and that is correct there. A guard that
     fired in dev would make the committed dev seed unusable."""
     monkeypatch.setenv("DS_ENV", "dev")
@@ -120,15 +164,21 @@ def test_the_same_seed_is_accepted_in_dev(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
     assert "did:web is a URL" not in result.output
+    assert result.exit_code == 0, result.output
+    assert _owner_ids(cli_database) == {"example-rec"}
 
 
-def test_a_real_host_passes_the_guard_in_production(tmp_path, monkeypatch):
+def test_a_real_host_passes_the_guard_in_production(
+    tmp_path, monkeypatch, cli_database
+):
     monkeypatch.setenv("DS_ENV", "production")
     owners = _owners_file(tmp_path, "did:web:example-rec.ds.example.org")
 
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
     assert "did:web is a URL" not in result.output
+    assert result.exit_code == 0, result.output
+    assert _owner_ids(cli_database) == {"example-rec"}
 
 
 def test_forgetting_ds_env_refuses_rather_than_permits(tmp_path, monkeypatch):
@@ -141,6 +191,7 @@ def test_forgetting_ds_env_refuses_rather_than_permits(tmp_path, monkeypatch):
     result = runner.invoke(cli, ["owner", "import", "--file", str(owners)])
 
     assert result.exit_code == 1
+    assert "did:web is a URL" in result.output
 
 
 def test_every_violation_is_reported_in_one_pass(tmp_path, monkeypatch):

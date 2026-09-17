@@ -560,6 +560,32 @@ def test_a_named_connector_failure_counts_whatever_the_status(settings):
     assert [s.status for s in result.steps] == ["PASS"]
 
 
+def test_an_unreachable_data_plane_is_a_status_not_an_exception(settings):
+    """A refused connection used to escape `_query` and end all of `e2e:all`."""
+    import httpx
+
+    http = MagicMock()
+    http.post_raw.side_effect = httpx.ConnectError("[Errno 111] Connection refused")
+
+    status, payload = _flow(settings, http)._query("http://172.17.0.1:30002", {})
+
+    assert status == 0
+    assert "Connection refused" in payload["detail"]
+
+
+def test_an_unreachable_plane_is_never_the_gates_refusal(settings):
+    """Even when the transport message happens to mention a connector: a data
+    plane that is not running proves nothing about the PDP."""
+    http = MagicMock()
+    http.post_raw.return_value = (0, {"detail": "ds-connector unreachable (sic)"})
+    flow, result = _flow(settings, http), FlowResult(flow_name="t")
+
+    flow._assert_per_query_refusals(result, {})
+
+    assert [s.status for s in result.steps] == ["FAIL"]
+    assert "not for want of the PDP" in result.steps[0].detail
+
+
 def test_every_configured_data_plane_is_queried(settings):
     """`E2E-16` was blocked on `T-1` precisely because asserting this against one
     implementation is evidence about that implementation."""

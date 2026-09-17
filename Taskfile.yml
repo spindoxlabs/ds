@@ -1285,6 +1285,12 @@ tasks:
   e2e:all:
     desc: Run all E2E flows (clean state, EDC restart, fixtures, then every flow)
     cmds:
+      # **First, before anything is reset.** The run queries every plane in
+      # `E2E_DATA_PLANES`, which defaults to the mock *and* the real celine
+      # dataset-api (`docs/development/testing.md`). `task start` runs only the
+      # mock, so without this check a missing real plane surfaced two minutes
+      # later as five `health` failures. The preflight names both remedies.
+      - cd libs/ds-e2e && uv run ds-e2e preflight
       - task: e2e:prepare
       - cd libs/ds-e2e && uv run ds-e2e run --flow all
 

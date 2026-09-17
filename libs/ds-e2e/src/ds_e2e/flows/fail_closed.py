@@ -113,6 +113,8 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any
 
+import httpx
+
 from ds_e2e.config import E2ESettings
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.http import HttpClient
@@ -230,6 +232,9 @@ class Attempt:
 #: what both data planes answer with — a bad gateway *is* the honest code for a
 #: dependency that did not respond.
 _PDP_UNREACHABLE_STATUS = frozenset({502, 503, 504})
+#: What `_query` reports when the data plane itself refused the connection. Never
+#: the gate's refusal, whatever its detail says.
+_DATA_PLANE_UNREACHABLE = 0
 
 
 def _names_the_pdp(detail: str) -> bool:
@@ -759,11 +764,24 @@ class FailClosedFlow(BaseFlow):
     # is consent-gated, exists on both, and both refuse it without a credential.
 
     def _query(self, url: str, headers: dict[str, str]) -> tuple[int, Any]:
-        return self.http.post_raw(
-            f"{url}/query",
-            {"sql": f"SELECT * FROM {self.settings.asset_id}", "limit": 10},
-            headers=headers,
-        )
+        """One query, or `(0, …)` when the data plane itself cannot be reached.
+
+        A refused connection used to escape as `httpx.ConnectError` and end the
+        whole `e2e:all` run with a traceback and no summary. Status `0` is never
+        a pass and never the gate's refusal: the baseline step fails on it, and
+        during the outage it lands in `unattributed`, because a data plane that
+        is not running proves nothing about the PDP.
+        """
+        try:
+            return self.http.post_raw(
+                f"{url}/query",
+                {"sql": f"SELECT * FROM {self.settings.asset_id}", "limit": 10},
+                headers=headers,
+            )
+        except httpx.HTTPError as exc:
+            return _DATA_PLANE_UNREACHABLE, {
+                "detail": f"data plane unreachable: {type(exc).__name__}: {exc}"
+            }
 
     def _establish_query_baseline(
         self, result: FlowResult, headers: dict[str, str]
@@ -872,6 +890,7 @@ class FailClosedFlow(BaseFlow):
                     "during the outage would prove nothing",
                     status_code=status,
                     data_plane=label,
+                    response=payload,
                 )
                 return None
         result.pass_step(
@@ -904,7 +923,9 @@ class FailClosedFlow(BaseFlow):
             observed.append(f"{short}: {status} {detail[:70]}")
             if status == 200 and rows > 0:
                 served.append(f"{short} served {rows} rows (HTTP {status})")
-            elif not (status in _PDP_UNREACHABLE_STATUS or _names_the_pdp(detail)):
+            elif status == _DATA_PLANE_UNREACHABLE or not (
+                status in _PDP_UNREACHABLE_STATUS or _names_the_pdp(detail)
+            ):
                 # **A refusal has to be the gate's.** `E2E-05` is the same lesson:
                 # a 403 is also what an unrelated policy denial produces, and here
                 # the confound is real — with the PDP down, the EDC's policy
@@ -935,9 +956,10 @@ class FailClosedFlow(BaseFlow):
             return
         result.pass_step(
             "per-query gate fails closed",
-            "every data plane refused the query while ds-connector was down — "
-            "asserted on the real celine dataset-api and on the mock, not "
-            "inferred from one of them, and with no cache to wait out",
+            "every data plane this run queried refused while ds-connector was "
+            "down, each asserted rather than inferred from another, and with no "
+            "cache to wait out",
+            data_planes=[label for label, _ in self.settings.data_planes],
             observed=observed,
         )
 

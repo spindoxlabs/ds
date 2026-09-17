@@ -11,7 +11,8 @@ provision, and the two places the contract is Keycloak-specific.
 !!! danger "Never import the dev realm into a production deployment"
     `services/keycloak/realm-dataspaces-dev.json` ships users whose password equals their
     username, a literal client secret, `directAccessGrantsEnabled: true` and
-    `sslRequired: external`. `realm-production.example.json` is the correct reference.
+    `sslRequired: external`. ds ships no production realm file: create the realm with
+    `celine-policies keycloak bootstrap`, then satisfy the settings below.
 
 ## 1. Realm settings
 

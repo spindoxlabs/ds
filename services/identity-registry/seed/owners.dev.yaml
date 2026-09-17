@@ -32,9 +32,14 @@ owners:
   # being true when the bootstrap started accepting on its behalf:
   # `docker-compose.yml` runs `ir-cli agreement accept --owner consumer-org`,
   # which defaults to `dataspace-participation`, and that agreement declares
-  # `capacity: processor` (`agreements.dev.yaml`). So the wildcard admits this
-  # DID *correctly* under `D-5`, and a test asserting its refusal is asserting a
-  # bug. The stale sentence cost a `wildcard-admission` e2e draft its premise.
+  # `capacity: processor` (`agreements.dev.yaml`). That is one half of the
+  # circle. The other half is the offer's own `admitted_by`, and it is ANDed:
+  # this organisation is **not a member of `example-org`**, so an offer that
+  # requires that membership (`household-energy-flexibility`) leaves it outside,
+  # and `D-14` correctly withholds that offer's wildcard grant from it. Whether
+  # the wildcard admits this DID is a question per offer, never per DID. The
+  # stale sentence cost a `wildcard-admission` e2e draft its premise, and the
+  # half-corrected one cost `onboarding-seam` an expectation.
   #
   # **The dev independent controller is `outsider-org`**, and it is not here: it
   # lives in `libs/ds-e2e/src/ds_e2e/scenarios/energy-chains.yaml`, accepts

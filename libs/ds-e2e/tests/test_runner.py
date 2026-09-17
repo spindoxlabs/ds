@@ -60,9 +60,47 @@ def test_cleanup_runs_after_a_successful_flow(registered, settings):
 def test_cleanup_runs_when_the_flow_raises(registered, settings):
     """The path that matters: an exception mid-outage must still restore the PDP."""
     cls = registered(type("Boom", (_Recorder,), {"raises": RuntimeError("mid-outage")}))
-    with pytest.raises(RuntimeError):
-        run_flow(cls.name, settings)
+    result = run_flow(cls.name, settings)
     assert cls.cleaned
+    assert result.failed
+
+
+def test_an_exception_is_reported_as_that_flows_failure(registered, settings):
+    """A refused connection in one flow used to end all of `e2e:all` with a
+    traceback and no summary. It is now a failed step naming the exception."""
+    import httpx
+
+    cls = registered(
+        type(
+            "Refused",
+            (_Recorder,),
+            {"raises": httpx.ConnectError("[Errno 111] Connection refused")},
+        )
+    )
+    result = run_flow(cls.name, settings)
+
+    assert result.failed
+    assert [s.name for s in result.steps] == ["unhandled error"]
+    assert "ConnectError" in result.steps[0].detail
+    assert "Connection refused" in result.steps[0].detail
+
+
+def test_one_flow_raising_does_not_stop_the_others(registered, settings, monkeypatch):
+    """The run continues, so the summary covers every flow."""
+    from ds_e2e import runner
+
+    boom = registered(
+        type("Boom2", (_Recorder,), {"name": "boom2", "raises": RuntimeError("x")})
+    )
+    ok = registered(type("Ok2", (_Recorder,), {"name": "ok2", "raises": None}))
+    monkeypatch.setattr(runner, "FLOW_REGISTRY", {boom.name: boom, ok.name: ok})
+
+    results = runner.run_all(settings)
+
+    assert [(r.flow_name, r.failed) for r in results] == [
+        (boom.name, True),
+        (ok.name, False),
+    ]
 
 
 def test_cleanup_runs_on_keyboard_interrupt(registered, settings):
@@ -104,5 +142,7 @@ def test_cleanup_is_not_attempted_when_the_flow_cannot_be_constructed(
             raise RuntimeError("bad settings")
 
     registered(Unbuildable)
-    with pytest.raises(RuntimeError, match="bad settings"):
-        run_flow("unbuildable", settings)
+    result = run_flow("unbuildable", settings)
+    assert result.failed
+    assert result.steps[0].name == "setup"
+    assert "bad settings" in result.steps[0].detail

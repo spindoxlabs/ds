@@ -31,11 +31,12 @@ The two parties:
   a consent request."*
 
 **Not `consumer_did`.** `did:web:third-party.dataspaces.localhost` accepts
-`dataspace-participation`, whose capacity is `processor` — it is inside the
-circle and the wildcard admits it correctly. Pointing this flow at it would
-assert that a covered processor must be refused, which is the opposite of D-5.
-The dev seed's comment about that DID having "no agreement" predates
-`agreements.dev.yaml` seeding one.
+`dataspace-participation`, whose capacity is `processor`, but it is not a member
+of `example-org`. Whether a wildcard admits it therefore depends on the offer's
+`admitted_by`, which is ANDed: an offer that also requires that membership leaves
+it outside. It is the wrong party for this flow either way, because the refusal
+here must come from *capacity*, the half `outsider-org` is built to fail.
+`onboarding-seam` asserts the membership half on the audience read.
 
 Needs `ds-e2e scenario apply` (`energy-chains`), which is what registers
 `outsider-org`. `task e2e:fast` declares it as a dependency; run it first when

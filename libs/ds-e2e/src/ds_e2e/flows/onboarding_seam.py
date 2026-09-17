@@ -64,7 +64,10 @@ class OnboardingSeamFlow(BaseFlow):
     # is the easiest way to get wrong. `D-13` — the offer projection a wizard
     # renders carries a count and no dataset keys, which is *why* the disclosure
     # route had to take an offer.
-    rules = ("L-2", "L-4", "D-13")
+    # `D-14` — the audience a caller reads is bounded the way the data plane is:
+    # the offer's controller sees the standing wildcard, a party outside the
+    # offer's circle does not (#37).
+    rules = ("L-2", "L-4", "D-13", "D-14")
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
@@ -124,6 +127,8 @@ class OnboardingSeamFlow(BaseFlow):
             return result
 
         if not self._read_the_audience(result, onboarding, offer):
+            return result
+        if not self._check_the_audience_is_bounded(result, onboarding, offer):
             return result
 
         disclosures = self._record_the_handover(result, onboarding, offer)
@@ -298,6 +303,11 @@ class OnboardingSeamFlow(BaseFlow):
         fails on a true answer to a question another flow had already changed.
         **The connector is right; the suite was order-dependent.**
 
+        Both parties the audience is read for are cleared: the controller, whose
+        read must answer from the wildcard alone, and the outsider, whose read
+        must be empty *because of* `D-14` rather than because of an opt-out
+        another flow left behind.
+
         So this asserts the precondition the flow actually needs — that the
         subject holds no explicit per-party decision about this offer — rather
         than granting one, which would make the audience prove a specific grant
@@ -318,9 +328,13 @@ class OnboardingSeamFlow(BaseFlow):
                 with conn.cursor() as cur:
                     cur.execute(
                         "DELETE FROM consent_requests "
-                        "WHERE subject_id = %s AND consumer_id = %s "
+                        "WHERE subject_id = %s AND consumer_id = ANY(%s) "
                         "AND offer_id = %s",
-                        (s.data_subject_id, s.consumer_did, offer["id"]),
+                        (
+                            s.data_subject_id,
+                            [s.provider_did, s.consumer_did],
+                            offer["id"],
+                        ),
                     )
                     removed = cur.rowcount
                 conn.commit()
@@ -412,16 +426,18 @@ class OnboardingSeamFlow(BaseFlow):
         flow. Borrowing the harness client would prove the route works and not
         that the service that needs it can reach it, which is the only question
         a new scope raises.
+
+        **Read for the offer's controller**, `provider_did` (`example-org`). The
+        POD-list export is the community exporting what its own members consented
+        to, and the controller is the party a standing wildcard grant admits
+        (`D-14`). This step used to read for `consumer_did`, which the offer's
+        `admitted_by` excludes: it holds `capacity: processor` but is not a member
+        of `example-org`, and the constraints are ANDed. Since #37 the route
+        answers that read the way the data plane does, with nobody, and
+        `_check_the_audience_is_bounded` now asserts exactly that.
         """
         s = self.settings
-        params = urllib.parse.urlencode(
-            {"offer_id": offer["id"], "consumer_id": s.consumer_did}
-        )
-        status, payload = self.http.raw(
-            "GET",
-            f"{s.connector_url}/consent/admin/shares?{params}",
-            headers=headers,
-        )
+        status, payload = self._audience(headers, offer, s.provider_did)
         if status != 200 or not isinstance(payload, dict):
             result.fail_step(
                 "read the audience",
@@ -490,10 +506,72 @@ class OnboardingSeamFlow(BaseFlow):
 
         result.pass_step(
             "read the audience",
-            "the offer's consenting subjects came back per dataset, purpose "
-            "stamped from the offer, and a call without a consumer was refused",
+            "the offer's consenting subjects came back per dataset for its "
+            "controller, purpose stamped from the offer, and a call without a "
+            "consumer was refused",
             subject=s.data_subject_id,
+            consumer=s.provider_did,
             sets=len(datasets),
+        )
+        return True
+
+    def _audience(
+        self, headers: dict[str, str], offer: dict[str, Any], consumer_id: str
+    ) -> tuple[int, Any]:
+        params = urllib.parse.urlencode(
+            {"offer_id": offer["id"], "consumer_id": consumer_id}
+        )
+        return self.http.raw(
+            "GET",
+            f"{self.settings.connector_url}/consent/admin/shares?{params}",
+            headers=headers,
+        )
+
+    def _check_the_audience_is_bounded(
+        self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
+    ) -> bool:
+        """`D-14` on the read side (#37): an outsider sees no wildcard subject.
+
+        `consumer_did` holds an accepted agreement with `capacity: processor`
+        but is not a member of `example-org`, and the offer's `admitted_by`
+        requires both. So it is outside the circle, the data plane refuses it
+        these rows, and the audience read must not list them either. Its
+        per-party decisions were cleared above, so the wildcard row is the only
+        thing that could put the subject here.
+        """
+        s = self.settings
+        status, payload = self._audience(headers, offer, s.consumer_did)
+        if status != 200 or not isinstance(payload, dict):
+            result.fail_step(
+                "audience bounded by D-14",
+                "the audience read for a party outside the circle was refused "
+                "instead of answered",
+                status_code=status,
+                response=payload,
+            )
+            return False
+        listed = [
+            d.get("dataset_id")
+            for d in payload.get("datasets") or []
+            if s.data_subject_id in d.get("subject_ids", [])
+        ]
+        if listed:
+            result.fail_step(
+                "audience bounded by D-14",
+                "a party outside the offer's circle sees the standing wildcard "
+                "subject, so an export built on this read would list people the "
+                "data plane then refuses to serve to that party. If the fixtures "
+                "now make this party a member of the controller, the premise "
+                "changed, not the rule.",
+                consumer=s.consumer_did,
+                datasets=listed,
+            )
+            return False
+        result.pass_step(
+            "audience bounded by D-14",
+            "a processor that is not a member of the controller is outside the "
+            "offer's circle, and the wildcard subject is absent from its audience",
+            consumer=s.consumer_did,
         )
         return True
 
