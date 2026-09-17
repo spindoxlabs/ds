@@ -51,9 +51,11 @@ Plus five one-shots: `identity-registry-db-create`, `identity-registry-db-init`,
 
 ### Grid operator — the second provider
 
-The provider file with a different port block and no dataset API, portal or catalogue:
+The provider file with a different port block and no portal or catalogue:
 `edc-grid-operator` on `39193`/`39194`, `ds-connector-grid-operator` on `32001`,
-`ds-provenance-grid-operator` on `32000`, `ir-grid-operator` on `30008`.
+`ds-provenance-grid-operator` on `32000`, `ir-grid-operator` on `30008`, and its own mock data
+plane `dataset-api-grid-operator` on `${DATASET_API_GRID_OPERATOR_MOCK_PORT:-32022}` — bound to
+this connector and this EDC, for the members' readings the DSO holds.
 
 Two things differ beyond ports, and they are the reason it exists:
 

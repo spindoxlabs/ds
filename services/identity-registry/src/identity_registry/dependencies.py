@@ -134,3 +134,13 @@ require_memberships_write = require_permission(
 require_keycloak_sync = require_permission(
     "identity-registry.admin", "identity-registry.keycloak.sync"
 )
+
+# "This organisation may register consent for its members at that holder" —
+# plan `a-collector-registers-consent-at-the-holder`. A governance act about two
+# organisations, so it has its own grant rather than riding
+# `organizations.write`: an onboarding reviewer editing an application has no
+# business deciding who may speak for whose members at a third party's connector.
+# The connector's read is `GET /consent-collectors/check`, on `.read`.
+require_collectors_write = require_permission(
+    "identity-registry.admin", "identity-registry.collectors.write"
+)

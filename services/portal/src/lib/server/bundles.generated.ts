@@ -32,7 +32,6 @@ export const ROLE_BUNDLES: Record<string, string[]> = {
 		'connector.provider.write',
 		'connector.history.read',
 		'connector.registry.invalidate',
-		'connector.consent.provision',
 		'connector.ingestion.record',
 		'connector.disclosure.record',
 		'catalog.read',

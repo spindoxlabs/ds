@@ -405,3 +405,16 @@ class AddTrustedIssuerRequest(BaseModel):
     scope_of_attestation: list[str] = Field(min_length=1)
     #: Required for a trust service provider (`DSSC-TRF-21`).
     derives_authority_from: str | None = None
+
+
+class ConsentCollectorRequest(BaseModel):
+    """Accept an organisation as a consent collector for a holder."""
+
+    holder_did: str = Field(min_length=1)
+    collector_did: str = Field(min_length=1)
+
+
+class RevokeConsentCollectorRequest(ConsentCollectorRequest):
+    """Withdraw the acceptance. The reason is required and stays on the row."""
+
+    reason: str = Field(min_length=3)

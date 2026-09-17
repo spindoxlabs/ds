@@ -2,9 +2,16 @@
 
 The onboarding service is **out of this repository**. What ds can assert about
 the seam is therefore not "the service works" but something narrower and more
-useful: *the eight scopes `services/keycloak/clients.yaml` grants
-`svc-ds-onboarding` are sufficient for the calls that seam makes, and the routes
-they reach take arguments that caller can actually hold.*
+useful: *the scopes `services/keycloak/clients.yaml` grants `svc-ds-onboarding`
+are sufficient for the calls that seam makes, and the routes they reach take
+arguments that caller can actually hold.*
+
+**One call moved off that client (2026-09-17).** The consent write is refused to a
+plain service token: consent is registered by an organisation's own client
+(`svc-ds-connector-<alias>`), and the onboarding service registers a member's
+decision with its organisation's. The flow asserts both halves — the onboarding
+client is refused with a `403` naming the organisation client, and the
+community's organisation client records the decision.
 
 That is only an assertion if the flow authenticates **as that client**. Every
 other flow here uses `svc-ds-e2e`, which holds a superset; run this seam under
@@ -42,7 +49,7 @@ from typing import Any
 
 import psycopg
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import HOLDER_DECIDES, holder_headers, legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -55,8 +62,8 @@ class OnboardingSeamFlow(BaseFlow):
     name = "onboarding-seam"
     description = (
         "The seam an external onboarding service calls: owner resolution by "
-        "alias, offer-scoped consent provisioning and offer-scoped disclosure, "
-        "under that service's own client and its own scopes"
+        "alias, offer-scoped consent provisioning (with its organisation's "
+        "client) and offer-scoped disclosure, under that service's own scopes"
     )
     # `L-2` — one `DataDisclosed` per resolved dataset, each carrying that
     # dataset's own recomputable hash. `L-4` — the same export replayed under one
@@ -362,25 +369,60 @@ class OnboardingSeamFlow(BaseFlow):
         self, result: FlowResult, headers: dict[str, str], offer: dict[str, Any]
     ) -> bool:
         s = self.settings
+        body = {
+            "subject_id": s.data_subject_id,
+            "offer_id": offer["id"],
+            "enabled": True,
+            "legal_basis": legal_basis(
+                f"onboarding-seam-{uuid.uuid4().hex[:12]}",
+                source="ds-e2e-onboarding-seam",
+            ),
+        }
+        # The onboarding client itself: refused, and told which client to use.
         status, payload = self.http.raw(
             "POST",
             f"{s.connector_url}/consent/admin/shares",
-            body={
-                "subject_id": s.data_subject_id,
-                "offer_id": offer["id"],
-                "enabled": True,
-                "legal_basis": legal_basis(
-                    f"onboarding-seam-{uuid.uuid4().hex[:12]}",
-                    source="ds-e2e-onboarding-seam",
-                ),
-            },
+            body=body,
             headers=headers,
+        )
+        detail = str(payload.get("detail") if isinstance(payload, dict) else payload)
+        # Two refusals are correct here and they are not the same fact, so the
+        # step says which one answered. In this realm the client no longer holds
+        # `connector.consent.provision` at all, so the permission guard answers
+        # first; the classifier's refusal — a plain service that *does* hold it —
+        # is unit-tested (`services/connector/tests/test_consent_collectors.py`),
+        # because the realm deliberately has no such client left to drive it with.
+        causes = {
+            "the permission": "Missing required permission",
+            "the classifier": "organisation's own client",
+        }
+        named = [name for name, fragment in causes.items() if fragment in detail]
+        if status != 403 or not named:
+            result.fail_step(
+                "a plain service does not register consent",
+                "the onboarding client's own token must be refused on the consent "
+                "write, either for the permission or by the writer classifier",
+                status_code=status,
+                response=payload,
+            )
+            return False
+        result.pass_step(
+            "a plain service does not register consent",
+            f"403 for the onboarding client, refused by {named[0]}",
+        )
+
+        status, payload = self.http.raw(
+            "POST",
+            f"{s.connector_url}/consent/admin/shares",
+            body={**body, "decided_by": HOLDER_DECIDES},
+            headers=holder_headers(self.http, s),
         )
         if status != 200 or not isinstance(payload, list) or not payload:
             result.fail_step(
                 "provision the decision",
-                "the onboarding client could not record the subject's decision — "
-                "`connector.consent.provision` is granted to it by name",
+                "the community's organisation client could not record the "
+                "subject's decision — it holds `connector.consent.provision` "
+                "through `ir-cli keycloak org-sync`",
                 status_code=status,
                 response=payload,
             )
@@ -837,10 +879,9 @@ class OnboardingSeamFlow(BaseFlow):
                     "subject_id": s.data_subject_id,
                     "offer_id": s.sharing_offer_id,
                     "enabled": False,
+                    "decided_by": HOLDER_DECIDES,
                 },
-                headers=self.http.bearer_headers_for(
-                    s.onboarding_client_id, s.onboarding_client_secret
-                ),
+                headers=holder_headers(self.http, s),
             )
         except Exception as exc:  # noqa: BLE001 — cleanup must not mask the result
             log.warning("could not withdraw the provisioned share: %s", exc)

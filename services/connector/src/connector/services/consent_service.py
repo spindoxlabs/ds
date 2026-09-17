@@ -49,14 +49,26 @@ class ConsentWithdrawalStands(Exception):
         self.subject_id = standing.subject_id
         self.dataset_id = standing.dataset_id
         self.withdrawn_at = standing.revoked_at or standing.decided_at
+        self.decided_by = standing.decided_by
+        self.collector = standing.collector
+        who = (
+            "the data subject withdrew this share themselves"
+            if standing.decided_by == "subject"
+            else f"this share was withdrawn by {standing.decided_by}"
+        )
         super().__init__(
-            f"the data subject withdrew this share themselves on "
-            f"{self.withdrawn_at or standing.requested_at!s}"
-            " — only the subject can lift it (D-15c)"
+            f"{who} on {self.withdrawn_at or standing.requested_at!s}"
+            " — only that authority, or the subject, can lift it (D-15c)"
         )
 
 
-def _may_lift(standing: ConsentRequestORM, decided_by: str, override: bool) -> bool:
+def _may_lift(
+    standing: ConsentRequestORM,
+    decided_by: str,
+    override: bool,
+    collector: str | None = None,
+    holder: str | None = None,
+) -> bool:
     """May ``decided_by`` re-open a standing refusal? (`D-15c`)
 
     A decision the data subject took themselves is theirs to re-open: a service
@@ -75,10 +87,34 @@ def _may_lift(standing: ConsentRequestORM, decided_by: str, override: bool) -> b
     an operator provisioning normally — the console's everyday path — must be
     refused exactly like a service; what earns the exception is the declaration
     and the evidence filed with it, not the console the call came from.
+
+    **A collector's own withdrawal is that collector's** (plan
+    `a-collector-registers-consent-at-the-holder`): the organisation that took
+    it, or the subject, may re-open it — not another collector, and not this
+    connector's own services, which are a different authority deciding about
+    another organisation's member. The converse holds too: a collector may not
+    lift a withdrawal this connector's services or operators made. A collector
+    that *relays* the member's decision writes `subject`, and is then the
+    subject for the purposes of this rule.
+
+    ``holder`` is this connector's own organisation DID when the caller speaks
+    with its authority — its own organisation client, or the deployment
+    operator — and ``None`` otherwise. A `service` or `operator` withdrawal (the
+    holder's own, including rows the retired plain-service path wrote), and a
+    `collector` withdrawal the holder's own organisation client made, are that
+    authority's to lift. Another collector's own withdrawal is not.
     """
+    if override:
+        return True
     if standing.decided_by == "subject":
-        return decided_by == "subject" or override
-    return True
+        return decided_by == "subject"
+    if standing.decided_by == "collector":
+        return (
+            decided_by == "subject"
+            or (decided_by == "collector" and standing.collector == collector)
+            or (holder is not None and standing.collector == holder)
+        )
+    return decided_by == "subject" or holder is not None
 
 
 def _latest_decision_first():
@@ -452,6 +488,9 @@ async def set_subject_data_sharing(
     legal_basis: dict | None = None,
     decided_by: str = "subject",
     override_subject_withdrawal: bool = False,
+    collector: str | None = None,
+    keys: list[str] | None = None,
+    holder: str | None = None,
 ) -> ConsentRequestORM:
     """Set a data subject's standing sharing decision for a dataset.
 
@@ -465,6 +504,13 @@ async def set_subject_data_sharing(
     whoever created it. That is what :func:`_may_lift` reads: a service
     withdrawing on a person's behalf leaves a refusal a service can lift, and a
     person withdrawing a service-provisioned grant leaves one only they can.
+
+    ``collector`` is the organisation (DID) whose token took this decision, and
+    is stamped on the row this call decides, like ``decided_by``. ``keys`` are
+    the subject's typed data keys at this holder: a grant stores them — a grant
+    that is already standing has them **replaced** when the call sends any — and
+    a withdrawal drops them with the grant. ``None`` means "not sent" and leaves
+    a standing grant's keys alone.
 
     Raises :class:`ConsentWithdrawalStands` when the caller would re-open a
     refusal it has no authority to re-open (`D-15c`).
@@ -497,6 +543,12 @@ async def set_subject_data_sharing(
 
     if enabled:
         if latest and latest.status == "granted":
+            if keys is not None and list(latest.subject_keys or []) != list(keys):
+                # A new registration updates the keys; nothing else about the
+                # standing decision changes, so no new row.
+                latest.subject_keys = list(keys)
+                if collector is not None:
+                    latest.collector = collector
             return latest
         # **A standing refusal is not a gap to be filled.** This asked only "is it
         # already granted?", so a `latest` of `revoked` fell through to the append
@@ -506,7 +558,9 @@ async def set_subject_data_sharing(
         # the same act reached from a consumer's ask rather than the subject's own
         # control, and is refused on the same terms.
         if latest and latest.status in {"revoked", "rejected"}:
-            if not _may_lift(latest, decided_by, override_subject_withdrawal):
+            if not _may_lift(
+                latest, decided_by, override_subject_withdrawal, collector, holder
+            ):
                 raise ConsentWithdrawalStands(latest)
         consent = ConsentRequestORM(
             subject_id=subject_id,
@@ -520,6 +574,8 @@ async def set_subject_data_sharing(
             message=message or "Data owner enabled sharing.",
             status="granted",
             decided_by=decided_by,
+            collector=collector,
+            subject_keys=list(keys) if keys else None,
             requested_at=now,
             decided_at=now,
             transfer_ids=[],
@@ -537,6 +593,10 @@ async def set_subject_data_sharing(
         # subject made over a grant that service had provisioned — the exact case
         # `D-15c` is about, reached through the mutation rather than the append.
         latest.decided_by = decided_by
+        latest.collector = collector
+        # Withdrawal drops the keys with the grant: nothing is disclosable
+        # under this row any more, so nothing it held stays behind.
+        latest.subject_keys = None
         return latest
 
     if latest and latest.status in {"revoked", "rejected"}:
@@ -548,6 +608,7 @@ async def set_subject_data_sharing(
         # not be able to launder it into one a service may lift.
         if decided_by == "subject" and latest.decided_by != "subject":
             latest.decided_by = "subject"
+            latest.collector = collector
         return latest
 
     consent = ConsentRequestORM(
@@ -562,6 +623,7 @@ async def set_subject_data_sharing(
         message=message or "Data owner disabled sharing.",
         status="revoked",
         decided_by=decided_by,
+        collector=collector,
         requested_at=now,
         revoked_at=now,
         revocation_reason=message or "Data owner disabled sharing.",
@@ -812,6 +874,19 @@ async def _consent_rows_for(
     return list(result.scalars().all())
 
 
+async def subject_rows_for(
+    session: AsyncSession,
+    dataset_id: str,
+    subject_id: str,
+    consumer_id: str | None = None,
+) -> list[ConsentRequestORM]:
+    """One subject's rows for a dataset — the standing (wildcard) decisions, and
+    one consumer's per-party rows when named — latest first, as
+    :func:`decide_for_subject` reads them."""
+    keys = {WILDCARD_CONSUMER} | ({consumer_id} if consumer_id else set())
+    return await _consent_rows_for(session, dataset_id, keys, subject_id=subject_id)
+
+
 def decide_for_subject(
     rows: Iterable[ConsentRequestORM],
     purpose: list[str] | None,
@@ -874,27 +949,65 @@ def decide_for_subject(
     saying so. The same comparison in the other direction is what makes *stop*
     mean stop — see :func:`_outranked_by_withdrawal`, which both axes share, and
     which resolves a tie to the withdrawal.
+
+    **An offer with ``requires_offers`` is admitted only together with them**
+    (plan `a-collector-registers-consent-at-the-holder`): where a required offer
+    is bound to the same dataset, the subject is admitted for the dependent
+    offer only while the required one also admits them, so withdrawing it
+    withdraws the dependent admission and leaves the dependent row alone.
     """
-    specific: dict[str | None, ConsentRequestORM] = {}
-    wildcard: dict[str | None, ConsentRequestORM] = {}
-    offers: list[str | None] = []
-    for row in rows:
-        if row.offer_id not in offers:
-            offers.append(row.offer_id)
-        target = wildcard if row.consumer_id == WILDCARD_CONSUMER else specific
-        target.setdefault(row.offer_id, row)
+    view = _SubjectRows(rows, admitted_wildcard_offers)
+    return view.decide(purpose, controller_role, consent_required, offer_id)
 
-    def decide(offer: str | None):
-        return resolve_decision(
-            specific.get(offer),
-            wildcard.get(offer),
-            purpose,
-            controller_role,
-            consent_required,
-            wildcard_admits=_admits(offer),
-        )
 
-    def _admits(offer: str | None) -> bool:
+def missing_prerequisites(
+    rows: Iterable[ConsentRequestORM], offer_id: str
+) -> list[str]:
+    """The offers *offer_id* requires that this subject has not granted here.
+
+    Only offers bound to the rows' dataset are checked — a required offer bound
+    elsewhere is not this connector's to evaluate (`requires_offers`). The same
+    procedure :func:`decide_for_subject` applies, so a write that reports
+    nothing missing is a write the data plane will admit on that account.
+    """
+    return _SubjectRows(rows, None).missing_prerequisites(offer_id)
+
+
+def _required_offers_bound(offer_id: str, dataset_id: str | None) -> list[str]:
+    """``requires_offers`` of *offer_id*, narrowed to offers bound to the dataset."""
+    try:
+        offer = vocab.get_offers().get(offer_id)
+    except Exception:  # noqa: BLE001 — an unreadable catalogue requires nothing new
+        return []
+    if offer is None or not offer.requires_offers or not dataset_id:
+        return []
+    bound = set(vocab.offers_for_dataset(dataset_id))
+    return [required for required in offer.requires_offers if required in bound]
+
+
+class _SubjectRows:
+    """One subject's rows for one dataset, indexed the way the rules read them."""
+
+    def __init__(
+        self,
+        rows: Iterable[ConsentRequestORM],
+        admitted_wildcard_offers: set[str] | None,
+    ):
+        self.specific: dict[str | None, ConsentRequestORM] = {}
+        self.wildcard: dict[str | None, ConsentRequestORM] = {}
+        self.offers: list[str | None] = []
+        self.dataset_id: str | None = None
+        self.admitted = admitted_wildcard_offers
+        for row in rows:
+            self.dataset_id = self.dataset_id or row.dataset_id
+            if row.offer_id not in self.offers:
+                self.offers.append(row.offer_id)
+            target = (
+                self.wildcard if row.consumer_id == WILDCARD_CONSUMER else self.specific
+            )
+            target.setdefault(row.offer_id, row)
+
+    def _admits(self, offer: str | None) -> bool:
         """`D-14`, per offer — because a controller is a property of an offer.
 
         One consumer can be the controller of one offer on a dataset and a
@@ -913,39 +1026,129 @@ def decide_for_subject(
         "authorise any party in any role for the purpose". So offer-less wildcard
         rows are withdrawals, and withdrawals are not gated here.
         """
-        if admitted_wildcard_offers is None:
+        if self.admitted is None:
             return True
-        return offer is not None and offer in admitted_wildcard_offers
+        return offer is not None and offer in self.admitted
 
-    bare_allowed, bare_reason, bare_row = decide(None)
-    bare_withdrawal = (
-        bare_row
-        if bare_row is not None and bare_row.status in ("revoked", "rejected")
-        else None
-    )
+    def _decide(
+        self,
+        offer: str | None,
+        purpose: list[str] | None,
+        controller_role: str | None,
+        consent_required: bool,
+        wildcard_admits: bool | None = None,
+    ):
+        return resolve_decision(
+            self.specific.get(offer),
+            self.wildcard.get(offer),
+            purpose,
+            controller_role,
+            consent_required,
+            wildcard_admits=self._admits(offer)
+            if wildcard_admits is None
+            else wildcard_admits,
+        )
 
-    def decide_offer(offer: str | None):
-        """One offer's verdict, unless a later dataset-wide withdrawal covers it."""
-        allowed, reason, row = decide(offer)
-        if allowed and _outranked_by_withdrawal(row, bare_withdrawal):
-            return (
-                False,
-                "a later decision withdrew sharing for this dataset, and this "
-                "grant names one offer — it does not survive a withdrawal that "
-                "covers it",
-                bare_withdrawal,
+    @property
+    def bare_withdrawal(self) -> ConsentRequestORM | None:
+        """The dataset-wide withdrawal that decides, if one does.
+
+        Purpose-independent: whichever row :func:`resolve_decision` selects for
+        the offer-less cell, it is a withdrawal or it is not.
+        """
+        _allowed, _reason, bare_row = resolve_decision(
+            self.specific.get(None), self.wildcard.get(None), None, None, False
+        )
+        if bare_row is not None and bare_row.status in ("revoked", "rejected"):
+            return bare_row
+        return None
+
+    def missing_prerequisites(
+        self, offer: str, seen: frozenset[str] = frozenset()
+    ) -> list[str]:
+        """Required offers bound here that do not currently admit the subject.
+
+        A required offer is read with **its own** purpose and controller role:
+        the question is whether the holder may release the data at all, not
+        whether the requested use is covered twice. It is not narrowed by `D-14`
+        for the same reason — it names no consumer. A later dataset-wide
+        withdrawal still closes it, and its own prerequisites apply in turn; a
+        cycle fails closed (compliance refuses one before it gets here).
+        """
+        missing: list[str] = []
+        bare = self.bare_withdrawal
+        for required in _required_offers_bound(offer, self.dataset_id):
+            if required in seen or required == offer:
+                missing.append(required)
+                continue
+            try:
+                required_offer = vocab.resolve_offer(required)
+            except vocab.VocabularyError:
+                missing.append(required)
+                continue
+            allowed, _reason, row = self._decide(
+                required,
+                [required_offer.purpose],
+                required_offer.recipients.controller_role,
+                True,
+                wildcard_admits=True,
             )
+            if allowed and _outranked_by_withdrawal(row, bare):
+                allowed = False
+            if not allowed or self.missing_prerequisites(required, seen | {offer}):
+                missing.append(required)
+        return missing
+
+    def decide(
+        self,
+        purpose: list[str] | None,
+        controller_role: str | None,
+        consent_required: bool,
+        offer_id: str | None,
+    ) -> tuple[bool, str, ConsentRequestORM | None]:
+        bare_allowed, bare_reason, bare_row = self._decide(
+            None, purpose, controller_role, consent_required
+        )
+        bare_withdrawal = (
+            bare_row
+            if bare_row is not None and bare_row.status in ("revoked", "rejected")
+            else None
+        )
+
+        def decide_offer(offer: str | None):
+            """One offer's verdict, unless a later dataset-wide withdrawal covers
+            it or an offer it requires is not granted."""
+            allowed, reason, row = self._decide(
+                offer, purpose, controller_role, consent_required
+            )
+            if allowed and _outranked_by_withdrawal(row, bare_withdrawal):
+                return (
+                    False,
+                    "a later decision withdrew sharing for this dataset, and this "
+                    "grant names one offer — it does not survive a withdrawal that "
+                    "covers it",
+                    bare_withdrawal,
+                )
+            if allowed and offer is not None:
+                missing = self.missing_prerequisites(offer)
+                if missing:
+                    return (
+                        False,
+                        f"offer '{offer}' is admitted only together with "
+                        f"{sorted(missing)}, which this subject has not granted here",
+                        row,
+                    )
+            return allowed, reason, row
+
+        if offer_id is not None:
+            return decide_offer(offer_id)
+
+        allowed, reason, row = bare_allowed, bare_reason, bare_row
+        for offer in sorted(o for o in self.offers if o):
+            if allowed:
+                break
+            allowed, reason, row = decide_offer(offer)
         return allowed, reason, row
-
-    if offer_id is not None:
-        return decide_offer(offer_id)
-
-    allowed, reason, row = bare_allowed, bare_reason, bare_row
-    for offer in sorted(o for o in offers if o):
-        if allowed:
-            break
-        allowed, reason, row = decide_offer(offer)
-    return allowed, reason, row
 
 
 async def check_consent(
@@ -1164,6 +1367,10 @@ class GrantedSubject:
 
     subject_id: str
     decided_at: datetime | None
+    #: The typed data keys on the authorising row (`subject_keys`), for a
+    #: holder whose data plane matches on them. Empty when that row carries
+    #: none — a per-party grant, or a registration that sent no keys.
+    keys: tuple[str, ...] = ()
 
 
 async def get_granted_subjects(
@@ -1222,6 +1429,9 @@ async def get_granted_subjects(
                     decided_at=deciding_row.decided_at
                     if deciding_row is not None
                     else None,
+                    keys=tuple(deciding_row.subject_keys or ())
+                    if deciding_row is not None
+                    else (),
                 )
             )
         else:

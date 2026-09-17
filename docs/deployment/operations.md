@@ -155,6 +155,38 @@ issue-membership`, `issue-data-subject`, or the organisation onboarding chain �
 old ones **after** the replacements are distributed, since revoking first takes down the whole
 colliding group. In development the whole remedy is `ir-cli bootstrap`.
 
+### Upgrading past connector schema 0012 — consent is registered by an organisation client
+
+**Breaking, for any service that calls `POST /consent/admin/shares`.** From this version the
+connector refuses a plain service token there (`403`, naming the client to use). Consent is
+registered by an **organisation's own client** — `svc-ds-connector-<alias>`, the client
+`ir-cli keycloak org-sync` and the provisioning bundle create — or, for the evidenced
+`override_subject_withdrawal` alone, by a person holding `connector.admin`.
+
+What a deployment has to do, in this order:
+
+1. **Give the caller its organisation's client.** An onboarding service that registers consent
+   for a community's members authenticates as that community's `svc-ds-connector-<alias>` with
+   the secret `SVC_DS_CONNECTOR_<ALIAS>_SECRET`. It needs no new permission: the client already
+   holds `connector.consent.provision` (`ds_auth.CONNECTOR_SERVICE_SCOPES`).
+2. **Say whose decision it is.** An organisation token must send `decided_by`:
+   `"subject"` when it relays a decision the member took, `"collector"` when the organisation
+   decided itself. A relayed withdrawal then belongs to the member and nothing else lifts it
+   (`D-15c`).
+3. **Register at the connector that holds the data.** Writing at *another* participant's
+   connector also needs that participant to accept the organisation as a consent collector:
+   `ir-cli collector add --holder-did … --collector-did …` on the trust anchor, or
+   `POST /admin/consent-collectors`. The subject must be a member of the *writing*
+   organisation.
+4. **Drop the old grant.** `connector.consent.provision` is no longer useful on a plain service
+   client (`svc-ds-onboarding` in `services/keycloak/clients.yaml` no longer carries it), and it
+   is no longer in the `ds-participant-admin` bundle, so a participant operator's console cannot
+   register consent either.
+
+Nothing has to be migrated in the database: rows written by the retired path keep
+`decided_by = "service"`, and the holder's own organisation client (or its operator) may still
+lift the withdrawals among them.
+
 ## Adding a participant
 
 Four edits, all values-only, provided DNS already has a wildcard record:

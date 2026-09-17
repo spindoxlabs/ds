@@ -42,6 +42,7 @@ CONSENT_CHECKS = (
     "offer-durations",
     "offer-codes",
     "offer-hash-stability",
+    "offer-prerequisites",
 )
 
 
@@ -205,6 +206,7 @@ def check_sharing_offers(
         _check_offer_hash_stability(result, offer, profile)
 
     _check_dataset_offer_references(result, catalogue, exposed, profile)
+    _check_offer_prerequisites(result, catalogue, exposed)
 
 
 def _check_dataset_offer_references(
@@ -271,6 +273,91 @@ def _check_dataset_offer_references(
                 f"Offer '{offer.id}' is declared by no exposed dataset — consenting "
                 "to it shares nothing",
             )
+
+
+def _check_offer_prerequisites(
+    result: ValidationResult,
+    catalogue: SharingOfferCatalogue,
+    exposed: list[DatasetEvidence],
+) -> None:
+    """``requires_offers`` names offers that exist, consent-based, and acyclic.
+
+    A required offer is evaluated from its own consent rows, so it has to be one
+    a person can grant: a contract-based prerequisite would never be "granted"
+    and would admit nobody. A cycle has no order to evaluate in.
+
+    **Binding is per dataset, and a missing one is a warning.** At a connector
+    where the dependent offer is bound to a dataset and the required one is not,
+    the requirement cannot be checked there — typically because the required
+    offer is another connector's. That is stated per dataset rather than left
+    silent, and it is not an error: the same offers file legitimately serves
+    connectors that bind only one of the two.
+    """
+    for offer in catalogue.offers:
+        for required in offer.requires_offers:
+            if required == offer.id:
+                result.error(
+                    "offer-prerequisites",
+                    f"Offer '{offer.id}' requires itself",
+                )
+                continue
+            target = catalogue.get(required)
+            if target is None:
+                result.error(
+                    "offer-prerequisites",
+                    f"Offer '{offer.id}' requires offer '{required}', which does "
+                    "not resolve",
+                )
+                continue
+            if not target.requires_consent:
+                result.error(
+                    "offer-prerequisites",
+                    f"Offer '{offer.id}' requires offer '{required}', which is not "
+                    "consent-based — a prerequisite is read from its consent rows, "
+                    "so it would admit nobody",
+                )
+        if _requires_itself_transitively(catalogue, offer.id):
+            result.error(
+                "offer-prerequisites",
+                f"Offer '{offer.id}' is part of a requires_offers cycle",
+            )
+
+    for item in exposed:
+        bound = set(item.rule.dataspace.sharing_offers)
+        for offer_id in item.rule.dataspace.sharing_offers:
+            offer = catalogue.get(offer_id)
+            if offer is None:
+                continue
+            for required in offer.requires_offers:
+                if required not in bound and catalogue.get(required) is not None:
+                    result.warning(
+                        "offer-prerequisites",
+                        f"Offer '{offer_id}' requires '{required}', which this "
+                        "dataset does not declare — the requirement is not checked "
+                        "for this dataset at this connector",
+                        item.key,
+                    )
+
+
+def _requires_itself_transitively(
+    catalogue: SharingOfferCatalogue, start: str
+) -> bool:
+    seen: set[str] = set()
+    stack = [
+        r for r in (catalogue.get(start).requires_offers if catalogue.get(start) else [])
+        if r != start
+    ]
+    while stack:
+        current = stack.pop()
+        if current == start:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        offer = catalogue.get(current)
+        if offer is not None:
+            stack.extend(offer.requires_offers)
+    return False
 
 
 def _check_offer_purpose(

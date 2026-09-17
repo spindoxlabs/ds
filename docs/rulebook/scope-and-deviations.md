@@ -174,6 +174,16 @@ more weakly.
 **Why:** having no third-party observer is how `PTO-81` (trust between observer and all
 parties) is satisfied. Both parties record independently and neither copy is authoritative.
 
+**One shape that is not a cross-participant check, stated as its own** (2026-09-17). An
+organisation a holder accepts as a **consent collector** writes its members' decisions at the
+holder's connector (`POST /consent/admin/shares`) and reads them back one member at a time.
+It is a registration of the member's own decision, not a consumer asking a question: the
+collector names no counterparty, gains no data, and is authenticated by its own organisation
+token plus a relation the trust anchor records (`DSSC-XCT-06`, `-26`). The consumer that
+later receives the data still negotiates over DSP, identified by DCP. What travels with the
+registration — the subject's data keys — stays on the holder's consent row and in the row
+filter its own data plane reads; provenance records only that keys were supplied.
+
 ### 3.4 The consent model exceeds the blueprint
 
 Recorded as a deviation because it imposes rules on participants that no blueprint row

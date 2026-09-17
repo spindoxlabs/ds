@@ -177,9 +177,10 @@ class E2ESettings(BaseSettings):
     )
     # The onboarding service's own client, and the `onboarding-seam` flow uses it
     # rather than `svc-ds-e2e` **on purpose**. The service is out of this
-    # repository, so what ds can assert about the seam is that the eight scopes
+    # repository, so what ds can assert about the seam is that the scopes
     # `services/keycloak/clients.yaml` grants this client are sufficient for the
-    # calls that seam makes — which is only an assertion if the flow authenticates
+    # calls that seam makes (the consent write excepted: that is its
+    # organisation client's) — which is only an assertion if the flow authenticates
     # as the client and not as a harness identity that holds more. Both halves of
     # `plans/onboarding-seam.md` were 403s and 404s reachable no other way.
     onboarding_client_id: str = Field(
@@ -214,6 +215,26 @@ class E2ESettings(BaseSettings):
     mock_data_plane_url: str = Field(
         "http://172.17.0.1:30022", validation_alias="E2E_MOCK_DATA_PLANE_URL"
     )
+    #: The grid operator's own stand-in plane (`docker-compose.grid-operator.yml`),
+    #: which asks the grid operator's connector for decisions — the only plane
+    #: that can serve the members' readings it holds (`collector-holder`).
+    grid_operator_mock_data_plane_url: str = Field(
+        "http://172.17.0.1:32022",
+        validation_alias="E2E_GRID_OPERATOR_MOCK_DATA_PLANE_URL",
+    )
+    #: The holder dataset and its two offers, as
+    #: `services/connector/governance-grid-operator/` declares them.
+    grid_meter_asset_id: str = Field(
+        "datasets.silver.grid_meter_readings",
+        validation_alias="E2E_GRID_METER_ASSET_ID",
+    )
+    grid_release_offer_id: str = "grid-meter-release"
+    grid_use_offer_id: str = "grid-meter-flexibility"
+    #: A member of the partner organisation and not of the community
+    #: (`ds-e2e scenario apply`).
+    partner_member_id: str = "did:web:rec.dataspaces.localhost:users:partner-member"
+    #: The second community member (`identity-users-bootstrap`).
+    dual_subject_id: str = "did:web:rec.dataspaces.localhost:users:dual-user"
     #: Host addresses where an EDC management API must **not** answer. EDC never
     #: checks a management token's audience, so an unpublished port is the
     #: control (ADR-0014). Empty skips the check, and the flow says so — for

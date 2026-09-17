@@ -89,7 +89,7 @@ bundle* that ds expands into capabilities in its own code:
 
 ```
 ds-admin                 the deployment operator
-ds-participant-admin     acts for a participant: publish, sync, manage assets
+ds-participant-admin     acts for a participant: publish, sync, manage assets (not consent registration)
 ds-participant-viewer    read-only within a participant
 ds-onboarding-operator   reviews organisation applications
 ds-member                an authenticated human who may browse the catalogue

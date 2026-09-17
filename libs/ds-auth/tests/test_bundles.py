@@ -332,3 +332,32 @@ def test_no_aliases_configured_changes_nothing():
     """The default path, and the one every existing deployment is on."""
     assert expand_bundles(["ds-admin"], {}) == expand_bundles(["ds-admin"])
     assert expand_bundles(["ds-admin"], None) == expand_bundles(["ds-admin"])
+
+
+# ── Consent registration is an organisation's act, not an operator seat's ────
+#
+# Plan `a-collector-registers-consent-at-the-holder`, decision 5 (2026-09-17).
+# A realm group is not bound to a connector, so a participant operator holding
+# `connector.consent.provision` could register consent at any connector, for any
+# organisation's members.
+
+
+def test_a_participant_operator_seat_cannot_register_consent():
+    for seat in ("ds-participant-admin", "ds-participant-viewer", "ds-member"):
+        assert "connector.consent.provision" not in ROLE_BUNDLES[seat], seat
+        assert not _user([seat]).grants("connector.consent.provision"), seat
+
+
+def test_the_deployment_operator_still_reaches_it_through_the_superset():
+    # `override_subject_withdrawal` is a person's act, and that person is the
+    # deployment operator.
+    assert _user(["ds-admin"]).grants("connector.consent.provision")
+
+
+def test_consent_registration_is_classified_as_service_only():
+    from ds_auth import SERVICE_ONLY_PERMISSIONS, all_bundled_permissions
+
+    assert "connector.consent.provision" in SERVICE_ONLY_PERMISSIONS
+    assert "connector.consent.provision" not in all_bundled_permissions()
+    assert "identity-registry.collectors.write" in SERVICE_ONLY_PERMISSIONS
+    assert "identity-registry.collectors.write" not in all_bundled_permissions()

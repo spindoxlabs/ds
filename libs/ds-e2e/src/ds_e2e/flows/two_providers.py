@@ -145,19 +145,24 @@ class TwoProvidersFlow(BaseFlow):
                 "nothing unless one side actually has some",
             )
             return
-        if dso_offers:
+        rec_ids = {o.get("id") for o in rec_offers if isinstance(o, dict)}
+        dso_ids = {o.get("id") for o in dso_offers if isinstance(o, dict)}
+        # The DSO has offers of its own since the collector plan: consent its
+        # customers' community registers there. What must never happen is the
+        # DSO publishing the REC's.
+        if rec_ids & dso_ids:
             result.fail_step(
                 "governance is its own",
-                "the grid operator publishes sharing offers, but it has no "
-                "members to ask — it is reading somebody else's governance",
-                offers=[o.get("id") for o in dso_offers if isinstance(o, dict)],
+                "the grid operator publishes the REC's sharing offers — it is "
+                "reading somebody else's governance",
+                shared=sorted(rec_ids & dso_ids),
             )
             return
         result.pass_step(
             "governance is its own",
-            "the REC publishes consent offers and the grid operator publishes "
-            "none — a provider with no members asks nobody for anything",
-            rec_offers=[o.get("id") for o in rec_offers if isinstance(o, dict)],
+            "each provider publishes only its own consent offers",
+            rec_offers=sorted(rec_ids),
+            dso_offers=sorted(dso_ids),
         )
 
     def _check_no_members(self, result: FlowResult, headers: dict[str, str]) -> None:

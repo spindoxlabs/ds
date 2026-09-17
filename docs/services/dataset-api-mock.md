@@ -128,7 +128,7 @@ option. This one can still refuse.
 
 ### The row filter's handlers
 
-The filter arrives whole — `{handler, args, principals}` — because the handler is what knows
+The filter arrives whole — `{handler, args, principals, keys}` — because the handler is what knows
 how a person maps to values in the column. ds names the person by an identifier **native to
 the receiving system**, never by DID.
 
@@ -136,6 +136,7 @@ the receiving system**, never by DID.
 |---|---|
 | `direct_user_match` | nothing — the column holds the principal itself |
 | `rec_registry` | a member to the meters they own, through the REC registry |
+| `subject_key_match` | nothing — the column holds a data key; `args.key_type` names which type of the decision's `keys` (`pod:…`) it matches, and the principals are ignored |
 
 **Handler names belong to the data plane, not to `ds.governance`.** ds passes the handler
 through from `governance.yaml` and never interprets it — `DataplaneRowFilter` says as much
@@ -181,12 +182,13 @@ configuration does.
 
 ## The fixtures
 
-Two built-in datasets, chosen to cover both sides of the consent decision:
+Built-in datasets, chosen to cover both sides of the consent decision:
 
 | Dataset | Consent | Shape |
 |---|---|---|
 | `datasets.gold.om_weather_features` | not required | open weather features |
 | `datasets.silver.meters_15m` | **required** | metering rows keyed by `device_id`, narrowed by a `rec_registry` filter |
+| `datasets.silver.grid_meter_readings` | **required** | the grid operator's members' readings keyed by `pod`, narrowed by a `subject_key_match` filter on the keys a collector registered; `EX000E00000009` belongs to nobody |
 
 **The gated dataset is declared exactly as `governance.yaml` declares it.** It used to key rows
 by subject DID in a column `sub`, while governance declared a `rec_registry` filter on

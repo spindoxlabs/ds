@@ -653,6 +653,9 @@ async def _materialise_consent_granted(
             "controllerRole": event.controller_role,
             "consumerDid": event.consumer_did,
             "legalBasis": event.legal_basis,
+            "decidedBy": event.decided_by,
+            "collector": event.collector,
+            "keysSupplied": event.keys_supplied,
         },
     )
     dataset = await upsert_node(
@@ -664,7 +667,25 @@ async def _materialise_consent_granted(
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, subject.id)
+    await _materialise_collector(session, activity, event.collector)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
+
+
+async def _materialise_collector(
+    session: AsyncSession, activity: ProvNodeORM, collector: str | None
+) -> None:
+    """The organisation that registered a consent decision here, as an agent.
+
+    Its DID is the same node every other event names that organisation with, so
+    "which decisions did this community register at the grid operator" is one
+    traversal.
+    """
+    if not collector:
+        return
+    agent = await upsert_node(session, collector, "Agent", label=collector)
+    await session.flush()
+    await _edge(session, "wasAssociatedWith", activity.id, agent.id, role="collector")
 
 
 async def _materialise_consent_revoked(
@@ -685,6 +706,8 @@ async def _materialise_consent_revoked(
             "controllerRole": event.controller_role,
             "consumerDid": event.consumer_did,
             "reason": event.reason,
+            "decidedBy": event.decided_by,
+            "collector": event.collector,
         },
     )
     dataset = await upsert_node(
@@ -698,6 +721,8 @@ async def _materialise_consent_revoked(
     # revocation invalidates the consent's hold on it.
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, subject.id)
+    await _materialise_collector(session, activity, event.collector)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 

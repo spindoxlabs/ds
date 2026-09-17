@@ -52,6 +52,7 @@ class FlowName(StrEnum):
     smoke = "smoke"
     consent_withdrawal = "consent-withdrawal"
     organisation_token = "organisation-token"
+    collector_holder = "collector-holder"
     fail_closed = "fail-closed"
     # Aggregates
     all = "all"

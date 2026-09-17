@@ -13,7 +13,7 @@ from ds_auth import Principal
 from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
 from ds_auth.user_credentials import verify_user_vc_jwt
-from fastapi import Header, HTTPException, Request
+from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
@@ -431,9 +431,105 @@ require_webhook = require_exact_permission("connector.webhook")
 # Onboarding provisions standing consent on a subject's behalf after approval.
 # It authenticates as a service (svc-ds-onboarding), not as the subject, so it
 # needs its own permission rather than the VC-JWT the /consent/my/* routes use.
+#
+# Who may *write* is narrower than who holds the permission since plan
+# `a-collector-registers-consent-at-the-holder`: see `require_consent_writer`.
 require_consent_provision = require_permission(
     "connector.consent.provision", "connector.admin"
 )
+
+
+#: The kinds of caller that may register a consent decision at this connector.
+WRITER_COLLECTOR = "collector"
+WRITER_PARTICIPANT = "participant"
+WRITER_OPERATOR = "operator"
+
+
+@dataclass(frozen=True)
+class ConsentWriter:
+    """Who is registering a consent decision here, classified from the token.
+
+    Plan `a-collector-registers-consent-at-the-holder` (decisions 1, 2, 5 and the
+    maintainer's follow-up, 2026-09-17). Three kinds, and nothing else:
+
+    - ``collector`` — **another** organisation's own client (`sub` = its
+      participant context). The one exception to "an organisation token is bound
+      to its own participant", and only for the consent write and its per-subject
+      read-back. Whether that organisation is accepted *here* is the identity
+      registry's relation, checked by the route.
+    - ``participant`` — this connector's own organisation client: the holder
+      registering consent it collected itself. This is where an onboarding
+      service belongs — it runs as its organisation's client.
+    - ``operator`` — a **person** holding `connector.admin`, the deployment
+      operator. Kept for one act no organisation token may perform: the evidenced
+      `override_subject_withdrawal` a person asks for at a desk (`D-15c`). It acts
+      for this connector's participant.
+
+    **A plain service token is refused** (`403`), whatever it holds. It names no
+    organisation, and in a shared realm one such client could write at every
+    connector; the onboarding service moves to its organisation's client
+    (`svc-ds-connector-<alias>`).
+
+    ``organisation`` is the DID of the organisation the caller speaks for; a
+    subject's membership is checked against *that* organisation (`D-21`), never
+    against the offer's recipient.
+    """
+
+    kind: str
+    organisation: str
+    principal: Principal
+
+    @property
+    def is_organisation_token(self) -> bool:
+        return self.kind in (WRITER_COLLECTOR, WRITER_PARTICIPANT)
+
+    @property
+    def is_holder(self) -> bool:
+        """Speaks with this connector's own organisation's authority."""
+        return self.kind in (WRITER_PARTICIPANT, WRITER_OPERATOR)
+
+    @property
+    def collector_did(self) -> str | None:
+        """What the row and the evidence record as the registering organisation."""
+        return self.organisation if self.is_organisation_token else None
+
+    @property
+    def acted_by(self) -> dict | None:
+        from .services.prov_bridge import acting_principal
+
+        return acting_principal(self.principal, on_behalf_of=self.organisation)
+
+
+async def require_consent_writer(
+    principal: Principal = Depends(require_consent_provision),
+) -> ConsentWriter:
+    """Classify an authenticated consent writer, refusing a plain service.
+
+    The permission check comes first (`connector.consent.provision`, or the
+    `connector.admin` superset), so a token without it is a 403 before anything
+    is classified — and the route still publishes the permission it needs,
+    which is what the e2e route sweep reads.
+    """
+    settings = get_settings()
+    if principal.is_organisation:
+        context = principal.organisation_context or ""
+        kind = (
+            WRITER_PARTICIPANT
+            if context == settings.participant_context_id
+            else WRITER_COLLECTOR
+        )
+        return ConsentWriter(kind=kind, organisation=context, principal=principal)
+    if principal.is_service:
+        raise HTTPException(
+            403,
+            "consent is registered by an organisation's own client "
+            "(svc-ds-connector-<alias>) — a service token names no organisation",
+        )
+    return ConsentWriter(
+        kind=WRITER_OPERATOR, organisation=settings.participant_did, principal=principal
+    )
+
+
 # "Is this negotiation waiting on a consent decision, and since when" — the
 # counterparty's own status question (§6.6). Separate from every other consent
 # permission because it is the *only* one a party outside this participant is

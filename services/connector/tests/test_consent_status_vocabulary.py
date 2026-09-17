@@ -145,15 +145,17 @@ def test_every_written_decider_is_declared(path: Path):
     )
 
 
-def test_the_decider_scan_sees_both_branches_of_the_route():
+def test_the_decider_scan_sees_what_the_routes_write():
     """Guards this scan the way `test_the_scan_sees_the_sweep` guards the other.
 
-    `service` and `operator` are written on the same line, in a conditional. A
-    regex that stopped at the first string would find `operator`, pass, and never
-    look at the branch that runs on almost every call.
+    The routes write `subject` (a person's own decision) and `operator` (the
+    deployment operator). `service` is **no longer written** since the
+    plain-service path was removed (2026-09-17) — it stays declared for the rows
+    it wrote, and a route writing it again would be that path coming back.
     """
     written = _deciders_written(SRC / "api" / "v1" / "consent.py")
-    assert {"service", "operator", "subject"} <= written
+    assert {"operator", "subject"} <= written
+    assert "service" not in written
 
 
 def test_declared_deciders_are_unique_and_lead_with_the_default():
@@ -162,3 +164,46 @@ def test_declared_deciders_are_unique_and_lead_with_the_default():
         "the column's default leads the list, and it is the fail-closed one: an "
         "unclassified withdrawal is treated as the person's own"
     )
+
+
+def test_the_values_an_organisation_may_state_are_declared_deciders():
+    """`decided_by` on the request body is a `Literal`, not an assignment the
+    scan above can read; this is the same check for it (plan
+    `a-collector-registers-consent-at-the-holder`)."""
+    from typing import get_args
+
+    from connector.api.v1.consent import AdminShareRequest
+
+    annotation = AdminShareRequest.model_fields["decided_by"].annotation
+    stated = {v for arg in get_args(annotation) for v in get_args(arg)}
+    assert stated == {"subject", "collector"}
+    assert stated <= set(CONSENT_DECIDERS)
+
+
+def test_the_database_holds_the_column_to_the_declared_set():
+    """Migration 0012 and the model state the same constraint over the same
+    values — a value added here and not there would be refused on write."""
+    from connector.db.models import ConsentRequestORM
+
+    [check] = [
+        c
+        for c in ConsentRequestORM.__table__.constraints
+        if getattr(c, "name", None) == "ck_consent_decided_by"
+    ]
+    for decider in CONSENT_DECIDERS:
+        assert f"'{decider}'" in str(check.sqltext)
+    migration = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0012_consent_collector.py"
+    ).read_text()
+    import ast
+
+    [assigned] = [
+        node.value
+        for node in ast.parse(migration).body
+        if isinstance(node, ast.Assign)
+        and any(getattr(t, "id", None) == "DECIDERS" for t in node.targets)
+    ]
+    assert ast.literal_eval(assigned) == CONSENT_DECIDERS

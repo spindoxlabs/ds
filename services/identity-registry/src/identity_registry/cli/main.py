@@ -49,6 +49,9 @@ membership_app = typer.Typer(help="Organization membership management")
 org_app = typer.Typer(help="Organisation onboarding (Block D)")
 agreement_app = typer.Typer(help="Service-agreement management")
 conformity_app = typer.Typer(help="Conformity assessment (DSSC-TRF-02…-04)")
+collector_app = typer.Typer(
+    help="Consent collectors: which organisations a holder accepts consent from"
+)
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
@@ -60,6 +63,7 @@ app.add_typer(membership_app, name="membership")
 app.add_typer(org_app, name="org")
 app.add_typer(agreement_app, name="agreement")
 app.add_typer(conformity_app, name="conformity")
+app.add_typer(collector_app, name="collector")
 
 
 def _run(coro):
@@ -1464,7 +1468,12 @@ def membership_list(
                 typer.echo(f"No members in {organization}.")
                 return
             for m in memberships:
-                typer.echo(f"  {m.user_did}  role={m.role or '-'}  status={m.status}")
+                # **No `role`.** Migration 0017 dropped the column — it was
+                # written by three paths and read by none — and this line kept
+                # reading it, so the command raised `AttributeError` instead of
+                # listing anybody. What somebody *is* in their community is a
+                # `communityRole` claim on their credential.
+                typer.echo(f"  {m.user_did}  status={m.status}")
 
     _run(_list())
 
@@ -2362,3 +2371,85 @@ def org_bundle(
         )
 
     asyncio.run(_bundle())
+
+
+# ── Consent collectors ────────────────────────────────────────────
+
+
+@collector_app.command("add")
+def collector_add(
+    holder_did: str = typer.Option(..., help="The holder participant's DID"),
+    collector_did: str = typer.Option(
+        ..., help="The DID of the organisation that collects its members' consent"
+    ),
+):
+    """Accept an organisation as a consent collector for a holder (idempotent)."""
+    from ..services import consent_collectors as collectors
+
+    async def _add():
+        factory = await _ensure_db()
+        async with factory() as session:
+            try:
+                row = await collectors.add(
+                    session,
+                    holder_did=holder_did,
+                    collector_did=collector_did,
+                    added_by="ir-cli",
+                )
+            except collectors.CollectorError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(
+                f"Consent collector {row.status}: {collector_did} → {holder_did}"
+            )
+
+    _run(_add())
+
+
+@collector_app.command("revoke")
+def collector_revoke(
+    holder_did: str = typer.Option(..., help="The holder participant's DID"),
+    collector_did: str = typer.Option(..., help="The collector's DID"),
+    reason: str = typer.Option(..., help="Why — kept on the row"),
+):
+    """Withdraw a collector's acceptance. The row stays, marked revoked."""
+    from ..services import consent_collectors as collectors
+
+    async def _revoke():
+        factory = await _ensure_db()
+        async with factory() as session:
+            try:
+                await collectors.revoke(
+                    session,
+                    holder_did=holder_did,
+                    collector_did=collector_did,
+                    reason=reason,
+                )
+            except collectors.CollectorError as exc:
+                typer.echo(exc.message, err=True)
+                raise typer.Exit(1) from exc
+            await session.commit()
+            typer.echo(f"Consent collector revoked: {collector_did} → {holder_did}")
+
+    _run(_revoke())
+
+
+@collector_app.command("list")
+def collector_list(
+    holder_did: str = typer.Option(None, help="Only this holder's collectors"),
+):
+    """List collector relations, revoked ones included."""
+    from ..services import consent_collectors as collectors
+
+    async def _list():
+        factory = await _ensure_db()
+        async with factory() as session:
+            rows = await collectors.list_relations(session, holder_did=holder_did)
+            if not rows:
+                typer.echo("No consent collectors.")
+                return
+            for row in rows:
+                typer.echo(f"  {row.collector_did} → {row.holder_did}  {row.status}")
+
+    _run(_list())

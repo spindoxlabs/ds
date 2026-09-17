@@ -32,6 +32,7 @@ import logging
 import urllib.parse
 from typing import Any
 
+from ds_e2e.consent import holder_headers
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -334,13 +335,19 @@ class ChainCommunityFlow(_ChainFlow):
                 "purpose": [s.consented_purpose],
                 "offer_id": s.sharing_offer_id,
             },
-            headers=svc,
+            # The provider organisation's own client: `POST /consent/request` is
+            # guarded by `connector.consent.provision`, which the harness client
+            # no longer holds — a 403 for the missing permission would pass this
+            # probe while proving nothing about the pool.
+            headers=holder_headers(self.http, s),
         )
-        if status < 400:
+        if status < 400 or "not a member" not in str(
+            body.get("detail") if isinstance(body, dict) else body
+        ):
             result.fail_step(
                 "pool is a boundary",
-                "a consent request was accepted for a subject outside the community "
-                "pool",
+                "a consent request for a subject outside the community pool was "
+                "not refused for that reason",
                 status_code=status,
                 response=body,
             )
@@ -348,7 +355,8 @@ class ChainCommunityFlow(_ChainFlow):
             return result
         result.pass_step(
             "pool is a boundary",
-            "a subject outside the community cannot be drawn into its consent",
+            "a subject outside the community cannot be drawn into its consent, and "
+            "the refusal names the membership",
             refused_with=status,
         )
 

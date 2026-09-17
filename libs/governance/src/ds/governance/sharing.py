@@ -118,6 +118,18 @@ class SharingOffer(BaseModel):
     consent_text_version: str = "1.0"
     revocable: bool = True
     retention: str | None = None
+    #: Offers this one is admitted only together with. When one offer
+    #: authorises the holder to release the data at all, an offer using that
+    #: data needs it too: at a connector where both are bound, a subject is
+    #: admitted for this offer only while each required offer is also granted,
+    #: and withdrawing a required offer withdraws this offer's admission (not its
+    #: row). Where a required offer is not bound to the dataset, the requirement
+    #: is not checked there — the compliance check says so for each dataset.
+    #:
+    #: **Not a user-visible fact.** It narrows who is admitted and never widens
+    #: what the person agreed to, so adding one does not ask anybody again
+    #: (plan `a-collector-registers-consent-at-the-holder`, 2026-09-17).
+    requires_offers: list[str] = Field(default_factory=list)
 
     @property
     def requires_consent(self) -> bool:

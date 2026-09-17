@@ -79,6 +79,25 @@ participants:
     roles: [consumer]
     dsp_address: http://grid-operator.dataspaces.localhost/protocol
 
+# People the flows need who are nobody's dev user. Issued through the admin API
+# the way onboarding issues them; `did` is what the registry derives and is
+# stated so `destroy` can find the membership again.
+subjects:
+  # A member of the partner organisation and **not** of the community — the
+  # person a collector for the community must not register consent for
+  # (`collector-holder`).
+  - subject_id: partner-member
+    did: did:web:rec.dataspaces.localhost:users:partner-member
+    linked_participant_did: did:web:rec.dataspaces.localhost
+    member_of: partner-org
+
+# Which organisations the grid operator accepts consent registrations from
+# (plan `a-collector-registers-consent-at-the-holder`). The community collects
+# its members' consent; the grid operator holds their readings.
+consent_collectors:
+  - holder_did: did:web:grid-operator.dataspaces.localhost
+    collector_did: did:web:rec.dataspaces.localhost
+
 # The offers the chain flows consent against. Declared here as expectations, not
 # as writes: offers live in `services/connector/governance-rec/sharing-offers.yaml`
 # and are served by the connector, so the scenario asserts they are published

@@ -32,6 +32,7 @@ import logging
 import urllib.parse
 from typing import Any
 
+from ds_e2e.consent import holder_headers
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -89,13 +90,16 @@ class ConsentRequestFlow(BaseFlow):
         # negotiation and records the ask from EDC's DCP-verified
         # `counterPartyId`. `POST /consent/request` is what remains for the
         # provider-local case — an operator or the portal seeding an ask — and it
-        # authenticates as a service accordingly. The lifecycle asserted below is
-        # the same one the guard produces; this drives it without needing an EDC.
+        # is guarded by `connector.consent.provision`. Since 2026-09-17 that
+        # permission is held by the organisation's own client rather than by the
+        # harness client, so the ask is raised with the provider organisation's
+        # token. The lifecycle asserted below is the same one the guard produces;
+        # this drives it without needing an EDC.
         status, payload = self.http.raw(
             "POST",
             f"{s.connector_url}/consent/request",
             body=request_body,
-            headers=svc_headers,
+            headers=holder_headers(self.http, s),
         )
         if status != 201 or not isinstance(payload, dict):
             result.fail_step(
@@ -229,7 +233,7 @@ class ConsentRequestFlow(BaseFlow):
             "POST",
             f"{s.connector_url}/consent/request",
             body={**request_body, "message": "e2e uc4 — approval path"},
-            headers=svc_headers,
+            headers=holder_headers(self.http, s),
         )
         if (
             status != 201

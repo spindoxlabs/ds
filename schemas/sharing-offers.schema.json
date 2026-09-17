@@ -117,6 +117,13 @@
         "recipients": {
           "$ref": "#/$defs/OfferRecipients"
         },
+        "requires_offers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Requires Offers",
+          "type": "array"
+        },
         "resolution": {
           "anyOf": [
             {

@@ -257,6 +257,16 @@ class ConsentGranted(BaseModel):
     controller: str | None = None
     controller_role: str | None = None
     legal_basis: dict | None = None  # codes/hashes only (Block B evidence)
+    # Who decided, and through whom (plan
+    # `a-collector-registers-consent-at-the-holder`). `decided_by` is the
+    # connector's authority value (`subject`, `service`, `operator`,
+    # `collector`); `collector` the DID of the organisation whose token
+    # registered it; `keys_supplied` whether the registration carried the
+    # subject's data keys — **never the keys themselves** (`L-3`).
+    decided_by: str | None = None
+    collector: str | None = None
+    keys_supplied: bool | None = None
+    acted_by: ActingPrincipal | None = None
 
 
 class ConsentRevoked(BaseModel):
@@ -271,6 +281,11 @@ class ConsentRevoked(BaseModel):
     controller: str | None = None
     controller_role: str | None = None
     reason: str | None = None
+    # As on `ConsentGranted`. A withdrawal a collector relays is the member's,
+    # `decided_by="subject"`, with the collector named beside it.
+    decided_by: str | None = None
+    collector: str | None = None
+    acted_by: ActingPrincipal | None = None
 
 
 #: A bare lowercase SHA-256 digest — the shape `consent_service.

@@ -254,3 +254,93 @@ def test_show_makes_no_write_calls():
     runner, calls = _runner({})
     runner.show()
     assert all(method == "GET" for method, _ in calls), calls
+
+
+# ── subjects and consent collectors ──────────────────────────────────────────
+#
+# Plan `a-collector-registers-consent-at-the-holder`: the collector flow needs
+# the grid operator to accept the community, and a person who is another
+# organisation's member.
+
+HOLDER = "did:web:holder.test"
+COLLECTOR = "did:web:collector.test"
+PERSON = "did:web:collector.test:users:someone"
+WITH_COLLECTORS = {
+    **SCENARIO,
+    "subjects": [
+        {
+            "subject_id": "someone",
+            "did": PERSON,
+            "linked_participant_did": COLLECTOR,
+            "member_of": "partner-org",
+        }
+    ],
+    "consent_collectors": [{"holder_did": HOLDER, "collector_did": COLLECTOR}],
+}
+
+
+def _collector_runner(raw_responses):
+    runner, calls = _runner(raw_responses)
+    runner.scenario = WITH_COLLECTORS
+    return runner, calls
+
+
+def test_apply_issues_the_subject_then_its_membership_then_the_relation():
+    runner, calls = _collector_runner(
+        {
+            ("POST", "/admin/credentials/data-subject"): (
+                201,
+                {"subjectDid": PERSON, "credentialId": "c", "generatedAt": "x"},
+            ),
+        }
+    )
+    report = runner.apply()
+    assert report.ok, report.problems
+    posted = [url for method, url in calls if method == "POST"]
+    subject = next(i for i, u in enumerate(posted) if "/data-subject" in u)
+    relation = next(i for i, u in enumerate(posted) if "/admin/consent-collectors" in u)
+    last_membership = max(i for i, u in enumerate(posted) if "/admin/memberships" in u)
+    assert subject < last_membership < relation
+
+
+def test_a_subject_under_an_unexpected_did_is_a_problem():
+    runner, _ = _collector_runner(
+        {
+            ("POST", "/admin/credentials/data-subject"): (
+                201,
+                {"subjectDid": "did:web:elsewhere:users:someone"},
+            ),
+        }
+    )
+    report = runner.apply()
+    assert any("expects" in p for p in report.problems)
+
+
+def test_a_refused_relation_is_a_problem_not_a_pass():
+    runner, _ = _collector_runner(
+        {
+            ("POST", "/admin/credentials/data-subject"): (201, {"subjectDid": PERSON}),
+            ("POST", "/admin/consent-collectors"): (422, {"detail": "not active"}),
+        }
+    )
+    report = runner.apply()
+    assert any("could not accept collector" in p for p in report.problems)
+
+
+def test_destroy_revokes_the_relation_and_stays_narrow():
+    runner, calls = _collector_runner({})
+    report = runner.destroy()
+    assert report.ok, report.problems
+    assert ("POST", f"{runner.ir}/admin/consent-collectors/revoke") in calls
+    deleted = [url for method, url in calls if method == "DELETE"]
+    assert any("collector.test%3Ausers%3Asomeone" in u for u in deleted)
+
+
+def test_the_shipped_scenario_accepts_the_community_at_the_grid_operator():
+    scenario = load_scenario(DEFAULT_SCENARIO)
+    assert {
+        "holder_did": "did:web:grid-operator.dataspaces.localhost",
+        "collector_did": "did:web:rec.dataspaces.localhost",
+    } in scenario["consent_collectors"]
+    [subject] = scenario["subjects"]
+    assert subject["member_of"] != "example-org"

@@ -61,3 +61,48 @@ sharing_offers:
     consent_text_version: "1.0"
     revocable: true
     retention: P1Y
+
+  # The holder's release authorisation: the member lets the grid operator
+  # release their meter readings through the dataspace at all.
+  - id: test-meter-release
+    purpose: EnergyCommunityOperation
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: grid-operator
+      controller_role: metering
+      processors:
+        category: appointed-service-providers
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y
+
+  # A use of that data by a named recipient, admitted only together with the
+  # release above.
+  - id: test-meter-analytics
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: consumer-org
+      processors:
+        category: appointed-service-providers
+    requires_offers: [test-meter-release]
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y
+
+  # Consent-based and declared by no dataset here: a registration for it has
+  # nothing to record against (422).
+  - id: test-unbound
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: example-org
+      processors:
+        category: appointed-service-providers
+    consent_text_version: "1.0"

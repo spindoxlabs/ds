@@ -151,3 +151,52 @@ def test_handler_names_are_this_planes_own():
 
     assert not hasattr(governance, "REC_REGISTRY")
     assert REC_REGISTRY == "rec_registry"
+
+
+# ── Keys registered with the consent (plan a-collector-registers-consent-at-the-holder)
+
+
+GRID_ROWS = [
+    {"pod": "EX000E00000001", "kwh": 0.31},
+    {"pod": "EX000E00000002", "kwh": 0.47},
+    {"pod": "EX000E00000009", "kwh": 9.99},
+]
+
+
+def _key_filter(**kwargs) -> DataplaneRowFilter:
+    from dataset_api_mock.main import SUBJECT_KEY_MATCH
+
+    payload = {
+        "handler": SUBJECT_KEY_MATCH,
+        "args": {"column": "pod", "key_type": "pod"},
+        "principals": ["subject@example.test"],
+        "keys": ["pod:EX000E00000001"],
+    }
+    payload.update(kwargs)
+    return DataplaneRowFilter.model_validate(payload)
+
+
+def test_subject_key_match_narrows_to_the_registered_keys():
+    kept = _apply_row_filter(GRID_ROWS, _key_filter())
+    assert [row["pod"] for row in kept] == ["EX000E00000001"]
+
+
+def test_subject_key_match_ignores_principals_and_other_key_types():
+    kept = _apply_row_filter(
+        GRID_ROWS,
+        _key_filter(
+            principals=["EX000E00000002"],
+            keys=["meter:EX000E00000002", "pod:EX000E00000002"],
+        ),
+    )
+    assert [row["pod"] for row in kept] == ["EX000E00000002"]
+
+
+def test_no_keys_narrows_to_nothing():
+    assert _apply_row_filter(GRID_ROWS, _key_filter(keys=[])) == []
+
+
+def test_a_key_filter_without_a_key_type_withholds_every_row():
+    with pytest.raises(HTTPException) as exc:
+        _apply_row_filter(GRID_ROWS, _key_filter(args={"column": "pod"}))
+    assert exc.value.status_code == 403

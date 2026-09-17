@@ -379,7 +379,16 @@ class TestSharingOffersEndpoint:
             "test-flexibility",
             "test-incentives",
             "test-grid-planning",
+            "test-meter-release",
+            "test-meter-analytics",
+            "test-unbound",
         }
+
+    @pytest.mark.asyncio
+    async def test_a_prerequisite_is_published_with_the_offer(self, client):
+        body = {o["id"]: o for o in (await client.get("/ns/sharing-offers")).json()}
+        assert body["test-meter-analytics"]["requires_offers"] == ["test-meter-release"]
+        assert body["test-flexibility"]["requires_offers"] == []
 
     @pytest.mark.asyncio
     async def test_public_projection_omits_dataset_keys(self, client):

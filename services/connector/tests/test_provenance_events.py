@@ -26,12 +26,18 @@ from connector.services.consent_service import (
     dataset_consent_snapshot,
 )
 from connector.services.membership_check import Membership
-from tests import make_headers, make_vc_headers
+from tests import make_headers, make_org_headers, make_vc_headers
 
 DATASET = "datasets.silver.meters"
 SUBJECT_DID = "did:web:rec.dataspaces.localhost:users:sub-001"
 SUBJECT = make_vc_headers(subject_did=SUBJECT_DID)
-PROVISION = make_headers(scope="connector.consent.provision")
+# Consent is registered by an organisation's own client since 2026-09-17 — here
+# this connector's own (plan `a-collector-registers-consent-at-the-holder`). A
+# plain service is refused (`tests/test_consent_collectors.py`). The holder
+# deciding on its own authority is `collector`, the successor of the retired
+# `service` value.
+PROVISION = make_org_headers(scopes=("connector.consent.provision",))
+HOLDER_DECIDES = "collector"
 INGEST = make_headers(scope="connector.ingestion.record")
 DISCLOSE = make_headers(scope="connector.disclosure.record")
 
@@ -124,6 +130,7 @@ async def test_admin_shares_emits_consent_granted(prov_client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT_DID,
             "offer_id": "test-flexibility",
             "enabled": True,

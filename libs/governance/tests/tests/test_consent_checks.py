@@ -549,3 +549,79 @@ class TestSharingOffers:
         result = run(tmp_path)
         assert result.offers_checked == 0
         assert not codes(result.errors) & {"offer-purpose", "offer-datasets"}
+
+
+# ── Offer prerequisites (`requires_offers`) ──────────────────────────────────
+#
+# Plan `a-collector-registers-consent-at-the-holder`, decided 2026-09-17: when
+# one offer authorises the holder to release data at all, an offer using that
+# data is admitted only together with it.
+
+
+def _release(**overrides) -> dict:
+    return offer(id="meter-release", **overrides)
+
+
+class TestOfferPrerequisites:
+    def test_a_prerequisite_bound_to_the_same_dataset_is_clean(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            sources={
+                "d": dataset(
+                    dataspace={
+                        "expose": True,
+                        "data_address": {"base_url": "http://dataset-api:30002"},
+                        "sharing_offers": [
+                            "meter-release",
+                            "household-energy-flexibility",
+                        ],
+                    }
+                )
+            },
+            offers=[_release(), offer(requires_offers=["meter-release"])],
+        )
+        assert "offer-prerequisites" not in codes(result.errors)
+        assert "offer-prerequisites" not in codes(result.warnings)
+
+    @pytest.mark.rule("D-14")
+    def test_an_unknown_prerequisite_is_an_error(self, tmp_path: Path):
+        result = run(tmp_path, offers=[offer(requires_offers=["ghost-offer"])])
+        assert "offer-prerequisites" in codes(result.errors)
+
+    def test_an_offer_cannot_require_itself(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            offers=[offer(requires_offers=["household-energy-flexibility"])],
+        )
+        assert "offer-prerequisites" in codes(result.errors)
+
+    def test_a_cycle_is_an_error(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            offers=[
+                _release(requires_offers=["household-energy-flexibility"]),
+                offer(requires_offers=["meter-release"]),
+            ],
+        )
+        errors = [f for f in result.errors if f.check == "offer-prerequisites"]
+        assert any("cycle" in f.message for f in errors)
+
+    def test_a_contract_based_prerequisite_admits_nobody(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            offers=[
+                _release(legal_basis="https://w3id.org/dpv#Contract"),
+                offer(requires_offers=["meter-release"]),
+            ],
+        )
+        assert "offer-prerequisites" in codes(result.errors)
+
+    def test_an_unbound_prerequisite_is_stated_not_silent(self, tmp_path: Path):
+        """Bound elsewhere (another connector): not checked here, and said so."""
+        result = run(
+            tmp_path,
+            offers=[_release(), offer(requires_offers=["meter-release"])],
+        )
+        assert "offer-prerequisites" not in codes(result.errors)
+        warnings = [f for f in result.warnings if f.check == "offer-prerequisites"]
+        assert warnings and "not checked" in warnings[0].message

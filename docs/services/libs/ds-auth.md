@@ -101,10 +101,17 @@ Layer A: ds's own semantics, in code, deliberately **not** deployment configurat
 | Bundle | Expands to |
 |---|---|
 | `ds-admin` | `identity-registry.admin`, `connector.admin`, `provenance.read`, `provenance.write`, `catalog.read` |
-| `ds-participant-admin` | `connector.provider.read`, `.write`, `connector.history.read`, `connector.registry.invalidate`, `connector.consent.provision`, `connector.ingestion.record`, `connector.disclosure.record`, `catalog.read`, `provenance.read`, `identity-registry.read`, `.membership.read` |
+| `ds-participant-admin` | `connector.provider.read`, `.write`, `connector.history.read`, `connector.registry.invalidate`, `connector.ingestion.record`, `connector.disclosure.record`, `catalog.read`, `provenance.read`, `identity-registry.read`, `.membership.read` |
 | `ds-participant-viewer` | `connector.provider.read`, `connector.history.read`, `catalog.read`, `provenance.read`, `identity-registry.read` |
 | `ds-onboarding-operator` | `identity-registry.organizations.read`, `.write`, `.agreements.read`, `.participants.write`, `identity-registry.read` |
 | `ds-member` | `catalog.read` |
+
+`connector.consent.provision` left `ds-participant-admin` on 2026-09-17: a realm group is bound
+to no connector, so a participant operator holding it could register consent at any connector,
+for any organisation's members. It is held by organisation clients (`CONNECTOR_SERVICE_SCOPES`)
+and the onboarding service, and reached by a person only through `connector.admin`. The
+connector decides where an organisation may write — see [ds-connector](../connector.md#a-collector-registers-consent).
+`identity-registry.collectors.write`, which manages that relation, is in no bundle either.
 
 Expansion applies four rules per group, in order:
 

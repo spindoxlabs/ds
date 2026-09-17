@@ -81,6 +81,12 @@ scopes:
   # the only write this endpoint made into a realm ds may not own.
   - name: identity-registry.keycloak.sync
     description: Bind a Keycloak user to a dataspace DID
+  # "Organisation X may register consent for its members at holder Y" — the
+  # relation a holder's connector reads through `GET /consent-collectors/check`
+  # (on `.read`). Managing it is a governance act about two organisations, so it
+  # has its own grant; no client holds it, a person reaches it through `.admin`.
+  - name: identity-registry.collectors.write
+    description: Accept or revoke an organisation as a consent collector for a holder
 
   # Connector
   #
@@ -107,8 +113,10 @@ scopes:
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
     description: Accept EDC webhook events (transfer-process, contract-negotiation)
+  # Held by organisation clients (an accepted collector, or the holder's own)
+  # and by the onboarding service — never by a participant operator's bundle.
   - name: connector.consent.provision
-    description: Provision a subject's standing sharing decision (POST /consent/admin/shares)
+    description: Register a subject's standing sharing decision (POST /consent/admin/shares)
   # Keycloak's client-scope description is VARCHAR(255) and the realm API
   # answers 500 rather than a validation error when it overflows — keep these
   # one short line each. The rationale lives in dependencies.py.
@@ -220,13 +228,16 @@ clients:
       # (see the scope's own description above), and it was the only write the
       # endpoint made into a realm ds may not own.
       - identity-registry.keycloak.sync
-      # Provision a subject's standing sharing decision on the connector after
-      # onboarding approval (POST /consent/admin/shares).
-      - connector.consent.provision
+      # **No `connector.consent.provision`** (removed 2026-09-17, plan
+      # `a-collector-registers-consent-at-the-holder`). The connector refuses a
+      # plain service token on `POST /consent/admin/shares`: it names no
+      # organisation. The onboarding service registers a member's consent with
+      # its organisation's own client, `svc-ds-connector-<alias>` (created by
+      # `ir-cli keycloak org-sync`), which holds the permission.
       # Read that decision back before exporting against it: who currently
       # consents to this offer (GET /consent/admin/shares). Separate from
-      # `.provision` because that one is in the `ds-participant-admin` bundle,
-      # and a write grant must not carry bulk subject enumeration with it.
+      # `.provision` because a write grant must not carry bulk subject
+      # enumeration with it — organisation clients hold `.provision`, not this.
       - connector.consent.audience
       # Record a CSV export as a disclosure (Block C). This is the route to use:
       # `POST /admin/disclosure` on the connector computes the authorising

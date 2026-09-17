@@ -137,6 +137,12 @@ class Settings(BaseSettings):
 
     identity_registry_url: str = "http://identity-registry:30005"
     participant_registry_cache_ttl: float = 60.0
+    #: How long an answer to "may this organisation register consent here" is
+    #: reused (plan `a-collector-registers-consent-at-the-holder`). The registry
+    #: also sends an invalidation hint when a relation changes; this bounds the
+    #: window when that hint is lost. An outage serves the last answer for at
+    #: most five times this, then refuses.
+    collector_cache_ttl: float = 60.0
     participants_registry_path: str | None = None
     governance_yaml_path: str = "governance/governance.yaml"
     governance_overlay_name: str | None = None

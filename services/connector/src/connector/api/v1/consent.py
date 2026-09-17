@@ -5,16 +5,20 @@ from __future__ import annotations
 import inspect
 import logging
 from datetime import datetime
+from typing import Literal
 from urllib.parse import urlparse
 
+from ds.governance.dataplane import split_key
 from ds_auth.user_credentials import verify_user_vc_jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import ConsentRequestORM
 from ...dependencies import (
+    WRITER_COLLECTOR,
+    ConsentWriter,
     get_db,
     get_notifier,
     get_participant_registry,
@@ -23,10 +27,12 @@ from ...dependencies import (
     require_consent_audience,
     require_consent_provision,
     require_consent_read,
+    require_consent_writer,
     require_internal_scope,
     require_provider_read,
 )
 from ...notifications.base import ConsentNotifier
+from ...registry.participants import CollectorAnswer, CollectorLookupError
 from ...services import circle, consent_service
 from ...services import consent_vocabulary as vocab
 from ...services.membership_check import (
@@ -46,6 +52,8 @@ async def _emit_consent_events(
     consents: list[ConsentRequestORM],
     *,
     reason: str | None = None,
+    acted_by: dict | None = None,
+    keys_supplied: bool | None = None,
 ) -> None:
     """Emit a provenance event per settled consent row, after the DB commits.
 
@@ -55,6 +63,11 @@ async def _emit_consent_events(
     then rolls back.  The row's final status decides the event; event ids are
     deterministic so an idempotent re-run (e.g. a repeated admin provision) is
     deduplicated by the provenance store rather than double-counted.
+
+    Who decided (`decided_by`) and the registering organisation (`collector`)
+    are read off the row, which the write stamped server-side; ``acted_by`` is
+    the verified token of whoever wrote it. The keys are never passed — only
+    whether the call supplied some.
     """
     if prov is None:
         return
@@ -70,6 +83,8 @@ async def _emit_consent_events(
                 controller_role=consent.controller_role,
                 legal_basis=consent.legal_basis,
                 event_id=f"consent-granted:{consent.id}",
+                **_decision_kwargs(consent, acted_by),
+                keys_supplied=keys_supplied,
             )
         elif consent.status == "revoked":
             await prov.consent_revoked(
@@ -82,7 +97,23 @@ async def _emit_consent_events(
                 controller_role=consent.controller_role,
                 reason=reason or consent.revocation_reason,
                 event_id=f"consent-revoked:{consent.id}",
+                **_decision_kwargs(consent, acted_by),
             )
+
+
+def _decision_kwargs(consent: ConsentRequestORM, acted_by: dict | None) -> dict:
+    """The authority context for an event — only when there is any to record.
+
+    A person's own decision through `/consent/my/*` records none of it, and its
+    payload stays exactly what it was.
+    """
+    if acted_by is None and consent.collector is None:
+        return {}
+    return {
+        "decided_by": consent.decided_by,
+        "collector": consent.collector,
+        "acted_by": acted_by,
+    }
 
 
 # ── Pydantic schemas ──────────────────────────────────────────────────────────
@@ -119,11 +150,42 @@ class ConsentResponse(BaseModel):
     # otherwise tell a consent the person gave from one a system recorded for
     # them, and `D-15c` makes that difference decide who may change it.
     decided_by: str = "subject"
+    # The organisation (DID) whose token registered the decision, when one did.
+    collector: str | None = None
+    # Whether the row holds data keys. The keys themselves are returned only to
+    # the organisation that registered them (`GET /consent/admin/subject-shares`).
+    keys_supplied: bool = False
     requested_at: datetime
     decided_at: datetime | None = None
     revoked_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+    @model_validator(mode="before")
+    @classmethod
+    def _keys_supplied_from_row(cls, value):
+        if isinstance(value, ConsentRequestORM):
+            return {
+                **{
+                    column: getattr(value, column)
+                    for column in cls.model_fields
+                    if hasattr(value, column)
+                },
+                "keys_supplied": bool(value.subject_keys),
+            }
+        return value
+
+
+class RegisteredConsentResponse(ConsentResponse):
+    """A registration's answer: the row, and what it is still waiting for.
+
+    ``missing_prerequisites`` names the offers this offer is admitted only
+    together with (`requires_offers`) that the subject has not granted at this
+    connector. Non-empty means the decision is recorded and does not admit the
+    subject yet — said here rather than discovered as an empty row filter.
+    """
+
+    missing_prerequisites: list[str] = []
 
 
 class TransferRegisterRequest(BaseModel):
@@ -258,6 +320,8 @@ class AdminShareRequest(BaseModel):
     stop, and requiring proof to stop would be the wrong way round.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     subject_id: str
     offer_id: str
     enabled: bool
@@ -265,6 +329,29 @@ class AdminShareRequest(BaseModel):
     #: Present only when the caller means to lift a withdrawal the subject made
     #: themselves. Absent, that attempt is refused with a 409 (`D-15c`).
     override_subject_withdrawal: SubjectWithdrawalOverride | None = None
+    #: The subject's typed data keys at this holder, `"<type>:<value>"`
+    #: (e.g. `pod:…`). Sent with a grant; a later grant replaces them and a
+    #: withdrawal drops them, so sending them with a withdrawal is refused.
+    keys: list[str] | None = Field(default=None, max_length=64)
+    #: **Required from an organisation token, refused from anyone else.**
+    #: `subject` — the organisation relays a decision the member took (a
+    #: relayed withdrawal is then the member's, `D-15c`); `collector` — the
+    #: organisation decided itself (e.g. the member left it).
+    decided_by: Literal["subject", "collector"] | None = None
+
+    @field_validator("keys")
+    @classmethod
+    def _typed_keys(cls, keys: list[str] | None) -> list[str] | None:
+        if keys is None:
+            return None
+        for key in keys:
+            try:
+                split_key(key)
+            except ValueError as exc:
+                raise ValueError(str(exc)) from exc
+        # One list, one order: a re-registration with the same keys in another
+        # order is not a change.
+        return sorted(set(keys))
 
     @model_validator(mode="after")
     def _evidence_required_to_grant(self) -> AdminShareRequest:
@@ -282,6 +369,10 @@ class AdminShareRequest(BaseModel):
             raise ValueError(
                 "override_subject_withdrawal applies to enabling a share; a "
                 "withdrawal overrides nothing"
+            )
+        if self.keys is not None and not self.enabled:
+            raise ValueError(
+                "keys travel with a grant; a withdrawal drops them and takes none"
             )
         return self
 
@@ -867,6 +958,7 @@ def _offer_legal_basis_record(
     offer,
     caller: AdminShareLegalBasis | None,
     override: SubjectWithdrawalOverride | None = None,
+    collector: str | None = None,
 ) -> dict:
     """Assemble the stored legal-basis evidence for a provisioned share.
 
@@ -876,6 +968,10 @@ def _offer_legal_basis_record(
     something other than what the offer describes. The caller supplies only the
     evidence it holds: source, versions, locale, the rendered-text hash and a
     non-PII submission reference.
+
+    ``collector`` — the organisation whose token registered the consent — is the
+    connector's too: read off the verified token, never off the body. Present
+    only when an organisation registered it.
     """
     sent = caller.model_dump() if caller else {}
     return {
@@ -892,6 +988,7 @@ def _offer_legal_basis_record(
         "user_visible_hash": vocab.offer_user_visible_hash(offer),
         "accepted_at": sent.get("accepted_at"),
         "submission_ref": sent.get("submission_ref"),
+        **({"collector": collector} if collector else {}),
         # Present only on the exceptional path, and then it is the most important
         # thing in the record: this consent came back over a withdrawal the person
         # made themselves, and here is who said so. Absent on every ordinary
@@ -904,55 +1001,176 @@ def _offer_legal_basis_record(
     }
 
 
-@router.post("/admin/shares")
+async def check_collector(
+    request: Request, holder_did: str, collector_did: str
+) -> CollectorAnswer:
+    """Ask the participant registry whether *collector_did* may write here.
+
+    One seam for the route and its tests. A registry with no collector lookup
+    (none configured) accepts only the holder itself.
+    """
+    registry = getattr(request.app.state, "registry", None)
+    lookup = getattr(registry, "consent_collector", None)
+    if lookup is None:
+        if holder_did == collector_did:
+            return CollectorAnswer(True, None, "a holder collects for itself")
+        return CollectorAnswer(False, None, "no collector registry is configured")
+    answer = lookup(holder_did, collector_did)
+    if inspect.isawaitable(answer):
+        answer = await answer
+    return answer
+
+
+async def _admit_writer(
+    request: Request, settings: Settings, writer: ConsentWriter, subject_id: str
+) -> None:
+    """May this writer write — or read back — this subject's decisions here?
+
+    Plan `a-collector-registers-consent-at-the-holder`, decisions 1-2:
+
+    1. a **collector** must be accepted for this holder in the identity
+       registry. Not accepted is a 403; a registry that cannot say is a 503.
+    2. the subject must be a **member of the organisation the writer speaks
+       for** — the collector, or this connector's own organisation — never of
+       the offer's recipient (`D-21`). The owner id to check is the registry's
+       answer for that organisation's DID.
+
+    A deployment with no identity registry keeps today's behaviour for its own
+    services (no membership check) and accepts no collector.
+    """
+    try:
+        answer = await check_collector(
+            request, settings.participant_did, writer.organisation
+        )
+    except CollectorLookupError as exc:
+        raise HTTPException(
+            503,
+            f"Identity registry unavailable, cannot verify that "
+            f"'{writer.organisation}' may register consent here",
+        ) from exc
+    if not answer.accepted:
+        raise HTTPException(
+            403,
+            f"'{writer.organisation}' is not an accepted consent collector for "
+            f"this participant ({answer.reason})",
+        )
+    if not settings.identity_registry_url:
+        if writer.kind == WRITER_COLLECTOR:
+            raise HTTPException(
+                403,
+                "no identity registry is configured, so no collector's "
+                "membership can be verified",
+            )
+        return
+    if not answer.collector_owner:
+        raise HTTPException(
+            403,
+            f"'{writer.organisation}' is not the DID of a registered organisation, "
+            "so whose members it speaks for cannot be checked",
+        )
+    membership = await check_subject_membership(
+        settings.identity_registry_url,
+        user_did=subject_id,
+        organization_alias=answer.collector_owner,
+        token_provider=getattr(request.app.state, "ir_token_provider", None),
+    )
+    # Retryable, not refused — see the same split on the consent-request
+    # route. Provisioning is driven by a service working through approved
+    # records, and a 403 is what tells it to stop and file the failure.
+    if membership is Membership.UNKNOWN:
+        raise HTTPException(
+            503,
+            f"Identity registry unavailable, cannot verify that "
+            f"'{subject_id}' is a member of organisation "
+            f"'{answer.collector_owner}'",
+        )
+    if membership is Membership.NOT_MEMBER:
+        raise HTTPException(
+            403,
+            f"Subject '{subject_id}' is not a member of organisation "
+            f"'{answer.collector_owner}', which this caller speaks for",
+        )
+
+
+@router.post("/admin/shares", response_model=list[RegisteredConsentResponse])
 async def admin_provision_share(
     body: AdminShareRequest,
     request: Request,
-    _claims: dict = Depends(require_consent_provision),
+    writer: ConsentWriter = Depends(require_consent_writer),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
     prov: ProvBridge | None = Depends(get_prov),
 ):
-    """Provision a data subject's standing sharing decision from an offer.
+    """Register a data subject's standing sharing decision from an offer.
 
-    **Who calls this, since grepping the repo will not tell you.** The production
-    caller is the onboarding service, which is **out of this repository**; it runs
-    as ``svc-ds-onboarding`` and calls here after it syncs a newly-approved
-    participant's DID (``services/keycloak/clients.yaml`` grants it
-    ``connector.consent.provision`` for exactly this).  In-repo the only caller is
-    ``libs/ds-e2e``'s smoke and perimeter flows, which is a harness rather than a
-    driver.  So this route is **not** dead, and it is also not reached by any
-    code shipped here — the two facts a reader needs, and the pair that made
-    `POST /webhooks/transfer-process` look deletable when it was not.
+    **Who calls this.** Three kinds of caller, classified from the verified
+    token (`ConsentWriter`), never from the body:
 
-    A third caller class exists and is deliberate: ``connector.consent.provision``
-    is in the ``ds-participant-admin`` bundle, so a participant's operator console
-    can provision as well.  That is why ``legal_basis`` is mandatory and refused
-    when absent — an operator asserting that somebody consented, with no record of
-    what they were shown, is exactly the claim this route must not accept on
-    anyone's word.
+    - an **accepted collector** — another organisation's own client, registering
+      a decision one of *its* members took (plan
+      `a-collector-registers-consent-at-the-holder`): the community collects the
+      consent, the organisation holding the data registers it here, and this
+      connector's data plane then needs no call back to the community;
+    - this connector's **own organisation client** — the holder registering what
+      it collected itself. An onboarding service (out of this repository) runs as
+      that client;
+    - the **deployment operator**, a person holding `connector.admin`, for the
+      evidenced `override_subject_withdrawal`.
 
-    It names an ``offer_id``, never a dataset, so it cannot
-    drift from the copy the person read: the connector expands the offer into
-    one **wildcard-scoped** row per resolved dataset (§3.1), stamping purpose,
-    controller-role and the user-visible-facts hash from the offer itself.
+    **A plain service token is refused** (`403`) since 2026-09-17, and so is a
+    participant operator's seat: neither is bound to an organisation that could
+    speak for the subject.
+
+    In every case the subject must be a member of the organisation the caller
+    speaks for (`D-21`), not of the offer's recipient.
+
+    An organisation token says whose decision it is (``decided_by``): the
+    member's, relayed — so a relayed withdrawal is the member's and no service
+    provision lifts it (`D-15c`) — or the organisation's own. The organisation is
+    recorded on the row, in the evidence and in provenance; the subject's data
+    ``keys`` are stored on the row and carried by the data plane's row filter,
+    and provenance records only that some were supplied.
+
+    It names an ``offer_id``, never a dataset, so it cannot drift from the copy
+    the person read: the connector expands the offer into one **wildcard-scoped**
+    row per resolved dataset (§3.1), stamping purpose, controller-role and the
+    user-visible-facts hash from the offer itself. An offer that resolves to no
+    dataset here is a 422 — an empty answer would read as "recorded".
 
     Only consent-based offers can be provisioned — a contract-based offer is
     disclosed, not consented, so provisioning one would manufacture a choice
-    that does not exist.  Idempotent: a re-run returns the existing rows.
+    that does not exist.  Idempotent: a re-run returns the existing rows, with
+    their keys replaced if the call sent different ones.
 
-    **It will not re-open a withdrawal the person made themselves** (`D-15c`).
-    A re-run over a member who has since withdrawn is refused with a ``409``
-    naming the withdrawal, rather than appending a fresh ``granted`` row that
-    same-cell recency would make the deciding one — which is what it did, with a
-    caller-supplied evidence record attached, at a moment when that person had
-    already said stop (issue #34). A withdrawal a *service* made is a different
-    matter and is lifted as before: the same authority is deciding again.
+    **It will not re-open a withdrawal another authority stands behind**
+    (`D-15c`): a re-run over a member who has since withdrawn is refused with a
+    ``409`` naming the withdrawal. An operator who has a person's instruction to
+    restore it sends ``override_subject_withdrawal``, which stamps the row
+    ``operator`` and files the authority for the act inside its evidence record.
 
-    An operator who has a person's instruction to restore it sends
-    ``override_subject_withdrawal``, which stamps the row ``operator`` and files
-    the authority for the act inside its evidence record.
+    ``missing_prerequisites`` on each row names the offers this one is admitted
+    only together with that the subject has not granted here.
     """
+    if writer.is_organisation_token:
+        if body.decided_by is None:
+            raise HTTPException(
+                422,
+                "an organisation registering consent must say whose decision it "
+                "is: decided_by='subject' (relayed) or 'collector'",
+            )
+        if body.override_subject_withdrawal is not None:
+            raise HTTPException(
+                422,
+                "override_subject_withdrawal is an operator's act; an "
+                "organisation token relays or takes decisions",
+            )
+    elif body.decided_by is not None:
+        raise HTTPException(
+            422,
+            "decided_by is stated by an organisation token only; this caller's "
+            "authority is recorded from its token",
+        )
+
     try:
         offer = vocab.resolve_offer(body.offer_id)
     except vocab.VocabularyError as exc:
@@ -965,50 +1183,39 @@ async def admin_provision_share(
             f"{offer.legal_basis}) — it is disclosed, not consented",
         )
 
-    # A standing share is only meaningful for a member of the offer's controller
-    # organisation. Enforced whenever a registry is wired; a pure-unit setup with
-    # no registry skips it rather than failing on an unreachable host.
-    if settings.identity_registry_url:
-        membership = await check_subject_membership(
-            settings.identity_registry_url,
-            user_did=body.subject_id,
-            organization_alias=offer.recipients.controller,
-            token_provider=getattr(request.app.state, "ir_token_provider", None),
+    try:
+        dataset_ids = vocab.datasets_for_offer(offer.id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not dataset_ids:
+        raise HTTPException(
+            422,
+            f"Offer '{offer.id}' resolves to no dataset at this connector — there "
+            "is nothing here to record the decision against",
         )
-        # Retryable, not refused — see the same split on the consent-request
-        # route. Provisioning is driven by a service working through approved
-        # records, and a 403 is what tells it to stop and file the failure.
-        if membership is Membership.UNKNOWN:
-            raise HTTPException(
-                503,
-                f"Identity registry unavailable, cannot verify that "
-                f"'{body.subject_id}' is a member of controller organisation "
-                f"'{offer.recipients.controller}'",
-            )
-        if membership is Membership.NOT_MEMBER:
-            raise HTTPException(
-                403,
-                f"Subject '{body.subject_id}' is not a member of controller "
-                f"organisation '{offer.recipients.controller}'",
-            )
+
+    await _admit_writer(request, settings, writer, body.subject_id)
 
     override = body.override_subject_withdrawal
-    legal_basis = _offer_legal_basis_record(offer, body.legal_basis, override)
+    legal_basis = _offer_legal_basis_record(
+        offer, body.legal_basis, override, collector=writer.collector_did
+    )
 
-    # **Two callers, and the column has to say which.** `service` is the ordinary
-    # one — onboarding, re-running over its own records. `operator` is a person at
-    # a console who has declared an override, and the declaration is the only
-    # thing that distinguishes them here: a client-credentials token and an
-    # operator's token both arrive holding `connector.consent.provision`, so
-    # inferring the difference from the claims would be guessing. Stamping what
-    # the caller *asserted* is honest, and it is also the value `D-15c` needs,
-    # because only the asserted act may lift a person's own withdrawal.
-    decided_by = "operator" if override else "service"
+    # **Whose decision, stated by the caller's class.** An organisation token
+    # says it (relayed member decision → `subject`, its own → `collector`). The
+    # only other writer is the deployment operator, a person, and its act is
+    # `operator` whether or not it carries the evidenced override — the
+    # override record in `legal_basis` is what says a person's withdrawal was
+    # lifted. A plain service never reaches here (`require_consent_writer`).
+    if writer.is_organisation_token:
+        decided_by = str(body.decided_by)
+    else:
+        decided_by = "operator"
 
     try:
         consents = []
         async with db.begin():
-            for dataset_id in vocab.datasets_for_offer(offer.id):
+            for dataset_id in dataset_ids:
                 consents.append(
                     await consent_service.set_subject_data_sharing(
                         session=db,
@@ -1023,6 +1230,9 @@ async def admin_provision_share(
                         legal_basis=legal_basis,
                         decided_by=decided_by,
                         override_subject_withdrawal=bool(override),
+                        collector=writer.collector_did,
+                        keys=body.keys,
+                        holder=settings.participant_did if writer.is_holder else None,
                         message=(
                             f"Operator override of the data subject's withdrawal: "
                             f"{override.reason}"
@@ -1031,6 +1241,15 @@ async def admin_provision_share(
                         ),
                     )
                 )
+            missing = {
+                consent.id: consent_service.missing_prerequisites(
+                    await consent_service.subject_rows_for(
+                        db, consent.dataset_id, body.subject_id
+                    ),
+                    offer.id,
+                )
+                for consent in consents
+            }
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
     except consent_service.ConsentWithdrawalStands as exc:
@@ -1041,16 +1260,104 @@ async def admin_provision_share(
         # again. The transaction rolls back, so a multi-dataset offer provisions
         # all of its rows or none: a partial audience is not a state anyone asked
         # for and not one the caller could detect from a 409.
+        whose = (
+            f"Subject '{body.subject_id}' withdrew this share themselves"
+            if exc.decided_by == "subject"
+            else f"This share was withdrawn by {exc.decided_by}"
+            + (f" '{exc.collector}'" if exc.collector else "")
+        )
         raise HTTPException(
             409,
-            f"Subject '{body.subject_id}' withdrew this share themselves "
-            f"(dataset '{exc.dataset_id}', consent '{exc.consent_id}', "
-            f"{exc.withdrawn_at}). Only the subject can lift it — or an operator, "
-            "by sending override_subject_withdrawal with the authority for it "
-            "(D-15c).",
+            f"{whose} (dataset '{exc.dataset_id}', consent '{exc.consent_id}', "
+            f"{exc.withdrawn_at}). Only that authority or the subject can lift it "
+            "— or an operator, by sending override_subject_withdrawal with the "
+            "authority for it (D-15c).",
         ) from exc
-    await _emit_consent_events(prov, consents)
-    return [ConsentResponse.model_validate(c) for c in consents]
+    await _emit_consent_events(
+        prov,
+        consents,
+        acted_by=writer.acted_by,
+        keys_supplied=bool(body.keys) if body.enabled else None,
+    )
+    return [
+        RegisteredConsentResponse(
+            **ConsentResponse.model_validate(c).model_dump(),
+            missing_prerequisites=missing.get(c.id, []),
+        )
+        for c in consents
+    ]
+
+
+class SubjectShare(ConsentResponse):
+    """One of a subject's decisions at this connector, for the organisation that
+    speaks for them — with the data keys it registered, and nothing it did not."""
+
+    keys: list[str] = []
+    missing_prerequisites: list[str] = []
+
+
+@router.get("/admin/subject-shares", response_model=list[SubjectShare])
+async def admin_read_subject_shares(
+    request: Request,
+    subject_id: str = Query(..., min_length=1),
+    writer: ConsentWriter = Depends(require_consent_writer),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """One subject's decisions here, for the organisation that speaks for them.
+
+    The read-back a collector needs (plan
+    `a-collector-registers-consent-at-the-holder`, item 6): what did the holder
+    record for my member? `D-20` forbids a service reading `/consent/my`; this is
+    the narrow exception, and it is **per subject and limited to the caller's own
+    members** — the same acceptance and membership check the write makes, so an
+    organisation reads back exactly the people it may write for, one at a time.
+    Never a roster: `GET /consent/admin/shares` is the cross-subject read, and an
+    organisation client does not hold its permission.
+
+    It lists the latest decision per ``(dataset, offer, consumer)``, the asks
+    outstanding against the subject here (`D-18`: a member cannot see a holder's
+    asks, so their organisation is where they surface), and — for the rows that
+    hold them — the data keys, which only the registering organisation gets back.
+    """
+    await _admit_writer(request, settings, writer, subject_id)
+
+    rows = await consent_service.list_subject_consents(
+        session=db, subject_id=subject_id
+    )
+    latest: dict[tuple[str, str | None, str], ConsentRequestORM] = {}
+    for row in sorted(rows, key=consent_service.decision_time, reverse=True):
+        if row.status == "pending":
+            latest.setdefault((row.dataset_id, row.offer_id, f"ask:{row.id}"), row)
+            continue
+        latest.setdefault((row.dataset_id, row.offer_id, row.consumer_id), row)
+
+    by_dataset: dict[str, list[ConsentRequestORM]] = {}
+    for row in rows:
+        by_dataset.setdefault(row.dataset_id, []).append(row)
+
+    shares = []
+    for row in latest.values():
+        own_keys = (
+            writer.collector_did is not None and row.collector == writer.collector_did
+        ) or (writer.collector_did is None and row.collector is None)
+        shares.append(
+            SubjectShare(
+                **ConsentResponse.model_validate(row).model_dump(),
+                keys=list(row.subject_keys or []) if own_keys else [],
+                missing_prerequisites=(
+                    consent_service.missing_prerequisites(
+                        await consent_service.subject_rows_for(
+                            db, row.dataset_id, subject_id
+                        ),
+                        row.offer_id,
+                    )
+                    if row.offer_id and row.status == "granted"
+                    else []
+                ),
+            )
+        )
+    return shares
 
 
 class OfferAudienceSubject(BaseModel):

@@ -296,6 +296,9 @@ def public_offer_projection(offer: SharingOffer) -> dict:
         "consent_text_version": offer.consent_text_version,
         "revocable": offer.revocable,
         "retention": offer.retention,
+        # Offer ids, like `id`: a frontend asking for this offer can say it
+        # takes effect only together with those (`requires_offers`).
+        "requires_offers": list(offer.requires_offers),
         "user_visible_hash": offer.user_visible_hash(chain),
         # A count, not the keys: which datasets back an offer is operator
         # detail the person was never shown. Derived from the datasets that

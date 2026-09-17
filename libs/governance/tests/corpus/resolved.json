@@ -81,6 +81,99 @@
       ],
       "title": "Substation Capacity Headroom (Gold)",
       "user_filter_column": null
+    },
+    "datasets.silver.grid_meter_readings": {
+      "access_level": "open",
+      "access_requirements": null,
+      "attribution": null,
+      "classification": "pii",
+      "dataspace": {
+        "asset": {
+          "content_type": "application/json",
+          "id": "datasets.silver.grid_meter_readings"
+        },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
+        "consent_required": true,
+        "consent_scope": "per_subject",
+        "contract": {
+          "access_policy_id": null,
+          "contract_definition_id": null,
+          "contract_policy_id": null
+        },
+        "contract_required": false,
+        "data_address": {
+          "base_url": "http://dataset-api-grid-operator:30002/query",
+          "proxy_path": false,
+          "proxy_query_params": true,
+          "query_params": {},
+          "type": "HttpData"
+        },
+        "expose": true,
+        "medallion": "silver",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
+        "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
+        "purpose": [
+          "FlexibilityResearch",
+          "GridMonitoring"
+        ],
+        "sharing_offers": [
+          "grid-meter-release",
+          "grid-meter-flexibility"
+        ],
+        "valid_from": null,
+        "valid_until": null
+      },
+      "dcat": {
+        "accrual_periodicity": null,
+        "conforms_to": null,
+        "language_uris": [],
+        "publisher_uri": null,
+        "spatial_uris": [],
+        "temporal": null,
+        "themes": []
+      },
+      "description": "Quarter-hourly readings per supply point, held by the distribution system operator, released only for the members whose consent their community has registered here.",
+      "documentation_url": null,
+      "expose": null,
+      "extra": {},
+      "license": "proprietary",
+      "ontology": null,
+      "ownership": [
+        [
+          "grid-operator",
+          "DATA_OWNER"
+        ]
+      ],
+      "retention_days": 365,
+      "row_filters": [
+        {
+          "args": {
+            "column": "pod",
+            "key_type": "pod"
+          },
+          "handler": "subject_key_match"
+        }
+      ],
+      "source_system": "DSO metering export",
+      "tags": [
+        "meters",
+        "pii",
+        "silver"
+      ],
+      "title": "Members' Meter Readings (Silver)",
+      "user_filter_column": null
     }
   },
   "connector/governance-rec": {
@@ -341,6 +434,99 @@
         "weather"
       ],
       "title": "Weather Features (test)",
+      "user_filter_column": null
+    },
+    "datasets.silver.grid_meters": {
+      "access_level": "open",
+      "access_requirements": null,
+      "attribution": null,
+      "classification": "pii",
+      "dataspace": {
+        "asset": {
+          "content_type": "application/json",
+          "id": "datasets.silver.grid_meters"
+        },
+        "audience": {
+          "membership": "dataspaces.localhost",
+          "required_role": null,
+          "required_scope": "dataspaces.query"
+        },
+        "consent_on_revocation": "terminate",
+        "consent_required": true,
+        "consent_scope": "per_subject",
+        "contract": {
+          "access_policy_id": null,
+          "contract_definition_id": null,
+          "contract_policy_id": null
+        },
+        "contract_required": false,
+        "data_address": {
+          "base_url": "http://dataset-api:30002/query",
+          "proxy_path": true,
+          "proxy_query_params": true,
+          "query_params": {},
+          "type": "HttpData"
+        },
+        "expose": true,
+        "medallion": "silver",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
+        "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
+        "purpose": [
+          "EnergyCommunityOperation",
+          "FlexibilityResearch"
+        ],
+        "sharing_offers": [
+          "test-meter-release",
+          "test-meter-analytics"
+        ],
+        "valid_from": null,
+        "valid_until": null
+      },
+      "dcat": {
+        "accrual_periodicity": null,
+        "conforms_to": null,
+        "language_uris": [],
+        "publisher_uri": null,
+        "spatial_uris": [],
+        "temporal": null,
+        "themes": []
+      },
+      "description": null,
+      "documentation_url": null,
+      "expose": null,
+      "extra": {},
+      "license": null,
+      "ontology": null,
+      "ownership": [
+        [
+          "grid-operator",
+          "DATA_OWNER"
+        ]
+      ],
+      "retention_days": null,
+      "row_filters": [
+        {
+          "args": {
+            "column": "pod",
+            "key_type": "pod"
+          },
+          "handler": "subject_key_match"
+        }
+      ],
+      "source_system": null,
+      "tags": [
+        "meters",
+        "pii",
+        "silver"
+      ],
+      "title": "Grid Meter Readings (test)",
       "user_filter_column": null
     },
     "datasets.silver.meters": {

@@ -611,3 +611,16 @@ def test_the_overlay_may_rebind_an_unbundling(tmp_path):
     )
 
     assert catalogue.roles_of("grid-operator") == ["dispatch"]
+
+
+def test_a_prerequisite_does_not_ask_anybody_again():
+    """`requires_offers` narrows admission and widens nothing a person agreed to,
+    so adding one leaves the re-consent trigger where it was."""
+    plain = _offer()
+    dependent = plain.model_copy(update={"requires_offers": ["meter-release"]})
+    assert "requires_offers" not in dependent.user_visible_facts()
+    assert _hash(dependent) == _hash(plain)
+
+
+def test_an_offer_requires_nothing_by_default():
+    assert _offer().requires_offers == []

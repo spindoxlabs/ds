@@ -1,12 +1,60 @@
-# The grid operator asks nobody for consent, so it offers nothing to consent to.
+# The grid operator's consent offers — for data it holds about **other
+# organisations' members**.
 #
-# **Empty on purpose, and present on purpose.** `sharing_offers_path` defaults to
-# the file beside `governance.yaml`, so without this file the DSO's connector
-# would fall back to whatever the REC declared — a provider publishing another
-# organisation's consent offers, which is exactly the kind of quiet cross-wiring
-# a second provider exists to expose (`DID-15`).
+# **Present on purpose.** `sharing_offers_path` defaults to the file beside
+# `governance.yaml`, so without this file the DSO's connector would fall back to
+# whatever the REC declared — a provider publishing another organisation's
+# consent offers, which is exactly the kind of quiet cross-wiring a second
+# provider exists to expose (`DID-15`). These are the DSO's own.
 #
-# A DSO's datasets are about its own infrastructure. There is no data subject in
-# them, so there is nothing to ask and no offer to make.
+# The DSO has no members, so it asks nobody itself: the community its customers
+# belong to collects the decision and registers it here (plan
+# `a-collector-registers-consent-at-the-holder`).
 
-sharing_offers: []
+controller_roles:
+  grid-operator: [metering, operations]
+
+sharing_offers:
+  # The member lets the grid operator release their meter readings through the
+  # dataspace at all. Every use of them below requires it.
+  - id: grid-meter-release
+    purpose: GridMonitoring
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: grid-operator
+      controller_role: metering
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: grid-operator
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P1Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y
+
+  # A named recipient studies the readings for flexibility. Admitted only
+  # together with the release above: withdrawing that withdraws this too.
+  - id: grid-meter-flexibility
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: consumer-org
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: consumer-org
+    requires_offers: [grid-meter-release]
+    subject_scope: own_data
+    measures: [consumption]
+    resolution: PT15M
+    coverage:
+      retrospective: P1Y
+      prospective: P1Y
+    consent_text_version: "1.0"
+    revocable: true
+    retention: P1Y

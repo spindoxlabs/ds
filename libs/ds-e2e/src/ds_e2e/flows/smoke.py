@@ -6,7 +6,7 @@ import urllib.parse
 from typing import Any
 from urllib.parse import quote
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import HOLDER_DECIDES, holder_headers, legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.http import HttpError
 from ds_e2e.models import FlowResult
@@ -182,7 +182,8 @@ class SmokeFlow(BaseFlow):
 
         # 6b. The scoped wildcard (§3.1). A consent provisioned by an operator on
         #     the subject's behalf (POST /consent/admin/shares, the path the
-        #     onboarding service uses) carries consumer_id = "*": it admits any
+        #     onboarding service uses, with the provider organisation's own
+        #     client) carries consumer_id = "*": it admits any
         #     party inside the circle for this controller and purpose. A consumer
         #     with no row of its own must be authorised by that wildcard alone,
         #     and never for a purpose the subject did not consent to.
@@ -195,8 +196,9 @@ class SmokeFlow(BaseFlow):
                         "offer_id": s.sharing_offer_id,
                         "enabled": True,
                         "legal_basis": legal_basis("e2e-verification"),
+                        "decided_by": HOLDER_DECIDES,
                     },
-                    headers=svc_headers,
+                    headers=holder_headers(self.http, s),
                 )
                 or []
             )

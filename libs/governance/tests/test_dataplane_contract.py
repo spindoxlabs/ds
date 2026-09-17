@@ -178,3 +178,78 @@ def test_deny_and_allow_carry_the_same_keys():
         "datasets",
         "cache",
     }
+
+
+# ── typed keys travel beside the principals ───────────────────────────────────
+#
+# Plan `a-collector-registers-consent-at-the-holder`: the collector sends the
+# subject's data keys with the consent, and the filter carries them so the
+# holder's data plane needs no call back to the collector.
+
+
+def test_the_filter_carries_typed_keys_beside_the_principals():
+    from ds.governance import DataplaneDecision as Decision
+
+    decision = Decision.model_validate(
+        _allow(
+            {
+                "handler": "subject_key_match",
+                "args": {"column": "pod", "key_type": "pod"},
+                "principals": [],
+                "keys": ["pod:EX000E00000001", "pod:EX000E00000002"],
+            }
+        )
+    )
+    row_filter = decision.verdict_for(GATED).row_filter
+    assert row_filter.keys == ["pod:EX000E00000001", "pod:EX000E00000002"]
+    assert row_filter.principals == []
+
+
+def test_keys_default_to_an_empty_allow_list():
+    assert DataplaneRowFilter(handler="rec_registry").keys == []
+
+
+def test_a_decision_with_keys_is_refused_by_a_reader_without_them():
+    """The one-way drift rule, applied to the new field: an older PEP must deny."""
+    from pydantic import BaseModel, ConfigDict
+
+    class OldRowFilter(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        handler: str
+        args: dict = {}
+        principals: list[str] = []
+
+    payload = DataplaneRowFilter(
+        handler="subject_key_match", keys=["pod:EX000E00000001"]
+    ).model_dump()
+    with pytest.raises(ValidationError):
+        OldRowFilter.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("key", "expected"),
+    [
+        ("pod:EX000E00000001", ("pod", "EX000E00000001")),
+        ("meter-id:a:b", ("meter-id", "a:b")),
+    ],
+)
+def test_a_typed_key_splits_at_the_first_colon(key, expected):
+    from ds.governance.dataplane import split_key
+
+    assert split_key(key) == expected
+
+
+@pytest.mark.parametrize("key", ["", "pod", ":x", "POD:x", "pod:", "pod:has space"])
+def test_a_malformed_key_is_refused(key):
+    from ds.governance.dataplane import split_key
+
+    with pytest.raises(ValueError):
+        split_key(key)
+
+
+def test_values_of_one_type_ignore_the_others_and_the_malformed():
+    from ds.governance.dataplane import values_of_type
+
+    assert values_of_type(
+        ["pod:A", "meter:B", "junk", "pod:C"], "pod"
+    ) == {"A", "C"}

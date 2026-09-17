@@ -1466,6 +1466,12 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow organisation-token
 
+  e2e:collector-holder:
+    desc: "E2E: a collector registers its members' consent at the grid operator, and an organisation pulls by key"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow collector-holder
+
   e2e:catalog:
     desc: "E2E: federated catalogue crawl freshness, discovery and search"
     cmds:

@@ -69,3 +69,32 @@ async def client(engine):
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
+
+
+#: The organisation this connector's participant belongs to, as the identity
+#: registry would name it. The consent fixtures' offers are `example-org`'s.
+OWN_ORGANISATION = "example-org"
+
+
+@pytest.fixture(autouse=True)
+def _own_organisation_collects(monkeypatch):
+    """The collector relation, as a registry with no relations would answer it.
+
+    Plan `a-collector-registers-consent-at-the-holder`: a consent write asks the
+    registry whether the calling organisation may write here and whose members
+    it speaks for. A unit run has no registry, so this answers what one with no
+    relations would: this connector's own organisation (`OWN_ORGANISATION`)
+    collects for itself, nobody else is accepted. Tests about the relation
+    override it (`tests/test_consent_collectors.py`).
+    """
+    from connector.api.v1 import consent
+    from connector.registry.participants import CollectorAnswer
+
+    async def _answer(_request, holder_did, collector_did):
+        if holder_did == collector_did:
+            return CollectorAnswer(
+                True, OWN_ORGANISATION, "a holder collects for itself"
+            )
+        return CollectorAnswer(False, None, "not an accepted collector")
+
+    monkeypatch.setattr(consent, "check_collector", _answer)

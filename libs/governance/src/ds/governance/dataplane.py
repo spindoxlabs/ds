@@ -6,7 +6,7 @@ lives here rather than in the connector because a shape with more than one
 implementer belongs to neither of them, and because what it carries is
 governance's own `RowFilter` with the consenting principals resolved into it.
 
-**The row filter travels whole.** Handler, args and principals — not a column
+**The row filter travels whole.** Handler, args, principals and keys — not a column
 and a list of ids. The handler is what knows how a person maps to values in the
 column: `rec_registry` resolves a member to their devices, `direct_user_match`
 matches the subject directly. A decision reduced to a column forces the
@@ -25,6 +25,7 @@ of a PEP stops the data plane rather than widening it. Rulebook `CR-4`.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,6 +38,39 @@ DIRECT_USER_MATCH = "direct_user_match"
 
 ALLOW = "allow"
 DENY = "deny"
+
+#: A typed data key, `"<type>:<value>"`. The type is a lowercase token; the value
+#: is whatever the holder stores the data under, split off at the **first** colon
+#: so a value may itself contain one.
+SUBJECT_KEY_PATTERN = re.compile(r"^(?P<type>[a-z][a-z0-9_-]{0,31}):(?P<value>\S{1,256})$")
+
+
+def split_key(key: str) -> tuple[str, str]:
+    """`("pod", "EX…")` from `"pod:EX…"`; `ValueError` for anything else.
+
+    Shared by the connector (which validates keys when a consent registration
+    carries them) and a data plane (which matches the values of one type), so
+    the two cannot disagree about what a key is.
+    """
+    match = SUBJECT_KEY_PATTERN.match(key or "")
+    if match is None:
+        raise ValueError(
+            f"{key!r} is not a typed key — expected '<type>:<value>', e.g. 'pod:…'"
+        )
+    return match.group("type"), match.group("value")
+
+
+def values_of_type(keys: list[str], key_type: str) -> set[str]:
+    """The values in *keys* whose type is *key_type*; malformed keys are skipped."""
+    values: set[str] = set()
+    for key in keys:
+        try:
+            kind, value = split_key(key)
+        except ValueError:
+            continue
+        if kind == key_type:
+            values.add(value)
+    return values
 
 
 class DecisionCache(BaseModel):
@@ -67,6 +101,17 @@ class DataplaneRowFilter(BaseModel):
     #: resolve, never subject DIDs. A DID here is derived from an unsalted email
     #: hash, so it re-identifies the subject to whoever later holds the payload.
     principals: list[str] = Field(default_factory=list)
+    #: **Typed data keys** of the same consenting subjects, `"<type>:<value>"`
+    #: (e.g. `pod:…`) — the values the holder stores their data under, sent with
+    #: the consent by the organisation that collected it (plan
+    #: `a-collector-registers-consent-at-the-holder`). The type is open: ds does
+    #: not interpret it, and a handler that keys rows on one type matches the
+    #: column against the values of that type. Like `principals`, an allow-list:
+    #: a handler reads the list it knows, and an empty one narrows to nothing.
+    #:
+    #: Added 2026-09-17. A PEP that predates it refuses the whole decision
+    #: (`extra="forbid"`), which is the intended direction.
+    keys: list[str] = Field(default_factory=list)
 
 
 class DatasetVerdict(BaseModel):

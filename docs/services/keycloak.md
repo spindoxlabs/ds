@@ -82,7 +82,7 @@ A human's authority arrives as Keycloak **groups**, never roles, and the vocabul
 | Group | Is |
 |---|---|
 | `ds-admin` | the deployment operator |
-| `ds-participant-admin` | acts for a participant: publish, sync, manage assets |
+| `ds-participant-admin` | acts for a participant: publish, sync, manage assets — not register consent, which an organisation's own client does |
 | `ds-participant-viewer` | read-only within a participant |
 | `ds-onboarding-operator` | reviews organisation applications |
 | `ds-member` | an authenticated human who may browse the catalogue |

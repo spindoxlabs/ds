@@ -117,6 +117,20 @@ with their legal identity), memberships (which person acts for which organisatio
 service agreements with their acceptances. The connector and the federated catalogue read
 these; the connector's cache is invalidated by a push from here on change.
 
+**Consent collectors.** Which organisations a holder accepts consent registrations from
+(plan `a-collector-registers-consent-at-the-holder`): a community collects its members'
+consent, and the organisation holding their data registers it at its own connector. The
+relation is a pair of DIDs, managed on `identity-registry.collectors.write`
+(`POST /admin/consent-collectors`, `POST /admin/consent-collectors/revoke`,
+`GET /admin/consent-collectors`, and `ir-cli collector add|revoke|list`). The holder must be
+an active participant and the collector exactly one verified owner; a holder always collects
+for itself, so that pair is never recorded. Revocation marks the row with its reason and never
+deletes it. The connector asks `GET /consent-collectors/check?holder_did=…&collector_did=…`
+on `identity-registry.read`, one pair at a time, and learns whether to accept and **which
+owner** the collector is — the organisation a subject's membership is checked against. A
+suspended owner is not accepted while its relation stands. Every write sends the connectors
+the same invalidation hint a participant change does.
+
 **A role change is a reissue.** A consumer commissions generation equipment and becomes a
 prosumer. Nothing in the credential model updates a claim in place — VCDM 2.0 defines no
 such property, algorithm or section, which is why there is no `PATCH` here and why the
@@ -232,7 +246,7 @@ This is the part most easily misread. The API has five tiers and they are not in
 | Issuer | a self-issued JWT proving control of the client's **own** DID, carrying a `pre-authorized_code` | `POST /issuer/credentials`, `GET /issuer/requests/{id}` |
 | STS | the participant's own STS client secret, PBKDF2-verified | `POST /sts/{did}/token` |
 | DCP | a self-issued JWT signed by the requested DID's registered key | `POST /credentials/{did}/presentations/query` |
-| Internal | OIDC scope (`identity-registry.read`, `.resolve`, `.membership.read`, `.credentials.read`, `.organizations.read`, `.agreements.read`) | `/users/*`, `/memberships/check`, `/credentials/check`, `/owners/resolve`, `/agreements/current`, participant reads |
+| Internal | OIDC scope (`identity-registry.read`, `.resolve`, `.membership.read`, `.credentials.read`, `.organizations.read`, `.agreements.read`) | `/users/*`, `/memberships/check`, `/credentials/check`, `/owners/resolve`, `/participants/resolve`, `/consent-collectors/check`, `/agreements/current`, participant reads |
 | Admin | OIDC scope, narrow grant preferred over `.admin` | `/admin/*` |
 
 The admin tier is deliberately split into eight narrow permissions
@@ -254,6 +268,17 @@ only way to admit it was to hand it the broad read as well.
 read. A service that decides admission needs the second and must never be given the first —
 `clients.yaml` refuses `*.admin` to a service client, and these two endpoints are what make
 that possible to honour.
+
+`GET /participants/resolve` is the same move for the participant registry (2026-09-17). A
+consumer connector asks it before it dials a counterparty (rulebook `C-19`). It takes exactly
+one of `?did=` or `?dsp_address=` and answers for one **active** participant with `did`,
+`dsp_address` and `roles`, and nothing else: no allowed scopes, no registration time. An
+unknown, inactive or ambiguous key gets the same `404`. It accepts `identity-registry.read`,
+which the connector's organisation client already holds, so no new permission was needed. It is
+anchor-only, like `/admin/participants`. The admin listing remains for callers that genuinely
+enumerate: the federated catalogue's crawler and the connector's operator view.
+`/admin/participants/check` remains for the EDC's scope check, because allowed scopes are
+exactly what the narrow route does not disclose.
 
 `GET /credentials/check` also decides **validity** — active, and unexpired — rather than
 returning state for the caller to interpret. The connector used to read the roster and judge
@@ -382,6 +407,7 @@ database-touching command verifies the schema revision first, and every command 
 | `key` | `rotate`, `custody-check` |
 | `status` | `export`, `check-indices` |
 | `keycloak` | `org-sync`, `map-user` |
+| `collector` | `add`, `revoke`, `list` — which organisations a holder accepts consent from |
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
 reports each entry's outcome, rolling back only the failures.
@@ -502,7 +528,7 @@ naming the URL it could not fetch.
 
 ## Persistence
 
-Fourteen tables in `identity_registry`, Alembic-managed; the service and every CLI command
+Fifteen tables in `identity_registry`, Alembic-managed; the service and every CLI command
 refuse to run against a schema that is not at head.
 
 | Table | Holds |
@@ -520,6 +546,7 @@ refuse to run against a schema that is not at head.
 | `organization_memberships` | person → organisation. **No role column** — it was written by three paths and read by none, so it went stale invisibly and no sharing offer could gate on it. What somebody *is* in their community is a `communityRole` claim on their credential (migration 0017) |
 | `keycloak_mappings` | `(realm, user_id)` → DID, plus username and email |
 | `status_lists` | the revocation bitstring |
+| `consent_collectors` | holder DID → collector DID, active or revoked with its reason (migration 0018) |
 
 ## Running it
 

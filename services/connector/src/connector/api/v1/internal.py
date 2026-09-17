@@ -451,7 +451,7 @@ async def _authorize_dataset(
 ) -> dict:
     """One dataset's verdict, with the row filter that goes with it."""
     from ...services import consent_vocabulary as vocab
-    from ...services.consent_service import get_granted_subject_ids
+    from ...services.consent_service import get_granted_subjects
     from ...services.subject_identities import resolve_usernames
 
     def verdict(decision: str, reason: str | None = None, row_filter=None) -> dict:
@@ -500,7 +500,7 @@ async def _authorize_dataset(
         # rows. A consent-gated dataset cannot be read "just because".
         return verdict(DENY, "purpose_required")
 
-    subject_ids = await get_granted_subject_ids(
+    granted = await get_granted_subjects(
         db,
         dataset_id,
         consumer_did,
@@ -508,8 +508,13 @@ async def _authorize_dataset(
         consent_required=True,
         admitted_wildcard_offers=admitted_wildcard_offers,
     )
+    subject_ids = [subject.subject_id for subject in granted]
     if not subject_ids:
         return verdict(DENY, "no_consent")
+    # The typed data keys a collector registered with the consent — the values
+    # the holder stores these subjects' data under. Sorted and de-duplicated:
+    # the list is an allow-list, and its order must say nothing about who.
+    keys = sorted({key for subject in granted for key in subject.keys})
 
     spec = _row_filter_spec(rule)
     if spec is None:
@@ -527,11 +532,13 @@ async def _authorize_dataset(
         subject_ids, settings.identity_registry_url, token_provider
     )
     principals = [usernames[did] for did in subject_ids if did in usernames]
-    if not principals:
+    if not principals and not keys:
         # Consent exists but nobody could be named to the system holding the
-        # data. Denying is the only honest answer: an empty principal set with
-        # an allow would be read as "filter to nothing", and a missing filter as
-        # "no filter".
+        # data — neither by a username nor by a key the collector registered.
+        # Denying is the only honest answer: an empty allow-list with an allow
+        # would be read as "filter to nothing", and a missing filter as "no
+        # filter". One list is enough: the handler reads the one it knows, and
+        # an empty one narrows it to nothing.
         return verdict(DENY, "subjects_unresolvable")
 
     return verdict(
@@ -543,6 +550,10 @@ async def _authorize_dataset(
             # unsalted email hash, so it is re-identifiable by anyone who later
             # holds the payload.
             principals=principals,
+            # Typed keys (`pod:…`), never DIDs either. Personal data like the
+            # principals, and sent for the same reason: the holder's data plane
+            # matches on them without calling the collector back.
+            keys=keys,
         ),
     )
 

@@ -9,6 +9,7 @@ from ds_e2e.flows.chains import (
     ChainPartnerFlow,
     ChainUnbundlingFlow,
 )
+from ds_e2e.flows.collector_holder import CollectorHolderFlow
 from ds_e2e.flows.consent_purpose import ConsentPurposeFlow
 from ds_e2e.flows.consent_request import ConsentRequestFlow
 from ds_e2e.flows.consent_withdrawal import ConsentWithdrawalFlow
@@ -81,6 +82,12 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # `fail-closed`, which negotiates for the same asset as a person: the two
     # are keyed apart, and this one revokes its own requests on both ends.
     "organisation-token": OrganisationTokenFlow,
+    # A collector registers its members' consent at the grid operator, and the
+    # consumer organisation pulls with its own token (plan
+    # `a-collector-registers-consent-at-the-holder`). After `organisation-token`,
+    # whose machinery it reuses, and before `fail-closed`: it withdraws its own
+    # registrations and revokes its own requests, on a different asset.
+    "collector-holder": CollectorHolderFlow,
     # **Last, and deliberately.** It stops a container and restarts it, so it is
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls

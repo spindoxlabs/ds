@@ -132,9 +132,77 @@ class ScenarioRunner:
             self._apply_owner(owner, report, pending_memberships)
         for participant in self.scenario.get("participants") or []:
             self._apply_participant(participant, report)
+        for subject in self.scenario.get("subjects") or []:
+            self._apply_subject(subject, report, pending_memberships)
         for user_did, organization in pending_memberships:
             self._apply_membership(user_did, organization, report)
+        # Last: a relation names a holder that must already be an active
+        # participant, and a collector that must already be a verified owner.
+        for relation in self.scenario.get("consent_collectors") or []:
+            self._apply_collector(relation, report)
         return report
+
+    def _apply_subject(
+        self,
+        spec: dict[str, Any],
+        report: ScenarioReport,
+        pending_memberships: list[tuple[str, str]],
+    ) -> None:
+        """A person, issued the way onboarding issues one — never by database write.
+
+        The data-subject route creates the person's (keyless) DID in their
+        custodian's namespace and is idempotent per role, so a second `apply`
+        re-delivers rather than re-mints.
+        """
+        status, payload = self.http.raw(
+            "POST",
+            f"{self.ir}/admin/credentials/data-subject",
+            body={
+                "subject_id": spec["subject_id"],
+                "role": spec.get("role", "DataSubject"),
+                "linked_participant_did": spec["linked_participant_did"],
+                "verified_by": spec.get("verified_by", "ds-e2e-scenario"),
+            },
+            headers=self.admin,
+        )
+        if status not in (200, 201) or not isinstance(payload, dict):
+            report.problem(
+                f"could not issue subject {spec['subject_id']}: HTTP {status} {payload}"
+            )
+            return
+        did = str(payload.get("subjectDid") or "")
+        if not did or did != spec.get("did", did):
+            # The scenario names the DID so `destroy` can find the membership
+            # again; a registry answering with another one has a person the
+            # scenario does not describe.
+            report.problem(
+                f"subject {spec['subject_id']}: the registry named {did!r}, the "
+                f"scenario expects {spec.get('did')!r}"
+            )
+            return
+        report.did(f"subject {spec['subject_id']} is {did}")
+        if spec.get("member_of"):
+            pending_memberships.append((did, spec["member_of"]))
+
+    def _apply_collector(self, spec: dict[str, Any], report: ScenarioReport) -> None:
+        status, payload = self.http.raw(
+            "POST",
+            f"{self.ir}/admin/consent-collectors",
+            body={
+                "holder_did": spec["holder_did"],
+                "collector_did": spec["collector_did"],
+            },
+            headers=self.admin,
+        )
+        if status in (200, 201):
+            report.did(
+                f"{spec['collector_did']} collects consent for {spec['holder_did']}"
+            )
+        else:
+            report.problem(
+                f"could not accept collector {spec['collector_did']} for "
+                f"{spec['holder_did']}: HTTP {status} {payload}"
+            )
 
     def _check_agreements(self, report: ScenarioReport) -> bool:
         required = self.scenario.get("requires_agreements") or []
@@ -386,6 +454,23 @@ class ScenarioRunner:
             # "active" is, because that is what the registry authorises on.
             state = "active" if payload.get("active") else "deactivated"
             report.did(f"participant {did}: {state}")
+        for relation in self.scenario.get("consent_collectors") or []:
+            status, payload = self.http.raw(
+                "GET",
+                f"{self.ir}/consent-collectors/check?"
+                + urllib.parse.urlencode(
+                    {
+                        "holder_did": relation["holder_did"],
+                        "collector_did": relation["collector_did"],
+                    }
+                ),
+                headers=self.admin,
+            )
+            accepted = isinstance(payload, dict) and payload.get("accepted")
+            report.did(
+                f"collector {relation['collector_did']} → {relation['holder_did']}: "
+                f"{'accepted' if accepted else 'not accepted'}"
+            )
         return report
 
     # ── destroy ──────────────────────────────────────────────────────────────
@@ -402,6 +487,38 @@ class ScenarioRunner:
         auditable. ``apply`` reactivates it, so the cycle is still repeatable.
         """
         report = ScenarioReport(name=self.scenario.get("name", "scenario"))
+
+        for relation in self.scenario.get("consent_collectors") or []:
+            status, _ = self.http.raw(
+                "POST",
+                f"{self.ir}/admin/consent-collectors/revoke",
+                body={
+                    "holder_did": relation["holder_did"],
+                    "collector_did": relation["collector_did"],
+                    "reason": "ds-e2e scenario destroy",
+                },
+                headers=self.admin,
+            )
+            if status == 200:
+                report.did(f"revoked collector {relation['collector_did']}")
+            elif status != 404:
+                report.problem(
+                    f"could not revoke collector {relation['collector_did']}: "
+                    f"HTTP {status}"
+                )
+
+        for subject in self.scenario.get("subjects") or []:
+            if not subject.get("member_of"):
+                continue
+            did = subject.get("did") or ""
+            if did:
+                self.http.raw(
+                    "DELETE",
+                    f"{self.ir}/admin/memberships/"
+                    f"{urllib.parse.quote(did, safe='')}/"
+                    f"{urllib.parse.quote(subject['member_of'])}",
+                    headers=self.admin,
+                )
 
         for participant in self.scenario.get("participants") or []:
             did = participant["did"]

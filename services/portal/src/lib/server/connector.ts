@@ -51,6 +51,8 @@ export interface LegalBasis {
 	user_visible_hash?: string | null;
 	accepted_at?: string | null;
 	submission_ref?: string | null;
+	/** The organisation (DID) whose token registered the consent, when one did. */
+	collector?: string | null;
 }
 
 export { WILDCARD_CONSUMER } from '$lib/consent';
@@ -190,6 +192,8 @@ export interface SharingOffer {
 	revocable: boolean;
 	retention: string | null;
 	user_visible_hash: string;
+	/** Offers this one takes effect only together with (`requires_offers`). */
+	requires_offers?: string[];
 	dataset_count: number;
 	fallback_text_en: {
 		purpose_label: string;

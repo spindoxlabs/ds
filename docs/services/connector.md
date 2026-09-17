@@ -35,13 +35,20 @@ cannot be resolved.
 **Holds the consent registry.** `/consent/*` is where a data subject grants, rejects or
 revokes sharing of their own rows. Subjects authenticate with a Verifiable Credential
 (`X-Subject-Id` + `X-User-VC`), not a bearer token — the credential *is* the identity, and
-no operator sits in between. Operators and the onboarding service have their own routes under
-the same prefix, guarded by ordinary permissions: `POST /consent/admin/shares` records a
+no operator sits in between. Organisations and the onboarding service have their own routes
+under the same prefix, guarded by ordinary permissions: `POST /consent/admin/shares` records a
 subject's standing decision (`connector.consent.provision`), and `GET /consent/admin/shares`
 reads back **who currently consents to one sharing offer**, for one named consumer
 (`connector.consent.audience`). The read is a separate permission on purpose — a write grant
 must not carry bulk subject enumeration with it, which is why `.audience` is in no bundle and
 is reached by a person only through `connector.admin`.
+
+**Registers consent another organisation collected.** A person consents where they are a
+member; the organisation holding their data runs this connector. An **accepted collector** —
+an organisation the identity registry lists for this participant — registers its members'
+decisions here with its own client token, together with the typed keys their data is stored
+under (`keys: ["pod:…"]`). The data plane then matches rows on those keys and never calls the
+collector back. See [A collector registers consent](#a-collector-registers-consent) below.
 
 **Answers every policy question.** `/internal/*` is the decision point:
 
@@ -115,8 +122,11 @@ API asks the connector whether rows may flow.
    the requested purpose must be covered by one of them under the profile's `broader`
    hierarchy — consent to a parent purpose covers a narrower request, never the reverse.
 6. **Per dataset:** if governance says no consent is needed, allow with no filter. Otherwise
-   collect the subjects whose latest decision authorises this consumer, translate their DIDs
-   to the usernames the data plane joins on, and return a row filter.
+   collect the subjects whose latest decision authorises this consumer — an offer that
+   `requires_offers` another admits them only while that one does too — translate their DIDs
+   to the usernames the data plane joins on (`principals`), gather the typed keys registered
+   with their consents (`keys`), and return a row filter. It is refused only when both lists
+   are empty; the handler reads the list it knows.
 7. **Combine.** The strictest verdict wins, and every refusal shares one response shape so a
    probe cannot distinguish causes.
 
@@ -134,13 +144,64 @@ A decision that names an **offer** is wildcard-scoped, on both routes that recor
 where the subject does. Naming a `consumer_id` is what makes either a per-party decision.
 
 **Who decided is recorded, and it decides who may change it.** Every consent row carries
-`decided_by` — `subject`, `service` or `operator` — and a withdrawal may only be lifted by
-the authority that made it (`D-15c`). So a service re-running onboarding over a member who
+`decided_by` — `subject`, `operator`, `collector`, or `service` for a row the retired
+plain-service path wrote — and a withdrawal may only be lifted by the authority that made it,
+or by the subject (`D-15c`). So a service re-running onboarding over a member who
 has since withdrawn is refused with a `409` naming the withdrawal, rather than appending a
 grant that would win the cell on recency; a withdrawal that same service made earlier it
 lifts as before. An operator with the person's instruction sends
 `override_subject_withdrawal` on `POST /consent/admin/shares`, which records who authorised
 it inside the row's evidence and stamps the row `operator`.
+
+### A collector registers consent
+
+Plan `a-collector-registers-consent-at-the-holder`. `POST /consent/admin/shares` classifies its
+caller from the verified token, never from the body:
+
+| Caller | Token | Speaks for | `decided_by` |
+|---|---|---|---|
+| an **accepted collector** | another organisation's client (`svc-ds-connector-<alias>`, `sub` ≠ this participant) holding `connector.consent.provision` | its own organisation | stated: `subject` (relayed) or `collector` |
+| this participant's **own organisation** | its own organisation client — this is where an onboarding service belongs | this participant | stated, as above |
+| the **deployment operator** | a **person** holding `connector.admin` | this participant | `operator` |
+
+**A plain service token is refused** (`403`), and so is a participant operator's seat.
+`connector.consent.provision` left the `ds-participant-admin` bundle and every plain service
+client: a realm group and a shared service client are bound to no connector, so either could
+write at any connector for anyone's members. A service that registered consent moves to its
+organisation's client — see
+[Operations · upgrading past connector schema 0012](../deployment/operations.md#upgrading-past-connector-schema-0012-consent-is-registered-by-an-organisation-client).
+The operator is kept for one act no organisation token may perform: the evidenced
+`override_subject_withdrawal` a person asks for (`D-15c`). Rows the retired service path wrote
+keep `decided_by = "service"`, and the holder's own organisation or its operator may lift them.
+
+For every caller the route then asks two questions, in order:
+
+1. **May this organisation write here?** `GET /consent-collectors/check` on the identity
+   registry, cached per pair for `CONNECTOR_COLLECTOR_CACHE_TTL` and dropped by the registry's
+   invalidation hint (`POST /internal/registry/invalidate`). An outage serves the last answer
+   for at most five TTLs, then refuses (`503`). A holder always collects for itself. Not
+   accepted is a `403`.
+2. **Is the subject its member?** The registry's answer names the organisation's owner id,
+   and `GET /memberships/check` is asked against **that** organisation — never the offer's
+   recipient (`D-21`). Not a member is a `403`, an unanswerable check a `503`.
+
+What is recorded:
+
+- the collector's DID on the row (`collector`), in the evidence record
+  (`legal_basis.collector`) and in provenance, with the client that acted (`acted_by`);
+- the keys on the row (`subject_keys`). A later registration replaces them, a withdrawal drops
+  them; sending keys with a withdrawal is a `422`. Provenance records only `keys_supplied`, and
+  only the registering organisation gets the keys back;
+- a relayed withdrawal as the member's (`decided_by="subject"`), so neither a service nor the
+  collector acting on its own can lift it.
+
+`missing_prerequisites` on each returned row names the offers this one is admitted only
+together with (`requires_offers`) that the subject has not granted here. An offer that resolves
+to no dataset at this connector is a `422`.
+
+`GET /consent/admin/subject-shares?subject_id=…` is the read-back: one subject's decisions and
+outstanding asks here, for the organisation that speaks for them, under the same two checks. It
+is the narrow exception to `D-20`, and it is not a roster.
 
 ### Parking a negotiation
 
@@ -169,6 +230,13 @@ not a permission ds invents:
 | `POST /consumer/transfer`, `POST /consumer/requests/{id}/revoke` | `management-api:transfers:write` |
 | `GET /consumer/transfers`, `GET /consumer/transfers/{id}`, `GET /consumer/edr/{id}` | `management-api:transfers:read` |
 | `POST /consumer/flow` | `negotiations:write` **and** `transfers:write` |
+
+Before any consumer route dials a counterparty, the connector checks that the counterparty is
+a registered, active participant. It asks identity-registry's `GET /participants/resolve`, by
+DSP address or DID, which answers with the DID, the address and the roles, and is cached for
+`CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`. It no longer reads the `/admin/participants`
+listing for this. If identity-registry cannot be reached and nothing is cached, the check
+fails closed.
 
 EDC's own matcher decides, so `management-api:write` also satisfies
 `management-api:negotiations:write`. A token naming another participant's context gets `403`,
@@ -300,6 +368,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 |---|---|---|
 | `CONNECTOR_IDENTITY_REGISTRY_URL` | `http://identity-registry:30005` | participants, owners, memberships |
 | `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL` | `60.0` | seconds; invalidated on registry change |
+| `CONNECTOR_COLLECTOR_CACHE_TTL` | `60.0` | seconds an accepted-collector answer is reused; invalidated by the same hint; an outage serves it for at most five TTLs |
 | `CONNECTOR_OWNERS_REGISTRY_CACHE_TTL` | `60.0` | seconds |
 | `CONNECTOR_PROVENANCE_URL` | `http://localhost:30000` | where events go |
 | `CONNECTOR_PROVIDER_CONNECTOR_URL` | `""` | consumer side: poll the provider for a parked decision. Empty disables |
@@ -331,7 +400,7 @@ the service refuses to boot against a schema that is not at head.
 | Table | Holds |
 |---|---|
 | `contract_agreements` | one row per agreement, with the **frozen ODRL policy snapshot** — the source of truth for purpose checks |
-| `consent_requests` | the consent registry: subject, consumer (or `*`), dataset, purposes, controller, status |
+| `consent_requests` | the consent registry: subject, consumer (or `*`), dataset, purposes, controller, status, who decided, the registering organisation and the subject's data keys |
 | `consumer_access_requests` | consumer-side: what was asked for, its negotiation, agreement and transfer |
 | `consumer_transfers` | consumer-side transfer records, so a subject sees only their own |
 | `edr_entries` | consumer-side: the EDR each started transfer's callback delivered, by transfer id |

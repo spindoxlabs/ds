@@ -27,9 +27,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from connector.db.models import ConsentRequestORM
 from connector.services.consent_service import WILDCARD_CONSUMER
 from connector.services.membership_check import Membership
-from tests import make_headers, make_vc_headers
+from tests import make_headers, make_org_headers, make_user_headers, make_vc_headers
 
-PROVISION = make_headers(scope="connector.consent.provision")
+# Consent is registered by an organisation's own client since 2026-09-17 — here
+# this connector's own (plan `a-collector-registers-consent-at-the-holder`). A
+# plain service is refused (`tests/test_consent_collectors.py`). The holder
+# deciding on its own authority is `collector`, the successor of the retired
+# `service` value.
+PROVISION = make_org_headers(scopes=("connector.consent.provision",))
+HOLDER_DECIDES = "collector"
 SUBJECT = "did:web:rec.dataspaces.localhost:users:sub-001"
 OFFER = "test-flexibility"
 
@@ -70,11 +76,26 @@ async def _subject_sets(client, *, enabled: bool):
     )
 
 
+#: The deployment operator — the only person who may register consent, and the
+#: only caller who may send the evidenced override.
+OPERATOR = make_user_headers(["ds-admin"])
+
+
 async def _service_provisions(client, *, enabled: bool = True, **extra):
+    """The holder's own authority provisioning — what onboarding does.
+
+    Since 2026-09-17 that is the holder's organisation client deciding for
+    itself (`decided_by="collector"`); a plain service is refused. A call
+    carrying the override is the deployment operator's, the one caller who may
+    send it.
+    """
     body = {"subject_id": SUBJECT, "offer_id": OFFER, "enabled": enabled}
     if enabled:
         body["legal_basis"] = EVIDENCE
     body.update(extra)
+    if "override_subject_withdrawal" in extra:
+        return await client.post("/consent/admin/shares", headers=OPERATOR, json=body)
+    body["decided_by"] = HOLDER_DECIDES
     return await client.post("/consent/admin/shares", headers=PROVISION, json=body)
 
 
@@ -141,7 +162,7 @@ async def test_a_service_may_lift_its_own_withdrawal(client, engine):
 
     assert r.status_code == 200
     assert [row["status"] for row in r.json()] == ["granted"]
-    assert [row["decided_by"] for row in r.json()] == ["service"]
+    assert [row["decided_by"] for row in r.json()] == [HOLDER_DECIDES]
 
 
 @pytest.mark.rule("D-15c")
@@ -171,8 +192,8 @@ async def test_an_evidenced_operator_override_lifts_it_and_says_so(client):
     assert r.status_code == 200
     row = r.json()[0]
     assert row["status"] == "granted"
-    # `operator`, not `service`: the act is a person's, and the column is what a
-    # later reader — or the next provisioning call — goes by.
+    # `operator`: the act is a person's, and the column is what a later reader —
+    # or the next provisioning call — goes by.
     assert row["decided_by"] == "operator"
     recorded = row["legal_basis"]["subject_withdrawal_override"]
     assert recorded["authorized_by"] == "operator-7"
@@ -264,3 +285,105 @@ async def test_a_subject_repeating_stop_takes_ownership_of_the_refusal(client, e
         "subject"
     ]
     assert (await _service_provisions(client)).status_code == 409
+
+
+# ── A withdrawal an organisation relays is the member's ───────────────────────
+#
+# Plan `a-collector-registers-consent-at-the-holder`, decision 3: an
+# organisation token states whose decision it registers. Relayed, it is the
+# member's — so the service re-running onboarding cannot lift it, exactly as if
+# the member had clicked stop here.
+
+ORG = make_org_headers(scopes=("connector.consent.provision",))
+
+
+async def _org_sets(client, *, enabled: bool, decided_by: str):
+    body = {
+        "subject_id": SUBJECT,
+        "offer_id": OFFER,
+        "enabled": enabled,
+        "decided_by": decided_by,
+    }
+    if enabled:
+        body["legal_basis"] = EVIDENCE
+    return await client.post("/consent/admin/shares", headers=ORG, json=body)
+
+
+@pytest.mark.rule("D-15c")
+@pytest.mark.asyncio
+async def test_a_relayed_withdrawal_is_not_lifted_by_a_service(client, engine):
+    assert (await _service_provisions(client)).status_code == 200
+    relayed = await _org_sets(client, enabled=False, decided_by="subject")
+    assert relayed.status_code == 200, relayed.text
+
+    [row] = await _rows(engine)
+    assert (row.status, row.decided_by) == ("revoked", "subject")
+    assert row.collector is not None
+
+    refused = await _service_provisions(client)
+    assert refused.status_code == 409, refused.text
+    # …and the member, through the same organisation, may.
+    assert (
+        await _org_sets(client, enabled=True, decided_by="subject")
+    ).status_code == 200
+
+
+@pytest.mark.rule("D-15c")
+@pytest.mark.asyncio
+async def test_the_holder_s_own_withdrawal_is_the_holder_s(client, engine):
+    """The holder's organisation deciding for itself is `collector`, naming
+    itself — and the deployment operator, the same authority, may re-open it
+    without an override; a relayed member withdrawal it may not."""
+    assert (
+        await _org_sets(client, enabled=True, decided_by="subject")
+    ).status_code == 200
+    own = await _org_sets(client, enabled=False, decided_by="collector")
+    assert own.status_code == 200
+    [row] = await _rows(engine)
+    assert row.decided_by == "collector"
+    assert row.collector is not None
+
+    body = {
+        "subject_id": SUBJECT,
+        "offer_id": OFFER,
+        "enabled": True,
+        "legal_basis": EVIDENCE,
+    }
+    lifted = await client.post("/consent/admin/shares", headers=OPERATOR, json=body)
+    assert lifted.status_code == 200, lifted.text
+    assert lifted.json()[0]["decided_by"] == "operator"
+
+    relayed = await _org_sets(client, enabled=False, decided_by="subject")
+    assert relayed.status_code == 200
+    refused = await client.post("/consent/admin/shares", headers=OPERATOR, json=body)
+    assert refused.status_code == 409
+
+
+@pytest.mark.rule("D-15c")
+@pytest.mark.asyncio
+async def test_the_holder_lifts_a_withdrawal_the_retired_service_path_made(
+    engine, client
+):
+    """Rows written before 2026-09-17 carry `service`. They were the holder's own
+    onboarding deciding, and the holder's organisation client is its successor,
+    so it may lift them; another organisation may not."""
+    from datetime import UTC, datetime
+
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session, session.begin():
+        session.add(
+            ConsentRequestORM(
+                subject_id=SUBJECT,
+                dataset_id="datasets.silver.meters",
+                consumer_id=WILDCARD_CONSUMER,
+                offer_id=OFFER,
+                purpose=["FlexibilityResearch"],
+                controller="example-org",
+                status="revoked",
+                decided_by="service",
+                requested_at=datetime(2026, 1, 1, tzinfo=UTC),
+                revoked_at=datetime(2026, 1, 2, tzinfo=UTC),
+                transfer_ids=[],
+            )
+        )
+    assert (await _service_provisions(client)).status_code == 200

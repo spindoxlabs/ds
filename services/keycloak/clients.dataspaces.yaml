@@ -111,7 +111,8 @@ clients:
       - connector.provider.read
       - connector.provider.write
       - connector.history.read
-      - connector.consent.provision
+      # No `connector.consent.provision`: the connector refuses a plain service
+      # token there. The flows register consent with the organisation clients.
       - connector.consent.audience
       - connector.ingestion.record
       - connector.disclosure.record

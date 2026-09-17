@@ -23,6 +23,18 @@ class ParticipantResponse(BaseModel):
     registered_at: datetime
 
 
+class ParticipantResolveResponse(BaseModel):
+    """`GET /participants/resolve` — who is at an address, and in which role.
+
+    Deliberately a subset of `ParticipantResponse`: no `allowed_scopes`, no
+    `active` (only active participants resolve), no `registered_at`.
+    """
+
+    did: str
+    dsp_address: str | None
+    roles: list[str]
+
+
 class ParticipantDetailResponse(ParticipantResponse):
     credentials: list[CredentialSummary] = []
 
@@ -329,3 +341,31 @@ class SubjectIdentityResponse(BaseModel):
 
     did: str
     username: str
+
+
+class ConsentCollectorResponse(BaseModel):
+    """One holder ↔ collector relation, revoked ones included."""
+
+    holder_did: str
+    collector_did: str
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    revoked_at: datetime | None = None
+    revocation_reason: str | None = None
+
+
+class ConsentCollectorCheckResponse(BaseModel):
+    """`GET /consent-collectors/check` — may this organisation register consent here?
+
+    `collector_owner` is the owner id the collector's DID belongs to: the
+    organisation a holder's connector checks the subject's membership against
+    (`D-21`). It is not a roster; it names one organisation the caller already
+    named by DID.
+    """
+
+    holder_did: str
+    collector_did: str
+    accepted: bool
+    collector_owner: str | None
+    reason: str

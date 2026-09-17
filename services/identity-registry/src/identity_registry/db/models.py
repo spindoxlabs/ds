@@ -584,3 +584,40 @@ class TrustedIssuer(Base):
     #: leaves every verifier guessing whether credentials it already accepted
     #: are still good.
     revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ConsentCollector(Base):
+    """"This organisation is an accepted consent collector for this holder."
+
+    Plan `a-collector-registers-consent-at-the-holder`. A holder's connector
+    (the organisation that holds a person's data) accepts consent registrations
+    from the organisations named here, for their own members. The relation is
+    registry data, not connector configuration: the anchor records it, and the
+    holder's connector reads it through `GET /consent-collectors/check`.
+
+    Both ends are DIDs, the identifiers an organisation token and a connector
+    carry (`sub` = the participant context = the DID).
+
+    **Revocation marks, never deletes** — the same rule as the trust list. A
+    consent row names the collector that registered it, and a relation that
+    vanished would leave that evidence pointing at nothing anyone can explain.
+    Adding a revoked pair again reactivates the row.
+    """
+
+    __tablename__ = "consent_collectors"
+
+    holder_did: Mapped[str] = mapped_column(Text, primary_key=True)
+    collector_did: Mapped[str] = mapped_column(Text, primary_key=True)
+    #: `active` | `revoked`.
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    added_by: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

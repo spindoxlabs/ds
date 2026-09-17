@@ -213,6 +213,7 @@ async def lifespan(app: FastAPI):
             settings.identity_registry_url,
             cache_ttl=settings.participant_registry_cache_ttl,
             token_provider=ir_token_provider,
+            collector_cache_ttl=settings.collector_cache_ttl,
         )
         registry = http_registry
     elif settings.participants_registry_path:

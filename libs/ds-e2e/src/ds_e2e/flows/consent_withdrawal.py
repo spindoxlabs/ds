@@ -64,7 +64,7 @@ import time
 import urllib.parse
 from typing import Any
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import HOLDER_DECIDES, holder_headers, legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.http import HttpError
 from ds_e2e.models import FlowResult
@@ -161,7 +161,11 @@ class ConsentWithdrawalFlow(BaseFlow):
     def _set_admin_share(
         self, svc: dict[str, str], subject_id: str, enabled: bool
     ) -> None:
-        """Provision or withdraw a subject's standing consent, as an operator.
+        """Provision or withdraw a subject's standing consent, as the provider.
+
+        Written with the provider organisation's own client (`holder_headers`):
+        the connector refuses a plain service token here since 2026-09-17, so
+        ``svc`` is not used for this call.
 
         **No `legal_basis` on withdrawal** — `ds_e2e.consent` says why: a person
         may always stop, and a caller that supplies proof in order to stop would
@@ -171,11 +175,14 @@ class ConsentWithdrawalFlow(BaseFlow):
             "subject_id": subject_id,
             "offer_id": self.settings.sharing_offer_id,
             "enabled": enabled,
+            "decided_by": HOLDER_DECIDES,
         }
         if enabled:
             body["legal_basis"] = legal_basis("e2e-consent-withdrawal restore")
         self.http.post(
-            f"{self.settings.connector_url}/consent/admin/shares", body, headers=svc
+            f"{self.settings.connector_url}/consent/admin/shares",
+            body,
+            headers=holder_headers(self.http, self.settings),
         )
 
     # ── The flow ─────────────────────────────────────────────────────────────

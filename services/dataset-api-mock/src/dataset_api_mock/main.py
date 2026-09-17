@@ -13,6 +13,7 @@ from ds.governance import (
     DataplaneDecision,
     DataplaneRowFilter,
 )
+from ds.governance.dataplane import values_of_type
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics
@@ -105,6 +106,18 @@ _check_production_config()
 # `celine-utils/schema/governance.schema.json` and is what the legacy
 # `user_filter_column` spelling migrates to, so it is part of the shape itself.
 REC_REGISTRY = "rec_registry"
+# A holder whose rows are keyed by the subjects' own data keys — a supply point,
+# say — rather than by a person. The keys arrive in the decision (`keys`,
+# `"<type>:<value>"`), registered with the consent by the organisation that
+# collected it (plan `a-collector-registers-consent-at-the-holder`); `args`
+# names the column and which key type it holds. Implemented here so the e2e flow
+# has a plane that honours it; the real dataset-api's matching is a later step.
+SUBJECT_KEY_MATCH = "subject_key_match"
+
+#: The supply points the grid operator's fixture rows are stored under. Fake,
+#: and obviously so. `EX000E00000009` belongs to nobody: a run that returns it
+#: has lost the filter.
+GRID_PODS = ("EX000E00000001", "EX000E00000002", "EX000E00000009")
 
 
 # The REC registry, collapsed into a fixture.
@@ -220,6 +233,24 @@ DATASETS: dict[str, dict[str, Any]] = {
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.55},
             {"timestamp": "2026-05-11T08:15:00Z", "device_id": "ds-e2e-METER-0002", "kwh": 0.51},
             {"timestamp": "2026-05-11T08:00:00Z", "device_id": "ds-e2e-METER-9999", "kwh": 9.99},
+        ],
+    },
+    # **Members' readings held by the grid operator** (plan
+    # `a-collector-registers-consent-at-the-holder`). Declared as
+    # `services/connector/governance-grid-operator/governance.yaml` declares it:
+    # rows keyed by supply point, narrowed by the keys the community registered
+    # with each member's consent.
+    "datasets.silver.grid_meter_readings": {
+        "asset_id": "datasets.silver.grid_meter_readings",
+        "requires_consent": True,
+        "row_filters": [
+            {"handler": SUBJECT_KEY_MATCH, "args": {"column": "pod", "key_type": "pod"}}
+        ],
+        "rows": [
+            {"timestamp": "2026-05-11T08:00:00Z", "pod": GRID_PODS[0], "kwh": 0.31},
+            {"timestamp": "2026-05-11T08:15:00Z", "pod": GRID_PODS[0], "kwh": 0.29},
+            {"timestamp": "2026-05-11T08:00:00Z", "pod": GRID_PODS[1], "kwh": 0.47},
+            {"timestamp": "2026-05-11T08:00:00Z", "pod": GRID_PODS[2], "kwh": 9.99},
         ],
     },
     # **The second provider's dataset** (`D-54`, `DID-15`). The grid operator
@@ -862,11 +893,22 @@ def _apply_row_filter(rows: list[dict[str, Any]], row_filter: DataplaneRowFilter
     # how a consent-gated dataset leaks. The same holds for a principal the
     # handler cannot resolve — an unknown member owns no devices, so their rows
     # are none, not all.
-    values = _handler_values(row_filter.handler, list(row_filter.principals))
+    if row_filter.handler == SUBJECT_KEY_MATCH:
+        # The keys are the allow-list; the principals say nothing about which
+        # supply point is whose. A filter naming no key type cannot be applied.
+        key_type = row_filter.args.get("key_type")
+        if not key_type:
+            raise HTTPException(
+                403,
+                f"Row filter handler {row_filter.handler!r} names no key type to match",
+            )
+        values = values_of_type(list(row_filter.keys), str(key_type))
+    else:
+        values = _handler_values(row_filter.handler, list(row_filter.principals))
     return [row for row in rows if row.get(column) in values]
 
 
-_IMPLEMENTED_HANDLERS = {DIRECT_USER_MATCH, REC_REGISTRY}
+_IMPLEMENTED_HANDLERS = {DIRECT_USER_MATCH, REC_REGISTRY, SUBJECT_KEY_MATCH}
 
 
 _jwks_cache: dict[str, Any] = {}

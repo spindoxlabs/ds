@@ -32,3 +32,22 @@ def legal_basis(submission_ref: str, *, source: str = "ds-e2e") -> dict[str, Any
         "locale": "en",
         "submission_ref": submission_ref,
     }
+
+
+#: What a flow registering consent as the provider organisation states.
+#:
+#: Since 2026-09-17 the connector refuses a plain service token on
+#: `POST /consent/admin/shares`: consent is registered by an organisation's own
+#: client, and that client says whose decision it is. The flows stand where the
+#: onboarding service stood — the holder's own organisation deciding — which is
+#: `collector` naming itself; the `service` value it replaces is no longer
+#: written.
+HOLDER_DECIDES = "collector"
+
+
+def holder_headers(http: Any, settings: Any) -> dict[str, str]:
+    """The provider organisation's own client — the one consent writer the
+    provider connector accepts for its own members."""
+    return http.bearer_headers_for(
+        settings.provider_org_client_id, settings.provider_org_client_secret
+    )

@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON
 
@@ -42,15 +42,22 @@ CONSENT_STATUSES: tuple[str, ...] = (
 #: This is not decoration on the audit trail — `set_subject_data_sharing` reads it
 #: to decide who may lift a standing withdrawal (`D-15c`). `subject` is the person
 #: whose data it is, deciding through `POST /consent/my/shares`; `service` is a
-#: system provisioning on their behalf through `POST /consent/admin/shares`;
-#: `operator` is a human at a participant's console doing the same thing
-#: deliberately, and is written only when that caller declares an override.
+#: plain service provisioning on their behalf through `POST /consent/admin/shares`
+#: — **no longer written** since 2026-09-17, when that path was removed, and kept
+#: for the rows it wrote; `operator` is the deployment operator (a person
+#: holding `connector.admin`) writing through the same route;
+#: `collector` is an organisation registering, at this connector, a decision it
+#: took itself about one of its members (plan
+#: `a-collector-registers-consent-at-the-holder`). A decision the collector only
+#: *relays* — the member said it — is stamped `subject`, so a later service
+#: provision cannot lift a relayed withdrawal (`D-15c`).
 #: `tests/test_consent_status_vocabulary.py` fails on a value written but not
-#: declared here.
+#: declared here, and migration 0012 holds the column to this set.
 CONSENT_DECIDERS: tuple[str, ...] = (
     "subject",
     "service",
     "operator",
+    "collector",
 )
 
 
@@ -81,6 +88,12 @@ class ConsentRequestORM(Base):
     """Consent request from a consumer for a data subject's data."""
 
     __tablename__ = "consent_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "decided_by IN ({})".format(", ".join(f"'{d}'" for d in CONSENT_DECIDERS)),
+            name="ck_consent_decided_by",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
     subject_id: Mapped[str] = mapped_column(Text, nullable=False)  # User DID
@@ -124,6 +137,19 @@ class ConsentRequestORM(Base):
     decided_by: Mapped[str] = mapped_column(
         Text, nullable=False, default="subject", server_default="subject"
     )
+    # The organisation (its DID) whose token registered the decision this row
+    # records, when an organisation token did — an accepted collector, or this
+    # connector's own organisation. Stamped server-side from the verified token,
+    # like `decided_by`, on whichever row the call decides. `None` for a person's
+    # own decision and for a plain service or operator.
+    collector: Mapped[str | None] = mapped_column(Text)
+    # The subject's **typed data keys** at this holder (`["pod:…"]`), sent with
+    # a registration so the data plane can match rows without calling the
+    # collector back. They are personal data, which is why they live here and
+    # nowhere else: never in `legal_basis`, never in provenance (which records
+    # only that keys were supplied), never in a log line. A new registration
+    # replaces them; a withdrawal drops them with the grant.
+    subject_keys: Mapped[list | None] = mapped_column(JSON)  # list[str]
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

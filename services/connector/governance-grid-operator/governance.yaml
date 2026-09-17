@@ -3,10 +3,16 @@
 # `D-54`, `DID-15`. The point of a second provider is that it is *not shaped
 # like the first*: the REC (`services/connector/governance-rec/`) publishes data
 # derived from its members and gates it on their consent; a DSO publishes data
-# about **its own infrastructure** and has no members to ask. Nothing in this
-# file mentions consent, and that is the fixture's whole contribution — a
-# platform tested against one provider quietly assumes every participant has a
-# member store, and this is what makes that assumption fail loudly.
+# about **its own infrastructure** and has no members to ask. A platform tested
+# against one provider quietly assumes every participant has a member store, and
+# this is what makes that assumption fail loudly.
+#
+# **A DSO still holds people's data without having members** (plan
+# `a-collector-registers-consent-at-the-holder`): the community's members'
+# meter readings. The community collects their consent and registers it here,
+# with the supply points the readings are stored under, so the DSO's data plane
+# never calls the community back. `datasets.silver.grid_meter_readings` is that
+# dataset; `datasets.gold.grid_capacity` is still consent-free.
 #
 # It is a **dev fixture, not a baseline**: a producer owns its own governance,
 # and this one exists so the dataspace has two of them.
@@ -89,5 +95,52 @@ sources:
         # data plane is the real celine service published on the host; that
         # overlay is the deployment-specific binding and this is the default.
         base_url: "http://dataset-api-rec:30002/query"
+        proxy_path: false
+        proxy_query_params: true
+
+  # ── Members' meter readings, held by the DSO ─────────────────────────────
+  #
+  # Plan `a-collector-registers-consent-at-the-holder`. Personal data the DSO
+  # holds about people who are members of a community, not of the DSO. The
+  # community (an accepted consent collector, `ir-cli collector add`) registers
+  # each member's consent here, with the typed keys (`pod:…`) their readings are
+  # stored under; the row filter matches on those keys (`subject_key_match`), so
+  # nothing is resolved from a username the DSO does not have.
+  #
+  # Two offers, and the second is admitted only together with the first
+  # (`requires_offers`): the member authorises the DSO to release the readings
+  # at all, and separately a named recipient's use of them.
+  datasets.silver.grid_meter_readings:
+    title: "Members' Meter Readings (Silver)"
+    description: >-
+      Quarter-hourly readings per supply point, held by the distribution system
+      operator, released only for the members whose consent their community has
+      registered here.
+    license: proprietary
+    access_level: open
+    classification: pii
+    tags: [meters, silver, pii]
+    source_system: DSO metering export
+    row_filters:
+      - handler: subject_key_match
+        args:
+          column: pod
+          key_type: pod
+    dataspace:
+      expose: true
+      medallion: silver
+      purpose: [GridMonitoring, FlexibilityResearch]
+      consent_required: true
+      sharing_offers:
+        - grid-meter-release
+        - grid-meter-flexibility
+      asset:
+        id: "datasets.silver.grid_meter_readings"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        # The grid operator's own stand-in plane (`docker-compose.grid-operator.yml`),
+        # which asks *this* connector for decisions and verifies *this* EDC's EDRs.
+        base_url: "http://dataset-api-grid-operator:30002/query"
         proxy_path: false
         proxy_query_params: true

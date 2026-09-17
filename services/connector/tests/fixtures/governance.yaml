@@ -36,6 +36,36 @@ sources:
       data_address:
         base_url: "http://dataset-api:30002/query"
 
+  # A holder's personal dataset, keyed by the subjects' data keys rather than by
+  # a username: the organisation that collected the consent sends the keys with
+  # it (plan `a-collector-registers-consent-at-the-holder`). Two offers, the
+  # second admitted only together with the first (`requires_offers`).
+  datasets.silver.grid_meters:
+    title: "Grid Meter Readings (test)"
+    access_level: open
+    classification: pii
+    tags: [meters, silver, pii]
+    ownership:
+      - name: grid-operator
+        type: DATA_OWNER
+    row_filters:
+      - handler: subject_key_match
+        args:
+          column: pod
+          key_type: pod
+    dataspace:
+      expose: true
+      medallion: silver
+      purpose: [EnergyCommunityOperation, FlexibilityResearch]
+      consent_required: true
+      sharing_offers:
+        - test-meter-release
+        - test-meter-analytics
+      asset:
+        id: "datasets.silver.grid_meters"
+      data_address:
+        base_url: "http://dataset-api:30002/query"
+
   # Open, non-personal — there is no data subject, so consent does not arise.
   datasets.gold.weather:
     title: "Weather Features (test)"

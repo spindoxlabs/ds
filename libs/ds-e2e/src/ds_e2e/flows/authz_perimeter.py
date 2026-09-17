@@ -29,7 +29,7 @@ import logging
 import urllib.parse
 from typing import Any
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import HOLDER_DECIDES, holder_headers, legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -331,7 +331,6 @@ class AuthzPerimeterFlow(BaseFlow):
         # provisioning is unavailable the probe degrades to the fabricated-id
         # assertion rather than silently passing.
         try:
-            svc_headers = self.http.bearer_headers()
             rows = (
                 self.http.post(
                     f"{s.connector_url}/consent/admin/shares",
@@ -340,8 +339,9 @@ class AuthzPerimeterFlow(BaseFlow):
                         "offer_id": s.sharing_offer_id,
                         "enabled": True,
                         "legal_basis": legal_basis("authz-perimeter"),
+                        "decided_by": HOLDER_DECIDES,
                     },
-                    headers=svc_headers,
+                    headers=holder_headers(self.http, s),
                 )
                 or []
             )

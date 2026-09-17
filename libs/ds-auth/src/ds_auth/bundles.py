@@ -77,12 +77,19 @@ ROLE_BUNDLES: dict[str, tuple[str, ...]] = {
     ),
     # A participant's own operator console: publish datasets, run the provider,
     # record an offline handover, see the negotiation history.
+    #
+    # **No `connector.consent.provision`** (plan
+    # `a-collector-registers-consent-at-the-holder`, decision 5, 2026-09-17). A
+    # realm group is not bound to a connector, so the grant let any
+    # participant's operator register consent at any connector, for anyone's
+    # members. Consent is registered by an organisation's own client (an
+    # accepted collector, or the holder itself); a person overriding a
+    # withdrawal is the deployment operator, through `connector.admin`.
     "ds-participant-admin": (
         "connector.provider.read",
         "connector.provider.write",
         "connector.history.read",
         "connector.registry.invalidate",
-        "connector.consent.provision",
         "connector.ingestion.record",
         "connector.disclosure.record",
         "catalog.read",
@@ -154,15 +161,24 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # `identity-registry.admin`. Listed so the coverage test does not report
         # it as unreachable.
         "identity-registry.organizations.promote",
+        # Which organisations a holder accepts consent registrations from. A
+        # governance act about two organisations: reachable by a human through
+        # `identity-registry.admin` only, like promotion.
+        "identity-registry.collectors.write",
+        # Register a subject's consent decision at a connector. Held by
+        # organisation clients (`management_api.CONNECTOR_SERVICE_SCOPES`) only —
+        # the connector refuses any other service token — and reachable by a
+        # human only through `connector.admin`. Out of `ds-participant-admin`
+        # since 2026-09-17.
+        "connector.consent.provision",
         # "Who consents to this offer" — the cross-subject read behind
         # `GET /consent/admin/shares`. Held by onboarding, and reachable by a
         # human, but only through `connector.admin` in `ds-admin` — deliberately
         # *not* in `ds-participant-admin`, so a participant operator does not
-        # acquire bulk subject enumeration as a side effect of holding the
-        # `connector.consent.provision` write grant beside it. Listed here for
-        # the same reason as the promote scope above: reachable only through an
-        # admin superset, so the coverage test would otherwise report it as a
-        # permission nobody can be granted.
+        # acquire bulk subject enumeration. Listed here for the same reason as
+        # the promote scope above: reachable only through an admin superset, so
+        # the coverage test would otherwise report it as a permission nobody can
+        # be granted.
         "connector.consent.audience",
         # Not ds endpoints — `dataset.*` belongs to the data-plane service, and is
         # here only because ds service clients call it.

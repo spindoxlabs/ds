@@ -191,3 +191,75 @@ async def test_new_events_queryable_by_type(client):
     assert len(graph) >= 1
     # data_product_id column is populated from dataset_id for these events
     assert any(e.get("ds:dataProductId") == DATA_INGESTED["dataset_id"] for e in graph)
+
+
+# ── A collector registers consent at the holder ───────────────────
+#
+# Plan `a-collector-registers-consent-at-the-holder`. The community's own client
+# writes a member's decision at the grid operator's connector; the record names
+# the community (as an agent, by its DID) and the client that acted, says who
+# decided, and says only *that* data keys were supplied.
+
+COLLECTOR = "did:web:rec.example.org"
+COLLECTOR_ACT = {
+    "subject": COLLECTOR,
+    "issuer": "https://keycloak.test/realms/dataspaces",
+    "on_behalf_of": COLLECTOR,
+    "is_service": True,
+    "client_id": "svc-ds-connector-example-rec",
+}
+
+
+def _collected(event: dict, **extra) -> dict:
+    return {
+        **event,
+        "event_id": f"{event['event_id']}-collected",
+        "collector": COLLECTOR,
+        "acted_by": COLLECTOR_ACT,
+        **extra,
+    }
+
+
+@pytest.mark.rule("L-5", "D-21")
+@pytest.mark.asyncio
+async def test_a_collected_consent_names_the_collector_and_its_client(client):
+    event = _collected(CONSENT_GRANTED, decided_by="subject", keys_supplied=True)
+    r = await client.post("/prov/events", json=event)
+    assert r.status_code == 201, r.text
+
+    agents = {n["@id"]: n for n in (await client.get("/prov/agents")).json()["@graph"]}
+    assert COLLECTOR in agents
+    principal = f"urn:ds:principal:{COLLECTOR_ACT['issuer']}:{COLLECTOR}"
+    assert agents[principal]["clientId"] == "svc-ds-connector-example-rec"
+
+    activities = (await client.get("/prov/activities")).json()["@graph"]
+    granted = next(a for a in activities if a.get("prov:label") == "Consent Granted")
+    assert granted.get("decidedBy") == "subject"
+    assert granted.get("collector") == COLLECTOR
+    assert granted.get("keysSupplied") is True
+
+
+@pytest.mark.rule("D-15c")
+@pytest.mark.asyncio
+async def test_a_relayed_withdrawal_is_recorded_as_the_member_s(client):
+    event = _collected(CONSENT_REVOKED, decided_by="subject")
+    r = await client.post("/prov/events", json=event)
+    assert r.status_code == 201, r.text
+    activities = (await client.get("/prov/activities")).json()["@graph"]
+    revoked = next(a for a in activities if a.get("prov:label") == "Consent Revoked")
+    assert revoked.get("decidedBy") == "subject"
+    assert revoked.get("collector") == COLLECTOR
+
+
+@pytest.mark.rule("L-3")
+@pytest.mark.asyncio
+async def test_the_event_has_no_place_for_the_keys_themselves(client):
+    """`keys_supplied` is a boolean; the values never reach provenance."""
+    from provenance.schemas.events import ConsentGranted
+
+    assert "keys" not in ConsentGranted.model_fields
+    assert "subject_keys" not in ConsentGranted.model_fields
+    r = await client.post(
+        "/prov/events", json=_collected(CONSENT_GRANTED, keys_supplied="pod:EX1")
+    )
+    assert r.status_code == 422

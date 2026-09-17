@@ -21,9 +21,10 @@
 # 39xxx for the EDC (`provider` holds 19xxx, `consumer` 29xxx), 32001 for the
 # connector, 32000 for provenance, 30008 for its identity registry.
 #
-# It runs no portal, no federated catalogue and no dataset API: those are the
-# REC's in this fixture, and a second copy would prove nothing. Its datasets are
-# served by the same stand-in backend — the asset id is what routes a query.
+# It runs no portal and no federated catalogue: those are the REC's in this
+# fixture, and a second copy would prove nothing. It does run its own stand-in
+# data plane (32022), because the members' readings it holds are decided by this
+# connector and signed by this EDC — a plane bound to the REC cannot serve them.
 
 # Project name — see docker-compose.yml for why this is declared rather than
 # inherited from the directory name.
@@ -264,6 +265,29 @@ services:
     networks: [dataspaces]
 
   # ── Provenance ──────────────────────────────────────────────────────────────
+  # ── Dataset API (mock) — the grid operator's own stand-in plane ─────────────
+  #
+  # Plan `a-collector-registers-consent-at-the-holder`. The members' readings the
+  # grid operator holds are served by a plane that asks **this** connector for
+  # its decisions and verifies **this** EDC's EDRs; the REC's plane asks the
+  # REC's connector and cannot. Same image as `dataset-api-rec`.
+  dataset-api-grid-operator:
+    build:
+      context: .
+      dockerfile: services/dataset-api-mock/Dockerfile
+    ports:
+      - "${DATASET_API_GRID_OPERATOR_MOCK_PORT:-32022}:30002"
+    environment:
+      DS_ENV: ${DS_ENV:-dev}
+      DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:32001
+      DATASET_API_KEYCLOAK_TOKEN_URL: ${KEYCLOAK_TOKEN_URL:-http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token}
+      DATASET_API_SERVICE_CLIENT_ID: ${SVC_DS_DATASET_API_ID:-svc-ds-dataset-api}
+      DATASET_API_SERVICE_CLIENT_SECRET: ${SVC_DS_DATASET_API_SECRET:-svc-ds-dataset-api}
+    depends_on:
+      ds-connector-grid-operator:
+        condition: service_healthy
+    networks: [dataspaces]
+
   ds-provenance-grid-operator:
     build:
       context: .

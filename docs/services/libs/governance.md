@@ -201,6 +201,24 @@ Composition follows the same split as the offers, except that an *identical* red
 accepted: two contributing files unbundling the same controller **differently** is an error
 naming both, and an overlay may rebind it.
 
+### `requires_offers` — an offer admitted only together with another
+
+When one offer authorises the holder to release data at all, an offer using that data names it:
+
+```yaml
+- id: grid-meter-flexibility
+  requires_offers: [grid-meter-release]
+```
+
+At a connector where both are bound to a dataset, a subject is admitted for the dependent offer
+only while the required one admits them too — withdrawing the required offer withdraws the
+dependent **admission** and leaves its row. The required offer is read with its own purpose and
+controller role. Where the required offer is not bound to the dataset (another connector's), the
+requirement is not checked there, and the gate says so per dataset (`offer-prerequisites`
+warning). An unknown, self-referencing, contract-based or cyclic prerequisite is an error.
+`requires_offers` is not a user-visible fact: it narrows admission and widens nothing a person
+agreed to, so adding one asks nobody again. `GET /ns/sharing-offers` publishes it.
+
 Each offer carries a `user_visible_hash` over the facts a person actually saw — purpose and its
 broader chain, legal basis, controller and role, processor category, subject scope, measures,
 resolution, coverage, retention, revocability. It deliberately excludes the backing datasets
@@ -221,7 +239,7 @@ Errors block; warnings do not.
 | Bounds | retention and delete-after ≤ 0; `valid_from` after `valid_until` |
 | Owners | ownership declared, alias resolvable, the owner's DID a registered participant |
 | Purposes | IRI shape, hierarchy cycles, DPV relation validity, labels, and that every dataset's purposes resolve |
-| Offers | purpose in the taxonomy, no duplicate ids, every named offer resolvable, `pii` datasets declaring an offer must require consent, the offer's purpose must be in the dataset's, controller resolvable and its `controller_role` one the file [declares](#controller_roles-the-unbundling-vocabulary), legal basis a DPV term, ISO-8601 durations, and hash stability |
+| Offers | purpose in the taxonomy, no duplicate ids, every named offer resolvable, `pii` datasets declaring an offer must require consent, the offer's purpose must be in the dataset's, controller resolvable and its `controller_role` one the file [declares](#controller_roles-the-unbundling-vocabulary), legal basis a DPV term, ISO-8601 durations, hash stability, and `requires_offers` naming known, consent-based offers without a cycle |
 
 ## Configuration
 
@@ -279,14 +297,28 @@ has readers the connector does not ship with: the celine `dataset-api` in a depl
 |---|---|
 | `DataplaneDecision` | the envelope — `decision`, `reason`, `agreement_id`, `transfer_id`, `purpose`, `datasets[]`, `cache` |
 | `DatasetVerdict` | one dataset's answer, because a single SQL statement can touch several and the envelope is the strictest of them |
-| `DataplaneRowFilter` | `handler`, `args`, `principals` |
+| `DataplaneRowFilter` | `handler`, `args`, `principals`, `keys` |
 
 Two properties are the point of it:
 
-**The row filter travels whole.** Handler, args and principals — never a column and a list of
-ids. The handler is what knows how a person maps to values in the column: `rec_registry`
+**The row filter travels whole.** Handler, args, principals and keys — never a column and a
+list of ids. The handler is what knows how a person maps to values in the column: `rec_registry`
 resolves a member to their devices, `direct_user_match` matches the subject directly. `args`
 is opaque to the PDP, so a handler's own arguments reach it intact.
+
+**`keys` — typed data keys (2026-09-17).** `["<type>:<value>"]`, e.g. `pod:…`: the values a
+holder stores the consenting subjects' data under, registered with the consent by the
+organisation that collected it (see [ds-connector](../connector.md#a-collector-registers-consent)).
+The type is open and ds does not interpret it; `split_key` and `values_of_type` are the one
+parser both ends use. Like `principals`, the list is an allow-list of the same consenting
+subjects, and a handler reads the list it knows — `services/dataset-api-mock` implements
+`subject_key_match` (`args: {column, key_type}`), which matches the column against the values of
+that type and ignores the principals. An empty list narrows to nothing. The connector refuses a
+verdict only when both lists are empty. **Contract change:** a PEP that parses the row filter
+with `extra="forbid"` and predates the field refuses every decision carrying a filter, which is
+the intended direction; the celine `dataset-api` reads the filter as a mapping and ignores the
+key until its own matching lands (a later step, in that repository). Keys are personal data:
+they never reach provenance, logs or the evidence record.
 
 **Unknown fields are refused** (`extra="forbid"`). The dangerous drift is one-way — a PDP that
 adds a narrowing an older PEP ignores serves rows it should have withheld. A parse failure is

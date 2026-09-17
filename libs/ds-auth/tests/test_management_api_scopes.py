@@ -198,3 +198,16 @@ NEG = "management-api:negotiations"
 )
 def test_the_matcher_follows_edc(granted, required, expected):
     assert scope_satisfies(granted, required) is expected
+
+
+def test_an_organisation_client_may_ask_to_register_consent():
+    """Plan `a-collector-registers-consent-at-the-holder`: the organisation's own
+    client is the consent writer — at its own connector, or at a holder that
+    accepts it as a collector. Which connector accepts it is the connector's
+    decision; the scope only lets it ask."""
+    from ds_auth import CONNECTOR_SERVICE_SCOPES, ORGANISATION_CLIENT_SCOPES
+
+    assert "connector.consent.provision" in CONNECTOR_SERVICE_SCOPES
+    assert "connector.consent.provision" in ORGANISATION_CLIENT_SCOPES
+    # Never the cross-subject read beside it.
+    assert "connector.consent.audience" not in ORGANISATION_CLIENT_SCOPES

@@ -50,6 +50,7 @@ from fastapi import APIRouter
 
 from .api.v1.admin import router as admin_router
 from .api.v1.agreements import router as agreements_router
+from .api.v1.consent_collectors import router as consent_collectors_router
 from .api.v1.credentials import check_router as credential_check_router
 from .api.v1.credentials import router as presentations_router
 from .api.v1.issuer import router as issuer_router
@@ -58,6 +59,7 @@ from .api.v1.onboarding import admin_router as onboarding_admin_router
 from .api.v1.onboarding import public_router as onboarding_public_router
 from .api.v1.organizations import router as organizations_router
 from .api.v1.owners import router as owners_router
+from .api.v1.participants import router as participants_router
 from .api.v1.public import did_router, status_router, trust_router
 from .api.v1.sts import router as sts_router
 from .api.v1.users import router as users_router
@@ -112,6 +114,8 @@ ROUTERS: tuple[RouterSpec, ...] = (
     RouterSpec("organizations", organizations_router, ANCHOR_ONLY),
     RouterSpec("agreements", agreements_router, ANCHOR_ONLY),
     RouterSpec("owners", owners_router, ANCHOR_ONLY),
+    RouterSpec("participants", participants_router, ANCHOR_ONLY),
+    RouterSpec("consent-collectors", consent_collectors_router, ANCHOR_ONLY),
     RouterSpec("issuer", issuer_router, ANCHOR_ONLY),
     RouterSpec("onboarding.admin", onboarding_admin_router, ANCHOR_ONLY),
     RouterSpec("onboarding.public", onboarding_public_router, ANCHOR_ONLY),
@@ -146,6 +150,12 @@ PATH_ROLES: tuple[tuple[str, frozenset[str]], ...] = (
     ("/agreements", ANCHOR_ONLY),
     ("/memberships", ANCHOR_ONLY),
     ("/owners", ANCHOR_ONLY),
+    # The participant registry answers for the whole dataspace, so only the
+    # anchor holds it — the same reason `/admin/participants` is anchor-only.
+    ("/participants", ANCHOR_ONLY),
+    # Who may register consent at whose connector — a relation between two
+    # organisations, held by the anchor like the participant registry.
+    ("/consent-collectors", ANCHOR_ONLY),
     ("/status", ANCHOR_ONLY),
     ("/trust", ANCHOR_ONLY),
     ("/credentials/check", ANCHOR_ONLY),

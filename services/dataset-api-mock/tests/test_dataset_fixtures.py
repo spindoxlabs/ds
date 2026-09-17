@@ -173,3 +173,22 @@ def test_every_committed_dataset_passes_the_same_check():
         assert "requires_consent" in spec, name
         if spec["requires_consent"]:
             assert _row_filter_spec(spec), name
+
+
+# ── The grid operator's holder dataset agrees with its governance ─────────────
+
+GRID_GOVERNANCE = (
+    REPO / "services" / "connector" / "governance-grid-operator" / "governance.yaml"
+)
+GRID = "datasets.silver.grid_meter_readings"
+
+
+def test_the_holder_dataset_declares_the_filter_its_governance_declares():
+    from dataset_api_mock.main import GRID_PODS, SUBJECT_KEY_MATCH
+
+    doc = yaml.safe_load(GRID_GOVERNANCE.read_text())
+    expected = doc["sources"][GRID]["row_filters"][0]
+    declared = _row_filter_spec(DATASETS[GRID])
+    assert declared["handler"] == expected["handler"] == SUBJECT_KEY_MATCH
+    assert declared["args"] == expected["args"] == {"column": "pod", "key_type": "pod"}
+    assert {row["pod"] for row in DATASETS[GRID]["rows"]} == set(GRID_PODS)

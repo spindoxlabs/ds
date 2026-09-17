@@ -62,6 +62,11 @@ CONNECTOR_SERVICE_SCOPES: tuple[str, ...] = (
     # A consumer connector asks the provider whether its negotiation is parked
     # on a consent decision (`GET /consent/pending`).
     "connector.consent.read",
+    # The organisation registers its members' consent — at its own connector,
+    # or at a holder that accepts it as a collector (`POST /consent/admin/shares`,
+    # plan `a-collector-registers-consent-at-the-holder`). The holder's
+    # connector decides *where* it may; the scope only says it may ask.
+    "connector.consent.provision",
 )
 
 #: The services a connector's token must be accepted by — every ds service

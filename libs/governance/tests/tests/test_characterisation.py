@@ -273,7 +273,10 @@ def test_the_snapshot_covers_every_dataset_key():
     """A snapshot of an empty resolution would match itself forever."""
     snapshot = json.loads(SNAPSHOT.read_text(encoding="utf-8"))
     assert sorted(snapshot) == sorted(list(corpus_files()) + ["overlay/deployment"])
-    assert sum(len(keys) for keys in snapshot.values()) == 37, (
+    # 39 since 2026-09-17: the grid operator's members' readings and the
+    # connector fixture's holder dataset (plan
+    # `a-collector-registers-consent-at-the-holder`).
+    assert sum(len(keys) for keys in snapshot.values()) == 39, (
         "the corpus changed size — confirm that is deliberate before refreshing"
     )
 

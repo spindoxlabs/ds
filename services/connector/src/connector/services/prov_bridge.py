@@ -55,6 +55,32 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def _decision_context(
+    decided_by: str | None,
+    collector: str | None,
+    keys_supplied: bool | None,
+    acted_by: dict | None,
+) -> dict:
+    """Who decided a consent, and through whom — only the keys that are set.
+
+    Omitted when absent, so an event from a path that records none of it is the
+    same payload it always was (and keeps its derived event id). ``collector`` is
+    an organisation DID, passed verbatim — never through ``_did``. Keys are
+    **never** carried: only whether some were supplied (plan
+    `a-collector-registers-consent-at-the-holder`, decision 4).
+    """
+    context: dict = {}
+    if decided_by is not None:
+        context["decided_by"] = decided_by
+    if collector is not None:
+        context["collector"] = collector
+    if keys_supplied is not None:
+        context["keys_supplied"] = keys_supplied
+    if acted_by is not None:
+        context["acted_by"] = acted_by
+    return context
+
+
 #: The ledger key of an organisation acting as itself (`Principal.actor`).
 ORG_ACTOR_PREFIX = "org:"
 
@@ -390,6 +416,10 @@ class ProvBridge:
         controller_role: str | None = None,
         legal_basis: dict | None = None,
         event_id: str | None = None,
+        decided_by: str | None = None,
+        collector: str | None = None,
+        keys_supplied: bool | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -404,6 +434,7 @@ class ProvBridge:
                 "controller": controller,
                 "controller_role": controller_role,
                 "legal_basis": legal_basis,
+                **_decision_context(decided_by, collector, keys_supplied, acted_by),
             }
         )
 
@@ -418,6 +449,9 @@ class ProvBridge:
         controller_role: str | None = None,
         reason: str | None = None,
         event_id: str | None = None,
+        decided_by: str | None = None,
+        collector: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -432,6 +466,7 @@ class ProvBridge:
                 "controller": controller,
                 "controller_role": controller_role,
                 "reason": reason,
+                **_decision_context(decided_by, collector, None, acted_by),
             }
         )
 

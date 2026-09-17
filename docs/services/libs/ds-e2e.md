@@ -44,13 +44,15 @@ pair, the dataset API, both provenance instances and the identity registry.
 | `consent-purpose` | that a purpose outside the consented set is refused, and a narrower one inside it is allowed |
 | `consent-request` | the full consent lifecycle: request → pending → reject → re-request → approve → revoke, with provenance |
 | `org-onboarding` | the five onboarding gates end to end, up to a resolvable participant DID |
-| `onboarding-seam` | the seam an **external** onboarding service crosses to admit a person to a REC — owner resolution by alias, offer-scoped consent provisioning, offer-scoped disclosure — driven under `svc-ds-onboarding`'s own client and its own eight scopes, not the harness client's superset. Its neighbour by name only: `org-onboarding` admits an **organisation** to the dataspace |
+| `onboarding-seam` | the seam an **external** onboarding service crosses to admit a person to a REC — owner resolution by alias, offer-scoped consent provisioning, offer-scoped disclosure — driven under `svc-ds-onboarding`'s own client and its own scopes, not the harness client's superset — except the consent write, which that client is refused (asserted) and the community's organisation client performs. Its neighbour by name only: `org-onboarding` admits an **organisation** to the dataspace |
 | `chain-community` / `chain-partner` / `chain-unbundling` | the disclosure chains — who may receive data as a processor, a partner, or an independent controller |
 | `uc1` / `uc2` / `uc3` | the three business use cases |
 | `semantic-model` | the payload model a producer publishes is the one every data plane states and serves a vocabulary for — read-only, and it names which backend answered |
 | `catalog-discovery` | catalogue freshness, shape, resolution, search and paging |
 | `lineage` | ingestion → provenance events → lineage traversal → audit log |
 | `two-providers` | that a second provider with no members keeps its own catalogue, governance and counterparty |
+| `organisation-token` | an organisation's own client token drives catalogue → negotiation → transfer → data, and is refused where it is not its own |
+| `collector-holder` | a community (an accepted collector) registers its members' consent at the grid operator with their supply points, the consumer organisation pulls exactly those rows by key, a relayed withdrawal narrows them; refuses an unlisted organisation, another organisation's member and both participant operator seats; a use offer without its required offer is recorded and not admitted. Needs `ds-e2e scenario apply` and the grid operator's own mock plane (`:32022`) |
 | `fail-closed` | **stops `ds-connector` and proves the negotiation gate denies**, then that service resumes. Runs last, takes ~3 minutes — it must outlast the EDC's decision cache in both directions — and needs the Docker topology |
 
 Four aggregates: `all`, `fast`, `security` (`api-contract`, `authz-perimeter`,

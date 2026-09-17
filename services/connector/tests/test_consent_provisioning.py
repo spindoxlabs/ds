@@ -21,9 +21,15 @@ from connector.services.consent_service import (
     get_granted_subject_ids,
 )
 from connector.services.membership_check import Membership
-from tests import make_headers
+from tests import make_headers, make_org_headers
 
-PROVISION = make_headers(scope="connector.consent.provision")
+# Consent is registered by an organisation's own client since 2026-09-17 — here
+# this connector's own (plan `a-collector-registers-consent-at-the-holder`). A
+# plain service is refused (`tests/test_consent_collectors.py`). The holder
+# deciding on its own authority is `collector`, the successor of the retired
+# `service` value.
+PROVISION = make_org_headers(scopes=("connector.consent.provision",))
+HOLDER_DECIDES = "collector"
 DATASET = "datasets.silver.meters"
 CONSUMER = "did:web:third-party.dataspaces.localhost"
 OTHER_CONSUMER = "did:web:other.dataspaces.localhost"
@@ -122,6 +128,7 @@ async def test_a_registry_that_cannot_be_reached_is_503_not_403(client, monkeypa
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -154,6 +161,7 @@ async def test_a_subject_the_registry_disowns_is_still_403(client, monkeypatch):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -178,6 +186,7 @@ async def test_admin_shares_expands_offer_to_wildcard_rows(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -221,6 +230,7 @@ async def test_admin_shares_rejects_contract_offer(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-incentives",
             "enabled": True,
@@ -236,6 +246,7 @@ async def test_admin_shares_unknown_offer_422(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "no-such-offer",
             "enabled": True,
@@ -293,6 +304,7 @@ async def test_admin_shares_is_idempotent(engine, client):
         "offer_id": "test-flexibility",
         "enabled": True,
         "legal_basis": EVIDENCE,
+        "decided_by": HOLDER_DECIDES,
     }
     first = await client.post("/consent/admin/shares", headers=PROVISION, json=body)
     second = await client.post("/consent/admin/shares", headers=PROVISION, json=body)
@@ -428,6 +440,7 @@ async def test_legal_basis_surfaces_in_internal_check(client, wildcard_admits):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -528,6 +541,7 @@ async def test_partial_evidence_is_refused(client, missing):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -546,6 +560,7 @@ async def test_withdrawal_needs_no_evidence(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -555,7 +570,12 @@ async def test_withdrawal_needs_no_evidence(client):
     r = await client.post(
         "/consent/admin/shares",
         headers=PROVISION,
-        json={"subject_id": SUBJECT, "offer_id": "test-flexibility", "enabled": False},
+        json={
+            "subject_id": SUBJECT,
+            "offer_id": "test-flexibility",
+            "enabled": False,
+            "decided_by": HOLDER_DECIDES,
+        },
     )
     assert r.status_code == 200
 
@@ -570,6 +590,7 @@ async def test_an_email_in_an_opaque_reference_is_refused(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -667,6 +688,7 @@ async def test_admin_shares_rejects_unknown_evidence_field(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -686,6 +708,7 @@ async def test_admin_shares_rejects_a_server_owned_field(client):
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": SUBJECT,
             "offer_id": "test-flexibility",
             "enabled": True,
@@ -715,6 +738,7 @@ async def _provision(
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": subject_id,
             "offer_id": offer,
             "enabled": True,
@@ -949,10 +973,12 @@ async def test_audience_reachable_by_connector_admin(client, wildcard_admits):
 async def test_provision_scope_alone_does_not_reach_the_audience(client):
     """The whole reason `.audience` is a new scope rather than a reuse.
 
-    `connector.consent.provision` is in the `ds-participant-admin` bundle, so
-    reusing it would hand every participant operator bulk subject enumeration as
-    a side effect of holding a *write* grant. If this test ever goes green by
-    accident, that disclosure has been made by nobody on purpose.
+    `connector.consent.provision` is held by every organisation client (and was
+    in the `ds-participant-admin` bundle until 2026-09-17), so reusing it would
+    hand bulk subject enumeration to every organisation — accepted collectors at
+    other participants' connectors included — as a side effect of holding a
+    *write* grant. If this test ever goes green by accident, that disclosure has
+    been made by nobody on purpose.
     """
     r = await client.get(
         "/consent/admin/shares",
@@ -1009,6 +1035,7 @@ async def _provision_offer(client, offer: str, enabled: bool, subject: str = SUB
         "/consent/admin/shares",
         headers=PROVISION,
         json={
+            "decided_by": HOLDER_DECIDES,
             "subject_id": subject,
             "offer_id": offer,
             "enabled": enabled,
