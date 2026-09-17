@@ -27,6 +27,12 @@ dependencies {
     // negotiation but not clear `pending`).
     api("org.eclipse.edc:web-spi:$edcVersion")
     api("org.eclipse.edc:transaction-spi:$edcVersion")
+    // The resume route's authorisation: EDC's `@RequiredScope` and ownership
+    // check (`auth-spi`), and the classic runtime's one participant context.
+    // Provided at runtime by `management-api-authorization` and
+    // `participant-context-connector-classic-core`.
+    api("org.eclipse.edc:auth-spi:$edcVersion")
+    api("org.eclipse.edc:participant-context-single-spi:$edcVersion")
     // Needed to compile the forked JsonObjectFromPolicyTransformer (see the file
     // header for why it is forked). Provided by the EDC runtime, so compileOnly.
     compileOnly("org.eclipse.edc:json-ld-spi:$edcVersion")
@@ -47,6 +53,8 @@ dependencies {
     testImplementation(platform("org.junit:junit-bom:5.10.2"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("jakarta.json:jakarta.json-api:2.1.3")
+    // The resume route takes the caller's `SecurityContext`; compileOnly for main.
+    testImplementation("jakarta.ws.rs:jakarta.ws.rs-api:3.1.0")
     // The forked JsonObjectFromPolicyTransformer is the highest-risk file here —
     // a silent revert republishes unreadable policies while everything looks
     // healthy — so its test drives the class rather than reading its source.

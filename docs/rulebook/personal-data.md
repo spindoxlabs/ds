@@ -218,6 +218,21 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 
 `DSSC-XCT-09` requires the identity management capability to deal with natural persons.
 
+**Declared 2026-09-17: an organisation's automation may negotiate for personal datasets, and
+that is not a deviation.** `XCT-09` asks for a *capability*, which ds has: member credentials
+and subject DIDs, below. It does not require every actor to be a natural person. An
+organisation's own client (its batch jobs) may negotiate and transfer where a legal basis or
+contractual agreement exists, on three conditions:
+
+- the act is attributable: provenance records the client that acted and the organisation, a
+  legal person and the accountable party, that it acted for;
+- what the token can obtain is limited by the provider's policy (recipient, purpose, contract),
+  so the EDC agreement drives and the token is only the operational means;
+- the token never reads a person's consents (`D-20`).
+
+Which person configured the automation is an administrative record, not a protocol
+requirement.
+
 | Aspect | Decision |
 |---|---|
 | Identifier | A subject DID, `did:web:<participant>:users:<id>` — in the namespace of the organisation that holds their credentials (`D-22a`) — mapped from a Keycloak user |
@@ -228,7 +243,7 @@ provider-local seeding route for an operator or the portal, authenticated as a s
 
 | # | Rule | Status |
 |---|---|---|
-| D-20 | Subject-facing surfaces authenticate the subject's credential, never a service's scope. A service token must not be able to read one person's consents | **Enforced** — `/consent/my/*`, `/consent/status`, `/consumer/*` use the VC-JWT path |
+| D-20 | Subject-facing surfaces authenticate the subject's credential, never a service's scope. A service token — an organisation's own included — must not be able to read one person's consents. **Amended 2026-09-17:** an organisation's own client token may negotiate and transfer on `/consumer/*` for its own participant only, holding EDC's scope for the call, and every such act records the client and the organisation it acted for (`XCT-09`) | **Enforced** — `/consent/my/*` and `/consent/status` take only the VC-JWT path; `/consumer/*` takes a `ConsumerUser` VC-JWT or the organisation token, which is refused (`403`) when its `sub` names another participant or it lacks the scope, and gets no owner-perimeter pass. Provenance attributes the act to `acted_by` (the client) on behalf of the participant DID. `ds-e2e --flow organisation-token` asserts both directions live ([ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)) |
 | D-21 | Membership in an owner organisation is checked against the registry at consent-write time, not read from a JWT claim. The portal reads claims for UX; **data access decisions always go through the registry API** | **Enforced** |
 | D-22 | A path-bearing subject DID must resolve, and its document asserts **no verification method** — the person holds no key | **Enforced.** The service itself serves the did:web path form (`/{path}/did.json`), so resolution no longer depends on an edge-proxy rewrite. The document carries `id` and nothing it cannot back: a subject presents nothing and signs nothing, so a key would be read by nobody. The DID must still resolve because it is what consent records, provenance events and `credentialSubject.id` point at |
 | D-22a | A person's DID sits in the namespace of the organisation that holds their credentials — `did:web:<participant>:users:<id>` — and **that** organisation publishes it | **Enforced** (`DID-11` step 2). It was `did:web:users.<anchor-domain>:<id>`, which said every person in the dataspace belonged to the trust anchor; the party that onboarded them, vouches for them and answers for them is their REC. A custodian learns of a person by *receiving their credential*, which is what creates the row it then publishes |

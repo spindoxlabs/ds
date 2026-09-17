@@ -19,10 +19,12 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    role: Literal["provider", "consumer"] = Field(
+    role: Literal["provider", "consumer", "both"] = Field(
         ...,
         description=(
-            "Participant role — determines which EDC client and routers are loaded"
+            "Which routers this process mounts: provider, consumer, or both. "
+            "One participant runs one EDC runtime, so both roles talk to the "
+            "same management API."
         ),
     )
 
@@ -31,32 +33,55 @@ class Settings(BaseSettings):
     participant_did: str = "did:web:rec.dataspaces.localhost"
     consumer_participant_did: str = "did:web:third-party.dataspaces.localhost"
 
-    # EDC Management API — env vars use EDC_ prefix (no CONNECTOR_ prefix).
+    # EDC Management API — env vars use the EDC_ prefix (no CONNECTOR_ prefix).
+    #
+    # **One EDC runtime per participant**, whichever roles this process plays:
+    # the provider and consumer clients are the same management API. It used to
+    # be two settings (`EDC_PROVIDER_MANAGEMENT_URL`, `EDC_CONSUMER_MANAGEMENT_URL`)
+    # selected by role, which a both-roles process could not express.
     #
     # Management only, deliberately. The *protocol* (DSP) URLs are not here: this
     # connector never dials its own EDC's protocol endpoint, and a counter-party's
     # is looked up by DSP address in the participant registry
-    # (`registry/participants.py`), which is the only thing that knows which
-    # participant an address belongs to. `EDC_PROVIDER_PROTOCOL_URL` and
-    # `EDC_CONSUMER_PROTOCOL_URL` were carried here from compose and Helm and read
-    # by nothing; the EDC's own callback address is `edc.dsp.callback.address`,
-    # set in the ds-edc chart and in `services/connector/config/*.properties`.
-    edc_rec_management_url: str = Field(
+    # (`registry/participants.py`). The EDC's own callback address is
+    # `edc.dsp.callback.address`, set in the ds-edc chart and in
+    # `services/connector/config/*.properties`.
+    edc_management_url: str = Field(
         default="http://localhost:19193/management",
-        validation_alias="EDC_PROVIDER_MANAGEMENT_URL",
+        validation_alias="EDC_MANAGEMENT_URL",
     )
-    edc_third_party_management_url: str = Field(
-        default="http://localhost:29193/management",
-        validation_alias="EDC_CONSUMER_MANAGEMENT_URL",
+    # The path segment of EDC's v5 management API: `v5beta` at EDC 0.18.0,
+    # `v5` from 0.19. The one thing the upgrade flips.
+    edc_management_api_version: str = Field(
+        default="v5beta",
+        validation_alias="EDC_MANAGEMENT_API_VERSION",
     )
-    edc_api_key: str = Field(
-        default="insecure-dev-key",
-        validation_alias="EDC_API_KEY",
-    )
-    edc_api_key_file: str | None = Field(
+    # The participant context this connector acts for in its EDC — the `sub` of
+    # its organisation client's tokens. Unset means `participant_did`, which is
+    # what every ds EDC is configured with (`edc.participant.context.id`).
+    edc_participant_context_id: str | None = Field(
         default=None,
-        validation_alias="EDC_API_KEY_FILE",
+        validation_alias="EDC_PARTICIPANT_CONTEXT_ID",
     )
+
+    # ── The EDR, delivered by the EDC ────────────────────────────────────────
+    #
+    # EDC 0.18.0's v5 has no EDR endpoint. A transfer this connector starts
+    # names a callback address, and the `TransferProcessStarted` event posted
+    # there carries the EDR, which is stored here (`edr_entries`).
+    #
+    # `edc_callback_url` is this connector's `POST /webhooks/edc-callback` **as
+    # the EDC reaches it**. Unset, no callback is requested, and a consumer
+    # transfer never yields an EDR — so consumer routes refuse to start one.
+    edc_callback_url: str | None = None
+    # EDC puts a header on the callback whose value it reads from **its own
+    # vault** under this alias (`CallbackHttpClient`), so the secret never
+    # travels in a request. The same value is `edc_callback_secret` here.
+    edc_callback_auth_code_id: str = "ds-connector-callback-key"
+    edc_callback_secret: str = Field(default="insecure-dev-callback-key")
+    edc_callback_secret_file: str | None = None
+    # How long a consumer route waits for the EDR after its transfer started.
+    edr_wait_timeout: float = 30.0
 
     # The counterparty connector's base URL, for the one off-DSP-path read a
     # consumer makes: "is this negotiation of mine waiting on a person?" (§6.6).
@@ -231,7 +256,23 @@ class Settings(BaseSettings):
 
     service_client_id: str = Field(
         default="svc-ds-connector",
-        description="Keycloak client ID for this service (used as JWT audience)",
+        description=(
+            "The audience this service verifies on incoming tokens. An identity "
+            "callers address, not one this service authenticates as."
+        ),
+    )
+    # **The credential this connector presents, everywhere** — to its own EDC's
+    # management API, to identity-registry, provenance and the counterparty
+    # connector. The organisation's client (`svc-ds-connector-<alias>`, plan
+    # decision 3): its `sub` is this participant's context id and it holds
+    # `ds_auth.MANAGEMENT_API_SCOPES` plus the connector's service grants.
+    client_id: str = Field(
+        default="svc-ds-connector-example-org",
+        description="Keycloak client this connector authenticates as.",
+    )
+    client_secret: str = Field(
+        default="svc-ds-connector-example-org",
+        description="Secret for client_id (client-credentials).",
     )
     # No `admin_scope` / `internal_scope` / `webhook_scope`. A permission name is
     # vocabulary, not deployment configuration: it is declared in
@@ -246,10 +287,6 @@ class Settings(BaseSettings):
         description=(
             "Keycloak token endpoint for service-to-service client-credentials grants"
         ),
-    )
-    service_client_secret: str = Field(
-        default="svc-ds-connector",
-        description="Client secret for service_client_id (Keycloak client-credentials)",
     )
 
     database_url: str = (
@@ -276,9 +313,24 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def load_file_secrets(self):
-        if self.edc_api_key_file:
-            self.edc_api_key = Path(self.edc_api_key_file).read_text().strip()
+        if self.edc_callback_secret_file:
+            self.edc_callback_secret = (
+                Path(self.edc_callback_secret_file).read_text().strip()
+            )
         return self
+
+    @property
+    def is_provider(self) -> bool:
+        return self.role in ("provider", "both")
+
+    @property
+    def is_consumer(self) -> bool:
+        return self.role in ("consumer", "both")
+
+    @property
+    def participant_context_id(self) -> str:
+        """This connector's participant context in its EDC."""
+        return self.edc_participant_context_id or self.participant_did
 
 
 @lru_cache(maxsize=1)

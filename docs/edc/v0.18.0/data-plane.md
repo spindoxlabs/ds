@@ -146,6 +146,10 @@ verifier key) — the upstream proxy that used to do this is gone.
    a sync subscription.
 4. Clients read it through the v3 EDR API (`/v3/edrs`, `EdrCacheApiV3Controller`) or the
    `EndpointDataReferenceStore` SPI (`spi/common/edr-store-spi`).
+5. **Or, with no cache at all**, from the event itself: a transfer request's
+   `callbackAddresses` receive `TransferProcessStarted`, data address included. That is the
+   only path v5 leaves, and it is the one ds uses (see
+   [Management API](management-api.md#the-edr-without-an-edr-api)).
 
 DR `2026-04-09-edr-cache-deprecation`: the EDR cache is deprecated — the SPI types are
 `@Deprecated(since = "management-api:v3")` and there is no v4 EDR API — because EDR handling

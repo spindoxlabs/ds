@@ -305,7 +305,7 @@ prefixed form does not work.
 | `IDENTITY_REGISTRY_PARTICIPANT_DID` | *(none)* | **Required in the participant role.** The DID this instance holds the key for; without it the service refuses to start rather than 404 everything while reporting healthy |
 | `IDENTITY_REGISTRY_PARTICIPANT_DSP_ADDRESS` | *(none)* | The DSP endpoint this participant publishes in its own DID document |
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_URL` | *(derived)* | The anchor's Issuer Service, used once at enrolment. Defaults to the anchor's did:web host over the `DID_WEB_USE_HTTPS` scheme |
-| `IDENTITY_REGISTRY_DATABASE_URL` | Postgres on `172.17.0.1:35432/identity_registry` | **secret** — one per instance, never shared between roles |
+| `IDENTITY_REGISTRY_DATABASE_URL` | Postgres on `172.17.0.1:35432/identity_registry` | **secret** — one per instance, never shared between roles. The default is the dev compose database: under `DS_ENV=production` the service, `ir-cli` and the migrations all refuse it before connecting |
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-change-in-production` | **secret** — encrypts every DID private key at rest, and derives subject ids. Losing it makes stored keys unrecoverable |
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN` | `trust-anchor.dataspaces.localhost` | the trust anchor's DID domain and status-list host |
 | `IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL` | *(derived from the domain)* | externally reachable URL written into provisioning bundles. The doubled prefix is correct — the field is `identity_registry_public_url` |
@@ -438,6 +438,15 @@ itself, so a host realm mounts [`services/keycloak/clients.yaml`](keycloak.md) d
 `ir-cli keycloak map-user` writes a Keycloak-user-to-DID mapping row and **does not contact
 Keycloak** — it was called `sync`, which is also the name of a command that really does apply
 a realm (`celine-policies keycloak sync`). Realm writes are `org-sync` and the promotion path.
+
+Both realm writes create the same thing for an organisation, its
+[organisation client](keycloak.md#organisation-clients) `svc-ds-connector-<alias>`
+(`keycloak_admin.ensure_organisation_client`): `org-sync` for each `organizations.yaml` entry
+with a `participant_context_id`, the promotion path for a promoted owner, with its DID as the
+participant context. Scopes, audiences and the `sub` mapper are reapplied on every call; a
+secret only when the client is created. `org-sync` exits non-zero when a client cannot be
+provisioned — under `DS_ENV=production`, when `SVC_DS_CONNECTOR_<ALIAS>_SECRET` is unset or
+equals the client id.
 
 `ir-cli status check-indices` reports credentials sharing a StatusList index and exits
 non-zero when it finds any, so it can gate a deployment.

@@ -1,5 +1,6 @@
 """Tests for /internal endpoints."""
 
+import json
 from datetime import UTC, datetime
 
 import httpx
@@ -8,22 +9,21 @@ import respx
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
-from connector.config import get_settings
 from connector.db.models import ConsentRequestORM
 from connector.services.agreement_service import upsert_agreement
 from connector.services.consent_service import create_consent_request
-from tests import make_headers
+from tests import edc_v5_root, make_headers
 
 HEADERS = make_headers(scope="connector.internal")
 
-EDC = get_settings().edc_rec_management_url.rstrip("/")
+EDC = edc_v5_root()
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_agreement_status_not_found(client):
     """A 404 from the EDC is a real negative — the agreement does not exist."""
-    respx.get(f"{EDC}/v3/contractagreements/nonexistent").mock(
+    respx.get(f"{EDC}/contractagreements/nonexistent").mock(
         return_value=httpx.Response(404)
     )
     r = await client.get("/internal/agreements/nonexistent/status", headers=HEADERS)
@@ -40,7 +40,7 @@ async def test_agreement_status_unreachable_edc_is_not_a_404(client):
     connection came back as "agreement not found", which a PEP caches as a
     negative fact about the agreement rather than as a failure to ask.
     """
-    respx.get(f"{EDC}/v3/contractagreements/urn:uuid:x").mock(
+    respx.get(f"{EDC}/contractagreements/urn:uuid:x").mock(
         side_effect=httpx.ConnectError("connection refused")
     )
     r = await client.get("/internal/agreements/urn:uuid:x/status", headers=HEADERS)
@@ -53,7 +53,7 @@ async def test_agreement_status_unreachable_edc_is_not_a_404(client):
 @respx.mock
 async def test_agreement_status_edc_5xx_is_not_a_404(client):
     """A 500 from the EDC is not evidence that the agreement is absent."""
-    respx.get(f"{EDC}/v3/contractagreements/urn:uuid:x").mock(
+    respx.get(f"{EDC}/contractagreements/urn:uuid:x").mock(
         return_value=httpx.Response(500, text="boom")
     )
     r = await client.get("/internal/agreements/urn:uuid:x/status", headers=HEADERS)
@@ -70,7 +70,7 @@ async def test_transfer_status_unreachable_edc_denies_and_says_so(client):
     definite "no such transfer" for a connection failure is the fact an operator
     would use to conclude the consumer never started one.
     """
-    respx.post(f"{EDC}/v3/transferprocesses/request").mock(
+    respx.post(f"{EDC}/transferprocesses/request").mock(
         side_effect=httpx.ConnectError("connection refused")
     )
     r = await client.get("/internal/transfers/tp-unknown/status", headers=HEADERS)
@@ -85,7 +85,7 @@ async def test_transfer_status_unreachable_edc_denies_and_says_so(client):
 @respx.mock
 async def test_transfer_status_empty_result_is_not_found(client):
     """An EDC that answers with no match is a real negative."""
-    respx.post(f"{EDC}/v3/transferprocesses/request").mock(
+    respx.post(f"{EDC}/transferprocesses/request").mock(
         return_value=httpx.Response(200, json=[])
     )
     r = await client.get("/internal/transfers/tp-unknown/status", headers=HEADERS)
@@ -216,3 +216,27 @@ async def test_create_consent_request_reuses_open_request(engine):
 
     assert second.id == first.id
     assert result.scalar_one() == 1
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_the_transfer_lookup_is_a_v5_query_by_correlation_id(client):
+    """Asked through the EDC client, on this participant context's v5 path —
+    not a hand-built v3 request with the shared key."""
+    route = respx.post(f"{EDC}/transferprocesses/request").mock(
+        return_value=httpx.Response(200, json=[{"state": "STARTED"}])
+    )
+    r = await client.get("/internal/transfers/tp-remote/status", headers=HEADERS)
+    assert r.json()["active"] is True
+    request = route.calls.last.request
+    assert "x-api-key" not in {k.lower() for k in request.headers}
+    body = json.loads(request.content)
+    assert body["@context"] == ["https://w3id.org/edc/connector/management/v2"]
+    assert body["filterExpression"] == [
+        {
+            "@type": "Criterion",
+            "operandLeft": "correlationId",
+            "operator": "=",
+            "operandRight": "tp-remote",
+        }
+    ]

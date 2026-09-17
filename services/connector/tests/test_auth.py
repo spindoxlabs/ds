@@ -7,16 +7,15 @@ import respx
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from connector.config import get_settings
 from connector.db.engine import Base
 from connector.dependencies import get_db, get_participant_registry
 from connector.main import create_app
 from connector.registry.participants import ParticipantRegistry
-from tests import make_headers
+from tests import attach_edc, edc_v5_root, make_headers
 
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
-EDC = get_settings().edc_rec_management_url.rstrip("/")
+EDC = edc_v5_root()
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -33,6 +32,7 @@ async def auth_client():
             yield session
 
     app = create_app()
+    attach_edc(app)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_participant_registry] = lambda: (
         ParticipantRegistry.empty()
@@ -87,9 +87,7 @@ async def test_internal_with_correct_scope(auth_client):
     test is about, so it asserted 404 and went red exactly when nobody had the
     stack up. The outcomes themselves are pinned in `test_internal_api.py`.
     """
-    respx.get(f"{EDC}/v3/contractagreements/test").mock(
-        return_value=httpx.Response(404)
-    )
+    respx.get(f"{EDC}/contractagreements/test").mock(return_value=httpx.Response(404))
     r = await auth_client.get(
         "/internal/agreements/test/status",
         headers=make_headers(scope="connector.internal"),

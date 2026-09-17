@@ -1,4 +1,4 @@
-"""EDC Management API v3 request/response Pydantic models."""
+"""EDC v5 Management API request/response Pydantic models."""
 
 from __future__ import annotations
 
@@ -6,7 +6,17 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .odrl import to_dsp_compact
+
 DATASPACE_PROTOCOL = "dataspace-protocol-http:2025-1"
+
+#: The ``@context`` of every v5 request body. The v5 schemas require an
+#: **array** containing this IRI; a JSON-object context is a 400.
+MANAGEMENT_CONTEXT = ["https://w3id.org/edc/connector/management/v2"]
+
+#: EDC's own vocabulary. Properties in a data address the control plane hands
+#: over (an EDR, a callback payload) arrive expanded under it.
+EDC_NAMESPACE = "https://w3id.org/edc/v0.0.1/ns/"
 
 #: The version half of the pin — ``2025-1``. The rulebook (data-exchange §6)
 #: makes this file the single place the version is decided; every DSP address in
@@ -37,6 +47,28 @@ def _policy_field(policy: dict[str, Any], key: str) -> Any:
     if key in policy:
         return policy[key]
     return policy.get(f"odrl:{key}")
+
+
+#: Prefixes the v2 management context declares itself, so a key using one
+#: needs no rewriting.
+_MANAGEMENT_PREFIXES = {"edc", "dct", "dcat"}
+
+
+def _expand_key(key: str, context: dict[str, Any] | None) -> str:
+    """A property key the management context cannot resolve, written in full.
+
+    ``dsp-policy:owner`` is declared only in the asset's own context, which v5
+    no longer accepts inline; the absolute IRI means the same thing. Unprefixed
+    keys fall under the properties' ``@vocab`` (EDC's namespace) exactly as
+    before.
+    """
+    if ":" not in key or not context:
+        return key
+    prefix, _, rest = key.partition(":")
+    if rest.startswith("//") or prefix in _MANAGEMENT_PREFIXES:
+        return key
+    base = context.get(prefix)
+    return f"{base}{rest}" if isinstance(base, str) else key
 
 
 # -- Assets ------------------------------------------------------------------
@@ -99,7 +131,10 @@ class AssetCreate(BaseModel):
 
     def to_edc(self) -> dict[str, Any]:
         return {
-            "@context": self.context or {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            # The management context declares `dct` and maps `conformsTo`, and
+            # v5 accepts only IRIs in the array. A property the asset's own
+            # context declared under another prefix is written out in full.
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "Asset",
             "@id": self.id,
             # **Null-valued properties are dropped, not sent.** An undeclared
@@ -107,7 +142,11 @@ class AssetCreate(BaseModel):
             # the first is what silence means — the same rule the DCAT emitter
             # follows for `dct:conformsTo`. Sending `null` would also put the key
             # in the catalogue for a consumer to read as present-and-empty.
-            "properties": {k: v for k, v in self.properties.items() if v is not None},
+            "properties": {
+                _expand_key(k, self.context): v
+                for k, v in self.properties.items()
+                if v is not None
+            },
             "dataAddress": self.data_address.to_edc(),
         }
 
@@ -121,10 +160,13 @@ class PolicyCreate(BaseModel):
 
     def to_edc(self) -> dict[str, Any]:
         return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "PolicyDefinition",
             "@id": self.id,
-            "policy": self.policy,
+            # v5 validates the DSP profile's compact form; the conversion keeps
+            # the meaning (measured: the stored permissions are byte-identical
+            # to the v3-era ones).
+            "policy": to_dsp_compact(self.policy),
         }
 
 
@@ -138,16 +180,18 @@ class ContractDefCreate(BaseModel):
     assets_selector: list[dict[str, Any]] = []
 
     def to_edc(self) -> dict[str, Any]:
-        selector = self.assets_selector or [
+        selector = [
+            {**criterion, "@type": "Criterion"} for criterion in self.assets_selector
+        ] or [
             {
-                "@type": "CriterionDto",
+                "@type": "Criterion",
                 "operandLeft": "https://w3id.org/edc/v0.0.1/ns/id",
                 "operator": "=",
                 "operandRight": "*",
             }
         ]
         return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "ContractDefinition",
             "@id": self.id,
             "accessPolicyId": self.access_policy_id,
@@ -166,13 +210,14 @@ class CatalogRequest(BaseModel):
 
     def to_edc(self) -> dict[str, Any]:
         body: dict[str, Any] = {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": MANAGEMENT_CONTEXT,
+            "@type": "CatalogRequest",
             "counterPartyAddress": self.counter_party_address,
             "counterPartyId": self.counter_party_id,
             "protocol": DATASPACE_PROTOCOL,
         }
         if self.query_spec:
-            body["querySpec"] = self.query_spec
+            body["querySpec"] = {"@type": "QuerySpec", **self.query_spec}
         return body
 
 
@@ -207,16 +252,15 @@ class NegotiationRequest(BaseModel):
           that offer anyway, with an error naming neither field.
         """
         if self.odrl_policy is None:
-            return {
-                "@context": ["http://www.w3.org/ns/odrl.jsonld"],
-                "@type": "Offer",
-                "@id": self.offer_id,
-                "assigner": self.assigner,
-                "target": self.asset_id,
-                "permission": [],
-            }
+            # The DSP schema requires at least one rule, and an offer is
+            # matched against what the provider published, so a hand-built
+            # empty one could never have succeeded. Callers pass the catalogue's.
+            raise ValueError(
+                "NegotiationRequest needs the offer's odrl_policy — take it from "
+                "the provider's catalogue"
+            )
 
-        policy = dict(self.odrl_policy)
+        policy = to_dsp_compact(dict(self.odrl_policy))
         for key, supplied, field in (
             ("@id", self.offer_id, "offer_id"),
             ("assigner", self.assigner, "assigner"),
@@ -236,8 +280,9 @@ class NegotiationRequest(BaseModel):
 
     def to_edc(self) -> dict[str, Any]:
         policy = self._offer()
+        policy["@type"] = "Offer"
         return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "ContractRequest",
             "counterPartyAddress": self.counter_party_address,
             # **The audience of the DCP token this negotiation is authenticated
@@ -263,25 +308,71 @@ class NegotiationState(BaseModel):
 # -- Transfer -----------------------------------------------------------------
 
 
+class CallbackAddress(BaseModel):
+    """Where EDC posts the events of one negotiation or transfer.
+
+    ``auth_key`` is the **header name** EDC sets, and ``auth_code_id`` the
+    **vault alias** of its value — EDC resolves the secret in its own vault
+    (``CallbackHttpClient``); the value never travels in the request.
+    """
+
+    uri: str
+    events: list[str]
+    transactional: bool = False
+    auth_key: str | None = None
+    auth_code_id: str | None = None
+
+    def to_edc(self) -> dict[str, Any]:
+        body: dict[str, Any] = {
+            "@type": "CallbackAddress",
+            "transactional": self.transactional,
+            "uri": self.uri,
+            "events": list(self.events),
+        }
+        if self.auth_key:
+            if not self.auth_code_id:
+                # EDC refuses to dispatch such a callback, at event time and in
+                # a log nobody reads — refuse it here, where the caller is.
+                raise ValueError("CallbackAddress.auth_key needs auth_code_id")
+            # **Prefixed, deliberately.** The v2 management context maps `uri`,
+            # `transactional` and `events` on `CallbackAddress` and not these
+            # two (EDC 0.18.0 and main), so the bare keys expand to nothing and
+            # are dropped without a word — EDC then calls back with no header
+            # at all (measured). `edc:` is declared by that context, so the
+            # prefixed keys expand to the IRIs EDC's transformer reads. The
+            # schema permits them.
+            body["edc:authKey"] = self.auth_key
+            body["edc:authCodeId"] = self.auth_code_id
+        return body
+
+
+#: The event that carries the EDR on the consumer side.
+TRANSFER_STARTED_EVENT = "transfer.process.started"
+
+
 class TransferRequest(BaseModel):
     contract_agreement_id: str
     counter_party_address: str
     asset_id: str
     connector_id: str
     transfer_type: str = "HttpData-PULL"
+    callback_addresses: list[CallbackAddress] = []
 
     def to_edc(self) -> dict[str, Any]:
-        return {
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+        # `assetId`, `connectorId` and `dataDestination` were v3 fields the v5
+        # schema does not define; the agreement names the asset and the
+        # counterparty, and a pull transfer has no destination to state.
+        body: dict[str, Any] = {
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "TransferRequest",
             "contractId": self.contract_agreement_id,
             "counterPartyAddress": self.counter_party_address,
             "protocol": DATASPACE_PROTOCOL,
-            "assetId": self.asset_id,
-            "connectorId": self.connector_id,
-            "dataDestination": {"type": "HttpProxy"},
             "transferType": self.transfer_type,
         }
+        if self.callback_addresses:
+            body["callbackAddresses"] = [cb.to_edc() for cb in self.callback_addresses]
+        return body
 
 
 class TransferState(BaseModel):
@@ -300,7 +391,7 @@ class EdrResponse(BaseModel):
 
     @classmethod
     def from_edc(cls, data: dict[str, Any]) -> EdrResponse:
-        """Parse EDC's EDR data address.
+        """Parse an EDR data address, in its compact or expanded form.
 
         ``endpoint`` and ``authorization`` are the whole content of an EDR: one
         says where the data plane is, the other is the bearer that opens it.
@@ -308,17 +399,25 @@ class EdrResponse(BaseModel):
         structurally valid EDR that the connector handed to a consumer, who then
         failed at the data plane with no way back to the cause. ``authType`` does
         default, because EDC omits it for the bearer case this platform uses.
+
+        A callback payload carries ``{"properties": {…}}`` with every key under
+        EDC's namespace (measured on 0.18.0); a management response carries the
+        compacted keys. Both are accepted.
         """
-        missing = [k for k in ("endpoint", "authorization") if not data.get(k)]
+        props = (
+            data.get("properties") if isinstance(data.get("properties"), dict) else data
+        )
+        flat = {str(k).removeprefix(EDC_NAMESPACE): v for k, v in (props or {}).items()}
+        missing = [k for k in ("endpoint", "authorization") if not flat.get(k)]
         if missing:
             raise ValueError(
                 f"EDC EDR data address is missing {', '.join(missing)}; "
-                f"got keys {sorted(data)}"
+                f"got keys {sorted(flat)}"
             )
         return cls(
-            endpoint=str(data["endpoint"]),
-            auth_type=str(data.get("authType") or "bearer"),
-            authorization=str(data["authorization"]),
+            endpoint=str(flat["endpoint"]),
+            auth_type=str(flat.get("authType") or "bearer"),
+            authorization=str(flat["authorization"]),
         )
 
 

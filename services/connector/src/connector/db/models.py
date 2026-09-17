@@ -201,3 +201,34 @@ class ConsumerAccessRequestORM(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class EdrEntryORM(Base):
+    """The EDR of a transfer this connector started, as its EDC delivered it.
+
+    EDC 0.18.0's v5 management API has no EDR endpoint (DR
+    ``2026-04-09-edr-cache-deprecation``). The EDR arrives in the
+    ``TransferProcessStarted`` event posted to the transfer's callback address
+    (``POST /webhooks/edc-callback``) and is kept here, keyed by the transfer.
+
+    ``data_address`` is the address **as delivered**, not a projection of it: a
+    later DPS data plane on the consumer side reads the same event, and a data
+    address that is not HTTP-pull does not fit ``endpoint``/``authorization``.
+    ``authorization`` is a live bearer for the provider's data plane — treat the
+    table like the vault EDC used to hold it in.
+    """
+
+    __tablename__ = "edr_entries"
+
+    transfer_id: Mapped[str] = mapped_column(Text, primary_key=True)
+    participant_context_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    agreement_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    asset_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    endpoint: Mapped[str] = mapped_column(Text, nullable=False)
+    auth_type: Mapped[str] = mapped_column(Text, nullable=False, default="bearer")
+    authorization: Mapped[str] = mapped_column(Text, nullable=False)
+    data_address: Mapped[dict] = mapped_column(JSON, nullable=False)
+    event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    received_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

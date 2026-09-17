@@ -59,13 +59,6 @@ spec:
           {{- include "ds.resources" . | nindent 10 }}
       volumes:
         {{- include "ds.tmpVolume" . | nindent 8 }}
-        # EDC API key mounted as a file (EDC_API_KEY_FILE), not env.
-        - name: edc-api-key
-          secret:
-            secretName: {{ include "ds.secretName" . }}
-            items:
-              - key: EDC_API_KEY
-                path: api-key
         {{- if .Values.governance.configMap }}
         - name: governance
           configMap:

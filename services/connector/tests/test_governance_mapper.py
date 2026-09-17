@@ -7,6 +7,7 @@ from ds.governance.models import (
     GovernanceOwner,
     GovernanceRuleV2,
 )
+from ds_edc import MANAGEMENT_CONTEXT
 
 from connector.services.governance import (
     ConnectorGovernanceMapper,
@@ -200,7 +201,12 @@ def test_the_context_declares_dct_so_the_curie_expands():
         _dcat_rule(conforms_to="https://rec.dataspaces.localhost/ns/meter-readings"),
     )
     assert asset.context and asset.context.get("dct") == "http://purl.org/dc/terms/"
-    assert asset.to_edc()["@context"]["dct"] == "http://purl.org/dc/terms/"
+    # v5 accepts only IRIs in `@context`; the management context it sends is
+    # the one that declares `dct` (and maps `conformsTo` to `dct:conformsTo`),
+    # so the CURIE keeps its prefix and still expands.
+    body = asset.to_edc()
+    assert body["@context"] == MANAGEMENT_CONTEXT
+    assert "dct:conformsTo" in body["properties"]
 
 
 @pytest.mark.rule("M-4")
@@ -210,7 +216,7 @@ def test_a_dataset_declaring_no_model_publishes_no_key_rather_than_a_null():
     mapper = _mapper()
     asset = mapper.to_asset_create("datasets.gold.test", _dcat_rule())
     assert "dct:conformsTo" not in asset.to_edc()["properties"]
-    assert "dct" not in asset.to_edc()["@context"]
+    assert asset.context is None or "dct" not in asset.context
 
 
 def test_the_owner_the_connector_resolves_survives_the_delegation():

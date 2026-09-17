@@ -45,6 +45,12 @@ which is the failure class this repository has paid for most often.
 - CI depends on a public image from the celine side. If it stops being public, this job
   fails loudly rather than degrading, and the fallback is a fixture that answers a weaker
   question — which must then be stated in the job, not assumed.
+- **A second provisioning step, 2026-09-17.** The organisation clients that hold EDC's
+  `management-api:*` scopes, with the `sub` mapper naming each one's participant context,
+  are created by `ir-cli keycloak org-sync`, not by the sync, which cannot add that mapper.
+  The job runs it after the sync, as compose's `keycloak-org-sync` does, and
+  `tests/integration/test_organisation_clients.py` asserts that only those clients hold the
+  scopes. The same measurement applies: without the step that suite fails.
 - It is the only CI job that provisions anything. Anything else needing a live stack — the
   `e2e:*` flows, the portal's Playwright journeys — stays out of CI for cost reasons and is
   run locally against `task docker:restart`.

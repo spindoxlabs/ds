@@ -5,6 +5,17 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: The zero-config dev database: ds's compose Postgres on the Docker bridge,
+#: with the dev password. It is the default so `task start` needs no setup, and
+#: that makes it the one setting whose dev value is not merely weak but
+#: *somebody else's*: whichever compose project publishes that port answers.
+#: Registered with the production guard (`register_database_url`) so a
+#: deployment that never set `IDENTITY_REGISTRY_DATABASE_URL` refuses to start,
+#: migrate or run `ir-cli` instead of writing into that database.
+DEV_DATABASE_URL = (
+    "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"
+)
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -20,9 +31,7 @@ class Settings(BaseSettings):
         populate_by_name=True,
     )
 
-    database_url: str = (
-        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/identity_registry"
-    )
+    database_url: str = DEV_DATABASE_URL
     debug: bool = False
 
     encryption_key: str = Field(
@@ -357,6 +366,38 @@ class Settings(BaseSettings):
 
     def status_list_url(self, list_id: int | str = 1) -> str:
         return f"{self.public_base_url}/status/{list_id}"
+
+
+def register_database_url(guard, settings: Settings) -> None:
+    """Register the dev database default with a `ProductionGuard`.
+
+    One function for every entry point that opens the database — the service
+    lifespan, `ir-cli` and alembic — so the three cannot disagree about what
+    counts as the dev value.
+    """
+    guard.forbid_default(
+        "IDENTITY_REGISTRY_DATABASE_URL",
+        settings.database_url,
+        {DEV_DATABASE_URL},
+        "Set IDENTITY_REGISTRY_DATABASE_URL to this deployment's own database. "
+        "The default is the dev compose Postgres on 172.17.0.1:35432.",
+    )
+
+
+def refuse_dev_database_in_production(entry_point: str) -> None:
+    """Raise `InsecureProductionConfig` before any connection is attempted.
+
+    For the one-shot entry points (`ir-cli`, alembic). Silent in dev, where the
+    default is the point; the service lifespan reports it with its other
+    defaults instead.
+    """
+    from ds_auth.production import ProductionGuard, is_production
+
+    if not is_production():
+        return
+    guard = ProductionGuard(entry_point)
+    register_database_url(guard, get_settings())
+    guard.enforce()
 
 
 @lru_cache(maxsize=1)

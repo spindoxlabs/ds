@@ -17,6 +17,7 @@ from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
+from ds_e2e.flows.organisation_token import OrganisationTokenFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
 from ds_e2e.flows.smoke import SmokeFlow
 from ds_e2e.flows.two_providers import TwoProvidersFlow
@@ -75,6 +76,11 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # flow has to out-rank with an explicit opt-out (`D-15`) — running it first
     # would assert against a subject state the suite has not produced yet.
     "consent-withdrawal": ConsentWithdrawalFlow,
+    # The organisation's own token driving the same exchange (ADR-0014). After
+    # the person-driven flows, whose ledger rows it never touches, and before
+    # `fail-closed`, which negotiates for the same asset as a person: the two
+    # are keyed apart, and this one revokes its own requests on both ends.
+    "organisation-token": OrganisationTokenFlow,
     # **Last, and deliberately.** It stops a container and restarts it, so it is
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls

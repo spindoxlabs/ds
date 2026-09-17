@@ -18,14 +18,16 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import httpx
 import pytest
+import respx
 from ds.governance import DataplaneDecision
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from connector.services import subject_identities
 from connector.services.agreement_service import terminate_agreement, upsert_agreement
 from connector.services.consent_service import set_subject_data_sharing
-from tests import make_headers
+from tests import edc_v5_root, make_headers
 
 HEADERS = make_headers(scope="connector.internal")
 
@@ -409,3 +411,41 @@ async def test_the_filter_reaches_the_wire_with_the_handlers_own_arguments(
     args = decision.verdict_for(GATED).row_filter.args
     assert args["urn_template"] == "urn:ngsi-ld:Device:{device_id}"
     assert args["column"]
+
+
+# ── A named transfer is checked the way the PEP route checks it ──────────────
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_transfer_the_edc_holds_as_terminated_is_refused(engine, client):
+    """`transfer_status` is called in-process, not over HTTP.
+
+    It gained a `request` parameter (the EDC client now lives on the app) and
+    this call site was left passing positionals, so every authorize naming a
+    transfer raised a 500 — invisible here until this test, because none named
+    one, and found by `ds-e2e --flow smoke` against a live stack.
+    """
+    await _agreement(engine, "ag-t", OPEN)
+    respx.post(f"{edc_v5_root()}/transferprocesses/request").mock(
+        return_value=httpx.Response(200, json=[{"state": "TERMINATED"}])
+    )
+    r = await _authorize(
+        client, agreement_id="ag-t", dataset_ids=[OPEN], transfer_id="tp-remote"
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["datasets"][0]["reason"] == "transfer_inactive"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_a_transfer_the_edc_holds_as_started_is_admitted_that_far(engine, client):
+    await _agreement(engine, "ag-s", OPEN)
+    respx.post(f"{edc_v5_root()}/transferprocesses/request").mock(
+        return_value=httpx.Response(200, json=[{"state": "STARTED"}])
+    )
+    r = await _authorize(
+        client, agreement_id="ag-s", dataset_ids=[OPEN], transfer_id="tp-remote"
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["datasets"][0]["reason"] != "transfer_inactive"

@@ -1,7 +1,7 @@
 {{/*
-Connector environment. The connector selects its EDC client by role, so only
-the role-appropriate EDC_* URLs are set. URLs use in-cluster DNS, never the
-host-gateway convention from compose.
+Connector environment. One EDC runtime per participant, whatever the role
+(provider, consumer or both). URLs use in-cluster DNS, never the host-gateway
+convention from compose.
 */}}
 {{/*
 Sibling releases follow the ds-<service>-<participant> naming enforced by
@@ -38,23 +38,33 @@ counter-party is resolved by DSP address through the identity registry, and this
 participant's own callback address is `edc.dsp.callback.address` in the ds-edc
 chart. EDC_*_PROTOCOL_URL was set here and read by nothing.
 */}}
-{{- if eq .Values.participant.role "provider" }}
-- name: EDC_PROVIDER_MANAGEMENT_URL
-  value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
-{{- else }}
+{{- if has .Values.participant.role (list "consumer" "both") }}
 - name: CONNECTOR_CONSUMER_PARTICIPANT_DID
   value: {{ include "ds.participantDid" . | quote }}
-- name: EDC_CONSUMER_MANAGEMENT_URL
-  value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
 {{- end }}
-# EDC's Management API key, and **nothing else**. It no longer doubles as an
-# `/internal` credential: those routes take a Keycloak bearer carrying
-# `connector.internal` (`require_internal_scope`), and the `X-Api-Key` branch is
-# deleted. This value is what the connector *presents outbound* to the EDC.
-# Read from a mounted file (the connector's preferred form) so it never appears
-# in the process env.
-- name: EDC_API_KEY_FILE
-  value: /run/secrets/edc/api-key
+{{/*
+One EDC runtime per participant, whichever roles this connector plays. v5, as
+this participant's organisation client — there is no management API key.
+*/}}
+- name: EDC_MANAGEMENT_URL
+  value: {{ printf "http://%s:%v/management" $edc .Values.edc.managementPort | quote }}
+- name: EDC_MANAGEMENT_API_VERSION
+  value: {{ .Values.edc.managementApiVersion | quote }}
+- name: CONNECTOR_CLIENT_ID
+  value: {{ .Values.clientId | default (printf "svc-ds-connector-%s" .Values.participant.name) | quote }}
+- name: CONNECTOR_CLIENT_SECRET
+  valueFrom:
+    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: CONNECTOR_CLIENT_SECRET}
+{{/*
+Where this participant's EDC delivers a started transfer's EDR, and the value of
+the header it sends — the same value the ds-edc chart puts in its vault
+(`secrets.edcCallbackKey` in both). In-cluster: the EDC reaches this Service.
+*/}}
+- name: CONNECTOR_EDC_CALLBACK_URL
+  value: {{ printf "http://%s:%v/webhooks/edc-callback" (include "ds.fullname" .) .Values.service.port | quote }}
+- name: CONNECTOR_EDC_CALLBACK_SECRET
+  valueFrom:
+    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_CALLBACK_KEY}
 - name: DB_USER
   valueFrom:
     secretKeyRef: {name: {{ include "ds.secretName" . }}, key: DB_USER}
@@ -103,9 +113,6 @@ otherwise the connector's default path finds nothing, which is the intended
   value: "false"
 - name: CONNECTOR_KEYCLOAK_TOKEN_URL
   value: {{ ((.Values.global).keycloak).tokenUrl | quote }}
-- name: CONNECTOR_SERVICE_CLIENT_SECRET
-  valueFrom:
-    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: CONNECTOR_SERVICE_CLIENT_SECRET}
 - name: CONNECTOR_NOTIFY_BACKENDS
   value: {{ .Values.notify.backends | quote }}
 - name: CONNECTOR_NOTIFY_PORTAL_BASE_URL

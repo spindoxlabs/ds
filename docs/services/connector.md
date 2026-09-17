@@ -8,9 +8,11 @@ moves data. It does not know what a dataset is, who owns it, or whether a person
 to it being shared. `ds-connector` knows all three, and answers the EDC every time a
 decision is needed.
 
-One codebase runs as **two instances** — a provider and a consumer — selected by
-`CONNECTOR_ROLE`. The role decides which EDC the connector drives and which routers it
-mounts: `/provider/*` on a provider, `/consumer/*` on a consumer, everything else on both.
+One codebase, one process per participant. `CONNECTOR_ROLE` is `provider`, `consumer` or
+`both`, and decides which routers are mounted: `/provider/*` for a provider, `/consumer/*` for
+a consumer, and everything else in every role. Whatever the role, a participant has **one**
+EDC runtime, and the connector drives it through one management client. The dev stack runs a
+provider (`rec`, `grid-operator`) and a consumer (`third-party`) as separate processes.
 
 ## Role in the blueprint
 
@@ -53,8 +55,14 @@ is reached by a person only through `connector.admin`.
 | `POST /internal/audit/query` | the dataset API | record that a query happened |
 
 **Drives the consumer side of an exchange.** `/consumer/*` walks the whole flow — request a
-catalogue over DSP, negotiate, poll to agreement, start a transfer, fetch the EDR — and
-records each access request so a consumer can see and revoke their own.
+catalogue over DSP, negotiate, poll to agreement, start a transfer, receive the EDR — and
+records each access request so its requester can see and revoke their own. The requester is a
+person holding a `ConsumerUser` credential, or **the organisation itself**, through its own
+client token (see [Who may drive the consumer side](#who-may-drive-the-consumer-side)).
+
+**Receives the EDR.** `POST /webhooks/edc-callback` is where this participant's EDC posts
+`TransferProcessStarted` for a transfer the connector started. The event carries the EDR, and
+the connector keeps it (see [The EDR arrives on a callback](#the-edr-arrives-on-a-callback)).
 
 **Records the EDC's lifecycle.** `/webhooks/*` receives contract-negotiation and
 transfer-process events from the EDC extensions and writes agreements and their frozen
@@ -141,6 +149,67 @@ provider EDC does not refuse — it *parks* the negotiation and the connector re
 Asks expire on a TTL sweep (`CONNECTOR_CONSENT_PENDING_TTL`, 30 days), which terminates the
 negotiation. When a subject decides in time, the connector resumes it.
 
+### Who may drive the consumer side
+
+Every `/consumer/*` route accepts one of two callers, and no other:
+
+| Caller | Presents | Bound by |
+|---|---|---|
+| a **person** acting for this participant | `X-Subject-Id` + `X-User-VC`, a `ConsumerUser` credential linked to `CONNECTOR_CONSUMER_PARTICIPANT_DID` | the credential |
+| **the organisation itself** — a batch job, the connector's operator tooling | a bearer from the organisation client `svc-ds-connector-<alias>` | its `sub` must be **this** connector's participant context, and its `scope` must hold EDC's scope for the call ds makes on its behalf |
+
+The scope an organisation token must hold is EDC's scope for the management call ds makes,
+not a permission ds invents:
+
+| Route | Scope |
+|---|---|
+| `POST /consumer/catalog` | `management-api:catalog:read` (the route also takes `connector.consumer.read`, as before) |
+| `POST /consumer/negotiate` | `management-api:negotiations:write` |
+| `GET /consumer/requests`, `GET /consumer/negotiations/{id}` | `management-api:negotiations:read` |
+| `POST /consumer/transfer`, `POST /consumer/requests/{id}/revoke` | `management-api:transfers:write` |
+| `GET /consumer/transfers`, `GET /consumer/transfers/{id}`, `GET /consumer/edr/{id}` | `management-api:transfers:read` |
+| `POST /consumer/flow` | `negotiations:write` **and** `transfers:write` |
+
+EDC's own matcher decides, so `management-api:write` also satisfies
+`management-api:negotiations:write`. A token naming another participant's context gets `403`,
+whatever scopes it holds.
+
+The organisation's requests are recorded under the actor `org:<context>`, apart from any
+person's. Provenance records the client that acted (`acted_by.client_id`) and the organisation
+it acted for (`actedOnBehalfOf`, the participant DID), as `DSSC-XCT-09` requires (rulebook
+`D-20`). An organisation token **never** reads a person's consents: `/consent/my/*` accepts
+only the subject's credential and answers `401` to the token.
+
+`GET /consumer/negotiations/{id}` answers `404` when the ledger row for that negotiation
+belongs to another actor. A person does not see the organisation's negotiations, and the
+organisation does not see a person's.
+
+### The EDR arrives on a callback
+
+EDC 0.18.0's v5 management API has no EDR endpoint. When the connector starts a transfer, it
+names a callback address:
+
+- the URI is `CONNECTOR_EDC_CALLBACK_URL`;
+- the event is `transfer.process.started`;
+- the header is `X-Ds-Edc-Callback-Key`. EDC reads that header's value from **its own vault**
+  under `CONNECTOR_EDC_CALLBACK_AUTH_CODE_ID` (default `ds-connector-callback-key`).
+
+EDC posts `TransferProcessStarted` there, and `POST /webhooks/edc-callback` handles it:
+
+- it compares the header with `CONNECTOR_EDC_CALLBACK_SECRET` (`401` otherwise);
+- it refuses an event for another participant context (`403`) and an event that carries no
+  EDR (`422`);
+- it stores the EDR in `edr_entries`, keyed by transfer id. A later event for the same
+  transfer refreshes it.
+
+Consumer routes wait up to `CONNECTOR_EDR_WAIT_TIMEOUT` for the EDR to arrive and then answer
+`504`. With no callback URL configured, they refuse to start a transfer (`503`): v5 cannot be
+asked for the EDR afterwards, so such a transfer would be useless. A consumer process under
+`DS_ENV=production` refuses to boot without the URL.
+
+The callback carries no bearer token, because EDC's callback client sends only the
+configured header. That header is the route's whole authentication.
+
 ### The owner perimeter
 
 A participant admin acting for one organisation must not be able to delete another's asset.
@@ -149,9 +218,13 @@ the caller to hold `connector.provider.write` *within* that organisation. Platfo
 service principals are exempt; a caller carrying no organisation claims at all is allowed
 unless `CONNECTOR_OWNER_SCOPING_STRICT` is set.
 
+An **organisation token** gets no such exemption. It may write only for its own participant
+context. It may write to an unowned target, or to one whose owner resolves, in the owners
+registry, to that context's DID. An owner that cannot be resolved is refused.
+
 ## Configuration
 
-`pydantic-settings`, prefix `CONNECTOR_`. Four `EDC_*` fields are read under their literal
+`pydantic-settings`, prefix `CONNECTOR_`. Three `EDC_*` fields are read under their literal
 name, without the prefix — all Management API, none of them DSP: the connector never dials
 a protocol endpoint, and a counter-party's is resolved by DSP address through the identity
 registry.
@@ -164,7 +237,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `CONNECTOR_ROLE` | **required** | `provider` or `consumer`. Selects the EDC client and the mounted routers |
+| `CONNECTOR_ROLE` | **required** | `provider`, `consumer` or `both`. Selects the mounted routers |
 | `CONNECTOR_PARTICIPANT_ID` | `provider` | short id, used in event attribution |
 | `CONNECTOR_PARTICIPANT_BASE_URL` | `https://rec.dataspaces.localhost` | own base URL; asset ids derive from it |
 | `CONNECTOR_PARTICIPANT_DID` | `did:web:rec.dataspaces.localhost` | own DID |
@@ -174,10 +247,13 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `EDC_PROVIDER_MANAGEMENT_URL` | `http://localhost:19193/management` | Management API, provider role |
-| `EDC_CONSUMER_MANAGEMENT_URL` | `http://localhost:29193/management` | Management API, consumer role |
-| `EDC_API_KEY` | `insecure-dev-key` | **secret** — Management API key |
-| `EDC_API_KEY_FILE` | — | read the key from a file instead |
+| `EDC_MANAGEMENT_URL` | `http://localhost:19193/management` | this participant's Management API. **Never published on a host**: EDC does not check a token's audience, so network isolation is the control (ADR-0014) |
+| `EDC_MANAGEMENT_API_VERSION` | `v5beta` | the version path segment; `v5` from EDC 0.19 |
+| `EDC_PARTICIPANT_CONTEXT_ID` | *(`CONNECTOR_PARTICIPANT_DID`)* | this participant's context in its EDC — the organisation client's `sub` |
+| `CONNECTOR_EDC_CALLBACK_URL` | — | this connector's `/webhooks/edc-callback` as the EDC reaches it. **Required for a consumer in production** |
+| `CONNECTOR_EDC_CALLBACK_AUTH_CODE_ID` | `ds-connector-callback-key` | the EDC vault alias holding the callback header value |
+| `CONNECTOR_EDC_CALLBACK_SECRET` | `insecure-dev-callback-key` | **secret** — the same value, compared here. `_FILE` reads it from a file |
+| `CONNECTOR_EDR_WAIT_TIMEOUT` | `30.0` | seconds a consumer route waits for the EDR |
 | `CONNECTOR_NEGOTIATION_POLL_INTERVAL` / `_TIMEOUT` | `2.0` / `120.0` | seconds |
 | `CONNECTOR_TRANSFER_POLL_INTERVAL` / `_TIMEOUT` | `2.0` / `120.0` | seconds. Separate from the negotiation pair: a negotiation can park on a person, a transfer cannot |
 | `CONNECTOR_EDC_VAULT_FILE` | — | EDC filesystem vault; unset ⇒ `/internal/edr-jwks` serves no key |
@@ -205,7 +281,8 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 |---|---|---|
 | `CONNECTOR_OIDC_ISSUER_URL` | — | Keycloak realm issuer. Set ⇒ JWTs are fully verified |
 | `CONNECTOR_OIDC_INSECURE_DEV` | `true` | with no issuer, accept unverified JWTs. **Refused in production** |
-| `CONNECTOR_SERVICE_CLIENT_ID` / `_SECRET` | `svc-ds-connector` | own client credentials; the id is also the expected JWT audience |
+| `CONNECTOR_SERVICE_CLIENT_ID` | `svc-ds-connector` | the audience this service verifies on incoming tokens. Not a credential: nothing authenticates as it |
+| `CONNECTOR_CLIENT_ID` / `_SECRET` | `svc-ds-connector-example-org` | **secret** — the organisation client this connector authenticates as, to its EDC and to every ds service. One credential per connector |
 | `CONNECTOR_KEYCLOAK_TOKEN_URL` | Keycloak on `172.17.0.1:9080` | token endpoint for outbound calls |
 | `CONNECTOR_TRUST_ANCHOR_DID` | `did:web:trust-anchor.dataspaces.localhost` | issuer of user VCs; **its key is resolved from this DID's document**, not mounted |
 | `CONNECTOR_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
@@ -237,13 +314,18 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_NOTIFY_PORTAL_BASE_URL` | `https://portal.dataspaces.localhost` | link base in notifications |
 | `CONNECTOR_NOTIFY_SMTP_HOST` / `_PORT` / `_USER` / `_PASSWORD` / `_FROM` / `_TLS` | — / `587` / — / — / — / `true` | required when `smtp` is enabled |
 
-Under `DS_ENV=production` a startup guard refuses to boot if the issuer is unset, either
-`*_INSECURE_DEV` flag is true, the trust-anchor key is missing, or the EDC key or service
-secret is still at its dev default.
+Under `DS_ENV=production` a startup guard refuses to boot in any of these cases:
+
+- the issuer is unset or not `https`;
+- either `*_INSECURE_DEV` flag is true;
+- the trust anchor or the trust list is unset;
+- the organisation client's secret still equals its id;
+- the callback secret is still at its dev default;
+- the process is a consumer and has no callback URL.
 
 ## Persistence
 
-Four tables in its own database (`connector_rec` / `connector_third_party`), Alembic-managed;
+Five tables in its own database (`connector_rec` / `connector_third_party`), Alembic-managed;
 the service refuses to boot against a schema that is not at head.
 
 | Table | Holds |
@@ -252,12 +334,13 @@ the service refuses to boot against a schema that is not at head.
 | `consent_requests` | the consent registry: subject, consumer (or `*`), dataset, purposes, controller, status |
 | `consumer_access_requests` | consumer-side: what was asked for, its negotiation, agreement and transfer |
 | `consumer_transfers` | consumer-side transfer records, so a subject sees only their own |
+| `edr_entries` | consumer-side: the EDR each started transfer's callback delivered, by transfer id |
 
 ## Running it
 
 | Task | Effect |
 |---|---|
-| `task provider:connector:run` | uvicorn on `:30001`, `CONNECTOR_ROLE=provider` |
+| `task provider:connector:run` | uvicorn on `:30001`, `CONNECTOR_ROLE=provider`. Pairs with the host-JVM EDCs of `dev:*`: a compose EDC does not publish its management port |
 | `task consumer:connector:run` | uvicorn on `:31001`, `CONNECTOR_ROLE=consumer` |
 | `task provider:connector:debug` | same plus debugpy on `:30901` (`:31901` for consumer) |
 | `task db:migrate:connector` | `alembic upgrade head` against both databases |

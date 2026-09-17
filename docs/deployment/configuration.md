@@ -210,7 +210,7 @@ A list. Each entry produces up to **six** releases named `ds-<service>-<name>`, 
 |---|---|---|
 | `name` | — | **Required.** Also the participant's public host and DID: `did:web:<name>.<baseDomain>` |
 | `enabled` | — | false → the whole group is skipped |
-| `role` | — | `provider` or `consumer`; surfaces as a pod label and in service config |
+| `role` | — | `provider`, `consumer` or `both` (one connector process, both routers, one EDC); surfaces as a pod label and in service config |
 | `did` | `""` | empty → derived. Override only to pin an existing DID |
 
 The dataset API takes no key here. It is participant-operated and external, and
@@ -223,6 +223,7 @@ is sent for data is the asset's `data_address.base_url` in `governance.yaml`.
 | Key | Default | Notes |
 |---|---|---|
 | `connector.replicaCount` | `1` | |
+| `connector.clientId` | `svc-ds-connector-<name>` | the organisation client this connector authenticates as, to its EDC and to every ds service. Its secret is `participants.<name>.organisationClientSecret` in the secrets file, and must equal what the realm holds ([Secrets](secrets.md)) |
 | `connector.notifyBackends` | — | only `smtp` and `webhook` are real backend names; leave empty for no notifications |
 | `connector.webhookAllowedHosts` | `[]` | SSRF guard. **An empty list rejects every webhook URL** — required if `notifyBackends` includes `webhook` |
 | `connector.governanceOverlayName` | `""` | merges `governance.<name>.yaml` on top of the base file |
@@ -245,7 +246,8 @@ Not in `helm/values.yaml`. Settable per release by editing `helm/charts/<chart>/
 | `migration.mode` | Python services | `initContainer` | |
 | `sqlSchemaAutocreate` | `ds-edc` | `true` | the EDC creates its own schema at boot — see [Prerequisites](prerequisites.md#one-database-and-one-role-per-service) |
 | `didWebUseHttps` | `ds-edc` | `true` | **do not change.** Kept as a value only to make the invariant visible |
-| `ports.*` | `ds-edc` | api 19191 · control 19192 · management 19193 · protocol 19194 | |
+| `ports.*` | `ds-edc` | api 19191 · control 19192 · management 19193 · protocol 19194 | management is in-cluster only, and must stay so: EDC does not check a management token's audience ([ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)) |
+| `edc.managementApiVersion` | `ds-connector` | `v5beta` | the management API path segment; `v5` from EDC 0.19 |
 | `connectorServiceName` | `ds-edc`, `ds-federated-catalog` | `""` | empty → this participant's own connector |
 | `credentialTtl.defaultDays` / `maxDays` | `ds-identity-registry` | 365 / 730 | issued-credential lifetime |
 | `maxLineageDepth` | `ds-provenance` | `20` | |

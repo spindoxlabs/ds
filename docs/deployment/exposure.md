@@ -75,7 +75,7 @@ consumer.
 
 | Surface | Why |
 |---|---|
-| EDC management API | creates and deletes assets, policies and transfers |
+| EDC management API | creates and deletes assets, policies and transfers. Its OAuth2 filter never checks a token's audience, so reachability is part of its access control, not only defence in depth (ADR-0014) |
 | EDC control API | the internal data-plane control plane |
 | EDC api/health | |
 | `ds-connector` | including `/internal/*` and `/webhooks/*` |
@@ -87,7 +87,9 @@ consumer.
 The `ds-edc` Service publishes management and control **in-cluster**, but the NetworkPolicy that
 admits the ingress controller lists only the protocol and public ports. So even a misconfigured
 Ingress path cannot reach them — the exposure is denied twice, at routing and at the network
-layer.
+layer. For management, keep it that way: only this participant's `ds-connector` may reach the
+port. An organisation's batch jobs hold the same client as its connector and call the
+connector's `/consumer/*` routes, never the management API.
 
 ## `did:web` over HTTPS
 
@@ -173,8 +175,11 @@ Two extra policies are conditional:
 ```bash
 # the management API must be unreachable from another namespace
 kubectl -n ds-consumer run probe --rm -it --restart=Never --image=curlimages/curl -- \
-  curl -sS --max-time 5 http://ds-edc-rec.ds-provider:19193/api/v3/assets
-# expect: timeout / connection refused
+  curl -sS --max-time 5 -X POST \
+  http://ds-edc-rec.ds-provider:19193/management/v5beta/participants/x/assets/request
+# expect: timeout / connection refused. A 401 means the port is reachable, and the
+# management API's only remaining check is the token — which EDC does not bind to an
+# audience (ADR-0014).
 
 # DSP protocol from a peer namespace must work
 kubectl -n ds-consumer run probe --rm -it --restart=Never --image=curlimages/curl -- \

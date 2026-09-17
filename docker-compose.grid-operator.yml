@@ -58,7 +58,13 @@ services:
       # 39291 (public) and 39195 (version) are gone with the contexts
       # themselves — no packaged module registers a resource on either. 39191
       # stays unpublished; the healthcheck below runs inside the container.
-      - "39193:39193"
+      # **The management port (39193) is not published** (plan
+      # `the-management-api-is-v3-behind-one-key`, decision 1). EDC's OAuth2
+      # filter checks a token's `sub` and `scope` but never its `aud`, so the
+      # organisation's client — shared by its connector and its batch jobs —
+      # is the whole credential; keeping the port off the host is the control.
+      # The connector reaches it on this project's network. Asserted by
+      # `services/connector/tests/test_management_port_isolation.py`.
       - "39194:39194"
     environment:
       # Traces. The same switch the Python services read, so one value
@@ -70,15 +76,12 @@ services:
       # the thing worth tracing — would be invisible: consumer and provider
       # would look like one service talking to itself.
       OTEL_SERVICE_NAME: edc-grid-operator
-      # No EDC_API_KEY here: on this service it maps to the EDC setting
-      # `edc.api.key`, read by no class in connector.jar. The `${EDC_API_KEY}`
-      # variable still feeds WEB_HTTP_MANAGEMENT_AUTH_KEY, which is enforced,
-      # and the ds-connector service below reads it as its own client credential.
+      # No management API key: the management context authenticates OAuth2
+      # tokens (`services/connector/config/*.properties`).
       EDC_PROG_ARGS: ${EDC_PROG_ARGS:-}
       # EDC reads the environment as config, converting ENVIRONMENT_NOTATION to
       # dot.notation. The properties file cannot carry these: it is loaded with a
       # plain `Properties.load()` and would store a `${...}` placeholder verbatim.
-      WEB_HTTP_MANAGEMENT_AUTH_KEY: ${EDC_API_KEY:-insecure-dev-key}
       # The control API's own key — see docker-compose.rec.yml.
       WEB_HTTP_CONTROL_AUTH_KEY: ${EDC_CONTROL_API_KEY:-insecure-dev-control-key}
       # Data-plane signalling got its own web context in EDC 0.18.0 and is no
@@ -194,8 +197,14 @@ services:
       DS_ENV: ${DS_ENV:-dev}
       CONNECTOR_ROLE: provider
       CONNECTOR_PORT: 32001
-      EDC_PROVIDER_MANAGEMENT_URL: http://172.17.0.1:39193/management
-      EDC_API_KEY: ${EDC_API_KEY:-insecure-dev-key}
+      # This participant's EDC, over the project network — its management port
+      # is not published. Authenticated as the organisation's client below.
+      EDC_MANAGEMENT_URL: http://edc-grid-operator:39193/management
+      # Where the EDC delivers a started transfer's EDR (`TransferProcessStarted`
+      # on the transfer's callback). The value of the header it sends is in its
+      # vault (`config/grid-operator-vault.properties`, `ds-connector-callback-key`).
+      CONNECTOR_EDC_CALLBACK_URL: http://172.17.0.1:32001/webhooks/edc-callback
+      CONNECTOR_EDC_CALLBACK_SECRET: ${EDC_CALLBACK_KEY:-insecure-dev-callback-key}
       CONNECTOR_PARTICIPANT_ID: grid-operator
       CONNECTOR_PARTICIPANT_BASE_URL: https://grid-operator.dataspaces.localhost
       CONNECTOR_PARTICIPANT_DID: did:web:grid-operator.dataspaces.localhost
@@ -222,7 +231,11 @@ services:
       CONNECTOR_OIDC_GROUP_ALIASES: ${CONNECTOR_OIDC_GROUP_ALIASES:-}
       CONNECTOR_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       CONNECTOR_KEYCLOAK_TOKEN_URL: http://172.17.0.1:9080/realms/dataspaces/protocol/openid-connect/token
-      CONNECTOR_SERVICE_CLIENT_SECRET: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
+      # The organisation's client, for everything this connector calls — its EDC,
+      # identity-registry, provenance, the counterparty. Created by
+      # `keycloak-org-sync` from `services/keycloak/organizations.yaml`.
+      CONNECTOR_CLIENT_ID: svc-ds-connector-grid-operator
+      CONNECTOR_CLIENT_SECRET: ${SVC_DS_CONNECTOR_GRID_OPERATOR_SECRET:-svc-ds-connector-grid-operator}
       CONNECTOR_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
       CONNECTOR_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
       CONNECTOR_DID_WEB_USE_HTTPS: "false"

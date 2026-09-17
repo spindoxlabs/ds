@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class ActingPrincipal(BaseModel):
@@ -47,6 +47,11 @@ class ActingPrincipal(BaseModel):
     """True when a service client acted, so an automated publish is not mistaken
     for a person's decision."""
 
+    client_id: str | None = None
+    """The client that acted, when a service did — for an organisation acting as
+    itself, its organisation client (DSSC-XCT-09: the act is attributable to the
+    client *and* to the organisation it acted for, `on_behalf_of`)."""
+
 
 class CataloguePublished(BaseModel):
     event_type: Literal["CataloguePublished"] = "CataloguePublished"
@@ -72,6 +77,18 @@ class CatalogViewed(BaseModel):
     dataset_count: int | None = None
 
 
+def _person_or_principal(user_did: str | None, acted_by: object | None) -> None:
+    """A consumer-side act names who did it: a person, or an organisation's client.
+
+    An organisation acting as itself (its own client, plan
+    `the-management-api-is-v3-behind-one-key`) has no person to name, and a
+    blank `user_did` must not stand in for one — so the act carries `acted_by`
+    instead, and an event with neither is refused.
+    """
+    if not user_did and acted_by is None:
+        raise ValueError("either user_did or acted_by is required")
+
+
 class AccessRequested(BaseModel):
     """A consumer asked for access — and, optionally, said why.
 
@@ -92,13 +109,19 @@ class AccessRequested(BaseModel):
     data_product_id: str
     provider_did: str
     consumer_did: str
-    user_did: str
+    user_did: str | None = None
     purpose: list[str] = []
     offer_id: str | None = None
     declared_purpose: list[str] = []
     declared_from: datetime | None = None
     declared_until: datetime | None = None
     justification_ref: str | None = None
+    acted_by: ActingPrincipal | None = None
+
+    @model_validator(mode="after")
+    def _names_its_actor(self) -> AccessRequested:
+        _person_or_principal(self.user_did, self.acted_by)
+        return self
 
 
 class NegotiationStarted(BaseModel):
@@ -111,6 +134,7 @@ class NegotiationStarted(BaseModel):
     consumer_did: str
     user_did: str | None = None
     offer_id: str | None = None
+    acted_by: ActingPrincipal | None = None
 
 
 class NegotiationFinalized(BaseModel):
@@ -158,6 +182,7 @@ class TransferStarted(BaseModel):
     provider_did: str
     consumer_did: str
     user_did: str | None = None
+    acted_by: ActingPrincipal | None = None
 
 
 class DataTransferCompleted(BaseModel):
@@ -197,8 +222,14 @@ class AccessRevoked(BaseModel):
     data_product_id: str
     provider_did: str
     consumer_did: str
-    subject_id: str
+    subject_id: str | None = None
     reason: str | None = None
+    acted_by: ActingPrincipal | None = None
+
+    @model_validator(mode="after")
+    def _names_its_actor(self) -> AccessRevoked:
+        _person_or_principal(self.subject_id, self.acted_by)
+        return self
 
 
 # ── Consent & disclosure events (Block C) ─────────────────────────────────────

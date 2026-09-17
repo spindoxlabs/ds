@@ -45,6 +45,9 @@ def acting_principal(
         "issuer": issuer if isinstance(issuer, str) else None,
         "on_behalf_of": on_behalf_of,
         "is_service": principal.is_service,
+        # Which client acted, for a service — an organisation's client above
+        # all (DSSC-XCT-09). A person's client says nothing about them.
+        "client_id": principal.client_id if principal.is_service else None,
     }
 
 
@@ -52,8 +55,19 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+#: The ledger key of an organisation acting as itself (`Principal.actor`).
+ORG_ACTOR_PREFIX = "org:"
+
+
 def _did(value: str | None) -> str | None:
-    if not value:
+    """A participant name as a DID — and never an organisation actor.
+
+    A bare name becomes ``did:web:<name>``, which was right for ``provider`` and
+    wrong for ``org:did:web:…``: that would record a person-shaped agent named
+    ``did:web:org:did:web:…``. An organisation's act is attributed through
+    ``acted_by`` instead, so its ledger key yields no DID here.
+    """
+    if not value or value.startswith(ORG_ACTOR_PREFIX):
         return None
     if value.startswith("did:"):
         return value
@@ -114,7 +128,7 @@ class ProvBridge:
         data_product_id: str,
         provider_id: str,
         consumer_id: str,
-        user_id: str,
+        user_id: str | None,
         purpose: list[str] | None = None,
         offer_id: str | None = None,
         event_id: str | None = None,
@@ -122,6 +136,7 @@ class ProvBridge:
         declared_from: datetime | None = None,
         declared_until: datetime | None = None,
         justification_ref: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         """``purpose`` is what the offer permits; ``declared_purpose`` is what
         the consumer said it wanted. Keeping them apart is the point: collapsing
@@ -148,6 +163,7 @@ class ProvBridge:
                 if declared_until
                 else None,
                 "justification_ref": justification_ref,
+                "acted_by": acted_by,
             }
         )
 
@@ -160,6 +176,7 @@ class ProvBridge:
         user_id: str | None = None,
         offer_id: str | None = None,
         event_id: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -172,6 +189,7 @@ class ProvBridge:
                 "consumer_did": _did(consumer_id),
                 "user_did": _did(user_id),
                 "offer_id": offer_id,
+                "acted_by": acted_by,
             }
         )
 
@@ -254,6 +272,7 @@ class ProvBridge:
         consumer_id: str,
         user_id: str | None = None,
         event_id: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -266,6 +285,7 @@ class ProvBridge:
                 "provider_did": _did(provider_id),
                 "consumer_did": _did(consumer_id),
                 "user_did": _did(user_id),
+                "acted_by": acted_by,
             }
         )
 
@@ -330,11 +350,12 @@ class ProvBridge:
         data_product_id: str,
         provider_id: str,
         consumer_id: str,
-        subject_id: str,
+        subject_id: str | None,
         agreement_id: str | None = None,
         transfer_id: str | None = None,
         reason: str | None = None,
         event_id: str | None = None,
+        acted_by: dict | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -348,6 +369,7 @@ class ProvBridge:
                 "consumer_did": _did(consumer_id),
                 "subject_id": subject_id,
                 "reason": reason,
+                "acted_by": acted_by,
             }
         )
 

@@ -58,7 +58,7 @@ All links are to the 0.18.0 pages.
 | one connector serving several organisations | participant contexts and the virtual control plane | [Participant context](v0.18.0/participant-context.md) |
 | per-organisation settings and secrets | `ParticipantContextConfig` (encrypted private entries), partitioned `Vault` | [Participant context](v0.18.0/participant-context.md#per-participant-configuration) |
 | a signed access token for consumer pull | `data-plane-iam`: EDR creation, token signing, `AccessTokenDataStore`, `DataPlaneAuthorizationService.authorize` | [Data plane](v0.18.0/data-plane.md#pull-the-edr-and-its-token) |
-| a consumer-side EDR cache | `edr-store-receiver` and `/v3/edrs` — **deprecated** | [Data plane](v0.18.0/data-plane.md#how-the-edr-reaches-the-consumer) |
+| a consumer-side EDR cache | `edr-store-receiver` and `/v3/edrs` — **deprecated**; ds takes the EDR from the transfer's own callback instead | [Data plane](v0.18.0/data-plane.md#how-the-edr-reaches-the-consumer) |
 | an integration for an external data plane | the Data Plane Signaling protocol stack | [Data plane](v0.18.0/data-plane.md#integrating-an-external-data-plane-current-stack) |
 | input validation for the Management API | `JsonObjectValidatorRegistry`, JSON Schemas | [Events and extensibility](v0.18.0/events-and-extensibility.md#extension-points) |
 | a federated catalogue crawler | `catalog-crawler-core` and `federated-catalog-api` | [Control plane](v0.18.0/control-plane.md#catalogue) |

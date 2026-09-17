@@ -41,6 +41,9 @@ from __future__ import annotations
 
 from typing import Any
 
+from ds_auth import CONNECTOR_AUDIENCES as _CONNECTOR_AUDIENCES
+from ds_auth import CONNECTOR_SERVICE_SCOPES, organisation_client_id
+from ds_auth import ORGANISATION_CLIENT_SCOPES as _ORGANISATION_CLIENT_SCOPES
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -48,40 +51,21 @@ from ..config import Settings
 from ..db.models import Owner, Participant
 from .enrolment import create_enrolment_token
 
-# The grants a third-party connector needs against this dataspace. Deliberately
-# the same set `svc-ds-connector` holds in `services/keycloak/clients.yaml` — a
-# participant's connector is not a more privileged thing than ours.
-#
-# This is a **copy**, and it cannot be anything else at runtime: `clients.yaml`
-# is not in the image (the Dockerfile ships `src/` and `alembic/` only), and
-# this list is read by the HTTP promotion path inside a container. So the
-# authority file cannot be consulted here — but the copy is pinned to it by
-# `tests/test_provisioning_scopes.py`, which fails on any divergence.
-#
-# It had already drifted once, silently and in the direction that matters: the
-# connector pass added `identity-registry.credentials.read` to
-# `svc-ds-connector` (a sharing offer may admit by credential type, and
-# `circle.py` reads it), and this list was not updated. Every third-party
-# connector provisioned in between got a client whose credential check 403s.
-CONNECTOR_SCOPES = [
-    "identity-registry.read",
-    "identity-registry.membership.read",
-    "identity-registry.credentials.read",
-    "provenance.write",
-    "connector.consent.read",
-]
+# The grants a connector needs against this dataspace, and the audiences its
+# token must carry. **Not a copy any more**: `ds_auth` holds the one list, and
+# `svc-ds-connector` in `services/keycloak/clients.yaml` holds nothing (it is an
+# audience; every connector presents its organisation's client). The copy that
+# stood here was pinned to that client by a test, and had drifted once before
+# the test existed. `libs/ds-auth/tests/test_management_api_scopes.py` checks
+# every entry is a scope the realm declares.
+CONNECTOR_SCOPES = list(CONNECTOR_SERVICE_SCOPES)
+CONNECTOR_AUDIENCES = list(_CONNECTOR_AUDIENCES)
 
-# The services a third-party connector's token must be accepted by. Every ds
-# service verifies `aud`, so a client created without these mappers holds a
-# token that is refused everywhere it is presented — it authenticates and then
-# fails at each call, which reads like a permission problem and is not one.
-# Same source and same pinning as the scopes above.
-CONNECTOR_AUDIENCES = [
-    "svc-ds-identity-registry",
-    "svc-ds-provenance",
-    # The counterparty's connector — the audience of GET /consent/pending.
-    "svc-ds-connector",
-]
+# What an organisation's client holds: its connector's grants in this realm, and
+# EDC's management-API scopes for its own participant context. `ds_auth` owns
+# the list — the image does not ship `clients.yaml`, and `svc-ds-connector`
+# there holds nothing any more (it is an audience).
+ORGANISATION_CLIENT_SCOPES = list(_ORGANISATION_CLIENT_SCOPES)
 
 
 class ProvisioningError(Exception):
@@ -92,7 +76,7 @@ class ProvisioningError(Exception):
 
 
 def client_id_for(alias: str) -> str:
-    return f"svc-ds-connector-{alias}"
+    return organisation_client_id(alias)
 
 
 def _host_of(did: str) -> str:
@@ -211,7 +195,7 @@ async def build_bundle(
             "issuer_url": settings.keycloak_issuer_url,
             "client_id": keycloak_client_id,
             "client_secret": keycloak_client_secret,
-            "scopes": CONNECTOR_SCOPES,
+            "scopes": ORGANISATION_CLIENT_SCOPES,
         }
 
     return bundle
@@ -299,12 +283,15 @@ def render_env(bundle: dict[str, Any]) -> str:
     if kc:
         lines += [
             "",
-            "# Service-to-service credentials in the dataspace realm. These are",
-            "# ours to issue: they are how your connector authenticates to *our*",
-            "# services, which is a different question from who you are.",
+            "# Your organisation's client in the dataspace realm. We issue it:",
+            "# it is how your connector — and your own jobs — authenticate to",
+            "# *our* services and to your EDC's management API. Its tokens name",
+            "# your participant (`sub`), which is a different question from how",
+            "# you prove who you are over DSP.",
             f"CONNECTOR_KEYCLOAK_TOKEN_URL={kc['issuer_url']}/protocol/openid-connect/token",
-            f"CONNECTOR_SERVICE_CLIENT_ID={kc['client_id']}",
-            f"CONNECTOR_SERVICE_CLIENT_SECRET={kc['client_secret']}",
+            f"CONNECTOR_CLIENT_ID={kc['client_id']}",
+            f"CONNECTOR_CLIENT_SECRET={kc['client_secret']}",
+            f"EDC_PARTICIPANT_CONTEXT_ID={p['did']}",
         ]
     return "\n".join(lines) + "\n"
 
@@ -323,6 +310,18 @@ def render_properties(bundle: dict[str, Any]) -> str:
     credential service was another organisation's.
     """
     p, inst, t = bundle["participant"], bundle["instance"], bundle["trust"]
+    kc = bundle.get("keycloak") or {}
+    management = (
+        [
+            "# The management API: v5 behind OAuth2, tokens from this realm.",
+            f"edc.participant.context.id={p['did']}",
+            f"edc.iam.oauth2.issuer={kc['issuer_url']}",
+            f"edc.iam.oauth2.jwks.url={kc['issuer_url']}/protocol/openid-connect/certs",
+            "edc.dataspace.enable.profiles.all=true",
+        ]
+        if kc.get("issuer_url")
+        else []
+    )
     return (
         "\n".join(
             [
@@ -330,6 +329,7 @@ def render_properties(bundle: dict[str, Any]) -> str:
                 "# Secrets are supplied as environment variables — see the .env "
                 "fragment.",
                 "",
+                *management,
                 f"edc.participant.id={p['did']}",
                 f"edc.iam.issuer.id={p['did']}",
                 "# Your own Secure Token Service and credential store.",

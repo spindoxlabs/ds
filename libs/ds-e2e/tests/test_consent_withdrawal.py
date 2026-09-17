@@ -73,99 +73,56 @@ class TestTheDeadline:
 
 
 class TestFindingTheProviderTransfer:
-    def test_it_joins_on_correlation_id_not_the_agreement(self, settings):
-        """Measured, after matching on the agreement found nothing live.
+    """The provider's view, through the provider connector.
 
-        The two sides mint different UUIDs for **both** the agreement and the
-        transfer; `correlationId` is the only field either carries that names the
-        other's. Matching on `contractId` compares the provider's local agreement
-        id to the consumer's and finds nothing — and "nothing" is a state this
-        flow reads as *stopped*, so the bug produced a green termination it never
-        observed.
-        """
+    It used to be a query against the provider EDC's management API with the
+    shared key. That port is not published and there is no key; the provider
+    connector's `GET /internal/transfers/{id}/status` does the same lookup —
+    by **correlationId**, the consumer's transfer id — against its own EDC.
+    """
+
+    def test_it_asks_the_provider_connector_by_the_consumer_transfer_id(self, settings):
         http = MagicMock()
-        http.post_raw.return_value = (
-            200,
-            [
-                {
-                    "@id": "p-1",
-                    "correlationId": "consumer-tp-A",
-                    "contractId": "provider-agreement-1",
-                    "state": "STARTED",
-                },
-                {
-                    "@id": "p-2",
-                    "correlationId": "consumer-tp-B",
-                    "contractId": "provider-agreement-2",
-                    "state": "STARTED",
-                },
-            ],
+        http.bearer_headers.return_value = {"Authorization": "Bearer t"}
+        http.raw.return_value = (200, {"active": True, "edc_state": "STARTED"})
+        flow = _flow(settings, http)
+
+        found = flow._provider_transfer_for("consumer tp/A")
+
+        assert flow._state_of(found) == "STARTED"
+        method, url = http.raw.call_args[0][:2]
+        assert method == "GET"
+        assert url == (
+            f"{settings.connector_url}/internal/transfers/consumer%20tp%2FA/status"
         )
+        assert settings.consumer_connector_url not in url
+
+    def test_a_transfer_the_provider_does_not_hold_is_none(self, settings):
+        http = MagicMock()
+        http.raw.return_value = (200, {"active": False, "reason": "transfer_not_found"})
+        assert _flow(settings, http)._provider_transfer_for("x") is None
+
+    def test_an_unreachable_edc_is_not_a_state(self, settings):
+        """`edc_unreachable` is a deny with no state; reading it as one would
+        report a stop nobody observed."""
+        http = MagicMock()
+        http.raw.return_value = (200, {"active": False, "reason": "edc_unreachable"})
+        assert _flow(settings, http)._provider_transfer_for("x") is None
+
+    @pytest.mark.parametrize(
+        "answer", [(401, {"detail": "no"}), (500, "boom"), (200, ["not", "a", "dict"])]
+    )
+    def test_an_unreadable_answer_is_none_not_an_exception(self, settings, answer):
+        """The caller loops on this; a refusal ends as a named failure."""
+        http = MagicMock()
+        http.raw.return_value = answer
+        assert _flow(settings, http)._provider_transfer_for("x") is None
+
+    def test_a_terminated_transfer_reads_as_terminated(self, settings):
+        http = MagicMock()
+        http.raw.return_value = (200, {"active": False, "edc_state": "TERMINATED"})
         flow = _flow(settings, http)
-
-        assert flow._provider_transfer_for("consumer-tp-B")["@id"] == "p-2"
-        # The consumer never sees the provider's agreement id, so this must miss.
-        assert flow._provider_transfer_for("provider-agreement-2") is None
-
-    def test_it_reads_the_prefixed_json_ld_form_too(self, settings):
-        """EDC answers compacted or prefixed depending on the context asked for;
-        `cleanup.py` reads both and a reader that does not sees no state."""
-        http = MagicMock()
-        http.post_raw.return_value = (
-            200,
-            [{"@id": "tp", "edc:correlationId": "c-tp", "edc:state": "TERMINATED"}],
-        )
-        flow = _flow(settings, http)
-
-        found = flow._provider_transfer_for("c-tp")
-
-        assert found is not None
-        assert flow._state_of(found) == "TERMINATED"
-
-    def test_an_unreadable_management_response_is_no_transfers(self, settings):
-        """Not an exception mid-poll: the caller loops on this, and a 401 from a
-        misconfigured key should end as a named failure rather than a traceback."""
-        http = MagicMock()
-        http.post_raw.return_value = (401, {"error": "unauthorized"})
-        flow = _flow(settings, http)
-
-        assert flow._provider_transfers() == []
-        assert flow._provider_transfer_for("anything") is None
-
-    def test_an_invalid_request_is_not_read_as_no_transfers(self, settings):
-        """The shape a missing `@type: QuerySpec` produced, live.
-
-        EDC answers a single `InvalidRequest` **object**, and treating that as an
-        empty list made the flow report a provider that was not watching a
-        transfer it was watching. It must stay distinguishable from `[]`.
-        """
-        http = MagicMock()
-        http.post_raw.return_value = (200, {"type": "InvalidRequest"})
-        flow = _flow(settings, http)
-
-        assert flow._provider_transfers() == []
-
-    def test_the_query_body_carries_the_type_edc_requires(self, settings):
-        """One holder of the request shape: `cleanup.EDC_CONTEXT`, which had it
-        right. The second copy written here did not."""
-        from ds_e2e.cleanup import EDC_CONTEXT
-
-        http = MagicMock()
-        http.post_raw.return_value = (200, [])
-        _flow(settings, http)._provider_transfers()
-
-        assert http.post_raw.call_args[0][1] is EDC_CONTEXT
-        assert EDC_CONTEXT["@type"] == "QuerySpec"
-
-    def test_it_reads_the_provider_edc_not_the_consumer(self, settings):
-        """The policy monitor runs on the side that owns the agreement."""
-        http = MagicMock()
-        http.post_raw.return_value = (200, [])
-        _flow(settings, http)._provider_transfers()
-
-        url = http.post_raw.call_args[0][0]
-        assert url.startswith(settings.edc_provider_management_url)
-        assert settings.edc_consumer_management_url not in url
+        assert flow._state_of(flow._provider_transfer_for("x")) == "TERMINATED"
 
 
 # ── What counts as stopped ────────────────────────────────────────────────────

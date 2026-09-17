@@ -22,6 +22,7 @@ import re
 from pathlib import Path
 
 import pytest
+from ds_edc import CallbackAddress
 
 from connector.config import Settings
 from connector.services.consumer_service import ConsumerService
@@ -35,8 +36,10 @@ REPO = Path(__file__).resolve().parents[3]
 #: space for the next dead setting.
 READ_ELSEWHERE = {
     # Consumed by the settings model itself: `load_file_secrets` folds it into
-    # `edc_api_key`, and nothing reads the path again.
-    "edc_api_key_file",
+    # `edc_callback_secret`, and nothing reads the path again.
+    "edc_callback_secret_file",
+    # Read through the `participant_context_id` property on the settings model.
+    "edc_participant_context_id",
 }
 
 #: ``settings.name``, or the name quoted — `notifications/factory.py` reads
@@ -100,7 +103,11 @@ class _RecordingEdc:
         self.intervals["transfer"] = poll_interval
         return _State("STARTED")
 
-    async def get_edr(self, _id):
+
+class _Edrs:
+    """The EDR as the callback would have stored it."""
+
+    async def wait_for(self, _id, timeout=None):
         from ds_edc.schemas import EdrResponse
 
         return EdrResponse(
@@ -140,6 +147,10 @@ async def test_the_transfer_poll_uses_the_transfer_interval():
         prov=_Prov(),
         negotiation_poll_interval=3.0,
         transfer_poll_interval=7.0,
+        edrs=_Edrs(),
+        callback=CallbackAddress(
+            uri="http://c/cb", events=["transfer.process.started"]
+        ),
     )
 
     await svc.run_flow(

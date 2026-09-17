@@ -12,8 +12,8 @@ Usage in a service lifespan::
 
     guard = ProductionGuard("connector")
     guard.forbid_default(
-        "EDC_API_KEY", settings.edc_api_key, {"insecure-dev-key"},
-        "Generate with: openssl rand -hex 32",
+        "CONNECTOR_EDC_CALLBACK_SECRET", settings.edc_callback_secret,
+        {"insecure-dev-callback-key"}, "Generate with: openssl rand -hex 32",
     )
     guard.forbid_true(
         "CONNECTOR_OIDC_INSECURE_DEV", settings.oidc_insecure_dev,

@@ -133,10 +133,14 @@ All settings use the `CONNECTOR_` prefix (or `EDC_` for EDC-specific overrides):
 - `CONNECTOR_PARTICIPANT_ID` — participant identifier (e.g. `provider`)
 - `CONNECTOR_PARTICIPANT_BASE_URL` — base URL used as asset IRI prefix
 - `CONNECTOR_PARTICIPANT_DID` — DID URI (e.g. `did:web:rec.dataspaces.localhost`)
-- `EDC_PROVIDER_MANAGEMENT_URL` — provider EDC Management API URL
-- `EDC_CONSUMER_MANAGEMENT_URL` — consumer EDC Management API URL
-- `EDC_API_KEY` — EDC's **Management API** key. No longer accepted on `/internal/*`;
-  those callers present their own Keycloak client credentials, so do not reuse this value
+- `CONNECTOR_ROLE` — `provider`, `consumer` or `both` (one process, one EDC)
+- `EDC_MANAGEMENT_URL` — this participant's EDC Management API URL (never published on the host)
+- `EDC_MANAGEMENT_API_VERSION` — management API version, default `v5beta`
+- `CONNECTOR_CLIENT_ID` / `CONNECTOR_CLIENT_SECRET` — the organisation client
+  (`svc-ds-connector-<alias>`) the connector authenticates as, to EDC and to every
+  ds service. There is no management API key.
+- `CONNECTOR_EDC_CALLBACK_URL` / `CONNECTOR_EDC_CALLBACK_SECRET` — where EDC posts a
+  started transfer's EDR, and the header value it must present
 - `CONNECTOR_DATABASE_URL` — PostgreSQL connection string
 - `CONNECTOR_PARTICIPANTS_REGISTRY_PATH` — path to participants YAML file (file-based fallback; only used when `CONNECTOR_IDENTITY_REGISTRY_URL` is not set)
 - `CONNECTOR_GOVERNANCE_YAML_PATH` — path to `governance.yaml`

@@ -41,6 +41,16 @@ from .jwt import (
     is_service_account,
     verify_token,
 )
+from .management_api import (
+    CONNECTOR_AUDIENCES,
+    CONNECTOR_SERVICE_SCOPES,
+    MANAGEMENT_API_SCOPES,
+    ORGANISATION_CLIENT_PREFIX,
+    ORGANISATION_CLIENT_SCOPES,
+    is_management_api_scope,
+    organisation_client_id,
+    scope_satisfies,
+)
 from .models import Organization
 from .permissions import grant_satisfies, has_exact_permission, has_permission
 from .principal import Principal
@@ -57,6 +67,15 @@ __all__ = [
     "all_bundled_permissions",
     "bundle_capabilities",
     "expand_bundles",
+    # EDC's management-API scopes ds grants, and to whom (`management_api.py`).
+    "CONNECTOR_AUDIENCES",
+    "CONNECTOR_SERVICE_SCOPES",
+    "MANAGEMENT_API_SCOPES",
+    "ORGANISATION_CLIENT_SCOPES",
+    "ORGANISATION_CLIENT_PREFIX",
+    "is_management_api_scope",
+    "organisation_client_id",
+    "scope_satisfies",
     "OidcConfig",
     "default_jwks_uri",
     "Organization",

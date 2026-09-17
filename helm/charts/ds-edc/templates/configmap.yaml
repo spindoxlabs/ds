@@ -18,13 +18,16 @@ data:
   # ENVIRONMENT_NOTATION to dot.notation (ConfigurationLoader →
   # ConfigFactory.fromEnvironment), so every secret-bearing setting is supplied
   # that way from the Secret and simply omitted from this file:
-  #   WEB_HTTP_MANAGEMENT_AUTH_KEY        → web.http.management.auth.key
   #   EDC_DATASOURCE_DEFAULT_USER         → edc.datasource.default.user
   #   EDC_DATASOURCE_DEFAULT_PASSWORD     → edc.datasource.default.password
   #   DS_CONNECTOR_INTERNAL_CLIENT_SECRET → ds.connector.internal.client.secret
   edc.properties: |
     edc.participant.id={{ $did }}
     edc.participant.did={{ $did }}
+    # The context id is the DID, as in the dev configs: the value the classic
+    # runtime already stamped on every stored entity, and the `sub` the
+    # organisation's Keycloak client carries (`svc-ds-connector-<alias>`).
+    edc.participant.context.id={{ $did }}
     edc.hostname={{ $host }}
 
     # ── Web contexts ──────────────────────────────────────────────────────────
@@ -32,11 +35,20 @@ data:
     web.http.path=/api
     web.http.management.port={{ .Values.ports.management }}
     web.http.management.path=/management
-    # `auth.type` is what installs the authentication filter — EDC registers one
-    # only for contexts that declare a type, so `auth.key` on its own leaves the
-    # Management API (assets, policies, transfer termination, negotiation resume)
-    # open to anything that can reach the port.
-    web.http.management.auth.type=tokenbased
+    # v5 behind OAuth2 (`management-api-oauth2-authentication` +
+    # `management-api-authorization`): signature against the realm's JWKS, the
+    # issuer, `nbf`/`exp` — never `aud` — then `sub` must name this participant
+    # context and `scope` must satisfy the route. No `auth.type`: beside the OAuth2
+    # filters it would demand an `x-api-key` as well. Who holds a
+    # `management-api:*` scope is therefore the whole boundary; see
+    # docs/services/keycloak.md, "Organisation clients".
+    # `iss` is compared as a string; Keycloak never ends it with a slash.
+    edc.iam.oauth2.issuer={{ required "global.keycloak.issuerUrl is required" ((.Values.global).keycloak).issuerUrl | trimSuffix "/" }}
+    edc.iam.oauth2.jwks.url={{ ((.Values.global).keycloak).jwksUrl | default (printf "%s/protocol/openid-connect/certs" (((.Values.global).keycloak).issuerUrl | trimSuffix "/")) }}
+    # v5 refuses a request whose `protocol` is not an enabled dataspace profile.
+    # All: the runtime registers exactly one (DSP 2025-1), and naming it here would
+    # be a second copy of the pin `ds_edc.DATASPACE_PROTOCOL`.
+    edc.dataspace.enable.profiles.all=true
     web.http.protocol.port={{ .Values.ports.protocol }}
     web.http.protocol.path=/protocol
     web.http.control.port={{ .Values.ports.control }}
@@ -50,7 +62,7 @@ data:
     # signals its own data plane in-process, not over this port. That stays true at
     # 0.18.0 **because the connector excludes the DPS modules** — see
     # `services/edc-connector/build.gradle.kts`; adopt DPS and this stops being true.
-    # Key from WEB_HTTP_CONTROL_AUTH_KEY, its own secret, not EDC_API_KEY's.
+    # Key from WEB_HTTP_CONTROL_AUTH_KEY, its own secret.
     web.http.control.auth.type=tokenbased
     # There is no `public`, `version` or `signaling` context, and adding one back
     # would bind a port with nothing behind it: with the DPS modules excluded,
@@ -81,10 +93,10 @@ data:
     ds.connector.internal.url=http://{{ include "edc.connectorService" . }}:{{ .Values.connectorPort }}
 
     # How this EDC authenticates to ds-connector: its own Keycloak client
-    # (connector.internal + connector.webhook), not EDC_API_KEY. That key is the
-    # Management API key above, and sharing it across both boundaries meant one
-    # leak yielded contract administration, the data-plane signing keys and the
-    # subject pools together. The extension refuses to start without these.
+    # (connector.internal + connector.webhook). It used to be the Management API
+    # key, and sharing one value across both boundaries meant one leak yielded
+    # contract administration, the data-plane signing keys and the subject pools
+    # together. The extension refuses to start without these.
     ds.connector.internal.token.url={{ required "keycloak.tokenUrl is required" ((.Values.global).keycloak).tokenUrl }}
     ds.connector.internal.client.id={{ .Values.connectorClientId }}
 

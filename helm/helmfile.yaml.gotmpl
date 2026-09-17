@@ -204,7 +204,7 @@ releases:
         replicaCount: {{ $p.edc.replicaCount | default 1 }}
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "edc_%s" (replace "-" "_" $p.name)) | quote }}
-          edcApiKey: {{ $psec.edcApiKey | quote }}
+          edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
           edcControlApiKey: {{ $psec.edcControlApiKey | quote }}
           connectorClientSecret: {{ $psec.connectorClientSecret | quote }}
           stsClientSecret: {{ $psec.stsSecret | quote }}
@@ -249,6 +249,8 @@ releases:
           role: {{ $p.role | quote }}
           did: {{ $p.did | default "" | quote }}
         replicaCount: {{ $p.connector.replicaCount | default 1 }}
+        # `svc-ds-connector-<owner alias>`; "" → the participant name as alias.
+        clientId: {{ dig "connector" "clientId" "" $p | quote }}
         notify:
           # "" is none. The default here was the string "null", which
           # `build_notifier` does not recognise — see the chart's values.yaml.
@@ -259,8 +261,10 @@ releases:
           configMap: {{ dig "connector" "governanceConfigMap" "" $p | quote }}
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "connector_%s" (replace "-" "_" $p.name)) | quote }}
-          edcApiKey: {{ $psec.edcApiKey | quote }}
-          serviceClientSecret: {{ $root.Values.secrets.svcDsConnectorSecret | quote }}
+          # The organisation client, not `svc-ds-connector` — that one is an
+          # audience only (plan `the-management-api-is-v3-behind-one-key`).
+          clientSecret: {{ $psec.organisationClientSecret | quote }}
+          edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
 
 {{- if dig "federatedCatalog" "enabled" false $p }}
   {{- /*

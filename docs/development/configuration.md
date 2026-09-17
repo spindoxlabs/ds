@@ -99,7 +99,7 @@ What each service registers:
 | Service | Refuses to start when |
 |---|---|
 | ds-connector | the OIDC issuer or the trust-anchor key path is unset; `OIDC_INSECURE_DEV` or `VC_INSECURE_DEV` is true; the EDC API key or the service secret is still at its dev default; a configured ODRL profile path does not exist |
-| identity-registry | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the encryption key or the Keycloak client secret is still at its dev default; the realm admin password is a dev default **while** `KEYCLOAK_MUTATE` is on |
+| identity-registry | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the database URL, the encryption key or the Keycloak client secret is still at its dev default (the database URL is also refused by `ir-cli` and the migrations, before any connection); the realm admin password is a dev default **while** `KEYCLOAK_MUTATE` is on |
 | ds-provenance | the OIDC issuer or the trust-anchor key path is unset; either `*_INSECURE_DEV` flag is true |
 | ds-federated-catalog | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the service secret is still at its dev default |
 | dataset-api-mock | the service secret is still at its dev default; EDR verification is off |
@@ -132,7 +132,9 @@ These are consumed by compose, Task or the client declaration — never by appli
 | `SVC_*_ID` / `SVC_*_SECRET` | fill both the realm client declaration and the service's own credentials |
 | `KEYCLOAK_ADMIN_USERNAME` / `_PASSWORD` | the Keycloak container's bootstrap admin |
 | `KEYCLOAK_TOKEN_URL` | fanned out into each service's own token-URL variable |
-| `EDC_API_KEY` | the EDC's enforced Management API key, and the connector's copy of it |
+| `SVC_DS_CONNECTOR_<ALIAS>_SECRET` | each organisation client's secret — `org-sync` creates the client with it, and compose passes it to that participant's connector as `CONNECTOR_CLIENT_SECRET` |
+| `EDC_CALLBACK_KEY` | the EDR callback's header value — compose passes it to each connector as `CONNECTOR_EDC_CALLBACK_SECRET`; the dev EDC vaults hold the default |
+| `EDC_MANAGEMENT_URL_PROVIDER` / `_CONSUMER`, `CONNECTOR_CLIENT_ID_*` / `CONNECTOR_CLIENT_SECRET_*` | expanded by the per-role run tasks into `EDC_MANAGEMENT_URL`, `CONNECTOR_CLIENT_ID`, `CONNECTOR_CLIENT_SECRET` |
 | `DATASET_API_MOCK_PORT` | the mock's host port (`30022` by default, leaving `30002` to the real service) |
 | `DATASET_API_PATH`, `REC_REGISTRY_PATH`, `CELINE_SDK_PATH` | sibling checkout locations for the real dataset-api stack |
 | `CONNECTOR_DATABASE_URL_PROVIDER` / `_CONSUMER`, `PROVENANCE_DATABASE_URL_*`, `CONNECTOR_PROVENANCE_URL_*` | expanded by the per-role run tasks into the un-suffixed variable each service actually reads |

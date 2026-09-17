@@ -37,6 +37,8 @@ import json
 import logging
 from collections.abc import Iterable, Mapping
 
+from .management_api import MANAGEMENT_API_SCOPES
+
 logger = logging.getLogger(__name__)
 
 # ── Machine identity ─────────────────────────────────────────────────────────
@@ -174,6 +176,10 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         "dataset.query",
         "dataset.read",
         "dataset.write",
+        # EDC's management-API scopes. Not ds permissions either — EDC's own
+        # grammar — and granted to organisation clients only, never to a person
+        # and never through a bundle (`management_api.py`).
+        *MANAGEMENT_API_SCOPES,
     }
 )
 

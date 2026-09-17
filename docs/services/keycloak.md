@@ -26,7 +26,7 @@ this*. The two membership systems never query each other, deliberately.
 | `clients.yaml` | what **ds** needs from *any* realm, including one it does not own — hand-written. This is the file that crosses |
 | `clients.dataspaces.yaml` | what a realm **ds owns** adds: the realm's identity, the e2e harness, the admin supersets, `dataset.*`. The base file in dev |
 | `clients.<domain>.yaml` | what a **domain backend** deployed beside ds needs — hand-written overlay |
-| `organizations.yaml` | Keycloak native organisations, their members, and per-organisation group assignments |
+| `organizations.yaml` | Keycloak native organisations, their members, per-organisation group assignments, and each organisation's participant context (which gives it an [organisation client](#organisation-clients)) |
 | `realm-dataspaces-dev.json` | the dev realm import — users, groups, the login client |
 
 Every file here is hand-written. **ds generates no YAML**: where ds is a guest, the host realm
@@ -67,6 +67,7 @@ Roughly thirty permission names in `clients.yaml`, grouped by service prefix:
 | `provenance.*` | read, write |
 | `catalog.*` | read |
 | `dataset.*` | admin, query, read, write |
+| `management-api:*` | EDC's grammar, not ds's: `assets`, `policies`, `contractdefinitions`, `negotiations`, `transfers` at `write`; `catalog`, `agreements` at `read`. Granted to [organisation clients](#organisation-clients) only |
 
 A grant is checked by name, with one rule: **`{service}.admin` satisfies any `{service}.*`** —
 except where a route asks for a permission *exactly*. Two permissions are treated that way,
@@ -101,7 +102,7 @@ only ever name a *bundle*, never a raw capability.
 
 | Client | Authenticated by | Holds |
 |---|---|---|
-| `svc-ds-connector` | ds-connector, both roles | `identity-registry.read`, `.membership.read`, `provenance.write`, `connector.consent.read` |
+| `svc-ds-connector` | **nothing** — the audience every connector verifies on incoming tokens | — |
 | `svc-ds-identity-registry` | the registry, notifying connectors of a change | `identity-registry.admin`, `connector.registry.invalidate` |
 | `svc-ds-federated-catalog` | the crawler | `identity-registry.read` |
 | `svc-ds-dataset-api` | the data-plane PEP | `connector.internal` |
@@ -111,6 +112,7 @@ only ever name a *bundle*, never a raw capability.
 | `svc-ds-provenance` | **nothing** — it exists as an audience only | — |
 | `svc-ds-onboarding` | an application outside this repository | narrow onboarding grants |
 | `oauth2_proxy` | the browser login flow | *(declared in the realm import, not by the syncer)* |
+| `svc-ds-connector-<alias>` | an organisation's connector — **for every call it makes** — and its batch jobs | `identity-registry.read`, `.membership.read`, `.credentials.read`, `provenance.write`, `connector.consent.read`, plus the `management-api:*` scopes; `sub` = the organisation's participant context. *(created by identity-registry, not by the syncer)* |
 
 `extra_audiences` on each client is what makes a token pass the callee's `aud` check: every
 Python service verifies `aud` against its own client id.
@@ -161,6 +163,51 @@ Everything else is ordinary OIDC.
 2. **The syncer**, which is a Keycloak admin-API client. Nothing at runtime depends on it
    having run in any particular way.
 
+## Organisation clients
+
+EDC 0.18.0's v5 management API authenticates an OAuth2 token and reads two claims: `sub`, the
+participant context the caller acts for, and `scope`, in EDC's grammar
+(`management-api[:resource]:read|write|admin`). ds gives each organisation **one** confidential
+client for it, `svc-ds-connector-<alias>`:
+
+| | |
+|---|---|
+| grants | `ds_auth.ORGANISATION_CLIENT_SCOPES`: the connector's service grants (`CONNECTOR_SERVICE_SCOPES`) plus `MANAGEMENT_API_SCOPES` — never `management-api:admin`, never a `*` resource |
+| `sub` | a hardcoded-claim mapper (`participant-context-sub`) set to the organisation's participant context, which ds sets to its DID. Keycloak's own `sub` is the service account's UUID |
+| audiences | `ds_auth.CONNECTOR_AUDIENCES`: `svc-ds-identity-registry`, `svc-ds-provenance`, `svc-ds-connector` (a counterparty connector) |
+| created by | `ir-cli keycloak org-sync`, for each entry of `organizations.yaml` with a `participant_context_id`; and the provisioning bundle, for a promoted third party |
+| secret | `SVC_DS_CONNECTOR_<ALIAS>_SECRET`; the client id in dev, required under `DS_ENV=production`. Applied only when the client is created |
+
+**One credential per connector, and one client per organisation** (the maintainer,
+2026-09-17). The connector authenticates as this client to its EDC and to every ds service
+(`CONNECTOR_CLIENT_ID` / `CONNECTOR_CLIENT_SECRET`). The organisation's batch jobs use the same
+client to call the connector's `/consumer/*` routes, where the token must name the connector's
+own context and hold the EDC scope of the call (see
+[connector](connector.md#who-may-drive-the-consumer-side)). `svc-ds-connector` remains only as
+the audience.
+
+The realm syncer declares the `management-api:*` scopes (`clients.yaml`) and grants them to no
+client: it cannot add the `sub` mapper, and it recomputes the grants of every client it is
+handed, so the organisation clients are deliberately absent from every file it reads.
+
+!!! danger "`celine-policies keycloak sync --prune` deletes the organisation clients"
+    The sync lists every `svc-ds-connector-<alias>` as an orphan client, and `--prune` deletes
+    orphans. Every organisation's connector and batch jobs then lose their credential, and a
+    re-created client gets a new secret. ds never passes `--prune`. A deployment that does must
+    re-run `ir-cli keycloak org-sync` immediately afterwards and redistribute the secrets.
+
+!!! warning "EDC does not check `aud`"
+    Any token of the realm whose `sub` names a participant context and whose `scope` matches is
+    accepted by that participant's management API. Who holds a `management-api:*` scope is
+    therefore the boundary, together with **where the management port can be reached**: a
+    batch job holding its organisation's token could administer that organisation's contracts
+    directly on any network that reaches the port. Compose publishes no EDC management port,
+    and the chart keeps it ClusterIP-only
+    ([ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)).
+    `libs/ds-auth/tests/test_management_api_scopes.py` asserts no declared client holds a
+    `management-api:*` scope; `tests/integration/test_organisation_clients.py` asserts it of a
+    provisioned realm.
+
 ## Organisations
 
 Keycloak native organisations gate the portal per owner, in parallel with identity-registry
@@ -197,8 +244,9 @@ its own client id.
    /app/clients.energy.yaml`: creates the client scopes and the service clients, and attaches
    the audience mappers.
 3. **`keycloak-org-sync`** — applies `organizations.yaml`: creates each organisation, adds its
-   members and puts them into the named per-organisation groups. Idempotent; a member the
-   realm does not know is reported and skipped.
+   members and puts them into the named per-organisation groups, and ensures each
+   [organisation client](#organisation-clients). Idempotent; a member the realm does not know is
+   reported and skipped, and a client that cannot be provisioned fails the step.
 
 ## Dev users
 

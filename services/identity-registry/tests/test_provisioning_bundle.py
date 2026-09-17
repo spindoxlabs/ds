@@ -412,11 +412,13 @@ async def test_owning_posture_provisions_the_client(
             return cls()
 
         async def ensure_service_client(
-            self, client_id, *, name, scopes, audiences=None
+            self, client_id, *, name, scopes, audiences=None, subject=None, secret=None
         ):
             created["client_id"] = client_id
             created["scopes"] = scopes
             created["audiences"] = audiences
+            created["subject"] = subject
+            created["secret"] = secret
             return "provisioned-secret"
 
         async def aclose(self):
@@ -433,6 +435,14 @@ async def test_owning_posture_provisions_the_client(
     # A participant's connector is not a more privileged thing than ours.
     assert "connector.internal" not in created["scopes"]
     assert r.json()["keycloak"]["client_secret"] == "provisioned-secret"
+    # It is the organisation's client: EDC's management-API scopes for its own
+    # participant context, named by `sub` = its DID, and a secret Keycloak
+    # generates (the bundle carries it, nobody chose it).
+    from ds_auth import MANAGEMENT_API_SCOPES
+
+    assert set(MANAGEMENT_API_SCOPES) <= set(created["scopes"])
+    assert created["subject"] == DID
+    assert created["secret"] is None
 
 
 def test_production_guard_flags_realm_admin_on_a_dev_password(monkeypatch):
@@ -446,3 +456,45 @@ def test_production_guard_flags_realm_admin_on_a_dev_password(monkeypatch):
         "KEYCLOAK_ADMIN_PASSWORD", "admin", {"admin"}, "set a real password"
     )
     assert [v.setting for v in guard.violations] == ["KEYCLOAK_ADMIN_PASSWORD"]
+
+
+def test_the_rendered_config_names_the_organisation_client():
+    """The organisation client is the connector's credential for everything —
+    `CONNECTOR_CLIENT_*` — and the EDC trusts this realm on its management API.
+    The secret goes to the env fragment only."""
+    from identity_registry.services import provisioning
+
+    bundle = {
+        "participant": {"did": DID, "alias": ALIAS},
+        "instance": {
+            "role": "participant",
+            "participant_did": DID,
+            "sts_token_url": "https://acme.example.test/sts/token",
+            "credential_service_url": "https://acme.example.test/credentials",
+            "dsp_address": "https://acme.example.test/protocol/2025-1",
+            "did_document_url": "https://acme.example.test/.well-known/did.json",
+        },
+        "trust": {
+            "trust_anchor_did": "did:web:anchor.example.test",
+            "identity_registry_url": "https://anchor.example.test",
+        },
+        "enrolment": {"code": "c", "expires_at": None, "enrol_url": "u"},
+        "counterparties": [],
+        "keycloak": {
+            "issuer_url": "https://sso.example.test/realms/dataspaces",
+            "client_id": f"svc-ds-connector-{ALIAS}",
+            "client_secret": "the-secret",
+            "scopes": provisioning.ORGANISATION_CLIENT_SCOPES,
+        },
+    }
+    env = provisioning.render_env(bundle)
+    assert f"CONNECTOR_CLIENT_ID=svc-ds-connector-{ALIAS}" in env
+    assert "CONNECTOR_CLIENT_SECRET=the-secret" in env
+    assert f"EDC_PARTICIPANT_CONTEXT_ID={DID}" in env
+    assert "CONNECTOR_SERVICE_CLIENT_SECRET" not in env
+
+    props = provisioning.render_properties(bundle)
+    assert f"edc.participant.context.id={DID}" in props
+    assert "edc.iam.oauth2.issuer=https://sso.example.test/realms/dataspaces" in props
+    assert "the-secret" not in props
+    assert "web.http.management.auth" not in props

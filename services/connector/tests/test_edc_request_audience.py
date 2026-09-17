@@ -25,12 +25,22 @@ PROVIDER = "did:web:rec.dataspaces.localhost"
 ADDRESS = "http://172.17.0.1:19194/protocol/2025-1"
 
 
+#: An offer as the provider's catalogue returns it (v5, DSP compact form).
+OFFER = {
+    "@id": "offer-1",
+    "@type": "Offer",
+    "assigner": PROVIDER,
+    "permission": [{"action": "odrl:use"}],
+}
+
+
 def _negotiation(**kwargs) -> dict:
     return NegotiationRequest(
         counter_party_address=ADDRESS,
         offer_id="offer-1",
         asset_id="asset-1",
         assigner=PROVIDER,
+        odrl_policy=OFFER,
         **kwargs,
     ).to_edc()
 

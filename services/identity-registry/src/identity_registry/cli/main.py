@@ -7,8 +7,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import typer
+from ds_auth.production import InsecureProductionConfig
 
-from ..config import get_settings
+from ..config import get_settings, refuse_dev_database_in_production
 from ..db.engine import get_session_factory, verify_schema
 from ..db.models import (
     Agreement,
@@ -73,6 +74,13 @@ def _run(coro):
 
 
 async def _ensure_db():
+    # Before `verify_schema`, which is the first connection: under
+    # `DS_ENV=production` the dev default names another deployment's database.
+    try:
+        refuse_dev_database_in_production("ir-cli")
+    except InsecureProductionConfig as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(1) from exc
     await verify_schema()
     return get_session_factory()
 
@@ -980,7 +988,12 @@ def keycloak_org_sync(
         False, help="Exit non-zero if any configured member is missing from Keycloak"
     ),
 ):
-    """Provision Keycloak native organizations from organizations.yaml (idempotent)."""
+    """Provision Keycloak organizations and organisation clients (organizations.yaml).
+
+    An entry with `participant_context_id` also gets its client,
+    `svc-ds-connector-<alias>`, whose secret is `SVC_DS_CONNECTOR_<ALIAS>_SECRET`
+    (the client id in dev; required under DS_ENV=production). Idempotent.
+    """
     from ..services.keycloak_admin import (
         KeycloakAdminClient,
         load_organizations_config,
@@ -1023,7 +1036,18 @@ def keycloak_org_sync(
     )
     for email in report.missing_users:
         typer.echo(f"WARNING: user not found in Keycloak: {email}", err=True)
-    if strict and report.has_warnings:
+    for client_id in report.clients_ensured:
+        typer.echo(f"Organisation client ensured: {client_id}")
+    for client_id in report.clients_with_other_secret:
+        typer.echo(
+            f"WARNING: {client_id} exists with a different secret; left unchanged",
+            err=True,
+        )
+    for error in report.client_errors:
+        typer.echo(f"ERROR: {error}", err=True)
+    # An organisation client that could not be provisioned is a failure whether
+    # or not `--strict` is given: its connector cannot reach its own EDC.
+    if report.client_errors or (strict and report.has_warnings):
         raise typer.Exit(1)
 
 

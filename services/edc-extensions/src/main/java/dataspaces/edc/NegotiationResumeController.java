@@ -5,16 +5,24 @@ import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.SecurityContext;
+import org.eclipse.edc.api.auth.spi.AuthorizationService;
+import org.eclipse.edc.api.auth.spi.RequiredScope;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.store.ContractNegotiationStore;
 import org.eclipse.edc.connector.controlplane.contract.spi.types.negotiation.ContractNegotiation;
 import org.eclipse.edc.connector.controlplane.contract.spi.types.negotiation.ContractNegotiationStates;
+import org.eclipse.edc.participantcontext.single.spi.SingleParticipantContextSupplier;
+import org.eclipse.edc.participantcontext.spi.types.ParticipantContext;
 import org.eclipse.edc.spi.monitor.Monitor;
 import org.eclipse.edc.transaction.spi.TransactionContext;
 import org.eclipse.edc.web.spi.exception.ObjectNotFoundException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
+
+import static org.eclipse.edc.web.spi.exception.ServiceResultHandler.exceptionMapper;
 
 /**
  * Resumes a contract negotiation parked by {@link ConsentPendingGuard}.
@@ -28,9 +36,26 @@ import java.util.Map;
  * <p>It is <b>not</b> a DSP message. It is a local control-plane operation on
  * this connector's own store, invoked by this participant's own connector when
  * a data subject decides — the counterparty neither calls it nor knows it
- * exists. Registered on the management context, so it inherits EDC's Management
- * API authentication: resuming a negotiation is contract administration, which
- * is exactly the boundary that key is for.
+ * exists.
+ *
+ * <h2>Who may call it</h2>
+ *
+ * <p>Registered on the management context, so the v5 OAuth2 filters
+ * authenticate the caller ({@code sub} names a participant context,
+ * {@code scope} is EDC's grammar). Nothing else would authorise it: the
+ * management context has no shared key any more, and a route without
+ * {@link RequiredScope} admits any token whose {@code sub} is a context. So the
+ * route declares the scope a v5 negotiation write requires, and asks EDC's
+ * {@link AuthorizationService} the same ownership question the v5 negotiation
+ * controller asks — the caller, this runtime's participant context and the
+ * negotiation's owner must be one and the same (or the caller holds
+ * {@code management-api:admin}, which ds grants nobody). Both are checked
+ * before the store is touched.
+ *
+ * <p>The path carries no participant context: the classic runtime has exactly
+ * one, and {@link SingleParticipantContextSupplier} names it. The lookup the
+ * ownership check needs is registered by EDC's {@code contract-negotiation-api-v5};
+ * without that module every call is refused, never admitted.
  *
  * <h2>Idempotency and races</h2>
  *
@@ -58,21 +83,41 @@ import java.util.Map;
 @Produces(MediaType.APPLICATION_JSON)
 public class NegotiationResumeController {
 
+    /** The scope EDC's v5 controller requires to terminate a negotiation. */
+    static final String REQUIRED_SCOPE = "management-api:negotiations:write";
+
     private final ContractNegotiationStore store;
     private final TransactionContext transactionContext;
+    private final AuthorizationService authorizationService;
+    private final SingleParticipantContextSupplier participantContext;
     private final Monitor monitor;
 
     public NegotiationResumeController(
-        ContractNegotiationStore store, TransactionContext transactionContext, Monitor monitor
+        ContractNegotiationStore store,
+        TransactionContext transactionContext,
+        AuthorizationService authorizationService,
+        SingleParticipantContextSupplier participantContext,
+        Monitor monitor
     ) {
         this.store = store;
         this.transactionContext = transactionContext;
+        this.authorizationService = authorizationService;
+        this.participantContext = participantContext;
         this.monitor = monitor;
     }
 
     @POST
     @Path("/{id}/resume")
-    public Map<String, Object> resume(@PathParam("id") String id) {
+    @RequiredScope(REQUIRED_SCOPE)
+    public Map<String, Object> resume(
+        @PathParam("id") String id, @Context SecurityContext securityContext
+    ) {
+        String owner = participantContext.get()
+            .orElseThrow(exceptionMapper(ParticipantContext.class))
+            .getParticipantContextId();
+        authorizationService.authorize(securityContext, owner, id, ContractNegotiation.class)
+            .orElseThrow(exceptionMapper(ContractNegotiation.class, id));
+
         return transactionContext.execute(() -> {
             var lease = store.findByIdAndLease(id);
             if (lease.failed()) {

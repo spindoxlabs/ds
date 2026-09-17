@@ -1,5 +1,6 @@
 package dataspaces.edc;
 
+import org.eclipse.edc.api.auth.spi.AuthorizationService;
 import org.eclipse.edc.connector.controlplane.contract.spi.event.contractnegotiation.ContractNegotiationEvent;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.ContractNegotiationPendingGuard;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.store.ContractNegotiationStore;
@@ -9,6 +10,7 @@ import org.eclipse.edc.connector.controlplane.contract.spi.policy.TransferProces
 import org.eclipse.edc.connector.controlplane.transfer.spi.event.TransferProcessEvent;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
 import org.eclipse.edc.iam.oauth2.spi.client.Oauth2Client;
+import org.eclipse.edc.participantcontext.single.spi.SingleParticipantContextSupplier;
 import org.eclipse.edc.policy.engine.spi.PolicyEngine;
 import org.eclipse.edc.policy.engine.spi.RuleBindingRegistry;
 import org.eclipse.edc.policy.model.Permission;
@@ -153,6 +155,16 @@ public class DataspacesExtension implements ServiceExtension {
     @Inject
     private TransactionContext transactionContext;
 
+    // The v5 management API's ownership check (`management-api-authorization`)
+    // and this classic runtime's one participant context — both for the resume
+    // route. Injected, not optional: without them that route would be reachable
+    // by any token whose `sub` names a context, whatever its scope.
+    @Inject
+    private AuthorizationService authorizationService;
+
+    @Inject
+    private SingleParticipantContextSupplier participantContextSupplier;
+
     private ConnectorClient connector;
 
     /**
@@ -206,11 +218,13 @@ public class DataspacesExtension implements ServiceExtension {
         // ── ds-connector → this control plane ────────────────────────────────
         // The only way to un-park a negotiation: the Management API can
         // terminate one but cannot clear `pending`. On the management context,
-        // so it inherits that API's authentication.
+        // so the v5 OAuth2 filters authenticate the caller; the controller
+        // declares its scope and asks EDC's ownership question itself.
         webService.registerResource(
             ApiContext.MANAGEMENT,
             new NegotiationResumeController(
-                negotiationStore, transactionContext, context.getMonitor()
+                negotiationStore, transactionContext, authorizationService,
+                participantContextSupplier, context.getMonitor()
             )
         );
 
@@ -443,8 +457,7 @@ public class DataspacesExtension implements ServiceExtension {
                     + "DS_CONNECTOR_INTERNAL_TOKEN_URL in the environment (EDC maps "
                     + "ENVIRONMENT_NOTATION to ds.connector.internal.*). They cannot be set in "
                     + "the .properties file as ${PLACEHOLDER}: EDC does not interpolate it. "
-                    + "EDC_API_KEY is no longer accepted on /internal/* — it is EDC's Management "
-                    + "API key and nothing else."
+                    + "There is no shared API key to fall back on."
             );
         }
 

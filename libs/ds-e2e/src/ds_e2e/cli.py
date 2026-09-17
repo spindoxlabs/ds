@@ -51,6 +51,7 @@ class FlowName(StrEnum):
     two_providers = "two-providers"
     smoke = "smoke"
     consent_withdrawal = "consent-withdrawal"
+    organisation_token = "organisation-token"
     fail_closed = "fail-closed"
     # Aggregates
     all = "all"

@@ -30,7 +30,8 @@ from .registry.participants import (
     ParticipantLookup,
     ParticipantRegistry,
 )
-from .services.consumer_service import ConsumerService
+from .services.consumer_service import ConsumerService, edr_callback_address
+from .services.edr_store import EdrStore
 from .services.pending_sweep import parse_duration, run_sweeper
 from .services.prov_bridge import ProvBridge
 
@@ -133,31 +134,35 @@ async def lifespan(app: FastAPI):
         settings.vc_insecure_dev,
         "Set CONNECTOR_VC_INSECURE_DEV=false so signatures are verified.",
     )
-    guard.forbid_default(
-        "EDC_API_KEY",
-        settings.edc_api_key,
-        {"insecure-dev-key"},
-        "Generate with: openssl rand -hex 32",
-    )
-    guard.forbid_default(
-        "CONNECTOR_SERVICE_CLIENT_SECRET",
-        settings.service_client_secret,
-        {"svc-ds-connector"},
-        "Set the Keycloak client secret for svc-ds-connector.",
-    )
-    # The same secret, checked against the *configured* client id rather than a
-    # literal. `forbid_default` above only fires on the shipped default, so a
-    # deployment that renames the client and leaves secret==client_id passes it.
-    # This is also the only signal that the realm was synced before the variable
-    # was set: `keycloak sync` applies a secret on create only, so setting the
-    # variable does not by itself change an existing realm (`KC-01`).
+    # The organisation client's secret. Every call this connector makes — to
+    # its EDC's management API, to identity-registry, provenance and the
+    # counterparty — authenticates with it, and EDC does not check `aud`, so it
+    # is the credential for this participant's contract administration.
     guard.forbid_secret_equal_to_client_id(
-        "CONNECTOR_SERVICE_CLIENT_SECRET",
-        settings.service_client_id,
-        settings.service_client_secret,
-        "Set a real secret for this client AND make sure the realm has it — a "
-        "realm synced before the variable was set still holds the client id.",
+        "CONNECTOR_CLIENT_SECRET",
+        settings.client_id,
+        settings.client_secret,
+        "Set the organisation client's real secret "
+        "(SVC_DS_CONNECTOR_<ALIAS>_SECRET where identity-registry creates it) — "
+        "and make sure the realm has it: a client created before the variable "
+        "was set still holds the client id.",
     )
+    # The value the EDC puts on the EDR callback, from its own vault. The dev
+    # default is in the committed dev vault files.
+    guard.forbid_default(
+        "CONNECTOR_EDC_CALLBACK_SECRET",
+        settings.edc_callback_secret,
+        {"insecure-dev-callback-key"},
+        "Generate with: openssl rand -hex 32, and put the same value in the "
+        "EDC's vault under CONNECTOR_EDC_CALLBACK_AUTH_CODE_ID.",
+    )
+    if settings.is_consumer:
+        guard.require_set(
+            "CONNECTOR_EDC_CALLBACK_URL",
+            settings.edc_callback_url,
+            "Set the URL the EDC reaches this connector's /webhooks/edc-callback "
+            "at. Without it a consumer transfer never yields an EDR.",
+        )
     # A configured-but-absent profile path silently falls back to the bundled
     # energy vocabulary. Every purpose the deployer declared then fails to
     # resolve, and since sync refuses a dataset whose purpose does not resolve,
@@ -175,28 +180,27 @@ async def lifespan(app: FastAPI):
 
     _load_vocabulary_cache(settings)
 
-    provider_edc = None
-    consumer_edc = None
     consumer_svc = None
 
-    if settings.role == "provider":
-        provider_edc = EdcManagementClient(
-            base_url=settings.edc_rec_management_url,
-            api_key=settings.edc_api_key,
-        )
-
-    if settings.role == "consumer":
-        consumer_edc = EdcManagementClient(
-            base_url=settings.edc_third_party_management_url,
-            api_key=settings.edc_api_key,
-        )
-
-    # Service token for identity-registry calls
-    ir_token_provider = ServiceTokenProvider(
+    # One credential for everything this connector calls (plan decision 3):
+    # the organisation's client. `service_client_id` stays the audience callers
+    # address; nothing authenticates as it.
+    org_token_provider = ServiceTokenProvider(
         token_url=settings.keycloak_token_url,
-        client_id=settings.service_client_id,
-        client_secret=settings.service_client_secret,
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
     )
+
+    # One EDC runtime per participant, so one client whatever the roles.
+    edc = EdcManagementClient(
+        settings.edc_management_url,
+        settings.participant_context_id,
+        token_source=org_token_provider,
+        api_version=settings.edc_management_api_version,
+    )
+    provider_edc = edc if settings.is_provider else None
+    consumer_edc = edc if settings.is_consumer else None
+    ir_token_provider = org_token_provider
 
     # Participant registry
     http_registry = None
@@ -236,6 +240,10 @@ async def lifespan(app: FastAPI):
             participant_id=settings.participant_id,
             provider_id=settings.participant_did,
             allow_unknown_participants=settings.allow_unknown_participants,
+            edrs=EdrStore(
+                get_session_factory(), wait_timeout=settings.edr_wait_timeout
+            ),
+            callback=edr_callback_address(settings),
         )
 
     # Owners registry
@@ -250,6 +258,7 @@ async def lifespan(app: FastAPI):
     # Notifier
     notifier = build_notifier(settings)
 
+    app.state.edc = edc
     app.state.provider_edc = provider_edc
     app.state.consumer_edc = consumer_edc
     app.state.consumer_service = consumer_svc
@@ -263,7 +272,7 @@ async def lifespan(app: FastAPI):
     # Provider-only: the asks and the negotiations they block are both the
     # provider's, and a consumer sweeping would have nothing to sweep.
     sweeper = None
-    if settings.role == "provider":
+    if settings.is_provider:
         sweeper = asyncio.create_task(
             run_sweeper(
                 get_session_factory(),
@@ -283,10 +292,7 @@ async def lifespan(app: FastAPI):
         await owners_registry.close()
     if http_registry is not None:
         await http_registry.close()
-    if provider_edc is not None:
-        await provider_edc.close()
-    if consumer_edc is not None:
-        await consumer_edc.close()
+    await edc.close()
     await prov_client.close()
 
 
@@ -334,11 +340,11 @@ def create_app() -> FastAPI:
     app.include_router(admin_router)
     app.include_router(history_router)
 
-    # Role-specific routers
-    if settings.role == "provider":
+    # Role-specific routers — one role, or both in one process.
+    if settings.is_provider:
         app.include_router(provider_router)
 
-    if settings.role == "consumer":
+    if settings.is_consumer:
         app.include_router(consumer_router)
 
     return app

@@ -232,7 +232,7 @@ authority:
 participants:
   - name: rec
     enabled: true
-    role: provider # provider | consumer
+    role: provider # provider | consumer | both
 
     # did: "" → derived as did:web:<name>.<global.baseDomain>. Override to pin.
     did: ""

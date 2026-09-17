@@ -5,9 +5,8 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 import httpx
-from ds_auth.user_credentials import verify_user_vc_jwt
 from ds_edc import EdcPollTimeout
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, field_validator
 from sqlalchemy import desc, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,10 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...db.models import ConsumerAccessRequestORM, ConsumerTransferORM
 from ...dependencies import (
+    EDC_NEGOTIATIONS_READ,
+    EDC_NEGOTIATIONS_WRITE,
+    EDC_TRANSFERS_READ,
+    EDC_TRANSFERS_WRITE,
     CatalogCaller,
+    ConsumerCaller,
     get_consumer_service,
     get_db,
     get_settings_dep,
+    require_consumer_caller,
     require_consumer_catalog_caller,
 )
 from ...registry.participants import UnknownParticipantError
@@ -28,7 +33,10 @@ from ...services.agreement_service import (
     terminate_agreement,
     upsert_agreement,
 )
+from ...services.consumer_service import NoEdrCallback
+from ...services.edr_store import EdrNotReceived
 from ...services.odrl_reader import extract_purposes
+from ...services.prov_bridge import ORG_ACTOR_PREFIX
 
 router = APIRouter(prefix="/consumer", tags=["consumer"])
 
@@ -95,35 +103,6 @@ class RevokeRequest(BaseModel):
     reason: str | None = None
 
 
-def _verify_consumer_user(
-    x_user_vc: str | None,
-    x_subject_id: str | None,
-    settings: Settings,
-) -> str:
-    """Verify the consumer user's credential and return the subject it names.
-
-    Same shape as `consent._verify_user`, and for the same reason:
-    `verify_user_vc_jwt` refuses a missing `X-Subject-Id` with a 401, so every
-    caller below was passing an `Optional` that could not occur into a service
-    typed `str`. Returning the verified value states the guarantee once.
-    """
-    verify_user_vc_jwt(
-        x_user_vc,
-        x_subject_id,
-        settings.trust_anchor_did,
-        {"ConsumerUser"},
-        trust_list_url=settings.trust_list_url,
-        did_web_use_https=settings.did_web_use_https,
-        expected_linked_participant=settings.consumer_participant_did,
-        credential_status_path=settings.credential_status_path,
-        credential_status_url=settings.credential_status_url,
-        insecure_dev=settings.vc_insecure_dev,
-    )
-    # Unreachable when `x_subject_id` is None — the call above raises 401.
-    assert x_subject_id is not None
-    return x_subject_id
-
-
 @router.post("/catalog")
 async def request_catalog(
     req: CatalogRequest,
@@ -180,10 +159,9 @@ async def start_negotiation(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_NEGOTIATIONS_WRITE)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     # Before any EDC call: a refused declaration must not leave a live
     # negotiation behind that the record then fails to describe.
     declared_purpose = _validated_declaration(req)
@@ -246,7 +224,8 @@ async def start_negotiation(
             data_product_id=req.asset_id,
             provider_id=req.assigner,
             consumer_id=settings.consumer_participant_did,
-            user_id=x_subject_id,
+            user_id=caller.subject_id,
+            acted_by=caller.acted_by,
             purpose=_extract_purposes(req.odrl_policy),
             offer_id=req.offer_id,
             # What the offer permits and what this consumer says it intends are
@@ -262,7 +241,8 @@ async def start_negotiation(
             data_product_id=req.asset_id,
             provider_id=req.assigner,
             consumer_id=settings.consumer_participant_did,
-            user_id=x_subject_id,
+            user_id=caller.subject_id,
+            acted_by=caller.acted_by,
             offer_id=req.offer_id,
         )
     await db.commit()
@@ -275,10 +255,9 @@ async def list_access_requests(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_NEGOTIATIONS_READ)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     result = await db.execute(
         select(ConsumerAccessRequestORM)
         .where(ConsumerAccessRequestORM.subject_id == x_subject_id)
@@ -415,10 +394,9 @@ async def revoke_access_request(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_TRANSFERS_WRITE)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     result = await db.execute(
         select(ConsumerAccessRequestORM).where(
             ConsumerAccessRequestORM.id == request_id,
@@ -464,7 +442,8 @@ async def revoke_access_request(
             data_product_id=request.asset_id,
             provider_id=request.assigner,
             consumer_id=settings.consumer_participant_did,
-            subject_id=x_subject_id,
+            subject_id=caller.subject_id,
+            acted_by=caller.acted_by,
             agreement_id=agreement_ids[0] if agreement_ids else None,
             transfer_id=request.transfer_id,
             reason=reason,
@@ -484,15 +463,18 @@ async def get_negotiation(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_NEGOTIATIONS_READ)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
+    access_request = await _access_request_for_negotiation(db, negotiation_id)
+    if access_request is not None and access_request.subject_id != x_subject_id:
+        # Another actor's request — a person's, or the organisation's. Answered
+        # as absent, like a transfer that is not the caller's.
+        raise HTTPException(404, "Negotiation not found")
     try:
         data = await svc._edc.get_negotiation(negotiation_id)
         agreement_id = data.get("contractAgreementId")
         state = data.get("state")
-        access_request = await _access_request_for_negotiation(db, negotiation_id)
         if data.get("state") in {"FINALIZED", "VERIFIED", "AGREED"} and agreement_id:
             asset_id = data.get("assetId") or (
                 access_request.asset_id if access_request else ""
@@ -520,7 +502,7 @@ async def get_negotiation(
                     data_product_id=asset_id,
                     provider_id=provider_id,
                     consumer_id=settings.consumer_participant_did,
-                    user_id=access_request.subject_id if access_request else None,
+                    user_id=_person(access_request),
                 )
                 await prov.contract_agreement_signed(
                     agreement_id=agreement_id,
@@ -539,7 +521,7 @@ async def get_negotiation(
                     data_product_id=access_request.asset_id if access_request else None,
                     provider_id=access_request.assigner if access_request else None,
                     consumer_id=settings.consumer_participant_did,
-                    user_id=access_request.subject_id if access_request else None,
+                    user_id=_person(access_request),
                     reason=data.get("errorDetail") or data.get("error_detail"),
                 )
             await db.commit()
@@ -558,11 +540,9 @@ async def start_transfer(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_TRANSFERS_WRITE)),
 ):
-    subject_id = x_subject_id
-    subject_id = _verify_consumer_user(x_user_vc, subject_id, settings)
+    subject_id = caller.actor
     duplicate = await _find_blocking_transfer(db, svc, subject_id, req.asset_id)
     if duplicate:
         raise HTTPException(
@@ -580,6 +560,8 @@ async def start_transfer(
             asset_id=req.asset_id,
             connector_id=req.connector_id,
         )
+    except NoEdrCallback as exc:
+        raise HTTPException(503, str(exc)) from exc
     except httpx.RequestError as exc:
         raise HTTPException(
             502,
@@ -610,7 +592,8 @@ async def start_transfer(
             data_product_id=req.asset_id,
             provider_id=req.connector_id,
             consumer_id=settings.consumer_participant_did,
-            user_id=subject_id,
+            user_id=caller.subject_id,
+            acted_by=caller.acted_by,
         )
     await db.commit()
     return {"transfer_id": transfer_id}
@@ -621,10 +604,9 @@ async def list_transfers(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_TRANSFERS_READ)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     owned_result = await db.execute(
         select(ConsumerTransferORM).where(
             ConsumerTransferORM.subject_id == x_subject_id
@@ -643,6 +625,8 @@ async def list_transfers(
             502, f"EDC transfer list failed: {exc.response.text}"
         ) from exc
 
+    # EDRs are this connector's own records now — one read, not one per row.
+    edrs = await svc.get_edrs(list(owned))
     result = []
     for transfer in transfers:
         transfer_id = transfer.get("@id") or transfer.get("id")
@@ -662,11 +646,9 @@ async def list_transfers(
                 or owner.contract_agreement_id
             ),
         }
-        if transfer_id and transfer.get("state") == "STARTED":
-            try:
-                item["edr"] = (await svc.get_edr(transfer_id)).model_dump()
-            except (httpx.RequestError, httpx.HTTPStatusError):
-                item["edr"] = None
+        if transfer.get("state") == "STARTED":
+            edr = edrs.get(transfer_id)
+            item["edr"] = edr.model_dump() if edr is not None else None
         result.append(item)
     return result
 
@@ -677,10 +659,9 @@ async def get_transfer(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_TRANSFERS_READ)),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     if not await _subject_owns_transfer(db, transfer_id, x_subject_id):
         raise HTTPException(404, "Transfer not found")
     try:
@@ -699,8 +680,7 @@ async def get_edr(
     svc=Depends(get_consumer_service),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(require_consumer_caller(EDC_TRANSFERS_READ)),
 ):
     """The EDR, plus what the client must send with it.
 
@@ -712,15 +692,17 @@ async def get_edr(
     is what makes the declaration mean something at query time instead of only
     in an audit record.
     """
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    x_subject_id = caller.actor
     if not await _subject_owns_transfer(db, transfer_id, x_subject_id):
         raise HTTPException(404, "Transfer not found")
     try:
         edr = await svc.get_edr(transfer_id)
-    except httpx.RequestError as exc:
-        raise HTTPException(502, f"EDC EDR lookup failed: {exc}") from exc
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(502, f"EDC EDR lookup failed: {exc.response.text}") from exc
+    except EdrNotReceived as exc:
+        # Not a 404: the transfer is ours. The EDC has not delivered its EDR —
+        # the transfer has not started, or the callback cannot reach us.
+        raise HTTPException(504, str(exc)) from exc
+    except NoEdrCallback as exc:
+        raise HTTPException(503, str(exc)) from exc
 
     result = await db.execute(
         select(ConsumerAccessRequestORM).where(
@@ -751,15 +733,17 @@ async def run_flow(
     req: FlowRequest,
     svc=Depends(get_consumer_service),
     settings: Settings = Depends(get_settings_dep),
-    x_subject_id: str | None = Header(default=None),
-    x_user_vc: str | None = Header(default=None),
+    caller: ConsumerCaller = Depends(
+        require_consumer_caller(EDC_NEGOTIATIONS_WRITE, EDC_TRANSFERS_WRITE)
+    ),
 ):
-    x_subject_id = _verify_consumer_user(x_user_vc, x_subject_id, settings)
+    # The convenience path keeps no ledger row; `caller` is the authentication.
+    del caller
     try:
         return await svc.run_flow(req)
     except UnknownParticipantError as exc:
         raise HTTPException(403, "Unknown dataspace participant") from exc
-    except EdcPollTimeout as exc:
+    except (EdcPollTimeout, EdrNotReceived) as exc:
         # Rulebook, data exchange X-10: a timeout is reported as a timeout. It
         # used to arrive as `state="TIMEOUT"` and leave here as a 502, which
         # says the counterparty answered badly — the one thing that did not
@@ -774,6 +758,8 @@ async def run_flow(
         ) from exc
     except httpx.HTTPStatusError as exc:
         raise HTTPException(502, f"EDC flow failed: {exc.response.text}") from exc
+    except NoEdrCallback as exc:
+        raise HTTPException(503, str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(502, str(exc))
 
@@ -837,6 +823,13 @@ async def _access_request_for_negotiation(
         )
     )
     return result.scalar_one_or_none()
+
+
+def _person(request: ConsumerAccessRequestORM | None) -> str | None:
+    """The person a ledger row belongs to, or ``None`` for an organisation's."""
+    if request is None or request.subject_id.startswith(ORG_ACTOR_PREFIX):
+        return None
+    return request.subject_id
 
 
 # One reader for both sides of the exchange — see `services/odrl_reader.py`.

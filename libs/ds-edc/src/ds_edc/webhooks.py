@@ -35,6 +35,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+from .schemas import EdrResponse
+
 
 class TransferProcessEvent(BaseModel):
     """EDC transfer process state change event."""
@@ -86,3 +88,52 @@ class ContractNegotiationEvent(BaseModel):
         no agreement before one is signed.
         """
         return self.payload.get("dspAgreementId")
+
+
+class TransferProcessStartedEvent(BaseModel):
+    """The ``TransferProcessStarted`` envelope EDC posts to a callback address.
+
+    Its shape is EDC's own ``EventEnvelope`` serialised by Jackson — ``id``,
+    ``at``, ``payload`` and ``type`` — not the compact JSON-LD a management
+    response carries. On the consumer side the payload's ``dataAddress`` is the
+    **EDR**: the data plane's endpoint and the bearer that opens it.
+    """
+
+    id: str | None = None
+    at: int | None = None
+    type: str
+    payload: dict[str, Any] = {}
+
+    @property
+    def is_started(self) -> bool:
+        return self.type == "TransferProcessStarted"
+
+    @property
+    def transfer_id(self) -> str | None:
+        value = self.payload.get("transferProcessId")
+        return str(value) if value else None
+
+    @property
+    def agreement_id(self) -> str | None:
+        """The agreement the transfer was started against — **local** scope."""
+        value = self.payload.get("contractId")
+        return str(value) if value else None
+
+    @property
+    def asset_id(self) -> str | None:
+        value = self.payload.get("assetId")
+        return str(value) if value else None
+
+    @property
+    def participant_context_id(self) -> str | None:
+        value = self.payload.get("participantContextId")
+        return str(value) if value else None
+
+    @property
+    def data_address(self) -> dict[str, Any]:
+        value = self.payload.get("dataAddress")
+        return value if isinstance(value, dict) else {}
+
+    def edr(self) -> EdrResponse:
+        """The EDR, or ``ValueError`` when the event carries none."""
+        return EdrResponse.from_edc(self.data_address)

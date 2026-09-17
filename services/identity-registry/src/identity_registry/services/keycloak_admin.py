@@ -13,11 +13,15 @@ KC organizations provide portal-level gating parallel to the identity-registry
 from __future__ import annotations
 
 import logging
+import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
 import httpx
 import yaml
+from ds_auth import is_management_api_scope
+from ds_auth.production import is_production
 from pydantic import BaseModel, Field
 
 log = logging.getLogger(__name__)
@@ -34,6 +38,11 @@ class OrganizationSpec(BaseModel, extra="ignore"):
     domains: list[str] = Field(default_factory=list)
     attributes: dict[str, list[str]] | None = None
     members: list[OrgMemberSpec] = Field(default_factory=list)
+    #: The organisation's EDC participant context id. When set, the sync also
+    #: ensures the organisation's client (`svc-ds-connector-<alias>`), whose
+    #: tokens carry this value as `sub` — the caller EDC's v5 management API
+    #: binds to a participant context. Absent: the organisation has no client.
+    participant_context_id: str | None = None
 
     @property
     def display_name(self) -> str:
@@ -53,16 +62,28 @@ class SyncReport(BaseModel):
     members_added: list[str] = Field(default_factory=list)
     groups_assigned: list[str] = Field(default_factory=list)
     missing_users: list[str] = Field(default_factory=list)
+    clients_ensured: list[str] = Field(default_factory=list)
+    #: Existing clients whose secret differs from the one configured. Never
+    #: rewritten — a live client's credential changes only by rotation.
+    clients_with_other_secret: list[str] = Field(default_factory=list)
+    #: Organisation clients not provisioned, with the reason.
+    client_errors: list[str] = Field(default_factory=list)
 
     @property
     def has_warnings(self) -> bool:
-        return bool(self.missing_users)
+        return bool(
+            self.missing_users or self.clients_with_other_secret or self.client_errors
+        )
 
 
 def load_organizations_config(path: Path) -> OrganizationsConfig:
     """Load and validate an organizations.yaml file."""
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     return OrganizationsConfig.model_validate(raw)
+
+
+#: The protocol mapper that sets an organisation client's `sub`.
+SUBJECT_MAPPER_NAME = "participant-context-sub"
 
 
 class KeycloakAdminClient:
@@ -147,6 +168,8 @@ class KeycloakAdminClient:
         name: str,
         scopes: list[str],
         audiences: list[str] | None = None,
+        subject: str | None = None,
+        secret: str | None = None,
     ) -> str:
         """Create (or find) a confidential client and return its secret.
 
@@ -158,34 +181,41 @@ class KeycloakAdminClient:
 
         Idempotent: an existing client is reused and its secret read back, so
         re-running promotion does not invalidate credentials already handed out.
-        Rotation is a separate, explicit act.
+        Rotation is a separate, explicit act. `secret` is applied **only when the
+        client is created** — the same rule the realm sync follows — and is
+        otherwise left to the caller to compare with what is returned.
 
-        `audiences` is applied on every call, not only at creation. Scopes alone
-        are not enough: every ds service verifies `aud`, so a client that holds
-        the right grants and no audience mapper authenticates successfully and
-        is then refused by each service it calls. Re-applying also repairs a
-        client created before the mappers existed, which is the whole
-        population provisioned until now.
+        `audiences`, `scopes` and `subject` are applied on every call, not only
+        at creation, which is also the repair path for a client created before
+        each existed:
+
+        - **audiences** — every ds service verifies `aud`, so a client with the
+          right grants and no audience mapper authenticates and is then refused;
+        - **scopes** — missing default scopes are added, and a `management-api`
+          scope not in `scopes` is removed. Other scopes Keycloak assigned at
+          creation (the realm defaults) are left alone;
+        - **subject** — a hardcoded `sub`. EDC's v5 management API reads the
+          caller's participant context from `sub`, which Keycloak otherwise sets
+          to the service account's UUID.
         """
         existing = await self._request(
             "GET", "/clients", params={"clientId": client_id}
         )
         if not existing:
-            await self._request(
-                "POST",
-                "/clients",
-                {
-                    "clientId": client_id,
-                    "name": name,
-                    "enabled": True,
-                    # Service-to-service only: no browser flows, no user sessions.
-                    "publicClient": False,
-                    "serviceAccountsEnabled": True,
-                    "standardFlowEnabled": False,
-                    "directAccessGrantsEnabled": False,
-                    "defaultClientScopes": scopes,
-                },
-            )
+            body: dict[str, Any] = {
+                "clientId": client_id,
+                "name": name,
+                "enabled": True,
+                # Service-to-service only: no browser flows, no user sessions.
+                "publicClient": False,
+                "serviceAccountsEnabled": True,
+                "standardFlowEnabled": False,
+                "directAccessGrantsEnabled": False,
+                "defaultClientScopes": scopes,
+            }
+            if secret:
+                body["secret"] = secret
+            await self._request("POST", "/clients", body)
             existing = await self._request(
                 "GET", "/clients", params={"clientId": client_id}
             )
@@ -194,11 +224,95 @@ class KeycloakAdminClient:
             raise RuntimeError(f"Keycloak client {client_id} could not be created")
 
         uuid = existing[0]["id"]
+        await self._ensure_default_scopes(uuid, scopes)
         await self._ensure_audience_mappers(uuid, audiences or [])
-        secret = await self._request("GET", f"/clients/{uuid}/client-secret")
-        if not secret or not secret.get("value"):
-            secret = await self._request("POST", f"/clients/{uuid}/client-secret")
-        return str((secret or {}).get("value", ""))
+        if subject:
+            await self._ensure_subject_mapper(uuid, subject)
+        current = await self._request("GET", f"/clients/{uuid}/client-secret")
+        if not current or not current.get("value"):
+            current = await self._request("POST", f"/clients/{uuid}/client-secret")
+        return str((current or {}).get("value", ""))
+
+    async def _ensure_default_scopes(self, uuid: str, scopes: list[str]) -> None:
+        """Add the missing default scopes; drop any unlisted `management-api` one.
+
+        Keycloak ignores an unknown scope name on client creation without a word,
+        and assigns nothing on a client that already exists. A scope the realm
+        does not declare is therefore an error here, not a silent gap: the client
+        would look provisioned and be refused by whatever checks the scope.
+        """
+        current = (
+            await self._request("GET", f"/clients/{uuid}/default-client-scopes") or []
+        )
+        have = {s.get("name"): s.get("id") for s in current}
+        wanted = set(scopes)
+
+        missing = [s for s in scopes if s not in have]
+        if missing:
+            realm_scopes = await self._request("GET", "/client-scopes") or []
+            ids = {s.get("name"): s.get("id") for s in realm_scopes}
+            undeclared = [s for s in missing if s not in ids]
+            if undeclared:
+                raise RuntimeError(
+                    f"the realm declares no client scope {undeclared} — sync "
+                    "services/keycloak/clients.yaml before provisioning clients"
+                )
+            for scope in missing:
+                await self._request(
+                    "PUT", f"/clients/{uuid}/default-client-scopes/{ids[scope]}"
+                )
+
+        for name_, scope_id in have.items():
+            if name_ and is_management_api_scope(name_) and name_ not in wanted:
+                await self._request(
+                    "DELETE",
+                    f"/clients/{uuid}/default-client-scopes/{scope_id}",
+                    tolerate=(404,),
+                )
+
+    async def _ensure_subject_mapper(self, uuid: str, subject: str) -> None:
+        """One hardcoded `sub` claim on the access token, set to `subject`.
+
+        Verified on Keycloak 26.7.3, with and without the stock `basic` scope:
+        the token carries a single `sub` with this value. An existing mapper
+        with another value is corrected — the organisation's participant
+        context is what the declaration says it is.
+        """
+        body = {
+            "name": SUBJECT_MAPPER_NAME,
+            "protocol": "openid-connect",
+            "protocolMapper": "oidc-hardcoded-claim-mapper",
+            "config": {
+                "claim.name": "sub",
+                "claim.value": subject,
+                "jsonType.label": "String",
+                "access.token.claim": "true",
+                "id.token.claim": "false",
+                "userinfo.token.claim": "false",
+                "introspection.token.claim": "true",
+            },
+        }
+        current = (
+            await self._request("GET", f"/clients/{uuid}/protocol-mappers/models") or []
+        )
+        for mapper in current:
+            if mapper.get("name") != SUBJECT_MAPPER_NAME:
+                continue
+            if (mapper.get("config") or {}).get("claim.value") == subject:
+                return
+            log.warning(
+                "client %s: sub mapper named %r, correcting to %r",
+                uuid,
+                (mapper.get("config") or {}).get("claim.value"),
+                subject,
+            )
+            await self._request(
+                "PUT",
+                f"/clients/{uuid}/protocol-mappers/models/{mapper['id']}",
+                {**body, "id": mapper["id"]},
+            )
+            return
+        await self._request("POST", f"/clients/{uuid}/protocol-mappers/models", body)
 
     async def _ensure_audience_mappers(self, uuid: str, audiences: list[str]) -> None:
         """Add one `oidc-audience-mapper` per audience, skipping those present.
@@ -337,13 +451,91 @@ class KeycloakAdminClient:
         )
 
 
+class OrganisationClientSecretError(ValueError):
+    """No usable secret for an organisation client in this environment."""
+
+
+def secret_env_name(client_id: str) -> str:
+    """`svc-ds-connector-example-rec` → `SVC_DS_CONNECTOR_EXAMPLE_REC_SECRET`.
+
+    The same convention as every `SVC_<CLIENT>_SECRET` in `clients.yaml`.
+    """
+    return client_id.upper().replace("-", "_") + "_SECRET"
+
+
+def organisation_client_secret(
+    client_id: str,
+    *,
+    environ: Mapping[str, str] | None = None,
+    production: bool | None = None,
+) -> str:
+    """The secret an organisation client is created with.
+
+    Dev keeps the zero-config default every ds client has — the client id. Under
+    `DS_ENV=production` there is no default: the variable must be set, and set to
+    something other than the client id, or the client is not provisioned.
+    """
+    environ = os.environ if environ is None else environ
+    production = is_production() if production is None else production
+    name = secret_env_name(client_id)
+    value = (environ.get(name) or "").strip()
+    if production:
+        if not value:
+            raise OrganisationClientSecretError(
+                f"{client_id}: {name} is not set (DS_ENV=production has no default)"
+            )
+        if value == client_id:
+            raise OrganisationClientSecretError(
+                f"{client_id}: {name} equals the client id, the dev default"
+            )
+    return value or client_id
+
+
+async def ensure_organisation_client(
+    kc: KeycloakAdminClient,
+    *,
+    alias: str,
+    name: str,
+    participant_context_id: str,
+    secret: str | None = None,
+) -> tuple[str, str]:
+    """Ensure `svc-ds-connector-<alias>`: organisation scopes, audiences, `sub`.
+
+    Returns (client id, the secret Keycloak holds). The one definition of an
+    organisation client, shared by `org-sync` and the provisioning bundle.
+    """
+    from ds_auth import organisation_client_id
+
+    from .provisioning import CONNECTOR_AUDIENCES, ORGANISATION_CLIENT_SCOPES
+
+    client_id = organisation_client_id(alias)
+    held = await kc.ensure_service_client(
+        client_id,
+        name=f"ds connector — {name}",
+        scopes=list(ORGANISATION_CLIENT_SCOPES),
+        audiences=list(CONNECTOR_AUDIENCES),
+        subject=participant_context_id,
+        secret=secret,
+    )
+    return client_id, held
+
+
 async def sync_organizations(
-    config: OrganizationsConfig, kc: KeycloakAdminClient
+    config: OrganizationsConfig,
+    kc: KeycloakAdminClient,
+    *,
+    environ: Mapping[str, str] | None = None,
+    production: bool | None = None,
 ) -> SyncReport:
-    """Provision KC organizations, members, and org groups. Idempotent."""
+    """Provision KC organizations, members, org groups and org clients. Idempotent."""
     report = SyncReport()
 
     for spec in config.organizations:
+        if spec.participant_context_id:
+            await _sync_organisation_client(
+                spec, kc, report, environ=environ, production=production
+            )
+
         org, created = await kc.ensure_organization(spec)
         org_id = org["id"]
         if created:
@@ -379,3 +571,41 @@ async def sync_organizations(
                 )
 
     return report
+
+
+async def _sync_organisation_client(
+    spec: OrganizationSpec,
+    kc: KeycloakAdminClient,
+    report: SyncReport,
+    *,
+    environ: Mapping[str, str] | None,
+    production: bool | None,
+) -> None:
+    from ds_auth import organisation_client_id
+
+    client_id = organisation_client_id(spec.alias)
+    try:
+        secret = organisation_client_secret(
+            client_id, environ=environ, production=production
+        )
+    except OrganisationClientSecretError as exc:
+        report.client_errors.append(str(exc))
+        log.error("%s — client not provisioned", exc)
+        return
+
+    _, held = await ensure_organisation_client(
+        kc,
+        alias=spec.alias,
+        name=spec.display_name,
+        participant_context_id=spec.participant_context_id or "",
+        secret=secret,
+    )
+    report.clients_ensured.append(client_id)
+    if held != secret:
+        report.clients_with_other_secret.append(client_id)
+        log.warning(
+            "%s exists with a different secret; left unchanged (%s is applied "
+            "only when the client is created)",
+            client_id,
+            secret_env_name(client_id),
+        )

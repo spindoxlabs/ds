@@ -5,7 +5,10 @@ from __future__ import annotations
 import inspect
 import logging
 
+from ds_edc import TRANSFER_STARTED_EVENT, CallbackAddress
+
 from ..clients.edc_management import EdcManagementClient
+from ..config import Settings
 from ..registry.participants import ParticipantLookup, UnknownParticipantError
 from ..schemas.edc import (
     CatalogRequest,
@@ -15,7 +18,31 @@ from ..schemas.edc import (
     NegotiationRequest,
     TransferRequest,
 )
+from .edr_store import EdrNotReceived, EdrStore
 from .prov_bridge import ProvBridge
+
+#: The header EDC sets on the EDR callback. Its value is read from the EDC's
+#: vault under `CONNECTOR_EDC_CALLBACK_AUTH_CODE_ID`, and compared by
+#: `POST /webhooks/edc-callback` with `CONNECTOR_EDC_CALLBACK_SECRET`.
+EDC_CALLBACK_AUTH_HEADER = "X-Ds-Edc-Callback-Key"
+
+
+def edr_callback_address(settings: Settings) -> CallbackAddress | None:
+    """The callback a transfer names so its EDR reaches this connector."""
+    if not settings.edc_callback_url:
+        return None
+    return CallbackAddress(
+        uri=settings.edc_callback_url,
+        events=[TRANSFER_STARTED_EVENT],
+        transactional=False,
+        auth_key=EDC_CALLBACK_AUTH_HEADER,
+        auth_code_id=settings.edc_callback_auth_code_id,
+    )
+
+
+class NoEdrCallback(RuntimeError):
+    """A transfer was asked for with no callback configured to deliver its EDR."""
+
 
 log = logging.getLogger(__name__)
 
@@ -83,6 +110,8 @@ class ConsumerService:
         participant_id: str = "consumer",
         provider_id: str = "provider",
         allow_unknown_participants: bool = False,
+        edrs: EdrStore | None = None,
+        callback: CallbackAddress | None = None,
     ):
         self._edc = consumer_edc
         self._registry = registry
@@ -94,6 +123,8 @@ class ConsumerService:
         self._participant_id = participant_id
         self._provider_id = provider_id
         self._allow_unknown_participants = allow_unknown_participants
+        self._edrs = edrs
+        self._callback = callback
 
     async def request_catalog(
         self, counter_party_address: str, counter_party_id: str | None = None
@@ -177,8 +208,9 @@ class ConsumerService:
                 policies = [policies]
             if not policies or not isinstance(policies[0], dict):
                 return None
+            # The v5 catalogue already answers in the DSP profile's compact form,
+            # so the offer goes back as published, naming its target.
             policy = dict(policies[0])
-            policy["@context"] = "http://www.w3.org/ns/odrl.jsonld"
             policy["target"] = asset_id
             return policy
         return None
@@ -204,16 +236,42 @@ class ConsumerService:
         asset_id: str,
         connector_id: str,
     ) -> str:
+        if self._callback is None or self._edrs is None:
+            # Without a callback the EDR is never delivered, and v5 has no way to
+            # ask for it afterwards — refuse before a transfer exists that
+            # nobody can use.
+            raise NoEdrCallback(
+                "CONNECTOR_EDC_CALLBACK_URL is not set, so this transfer's EDR "
+                "could never reach this connector"
+            )
         req = TransferRequest(
             contract_agreement_id=contract_agreement_id,
             counter_party_address=counter_party_address,
             asset_id=asset_id,
             connector_id=connector_id,
+            callback_addresses=[self._callback],
         )
         return await self._edc.start_transfer(req)
 
-    async def get_edr(self, transfer_id: str) -> EdrResponse:
-        return await self._edc.get_edr(transfer_id)
+    async def get_edr(self, transfer_id: str, *, wait: bool = True) -> EdrResponse:
+        """The EDR the EDC delivered for ``transfer_id``.
+
+        ``wait`` bounds a wait for a transfer that has just started: the callback
+        is dispatched asynchronously. ``EdrNotReceived`` when none arrived.
+        """
+        if self._edrs is None:
+            raise NoEdrCallback("no EDR store is configured")
+        if not wait:
+            edr = await self._edrs.get(transfer_id)
+            if edr is None:
+                raise EdrNotReceived(transfer_id, 0)
+            return edr
+        return await self._edrs.wait_for(transfer_id)
+
+    async def get_edrs(self, transfer_ids: list[str]) -> dict[str, EdrResponse]:
+        if self._edrs is None:
+            return {}
+        return await self._edrs.get_many(transfer_ids)
 
     async def run_flow(self, req: FlowRequest) -> FlowResult:
         """Full consumer flow: catalog → negotiate → transfer → EDR."""
@@ -278,8 +336,8 @@ class ConsumerService:
                 f"error={tx_state.error_detail}"
             )
 
-        # 6. Fetch EDR
-        edr = await self._edc.get_edr(transfer_id)
+        # 6. The EDR, as the EDC delivered it to the transfer's callback
+        edr = await self.get_edr(transfer_id)
         log.info("Got EDR for transfer %s", transfer_id)
 
         # 7. Emit DataTransferCompleted PROV-O

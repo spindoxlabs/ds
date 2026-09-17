@@ -131,6 +131,35 @@ scopes:
   - name: catalog.read
     description: Query federated catalog
 
+  # EDC's v5 management API — EDC's grammar, `management-api[:resource]:action`,
+  # not ds's. **Declared here and granted by no client in any file.** An
+  # organisation's client (`svc-ds-connector-<alias>`) is created by
+  # identity-registry (`ir-cli keycloak org-sync`, or the provisioning bundle),
+  # which grants exactly `ds_auth.MANAGEMENT_API_SCOPES` and adds the `sub`
+  # mapper naming the organisation's participant context. The sync cannot add
+  # that mapper, and a client holding these scopes without it is refused by EDC.
+  #
+  # EDC checks the token's `sub` and `scope`, **never its `aud`**: whoever holds
+  # one of these scopes can act on that participant's management API. Declared
+  # in the file that crosses because an organisation client needs them in any
+  # realm. No `management-api:admin` and no `*` resource, ever — `admin` ignores
+  # `sub` altogether. `libs/ds-auth/tests/test_management_api_scopes.py` holds
+  # all of this.
+  - name: management-api:assets:write
+    description: EDC management API - create, update and delete assets
+  - name: management-api:policies:write
+    description: EDC management API - create, update and delete policy definitions
+  - name: management-api:contractdefinitions:write
+    description: EDC management API - create, update and delete contract definitions
+  - name: management-api:catalog:read
+    description: EDC management API - request a counterparty catalogue
+  - name: management-api:negotiations:write
+    description: EDC management API - start, read, terminate and resume negotiations
+  - name: management-api:agreements:read
+    description: EDC management API - read contract agreements
+  - name: management-api:transfers:write
+    description: EDC management API - start, read and terminate transfers
+
 # =============================================================================
 # CLIENTS
 # =============================================================================
@@ -257,29 +286,19 @@ clients:
   # mounts. That was a rule inside a generator until 2026-08-28; it is a file
   # boundary now, which is why the generator is gone.
 
+  # **An audience, and nothing authenticates as it** (plan
+  # `the-management-api-is-v3-behind-one-key`, decision 3). Every connector
+  # presents its organisation's client, `svc-ds-connector-<alias>`, which
+  # identity-registry creates with the grants a connector needs
+  # (`ds_auth.ORGANISATION_CLIENT_SCOPES`) and a `sub` naming its participant.
+  # This client stays because it is the `aud` every connector verifies and the
+  # audience the sync derives from `connector.*` grants — the same shape as
+  # `svc-ds-provenance` below.
   - client_id: svc-ds-connector
     name: Dataspace Connector
     secret: ${SVC_DS_CONNECTOR_SECRET:-svc-ds-connector}
     scopes_prefix: connector
-    default_scopes:
-      - identity-registry.read
-      - identity-registry.membership.read
-      # A sharing offer may admit by credential type as well as by membership
-      # (`admitted_by: [{credential_type: OrganizationCredential}]`). Both
-      # constraints are evaluated in `services/circle.py`, and this is the second
-      # one's read — narrow by design, because the alternative was the `.admin`
-      # this file refuses a service client.
-      - identity-registry.credentials.read
-      - provenance.write
-      # A consumer connector asks the provider whether one of its own
-      # negotiations is parked on a consent decision, so a long REQUESTED can be
-      # shown as "waiting on a person" instead of as silence (§6.6).
-      - connector.consent.read
-    extra_audiences:
-      - svc-ds-identity-registry
-      - svc-ds-provenance
-      # The counterparty's connector — the audience of GET /consent/pending.
-      - svc-ds-connector
+    default_scopes: []
 
   # Declared so the audience the provenance service verifies is a real identity.
   # It appears in four `extra_audiences` lists above and used to be defined as a

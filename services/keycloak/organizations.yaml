@@ -2,6 +2,15 @@ realm: dataspaces
 
 # Keycloak native organizations, provisioned by `ir-cli keycloak org-sync`.
 #
+# `participant_context_id` also makes the sync ensure the **organisation's
+# client**, `svc-ds-connector-<alias>`: the one confidential client an
+# organisation's connector and its own agents authenticate as. Its tokens carry
+# `sub` = this value (a hardcoded-claim mapper the realm sync cannot create) and
+# `ds_auth.MANAGEMENT_API_SCOPES`, which is what EDC's v5 management API checks.
+# It must equal the EDC's `edc.participant.context.id`, which ds sets to the
+# participant's DID — the value the classic runtime already stamped on every
+# stored entity. Secret: `SVC_DS_CONNECTOR_<ALIAS>_SECRET`, the client id in dev.
+#
 # `groups:` are **role bundles** (ds_auth.bundles), assigned per organisation, so
 # a seat is scoped to one owner rather than the whole realm: an operator for one
 # participant is not an operator for another. `ensure_org_group` creates them
@@ -11,6 +20,7 @@ realm: dataspaces
 organizations:
   - alias: example-org
     name: Example Organization
+    participant_context_id: did:web:rec.dataspaces.localhost
     domains: []
     attributes:
       type: ["dso"]
@@ -50,9 +60,20 @@ organizations:
   # resolution the perimeter performs has something real to resolve.
   - alias: grid-operator
     name: Grid Operator
+    participant_context_id: did:web:grid-operator.dataspaces.localhost
     domains: []
     attributes:
       type: ["dso"]
     members:
       - email: gridops@example.test
         groups: [ds-participant-admin]
+
+  # The dev consumer participant (`docker-compose.third-party.yml`). Listed for
+  # its client only: no seat is scoped to it, so it has no members. The alias is
+  # its owner id in `services/identity-registry/seed/owners.dev.yaml`, as for the
+  # two above — the same name the provisioning bundle gives a client.
+  - alias: consumer-org
+    name: Consumer Organization
+    participant_context_id: did:web:third-party.dataspaces.localhost
+    domains: []
+    members: []

@@ -40,9 +40,6 @@ spec:
             # to dot.notation. These names ARE the settings — the ConfigMap
             # cannot carry them, because EDC does not interpolate ${...} in a
             # properties file.
-            - name: WEB_HTTP_MANAGEMENT_AUTH_KEY
-              valueFrom:
-                secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_API_KEY}
             - name: WEB_HTTP_CONTROL_AUTH_KEY
               valueFrom:
                 secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_CONTROL_API_KEY}

@@ -226,8 +226,46 @@ Connector's `JwtValidatorFilter`. Its API prefix is `/v1beta`
 
 ## What ds adds on top
 
-ds packages `controlplane-dcp-bom` — the classic `management-api` (v3, v4) — and sets
-`web.http.management.auth.type=tokenbased`, so the Management API is guarded by an
-`X-Api-Key`. It adds one route, `POST /dataspaces/negotiations/{id}/resume`
-(`services/edc-extensions/.../NegotiationResumeController.java`). See
+ds packages `controlplane-dcp-bom` with its classic management controllers (v3, v4)
+**excluded**, and adds the v5 controllers it calls plus `management-api-oauth2-authentication`
+and `management-api-authorization` by hand — in the classic runtime, with its single
+participant context (`edc.participant.context.id`, set to the participant DID). There is no
+`web.http.management.auth.type`. It adds one route, `POST /dataspaces/negotiations/{id}/resume`
+(`services/edc-extensions/.../NegotiationResumeController.java`), with
+`@RequiredScope("management-api:negotiations:write")` and the same ownership check. Measured on
+the running provider: v5 routes answer 401 to a token whose `sub` is not a context, 403 to a
+missing scope, and v3/v4 routes 404. See
 [edc-connector](../../services/edc-connector.md#the-api-contexts).
+
+## What v5beta demands of a request body (measured)
+
+`management-api-schema-validator` checks the **raw** JSON against the v5 JSON schemas before
+any JSON-LD expansion. v3 expanded first and accepted more. Each of these was a `400` against
+the running 0.18.0 runtime until ds changed what it sends:
+
+| Requirement | Detail |
+|---|---|
+| `@context` is an **array** | `["https://w3id.org/edc/connector/management/v2"]`. A JSON-object context is refused on negotiations, transfers and agreement queries |
+| policies in the DSP 2025 compact form | `@type` `Set` (a policy definition) or `Offer` (a negotiation); bare `permission`, `action`, `constraint`, `leftOperand`, `operator`; `operator` from the profile's term list (`eq`, `isAnyOf`, …). `odrl:`-prefixed keys and an embedded context are refused |
+| `@type` on nested objects | `Criterion` on each `assetsSelector` / `filterExpression` entry, `QuerySpec` on a query |
+| a dataspace profile for the participant | a catalogue, negotiation or transfer request is `400` "No profile … for participant" unless the participant has one. The classic runtime registers DSP `2025-1` only; `edc.dataspace.enable.profiles.all=true` enables it |
+| no v3 transfer fields | `assetId`, `connectorId` and `dataDestination` are not in the v5 `TransferRequest` schema. A pull transfer states no destination |
+
+### The EDR, without an EDR API
+
+v5 has no EDR endpoint. A consumer gets the EDR from the transfer's per-request
+`callbackAddresses`. EDC posts `TransferProcessStarted` with the data address under
+`payload.dataAddress.properties`, keyed by full IRIs in `https://w3id.org/edc/v0.0.1/ns/`
+(`endpoint`, `authorization`, `authType`, `type`). The v5 `GET …/transferprocesses/{id}`
+response of a started pull transfer was also seen to carry the same data under
+`dataDestination`. ds does not rely on that, because the schema does not promise it.
+
+A callback address may name a header (`authKey`) whose value EDC resolves from its vault under
+`authCodeId` (`CallbackHttpClient`).
+
+!!! warning "Upstream gap: the v2 context does not map `authKey` / `authCodeId`"
+    `management-context-v2` maps `uri`, `events` and `transactional` on `CallbackAddress`, and
+    not the two auth keys, in 0.18.0 and on main. Sent bare, they expand to nothing, are
+    dropped without an error, and EDC calls back with **no header**. Send them as
+    `edc:authKey` and `edc:authCodeId`, which the context's `edc` prefix resolves to the IRIs
+    the transformer reads.

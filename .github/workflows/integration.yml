@@ -228,7 +228,27 @@ jobs:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install
-        run: task -d libs/ds-auth setup
+        run: |
+          task -d libs/ds-auth setup
+          task -d services/identity-registry setup
+
+      # **The second provisioning step**, as `keycloak-org-sync` runs it in
+      # compose. The sync above declares the `management-api:*` scopes and grants
+      # them to nobody; the organisation clients that hold them, and the `sub`
+      # mapper naming each one's participant context, exist only after this. The
+      # suite's `test_organisation_clients.py` fails without it (ADR-0011).
+      # `DS_ENV=dev`: the organisation clients take their dev secret, the client id.
+      - name: Provision the organisation clients (ir-cli)
+        working-directory: services/identity-registry
+        env:
+          DS_ENV: dev
+        run: |
+          uv run ir-cli keycloak org-sync \
+            --config ../keycloak/organizations.yaml \
+            --keycloak-url "$KC_URL" \
+            --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
+            --admin-password "$KEYCLOAK_ADMIN_PASSWORD" \
+            --strict
 
       - name: Integration tests
         run: task -d libs/ds-auth test:integration

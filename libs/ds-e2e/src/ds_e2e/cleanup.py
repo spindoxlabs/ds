@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-import httpx
 import psycopg
 
 from ds_e2e.config import E2ESettings
@@ -20,14 +18,6 @@ class CleanupIncomplete(RuntimeError):
     — which surfaces as an unrelated flow failing on stale state.
     """
 
-
-# The EDC management credentials and endpoints (`E2E-07`).
-#
-# Hardcoded module constants until now, so a stack whose EDC key or ports were
-# changed could not be cleaned — and `run_cleanup` reported success having
-# deleted nothing, because a 401 on a delete is not something it checked. Every
-# other address the harness uses is a setting; these are now too, with the same
-# dev defaults so nothing changes for a default stack.
 
 CONNECTOR_TABLES = [
     "consumer_access_requests",
@@ -59,24 +49,6 @@ DATABASES = {
 # owned by the connector runtime, so the table set is not ours to enumerate.
 EDC_DATABASES = ("edc_rec", "edc_third_party", "edc_grid_operator")
 
-EDC_CONTEXT = {
-    "@context": {"edc": "https://w3id.org/edc/v0.0.1/ns/"},
-    "@type": "QuerySpec",
-}
-
-
-def edc_headers(settings: E2ESettings) -> dict[str, str]:
-    return {"x-api-key": settings.edc_api_key, "Content-Type": "application/json"}
-
-
-def edc_management_urls(settings: E2ESettings) -> dict[str, str]:
-    """Control-plane management endpoints, by role."""
-    return {
-        "provider": settings.edc_provider_management_url,
-        "consumer": settings.edc_consumer_management_url,
-        "grid-operator": settings.edc_grid_operator_management_url,
-    }
-
 
 def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
     """Every connector that must re-sync its catalogue after a clean.
@@ -94,110 +66,21 @@ def provider_sync_targets(settings: E2ESettings) -> list[tuple[str, str]]:
     ]
 
 
-def _edc_list(
-    client: httpx.Client, mgmt_url: str, resource: str, headers: dict[str, str]
-) -> list[dict[str, Any]]:
-    resp = client.post(
-        f"{mgmt_url}/v3/{resource}/request", json=EDC_CONTEXT, headers=headers
-    )
-    return resp.json() if resp.status_code == 200 and resp.text else []
-
-
-def _edc_terminate(
-    client: httpx.Client,
-    mgmt_url: str,
-    resource: str,
-    item_id: str,
-    body_type: str,
-    headers: dict[str, str],
-) -> None:
-    client.post(
-        f"{mgmt_url}/v3/{resource}/{item_id}/terminate",
-        json={
-            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
-            "@type": body_type,
-            "reason": "e2e cleanup",
-        },
-        headers=headers,
-    )
-
-
-def _clear_edc(
-    client: httpx.Client, mgmt_url: str, label: str, settings: E2ESettings
-) -> None:
-    headers = edc_headers(settings)
-
-    # Terminate active transfer processes first (block agreement cleanup)
-    transfers = _edc_list(client, mgmt_url, "transferprocesses", headers)
-    for tp in transfers:
-        tp_id = tp.get("@id", "")
-        state = tp.get("edc:state", tp.get("state", ""))
-        if state not in ("TERMINATED", "COMPLETED"):
-            _edc_terminate(
-                client,
-                mgmt_url,
-                "transferprocesses",
-                tp_id,
-                "TerminateTransfer",
-                headers,
-            )
-    if transfers:
-        log.info("Terminated %d transfers (%s)", len(transfers), label)
-
-    # Terminate active negotiations
-    negotiations = _edc_list(client, mgmt_url, "contractnegotiations", headers)
-    for neg in negotiations:
-        neg_id = neg.get("@id", "")
-        state = neg.get("edc:state", neg.get("state", ""))
-        if state not in ("TERMINATED",):
-            _edc_terminate(
-                client,
-                mgmt_url,
-                "contractnegotiations",
-                neg_id,
-                "TerminateNegotiation",
-                headers,
-            )
-    if negotiations:
-        log.info("Terminated %d negotiations (%s)", len(negotiations), label)
-
-    # Delete contract definitions, policy definitions, assets (in dependency order)
-    for resource in ("contractdefinitions", "policydefinitions", "assets"):
-        items = _edc_list(client, mgmt_url, resource, headers)
-        for item in items:
-            client.delete(
-                f"{mgmt_url}/v3/{resource}/{item.get('@id', '')}", headers=headers
-            )
-        if items:
-            log.info("Deleted %d %s (%s)", len(items), resource, label)
-
-
-def run_cleanup(
-    settings: E2ESettings,
-    http: HttpClient,
-    edc_client: httpx.Client | None = None,
-) -> None:
+def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
     """Reset the dataspace to a known state. **Destructive, by design.**
 
-    `edc_client` is a parameter because it used to be a `httpx.Client()`
-    constructed here, and a caller that mocked `http` and `psycopg` still got a
-    live one (`E2E-17`). The unit suite did exactly that: eight green tests in
-    `test_cleanup.py` called this function and **deleted every contract
-    definition and policy from the running dev stack's EDCs**, on both
-    providers, while asserting on mocks.
+    **No EDC management calls.** This used to also terminate every transfer and
+    negotiation and delete every definition through each EDC's management API,
+    with the shared key. Both are gone: the management port is not published
+    and there is no key (plan `the-management-api-is-v3-behind-one-key`,
+    decision 1). The calls were also redundant — the EDC databases are dropped
+    and recreated below, and `e2e:prepare` restarts all three EDCs straight
+    afterwards, which is what empties their stores.
 
-    The symptom was three sessions of debugging a federated catalogue that had
-    gone empty on its own — the assets survived, because the asset delete 409s
-    while an agreement references it, so the wreckage looked like a half-run
-    provider sync rather than a clean. Nothing in any service log accounted for
-    it: the deletes go straight to the EDC Management API.
-
-    Two things follow, and the second is the one that generalises:
-
-    - The client is injected, so a test can supply one that goes nowhere.
-    - `tests/conftest.py` refuses **any** outbound socket in the unit suite. A
-      unit suite that can reach the network will eventually change something,
-      and no amount of care at each call site prevents the next instance.
+    `tests/conftest.py` refuses any outbound socket in the unit suite: a
+    `run_cleanup` that built its own HTTP client once deleted every contract
+    definition from the running dev stack while its tests asserted on mocks
+    (`E2E-17`). Keep every network path injectable.
     """
     base_url = settings.database_url.rstrip("/")
     failures: list[str] = []
@@ -251,31 +134,6 @@ def run_cleanup(
         except psycopg.Error as exc:
             log.warning("Could not reset %s: %s", edc_db, exc)
             failures.append(f"reset {edc_db}: {exc}")
-
-    owns_client = edc_client is None
-    edc_client = edc_client or httpx.Client(timeout=10)
-    try:
-        for label, mgmt_url in edc_management_urls(settings).items():
-            try:
-                _clear_edc(edc_client, mgmt_url, label, settings)
-            except Exception as exc:
-                # Logged **and collected**. This used to warn and continue, and
-                # `run_cleanup` then returned normally — so `Cleanup complete`
-                # was printed over three control planes that had not been
-                # cleaned, and the next run's flows failed on the previous run's
-                # agreements with no connection to the cause.
-                #
-                # Found exactly that way: threading settings through these calls
-                # left one call site unfixed, every unit test stayed green, and
-                # the live clean printed three warnings and then `Cleanup
-                # complete`. A warning nobody has to act on is not a result.
-                log.warning("EDC cleanup failed (%s): %s", label, exc)
-                failures.append(f"{label}: {exc}")
-    finally:
-        # Only what this function opened. Closing a caller's client would break
-        # the next use of it, and the caller is the one that knows its lifetime.
-        if owns_client:
-            edc_client.close()
 
     # **Both providers re-sync.** Dropping an EDC's database empties its
     # catalogue, so a provider that is not re-synced afterwards is a provider

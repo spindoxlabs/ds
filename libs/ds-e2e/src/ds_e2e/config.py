@@ -189,6 +189,40 @@ class E2ESettings(BaseSettings):
         "svc-ds-onboarding", validation_alias="SVC_DS_ONBOARDING_SECRET"
     )
 
+    # The organisation clients (ADR-0014): one per organisation, `sub` = its
+    # participant context. The consumer's drives the `organisation-token` flow;
+    # the provider's is the *other participant's* token that flow must see
+    # refused. Dev secrets are the client ids, as `org-sync` creates them.
+    consumer_org_client_id: str = Field(
+        "svc-ds-connector-consumer-org", validation_alias="E2E_CONSUMER_ORG_CLIENT_ID"
+    )
+    consumer_org_client_secret: str = Field(
+        "svc-ds-connector-consumer-org",
+        validation_alias="SVC_DS_CONNECTOR_CONSUMER_ORG_SECRET",
+    )
+    provider_org_client_id: str = Field(
+        "svc-ds-connector-example-org", validation_alias="E2E_PROVIDER_ORG_CLIENT_ID"
+    )
+    provider_org_client_secret: str = Field(
+        "svc-ds-connector-example-org",
+        validation_alias="SVC_DS_CONNECTOR_EXAMPLE_ORG_SECRET",
+    )
+    #: The mock data plane, named on its own. `organisation-token` queries a
+    #: dataset only the mock serves, so it must reach the mock even when
+    #: `E2E_DATA_PLANES` names the real plane alone (as `.env.local` does).
+    #: `task docker:start` always runs the mock, on `DATASET_API_MOCK_PORT`.
+    mock_data_plane_url: str = Field(
+        "http://172.17.0.1:30022", validation_alias="E2E_MOCK_DATA_PLANE_URL"
+    )
+    #: Host addresses where an EDC management API must **not** answer. EDC never
+    #: checks a management token's audience, so an unpublished port is the
+    #: control (ADR-0014). Empty skips the check, and the flow says so — for
+    #: `dev:*`, whose EDCs are host JVMs and listen on the host by construction.
+    e2e_edc_management_host_urls: str = Field(
+        "http://172.17.0.1:19193,http://172.17.0.1:29193,http://172.17.0.1:39193",
+        validation_alias="E2E_EDC_MANAGEMENT_HOST_URLS",
+    )
+
     # Identity.
     #
     # **These name roles in an exchange, not organisations** (`DID-15`). The
@@ -302,25 +336,11 @@ class E2ESettings(BaseSettings):
     # the negative case that proves the purpose chain is enforced.
     unconsented_purpose: str = "IncentiveCalculation"
 
-    # EDC control planes, for `ds-e2e clean` (`E2E-07`).
-    #
-    # These were module constants in `cleanup.py`, so a stack whose EDC key or
-    # ports differed could not be cleaned — and the clean reported success
-    # having deleted nothing, since a 401 on a delete was not checked. Same dev
-    # defaults, now overridable like every other address the harness uses.
-    edc_api_key: str = Field("insecure-dev-key", validation_alias="EDC_API_KEY")
-    edc_provider_management_url: str = Field(
-        "http://172.17.0.1:19193/management",
-        validation_alias="E2E_EDC_PROVIDER_MANAGEMENT_URL",
-    )
-    edc_consumer_management_url: str = Field(
-        "http://172.17.0.1:29193/management",
-        validation_alias="E2E_EDC_CONSUMER_MANAGEMENT_URL",
-    )
-    edc_grid_operator_management_url: str = Field(
-        "http://172.17.0.1:39193/management",
-        validation_alias="E2E_EDC_GRID_OPERATOR_MANAGEMENT_URL",
-    )
+    # No EDC management URLs and no key. The harness does not talk to an EDC's
+    # management API: its port is not published (plan
+    # `the-management-api-is-v3-behind-one-key`, decision 1), `ds-e2e clean`
+    # resets the EDC databases instead, and a flow that needs a provider's view
+    # of a transfer asks the provider connector.
 
     #: How long to wait for a withdrawn consent to terminate a running transfer
     #: before the `consent-withdrawal` flow calls it a failure.
@@ -435,6 +455,11 @@ class E2ESettings(BaseSettings):
     #:
     #: Absent, it falls back to the single configured plane, so a deployment
     #: running only one is unaffected and says which.
+    @property
+    def edc_management_host_urls(self) -> tuple[str, ...]:
+        raw = (self.e2e_edc_management_host_urls or "").strip()
+        return tuple(u.strip() for u in raw.split(",") if u.strip())
+
     @property
     def data_planes(self) -> tuple[tuple[str, str], ...]:
         raw = (self.e2e_data_planes or "").strip()

@@ -13,6 +13,7 @@ from .jwt import (
     extract_scopes,
     is_service_account,
 )
+from .management_api import ORGANISATION_CLIENT_PREFIX, scope_satisfies
 from .models import Organization
 from .permissions import has_exact_permission, has_permission
 
@@ -64,6 +65,52 @@ class Principal:
             group_aliases=dict(group_aliases or {}),
             claims=claims,
         )
+
+    @property
+    def client_id(self) -> str | None:
+        """The client a service token was issued to (Keycloak's `azp`)."""
+        if not isinstance(self.claims, dict):
+            return None
+        value = self.claims.get("azp") or self.claims.get("client_id")
+        return str(value) if value else None
+
+    @property
+    def organisation_context(self) -> str | None:
+        """The participant context an **organisation actor** acts as, or ``None``.
+
+        An organisation's client (`svc-ds-connector-<alias>`) carries the
+        organisation's participant context as `sub` (a hardcoded-claim mapper) —
+        the value EDC's v5 management API binds a caller to. A token from such a
+        client is the organisation acting as itself: its connector, or a batch
+        job the organisation runs. Not a person, and never a person's proxy.
+
+        Classified by the client, not by the `sub`: a caller deciding *what* a
+        token may do must not let the token's own claims choose its class. Whose
+        participant it may act for is the caller's check — compare this value
+        with its own context.
+        """
+        client = self.client_id or ""
+        if self.is_service and client.startswith(ORGANISATION_CLIENT_PREFIX):
+            return self.subject or None
+        return None
+
+    @property
+    def is_organisation(self) -> bool:
+        return self.organisation_context is not None
+
+    @property
+    def actor(self) -> str:
+        """A stable key for who acted: ``org:<context>`` for an organisation."""
+        context = self.organisation_context
+        return f"org:{context}" if context else self.subject
+
+    def grants_management_scope(self, required: str) -> bool:
+        """EDC's scope grammar (`management-api[:resource]:action`), on this token.
+
+        Only a service token carries such a scope; a person's groups never
+        expand to one (`MANAGEMENT_API_SCOPES` is in no bundle).
+        """
+        return self.is_service and scope_satisfies(self.scopes, required)
 
     @property
     def organization_aliases(self) -> list[str]:

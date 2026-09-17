@@ -407,6 +407,10 @@ tasks:
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
         CONNECTOR_EDC_VAULT_FILE=config/rec-vault.properties \
+        EDC_MANAGEMENT_URL=$EDC_MANAGEMENT_URL_PROVIDER \
+        CONNECTOR_CLIENT_ID=$CONNECTOR_CLIENT_ID_PROVIDER \
+        CONNECTOR_CLIENT_SECRET=$CONNECTOR_CLIENT_SECRET_PROVIDER \
+        CONNECTOR_EDC_CALLBACK_URL=http://172.17.0.1:30001/webhooks/edc-callback \
         uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
   provider:connector:debug:
@@ -421,6 +425,10 @@ tasks:
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_PROVIDER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_PROVIDER \
         CONNECTOR_EDC_VAULT_FILE=config/rec-vault.properties \
+        EDC_MANAGEMENT_URL=$EDC_MANAGEMENT_URL_PROVIDER \
+        CONNECTOR_CLIENT_ID=$CONNECTOR_CLIENT_ID_PROVIDER \
+        CONNECTOR_CLIENT_SECRET=$CONNECTOR_CLIENT_SECRET_PROVIDER \
+        CONNECTOR_EDC_CALLBACK_URL=http://172.17.0.1:30001/webhooks/edc-callback \
         uv run python -m debugpy --listen 0.0.0.0:30901 --wait-for-client \
           -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 30001
 
@@ -466,6 +474,10 @@ tasks:
         CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
+        EDC_MANAGEMENT_URL=$EDC_MANAGEMENT_URL_CONSUMER \
+        CONNECTOR_CLIENT_ID=$CONNECTOR_CLIENT_ID_CONSUMER \
+        CONNECTOR_CLIENT_SECRET=$CONNECTOR_CLIENT_SECRET_CONSUMER \
+        CONNECTOR_EDC_CALLBACK_URL=http://172.17.0.1:31001/webhooks/edc-callback \
         uv run uvicorn connector.main:app --reload --host 0.0.0.0 --port 31001
 
   consumer:connector:debug:
@@ -480,6 +492,10 @@ tasks:
         CONNECTOR_CONSUMER_PARTICIPANT_DID=did:web:third-party.dataspaces.localhost \
         CONNECTOR_PROVENANCE_URL=$CONNECTOR_PROVENANCE_URL_CONSUMER \
         CONNECTOR_DATABASE_URL=$CONNECTOR_DATABASE_URL_CONSUMER \
+        EDC_MANAGEMENT_URL=$EDC_MANAGEMENT_URL_CONSUMER \
+        CONNECTOR_CLIENT_ID=$CONNECTOR_CLIENT_ID_CONSUMER \
+        CONNECTOR_CLIENT_SECRET=$CONNECTOR_CLIENT_SECRET_CONSUMER \
+        CONNECTOR_EDC_CALLBACK_URL=http://172.17.0.1:31001/webhooks/edc-callback \
         uv run python -m debugpy --listen 0.0.0.0:31901 --wait-for-client \
           -m uvicorn connector.main:app --reload --host 0.0.0.0 --port 31001
 
@@ -1014,11 +1030,33 @@ tasks:
       - |
         set +e
         # The management API is the readiness signal, not /health: it answers
-        # (401 without a key) only once the control plane is actually serving.
+        # (401 without a token) only once the control plane is actually serving.
         # A flow that starts on a half-booted EDC gets a 502 from
         # /consumer/catalog and reads as a product failure.
-        probe() { curl -so /dev/null -w '%{http_code}' -m 3 -X POST "$1" \
-          -H 'Content-Type: application/json' -d '{}' 2>/dev/null; }
+        # **The management port is not published in `docker:*`** (plan
+        # `the-management-api-is-v3-behind-one-key`, decision 1), so the probe
+        # runs where the API is: against the host JVM when `dev:*` runs one on
+        # the port, otherwise inside the container. The path is v5 — v3 is not
+        # packaged and answers 404 — and an unauthenticated POST answers **401**
+        # from a management context that is serving.
+        edc_container() {
+          case "$1" in
+            19193) echo dataspaces-edc-rec-1 ;;
+            29193) echo dataspaces-edc-third-party-1 ;;
+            39193) echo dataspaces-edc-grid-operator-1 ;;
+          esac
+        }
+        edc_probe() {
+          url="http://%s:$1/management/${EDC_MANAGEMENT_API_VERSION:-v5beta}/participants/readiness-probe/assets/request"
+          if lsof -nP -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | xargs -r ps -o comm= -p 2>/dev/null | grep -qx java; then
+            curl -so /dev/null -w '%{http_code}' -m 3 -X POST "$(printf "$url" 172.17.0.1)" \
+              -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true
+          else
+            docker exec "$(edc_container "$1")" curl -so /dev/null -w '%{http_code}' -m 3 -X POST \
+              "$(printf "$url" localhost)" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true
+          fi
+        }
+        probe() { c=$(edc_probe "$1"); echo "${c:-000}"; }
         # **Routed, not merely listening.** This tested `!= 000` — connection
         # refused — which is a weaker claim than the comment above makes, and it
         # let through the state that actually cost a flow: an EDC whose port was
@@ -1035,7 +1073,9 @@ tasks:
         # that means ready, deliberately, because a gate that waits for one exact
         # success code turns any new-but-healthy answer into a four-minute hang
         # and then a false failure.
-        ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
+        # 404 joins them: the v5 routes are registered by extensions, and a
+        # context answering before they are is not serving this API either.
+        ready() { [ "$1" != "000" ] && [ "$1" != "404" ] && [ "$1" != "405" ]; }
         # **All three, not two.** The grid-operator EDC (39193) is the second
         # provider (`DID-15`) and was never in this gate, though `semantic-model`,
         # `two-providers` and the `chain-*` flows all read its published assets.
@@ -1044,9 +1084,9 @@ tasks:
         # assets" — rather than as a connector that was not up yet. Added after
         # exactly that, 2026-09-02; see trap 4 in `playbooks/testing.md`.
         for i in $(seq 1 120); do
-          p=$(probe http://172.17.0.1:19193/management/v3/assets/request)
-          c=$(probe http://172.17.0.1:29193/management/v3/assets/request)
-          g=$(probe http://172.17.0.1:39193/management/v3/assets/request)
+          p=$(probe 19193)
+          c=$(probe 29193)
+          g=$(probe 39193)
           ready "$p" && ready "$c" && ready "$g" && break
           sleep 2
         done
@@ -1219,9 +1259,31 @@ tasks:
         # publishes it — there is nothing to compare and the streak stands alone,
         # which is what it was before. The identity check is exactly the extra
         # claim the source-run topology needs and the container one cannot make.
-        probe() { curl -s -o /dev/null -w '%{http_code}' --max-time 2 \
-          "http://172.17.0.1:$1/management/v3/assets/request" -X POST 2>/dev/null; }
-        ready() { [ "$1" != "000" ] && [ "$1" != "405" ]; }
+        # **The management port is not published in `docker:*`** (plan
+        # `the-management-api-is-v3-behind-one-key`, decision 1), so the probe
+        # runs where the API is: against the host JVM when `dev:*` runs one on
+        # the port, otherwise inside the container. The path is v5 — v3 is not
+        # packaged and answers 404 — and an unauthenticated POST answers **401**
+        # from a management context that is serving.
+        edc_container() {
+          case "$1" in
+            19193) echo dataspaces-edc-rec-1 ;;
+            29193) echo dataspaces-edc-third-party-1 ;;
+            39193) echo dataspaces-edc-grid-operator-1 ;;
+          esac
+        }
+        edc_probe() {
+          url="http://%s:$1/management/${EDC_MANAGEMENT_API_VERSION:-v5beta}/participants/readiness-probe/assets/request"
+          if lsof -nP -t -iTCP:"$1" -sTCP:LISTEN 2>/dev/null | xargs -r ps -o comm= -p 2>/dev/null | grep -qx java; then
+            curl -so /dev/null -w '%{http_code}' -m 3 -X POST "$(printf "$url" 172.17.0.1)" \
+              -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true
+          else
+            docker exec "$(edc_container "$1")" curl -so /dev/null -w '%{http_code}' -m 3 -X POST \
+              "$(printf "$url" localhost)" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || true
+          fi
+        }
+        probe() { c=$(edc_probe "$1"); echo "${c:-000}"; }
+        ready() { [ "$1" != "000" ] && [ "$1" != "404" ] && [ "$1" != "405" ]; }
         for port in 19193 29193 39193; do
           eval "old_pid=\$OLD_${port}"
           echo -n "Waiting for EDC management API on :${port}... "
@@ -1399,6 +1461,11 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow onboarding-seam
 
+  e2e:organisation-token:
+    desc: "E2E: an organisation's own client token drives the exchange, and is refused where it is not its own"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow organisation-token
+
   e2e:catalog:
     desc: "E2E: federated catalogue crawl freshness, discovery and search"
     cmds:
@@ -1473,10 +1540,12 @@ tasks:
         # Replace each remaining CHANGE_ME with a distinct generated secret.
         # Non-secret CHANGE_ME placeholders (hostnames, DIDs) are left alone —
         # they need human input, and the guard will name them at startup.
-        SECRET_VARS="EDC_API_KEY IDENTITY_REGISTRY_ENCRYPTION_KEY \
+        SECRET_VARS="IDENTITY_REGISTRY_ENCRYPTION_KEY EDC_CALLBACK_KEY \
           KEYCLOAK_ADMIN_PASSWORD POSTGRES_PASSWORD \
           SVC_DS_IDENTITY_REGISTRY_SECRET SVC_DS_ONBOARDING_SECRET \
           SVC_DS_PORTAL_SECRET SVC_DS_CONNECTOR_SECRET \
+          SVC_DS_CONNECTOR_EXAMPLE_ORG_SECRET SVC_DS_CONNECTOR_CONSUMER_ORG_SECRET \
+          SVC_DS_CONNECTOR_GRID_OPERATOR_SECRET \
           SVC_DS_FEDERATED_CATALOG_SECRET SVC_DS_DATASET_API_SECRET \
           SVC_DS_PROVENANCE_SECRET \
           SVC_DS_E2E_SECRET SVC_REC_REGISTRY_SECRET \

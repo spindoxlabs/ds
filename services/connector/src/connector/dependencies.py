@@ -13,7 +13,7 @@ from ds_auth import Principal
 from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
 from ds_auth.user_credentials import verify_user_vc_jwt
-from fastapi import Header, Request
+from fastapi import Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
@@ -288,7 +288,10 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
     subject-pool keyed by a data subject's DID, and an operator legitimately has no
     DID at all. The two membership systems stay separate, as documented.
 
-    Four exemptions, each deliberate:
+    Four exemptions, each deliberate — and none of them reaches an
+    **organisation token** (the organisation's own client), which is bound to
+    this participant and to the objects its own organisation owns
+    (:func:`_organisation_owns_target`):
 
     * ``connector.admin`` — the *deployment operator's* grant, not a participant's.
       It crosses owners by design; that is what distinguishes it from
@@ -306,6 +309,10 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
       thing being prevented. Deployments that *do* model owners can set the flag
       and get the tighter posture.
     """
+    if principal.is_organisation:
+        # **No blanket pass** (plan decision 2). An organisation's own client is
+        # a service token, and it used to ride the service exemption below.
+        return await _organisation_owns_target(principal, request)
     if principal.grants("connector.admin"):
         return True
     if principal.is_service:
@@ -367,6 +374,39 @@ async def _own_owner_only(principal: Principal, request: Request) -> bool:
         if principal.grants_in(alias, "connector.provider.write"):
             return True
     return False
+
+
+async def _organisation_owns_target(principal: Principal, request: Request) -> bool:
+    """An organisation token writes only what belongs to its own participant.
+
+    Bound twice: the token's participant context must be this connector's, and
+    an owned target's owner must be that same organisation (its DID in the owners
+    registry). An unowned target belongs to the participant as a whole, which is
+    exactly what the organisation is. An owner that cannot be determined, or
+    resolved, is a refusal — the same fail-closed rule as every other caller
+    (`ENV-09`).
+    """
+    context = principal.organisation_context
+    if context != get_settings().participant_context_id:
+        return False
+    try:
+        owner = await _target_owner(request)
+    except OwnerUnknown as exc:
+        raise PermissionDenied(
+            f"cannot determine which organisation owns this object ({exc})"
+        ) from exc
+    if not owner:
+        return True
+    registry = getattr(request.app.state, "owners_registry", None)
+    if registry is None:
+        return False
+    try:
+        entry = await registry.by_id(
+            _owner_aliases(get_settings().owner_aliases).get(owner, owner)
+        )
+    except Exception:  # noqa: BLE001 — no answer is not a yes
+        return False
+    return entry is not None and entry.did == context
 
 
 # Owner-scoped variant. Used where the target carries an owner; the unscoped
@@ -450,6 +490,130 @@ require_disclosure_record = require_permission(
 require_consumer_read = require_permission("connector.consumer.read", "connector.admin")
 
 
+# ── The consumer side: a person, or the organisation acting as itself ───────
+#
+# Plan `the-management-api-is-v3-behind-one-key`, decisions 1-2 (2026-09-17):
+# an organisation's own client may drive `/consumer/*` — its batch jobs — but
+# it is **bound to this connector's participant** (its `sub` must be this
+# participant context) and it holds **EDC's scope for the call ds makes on its
+# behalf** (`management-api:negotiations:write` to negotiate, …). ds invents no
+# permission of its own for it. A person keeps the ConsumerUser VC-JWT path.
+#
+# The org token gets no exemption anywhere a person's data is at stake: it never
+# reaches `/consent/my/*` (a VC-only surface, rulebook `D-20`), and it carries no
+# blanket service pass through `_own_owner_only`.
+
+EDC_CATALOG_READ = "management-api:catalog:read"
+EDC_NEGOTIATIONS_READ = "management-api:negotiations:read"
+EDC_NEGOTIATIONS_WRITE = "management-api:negotiations:write"
+EDC_TRANSFERS_READ = "management-api:transfers:read"
+EDC_TRANSFERS_WRITE = "management-api:transfers:write"
+
+
+@dataclass(frozen=True)
+class ConsumerCaller:
+    """Who is acting on the consumer side, having proved it.
+
+    ``subject_id`` is a natural person's DID (the VC-JWT path) or ``None``.
+    ``actor`` is the ledger key: the person's DID, or ``org:<participant>`` for
+    the organisation — never a caller-supplied value.
+    """
+
+    subject_id: str | None
+    actor: str
+    principal: Principal | None = None
+
+    @property
+    def is_organisation(self) -> bool:
+        return self.principal is not None and self.principal.is_organisation
+
+    @property
+    def acted_by(self) -> dict | None:
+        """The provenance `acted_by` block for an organisation's act.
+
+        DSSC-XCT-09 as decided 2026-09-17: the act is attributable — the client
+        that acted, acting on behalf of the organisation that is accountable for
+        it (a legal person). A person's act is attributed through `user_did`.
+        """
+        if not self.is_organisation:
+            return None
+        from .services.prov_bridge import acting_principal
+
+        assert self.principal is not None
+        return acting_principal(
+            self.principal, on_behalf_of=self.principal.organisation_context
+        )
+
+
+def _bind_organisation(principal: Principal, *edc_scopes: str) -> None:
+    """Refuse an organisation token that is not this participant's, or lacks a scope."""
+    settings = get_settings()
+    if not principal.is_organisation:
+        raise HTTPException(
+            403,
+            "this route takes a ConsumerUser credential, or the token of this "
+            "participant's organisation client",
+        )
+    if principal.organisation_context != settings.participant_context_id:
+        # Bound to its own participant: a token naming another context is another
+        # organisation's, whatever it holds.
+        raise HTTPException(
+            403, "an organisation token may act only for its own participant"
+        )
+    missing = [s for s in edc_scopes if not principal.grants_management_scope(s)]
+    if missing:
+        raise HTTPException(403, f"Missing required scope: {' and '.join(missing)}")
+
+
+def _verify_consumer_vc(x_user_vc: str | None, x_subject_id: str | None) -> str:
+    settings = get_settings()
+    verify_user_vc_jwt(
+        x_user_vc,
+        x_subject_id,
+        settings.trust_anchor_did,
+        {"ConsumerUser"},
+        trust_list_url=settings.trust_list_url,
+        did_web_use_https=settings.did_web_use_https,
+        expected_linked_participant=settings.consumer_participant_did,
+        credential_status_path=settings.credential_status_path,
+        credential_status_url=settings.credential_status_url,
+        insecure_dev=settings.vc_insecure_dev,
+    )
+    # Unreachable when `x_subject_id` is None — the call above raises 401.
+    assert x_subject_id is not None
+    return x_subject_id
+
+
+def require_consumer_caller(*edc_scopes: str):
+    """A person (ConsumerUser VC-JWT) or this participant's organisation token.
+
+    ``edc_scopes`` are what the organisation token must hold — EDC's scopes for
+    the management calls the route makes for it. A person is not asked for
+    them: their authority is the credential, as it always was.
+
+    A presented VC takes precedence, so a person whose client also sends a
+    bearer token is recorded as that person. Neither credential is a 401.
+    """
+
+    async def _dependency(
+        request: Request,
+        x_subject_id: str | None = Header(default=None),
+        x_user_vc: str | None = Header(default=None),
+    ) -> ConsumerCaller:
+        if x_user_vc or x_subject_id:
+            subject = _verify_consumer_vc(x_user_vc, x_subject_id)
+            return ConsumerCaller(subject_id=subject, actor=subject)
+        from ds_auth.fastapi import authenticate
+
+        principal = await authenticate(request, get_oidc_config_for(request))
+        _bind_organisation(principal, *edc_scopes)
+        return ConsumerCaller(
+            subject_id=None, actor=principal.actor, principal=principal
+        )
+
+    return _dependency
+
+
 @dataclass(frozen=True)
 class CatalogCaller:
     """Who asked for a counterparty's catalogue, having proved it.
@@ -463,6 +627,7 @@ class CatalogCaller:
     subject_id: str | None
     actor: str
     is_service: bool
+    principal: Principal | None = None
 
 
 async def require_consumer_catalog_caller(
@@ -514,6 +679,19 @@ async def require_consumer_catalog_caller(
             is_service=False,
         )
 
+    from ds_auth.fastapi import authenticate
+
+    principal = await authenticate(request, get_oidc_config_for(request))
+    if principal.is_organisation:
+        # The organisation fetching a counterparty's catalogue for itself: bound
+        # to this participant, and holding EDC's catalogue scope.
+        _bind_organisation(principal, EDC_CATALOG_READ)
+        return CatalogCaller(
+            subject_id=None,
+            actor=principal.actor,
+            is_service=True,
+            principal=principal,
+        )
     principal = await require_consumer_read(request, get_oidc_config_for(request))
     return CatalogCaller(subject_id=None, actor=principal.subject, is_service=True)
 
@@ -545,6 +723,7 @@ def get_oidc_config_for(request: Request):
 # Both callers now present their own Keycloak client credentials —
 # `svc-edc` and `svc-ds-dataset-api`, each holding `connector.internal`. The
 # fallback is removed rather than merely deprecated so it cannot silently
-# persist; `EDC_API_KEY` survives only as EDC's Management API key.
+# persist. (`EDC_API_KEY` itself is gone too: the Management API takes the
+# organisation client's OAuth2 token.)
 require_internal_scope = require_internal
 require_webhook_scope = require_webhook

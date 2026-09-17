@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-15 from `c2586a9-dirty`.
+Generated 2026-09-17 from `45ab9d6-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -13,14 +13,14 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | Blueprint requirement rows | 1623 |
 | …of which binding (`must` + `should`) | 783 |
 | …carrying a disposition | 252 |
-| …answered by a **named rule** | 37 |
-| …answered **at page level only** | 121 |
+| …answered by a **named rule** | 38 |
+| …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
 | Rulebook rules | 157 |
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 126 |
 | …of those, **evidenced by a test that names them** | 126 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 868 |
+| Test nodes declaring a rule | 885 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -51,7 +51,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-13` | Not enforced | · consistent | — | — |
 | `C-14` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_valid_file_passes_cleanly`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_dataset_missing_a_mandatory_dcat_property_fails`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_complete_dataset_raises_no_dcat_ap_error` |
 | `C-15` | Enforced | ✅ evidenced | e2e×1, unit×3 | `user-authority`, `services/connector/tests/test_provider_api.py::test_provider_read_alone_can_list_agreements`, `services/connector/tests/test_provider_api.py::test_an_anonymous_caller_is_refused` +1 more |
-| `C-16` | Enforced | ✅ evidenced | e2e×2, unit×11 | `uc2`, `user-authority`, `services/connector/tests/test_provider_api.py::test_another_participants_agreements_are_not_listed` +10 more |
+| `C-16` | Enforced | ✅ evidenced | e2e×2, unit×12 | `uc2`, `user-authority`, `services/connector/tests/test_provider_api.py::test_another_participants_agreements_are_not_listed` +11 more |
 | `C-17` | Enforced | ✅ evidenced | e2e×2, unit×12 | `api-contract`, `authz-perimeter`, `services/connector/tests/test_auth.py::test_internal_without_token_returns_401` +11 more |
 | `C-18` | Enforced | ✅ evidenced | e2e×1 | `catalog-discovery` |
 | `C-19` | Enforced | ✅ evidenced | e2e×1, unit×13 | `catalog-discovery`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_without_any_credential_is_refused`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_refuses_a_service_token_without_the_scope` +11 more |
@@ -150,7 +150,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-3a` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_consent_gate.py::test_the_mapper_spelling_is_the_same_object_not_a_second_copy`, `libs/governance/tests/tests/test_consent_gate.py::test_each_signal_alone_gates_and_names_itself`, `libs/governance/tests/tests/test_consent_gate.py::test_every_signal_is_collected_not_short_circuited` +1 more |
 | `D-3b` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +1 more |
 | `D-4` | Enforced | ✅ evidenced | unit×2 | `services/connector/tests/test_consent_vocabulary.py::TestSharingOffersEndpoint::test_contract_based_offer_is_flagged_as_disclosure`, `services/connector/tests/test_consent_vocabulary.py::TestOfferDrivenShares::test_contract_based_offer_cannot_be_toggled` |
-| `D-5` | Enforced | ✅ evidenced | e2e×3, unit×4 | `chain-partner`, `chain-unbundling`, `uc1` +4 more |
+| `D-5` | Enforced | ✅ evidenced | e2e×3, unit×6 | `chain-partner`, `chain-unbundling`, `uc1` +6 more |
 | `D-6` | Declared | · consistent | — | — |
 | `D-7` | Enforced | ✅ evidenced | unit×10 | `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_empty_purpose_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_absent_purpose_block_is_an_error`, `services/connector/tests/test_consent_ask_projection.py::test_open_dataset_is_never_a_question` +7 more |
 | `D-8` | Enforced | ✅ evidenced | e2e×1, unit×8 | `consent-purpose`, `services/connector/tests/test_access_request_declaration.py::test_declared_purpose_within_the_offer_is_accepted`, `services/connector/tests/test_access_request_declaration.py::test_narrower_purpose_than_the_offer_names_is_accepted` +6 more |
@@ -160,7 +160,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-11a` | Enforced | ✅ evidenced | e2e×1, unit×5 | `chain-unbundling`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_with_no_declared_vocabulary_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_outside_the_declared_vocabulary_is_an_error` +3 more |
 | `D-12` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_consent_provisioning.py::test_legal_basis_surfaces_in_internal_check`, `services/connector/tests/test_consent_provisioning.py::test_subject_offer_share_records_legal_basis` +5 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
-| `D-14` | Enforced | ✅ evidenced | e2e×4, unit×32 | `chain-community`, `chain-partner`, `uc1` +33 more |
+| `D-14` | Enforced | ✅ evidenced | e2e×5, unit×34 | `chain-community`, `chain-partner`, `onboarding-seam` +36 more |
 | `D-15` | Enforced | ✅ evidenced | e2e×1, unit×18 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +16 more |
 | `D-15a` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_consent_provisioning.py::test_decided_at_is_the_authorising_row_not_the_latest_one`, `services/connector/tests/test_consent_provisioning.py::test_a_dataset_wide_withdrawal_denies_every_offer`, `services/connector/tests/test_consent_provisioning.py::test_a_blanket_withdrawal_closes_an_earlier_per_party_grant` +5 more |
 | `D-15b` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consent_provisioning.py::test_audience_omits_a_subject_who_opted_out_of_this_consumer` |
@@ -169,7 +169,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-17` | Enforced | ✅ evidenced | e2e×1 | `consent-withdrawal` |
 | `D-18` | Enforced | ✅ evidenced | e2e×1, unit×11 | `consent-request`, `services/connector/tests/test_consent_ask_projection.py::test_consent_gated_dataset_asks_when_capacity_is_unprovable`, `services/connector/tests/test_consent_ask_projection.py::test_pending_ask_is_reported_so_a_retry_reattaches` +9 more |
 | `D-19` | Enforced | ✅ evidenced | e2e×1, unit×5 | `consent-request`, `services/connector/tests/test_authorizations.py::test_authorizations_empty`, `services/connector/tests/test_authorizations.py::test_authorizations_returns_granted` +3 more |
-| `D-20` | Enforced | ✅ evidenced | e2e×1, unit×11 | `authz-perimeter`, `services/connector/tests/test_auth.py::test_consent_check_requires_scope`, `services/connector/tests/test_consent_provisioning.py::test_admin_shares_requires_provision_scope` +9 more |
+| `D-20` | Enforced | ✅ evidenced | e2e×2, unit×18 | `authz-perimeter`, `organisation-token`, `libs/ds-e2e/tests/test_organisation_token.py::test_it_declares_the_rule_it_evidences` +17 more |
 | `D-21` | Enforced | ✅ evidenced | e2e×1, unit×11 | `uc1`, `services/connector/tests/test_circle_admission.py::test_it_asks_the_narrow_check_not_the_roster`, `services/connector/tests/test_circle_admission.py::test_the_credential_type_reaches_the_registry` +9 more |
 | `D-22` | Enforced | ✅ evidenced | unit×3 | `services/identity-registry/tests/test_did.py::test_user_did_document_no_auth`, `services/identity-registry/tests/test_did.py::test_the_did_path_route_does_not_shadow_dids`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |
 | `D-22a` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_custody.py::test_the_credential_records_who_attested_the_person`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |
@@ -210,7 +210,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `L-2` | Enforced | ✅ evidenced | e2e×1, unit×18 | `onboarding-seam`, `services/connector/tests/test_consent_provisioning.py::test_declining_one_offer_does_not_erase_a_grant_on_another`, `services/connector/tests/test_provenance_events.py::test_disclosure_computes_the_snapshot_the_caller_cannot` +16 more |
 | `L-3` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously`, `services/connector/tests/test_acting_principal.py::test_no_personal_data_reaches_the_record`, `services/provenance/tests/test_event_agents.py::test_the_subject_edge_is_distinguishable_from_the_two_parties` +1 more |
 | `L-4` | Enforced | ✅ evidenced | e2e×1, unit×9 | `onboarding-seam`, `services/connector/tests/test_provenance_events.py::test_disclosure_by_offer_keys_each_event_distinctly`, `services/provenance/tests/test_event_idempotency.py::test_an_event_without_an_id_is_stored_once` +7 more |
-| `L-5` | Enforced | ✅ evidenced | e2e×1, unit×10 | `lineage`, `services/provenance/tests/test_event_agents.py::test_access_revoked_names_the_subject_as_an_agent`, `services/provenance/tests/test_event_agents.py::test_the_subject_edge_is_distinguishable_from_the_two_parties` +8 more |
+| `L-5` | Enforced | ✅ evidenced | e2e×2, unit×12 | `lineage`, `organisation-token`, `services/provenance/tests/test_event_agents.py::test_access_revoked_names_the_subject_as_an_agent` +11 more |
 | `L-6` | Declared | · consistent | — | — |
 | `L-7` | Enforced | ✅ evidenced | unit×4 | `services/provenance/tests/test_relation_vocabulary.py::test_every_written_relation_is_accepted_by_the_relations_route`, `services/provenance/tests/test_relation_vocabulary.py::test_every_written_relation_is_defined_in_the_context`, `services/provenance/tests/test_relation_vocabulary.py::test_every_accepted_relation_is_defined_in_the_context` +1 more |
 | `L-8` | Enforced | ✅ evidenced | unit×5 | `services/provenance/tests/test_jsonld_service.py::test_endpoints_are_keyed_by_the_nodes_own_type`, `services/provenance/tests/test_jsonld_service.py::test_an_agent_endpoint_is_an_agent_not_an_activity`, `services/provenance/tests/test_jsonld_service.py::test_a_same_type_edge_keeps_both_ends_and_stays_directional` +2 more |
@@ -298,10 +298,11 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-TRF-38` | must | `P-14` | rule text | yes |
 | `DSSC-TRF-41` | must | `P-6`, `P-7`, `P-8`, `P-21` | manifest | yes |
 | `DSSC-XCT-07` | must | `D-6` | manifest | n/a — declared |
+| `DSSC-XCT-09` | must | `D-20` | manifest | yes |
 
 ### Rows answered only at page level
 
-125 rows. A rulebook page addresses the topic and nobody has said which rule answers the row, so no evidence attaches and none of these can read as done. This is the granularity the rulebook's own *Blueprint rows* sections have; sharpening one to a named rule is the work.
+124 rows. A rulebook page addresses the topic and nobody has said which rule answers the row, so no evidence attaches and none of these can read as done. This is the granularity the rulebook's own *Blueprint rows* sections have; sharpening one to a named rule is the work.
 
 | Requirement | Force | Page | Requirement text |
 |---|---|---|---|
@@ -427,7 +428,6 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-XCT-05` | must | [personal-data](personal-data.md) | B2B data sharing that includes personal data requires that purpose limitation is applied. |
 | `DSSC-XCT-06` | must | [personal-data](personal-data.md) | Where consent is the legal basis, the data space needs to accommodate a cross-organisatio… |
 | `DSSC-XCT-08` | must | [personal-data](personal-data.md) | Sharing personal data on legitimate grounds other than consent requires appropriate data… |
-| `DSSC-XCT-09` | must | [personal-data](personal-data.md) | In scenarios where personal data is shared, the identity management capability must be ab… |
 | `DSSC-XCT-17` | must | [personal-data](personal-data.md) | Designing intermediary roles for the data space must acknowledge that certain types of in… |
 | `DSSC-XCT-26` | must | [personal-data](personal-data.md) | C2I2B sharing of personal data: the intermediary must have means to manage consent or oth… |
 

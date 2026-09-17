@@ -218,6 +218,7 @@ async def _materialise_acting_principal(
         external_meta={
             "issuer": principal.issuer,
             "isService": principal.is_service,
+            "clientId": principal.client_id,
         },
     )
     await session.flush()
@@ -229,11 +230,15 @@ async def _materialise_acting_principal(
         role="service" if principal.is_service else "actor",
     )
     if principal.on_behalf_of:
+        # An organisation acting as itself acts on behalf of its own
+        # participant, named by its DID — the same node every other event names
+        # the participant with. An owner id keeps its `urn:ds:owner:` node.
+        behalf = principal.on_behalf_of
         owner = await upsert_node(
             session,
-            f"urn:ds:owner:{principal.on_behalf_of}",
+            behalf if behalf.startswith("did:") else f"urn:ds:owner:{behalf}",
             "Agent",
-            label=principal.on_behalf_of,
+            label=behalf,
         )
         await session.flush()
         await _edge(session, "actedOnBehalfOf", actor.id, owner.id)
@@ -327,12 +332,15 @@ async def _materialise_access_requested(
     consumer = await upsert_node(
         session, event.consumer_did, "Agent", label=event.consumer_did
     )
-    user = await upsert_node(session, event.user_did, "Agent", label=event.user_did)
     await session.flush()
     await _edge(session, "used", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
-    await _edge(session, "wasAssociatedWith", activity.id, user.id)
+    if event.user_did:
+        user = await upsert_node(session, event.user_did, "Agent", label=event.user_did)
+        await session.flush()
+        await _edge(session, "wasAssociatedWith", activity.id, user.id)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 
@@ -367,6 +375,7 @@ async def _materialise_negotiation_started(
         user = await upsert_node(session, event.user_did, "Agent", label=event.user_did)
         await session.flush()
         await _edge(session, "wasAssociatedWith", activity.id, user.id)
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 
@@ -543,6 +552,7 @@ async def _materialise_transfer_started(
         user = await upsert_node(session, event.user_did, "Agent", label=event.user_did)
         await session.flush()
         await _edge(session, "wasAssociatedWith", transfer.id, user.id)
+    await _materialise_acting_principal(session, transfer, event.acted_by)
     return transfer
 
 
@@ -607,16 +617,21 @@ async def _materialise_access_revoked(
     # principal it never became an agent (rulebook `L-5`) — so the graph recorded
     # a revocation with no answer to "whose". `prov:role` distinguishes them from
     # the two parties that *performed* it.
-    subject = await upsert_node(
-        session, event.subject_id, "Agent", label=event.subject_id
-    )
     await session.flush()
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _edge(session, "wasAssociatedWith", activity.id, consumer.id)
-    await _edge(
-        session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject"
-    )
+    if event.subject_id:
+        subject = await upsert_node(
+            session, event.subject_id, "Agent", label=event.subject_id
+        )
+        await session.flush()
+        await _edge(
+            session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject"
+        )
+    # An organisation revoking its own access names no subject; its client and
+    # the organisation it acted for are the agents instead.
+    await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 
 

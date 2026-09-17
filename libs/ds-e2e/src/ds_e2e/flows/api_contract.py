@@ -89,7 +89,11 @@ LEAK_MARKERS = (
 # Named once, because the same mechanism covers a whole router and repeating the
 # sentence per route is how two entries come to disagree about one guard.
 SUBJECT_VC = "DataSubject VC-JWT"
-CONSUMER_AUTH = "ConsumerUser VC-JWT or connector.consumer.read"
+CONSUMER_AUTH = (
+    "ConsumerUser VC-JWT, or this participant's organisation token holding the "
+    "EDC scope of the call"
+)
+CATALOG_AUTH = f"{CONSUMER_AUTH}, or connector.consumer.read"
 DID_WEB = "did:web resolution — an unknown verifier must resolve it"
 
 # What a probe puts where a real caller would put an identifier. It has to be
@@ -177,12 +181,14 @@ SELF_AUTHENTICATED_ROUTES: dict[tuple[str, str, str], str] = {
     ("connector", "POST", "/consent/my/{consent_id}/revoke"): SUBJECT_VC,
     ("connector", "GET", "/consent/status"): SUBJECT_VC,
     ("provenance", "GET", "/prov/my/events"): f"{SUBJECT_VC}; asserted by `lineage`",
-    # `require_consumer_catalog_caller` and its siblings take **either** a
-    # ConsumerUser VC-JWT or `connector.consumer.read`, and decide inside the
-    # handler rather than in a dependency — so the app publishes no requirement
-    # and the wrong-scope battery cannot reach them. Asserted positively by
-    # `smoke`, `uc1` and `two-providers`.
-    ("connector", "POST", "/consumer/catalog"): CONSUMER_AUTH,
+    # `require_consumer_caller` and `require_consumer_catalog_caller` take
+    # **either** a ConsumerUser VC-JWT or the participant's organisation token
+    # (bound to its own participant context, holding EDC's scope for the call;
+    # the catalogue also takes `connector.consumer.read`), and decide inside the
+    # dependency rather than through `require_permission` — so the app publishes
+    # no requirement and the wrong-scope battery cannot reach them. Asserted
+    # positively by `smoke`, `uc1`, `two-providers` and `organisation-token`.
+    ("connector", "POST", "/consumer/catalog"): CATALOG_AUTH,
     ("connector", "POST", "/consumer/negotiate"): CONSUMER_AUTH,
     ("connector", "POST", "/consumer/transfer"): CONSUMER_AUTH,
     ("connector", "POST", "/consumer/flow"): CONSUMER_AUTH,
@@ -207,6 +213,13 @@ SELF_AUTHENTICATED_ROUTES: dict[tuple[str, str, str], str] = {
     ),
     ("identity-registry", "GET", "/issuer/requests/{issuer_pid}"): (
         "DCP: request status, self-issued token"
+    ),
+    # EDC delivering a started transfer's EDR. EDC can set one static header on
+    # a callback, from its own vault, so the credential is that value — a realm
+    # token cannot reach it. Asserted positively by `smoke`, which cannot read
+    # an EDR the callback did not deliver.
+    ("connector", "POST", "/webhooks/edc-callback"): (
+        "the EDC callback key header, from the EDC's vault"
     ),
     # Invite-gated intake: anonymous by design, but an application without a
     # valid invite code is refused. Asserted by `org-onboarding`.

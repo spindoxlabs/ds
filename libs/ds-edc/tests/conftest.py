@@ -15,6 +15,9 @@ import pytest
 from ds_edc.client import EdcManagementClient
 
 BASE = "http://edc.test/management"
+CONTEXT_ID = "did:web:rec.example.org"
+#: The path every resource call is under, as EDC 0.18.0 serves it.
+ROOT = "/management/v5beta/participants/did%3Aweb%3Arec.example.org"
 
 
 class RecordingEdc:
@@ -41,16 +44,20 @@ def edc_client():
     """Build a client whose transport the test controls.
 
     The client owns its `AsyncClient`, so the transport is swapped in after
-    construction — which also keeps `__init__`'s header wiring under test in
-    `test_client_errors.py::test_api_key_becomes_the_edc_management_header`.
+    construction; the bearer auth is carried over, which keeps it under test in
+    `test_v5.py`.
     """
 
     def _build(handler: Callable[[httpx.Request], httpx.Response]):
         fake = RecordingEdc(handler)
-        client = EdcManagementClient(BASE, api_key="edc-key")
+
+        async def token() -> str:
+            return "org-token"
+
+        client = EdcManagementClient(BASE, CONTEXT_ID, token_source=token)
         client._http = httpx.AsyncClient(
             base_url=BASE,
-            headers=dict(client._http.headers),
+            auth=client._http.auth,
             transport=httpx.MockTransport(fake),
         )
         return client, fake

@@ -64,7 +64,6 @@ import time
 import urllib.parse
 from typing import Any
 
-from ds_e2e.cleanup import EDC_CONTEXT, edc_headers
 from ds_e2e.consent import legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.http import HttpError
@@ -91,64 +90,46 @@ class ConsentWithdrawalFlow(BaseFlow):
     )
     rules = ("A-12", "D-17", "P-18")
 
-    # ── EDC reads ────────────────────────────────────────────────────────────
-
-    def _provider_transfers(self) -> list[dict[str, Any]]:
-        """Every transfer process the **provider** EDC holds.
-
-        The provider's, not the consumer's: the policy monitor runs on the side
-        that owns the agreement, so that is where a termination originates.
-        Reading the consumer's view instead would assert on DSP propagation too,
-        and a flow that fails should name one thing.
-
-        `EDC_CONTEXT` and `edc_headers` come from `cleanup`, which already had
-        the request shape right. Writing a second one here got it **wrong** —
-        the body omitted `"@type": "QuerySpec"`, EDC answered `InvalidRequest`,
-        and the `isinstance(body, list)` guard below turned that into *no
-        transfers* rather than an error. The flow then reported that the provider
-        was not watching a transfer it was watching perfectly well.
-        """
-        status, body = self.http.post_raw(
-            f"{self.settings.edc_provider_management_url}/v3/transferprocesses/request",
-            EDC_CONTEXT,
-            headers=edc_headers(self.settings),
-        )
-        if status != 200:
-            log.warning(
-                "provider EDC management refused the transfer query: HTTP %s %s",
-                status,
-                body,
-            )
-            return []
-        if not isinstance(body, list):
-            # **Loud.** This is the shape the missing `@type` produced, and
-            # returning `[]` for it is indistinguishable from a provider with no
-            # transfers — which is a state this flow reads as *stopped*.
-            log.warning("provider EDC answered a non-list transfer query: %s", body)
-            return []
-        return body
+    # ── The provider's view of the transfer ──────────────────────────────────
 
     @staticmethod
     def _state_of(transfer: dict[str, Any]) -> str:
-        # EDC's JSON-LD comes back compacted or prefixed depending on the
-        # context it was asked with; `cleanup.py` reads both and so does this.
-        return str(transfer.get("state") or transfer.get("edc:state") or "")
+        return str(transfer.get("state") or "")
 
     def _provider_transfer_for(self, transfer_id: str) -> dict[str, Any] | None:
         """The provider-side transfer for the consumer transfer we started.
 
-        Joined on **`correlationId`**, which is the consumer's transfer-process
-        id — measured, after matching on the agreement found nothing. The two
-        sides mint different ids for *both* the agreement and the transfer, and
-        `correlationId` is the only field either side carries that names the
-        other's. Matching on `contractId` compares the provider's local agreement
-        id against the consumer's, which are different UUIDs for one agreement.
+        The provider's, not the consumer's: the policy monitor runs on the side
+        that owns the agreement, so that is where a termination originates.
+
+        Asked through the **provider connector** —
+        `GET /internal/transfers/{id}/status`, which looks the transfer up in its
+        own EDC by **`correlationId`** (the consumer's transfer-process id; the
+        two sides mint different ids for both the agreement and the transfer).
+        This flow used to query the provider EDC's management API directly with
+        the shared key; that port is no longer published and there is no key.
+        ``None`` when the provider holds no such transfer.
         """
-        for tp in self._provider_transfers():
-            correlation = tp.get("correlationId") or tp.get("edc:correlationId")
-            if correlation == transfer_id:
-                return tp
-        return None
+        status, body = self.http.raw(
+            "GET",
+            f"{self.settings.connector_url}/internal/transfers/"
+            f"{urllib.parse.quote(transfer_id, safe='')}/status",
+            headers=self.http.bearer_headers(),
+        )
+        if status != 200 or not isinstance(body, dict):
+            # **Loud.** An unreadable answer is not a provider with no transfer,
+            # which this flow reads as *stopped*.
+            log.warning(
+                "provider connector refused the transfer status: HTTP %s %s",
+                status,
+                body,
+            )
+            return None
+        if body.get("reason") == "edc_unreachable":
+            log.warning("provider connector could not reach its EDC: %s", body)
+            return None
+        state = body.get("edc_state")
+        return {"state": state} if state else None
 
     # ── Consent state ────────────────────────────────────────────────────────
 

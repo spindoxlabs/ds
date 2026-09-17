@@ -27,6 +27,14 @@ from ds_edc.schemas import (
 
 REFUSAL = "Asset with ID 'energy.meter_readings' already exists"
 
+#: An offer as a provider's catalogue returns it: compact DSP form.
+OFFER = {
+    "@id": "o",
+    "@type": "Offer",
+    "assigner": "did:web:x",
+    "permission": [{"action": "odrl:use"}],
+}
+
 
 def _calls(client: EdcManagementClient):
     """Every method that issues a request, with arguments that reach the wire."""
@@ -36,7 +44,9 @@ def _calls(client: EdcManagementClient):
         "get_asset": lambda: client.get_asset("a"),
         "list_assets": client.list_assets,
         "delete_asset": lambda: client.delete_asset("a"),
-        "create_policy": lambda: client.create_policy(PolicyCreate(id="p", policy={})),
+        "create_policy": lambda: client.create_policy(
+            PolicyCreate(id="p", policy={"@type": "odrl:Set"})
+        ),
         "list_policies": client.list_policies,
         "delete_policy": lambda: client.delete_policy("p"),
         "create_contract_definition": lambda: client.create_contract_definition(
@@ -55,6 +65,7 @@ def _calls(client: EdcManagementClient):
                 offer_id="o",
                 asset_id="a",
                 assigner="did:web:x",
+                odrl_policy=OFFER,
             )
         ),
         "get_negotiation": lambda: client.get_negotiation("n"),
@@ -71,7 +82,9 @@ def _calls(client: EdcManagementClient):
         "get_transfer": lambda: client.get_transfer("t"),
         "terminate_transfer": lambda: client.terminate_transfer("t", "why"),
         "list_transfers": client.list_transfers,
-        "get_edr": lambda: client.get_edr("t"),
+        "find_transfer_by_correlation": lambda: client.find_transfer_by_correlation(
+            "t"
+        ),
         "query_negotiations": client.query_negotiations,
         "query_transfers": client.query_transfers,
         "get_agreement": lambda: client.get_agreement("ag"),
@@ -96,11 +109,13 @@ def test_every_request_issuing_method_is_covered_by_this_file():
         for name, fn in inspect.getmembers(EdcManagementClient, inspect.isfunction)
         if not name.startswith("_")
     } - NOT_A_REQUEST
-    client = EdcManagementClient("http://x")
+    client = EdcManagementClient("http://x", "did:web:x")
     assert public == set(_calls(client))
 
 
-@pytest.mark.parametrize("name", list(_calls(EdcManagementClient("http://x"))))
+@pytest.mark.parametrize(
+    "name", list(_calls(EdcManagementClient("http://x", "did:web:x")))
+)
 async def test_a_refusal_reaches_the_caller_with_edc_s_own_words(edc_client, name):
     client, _ = edc_client(lambda _r: status_only(400, REFUSAL))
     with pytest.raises(httpx.HTTPStatusError) as exc:
@@ -144,6 +159,7 @@ async def test_start_negotiation_returns_the_id(edc_client):
                 offer_id="o",
                 asset_id="a",
                 assigner="did:web:x",
+                odrl_policy=OFFER,
             )
         )
         == "neg-1"
@@ -174,6 +190,7 @@ async def test_a_2xx_without_an_id_names_the_operation(edc_client, body, kind):
                 offer_id="o",
                 asset_id="a",
                 assigner="did:web:x",
+                odrl_policy=OFFER,
             )
         )
 
@@ -204,19 +221,9 @@ async def test_list_calls_send_a_json_ld_query_spec(edc_client, name):
     assert '"QuerySpec"' in body
 
 
-async def test_api_key_becomes_the_edc_management_header():
-    """EDC's own Management API key, and correct in this one place only.
-
-    Not the key that once fronted ds-connector's ``/internal/*``: that was the
-    same value spanning two trust boundaries, and it is now per-caller Keycloak
-    credentials. Do not reuse this one anywhere else.
-    """
-    client = EdcManagementClient("http://edc.test", api_key="edc-key")
-    assert client._http.headers["X-Api-Key"] == "edc-key"
-    await client.close()
-
-
-async def test_no_api_key_sends_no_header():
-    client = EdcManagementClient("http://edc.test")
+async def test_the_client_sends_no_api_key():
+    """The shared Management API key is gone: v5 authenticates a bearer token
+    per participant context, and a key beside it would be demanded as well."""
+    client = EdcManagementClient("http://edc.test", "did:web:x")
     assert "X-Api-Key" not in client._http.headers
     await client.close()

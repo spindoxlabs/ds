@@ -743,3 +743,90 @@ async def test_an_edc_outage_does_not_lock_out_the_operator_or_the_syncs(
     )
     assert r.status_code != 403
     assert edc.deleted == [ASSET]
+
+
+# ── An organisation token gets no blanket service pass (plan decision 2) ─────
+
+
+class _OwnersWithDids:
+    def __init__(self, dids: dict[str, str]):
+        self._dids = dids
+
+    async def by_id(self, alias: str):
+        did = self._dids.get(alias)
+        return type("Entry", (), {"id": alias, "did": did})() if did else None
+
+
+def _org_writer(context: str | None = None) -> dict:
+    """An organisation token that also holds the provider write scope — the
+    worst case: the scope check alone would let it through."""
+    from tests import make_org_headers
+
+    return make_org_headers(
+        context=context,
+        scopes=(
+            "connector.provider.write",
+            "connector.admin",
+            "management-api:assets:write",
+        ),
+    )
+
+
+@pytest.mark.rule("C-16")
+@pytest.mark.asyncio
+async def test_an_organisation_token_is_not_a_service_pass(client, owned_by):
+    """It is a service token, and it used to ride the service exemption: any
+    organisation client holding `connector.provider.write` wrote anybody's
+    asset. `connector.admin` in its scope does not change that."""
+    edc = owned_by("grid-operator")
+    client._transport.app.state.owners_registry = _OwnersWithDids(
+        {"grid-operator": "did:web:grid-operator.dataspaces.localhost"}
+    )
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_org_writer())
+    assert r.status_code == 403
+    assert edc.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_an_organisation_writes_what_its_organisation_owns(client, owned_by):
+    from connector.config import get_settings
+
+    edc = owned_by("example-org")
+    client._transport.app.state.owners_registry = _OwnersWithDids(
+        {"example-org": get_settings().participant_context_id}
+    )
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_org_writer())
+    assert r.status_code == 204
+    assert edc.deleted == [ASSET]
+
+
+@pytest.mark.asyncio
+async def test_an_organisation_writes_an_unowned_object(client, owned_by):
+    """Unowned belongs to the participant as a whole — which is what the
+    organisation is."""
+    edc = owned_by(None)
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_org_writer())
+    assert r.status_code == 204
+    assert edc.deleted == [ASSET]
+
+
+@pytest.mark.asyncio
+async def test_another_participant_s_organisation_writes_nothing(client, owned_by):
+    edc = owned_by(None)
+    r = await client.delete(
+        f"/provider/assets/{ASSET}",
+        headers=_org_writer(context="did:web:someone-else.example.org"),
+    )
+    assert r.status_code == 403
+    assert edc.deleted == []
+
+
+@pytest.mark.asyncio
+async def test_an_owner_the_registry_cannot_resolve_refuses_the_organisation(
+    client, owned_by
+):
+    edc = owned_by("example-org")
+    client._transport.app.state.owners_registry = None
+    r = await client.delete(f"/provider/assets/{ASSET}", headers=_org_writer())
+    assert r.status_code == 403
+    assert edc.deleted == []

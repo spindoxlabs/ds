@@ -1,6 +1,7 @@
 import base64
 import json
 import time
+from urllib.parse import quote
 
 import jwt as pyjwt
 
@@ -93,6 +94,63 @@ def make_user_headers(groups: list[str] | None = None) -> dict:
             sub="user-test",
             email="user@example.test",
             groups=list(groups or []),
+        ),
+        "secret",
+        algorithm="HS256",
+    )
+    return {"Authorization": f"Bearer {token}"}
+
+
+def edc_v5_root() -> str:
+    """This connector's own participant context path, as the client builds it."""
+    from connector.config import get_settings
+
+    settings = get_settings()
+    return (
+        f"{settings.edc_management_url.rstrip('/')}/"
+        f"{settings.edc_management_api_version}/participants/"
+        f"{quote(settings.participant_context_id, safe='')}"
+    )
+
+
+def attach_edc(app) -> None:
+    """Give a test app the EDC client the lifespan would build (no auth)."""
+    from ds_edc import EdcManagementClient
+
+    from connector.config import get_settings
+
+    settings = get_settings()
+    app.state.edc = EdcManagementClient(
+        settings.edc_management_url,
+        settings.participant_context_id,
+        api_version=settings.edc_management_api_version,
+    )
+
+
+def make_org_headers(
+    context: str | None = None,
+    scopes: tuple[str, ...] = (
+        "management-api:catalog:read",
+        "management-api:negotiations:write",
+        "management-api:agreements:read",
+        "management-api:transfers:write",
+    ),
+    alias: str = "example-org",
+) -> dict:
+    """An organisation client's bearer: `sub` = the participant context.
+
+    What `svc-ds-connector-<alias>` mints once its `sub` mapper is in place. The
+    default context is this test connector's own (`participant_context_id`).
+    """
+    from connector.config import get_settings
+
+    token = pyjwt.encode(
+        _claims(
+            sub=context or get_settings().participant_context_id,
+            azp=f"svc-ds-connector-{alias}",
+            preferred_username=f"service-account-svc-ds-connector-{alias}",
+            scope=" ".join(scopes),
+            iss="http://keycloak.test/realms/dataspaces",
         ),
         "secret",
         algorithm="HS256",

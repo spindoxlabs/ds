@@ -37,7 +37,10 @@ from ...services import org_onboarding as ops
 from ...services import provisioning, trust_list
 from ...services.did import refuse_dev_only_did
 from ...services.enrolment import EnrolmentError
-from ...services.keycloak_admin import KeycloakAdminClient
+from ...services.keycloak_admin import (
+    KeycloakAdminClient,
+    ensure_organisation_client,
+)
 from ...services.registry_notify import invalidate_participant_caches
 
 router = APIRouter(prefix="/admin", tags=["organizations"])
@@ -515,6 +518,9 @@ async def generate_provisioning_bundle(
         settings.keycloak_mutate
         and settings.keycloak_admin_url
         and settings.keycloak_admin_user
+        # No DID, no participant context to name as `sub`; `build_bundle`
+        # refuses this owner below with the reason, before anything is created.
+        and owner.did
     ):
         # A third party's connector authenticates service-to-service against this
         # realm, so its client lives here. Failing to provision it would hand over
@@ -531,12 +537,14 @@ async def generate_provisioning_bundle(
             admin_password=settings.keycloak_admin_password or "",
         )
         try:
-            keycloak_client_id = provisioning.client_id_for(alias)
-            keycloak_secret = await client.ensure_service_client(
-                keycloak_client_id,
-                name=f"ds connector — {owner.name or alias}",
-                scopes=provisioning.CONNECTOR_SCOPES,
-                audiences=provisioning.CONNECTOR_AUDIENCES,
+            # The organisation's client: its connector's grants here, EDC's
+            # management-API scopes, and `sub` = its participant context, which a
+            # ds deployment sets to the organisation's DID.
+            keycloak_client_id, keycloak_secret = await ensure_organisation_client(
+                client,
+                alias=alias,
+                name=owner.name or alias,
+                participant_context_id=owner.did,
             )
         except Exception as exc:  # noqa: BLE001 — surfaced to the operator
             raise HTTPException(

@@ -3,7 +3,10 @@ import asyncio
 from alembic import context
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from identity_registry.config import get_settings
+from identity_registry.config import (
+    get_settings,
+    refuse_dev_database_in_production,
+)
 from identity_registry.db.engine import Base
 
 import identity_registry.db.models  # noqa: F401
@@ -12,6 +15,8 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
+    # A migration is a write; the dev default must not be migrated in production.
+    refuse_dev_database_in_production("identity-registry-migrations")
     return get_settings().database_url
 
 

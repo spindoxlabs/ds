@@ -31,7 +31,10 @@ consumer pulls with. What it may do is decided by [`ds-connector`](connector.md)
 | `identity-did-web` | `did:web` resolution |
 | `control-plane-sql`, `data-plane-store-sql`, `edr-index-sql`, `policy-monitor-store-sql`, `sql-lease-core`, `sql-pool-apache-commons`, `transaction-local` | PostgreSQL persistence for every store — without the policy-monitor store a restart forgets every watched transfer |
 | `configuration-filesystem` | the `edc.fs.config` properties reader |
+| management API v5 | `asset-api-v5`, `policy-definition-api-v5`, `contract-definition-api-v5`, `catalog-api-v5`, `contract-negotiation-api-v5`, `contract-agreement-api-v5`, `transfer-process-api-v5`, `participant-context-api-v5`, `management-api-schema-validator`, `management-api-oauth2-authentication`, `management-api-authorization` — added one by one; the DCP BOM carries none of them |
 | `:edc-extensions` | this platform's constraint functions, pending guard, resume route, event publisher, vault seeder and the forked policy transformer |
+
+The DCP BOM's **classic (v3/v4) management controllers are excluded** — `asset-api` … `transfer-process-api`, `edr-cache-api`, `data-plane-selector-api`, `federated-catalog-api`. None of them checks a scope or ownership, so behind the OAuth2 filters they would admit any token naming a participant context.
 
 That resolves to roughly 190 EDC modules and 160 registered service extensions.
 
@@ -43,13 +46,22 @@ The runtime binds a Jetty connector only for contexts something registers. Four 
 |---|---|---|---|---|
 | `default` | `/api` | 19191 | 29191 | **none** — health and liveness probes |
 | `control` | `/control` | 19192 | 29192 | `x-api-key` — data-plane signalling, in-cluster only |
-| `management` | `/management` | 19193 | 29193 | `X-Api-Key` |
+| `management` | `/management` | 19193 | 29193 | OAuth2 bearer token: `sub` = this participant context, `scope` in EDC's grammar |
 | `protocol` | `/protocol` | 19194 | 29194 | DSP/DCP self-issued token; `/.well-known/dspace-version` is open |
 
 **Only `protocol` is ever public.** Management creates and deletes assets, policies and
 transfers; control drives the data plane. Neither is routed by an Ingress, control is not even
 a Service port, and both are unpublished in compose — so the exposure is denied at routing and
 again at the network layer.
+
+**For management, that isolation is the control, not a second line.** EDC never checks a
+management token's audience. One client per organisation is shared by its connector and its
+batch jobs, so whoever holds that client's token can administer the organisation's contracts
+on any network that reaches the port. Compose publishes no `x9193` port (asserted by
+`services/connector/tests/test_management_port_isolation.py`, and live by `ds-e2e --flow
+organisation-token`). The connector reaches the port on the project network as
+`edc-<participant>:<port>`. The chart keeps it ClusterIP-only, behind the NetworkPolicy. See
+[ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md).
 
 **Control is authenticated too.** Until `web.http.control.auth.type=tokenbased` was set,
 `GET /control/v1/dataplanes` returned 200 with the full data-plane registry to any container on
@@ -69,10 +81,20 @@ resource on either. `ApiContext` declares `MANAGEMENT`, `CONTROL` and `PROTOCOL`
 data-plane public API is on the classpath; the management Version API registers on the default
 context. `RuntimeContractTest` fails if either is configured again.
 
-The Management API surface is upstream EDC's v3 (deprecated) and v4 CRUD over assets, policy
-definitions, contract definitions, negotiations, transfer processes, agreements, EDRs and data
-planes — plus exactly one route this repository adds:
-`POST /management/dataspaces/negotiations/{id}/resume`.
+The Management API surface is upstream EDC's **v5** (`/management/v5beta/participants/{participantContextId}/…`
+at 0.18.0) over assets, policy definitions, contract definitions, the catalogue, negotiations,
+agreements and transfer processes — plus exactly one route this repository adds:
+`POST /management/dataspaces/negotiations/{id}/resume`, which requires
+`management-api:negotiations:write` and EDC's ownership check for this runtime's participant
+context. There is no v3 or v4 route, and no EDR route (EDC 0.18.0 has none in v5).
+
+**Who may call it.** `management-api-oauth2-authentication` validates the bearer token against
+the realm's JWKS, its issuer, `nbf` and `exp` — **never `aud`** — and requires `sub` to name a
+participant context (`management-api:admin` skips that; ds grants it to nobody).
+`management-api-authorization` then enforces each route's `@RequiredScope` and the ownership
+check. The token comes from the organisation's Keycloak client — see
+[keycloak](keycloak.md#organisation-clients). There is no `web.http.management.auth.type`: beside
+these filters it would demand an `x-api-key` on every call as well.
 
 The protocol context advertises a single DSP version:
 
@@ -91,11 +113,11 @@ GET /protocol/.well-known/dspace-version
 properties file  <  environment  <  -D system properties
 ```
 
-The environment mapping lower-cases and turns `_` into `.`, so `WEB_HTTP_MANAGEMENT_AUTH_KEY`
-becomes `web.http.management.auth.key`.
+The environment mapping lower-cases and turns `_` into `.`, so `WEB_HTTP_CONTROL_AUTH_KEY`
+becomes `web.http.control.auth.key`.
 
 !!! warning "No interpolation in properties files"
-    `FsConfigurationExtension` does a plain `Properties.load()`. A `${EDC_API_KEY}` written
+    `FsConfigurationExtension` does a plain `Properties.load()`. A `${EDC_CONTROL_API_KEY}` written
     into a `.properties` file is stored as that literal string. **Every secret-bearing setting
     must come from the environment.** The ds extension defends against the mistake by treating
     any value containing `${` as absent, which turns it into a startup failure.
@@ -109,17 +131,19 @@ differing by +10000 and a different DID, vault, database and connector URL.
 | Setting | Provider value | Meaning |
 |---|---|---|
 | `edc.participant.id` / `edc.iam.issuer.id` | `did:web:rec.dataspaces.localhost` | this participant's DID |
+| `edc.participant.context.id` | the same DID | the one participant context of this classic runtime — the `sub` its organisation client carries. The value the runtime already stamped on every stored entity (it was the fallback), so it needs no migration |
+| `edc.iam.oauth2.issuer` / `edc.iam.oauth2.jwks.url` | the realm issuer / its JWKS on the host gateway | what the management API trusts. Under Helm, `global.keycloak.issuerUrl` (required) and `jwksUrl` |
+| `edc.dataspace.enable.profiles.all` | `true` | v5 resolves a request's dataspace profile per participant (`ParticipantProfileService`) and answers `400` "No profile … for participant" otherwise. The classic runtime registers exactly one, DSP `2025-1`, so enabling all of them enables that one. Listing it explicitly instead would restate the protocol pin |
 | `edc.dsp.callback.address` | `http://172.17.0.1:19194/protocol` | the address counterparties call back on |
 | `web.http.<context>.port` / `.path` | see the table above | context binding |
-| `web.http.management.auth.type` / `web.http.control.auth.type` | `tokenbased` | the two contexts with an auth filter — `auth.key` alone installs none |
-| `web.http.management.auth.key` | *(from `EDC_API_KEY`)* | **secret** — the Management API key |
+| `web.http.control.auth.type` | `tokenbased` | the one context with a key filter — `auth.key` alone installs none. Not set on `management`, which is OAuth2 |
 | `web.http.control.auth.key` | *(from `EDC_CONTROL_API_KEY`)* | **secret** — the control API key. Its own value; nothing outside the runtime holds it |
 | `edc.iam.sts.oauth.token.url` | `…/sts/<did>/token` on the identity registry | where this EDC gets its DCP token |
 | `edc.iam.sts.oauth.client.id` / `.client.secret.alias` | the DID / a vault alias | STS credentials |
 | `edc.iam.trusted-issuer.0.id` | `did:web:trust-anchor.dataspaces.localhost` | whose credentials are believed |
 | `edc.iam.dcp.scopes.membership.*` | `MembershipCredential:read` | which credential is requested in a presentation |
 | `edc.iam.did.web.use.https` | `false` in dev, **`true` in production** | DID documents carry the keys every trust decision rests on |
-| `ds.vault.seed.file` | `/config/<role>-vault.properties` | the vault seed. **The only thing that puts anything in the vault** — the sole `Vault` on the classpath is EDC's in-memory default. Was `edc.vault.fs.file`, the key EDC's own `vault-filesystem` module reads; still honoured, with a deprecation warning |
+| `ds.vault.seed.file` | `/config/<role>-vault.properties` | the vault seed. It also holds `ds-connector-callback-key`, the header value EDC sends with the EDR callback (under Helm, `secrets.edcCallbackKey`). **The only thing that puts anything in the vault** — the sole `Vault` on the classpath is EDC's in-memory default. Was `edc.vault.fs.file`, the key EDC's own `vault-filesystem` module reads; still honoured, with a deprecation warning |
 | `edc.transfer.proxy.token.signer/verifier.publickey.alias` | `participant-private-key` | the EDR signing key |
 | `edc.datasource.default.url` / `.user` / `.password` | `jdbc:postgresql://…/edc_rec` | one database per participant |
 | `edc.sql.schema.autocreate` | `true` | see below |
@@ -129,15 +153,13 @@ differing by +10000 and a different DID, vault, database and connector URL.
 **Four settings that used to be here are gone**, each read by no class in `connector.jar`:
 `edc.dataplane.api.public.baseurl`, `edc.credential.service.url`, `edc.vault.hashicorp.enabled`
 and `edc.api.key`. EDC ignores an unknown key silently, so they looked like configuration and
-were not — a counterparty finds this participant's credential service through its DID document,
-and the Management API key is `web.http.management.auth.key`. `RuntimeContractTest` fails if a
+were not — a counterparty finds this participant's credential service through its DID document. `RuntimeContractTest` fails if a
 setting with no reader is added back.
 
 ### Supplied from the environment
 
 | Variable | Becomes | Why environment |
 |---|---|---|
-| `WEB_HTTP_MANAGEMENT_AUTH_KEY` | `web.http.management.auth.key` | secret |
 | `WEB_HTTP_CONTROL_AUTH_KEY` | `web.http.control.auth.key` | secret |
 | `DS_CONNECTOR_INTERNAL_TOKEN_URL` / `_CLIENT_ID` / `_CLIENT_SECRET` | `ds.connector.internal.*` | secret; empty is fatal at boot |
 | `EDC_DATASOURCE_DEFAULT_USER` / `_PASSWORD` | database credentials | secret |
@@ -172,7 +194,17 @@ compose, by CloudNativePG in Kubernetes.
 | out | Keycloak | the `client_credentials` token for the connector calls |
 | out | its own PostgreSQL database | every store |
 | both | **peer EDCs** | DSP over `/protocol/2025-1` |
-| in | ds-connector | the Management API, with `X-Api-Key` |
+| in | ds-connector | the Management API v5, with its organisation client's token |
+
+## Known behaviour: a half-registered runtime after a restart
+
+Right after a container restart, the runtime can answer for a while before every controller
+is registered. A management call then gets `405` or `404` on a route that exists (for example
+`POST …/assets/request`), and `/api/check/health` can get `404`. It clears without
+intervention, sometimes after tens of seconds, and once only after a second restart. The
+readiness gates in `task e2e:wait-ready` and `task e2e:prepare` treat `000`, `404` and `405` as
+*not ready*. They probe a v5 route rather than the health endpoint, through `docker exec` when
+the EDC is a container, because the management port is not on the host.
 
 ## Build
 

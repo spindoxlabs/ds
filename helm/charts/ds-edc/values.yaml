@@ -104,7 +104,7 @@ ingress:
 secrets:
   dbUser: "" # defaults to the edc database name (owner role)
   dbPassword: ""
-  edcApiKey: "" # EDC's Management API key — and nothing else
+  edcCallbackKey: "" # EDR callback header value; same as ds-connector secrets.edcCallbackKey
   edcControlApiKey: "" # EDC's control API key. Held by nothing outside the pod
   connectorClientSecret: "" # Keycloak secret for connectorClientId (svc-edc)
   stsClientSecret: "" # matches the participant's sts_client_secret in the registry
@@ -114,8 +114,11 @@ global:
   baseDomain: ds.example.org
   hosts: {trustAnchor: trust-anchor}
   # tokenUrl is required: the EDC extensions obtain a client-credentials token
-  # for ds-connector's internal API from it.
-  keycloak: {tokenUrl: ""}
+  # for ds-connector's internal API from it. issuerUrl is required: the
+  # Management API accepts only tokens this realm issued. jwksUrl defaults to
+  # the issuer's `/protocol/openid-connect/certs`; set it when the pod reaches
+  # the realm at another address than the issuer it names.
+  keycloak: {issuerUrl: "", tokenUrl: "", jwksUrl: ""}
   image: {registry: ghcr.io/spindoxlabs, prefix: ds-, tag: "", pullPolicy: IfNotPresent, pullSecrets: []}
   namespaces: {authority: ds-authority}
   postgres:

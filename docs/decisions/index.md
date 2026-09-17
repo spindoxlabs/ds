@@ -23,6 +23,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0011](ADR-0011-ci-provisions-a-real-realm.md) | CI provisions a real Keycloak realm rather than mocking it |
 | [ADR-0012](ADR-0012-defects-are-issues.md) | Defects are issues, not a repository artifact |
 | [ADR-0013](ADR-0013-governance-shape-comes-from-celine-utils.md) | The governance shape comes from `celine.governance`, not a parallel implementation |
+| [ADR-0014](ADR-0014-management-api-v5-and-the-organisation-actor.md) | The management API is v5beta behind OAuth2, and an organisation can act as itself |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule

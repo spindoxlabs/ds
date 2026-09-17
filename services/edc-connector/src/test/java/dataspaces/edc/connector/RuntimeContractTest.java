@@ -148,6 +148,131 @@ class RuntimeContractTest {
                         plane that speaks it — a capability decision, not a version bump.""".formatted(dps));
     }
 
+    // ── Management API: v5 behind OAuth2, and nothing else ──────────────────────
+
+    /** The `@Path` of every v5 controller ds calls, as it reads at 0.18.0. */
+    private static final List<String> V5_PATHS = List.of(
+            "/v5beta/participants/{participantContextId}/assets",
+            "/v5beta/participants/{participantContextId}/policydefinitions",
+            "/v5beta/participants/{participantContextId}/contractdefinitions",
+            "/v5beta/participants/{participantContextId}/catalog",
+            "/v5beta/participants/{participantContextId}/contractnegotiations",
+            "/v5beta/participants/{participantContextId}/contractagreements",
+            "/v5beta/participants/{participantContextId}/transferprocesses",
+            // Admin-scoped; packaged for the `ParticipantContext` lookup every
+            // collection route's ownership check resolves through.
+            "/v5beta/participants");
+
+    /** Every classic controller the DCP BOM would register on the management context. */
+    private static final List<String> CLASSIC_PATHS = List.of(
+            "/v3/assets", "/v4/assets",
+            "/v3/policydefinitions", "/v4/policydefinitions",
+            "/v3/contractdefinitions", "/v4/contractdefinitions",
+            "/v3/catalog", "/v4/catalog",
+            "/v3/catalogs", "/v4/catalogs",
+            "/v3/contractnegotiations", "/v4/contractnegotiations",
+            "/v3/contractagreements", "/v4/contractagreements",
+            "/v3/transferprocesses", "/v4/transferprocesses",
+            "/v3/dataplanes", "/v4/dataplanes",
+            "/v3/edrs");
+
+    private static final List<String> OAUTH2_EXTENSIONS = List.of(
+            "org.eclipse.edc.connector.api.management.authn.ManagementApiOauth2AuthenticationExtension",
+            "org.eclipse.edc.connector.api.management.authz.ManagementApiAuthorizationExtension");
+
+    @Test
+    @DisplayName("the management API is v5 behind OAuth2 and scopes")
+    void managementApiIsV5BehindOauth2() {
+        var missing = V5_PATHS.stream().filter(path -> !runtime.anyClassDeclares(path)).toList();
+        assertTrue(missing.isEmpty(), () -> "v5 controllers ds calls are not packaged: " + missing
+                + "\nThey are added one by one in services/edc-connector/build.gradle.kts.");
+
+        var extensions = runtime.serviceExtensions();
+        var absent = OAUTH2_EXTENSIONS.stream().filter(it -> !extensions.contains(it)).toList();
+        assertTrue(absent.isEmpty(), () -> "not packaged: " + absent
+                + "\nWithout the OAuth2 filters the management context authenticates nothing; without "
+                + "the authorization extension `@RequiredScope` is not enforced and v5 does not boot.");
+    }
+
+    @Test
+    @DisplayName("no classic (v3/v4) management controller is packaged")
+    void noClassicManagementController() {
+        var present = CLASSIC_PATHS.stream().filter(runtime::anyClassDeclares).toList();
+        assertTrue(present.isEmpty(), () -> """
+                classic management controllers are packaged: %s
+
+                None carries `@RequiredScope` or asks for ownership, so behind the OAuth2 filters they admit \
+                any token whose `sub` names a participant context, whatever its scope. The exclude list in \
+                services/edc-connector/build.gradle.kts stopped matching (a module was renamed or added \
+                upstream).""".formatted(present));
+    }
+
+    @Test
+    @DisplayName("the resume route declares its scope")
+    void resumeRouteDeclaresItsScope() throws IOException {
+        var strings = runtime.stringsIn("dataspaces/edc/NegotiationResumeController.class");
+        assertTrue(strings.contains("Lorg/eclipse/edc/api/auth/spi/RequiredScope;")
+                        && strings.contains("management-api:negotiations:write"),
+                () -> "the packaged NegotiationResumeController carries no @RequiredScope"
+                        + "(\"management-api:negotiations:write\") — the scope filter would not run on it");
+    }
+
+    @Test
+    @DisplayName("every config authenticates the management API with OAuth2 and names its context")
+    void everyConfigUsesOauth2ForManagement() throws IOException {
+        var problems = new ArrayList<String>();
+        for (String participant : PARTICIPANTS) {
+            checkManagementSettings(participant, key -> {
+                try {
+                    return valueOf(participant, key);
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException(e);
+                }
+            }, problems);
+        }
+        var chart = chartValues();
+        checkManagementSettings(CHART_CONFIGMAP, key -> chart.getOrDefault(key, ""), problems);
+        if (!problems.isEmpty()) {
+            fail("management API settings:\n  " + String.join("\n  ", problems));
+        }
+    }
+
+    private static void checkManagementSettings(
+            String source, java.util.function.Function<String, String> value, List<String> problems) {
+        // With `auth.type` set beside the OAuth2 filters, every call needs an
+        // `x-api-key` as well — the shared key this plan removes.
+        if (!value.apply("web.http.management.auth.type").isEmpty()) {
+            problems.add(source + ": web.http.management.auth.type is set");
+        }
+        for (String key : List.of("edc.iam.oauth2.issuer", "edc.iam.oauth2.jwks.url")) {
+            if (value.apply(key).isEmpty()) {
+                problems.add(source + ": " + key + " is not set");
+            }
+        }
+        // Stated, and equal to the participant id: the value the classic runtime
+        // already stamped on stored entities, and the `sub` the organisation
+        // client carries.
+        String context = value.apply("edc.participant.context.id");
+        String participant = value.apply("edc.participant.id");
+        if (context.isEmpty() || !context.equals(participant)) {
+            problems.add(source + ": edc.participant.context.id (" + context
+                    + ") must equal edc.participant.id (" + participant + ")");
+        }
+    }
+
+    /** key → raw (template) value, for the chart's `edc.properties` lines. */
+    private static Map<String, String> chartValues() throws IOException {
+        var values = new TreeMap<String, String>();
+        var assignment = Pattern.compile("^([a-z][a-zA-Z0-9._-]*)=(.*)$");
+        for (var line : Files.readAllLines(repoRoot.resolve(CHART_CONFIGMAP))) {
+            var matcher = assignment.matcher(line.trim());
+            if (matcher.find()) {
+                values.put(matcher.group(1), matcher.group(2).trim());
+            }
+        }
+        return values;
+    }
+
     // ── Settings ────────────────────────────────────────────────────────────────
 
     @Test

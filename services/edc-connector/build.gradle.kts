@@ -3,7 +3,9 @@
  *
  * Replaces the edc-samples connector used in Iterations 0–4. Produces a
  * self-contained fat JAR via the Shadow plugin out of:
- *   - controlplane-dcp-bom     — DCP identity/trust + VC verification
+ *   - controlplane-dcp-bom     — DCP identity/trust + VC verification, with
+ *                                the classic management controllers excluded
+ *   - management API v5        — per-participant OAuth2 + scopes, added by hand
  *   - dataplane-base-bom       — HTTP data plane
  *   - configuration-filesystem — .properties file config (a plain module, not a
  *                                BOM; this header used to name a
@@ -78,8 +80,63 @@ dependencies {
         exclude(group = "org.eclipse.edc", module = "data-plane-signaling")
         exclude(group = "org.eclipse.edc", module = "data-plane-signaling-core")
         exclude(group = "org.eclipse.edc", module = "data-plane-signaling-oauth2")
+        // The classic (v3/v4) management controllers. None carries
+        // `@RequiredScope` or asks `AuthorizationService` anything, so behind the
+        // OAuth2 filters below they would admit any token whose `sub` names a
+        // participant context, whatever its scope — and without `auth.type` there
+        // is no key in front of them either. ds calls v5 only. Every module that
+        // registers on the management context and is not v5 is listed; the v5
+        // artifacts are named `*-v5` and are not matched. `RuntimeContractTest`
+        // fails if a classic controller comes back.
+        listOf(
+            "asset-api",
+            "catalog-api",
+            "contract-agreement-api",
+            "contract-definition-api",
+            "contract-negotiation-api",
+            "edr-cache-api",
+            "policy-definition-api",
+            "transfer-process-api",
+            "data-plane-selector-api",
+            "federated-catalog-api",
+        ).forEach { exclude(group = "org.eclipse.edc", module = it) }
     }
     runtimeOnly("org.eclipse.edc:transfer-data-plane-signaling:${edcVersion}")
+
+    // ── Management API v5 (`/v5beta/participants/{id}/…` at 0.18.0) + OAuth2 ──
+    //
+    // `controlplane-dcp-bom` carries none of this: at 0.18.0 these modules are in
+    // `controlplane-virtual-base-bom` only. Taken one by one rather than as the
+    // `management-api-v5` aggregate, which also brings the CEL, participant-config,
+    // dataspace-profile and discovery APIs — each needing services (a CEL engine,
+    // an encrypted per-participant config store) this classic runtime does not
+    // have, and none of them called by ds.
+    //
+    //   * the resources ds calls — assets, policies, contract definitions,
+    //     catalogue, negotiations, agreements, transfers;
+    //   * `participant-context-api-v5` — admin-scoped routes nobody is granted,
+    //     packaged for the one thing every collection route needs: the
+    //     `ParticipantContext` lookup its `authorize(…)` call resolves through.
+    //     Without it every collection route answers 401;
+    //   * `management-api-schema-validator` — the v4 schemas v5 requests are
+    //     validated against, as the aggregate packages it;
+    //   * `management-api-oauth2-authentication` — JWKS signature, issuer,
+    //     `nbf`/`exp` (never `aud`), then `sub` must name a participant context;
+    //   * `management-api-authorization` — `@RequiredScope` and the ownership
+    //     check (`AuthorizationServiceImpl`), which ds's resume route uses too.
+    listOf(
+        "asset-api-v5",
+        "policy-definition-api-v5",
+        "contract-definition-api-v5",
+        "catalog-api-v5",
+        "contract-negotiation-api-v5",
+        "contract-agreement-api-v5",
+        "transfer-process-api-v5",
+        "participant-context-api-v5",
+        "management-api-schema-validator",
+        "management-api-oauth2-authentication",
+        "management-api-authorization",
+    ).forEach { runtimeOnly("org.eclipse.edc:$it:${edcVersion}") }
 
     // ── Data plane (HTTP proxy for EDR transfers) ─────────────────────────────
     runtimeOnly("org.eclipse.edc:dataplane-base-bom:${edcVersion}")

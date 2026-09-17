@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "ds-edc"
 version = "0.1.0"
-description = "Shared EDC Management API v3 client and Pydantic models for the dataspaces platform"
+description = "Shared EDC v5 Management API client and Pydantic models for the dataspaces platform"
 requires-python = ">=3.12"
 dependencies = [
     "httpx>=0.27",

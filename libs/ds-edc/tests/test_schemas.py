@@ -67,41 +67,61 @@ def test_asset_create_carries_the_data_address_through():
 # -- EDCL-01 · the three fields the normal path used to discard ----------------
 
 
-def test_offer_is_synthesised_when_no_policy_is_supplied():
+def test_a_negotiation_without_an_offer_is_refused():
+    """v5 validates the offer against the DSP schema, which needs a rule; an
+    empty hand-built offer never matched what a provider published anyway."""
     req = NegotiationRequest(
         counter_party_address="http://172.17.0.1:19194/protocol/2025-1",
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
     )
-    policy = req.to_edc()["policy"]
-    assert policy["@id"] == OFFER
-    assert policy["assigner"] == DID
-    assert policy["target"] == ASSET
+    with pytest.raises(ValueError, match="odrl_policy"):
+        req.to_edc()
 
 
-def test_a_published_offer_is_sent_back_unchanged():
+#: An offer as a provider's v5 catalogue returns it — the DSP compact form.
+PUBLISHED = {
+    "@id": OFFER,
+    "@type": "Offer",
+    "assigner": DID,
+    "permission": [
+        {
+            "action": "https://w3id.org/dsp/policy/Query",
+            "constraint": [
+                {
+                    "leftOperand": "odrl:purpose",
+                    "operator": "isAnyOf",
+                    "rightOperand": ["https://w3id.org/dsp/policy/purpose/X"],
+                }
+            ],
+        }
+    ],
+}
+
+
+def test_a_published_offer_keeps_its_meaning():
     """DSP requires the offer we return to be the offer we were given.
 
-    So a policy that already names all three is passed through byte-for-byte —
-    filling them in from the fields would be the *other* way to get this wrong.
+    Already compact, so only the target is added; `odrl:purpose` is expanded,
+    which is the same IRI the profile context would give it.
     """
-    published = {
-        "@context": "http://www.w3.org/ns/odrl.jsonld",
-        "@type": "Offer",
-        "@id": OFFER,
-        "assigner": DID,
-        "target": ASSET,
-        "permission": [{"action": "use", "constraint": []}],
-    }
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
-        odrl_policy=published,
+        odrl_policy=PUBLISHED,
     )
-    assert req.to_edc()["policy"] == published
+    policy = req.to_edc()["policy"]
+    assert policy["@id"] == OFFER
+    assert policy["@type"] == "Offer"
+    assert policy["assigner"] == DID
+    assert policy["target"] == ASSET
+    constraint = policy["permission"][0]["constraint"][0]
+    assert constraint["leftOperand"] == "http://www.w3.org/ns/odrl/2/purpose"
+    assert constraint["operator"] == "isAnyOf"
+    assert policy["permission"][0]["action"] == "https://w3id.org/dsp/policy/Query"
 
 
 def test_fields_fill_gaps_in_a_partial_policy():
@@ -111,7 +131,7 @@ def test_fields_fill_gaps_in_a_partial_policy():
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
-        odrl_policy={"@type": "Offer", "permission": []},
+        odrl_policy={"@type": "Offer", "permission": [{"action": "use"}]},
     )
     policy = req.to_edc()["policy"]
     assert policy["@id"] == OFFER
@@ -126,24 +146,38 @@ def test_node_reference_and_bare_form_are_the_same_identifier():
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
-        odrl_policy={"@id": OFFER, "assigner": {"@id": DID}, "target": {"@id": ASSET}},
+        odrl_policy={
+            "@id": OFFER,
+            "assigner": {"@id": DID},
+            "target": {"@id": ASSET},
+            "permission": [{"action": "use"}],
+        },
     )
-    assert req.to_edc()["policy"]["assigner"] == {"@id": DID}
+    # `assigner` is `@id`-typed in the profile, so the compact form is the string.
+    assert req.to_edc()["policy"]["assigner"] == DID
 
 
 def test_prefixed_odrl_keys_are_not_duplicated_in_bare_form():
     """A catalogue answer may be prefixed. Injecting `assigner` beside
-    `odrl:assigner` would put two assigners in one offer."""
+    `odrl:assigner` would put two assigners in one offer — so the prefixed key
+    becomes the bare one, once."""
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
-        odrl_policy={"@id": OFFER, "odrl:assigner": DID, "odrl:target": ASSET},
+        odrl_policy={
+            "@id": OFFER,
+            "odrl:assigner": DID,
+            "odrl:target": ASSET,
+            "odrl:permission": [{"odrl:action": "use"}],
+        },
     )
     policy = req.to_edc()["policy"]
-    assert "assigner" not in policy
-    assert "target" not in policy
+    assert "odrl:assigner" not in policy
+    assert "odrl:target" not in policy
+    assert policy["assigner"] == DID
+    assert policy["target"] == ASSET
 
 
 @pytest.mark.parametrize(
@@ -165,7 +199,12 @@ def test_a_field_contradicting_the_policy_is_refused(field, policy_key, wrong):
     kwargs[field] = wrong
     req = NegotiationRequest(
         counter_party_address="http://x/protocol/2025-1",
-        odrl_policy={"@id": OFFER, "assigner": DID, "target": ASSET},
+        odrl_policy={
+            "@id": OFFER,
+            "assigner": DID,
+            "target": ASSET,
+            "permission": [{"action": "use"}],
+        },
         **kwargs,
     )
     with pytest.raises(ValueError, match=field):
@@ -179,6 +218,7 @@ def test_counter_party_id_defaults_to_the_assigner():
         offer_id=OFFER,
         asset_id=ASSET,
         assigner=DID,
+        odrl_policy=PUBLISHED,
     )
     body = req.to_edc()
     assert body["counterPartyId"] == DID
@@ -225,3 +265,28 @@ def test_an_incomplete_edr_is_refused(payload):
     """
     with pytest.raises(ValueError):
         EdrResponse.from_edc(payload)
+
+
+def test_a_callback_payload_edr_is_parsed_from_its_expanded_keys():
+    """What EDC 0.18.0 posts in `TransferProcessStarted.dataAddress` — measured."""
+    ns = "https://w3id.org/edc/v0.0.1/ns/"
+    edr = EdrResponse.from_edc(
+        {
+            "properties": {
+                f"{ns}type": "https://w3id.org/idsa/v4.1/HTTP",
+                f"{ns}endpoint": "http://172.17.0.1:30002/query",
+                f"{ns}authType": "bearer",
+                f"{ns}authorization": "eyJ...",
+            }
+        }
+    )
+    assert edr.endpoint == "http://172.17.0.1:30002/query"
+    assert edr.authorization == "eyJ..."
+    assert edr.auth_type == "bearer"
+
+
+def test_an_incomplete_callback_edr_is_refused():
+    with pytest.raises(ValueError, match="authorization"):
+        EdrResponse.from_edc(
+            {"properties": {"https://w3id.org/edc/v0.0.1/ns/endpoint": "http://x"}}
+        )

@@ -12,12 +12,23 @@ Covers `DSSC-TRF-01`–`14`, `-38`, `-41` and `DSSC-IAM-04`–`08`, `-13`, `-14`
 | **Owner** | a named alias resolving to a canonical URI (DID preferred over URL) | identity-registry `Owner` table |
 | **Natural person** | a subject DID, plus a `DataSubjectCredential` and/or `ConsumerUser` credential | identity-registry, mapped from a Keycloak user |
 | **Service** | a Keycloak client with `client_credentials` and a declared scope set | `services/keycloak/clients.yaml` |
+| **Organisation acting as itself** | the organisation's own client `svc-ds-connector-<alias>`: `sub` = its participant context (its DID), `scope` in EDC's `management-api:…` grammar | the realm, created by identity-registry (`ir-cli keycloak org-sync`, the provisioning bundle) |
 
 An organisation and an owner are not the same thing and the distinction is load-bearing: a
 participant is a party that speaks DSP, an owner is a party that datasets are attributed
 to. One organisation may be the owner of several dataset collections, and a dataset's owner
 may be a party that operates no connector at all. `governance.yaml` `ownership[].name`
 resolves through the owners registry to the ODRL assigner.
+
+An organisation acts through **its own client** as well as through its people. That client
+is what its connector authenticates as, everywhere, and what its batch jobs use to drive the
+connector's consumer routes. It is bound to its own participant: a token whose `sub` names
+another participant is refused, and it never reads a person's consents
+([Personal data](personal-data.md) `D-20`,
+[ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)). There is
+one such client per organisation, shared by the connector and the batch jobs. EDC does not
+check a management token's audience, so the EDC management port stays unreachable from
+everywhere but the connector.
 
 **Deployment decision.** The set of admissible participant kinds is fixed by the code. Who
 may hold each is a deployment decision, expressed through the onboarding criteria below and

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import hmac
 import logging
 from datetime import UTC, datetime
 
+from ds_edc import TransferProcessStartedEvent
 from ds_obs import correlate_agreement
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -19,6 +21,8 @@ from ...services.agreement_service import (
     terminate_agreement,
     upsert_agreement,
 )
+from ...services.consumer_service import EDC_CALLBACK_AUTH_HEADER
+from ...services.edr_store import save_started_event
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/webhooks", tags=["webhooks"])
@@ -38,6 +42,56 @@ _ACCESS_REQUEST_STATUS = {
 # FINALIZED event still in flight, and a transfer already under way is further
 # along than the negotiation state can express.
 _ACCESS_REQUEST_SETTLED = {"revoked", "transferring", "transferred"}
+
+
+def require_edc_callback_key(
+    settings: Settings = Depends(get_settings_dep),
+    key: str | None = Header(default=None, alias=EDC_CALLBACK_AUTH_HEADER),
+) -> None:
+    """The EDR callback's credential: the value this connector's EDC holds.
+
+    EDC can put exactly one static header on a callback, read from its own vault
+    (`CallbackHttpClient`), so this is a shared secret between one EDC and its
+    one connector — never a realm token, which a callback cannot carry. Compared
+    in constant time; an absent header and a wrong one are the same 401.
+    """
+    expected = settings.edc_callback_secret
+    if not key or not expected or not hmac.compare_digest(key, expected):
+        raise HTTPException(401, "EDC callback key missing or wrong")
+
+
+@router.post("/edc-callback", status_code=200)
+async def edc_callback(
+    event: TransferProcessStartedEvent,
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    _key: None = Depends(require_edc_callback_key),
+):
+    """Keep the EDR a started transfer carries (EDC 0.18.0 v5 has no EDR API).
+
+    Registered per transfer by ``ConsumerService.transfer`` as a callback
+    address for ``transfer.process.started``. Anything else is acknowledged and
+    dropped, so an EDC that grows more events does not retry into a 4xx.
+
+    **Refuses an event for another participant context.** This connector's EDC
+    serves one context; an event naming another is not one it asked for.
+    """
+    if not event.is_started:
+        return {"status": "ignored", "type": event.type}
+    context = event.participant_context_id
+    if context and context != settings.participant_context_id:
+        raise HTTPException(
+            403, f"callback for participant context {context!r}, not this one"
+        )
+    try:
+        await save_started_event(db, event)
+    except ValueError as exc:
+        # A started event without a usable EDR is EDC's defect, and storing an
+        # empty row would hand a consumer a key to nothing.
+        raise HTTPException(422, str(exc)) from exc
+    await db.commit()
+    log.info("EDR stored for transfer %s", event.transfer_id)
+    return {"status": "stored", "transfer_id": event.transfer_id}
 
 
 @router.post("/transfer-process", status_code=200)

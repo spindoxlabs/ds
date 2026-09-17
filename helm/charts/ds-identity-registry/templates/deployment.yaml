@@ -143,6 +143,12 @@ spec:
                 --keycloak-url "$KEYCLOAK_ADMIN_URL" \
                 --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
                 --admin-password "$KEYCLOAK_ADMIN_PASSWORD"
+          {{- with .Values.keycloak.sync.organisationClientSecrets }}
+          # One `SVC_DS_CONNECTOR_<ALIAS>_SECRET` per organisation client.
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
           env:
             {{- include "ir.env" . | nindent 12 }}
             - name: KEYCLOAK_ADMIN_USERNAME

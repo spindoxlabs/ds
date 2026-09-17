@@ -1,20 +1,40 @@
-"""Async httpx client for EDC Management API v3."""
+"""Async httpx client for EDC's v5 Management API.
+
+**v5, per participant context, behind OAuth2.** Every resource path is
+``/{version}/participants/{participantContextId}/…``; ``version`` is
+:data:`DEFAULT_API_VERSION` (``v5beta`` at EDC 0.18.0, ``v5`` from 0.19) and is
+one setting, so the upgrade flips a string. The caller authenticates with a
+bearer token from its organisation client (``sub`` = the participant context,
+``scope`` in EDC's ``management-api:…`` grammar); there is no API key.
+
+v5 validates the raw request body against JSON schemas before anything else,
+which is why every body here carries :data:`MANAGEMENT_CONTEXT` as an array and
+policies are rewritten into the DSP profile's compact form
+(:mod:`ds_edc.odrl`).
+
+**There is no EDR endpoint.** EDC 0.18.0's v5 has none (DR
+``2026-04-09-edr-cache-deprecation``). The EDR reaches the caller through the
+transfer's own callback: :meth:`EdcManagementClient.start_transfer` takes
+``callback_addresses``, and the ``TransferProcessStarted`` event delivered there
+carries the data address (:class:`ds_edc.webhooks.TransferProcessStartedEvent`).
+"""
 
 from __future__ import annotations
 
 import asyncio
 import logging
 import time
+from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from typing import Any
 from urllib.parse import quote
 
 import httpx
 
 from .schemas import (
+    MANAGEMENT_CONTEXT,
     AssetCreate,
     CatalogRequest,
     ContractDefCreate,
-    EdrResponse,
     NegotiationRequest,
     NegotiationState,
     PolicyCreate,
@@ -34,9 +54,51 @@ _TERMINAL_STATES = {"TERMINATED"}
 _ACTIVE_TRANSFER_STATES = {"STARTED"}
 _TERMINAL_TRANSFER_STATES = {"COMPLETED", "TERMINATED", "DEPROVISIONING_REQUESTED"}
 
-EDC_CONTEXT = {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"}
+#: The management API version segment. EDC 0.18.0 serves v5 as ``v5beta``;
+#: 0.19 renames it ``v5`` with no compatibility window. One setting.
+DEFAULT_API_VERSION = "v5beta"
 
-_QUERY_SPEC = {"@context": EDC_CONTEXT, "@type": "QuerySpec"}
+#: A request body's ``@context``. Kept under the old name for callers that
+#: build a body by hand; it is now the v2 management context, as an array.
+EDC_CONTEXT = MANAGEMENT_CONTEXT
+
+_QUERY_SPEC = {"@context": MANAGEMENT_CONTEXT, "@type": "QuerySpec"}
+
+#: Where a bearer token comes from. ``ds_auth.ServiceTokenProvider`` is one.
+TokenSource = Callable[[], Awaitable[str]]
+
+
+class BearerAuth(httpx.Auth):
+    """A bearer token per request, refreshed once on a 401.
+
+    The token source caches; a 401 means the cached token was rejected (expired
+    early, realm key rotated), so the source is told to drop it — if it can —
+    and the request is sent once more. A second 401 is the caller's to see.
+    """
+
+    requires_response_body = False
+
+    def __init__(self, token_source: TokenSource):
+        self._token_source = token_source
+
+    def sync_auth_flow(
+        self, request: httpx.Request
+    ) -> Generator[httpx.Request, httpx.Response, None]:  # pragma: no cover
+        raise RuntimeError("EdcManagementClient is async only")
+
+    async def async_auth_flow(
+        self, request: httpx.Request
+    ) -> AsyncGenerator[httpx.Request, httpx.Response]:
+        request.headers["Authorization"] = f"Bearer {await self._token_source()}"
+        response = yield request
+        if response.status_code != 401:
+            return
+        invalidate = getattr(self._token_source, "invalidate", None)
+        if invalidate is None:
+            return
+        invalidate()
+        request.headers["Authorization"] = f"Bearer {await self._token_source()}"
+        yield request
 
 
 class EdcPollTimeout(TimeoutError):
@@ -69,17 +131,35 @@ def _path_id(value: str) -> str:
 
 
 class EdcManagementClient:
-    """Typed async wrapper around the EDC Management API v3."""
+    """Typed async wrapper around one participant context's v5 Management API."""
 
-    def __init__(self, base_url: str, api_key: str | None = None):
-        headers: dict[str, str] = {}
-        if api_key:
-            headers["X-Api-Key"] = api_key
+    def __init__(
+        self,
+        base_url: str,
+        participant_context_id: str,
+        *,
+        token_source: TokenSource | None = None,
+        api_version: str = DEFAULT_API_VERSION,
+        timeout: float = 30.0,
+    ):
+        if not participant_context_id:
+            raise ValueError("participant_context_id is required")
+        self.participant_context_id = participant_context_id
+        self.api_version = api_version.strip("/")
+        #: Every resource path is relative to this.
+        self._root = (
+            f"/{self.api_version}/participants/{quote(participant_context_id, safe='')}"
+        )
         self._http = httpx.AsyncClient(
             base_url=base_url,
-            headers=headers,
-            timeout=30.0,
+            auth=BearerAuth(token_source) if token_source else None,
+            timeout=timeout,
         )
+
+    def _path(self, resource: str, *parts: str) -> str:
+        """``/{version}/participants/{ctx}/{resource}[/{part}…]``, parts quoted."""
+        tail = "".join(f"/{_path_id(p)}" for p in parts)
+        return f"{self._root}/{resource}{tail}"
 
     async def close(self) -> None:
         await self._http.aclose()
@@ -128,19 +208,19 @@ class EdcManagementClient:
     # -- Assets ---------------------------------------------------------------
 
     async def create_asset(self, asset: AssetCreate) -> dict[str, Any]:
-        r = await self._http.post("/v3/assets", json=asset.to_edc())
+        r = await self._http.post(self._path("assets"), json=asset.to_edc())
         self._raise_with_body(r, "create_asset")
         data: dict[str, Any] = r.json()
         return data
 
     async def get_asset(self, asset_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/assets/{_path_id(asset_id)}")
+        r = await self._http.get(self._path("assets", asset_id))
         self._raise_with_body(r, "get_asset")
         data: dict[str, Any] = r.json()
         return data
 
     async def list_assets(self) -> list[dict[str, Any]]:
-        r = await self._http.post("/v3/assets/request", json=_QUERY_SPEC)
+        r = await self._http.post(self._path("assets", "request"), json=_QUERY_SPEC)
         self._raise_with_body(r, "list_assets")
         data: list[dict[str, Any]] = r.json()
         return data
@@ -149,14 +229,14 @@ class EdcManagementClient:
         # A 404 on a *delete* is the requested end state reached by another
         # route: the asset is not there. That is not the same argument as the
         # one the terminate calls used to make — see `terminate_negotiation`.
-        r = await self._http.delete(f"/v3/assets/{_path_id(asset_id)}")
+        r = await self._http.delete(self._path("assets", asset_id))
         if r.status_code != 404:
             self._raise_with_body(r, "delete_asset")
 
     # -- Policies -------------------------------------------------------------
 
     async def create_policy(self, policy: PolicyCreate) -> dict[str, Any]:
-        r = await self._http.post("/v3/policydefinitions", json=policy.to_edc())
+        r = await self._http.post(self._path("policydefinitions"), json=policy.to_edc())
         self._raise_with_body(r, "create_policy")
         data: dict[str, Any] = r.json()
         return data
@@ -165,39 +245,43 @@ class EdcManagementClient:
         # `{}` has no `@context`, so EDC expands it against no vocabulary and
         # the QuerySpec's own defaults apply by accident rather than by request.
         # Every other list call on this client sends the JSON-LD form.
-        r = await self._http.post("/v3/policydefinitions/request", json=_QUERY_SPEC)
+        r = await self._http.post(
+            self._path("policydefinitions", "request"), json=_QUERY_SPEC
+        )
         self._raise_with_body(r, "list_policies")
         data: list[dict[str, Any]] = r.json()
         return data
 
     async def delete_policy(self, policy_id: str) -> None:
-        r = await self._http.delete(f"/v3/policydefinitions/{_path_id(policy_id)}")
+        r = await self._http.delete(self._path("policydefinitions", policy_id))
         if r.status_code != 404:
             self._raise_with_body(r, "delete_policy")
 
     # -- Contract Definitions -------------------------------------------------
 
     async def create_contract_definition(self, cd: ContractDefCreate) -> dict[str, Any]:
-        r = await self._http.post("/v3/contractdefinitions", json=cd.to_edc())
+        r = await self._http.post(self._path("contractdefinitions"), json=cd.to_edc())
         self._raise_with_body(r, "create_contract_definition")
         data: dict[str, Any] = r.json()
         return data
 
     async def list_contract_definitions(self) -> list[dict[str, Any]]:
-        r = await self._http.post("/v3/contractdefinitions/request", json=_QUERY_SPEC)
+        r = await self._http.post(
+            self._path("contractdefinitions", "request"), json=_QUERY_SPEC
+        )
         self._raise_with_body(r, "list_contract_definitions")
         data: list[dict[str, Any]] = r.json()
         return data
 
     async def delete_contract_definition(self, cid: str) -> None:
-        r = await self._http.delete(f"/v3/contractdefinitions/{_path_id(cid)}")
+        r = await self._http.delete(self._path("contractdefinitions", cid))
         if r.status_code != 404:
             self._raise_with_body(r, "delete_contract_definition")
 
     # -- Catalog --------------------------------------------------------------
 
     async def request_catalog(self, req: CatalogRequest) -> dict[str, Any]:
-        r = await self._http.post("/v3/catalog/request", json=req.to_edc())
+        r = await self._http.post(self._path("catalog", "request"), json=req.to_edc())
         self._raise_with_body(r, "request_catalog")
         data: dict[str, Any] = r.json()
         return data
@@ -205,12 +289,12 @@ class EdcManagementClient:
     # -- Negotiation ----------------------------------------------------------
 
     async def start_negotiation(self, req: NegotiationRequest) -> str:
-        r = await self._http.post("/v3/contractnegotiations", json=req.to_edc())
+        r = await self._http.post(self._path("contractnegotiations"), json=req.to_edc())
         self._raise_with_body(r, "start_negotiation")
         return self._created_id(r, "start_negotiation")
 
     async def get_negotiation(self, negotiation_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/contractnegotiations/{_path_id(negotiation_id)}")
+        r = await self._http.get(self._path("contractnegotiations", negotiation_id))
         self._raise_with_body(r, "get_negotiation")
         data: dict[str, Any] = r.json()
         return data
@@ -269,11 +353,10 @@ class EdcManagementClient:
         client observed, rather than one it assumed.
         """
         r = await self._http.post(
-            f"/v3/contractnegotiations/{_path_id(negotiation_id)}/terminate",
+            self._path("contractnegotiations", negotiation_id) + "/terminate",
             json={
-                "@context": EDC_CONTEXT,
+                "@context": MANAGEMENT_CONTEXT,
                 "@type": "TerminateNegotiation",
-                "@id": negotiation_id,
                 "reason": reason,
             },
         )
@@ -331,12 +414,12 @@ class EdcManagementClient:
     # -- Transfer -------------------------------------------------------------
 
     async def start_transfer(self, req: TransferRequest) -> str:
-        r = await self._http.post("/v3/transferprocesses", json=req.to_edc())
+        r = await self._http.post(self._path("transferprocesses"), json=req.to_edc())
         self._raise_with_body(r, "start_transfer")
         return self._created_id(r, "start_transfer")
 
     async def get_transfer(self, transfer_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/transferprocesses/{_path_id(transfer_id)}")
+        r = await self._http.get(self._path("transferprocesses", transfer_id))
         self._raise_with_body(r, "get_transfer")
         data: dict[str, Any] = r.json()
         return data
@@ -358,9 +441,9 @@ class EdcManagementClient:
         idempotent without assuming anything.
         """
         r = await self._http.post(
-            f"/v3/transferprocesses/{_path_id(transfer_id)}/terminate",
+            self._path("transferprocesses", transfer_id) + "/terminate",
             json={
-                "@context": EDC_CONTEXT,
+                "@context": MANAGEMENT_CONTEXT,
                 "@type": "TerminateTransfer",
                 "reason": reason or "Revoked by consumer",
             },
@@ -395,17 +478,15 @@ class EdcManagementClient:
             await asyncio.sleep(poll_interval)
 
     async def list_transfers(self) -> list[dict[str, Any]]:
-        r = await self._http.post("/v3/transferprocesses/request", json=_QUERY_SPEC)
+        r = await self._http.post(
+            self._path("transferprocesses", "request"), json=_QUERY_SPEC
+        )
         self._raise_with_body(r, "list_transfers")
         data: list[dict[str, Any]] = r.json()
         return data
 
-    # -- EDR ------------------------------------------------------------------
-
-    async def get_edr(self, transfer_id: str) -> EdrResponse:
-        r = await self._http.get(f"/v3/edrs/{_path_id(transfer_id)}/dataaddress")
-        self._raise_with_body(r, "get_edr")
-        return EdrResponse.from_edc(r.json())
+    # There is no `get_edr`. v5 has no EDR endpoint; the EDR arrives on the
+    # transfer's callback — see the module docstring.
 
     # -- Query helpers (used by history API) ----------------------------------
 
@@ -416,7 +497,7 @@ class EdcManagementClient:
         state: str | None = None,
     ) -> list[dict[str, Any]]:
         query_spec: dict[str, Any] = {
-            "@context": EDC_CONTEXT,
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "QuerySpec",
             "offset": offset,
             "limit": limit,
@@ -426,12 +507,15 @@ class EdcManagementClient:
         if state:
             query_spec["filterExpression"] = [
                 {
+                    "@type": "Criterion",
                     "operandLeft": "state",
                     "operator": "=",
                     "operandRight": state,
                 }
             ]
-        r = await self._http.post("/v3/contractnegotiations/request", json=query_spec)
+        r = await self._http.post(
+            self._path("contractnegotiations", "request"), json=query_spec
+        )
         self._raise_with_body(r, "query_negotiations")
         data: list[dict[str, Any]] = r.json()
         return data
@@ -443,7 +527,7 @@ class EdcManagementClient:
         state: str | None = None,
     ) -> list[dict[str, Any]]:
         query_spec: dict[str, Any] = {
-            "@context": EDC_CONTEXT,
+            "@context": MANAGEMENT_CONTEXT,
             "@type": "QuerySpec",
             "offset": offset,
             "limit": limit,
@@ -453,18 +537,49 @@ class EdcManagementClient:
         if state:
             query_spec["filterExpression"] = [
                 {
+                    "@type": "Criterion",
                     "operandLeft": "state",
                     "operator": "=",
                     "operandRight": state,
                 }
             ]
-        r = await self._http.post("/v3/transferprocesses/request", json=query_spec)
+        r = await self._http.post(
+            self._path("transferprocesses", "request"), json=query_spec
+        )
         self._raise_with_body(r, "query_transfers")
         data: list[dict[str, Any]] = r.json()
         return data
 
+    async def find_transfer_by_correlation(
+        self, correlation_id: str
+    ) -> dict[str, Any] | None:
+        """The provider-side transfer whose ``correlationId`` is ``correlation_id``.
+
+        A consumer names its own transfer id; the provider holds it as the
+        correlation id of a transfer with a different id. ``None`` when this
+        control plane holds no such transfer.
+        """
+        query_spec = {
+            "@context": MANAGEMENT_CONTEXT,
+            "@type": "QuerySpec",
+            "filterExpression": [
+                {
+                    "@type": "Criterion",
+                    "operandLeft": "correlationId",
+                    "operator": "=",
+                    "operandRight": correlation_id,
+                }
+            ],
+        }
+        r = await self._http.post(
+            self._path("transferprocesses", "request"), json=query_spec
+        )
+        self._raise_with_body(r, "find_transfer_by_correlation")
+        data: list[dict[str, Any]] = r.json() if r.content else []
+        return data[0] if data else None
+
     async def get_agreement(self, agreement_id: str) -> dict[str, Any]:
-        r = await self._http.get(f"/v3/contractagreements/{_path_id(agreement_id)}")
+        r = await self._http.get(self._path("contractagreements", agreement_id))
         self._raise_with_body(r, "get_agreement")
         data: dict[str, Any] = r.json()
         return data

@@ -9,7 +9,7 @@ replicaCount: 1
 
 participant:
   name: provider
-  role: provider # provider | consumer
+  role: provider # provider | consumer | both
   did: "" # "" → did:web:<name>.<baseDomain>
 
 image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
@@ -54,6 +54,13 @@ edc:
   # participants reach it through the ds-edc Ingress, and this connector resolves
   # a counter-party by DSP address through the identity registry.
   managementPort: 19193
+  # The v5 path segment: `v5beta` on EDC 0.18.0, `v5` from 0.19.
+  managementApiVersion: v5beta
+
+# This participant's organisation client — its connector's credential for
+# everything it calls. "" → svc-ds-connector-<participant.name>; set it when the
+# organisation's owner alias differs from the participant name.
+clientId: ""
 
 # ── Trust anchor ──────────────────────────────────────────────────────────────
 # did:web of the trust anchor; "" → did:web:<trustAnchor host>.<baseDomain>.
@@ -125,8 +132,8 @@ notify:
 secrets:
   dbUser: ""
   dbPassword: ""
-  edcApiKey: "" # shared with this participant's ds-edc
-  serviceClientSecret: "" # svc-ds-connector Keycloak secret
+  clientSecret: "" # the organisation client's Keycloak secret (svc-ds-connector-<alias>)
+  edcCallbackKey: "" # EDR callback header value; same as ds-edc secrets.edcCallbackKey
 
 global:
   baseDomain: ds.example.org

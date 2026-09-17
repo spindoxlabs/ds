@@ -1,11 +1,21 @@
-"""Shared EDC Management API v3 client and Pydantic models."""
+"""Shared EDC v5 Management API client and Pydantic models."""
 
-from .client import EdcManagementClient, EdcPollTimeout
+from .client import (
+    DEFAULT_API_VERSION,
+    BearerAuth,
+    EdcManagementClient,
+    EdcPollTimeout,
+    TokenSource,
+)
+from .odrl import OdrlConversionError, to_dsp_compact
 from .schemas import (
     DATASPACE_PROTOCOL,
     DSP_PATH_SEGMENT,
     DSP_VERSION,
+    MANAGEMENT_CONTEXT,
+    TRANSFER_STARTED_EVENT,
     AssetCreate,
+    CallbackAddress,
     CatalogRequest,
     ContractDefCreate,
     DataAddress,
@@ -19,9 +29,22 @@ from .schemas import (
     TransferRequest,
     TransferState,
 )
-from .webhooks import ContractNegotiationEvent, TransferProcessEvent
+from .webhooks import (
+    ContractNegotiationEvent,
+    TransferProcessEvent,
+    TransferProcessStartedEvent,
+)
 
 __all__ = [
+    "DEFAULT_API_VERSION",
+    "MANAGEMENT_CONTEXT",
+    "TRANSFER_STARTED_EVENT",
+    "BearerAuth",
+    "CallbackAddress",
+    "OdrlConversionError",
+    "TokenSource",
+    "TransferProcessStartedEvent",
+    "to_dsp_compact",
     "DATASPACE_PROTOCOL",
     "DSP_PATH_SEGMENT",
     "DSP_VERSION",
