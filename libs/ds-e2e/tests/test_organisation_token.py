@@ -175,9 +175,18 @@ def test_an_unreachable_port_passes(settings):
 
 
 @pytest.mark.parametrize("status", [401, 403, 404, 200])
-def test_any_answer_from_a_management_port_fails(settings, status):
+def test_any_answer_from_a_management_port_fails(settings, status, monkeypatch):
     """A 401 is the port being reachable: the token is then the only check,
-    and EDC does not bind it to an audience."""
+    and EDC does not bind it to an audience.
+
+    **The topology is pinned**, because the verdict depends on it: a port that
+    answers is a defect under Docker and a construction under `dev:*`, and
+    leaving it to whatever the machine running the tests happens to have started
+    makes this assertion depend on the developer's tmux session.
+    """
+    monkeypatch.setattr(
+        "ds_e2e.flows.organisation_token._edc_runs_in_docker", lambda: True
+    )
     http = MagicMock(spec=HttpClient)
     http.raw.side_effect = [httpx.ConnectError("refused"), (status, None)] + [
         httpx.ConnectError("refused")
@@ -247,3 +256,60 @@ def test_the_data_step_asks_the_mock_plane_whatever_the_suite_plane(monkeypatch)
 
     assert http.post_raw.call_args.args[0] == "http://172.17.0.1:30022/query"
     assert _step(result, "data").status == "PASS"
+
+
+# ── the unpublished-port control, and the topology it belongs to ─────────────
+
+
+def _port_flow(settings, monkeypatch, *, in_docker: bool):
+    """A flow whose management probe always answers, on a chosen topology."""
+    http = MagicMock(spec=HttpClient)
+    http.raw = MagicMock(return_value=(401, {}))
+    monkeypatch.setattr(
+        "ds_e2e.flows.organisation_token._edc_runs_in_docker", lambda: in_docker
+    )
+    return OrganisationTokenFlow(settings, http)
+
+
+def test_a_published_management_port_fails_in_the_container_topology(
+    settings, monkeypatch
+):
+    """The control ADR-0014 rests on: EDC never checks a management token's
+    audience, so an unpublished port is the thing standing between an
+    organisation token and that organisation's contracts."""
+    flow = _port_flow(settings, monkeypatch, in_docker=True)
+    result = FlowResult(flow_name="organisation-token")
+
+    flow._check_management_port(result)
+    assert result.steps[-1].status == "FAIL"
+
+
+def test_a_published_management_port_is_skipped_for_host_jvms(settings, monkeypatch):
+    """`dev:*` runs the EDCs as host JVMs, which bind the port by construction.
+
+    Failing there made `e2e:all` permanently red in dev — a suite with a standing
+    red line is one people stop reading, and this is the same reasoning
+    `fail-closed` writes out for the same situation. A `SKIP` is counted apart
+    from a pass and carries the reason.
+    """
+    flow = _port_flow(settings, monkeypatch, in_docker=False)
+    result = FlowResult(flow_name="organisation-token")
+
+    flow._check_management_port(result)
+    assert result.steps[-1].status == "SKIP"
+    assert "host JVMs" in result.steps[-1].detail
+
+
+def test_the_skip_is_not_reached_when_nothing_answers(settings, monkeypatch):
+    """A silent port passes in either topology — the skip is about an answer it
+    cannot attribute, not about being in dev."""
+    http = MagicMock(spec=HttpClient)
+    http.raw = MagicMock(side_effect=httpx.ConnectError("refused"))
+    monkeypatch.setattr(
+        "ds_e2e.flows.organisation_token._edc_runs_in_docker", lambda: False
+    )
+    flow = OrganisationTokenFlow(settings, http)
+    result = FlowResult(flow_name="organisation-token")
+
+    flow._check_management_port(result)
+    assert result.steps[-1].status == "PASS"

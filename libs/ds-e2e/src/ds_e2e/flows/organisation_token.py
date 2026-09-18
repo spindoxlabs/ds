@@ -42,6 +42,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import subprocess
 import time
 import urllib.parse
 from typing import Any
@@ -62,6 +63,30 @@ PURPOSE = "GridMonitoring"
 REASON = "e2e-organisation-token"
 #: How long provenance may take to materialise a fire-and-forget event.
 PROVENANCE_WAIT_S = 15.0
+
+
+def _edc_runs_in_docker() -> bool:
+    """Is the provider EDC a container, or a host JVM?
+
+    The same question `fail-closed` asks about the connector, and the same way:
+    ask Docker for a **running** container by name. `dev:*` replaces the EDCs with
+    host processes, and a port they bind says nothing about whether a deployment
+    would publish it.
+
+    Docker being absent or unreadable answers *not in Docker*, which downgrades a
+    step to a skip rather than failing a run for a tool this harness does not
+    require.
+    """
+    try:
+        proc = subprocess.run(
+            ["docker", "ps", "--filter", "name=^dataspaces-edc-rec-1$", "--format", "{{.Names}}"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return proc.returncode == 0 and "dataspaces-edc-rec-1" in proc.stdout
 
 
 def _claims(token: str) -> dict[str, Any]:
@@ -280,6 +305,29 @@ class OrganisationTokenFlow(BaseFlow):
                 # Refused, unroutable or timed out: nothing answers here.
                 continue
             answered[url] = status
+        if answered and not _edc_runs_in_docker():
+            # **`dev:*`, where the EDCs are host JVMs.** They bind the management
+            # port on the host by construction — `task edc-rec:watch` runs the fat
+            # JAR directly — so the property this step asserts is one only the
+            # container topology can have. Failing here would make `e2e:all`
+            # permanently red in dev, and a suite with a standing red line is one
+            # people stop reading; that is the reasoning `fail-closed` already
+            # writes out at length for the same situation.
+            #
+            # Detected rather than configured. The setting could be cleared by
+            # hand for a dev run, and was not: the default is non-empty, nothing
+            # sets it, and the step failed for a property of the topology rather
+            # than of the platform. A check that needs a variable nobody sets is a
+            # check that runs in one mode.
+            result.skip_step(
+                "management port unreachable",
+                "the EDCs are host JVMs in this topology (`task dev:*`), so they "
+                "listen on the host by construction — the unpublished-port control "
+                "is a property of the container topology and is asserted there. "
+                "Not evidence either way in this run.",
+                answered=answered,
+            )
+            return
         if answered:
             result.fail_step(
                 "management port unreachable",

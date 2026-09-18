@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-17 from `42a1ce4-dirty`.
+Generated 2026-09-18 from `1b6b69b-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
