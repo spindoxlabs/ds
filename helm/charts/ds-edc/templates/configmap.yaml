@@ -117,6 +117,18 @@ data:
     edc.iam.dcp.scopes.membership.value=org.eclipse.dspace.dcp.vc.type:MembershipCredential:read
     edc.iam.dcp.scopes.membership.profile=*
 
+    # ── How fast a suspension is seen ─────────────────────────────────────────
+    # Membership is a claim on a credential EDC has already verified, so nothing
+    # is asked per negotiation and nothing has to be invalidated. What bounds
+    # *deactivation* is the StatusList2021 register cache: EDC runs `IsNotRevoked`
+    # against the anchor's registers and holds each fetched register this long.
+    # **Milliseconds; EDC's default is 15 minutes**, which would be a fifteen-fold
+    # regression on the 60 s decision cache the retired HTTP membership check had.
+    # The cost of the lower value is one conditional GET per register per runtime
+    # per window against a static signed document — not per negotiation and not
+    # per counterparty. See ADR-0016.
+    edc.iam.credential.revocation.cache.validity={{ .Values.revocationCacheValidityMs }}
+
     # did:web resolution over HTTPS — a DID document carries trust keys.
     edc.iam.did.web.use.https={{ .Values.didWebUseHttps }}
 

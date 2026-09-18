@@ -260,6 +260,98 @@ class RuntimeContractTest {
         }
     }
 
+    // ── Revocation, and the window a suspension takes to be seen ────────────────
+
+    /** The setting that bounds how long a suspended participant keeps negotiating. */
+    private static final String REVOCATION_CACHE = "edc.iam.credential.revocation.cache.validity";
+
+    /** EDC's own default, from {@code RevocationServiceRegistryExtension}: 15 minutes. */
+    private static final long EDC_DEFAULT_REVOCATION_CACHE_MS = 15 * 60 * 1000L;
+
+    /** What ds sets instead — the decision cache the HTTP membership check had. */
+    private static final long DS_REVOCATION_CACHE_MS = 60_000L;
+
+    @Test
+    @DisplayName("every config bounds the revocation window explicitly, and they agree")
+    void everyConfigSetsTheRevocationCacheValidity() throws IOException {
+        // Membership stopped being an HTTP question ds could invalidate
+        // (`the-owner-scope-is-a-string-nobody-grants`): it is a claim on a
+        // credential EDC has already verified, so what bounds *deactivation* is
+        // how long EDC reuses a fetched StatusList2021 register. Leaving that at
+        // EDC's default would have made a suspension take fifteen minutes to bite
+        // where the retired check took sixty seconds — a regression nothing in the
+        // platform would have reported, because every test still passes while a
+        // credential is merely stale.
+        //
+        // Asserted as a **contract across four files**, not as a value in one:
+        // the three participant configs and the chart are independent copies, and
+        // the chart is the one no developer ever starts a runtime against.
+        var problems = new ArrayList<String>();
+        for (String participant : PARTICIPANTS) {
+            checkRevocationCache(participant, valueOf(participant, REVOCATION_CACHE), problems);
+        }
+        checkRevocationCache(
+                CHART_CONFIGMAP, renderedChartValue(REVOCATION_CACHE), problems);
+        if (!problems.isEmpty()) {
+            fail(REVOCATION_CACHE + ":\n  " + String.join("\n  ", problems));
+        }
+    }
+
+    private static void checkRevocationCache(String source, String raw, List<String> problems) {
+        if (raw.isEmpty()) {
+            problems.add(source + ": not set, so EDC's "
+                    + EDC_DEFAULT_REVOCATION_CACHE_MS + "ms default applies and a suspended "
+                    + "participant keeps negotiating for fifteen minutes");
+            return;
+        }
+        long millis;
+        try {
+            millis = Long.parseLong(raw);
+        } catch (NumberFormatException e) {
+            problems.add(source + ": '" + raw + "' is not a number of milliseconds");
+            return;
+        }
+        if (millis != DS_REVOCATION_CACHE_MS) {
+            // Equality rather than an upper bound: four copies that merely each
+            // satisfy a bound can still disagree with each other, and two
+            // participants seeing a suspension at different times is the defect
+            // that would be hardest to reproduce. Change this constant to change
+            // the window.
+            problems.add(source + ": " + millis + "ms, but this dataspace's window is "
+                    + DS_REVOCATION_CACHE_MS + "ms — change DS_REVOCATION_CACHE_MS "
+                    + "deliberately, or make this copy agree");
+        }
+    }
+
+    /**
+     * The chart's value for {@code key}, with a single-value Helm expression resolved
+     * against {@code values.yaml}.
+     *
+     * <p>{@link #chartValues()} returns the raw template text, which for a templated
+     * line is {@code {{ .Values.something }}} — a string that satisfies "is it set?"
+     * and tells you nothing about what a cluster would actually run. Resolving the
+     * one-value case is the difference between asserting the chart and asserting that
+     * the chart has a placeholder.
+     */
+    private static String renderedChartValue(String key) throws IOException {
+        String raw = chartValues().getOrDefault(key, "");
+        var reference = Pattern.compile("^\\{\\{-?\\s*\\.Values\\.([A-Za-z0-9_.]+)\\s*-?\\}\\}$");
+        var matcher = reference.matcher(raw);
+        if (!matcher.matches()) {
+            return raw;
+        }
+        String path = matcher.group(1);
+        String leaf = path.substring(path.lastIndexOf('.') + 1);
+        var assignment = Pattern.compile("^" + Pattern.quote(leaf) + ":\\s*(\\S+)\\s*$");
+        for (var line : Files.readAllLines(repoRoot.resolve("helm/charts/ds-edc/values.yaml"))) {
+            var value = assignment.matcher(line);
+            if (value.matches()) {
+                return value.group(1);
+            }
+        }
+        return "";
+    }
+
     /** key → raw (template) value, for the chart's `edc.properties` lines. */
     private static Map<String, String> chartValues() throws IOException {
         var values = new TreeMap<String, String>();

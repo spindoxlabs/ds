@@ -351,14 +351,23 @@ holder stores the consenting subjects' data under, registered with the consent b
 organisation that collected it (see [ds-connector](../connector.md#a-collector-registers-consent)).
 The type is open and ds does not interpret it; `split_key` and `values_of_type` are the one
 parser both ends use. Like `principals`, the list is an allow-list of the same consenting
-subjects, and a handler reads the list it knows — `services/dataset-api-mock` implements
-`subject_key_match` (`args: {column, key_type}`), which matches the column against the values of
-that type and ignores the principals. An empty list narrows to nothing. The connector refuses a
-verdict only when both lists are empty. **Contract change:** a PEP that parses the row filter
-with `extra="forbid"` and predates the field refuses every decision carrying a filter, which is
-the intended direction; the celine `dataset-api` reads the filter as a mapping and ignores the
-key until its own matching lands (a later step, in that repository). Keys are personal data:
-they never reach provenance, logs or the evidence record.
+subjects, and a handler reads the list it knows — `subject_key_match`
+(`args: {column, key_type}`) matches the column against the values of that type and ignores the
+principals. An empty list narrows to nothing. The connector refuses a verdict only when both
+lists are empty. Keys are personal data: they never reach provenance, logs or the evidence
+record.
+
+**The celine `dataset-api` implements `subject_key_match`** (2026-09-18), against its own
+specification `docs/dataspace-row-filters.md` in that repository. It is the **reference
+implementation** of this contract and the PEP a deployment actually runs;
+`services/dataset-api-mock` is a stand-in that implements the handler so the e2e flows have
+something to exercise, and it is never the authority on the shape. Where the two disagree,
+the `dataset-api` is right and the mock is the thing to fix. This section said the
+`dataset-api` "ignores the key until its own matching lands"; it does not, and that sentence
+outlived the work it described by a day.
+
+**Contract change, still true:** a PEP that parses the row filter with `extra="forbid"` and
+predates the field refuses every decision carrying a filter, which is the intended direction.
 
 **Unknown fields are refused** (`extra="forbid"`). The dangerous drift is one-way — a PDP that
 adds a narrowing an older PEP ignores serves rows it should have withheld. A parse failure is

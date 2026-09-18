@@ -71,7 +71,8 @@ a policy whose only permission was deleted evaluates to *success*.
 `circle.admits_wildcard` reads for `D-14`. One rule, one implementation; two enforcement
 points that cannot disagree about who the recipients are.
 
-**6. The restriction is opt-in per dataset** — `access_requirements: partner`, the value that
+**6. The restriction is opt-in per dataset, confirmed by the maintainer 2026-09-18** —
+`access_requirements: partner`, the value that
 used to mean `owner:<alias>:partner`. Deriving it for every dataset with an offer would close
 `D-15`'s per-party grant: a person may admit a party the offer does not name, and a
 negotiation the access policy refuses never reaches the consent layer that would have admitted
@@ -104,11 +105,26 @@ unauthenticated as signed VC-JWTs, and EDC 0.18.0 enforces them —
 `BaseRevocationListService` validates a JWT status list through the DID public key whenever
 the accepted content type is not exactly `application/json` (the default is `*/*`).
 
-**The cost is a window.** `edc.iam.credential.revocation.cache.validity` defaults to **15
-minutes** and ds does not override it, so a suspended participant may keep negotiating for up
-to that long at a verifier that has already fetched the register — against 60 seconds before.
-A deployment that needs it tighter sets that value; the trade is one HTTP GET per verifier per
-window against one per negotiation, which is the trade DCP was designed to make.
+**The window is set to 60 seconds, not left at EDC's default.**
+`edc.iam.credential.revocation.cache.validity` defaults to **15 minutes**, which would have
+made a suspension take fifteen times longer to bite than the 60 s decision cache the HTTP
+check had — a regression no test would report, because everything passes while a credential is
+merely stale. The maintainer decided on 2026-09-18 to restore the old number: `60000` in all
+three `services/connector/config/*.properties` and in the chart
+(`revocationCacheValidityMs`).
+
+**What that costs, precisely.** One conditional GET per **register** per **runtime** per
+minute — `/status/1` and `/status/2` on the trust anchor — not one per negotiation and not one
+per counterparty, because a register is shared by every credential the anchor issues. So the
+anchor sees a steady, bounded rate that does not grow with exchange volume, against a call
+that used to sit on the critical path of every negotiation. The register is static, signed and
+unauthenticated, so an anchor outage costs freshness rather than availability; a fetch that
+fails makes the credential fail closed, which is the safe direction and the reason not to push
+this much lower.
+
+`RuntimeContractTest.everyConfigSetsTheRevocationCacheValidity` holds the four copies to one
+value and resolves the chart's Helm reference against `values.yaml`, so it asserts what a
+cluster would run rather than that the chart has a placeholder.
 
 **A restricted offering is invisible to the federated crawler** unless the crawler's
 participant is a recipient. Accepted: the federated index is advisory (`C-2`), never
@@ -126,15 +142,18 @@ leaving the trap for the next reader.
 `allowed_scopes`, re-issue `MembershipCredential`s so the `memberOf` claim is present and
 correct, set `CONNECTOR_DATASPACE_URI` to the same value as
 `IDENTITY_REGISTRY_DATASPACE_URI` (a mismatch denies every negotiation, which is at least the
-safe direction), run connector migration `0013`, and rebuild the EDC image — the constraint
-functions are Java.
+safe direction), run connector migration `0013`, rebuild the EDC image — the constraint
+functions are Java — and carry
+`edc.iam.credential.revocation.cache.validity=60000` into its own EDC configuration if it
+does not render the chart.
 
 ## Alternatives considered
 
 **Keep the HTTP membership check alongside the credential claim**, for immediate
 deactivation. Rejected 2026-09-17 by the maintainer: it is the central call DCP removes, it
 can disagree with the signed claim, and status-list suspension already answers the question
-the check was kept for. The 15-minute window is the recorded price.
+the check was kept for. The price is a *window* rather than a lost property, and the window is
+configured rather than inherited — see the consequences above.
 
 **Declare the recipient set on the dataset** instead of deriving it from the offers.
 Rejected: `circle.admits_wildcard` already reads `recipients.recipient` for `D-14`, and two

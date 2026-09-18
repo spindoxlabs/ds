@@ -85,6 +85,17 @@ sqlSchemaAutocreate: true
 # visible; do not set false outside a throwaway cluster.
 didWebUseHttps: true
 
+# How long a fetched StatusList2021 register is reused, in **milliseconds**, and
+# so the window in which a suspended participant can still negotiate.
+#
+# EDC's default is 900000 (15 minutes). ds sets 60000 because that is what the
+# per-negotiation HTTP membership check it replaced had, and a version bump
+# should not quietly make deactivation fifteen times slower. Raising it costs
+# latency on a suspension; lowering it costs one more conditional GET per
+# register per runtime per window, against a static signed document the anchor
+# serves to anyone. See ADR-0016.
+revocationCacheValidityMs: 60000
+
 # In-cluster address of this participant's connector, for EDC transfer/webhook
 # callbacks. "" → ds-connector-<participant>.
 connectorServiceName: ""

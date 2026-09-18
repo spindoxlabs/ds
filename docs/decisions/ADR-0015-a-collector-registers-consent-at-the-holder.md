@@ -64,8 +64,13 @@ managing consent for natural persons) and prescribe no mechanism. EDC has no con
   consent row and in the row filter, and nowhere else: not in `legal_basis`, not in provenance,
   not in logs, and only the registering organisation reads them back.
 - **The data-plane contract gained `keys`.** A PEP that refuses unknown fields refuses every
-  filtered decision until it is upgraded; the celine `dataset-api` ignores the field until its
-  own matching lands. `services/dataset-api-mock` implements `subject_key_match`.
+  filtered decision until it is upgraded. **The celine `dataset-api` implements
+  `subject_key_match`** (2026-09-18, specified in `docs/dataspace-row-filters.md` in that
+  repository) — it is the reference implementation, and the PEP a deployment runs.
+  `services/dataset-api-mock` implements the handler too, so the e2e flows have something to
+  exercise; it is a stand-in and never the authority on the shape. This row said the
+  `dataset-api` "ignores the field until its own matching lands", which stopped being true the
+  day after it was written.
 - **`POST /consent/admin/shares` refuses unknown body fields** (`extra="forbid"`), so a
   mistyped `keys` is a `422` rather than a registration without keys.
 - **A participant operator's console can no longer register consent**, and neither can a plain
