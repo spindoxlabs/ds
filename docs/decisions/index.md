@@ -25,6 +25,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0013](ADR-0013-governance-shape-comes-from-celine-utils.md) | The governance shape comes from `celine.governance`, not a parallel implementation |
 | [ADR-0014](ADR-0014-management-api-v5-and-the-organisation-actor.md) | The management API is v5beta behind OAuth2, and an organisation can act as itself |
 | [ADR-0015](ADR-0015-a-collector-registers-consent-at-the-holder.md) | A collector registers consent at the holder |
+| [ADR-0016](ADR-0016-access-policy-and-contract-policy-are-two-policies.md) | The access policy and the contract policy are two policies, and membership is a credential claim |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule

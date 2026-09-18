@@ -219,7 +219,7 @@ def resolve_offer(offer_id: str) -> SharingOffer:
 def offers_covering(
     dataset_id: str,
     purposes: list[str] | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
 ) -> list[SharingOffer]:
     """Consent-based offers that back this dataset for these purposes.
 
@@ -242,12 +242,12 @@ def offers_covering(
         for offer in (catalogue.get(oid) for oid in offers_for_dataset(dataset_id))
         if offer is not None and offer.requires_consent
     ]
-    if controller_role:
+    if recipient_role:
         candidates = [
             offer
             for offer in candidates
-            if not offer.recipients.controller_role
-            or offer.recipients.controller_role == controller_role
+            if not offer.recipients.recipient_role
+            or offer.recipients.recipient_role == recipient_role
         ]
     if not purposes:
         return candidates
@@ -282,8 +282,8 @@ def public_offer_projection(offer: SharingOffer) -> dict:
         "legal_basis": offer.legal_basis,
         "requires_consent": offer.requires_consent,
         "recipients": {
-            "controller": offer.recipients.controller,
-            "controller_role": offer.recipients.controller_role,
+            "recipient": offer.recipients.recipient,
+            "recipient_role": offer.recipients.recipient_role,
             "processors": {"category": offer.recipients.processors.category},
         },
         "subject_scope": offer.subject_scope,

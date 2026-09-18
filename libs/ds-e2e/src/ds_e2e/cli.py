@@ -49,6 +49,7 @@ class FlowName(StrEnum):
     catalog_discovery = "catalog-discovery"
     lineage = "lineage"
     two_providers = "two-providers"
+    recipient_restriction = "recipient-restriction"
     smoke = "smoke"
     consent_withdrawal = "consent-withdrawal"
     organisation_token = "organisation-token"

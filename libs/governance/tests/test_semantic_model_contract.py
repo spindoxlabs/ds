@@ -169,6 +169,7 @@ def _evidence(key: str, rule):
         rule=rule,
         asset_id=key,
         policy_id=f"{key}-policy",
+        access_policy_id=f"{key}-access-policy",
         contract_id=f"{key}-contract",
     )
 

@@ -289,7 +289,6 @@ def _fold_legacy_policy(
     | `consent.scope`, `consent.on_revocation` | `consent_scope`, `consent_on_revocation` |
     | `obligations.contract_required`        | `contract_required`            |
     | `obligations.*` (the rest)             | `obligations.*`                |
-    | `audience`                             | `audience`                     |
     | `permitted_actions`, `prohibited_actions`, `valid_from`, `valid_until` | the same names |
 
     **The canonical value wins where a file states both**, which is the rule
@@ -337,11 +336,11 @@ def _fold_legacy_policy(
         # `obligations.delete_after_days` legacily means both.
         merged["obligations"] = {**obligations, **(merged.get("obligations") or {})}
 
-    if policy_raw.get("audience"):
-        merged["audience"] = {
-            **policy_raw["audience"],
-            **(merged.get("audience") or {}),
-        }
+    # `audience` was folded here too, and is not any more: the block was removed
+    # in full (see the note above `DataspaceAsset` in `models.py`). Folding a
+    # legacy spelling of a field nothing reads would land it in `extra`, where it
+    # looks configured and is not — the `audience-declared` compliance check
+    # reports it instead, whichever block it was written in.
 
     return merged
 

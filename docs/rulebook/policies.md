@@ -112,9 +112,19 @@ policy follows.
 | `yellow` | `odrl:sublicense` |
 | `green` | none |
 
-**Constraints attached to a permission**, in emission order: membership (for `internal`
-and `restricted`, or an explicit `access_requirements`), contract acknowledgement (for
-`restricted`), purpose, and consent status.
+**Two policies, and which one a constraint lands in is the decision.** EDC's
+`ContractDefinition` holds an **access** policy — may this counterparty see and ask for the
+asset? — and a **contract** policy — what binds once an agreement exists. Until 2026-09-17 ds
+emitted one policy into both slots, so every admission condition was published to every
+counterparty and none of them could hide anything.
+
+- **Access policy** (`<key>-access-policy`): dataspace membership (for `internal` and
+  `restricted`, or an explicit `access_requirements`), and `odrl:recipient` where a dataset
+  asks for `access_requirements: partner`. It carries the same permitted actions as the
+  contract policy, because EDC's `ScopeFilter` deletes a rule whose action is unbound in the
+  scope and a policy whose only permission was deleted evaluates to **success**.
+- **Contract policy** (`<key>-policy`), in emission order: contract acknowledgement (for
+  `restricted`), purpose, and consent status.
 
 Constraints within a permission are **ANDed**. Multiple purposes are therefore emitted as
 one `odrl:isAnyOf` constraint listing every permitted purpose, not one constraint per
@@ -126,7 +136,7 @@ an attribution obligation when the dataset declares one.
 | # | Rule | Status |
 |---|---|---|
 | A-6 | `access_level: secret` means the dataset is never mapped or published | **Enforced** |
-| A-7 | A `pii` dataset may never be transferred onward, derived from, distributed or sublicensed | **Enforced** as an ODRL prohibition. Note that a prohibition is a *statement to the consumer*; nothing in this platform technically prevents a consumer from doing it after receipt |
+| A-7 | A `pii` dataset may never have its ownership transferred, be derived from, distributed or sublicensed | **Enforced** as an ODRL prohibition, and the four actions are the ODRL 2.2 ones rather than a paraphrase (re-read from the vocabulary 2026-09-17): `odrl:transfer` is ownership *in perpetuity*, `odrl:distribute` is supplying the asset to third parties, `odrl:derive` is making and editing a derivative, `odrl:sublicense` is granting an identical policy onward. "Passed on" is `distribute`, which is why prohibiting `transfer` alone would not have said it. Note that a prohibition is a *statement to the consumer*; nothing in this platform technically prevents a consumer from doing it after receipt |
 | A-8 | Retention is expressed as a machine-readable duty on every dataset that declares one | **Enforced**, prefix included: `rdf:` is declared in the emitted `@context` when an obligation uses it, on the same rule `dct` follows. Note the asymmetry with `ds:`, which must **not** be declared — see the header of `mapper.py`: EDC binds the literal string `"ds:contractRequired"`, so declaring that prefix would expand the term and silently stop the contract constraint being evaluated |
 | A-9 | A policy's validity window (`valid_from` / `valid_until`) is enforced | **Not enforced, and deliberately not emitted** — a decision rather than a defect now. Emitting them as ODRL constraints would show a counterparty a term nothing enforces: no date operand is bound in `services/edc-extensions`, and advertising an unenforced term is exactly what `DSSC-AUP-06` forbids and what `GOV-04` was. Deleting the fields would replace *"we do not do this yet"* with silence, and the next producer would re-add the key expecting it to work. They are **reported** instead, by the `declared-not-enforced` check, as warnings: the file is not invalid, the platform is incomplete. Closing this properly means binding a date operand in the EDC first |
 
@@ -149,9 +159,19 @@ this platform's design requires.
 
 ### What each means concretely here
 
-- **CR-1** is why a `pii` dataset published at `access_level: open` still cannot be
-  transferred: `open` permits `odrl:transfer`, `pii` prohibits it, the prohibition wins.
-  The mapper emits both and the conflict is real, not hypothetical.
+- **CR-1** is why a `pii` dataset published at `access_level: open` still cannot be passed
+  on: `open` permits `odrl:transfer`, `pii` prohibits it, the prohibition wins. The mapper
+  emits both and the conflict is real, not hypothetical.
+
+  **Read against the ODRL 2.2 vocabulary itself, 2026-09-17**, because the gloss here used to
+  say "cannot be transferred" for what a reader would call *passing data on*, and those are
+  two different actions. `odrl:transfer` (Core) is *"to transfer the ownership of the Asset in
+  perpetuity"*; supplying it to third parties is `odrl:distribute` (Common), *"to supply the
+  Asset to third-parties"*. The `pii` prohibition set covers **both**, and `odrl:derive` and
+  `odrl:sublicense` beside them, so the behaviour was right and only this sentence was loose.
+  CR-1 itself is unchanged: it is `DSSC-AUP-51`'s precedence rule, cited correctly, and the
+  vocabulary gives no reason to restate it. What the prohibition *table* derives from is
+  `CR-2` — the platform, not the producer, decides it from `classification`.
 - **CR-2** is why the classification-driven prohibitions and the consent gate are derived
   by the platform from `classification` and `consent_required`, not written by the producer.
   A producer cannot opt out of them in `governance.yaml`.
@@ -187,8 +207,8 @@ the sharing itself, and require every participant to have the capability.
 | Stage | Point | Mechanism | Status |
 |---|---|---|---|
 | **Publication** | `POST /provider/sync` | validation gate; `secret` never published; unresolvable consent gate refused | **Enforced** |
-| **Discovery** | DSP catalogue over a DCP-verified counterparty | the offer carries the policy; a consumer sees the terms before negotiating | **Enforced** over DSP, and on `POST /consumer/catalog` since defect **P0-1** closed — `require_consumer_catalog_caller` accepts a service scope **or** a `ConsumerUser` VC-JWT, never neither. `services/connector/tests/test_consumer_catalog_auth.py` |
-| **Negotiation** | EDC constraint functions in `contract.negotiation` scope, calling `ds-connector /internal/*` | membership, purpose, consent, contract acknowledgement | **Enforced** — defect **P1-1** is closed. No emitted operand is stripped: `ds:accessScope` is no longer bound with nothing behind it, `ds:contractRequired` replaced the unbound `odrl:industry`, and consent is registered in both scopes and in both spellings. `PolicyRegistrationTest`, `NegotiationScopeFunctionsTest`, `NegotiationConsentValidatorTest` |
+| **Discovery** | DSP catalogue over a DCP-verified counterparty, filtered by the **access policy** in the `catalog` scope | the offer carries the policy; a consumer sees the terms before negotiating — and sees only what it is admitted to | **Enforced** over DSP, and on `POST /consumer/catalog` since defect **P0-1** closed — `require_consumer_catalog_caller` accepts a service scope **or** a `ConsumerUser` VC-JWT, never neither. Since 2026-09-17 `ContractDefinitionResolverImpl` also evaluates each definition's access policy against the requesting agent, so membership and `odrl:recipient` hide a dataset rather than refusing it late (`C-21`). `services/connector/tests/test_consumer_catalog_auth.py`, `PolicyRegistrationTest` |
+| **Negotiation** | the **access policy** re-evaluated in `catalog` scope (`ContractValidationServiceImpl.validateInitialOffer`), then the **contract policy** in `contract.negotiation` scope, calling `ds-connector /internal/*` | membership and recipient, then purpose, consent, contract acknowledgement | **Enforced** — defect **P1-1** is closed. No emitted operand is stripped: `ds:accessScope` is no longer bound with nothing behind it, `ds:contractRequired` replaced the unbound `odrl:industry`, and consent is registered in both scopes and in both spellings. Membership stopped being an HTTP call to a string nobody grants and became a constraint on the `memberOf` claim of a verified `MembershipCredential`. `PolicyRegistrationTest`, `AccessPolicyFunctionsTest`, `NegotiationScopeFunctionsTest`, `NegotiationConsentValidatorTest` |
 | **Negotiation** | `ConsentPendingGuard` | parks a negotiation while a subject decides, rather than refusing | **Enforced** |
 | **During transfer** | `AgreementConsentFunction` in `policy.monitor` scope | revocation terminates a live transfer through EDC's state machine | **Enforced.** `FailClosedTest` covers this function in both scopes — withdrawal after signing terminates, an agreement with no asset terminates, sustained silence terminates, and a definite answer clears the streak |
 | **Data plane** | `POST /internal/dataplane/authorize` | per-request decision plus the row filter | **Enforced.** The decision shape is `ds.governance.dataplane`, parsed by both ends — a PEP that cannot read it, or cannot apply the filter it names, serves nothing (defect **P1-2**, closed) |

@@ -11,7 +11,7 @@ from .checks import (
 )
 from .consent_checks import (
     CONSENT_CHECKS,
-    ControllerLookup,
+    RecipientLookup,
     check_dataset_purposes,
     check_purpose_taxonomy,
     check_sharing_offers,
@@ -22,7 +22,7 @@ from .runtime import (
     fetch_participant_dids,
 )
 from .validator import (
-    build_controller_lookup,
+    build_recipient_lookup,
     load_participant_dids,
     validate,
 )
@@ -33,7 +33,7 @@ __all__ = [
     "DatasetEvidence",
     "Finding",
     "OwnerLookup",
-    "ControllerLookup",
+    "RecipientLookup",
     "ValidationResult",
     "check_exposure_conflict",
     "load_exposed",
@@ -45,7 +45,7 @@ __all__ = [
     "write_artifacts",
     "RuntimeOwnerLookup",
     "fetch_participant_dids",
-    "build_controller_lookup",
+    "build_recipient_lookup",
     "load_participant_dids",
     "validate",
 ]

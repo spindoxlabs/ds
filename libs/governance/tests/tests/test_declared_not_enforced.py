@@ -50,13 +50,26 @@ def test_policy_and_contract_ids_differ_by_default():
     assert contract["@id"].endswith("-contract")
 
 
-def test_naming_the_access_policy_no_longer_renames_the_contract():
-    """The counterfactual.
+def test_the_three_derived_ids_differ_by_default():
+    """Three EDC objects, three ids — the access policy is the third since the split."""
+    mapper = _mapper()
+    rule = GovernanceRuleV2(access_level="open", classification="green")
+    policy = mapper.to_policy_create("datasets.gold.meters", rule)
+    access = mapper.to_access_policy_create("datasets.gold.meters", rule)
+    contract = mapper.to_contract_definition(
+        "datasets.gold.meters", rule, policy["@id"], "asset-1"
+    )
+    assert len({policy["@id"], access["@id"], contract["@id"]}) == 3
+    assert access["@id"].endswith("-access-policy")
 
-    `to_contract_definition` derived its `@id` from `access_policy_id`, so a
-    deployment that named its access policy gave the contract definition the
-    same id. Nothing 409s — they are separate EDC collections — the id simply
-    stops saying which entity is meant.
+
+def test_naming_the_access_policy_names_the_access_policy_and_nothing_else():
+    """The counterfactual, updated for the split.
+
+    `access_policy_id` used to name *the* policy — and, through
+    `to_contract_definition`, the contract definition as well. It now names the
+    access policy, which is what the field always said it did; the contract
+    policy keeps the derived `-policy` id an agreement references.
     """
     mapper = _mapper()
     rule = GovernanceRuleV2(
@@ -68,10 +81,13 @@ def test_naming_the_access_policy_no_longer_renames_the_contract():
         ),
     )
     policy = mapper.to_policy_create("datasets.gold.meters", rule)
+    access = mapper.to_access_policy_create("datasets.gold.meters", rule)
     contract = mapper.to_contract_definition(
         "datasets.gold.meters", rule, policy["@id"], "asset-1"
     )
-    assert policy["@id"] == "meters-access"
+    assert access["@id"] == "meters-access"
+    assert contract["accessPolicyId"] == "meters-access"
+    assert policy["@id"] == "datasets-gold-meters-policy"
     assert contract["@id"] == "datasets-gold-meters-contract"
 
 
@@ -109,7 +125,7 @@ def test_a_collision_reintroduced_by_configuration_fails_the_gate(tmp_path: Path
                 "a": exposed_dataset(
                     dataspace={
                         "contract": {
-                            "access_policy_id": "same-id",
+                            "contract_policy_id": "same-id",
                             "contract_definition_id": "same-id",
                         }
                     }
@@ -363,3 +379,35 @@ def test_the_version_is_metadata_and_not_a_constraint():
     for permission in offer["odrl:permission"]:
         for constraint in permission.get("odrl:constraint", []):
             assert "profileVersion" not in str(constraint)
+
+
+@pytest.mark.rule("A-5")
+def test_naming_both_policies_the_same_collides_them_again(tmp_path: Path):
+    """The access/contract split has its own way to be undone by configuration.
+
+    `access_policy_id` and `contract_policy_id` set to one string puts one policy
+    definition in both slots of the ContractDefinition, which is precisely the
+    shape the split removed: every admission condition published to every
+    counterparty, and nothing hideable from anyone. It is a validation error
+    rather than something noticed in a log six months later.
+    """
+    write_governance(
+        tmp_path,
+        {
+            "sources": {
+                "a": exposed_dataset(
+                    dataspace={
+                        "contract": {
+                            "access_policy_id": "one-policy",
+                            "contract_policy_id": "one-policy",
+                        }
+                    }
+                )
+            }
+        },
+    )
+    result = run(tmp_path / "governance.yaml")
+    assert not result.passed
+    assert any(
+        e["check"] == "policy-contract-id-collision" for e in result.asdict()["errors"]
+    )

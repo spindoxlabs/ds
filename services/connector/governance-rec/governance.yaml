@@ -113,3 +113,70 @@ sources:
         type: HttpData
         base_url: "http://dataset-api-rec:30002/query"
         proxy_query_params: true
+
+  # ── Two recipient-restricted forecasts ────────────────────────────────────
+  #
+  # `access_requirements: partner` is the dataset saying *this goes to the
+  # organisations my offers name, and to nobody else*. The mapper turns that
+  # into an `odrl:recipient` set in the ContractDefinition's **access** policy,
+  # which EDC evaluates in the `catalog` scope — so a participant outside the
+  # set does not see the dataset in a catalogue at all, and is refused if it
+  # asks for it by id (plans `every-personal-dataset-asks-for-a-local-consent`
+  # and `the-owner-scope-is-a-string-nobody-grants`).
+  #
+  # They come in a pair because one alone proves nothing: a restriction that
+  # hides everything looks exactly like one that works. The dev consumer is a
+  # recipient of the first and not of the second, and `e2e --flow
+  # recipient-restriction` asserts both directions against a running exchange.
+  #
+  # Both are `green` with a contract-based offer, so the consent gate is
+  # legitimately absent and the flow measures the restriction and nothing else.
+  datasets.gold.flex_forecast:
+    title: "Flexibility Forecast (Gold)"
+    description: >-
+      Day-ahead flexibility forecast for the community, supplied to the
+      aggregator named in the offer under contract.
+    license: CC-BY-4.0
+    access_level: internal
+    access_requirements: partner
+    classification: green
+    tags: [flexibility, gold, forecast]
+    source_system: REC forecasting
+    dataspace:
+      expose: true
+      medallion: gold
+      purpose: [FlexibilityResearch]
+      sharing_offers: [flexibility-forecast-supply]
+      asset:
+        id: "datasets.gold.flex_forecast"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        base_url: "http://dataset-api-rec:30002/query"
+        proxy_path: false
+        proxy_query_params: true
+
+  datasets.gold.grid_forecast:
+    title: "Grid Headroom Forecast (Gold)"
+    description: >-
+      Day-ahead headroom forecast, supplied to the grid operator named in the
+      offer under contract. The dev consumer is deliberately not a recipient.
+    license: CC-BY-4.0
+    access_level: internal
+    access_requirements: partner
+    classification: green
+    tags: [grid, gold, forecast]
+    source_system: REC forecasting
+    dataspace:
+      expose: true
+      medallion: gold
+      purpose: [GridMonitoring]
+      sharing_offers: [grid-forecast-supply]
+      asset:
+        id: "datasets.gold.grid_forecast"
+        content_type: "application/json"
+      data_address:
+        type: HttpData
+        base_url: "http://dataset-api-rec:30002/query"
+        proxy_path: false
+        proxy_query_params: true

@@ -104,9 +104,9 @@ consent_collectors:
 # rather than trying to create them.
 requires_offers:
   - id: household-energy-flexibility
-    controller: example-org
+    recipient: example-org
     purpose: FlexibilityResearch
   - id: grid-operations-planning
-    controller: grid-operator
-    controller_role: operations
+    recipient: grid-operator
+    recipient_role: operations
     purpose: EnergyCommunityOperation

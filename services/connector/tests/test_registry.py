@@ -267,58 +267,10 @@ async def test_invalidate_drops_the_resolved_answers():
         await registry.close()
 
 
-@pytest.mark.asyncio
-@respx.mock
-async def test_http_registry_check_scope():
-    respx.get(
-        f"{REGISTRY_URL}/admin/participants/check",
-        params={"did": "did:web:rec.ds.localhost", "scope": "dataspaces.query"},
-    ).mock(return_value=httpx.Response(200, json={"allowed": True}))
-
-    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
-    try:
-        allowed = await registry.check_scope(
-            "did:web:rec.ds.localhost", "dataspaces.query"
-        )
-        assert allowed is True
-    finally:
-        await registry.close()
 
 
-@pytest.mark.rule("C-19")
-@pytest.mark.asyncio
-@respx.mock
-async def test_http_registry_check_scope_denied():
-    respx.get(
-        f"{REGISTRY_URL}/admin/participants/check",
-        params={"did": "did:web:rec.ds.localhost", "scope": "admin.secret"},
-    ).mock(return_value=httpx.Response(200, json={"allowed": False}))
-
-    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
-    try:
-        allowed = await registry.check_scope("did:web:rec.ds.localhost", "admin.secret")
-        assert allowed is False
-    finally:
-        await registry.close()
 
 
-@pytest.mark.rule("X-6b")
-@pytest.mark.asyncio
-@respx.mock
-async def test_http_registry_check_scope_error_returns_false():
-    respx.get(
-        f"{REGISTRY_URL}/admin/participants/check",
-        params={"did": "did:web:rec.ds.localhost", "scope": "dataspaces.query"},
-    ).mock(return_value=httpx.Response(500))
-
-    registry = HttpParticipantRegistry(REGISTRY_URL, cache_ttl=60)
-    try:
-        allowed = await registry.check_scope(
-            "did:web:rec.ds.localhost", "dataspaces.query"
-        )
-        assert allowed is False
-    finally:
-        await registry.close()
 
 
 # ── The collector relation: GET /consent-collectors/check ─────────────────────

@@ -222,12 +222,12 @@ class TestPurposeEnforcement:
         assert not active
 
 
-class TestControllerRoleEnforcement:
+class TestRecipientRoleEnforcement:
     @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
     async def test_matching_role_is_allowed(self, engine):
         await _grant(
-            engine, controller="example-org", controller_role="community-operator"
+            engine, recipient="example-org", recipient_role="community-operator"
         )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
@@ -237,7 +237,7 @@ class TestControllerRoleEnforcement:
                 PII,
                 "consumer",
                 purpose=["FlexibilityResearch"],
-                controller_role="community-operator",
+                recipient_role="community-operator",
             )
         assert active
 
@@ -246,7 +246,7 @@ class TestControllerRoleEnforcement:
     async def test_different_role_is_denied(self, engine):
         """Controller ≠ legal entity: two roles of one company are two controllers."""
         await _grant(
-            engine, controller="example-org", controller_role="community-operator"
+            engine, recipient="example-org", recipient_role="community-operator"
         )
         factory = async_sessionmaker(engine, expire_on_commit=False)
         async with factory() as session:
@@ -256,10 +256,10 @@ class TestControllerRoleEnforcement:
                 PII,
                 "consumer",
                 purpose=["FlexibilityResearch"],
-                controller_role="metering",
+                recipient_role="metering",
             )
         assert not active
-        assert "controller role" in reason
+        assert "recipient role" in reason
 
 
 class TestRowFiltering:
@@ -423,7 +423,7 @@ class TestSharingOffersEndpoint:
 class TestOfferDrivenShares:
     @pytest.mark.rule("D-11")
     @pytest.mark.asyncio
-    async def test_offer_expands_to_rows_with_purpose_and_controller(self, client):
+    async def test_offer_expands_to_rows_with_purpose_and_recipient(self, client):
         r = await client.post(
             "/consent/my/shares",
             json={"offer_id": "test-flexibility", "enabled": True},
@@ -434,7 +434,7 @@ class TestOfferDrivenShares:
         assert len(rows) == 1
         assert rows[0]["dataset_id"] == PII
         assert rows[0]["purpose"] == ["FlexibilityResearch"]
-        assert rows[0]["controller"] == "example-org"
+        assert rows[0]["recipient"] == "example-org"
         assert rows[0]["offer_id"] == "test-flexibility"
 
     @pytest.mark.rule("D-4")

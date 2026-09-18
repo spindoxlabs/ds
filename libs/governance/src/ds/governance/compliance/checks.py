@@ -143,6 +143,10 @@ class DatasetEvidence:
     rule: GovernanceRuleV2
     asset_id: str
     policy_id: str
+    #: The **access** policy definition's `@id`. A separate EDC object since the
+    #: access/contract split, so it is a separate id that can collide with
+    #: something else if a deployment names it badly.
+    access_policy_id: str
     contract_id: str
 
 
@@ -157,6 +161,7 @@ def load_exposed(
             continue
         asset_create = mapper.to_asset_create(key, rule)
         policy_create = mapper.to_policy_create(key, rule)
+        access_policy_create = mapper.to_access_policy_create(key, rule)
         contract = mapper.to_contract_definition(
             key, rule, policy_create["@id"], asset_create["@id"]
         )
@@ -166,6 +171,7 @@ def load_exposed(
                 rule=rule,
                 asset_id=asset_create["@id"],
                 policy_id=policy_create["@id"],
+                access_policy_id=access_policy_create["@id"],
                 contract_id=contract["@id"],
             )
         )
@@ -205,6 +211,7 @@ def check_identifier_collisions(
     for check, attr, label in (
         ("asset-id-collision", "asset_id", "asset id"),
         ("policy-id-collision", "policy_id", "policy id"),
+        ("policy-id-collision", "access_policy_id", "access policy id"),
         ("policy-id-collision", "contract_id", "contract id"),
     ):
         by_id: dict[str, list[str]] = defaultdict(list)
@@ -221,23 +228,38 @@ def check_identifier_collisions(
 def check_policy_contract_id_collision(
     result: ValidationResult, exposed: list[DatasetEvidence]
 ) -> None:
-    """One dataset's policy id and contract id must differ (``GOV-12``).
+    """A dataset's three derived ids must differ (``GOV-12``).
 
-    They are separate EDC collections, so nothing rejects the duplicate — the id
-    just stops identifying which entity is meant, in logs, in evidence rows and
-    in whatever an operator greps. Both used to derive from the single
-    ``dataspace.contract.access_policy_id``, so naming the access policy was
-    enough to collide them.
+    The contract policy, the access policy and the contract definition live in
+    separate EDC collections, so nothing rejects a duplicate — the id just stops
+    identifying which entity is meant, in logs, in evidence rows and in whatever
+    an operator greps. The policy and the contract definition both used to derive
+    from the single ``dataspace.contract.access_policy_id``, so naming the access
+    policy was enough to collide them.
+
+    Since the access/contract split there is a third id, and one more way to
+    collide: ``access_policy_id`` and ``contract_policy_id`` set to the same
+    string puts one policy in both slots again, which is exactly what the split
+    removed.
     """
     for item in exposed:
-        if item.policy_id == item.contract_id:
-            result.error(
-                "policy-contract-id-collision",
-                f"policy and contract definition both derive @id '{item.policy_id}'. "
-                "Set dataspace.contract.contract_definition_id, or leave both unset "
-                "so the -policy/-contract suffixes apply.",
-                item.key,
-            )
+        for first, second, what in (
+            (item.policy_id, item.contract_id, "policy and contract definition"),
+            (
+                item.access_policy_id,
+                item.contract_id,
+                "access policy and contract definition",
+            ),
+            (item.policy_id, item.access_policy_id, "contract and access policies"),
+        ):
+            if first == second:
+                result.error(
+                    "policy-contract-id-collision",
+                    f"{what} both derive @id '{first}'. Set "
+                    "dataspace.contract.contract_definition_id, or leave the ids "
+                    "unset so the -policy/-access-policy/-contract suffixes apply.",
+                    item.key,
+                )
 
 
 #: Fields governance may declare that reach no emitter and no enforcement point.

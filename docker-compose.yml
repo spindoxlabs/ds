@@ -351,9 +351,19 @@ services:
           --roles provider \
           --scope dataspaces.query --scope dataspaces.admin \
           --label "dev provider bootstrap" > /enrolment/example-org.code
+        # **No `owner:<alias>:member` grant**, and it is not an omission
+        # (`the-owner-scope-is-a-string-nobody-grants`, 2026-09-17). The mapper
+        # emitted `Membership eq owner:example-org:member` and the anchor tested
+        # that literal against this list; no code granted the `:partner` form and
+        # no owner could grant anything, so the grammar said nothing. Membership
+        # is now a constraint on the `memberOf` claim of the MembershipCredential
+        # the anchor signs, read inside the EDC from a presentation it has already
+        # verified. `dataspaces.query` stays: it is an ordinary scope, still
+        # carried in `allowedScopes` and still answerable on
+        # `GET /admin/participants/check` for an operator.
         ir-cli org enrolment-token --alias consumer-org \
           --roles consumer \
-          --scope dataspaces.query --scope owner:example-org:member \
+          --scope dataspaces.query \
           --label "dev consumer bootstrap" > /enrolment/consumer-org.code
         # **The second provider** (`D-54`, `DID-15`). A DSO shares its own grid
         # data and has no members, which is the structural difference the

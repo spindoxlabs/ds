@@ -143,8 +143,16 @@ class HttpParticipantRegistry:
     the whole `GET /admin/participants` listing, scopes included, for that.
 
     The listing stays for what genuinely needs the listing: the operator view
-    (`all`). `check_scope` stays on `/admin/participants/check`, because the
-    scopes are exactly what the narrow route does not disclose.
+    (`all`).
+
+    **There is no `check_scope` any more.** It forwarded to the anchor's
+    `GET /admin/participants/check` so that `AccessScopeFunction` could ask, per
+    negotiation, whether a string was in a participant's `allowed_scopes`. The
+    string granted nothing, the anchor could not keep it in step with the
+    `MembershipCredential` it signs, and the claim was already in the verifier's
+    hands — so membership is read off that credential now
+    (`the-owner-scope-is-a-string-nobody-grants`). The anchor's route survives
+    for an operator asking about a grant; nothing in the exchange path calls it.
     """
 
     def __init__(
@@ -365,21 +373,6 @@ class HttpParticipantRegistry:
         """
         registry = await self._refresh_cache(force=fresh)
         return registry.all()
-
-    async def check_scope(self, participant_id: str, scope: str) -> bool:
-        """Forward scope check to identity-registry for authoritative answer."""
-        try:
-            headers = await self._get_headers()
-            resp = await self._client.get(
-                "/admin/participants/check",
-                params={"did": participant_id, "scope": scope},
-                headers=headers,
-            )
-            resp.raise_for_status()
-            return resp.json().get("allowed", False)
-        except httpx.HTTPError as exc:
-            log.error("Scope check failed for %s: %s", participant_id, exc)
-            return False
 
     async def close(self) -> None:
         await self._client.aclose()

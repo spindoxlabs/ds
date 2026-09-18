@@ -60,7 +60,7 @@ from ds_e2e.models import FlowResult
 
 log = logging.getLogger(__name__)
 
-CONTROLLER_ALIAS = "example-org"
+RECIPIENT_ALIAS = "example-org"
 
 # The independent controller, from `scenarios/energy-chains.yaml`.
 OUTSIDER_ALIAS = "outsider-org"
@@ -161,7 +161,7 @@ class WildcardAdmissionFlow(BaseFlow):
             return result
         rows = rows if isinstance(rows, list) else [rows]
         consumers = {r.get("consumer_id") for r in rows}
-        controllers = {r.get("controller") for r in rows}
+        controllers = {r.get("recipient") for r in rows}
         if consumers != {"*"}:
             result.fail_step(
                 "member consents to the offer",
@@ -169,18 +169,18 @@ class WildcardAdmissionFlow(BaseFlow):
                 consumer_ids=sorted(str(c) for c in consumers),
             )
             return result
-        if controllers != {CONTROLLER_ALIAS}:
+        if controllers != {RECIPIENT_ALIAS}:
             result.fail_step(
                 "member consents to the offer",
                 "the wildcard row is not stamped with the offer's controller",
-                controllers=sorted(str(c) for c in controllers),
-                expected=CONTROLLER_ALIAS,
+                recipients=sorted(str(c) for c in controllers),
+                expected=RECIPIENT_ALIAS,
             )
             return result
         result.pass_step(
             "member consents to the offer",
             "the grant is a wildcard row stamped with the offer's controller",
-            controller=CONTROLLER_ALIAS,
+            recipient=RECIPIENT_ALIAS,
             purpose=s.consented_purpose,
         )
 
@@ -193,14 +193,14 @@ class WildcardAdmissionFlow(BaseFlow):
             result.fail_step(
                 "the controller is admitted",
                 "the offer's own controller was refused by the grant naming it",
-                controller_did=s.provider_did,
+                recipient_did=s.provider_did,
                 reason=check.get("reason"),
             )
             return result
         result.pass_step(
             "the controller is admitted",
             "the party the offer names as controller reads the consented rows",
-            controller_did=s.provider_did,
+            recipient_did=s.provider_did,
         )
 
         # ── 3. The defect: a second consumer rides the same row ──────────────
@@ -216,7 +216,7 @@ class WildcardAdmissionFlow(BaseFlow):
                 "an independent controller read the member's rows on a grant the "
                 "member made to the offer's controller",
                 consumer_did=OUTSIDER_DID,
-                controller=CONTROLLER_ALIAS,
+                recipient=RECIPIENT_ALIAS,
             )
             return result
         result.pass_step(

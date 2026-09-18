@@ -209,6 +209,10 @@ async def sync_governance(
             {"offer": offer_id, "error": f"Not published — it {failure}"}
         )
 
+    # One authority for the offers this sync maps against — the same catalogue
+    # the drift check and the recipient access policy both read.
+    mapper.bind_offers(catalogue)
+
     rejected = _reject_unpublishable(datasets, mapper, catalogue, result, set(drifted))
 
     for key, rule in datasets.items():
@@ -217,12 +221,26 @@ async def sync_governance(
         try:
             asset_create = mapper.to_asset_create(key, rule)
             policy_create = mapper.to_policy_create(key, rule)
+            # Two policies: the access half decides who is admitted (membership,
+            # recipient), the contract half states the terms. They were one, so
+            # every admission condition was published to every counterparty and
+            # nothing could be hidden from one.
+            access_policy_create = mapper.to_access_policy_create(key, rule)
             contract_create = mapper.to_contract_definition(
-                key, rule, policy_id=policy_create.id, asset_id=asset_create.id
+                key,
+                rule,
+                policy_id=policy_create.id,
+                asset_id=asset_create.id,
+                access_policy_id=access_policy_create.id,
             )
 
+            # The contract definition references both policies, so it goes first
+            # and comes back last: deleting a policy EDC still has a definition
+            # for is refused.
             await edc.delete_contract_definition(contract_create.id)
             await edc.delete_policy(policy_create.id)
+            if access_policy_create.id != policy_create.id:
+                await edc.delete_policy(access_policy_create.id)
 
             try:
                 await edc.delete_asset(asset_create.id)
@@ -237,6 +255,8 @@ async def sync_governance(
                     raise
 
             await edc.create_policy(policy_create)
+            if access_policy_create.id != policy_create.id:
+                await edc.create_policy(access_policy_create)
             await edc.create_contract_definition(contract_create)
 
             await prov.catalogue_published(

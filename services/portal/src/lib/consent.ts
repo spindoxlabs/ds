@@ -8,8 +8,8 @@
 
 /**
  * A consent row whose `consumer_id` is this is a **scoped wildcard**: a standing
- * decision admitting any party inside the circle for that controller and purpose
- * — never a new controller or purpose. A per-party row overrides it, so an
+ * decision admitting any party inside the circle for that recipient and purpose
+ * — never a new recipient or purpose. A per-party row overrides it, so an
  * explicit grant or opt-out still wins.
  *
  * It must not be rendered as a grant to one named party, which is what it looked

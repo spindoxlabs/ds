@@ -157,8 +157,8 @@ class OrganisationTokenFlow(BaseFlow):
         negotiate = f"{s.consumer_connector_url}/consumer/negotiate"
         negotiate_body = {
             "counter_party_address": s.counter_party_address,
-            "offer_id": f"{s.fail_closed_asset_id}#offer",
-            "asset_id": s.fail_closed_asset_id,
+            "offer_id": f"{s.organisation_asset_id}#offer",
+            "asset_id": s.organisation_asset_id,
             "assigner": s.provider_did,
             "declared_purpose": [PURPOSE],
             "justification_ref": REASON,
@@ -299,7 +299,7 @@ class OrganisationTokenFlow(BaseFlow):
 
     def _negotiate(self, result: FlowResult, headers: dict[str, str]) -> str | None:
         s = self.settings
-        asset_id = s.fail_closed_asset_id
+        asset_id = s.organisation_asset_id
         try:
             catalog = (
                 self.http.post(
@@ -478,7 +478,7 @@ class OrganisationTokenFlow(BaseFlow):
                     {
                         "contract_agreement_id": agreement_id,
                         "counter_party_address": s.counter_party_address,
-                        "asset_id": s.fail_closed_asset_id,
+                        "asset_id": s.organisation_asset_id,
                         "connector_id": s.provider_did,
                     },
                     headers=headers,
@@ -543,7 +543,7 @@ class OrganisationTokenFlow(BaseFlow):
         plane = s.mock_data_plane_url
         status, payload = self.http.post_raw(
             f"{plane}/query",
-            {"sql": f"SELECT * FROM {s.fail_closed_asset_id}", "limit": 10},
+            {"sql": f"SELECT * FROM {s.organisation_asset_id}", "limit": 10},
             headers={
                 "Authorization": token,
                 "Edc-Contract-Agreement-Id": str(
@@ -581,7 +581,7 @@ class OrganisationTokenFlow(BaseFlow):
         for item in requests:
             if not isinstance(item, dict) or not item.get("can_revoke"):
                 continue
-            if item.get("asset_id") != s.fail_closed_asset_id:
+            if item.get("asset_id") != s.organisation_asset_id:
                 continue
             request_id = str(item.get("id") or "")
             encoded = urllib.parse.quote(request_id, safe="")

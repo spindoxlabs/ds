@@ -6,7 +6,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: example-org
+      recipient: example-org
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -26,8 +26,8 @@ sharing_offers:
     purpose: IncentiveCalculation
     legal_basis: "https://w3id.org/dpv#Contract"
     recipients:
-      controller: example-org
-      controller_role: community-operator
+      recipient: example-org
+      recipient_role: community-operator
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -46,8 +46,8 @@ sharing_offers:
     purpose: EnergyCommunityOperation
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: grid-operator
-      controller_role: operations
+      recipient: grid-operator
+      recipient_role: operations
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -68,8 +68,8 @@ sharing_offers:
     purpose: EnergyCommunityOperation
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: grid-operator
-      controller_role: metering
+      recipient: grid-operator
+      recipient_role: metering
       processors:
         category: appointed-service-providers
     subject_scope: own_data
@@ -85,7 +85,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: consumer-org
+      recipient: consumer-org
       processors:
         category: appointed-service-providers
     requires_offers: [test-meter-release]
@@ -102,7 +102,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: example-org
+      recipient: example-org
       processors:
         category: appointed-service-providers
     consent_text_version: "1.0"

@@ -869,6 +869,7 @@ class TestSemanticModel:
             rule=rule,
             asset_id="datasets.silver.meters",
             policy_id="datasets-silver-meters-policy",
+            access_policy_id="datasets-silver-meters-access-policy",
             contract_id="datasets-silver-meters-contract",
         )
         result = ValidationResult(governance_path="x")

@@ -79,14 +79,23 @@ one blip would destroy a live agreement and buys nothing while it lasts — the 
 asks the same question on every query and fails closed itself. A definite *no* denies
 immediately in both.
 
-Membership and `ds:contractRequired` are bound to the negotiation scope only: whether you
-belong to the dataspace is settled when the contract is made, not re-litigated per row.
+`ds:contractRequired` is bound to the negotiation scope only: whether a contract was
+acknowledged is settled when the contract is made, not re-litigated per row.
+
+**Membership and `odrl:recipient` are bound to the `catalog` scope, and only there.** They
+belong to the ContractDefinition's *access* policy rather than its contract policy, and EDC
+evaluates an access policy with a `CatalogPolicyContext` — which it builds both for a
+catalogue request (`ContractDefinitionResolverImpl.resolveFor`) and for an initial offer
+(`ContractValidationServiceImpl.validateInitialOffer`). One binding therefore covers
+discovery *and* negotiation, and binding either operand in `contract.negotiation` would be a
+dead binding.
 
 ### The constraint functions
 
 | Left operand | Scope | Answered by |
 |---|---|---|
-| `{ns}Membership` | negotiation | `GET /internal/participants/check` — is this participant admitted with this scope? Cached per `identity\|scope`; an unanswerable check caches as **false** |
+| `{ns}Membership` | catalog | the `memberOf` claim of the counterparty's `MembershipCredential`, read off the `ParticipantAgent`. No call, no cache — EDC verified the presentation (validity, trusted issuer, **StatusList2021 revocation and suspension**) before the agent existed |
+| `odrl:recipient` | catalog | `ParticipantAgent.getIdentity()` against the DIDs the dataset's sharing offers name. An empty set denies |
 | `ds:consentStatus` / `{ns}ConsentStatus` | negotiation | `GET /internal/consent/check` — but see below: the deciding check is the post-validator, not this function |
 | `ds:consentStatus` / `{ns}ConsentStatus` | transfer, monitor | `GET /internal/consent/check` against the **agreement's** consumer and asset — an empty subject pool refuses the start, or terminates the transfer |
 | `odrl:purpose` | all three | accepts `IS_A`, `IS_ANY_OF` and `EQ`; the taxonomy check itself happens in the connector |

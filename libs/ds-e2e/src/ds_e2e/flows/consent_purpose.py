@@ -9,7 +9,7 @@ chain that makes that enforcement mean something:
            groups                    dpv_mapping → DPV IRI + relation
     sharing offer ── resolves to ──► governance datasets
            consented as
-    consent row (dataset + purpose + controller-role, all validated)
+    consent row (dataset + purpose + recipient-role, all validated)
            compared at
     /internal/consent/check
 
@@ -295,10 +295,10 @@ class ConsentPurposeFlow(BaseFlow):
                     "consent by offer", "row purpose does not match the offer", row=row
                 )
                 return False
-            if row.get("controller") != offer["recipients"]["controller"]:
+            if row.get("recipient") != offer["recipients"]["recipient"]:
                 result.fail_step(
                     "consent by offer",
-                    "row controller does not match the offer",
+                    "row recipient does not match the offer",
                     row=row,
                 )
                 return False
@@ -310,9 +310,9 @@ class ConsentPurposeFlow(BaseFlow):
 
         result.pass_step(
             "consent by offer",
-            "offer expanded into per-dataset rows stamped with purpose and controller",
+            "offer expanded into per-dataset rows stamped with purpose and recipient",
             datasets=[r.get("dataset_id") for r in rows],
-            controller=offer["recipients"]["controller"],
+            recipient=offer["recipients"]["recipient"],
         )
 
         # The odrl:isA matrix, evaluated by the same endpoint the EDC extension

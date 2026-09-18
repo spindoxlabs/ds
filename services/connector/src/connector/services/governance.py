@@ -8,6 +8,7 @@ from pathlib import Path
 from ds.governance.mapper import GovernanceMapper
 from ds.governance.models import GovernanceRuleV2, OdrlProfile
 from ds.governance.resolver import GovernanceResolver
+from ds.governance.sharing import SharingOfferCatalogue
 
 from ..schemas.edc import AssetCreate, ContractDefCreate, DataAddress, PolicyCreate
 
@@ -22,6 +23,8 @@ class ConnectorGovernanceMapper:
         profile: OdrlProfile | None = None,
         owner_did_resolver: Callable[[str], str | None] | None = None,
         participant_did: str | None = None,
+        dataspace_uri: str | None = None,
+        sharing_offers: SharingOfferCatalogue | None = None,
     ):
         self.participant_id = participant_id
         self.base_url = participant_base_url.rstrip("/")
@@ -31,13 +34,23 @@ class ConnectorGovernanceMapper:
         # `did:web:{participant_id}.dataspaces.localhost`, which is the dev
         # domain: a deployment that did not forward `CONNECTOR_PARTICIPANT_DID`
         # published every policy under a DID that resolves to nothing.
+        #
+        # `dataspace_uri` and `sharing_offers` are what the **access** policy
+        # needs: the value of the `memberOf` claim to compare against, and the
+        # offers the `odrl:recipient` set is derived from.
         self._mapper = GovernanceMapper(
             participant_id=participant_id,
             base_url=participant_base_url,
             profile=profile,
             owner_did_resolver=owner_did_resolver,
             participant_did=participant_did,
+            dataspace_uri=dataspace_uri,
+            sharing_offers=sharing_offers,
         )
+
+    def bind_offers(self, catalogue: SharingOfferCatalogue | None) -> None:
+        """See `GovernanceMapper.bind_offers`."""
+        self._mapper.bind_offers(catalogue)
 
     @property
     def profile(self) -> OdrlProfile:
@@ -106,10 +119,8 @@ class ConnectorGovernanceMapper:
     def to_policy_create(
         self, dataset_key: str, rule: GovernanceRuleV2
     ) -> PolicyCreate:
-        ds = rule.dataspace
-        policy_id = (
-            ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-policy"
-        )
+        """The **contract** policy: the terms a counterparty negotiates against."""
+        policy_id = self._mapper.contract_policy_id(dataset_key, rule)
 
         odrl_offer = self._mapper.to_odrl_offer(dataset_key, rule)
         odrl_set = self._to_edc_policy({**odrl_offer, "@type": "odrl:Set"})
@@ -121,20 +132,46 @@ class ConnectorGovernanceMapper:
 
         return PolicyCreate(id=policy_id, policy=odrl_set)
 
+    def to_access_policy_create(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> PolicyCreate:
+        """The **access** policy: who is admitted to see and ask for the asset.
+
+        A separate PolicyDefinition, referenced by the contract definition's
+        `accessPolicyId`. EDC evaluates it in the `catalog` scope, so a
+        counterparty the recipient set excludes never sees the dataset in a
+        catalogue and is refused if it asks for it by id anyway.
+        """
+        policy_id = self._mapper.access_policy_id(dataset_key, rule)
+        odrl_set = self._to_edc_policy(
+            self._mapper.to_access_odrl_set(dataset_key, rule)
+        )
+        odrl_set["@id"] = policy_id
+        if "odrl:assigner" not in odrl_set:
+            odrl_set["odrl:assigner"] = {"@id": self.participant_id}
+        return PolicyCreate(id=policy_id, policy=odrl_set)
+
     def to_contract_definition(
         self,
         dataset_key: str,
         rule: GovernanceRuleV2,
         policy_id: str,
         asset_id: str,
+        access_policy_id: str | None = None,
     ) -> ContractDefCreate:
         ds = rule.dataspace
+        # **Not `access_policy_id`** — `GOV-12`, which the library mapper fixed
+        # and this copy did not: the contract definition took the same `@id` as
+        # the policy whenever a deployment named one, so the id stopped saying
+        # which entity was meant.
         contract_id = (
-            ds.contract.access_policy_id or f"{dataset_key.replace('.', '-')}-contract"
+            ds.contract.contract_definition_id
+            or f"{dataset_key.replace('.', '-')}-contract"
         )
         return ContractDefCreate(
             id=contract_id,
-            access_policy_id=ds.contract.access_policy_id or policy_id,
+            access_policy_id=access_policy_id
+            or self._mapper.access_policy_id(dataset_key, rule),
             contract_policy_id=ds.contract.contract_policy_id or policy_id,
             assets_selector=[
                 {
@@ -183,9 +220,23 @@ class ConnectorGovernanceMapper:
     #: with a 500. Every other operand the mapper emits is already absolute.
     PURPOSE_OPERAND = "http://www.w3.org/ns/odrl/2/purpose"
 
+    #: ``odrl:recipient`` in absolute form, for exactly the reasons above: it is
+    #: an ODRL term whose compact spelling EDC would store verbatim and then fail
+    #: to compact. The right operand is a list of participant DIDs, flattened to
+    #: plain strings because that is what ``RecipientFunction`` compares
+    #: ``ParticipantAgent.getIdentity()`` against.
+    RECIPIENT_OPERAND = "http://www.w3.org/ns/odrl/2/recipient"
+
+    _IRI_OPERANDS = {
+        "odrl:purpose": PURPOSE_OPERAND,
+        PURPOSE_OPERAND: PURPOSE_OPERAND,
+        "odrl:recipient": RECIPIENT_OPERAND,
+        RECIPIENT_OPERAND: RECIPIENT_OPERAND,
+    }
+
     @classmethod
     def _to_edc_constraint(cls, constraint):
-        """Make the purpose constraint safe for EDC's policy store and serialiser.
+        """Make an IRI-valued constraint safe for EDC's policy store and serialiser.
 
         The public ODRL offer keeps the idiomatic ``odrl:purpose`` and
         ``{"@id": <iri>}`` forms, because a purpose *is* an IRI reference and the
@@ -194,13 +245,15 @@ class ConnectorGovernanceMapper:
         left operand is expanded to an absolute IRI and the right operand
         flattened to plain strings — which is also the shape
         ``ConsentStatusFunction`` reads the negotiated purposes back out of.
+
+        ``odrl:recipient`` goes through the same treatment. It arrived later and
+        by a different route (the access policy, not the offer), which is exactly
+        how a second operand ends up with a second, subtly different flattener.
         """
         if not isinstance(constraint, dict):
             return constraint
-        if constraint.get("odrl:leftOperand") not in (
-            "odrl:purpose",
-            cls.PURPOSE_OPERAND,
-        ):
+        expanded = cls._IRI_OPERANDS.get(constraint.get("odrl:leftOperand"))
+        if expanded is None:
             return constraint
 
         right = constraint.get("odrl:rightOperand")
@@ -213,7 +266,7 @@ class ConnectorGovernanceMapper:
             ]
         return {
             **constraint,
-            "odrl:leftOperand": cls.PURPOSE_OPERAND,
+            "odrl:leftOperand": expanded,
             "odrl:rightOperand": right,
         }
 
@@ -263,11 +316,14 @@ def owner_by_edc_id(
         if not owner:
             continue
         ds = rule.dataspace
-        policy_id = ds.contract.access_policy_id or f"{key.replace('.', '-')}-policy"
-        contract_id = (
-            ds.contract.access_policy_id or f"{key.replace('.', '-')}-contract"
+        policy_id = ds.contract.contract_policy_id or f"{key.replace('.', '-')}-policy"
+        access_policy_id = (
+            ds.contract.access_policy_id or f"{key.replace('.', '-')}-access-policy"
         )
-        for object_id in (policy_id, contract_id, ds.contract.contract_policy_id):
+        contract_id = (
+            ds.contract.contract_definition_id or f"{key.replace('.', '-')}-contract"
+        )
+        for object_id in (policy_id, access_policy_id, contract_id):
             if object_id:
                 index[object_id] = owner
     return index

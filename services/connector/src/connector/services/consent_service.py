@@ -19,8 +19,8 @@ from . import consent_vocabulary as vocab
 log = logging.getLogger(__name__)
 
 # A consent row whose consumer is the wildcard admits *any party inside the
-# circle* for its controller and purpose (§3.1) — a processor of the declared
-# controller, never a new controller and never a new purpose. A per-party
+# circle* for its recipient and purpose (§3.1) — a processor of the declared
+# recipient, never a new recipient and never a new purpose. A per-party
 # specific row always overrides it: an explicit grant or an explicit opt-out
 # both beat the standing wildcard.
 WILDCARD_CONSUMER = "*"
@@ -162,8 +162,8 @@ async def create_consent_request(
     message: str | None = None,
     notification_url: str | None = None,
     notifier: ConsentNotifier | None = None,
-    controller: str | None = None,
-    controller_role: str | None = None,
+    recipient: str | None = None,
+    recipient_role: str | None = None,
     offer_id: str | None = None,
     legal_basis: dict | None = None,
     negotiation_id: str | None = None,
@@ -187,8 +187,8 @@ async def create_consent_request(
         consumer_id=consumer_id,
         dataset_id=dataset_id,
         purpose=purposes,
-        controller=controller,
-        controller_role=controller_role,
+        recipient=recipient,
+        recipient_role=recipient_role,
         offer_id=offer_id,
         legal_basis=legal_basis,
         message=message,
@@ -269,7 +269,7 @@ async def get_latest_offer_consent(
 
     Distinct from :func:`get_latest_consent`, which keys on the dataset alone.
     Several offers can name the same dataset for different purposes and different
-    controllers, and those are different questions: agreeing to share meter data
+    recipients, and those are different questions: agreeing to share meter data
     for flexibility research is not agreeing to share it for grid planning. Keyed
     on the dataset, the second decision would collide with the first — granting
     would be a silent no-op and withdrawing would revoke the wrong purpose.
@@ -482,8 +482,8 @@ async def set_subject_data_sharing(
     enabled: bool,
     purpose: list[str] | None = None,
     message: str | None = None,
-    controller: str | None = None,
-    controller_role: str | None = None,
+    recipient: str | None = None,
+    recipient_role: str | None = None,
     offer_id: str | None = None,
     legal_basis: dict | None = None,
     decided_by: str = "subject",
@@ -529,7 +529,7 @@ async def set_subject_data_sharing(
     purposes = _validated(dataset_id, purpose)
 
     # A decision made about an offer is scoped to that offer. Two offers may name
-    # the same dataset for different purposes and controllers; treating them as
+    # the same dataset for different purposes and recipients; treating them as
     # one row makes granting the second a silent no-op and makes withdrawing it
     # revoke the first. Decisions made about a bare dataset keep the old key.
     latest = (
@@ -567,8 +567,8 @@ async def set_subject_data_sharing(
             consumer_id=consumer_id,
             dataset_id=dataset_id,
             purpose=purposes,
-            controller=controller,
-            controller_role=controller_role,
+            recipient=recipient,
+            recipient_role=recipient_role,
             offer_id=offer_id,
             legal_basis=legal_basis,
             message=message or "Data owner enabled sharing.",
@@ -616,8 +616,8 @@ async def set_subject_data_sharing(
         consumer_id=consumer_id,
         dataset_id=dataset_id,
         purpose=purposes,
-        controller=controller,
-        controller_role=controller_role,
+        recipient=recipient,
+        recipient_role=recipient_role,
         offer_id=offer_id,
         legal_basis=legal_basis,
         message=message or "Data owner disabled sharing.",
@@ -676,16 +676,16 @@ async def register_transfer(
 def consent_satisfies(
     consent: ConsentRequestORM,
     purpose: list[str] | None,
-    controller_role: str | None,
+    recipient_role: str | None,
     consent_required: bool,
 ) -> tuple[bool, str]:
     """Does a granted row authorise *this* request? Returns (allowed, reason).
 
     The matrix, for a dataset whose rows are gated on consent:
 
-    | purpose is the consented one or narrower AND controller-role matches | allow |
+    | purpose is the consented one or narrower AND recipient-role matches  | allow |
     | purpose empty, unrelated, or broader                                 | deny  |
-    | controller-role differs                                              | deny  |
+    | recipient-role differs                                               | deny  |
 
     For an open, non-personal dataset there is no data subject and the question
     does not arise, so the row's own status is the whole answer.
@@ -712,16 +712,16 @@ def consent_satisfies(
         )
 
     if (
-        controller_role
-        and consent.controller_role
-        and controller_role != consent.controller_role
+        recipient_role
+        and consent.recipient_role
+        and recipient_role != consent.recipient_role
     ):
         return False, (
-            f"controller role '{controller_role}' differs from consented "
-            f"'{consent.controller_role}'"
+            f"recipient role '{recipient_role}' differs from consented "
+            f"'{consent.recipient_role}'"
         )
 
-    return True, "consent covers the requested purpose and controller role"
+    return True, "consent covers the requested purpose and recipient role"
 
 
 def decision_time(row: ConsentRequestORM) -> datetime:
@@ -770,7 +770,7 @@ def resolve_decision(
     specific: ConsentRequestORM | None,
     wildcard: ConsentRequestORM | None,
     purpose: list[str] | None,
-    controller_role: str | None,
+    recipient_role: str | None,
     consent_required: bool,
     wildcard_admits: bool = True,
 ) -> tuple[bool, str, ConsentRequestORM | None]:
@@ -803,8 +803,8 @@ def resolve_decision(
     callers can surface its legal-basis evidence.
 
     ``wildcard_admits`` is `D-14`: whether *this* consumer is inside the circle
-    of the offer this row belongs to — its controller, or a processor of that
-    controller (:func:`circle.admits_wildcard`).  It gates only the direction in
+    of the offer this row belongs to — its recipient, or a processor of that
+    recipient (:func:`circle.admits_wildcard`).  It gates only the direction in
     which a wildcard row **grants**.  A wildcard row still *denies* whatever it
     outranks, for everyone: withdrawals spread, and a blanket stop has to close a
     per-party grant whether or not the wildcard would have admitted that party.
@@ -823,7 +823,7 @@ def resolve_decision(
                     wildcard,
                 )
             allowed, reason = consent_satisfies(
-                specific, purpose, controller_role, consent_required
+                specific, purpose, recipient_role, consent_required
             )
             return allowed, reason, specific
         if specific.status in ("revoked", "rejected"):
@@ -834,13 +834,13 @@ def resolve_decision(
             )
     if wildcard is not None:
         allowed, reason = consent_satisfies(
-            wildcard, purpose, controller_role, consent_required
+            wildcard, purpose, recipient_role, consent_required
         )
         if allowed and not wildcard_admits:
             return (
                 False,
                 "the subject consented to this offer, not to this party: a "
-                "wildcard grant admits the offer's controller and its "
+                "wildcard grant admits the offer's recipient and its "
                 "processors, and this consumer is neither (D-14)",
                 wildcard,
             )
@@ -890,7 +890,7 @@ async def subject_rows_for(
 def decide_for_subject(
     rows: Iterable[ConsentRequestORM],
     purpose: list[str] | None,
-    controller_role: str | None,
+    recipient_role: str | None,
     consent_required: bool,
     offer_id: str | None = None,
     admitted_wildcard_offers: set[str] | None = None,
@@ -914,7 +914,7 @@ def decide_for_subject(
     **Decisions collapse per offer, not per subject.** The write side already
     keys on the offer — ``set_subject_data_sharing`` reads back through
     :func:`get_latest_offer_consent` whenever one is named, because "two offers
-    may name the same dataset for different purposes and controllers; treating
+    may name the same dataset for different purposes and recipients; treating
     them as one row makes granting the second a silent no-op and makes
     withdrawing it revoke the first". Collapsing on the subject alone kept only
     the most recent row, which made the answer depend on the **order** two
@@ -957,7 +957,7 @@ def decide_for_subject(
     withdraws the dependent admission and leaves the dependent row alone.
     """
     view = _SubjectRows(rows, admitted_wildcard_offers)
-    return view.decide(purpose, controller_role, consent_required, offer_id)
+    return view.decide(purpose, recipient_role, consent_required, offer_id)
 
 
 def missing_prerequisites(
@@ -1008,9 +1008,9 @@ class _SubjectRows:
             target.setdefault(row.offer_id, row)
 
     def _admits(self, offer: str | None) -> bool:
-        """`D-14`, per offer — because a controller is a property of an offer.
+        """`D-14`, per offer — because a recipient is a property of an offer.
 
-        One consumer can be the controller of one offer on a dataset and a
+        One consumer can be the recipient of one offer on a dataset and a
         stranger to another: on the dev fixtures `household-energy-flexibility`
         is `example-org`'s and `grid-operations-planning` is the grid operator's.
         A single verdict for the whole call would answer the wrong question for
@@ -1034,7 +1034,7 @@ class _SubjectRows:
         self,
         offer: str | None,
         purpose: list[str] | None,
-        controller_role: str | None,
+        recipient_role: str | None,
         consent_required: bool,
         wildcard_admits: bool | None = None,
     ):
@@ -1042,7 +1042,7 @@ class _SubjectRows:
             self.specific.get(offer),
             self.wildcard.get(offer),
             purpose,
-            controller_role,
+            recipient_role,
             consent_required,
             wildcard_admits=self._admits(offer)
             if wildcard_admits is None
@@ -1068,7 +1068,7 @@ class _SubjectRows:
     ) -> list[str]:
         """Required offers bound here that do not currently admit the subject.
 
-        A required offer is read with **its own** purpose and controller role:
+        A required offer is read with **its own** purpose and recipient role:
         the question is whether the holder may release the data at all, not
         whether the requested use is covered twice. It is not narrowed by `D-14`
         for the same reason — it names no consumer. A later dataset-wide
@@ -1089,7 +1089,7 @@ class _SubjectRows:
             allowed, _reason, row = self._decide(
                 required,
                 [required_offer.purpose],
-                required_offer.recipients.controller_role,
+                required_offer.recipients.recipient_role,
                 True,
                 wildcard_admits=True,
             )
@@ -1102,12 +1102,12 @@ class _SubjectRows:
     def decide(
         self,
         purpose: list[str] | None,
-        controller_role: str | None,
+        recipient_role: str | None,
         consent_required: bool,
         offer_id: str | None,
     ) -> tuple[bool, str, ConsentRequestORM | None]:
         bare_allowed, bare_reason, bare_row = self._decide(
-            None, purpose, controller_role, consent_required
+            None, purpose, recipient_role, consent_required
         )
         bare_withdrawal = (
             bare_row
@@ -1119,7 +1119,7 @@ class _SubjectRows:
             """One offer's verdict, unless a later dataset-wide withdrawal covers
             it or an offer it requires is not granted."""
             allowed, reason, row = self._decide(
-                offer, purpose, controller_role, consent_required
+                offer, purpose, recipient_role, consent_required
             )
             if allowed and _outranked_by_withdrawal(row, bare_withdrawal):
                 return (
@@ -1157,7 +1157,7 @@ async def check_consent(
     dataset_id: str,
     consumer_id: str,
     purpose: list[str] | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
     consent_required: bool | None = None,
 ) -> tuple[bool, str]:
     """Whether one subject's consent authorises this consumer, purpose and role."""
@@ -1167,7 +1167,7 @@ async def check_consent(
         dataset_id,
         consumer_id,
         purpose=purpose,
-        controller_role=controller_role,
+        recipient_role=recipient_role,
         consent_required=consent_required,
     )
     return allowed, reason
@@ -1179,7 +1179,7 @@ async def check_consent_detail(
     dataset_id: str,
     consumer_id: str,
     purpose: list[str] | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
     admitted_wildcard_offers: set[str] | None = None,
@@ -1202,7 +1202,7 @@ async def check_consent_detail(
     return decide_for_subject(
         rows,
         purpose,
-        controller_role,
+        recipient_role,
         consent_required,
         offer_id,
         admitted_wildcard_offers,
@@ -1227,33 +1227,33 @@ def _dataset_requires_consent(dataset_id: str) -> bool:
 def consent_snapshot_hash(rows: Iterable[ConsentRequestORM]) -> str:
     """A recomputable, non-PII fingerprint of a consent state (§4.1).
 
-    SHA-256 over the sorted ``(subject_did, dataset_id, purpose, controller,
-    controller_role, consent_text_version)`` tuples.  It proves *which* consent
+    SHA-256 over the sorted ``(subject_did, dataset_id, purpose, recipient,
+    recipient_role, consent_text_version)`` tuples.  It proves *which* consent
     state authorised a handover, verifiable by recomputation from the connector
     DB, while holding no name, POD or fiscal code — the subject appears only as
     its pseudonymous DID, exactly as it does on the consent row itself.  A
-    controller alias is an organisation, not a person, so naming it costs the
+    recipient alias is an organisation, not a person, so naming it costs the
     fingerprint none of that.
 
-    **``controller`` is in the tuple since 2026-08-28, and it was missing.**
-    `D-11` names the consent key ``(subject, purpose, controller-role)`` and
-    says matching on the controller *alone* is insufficient — which makes the
-    role necessary, not the controller irrelevant. `D-14` then makes the
-    controller decisive in as many words: the wildcard "never admits a new
-    controller and never a new purpose". A dimension the wildcard refuses to
+    **The recipient is in the tuple since 2026-08-28, and it was missing.**
+    `D-11` names the consent key ``(subject, purpose, recipient-role)`` and says
+    matching on the recipient *alone* is insufficient — which makes the role
+    necessary, not the recipient irrelevant. `D-14` then makes the recipient
+    decisive in as many words: the wildcard "never admits a new recipient and
+    never a new purpose". A dimension the wildcard refuses to
     cross has to be visible in the evidence that proves which consent state
     authorised the handover. Without it, two offers over one dataset agreeing on
-    purpose and controller role but naming **different controllers** produced
+    purpose and recipient role but naming **different recipients** produced
     byte-identical tuples, so `L-2`'s digest could not tell a disclosure to one
     from a disclosure to the other. The write path already stored what was
-    needed — ``set_subject_data_sharing`` persists ``controller`` from
-    ``offer.recipients.controller`` — and only the hash omitted it.
+    needed — ``set_subject_data_sharing`` persists the recipient from
+    ``offer.recipients.recipient`` — and only the hash omitted it.
 
     Not reachable on the offers shipped here, whose three purposes separate them
-    on their own; reachable as soon as two controllers share a role and a
-    purpose over one dataset, which nothing forbids — `D-11a` constrains which
-    roles a controller may name and does nothing to separate two controllers
-    holding the same one.
+    on their own; reachable as soon as two recipients share a role and a purpose
+    over one dataset, which nothing forbids — `D-11a` constrains which roles a
+    recipient may name and does nothing to separate two recipients holding the
+    same one.
 
     **Every hash recorded before that date was computed over the old tuple**, so
     an auditor recomputing an older `DataDisclosed` from today's code will not
@@ -1266,8 +1266,8 @@ def consent_snapshot_hash(rows: Iterable[ConsentRequestORM]) -> str:
             row.subject_id or "",
             row.dataset_id or "",
             ",".join(sorted(row.purpose or [])),
-            row.controller or "",
-            row.controller_role or "",
+            row.recipient or "",
+            row.recipient_role or "",
             (row.legal_basis or {}).get("consent_text_version") or "",
         )
         for row in rows
@@ -1301,13 +1301,13 @@ async def latest_granted_rows_for_dataset(
     two now agree about what a decision is keyed by.
 
     **This fix changed which rows are hashed, not the tuple.** The tuple did
-    change afterwards — :func:`consent_snapshot_hash` gained ``controller``,
+    change afterwards — :func:`consent_snapshot_hash` gained the recipient,
     because `D-14` makes it decisive and it was absent — but that was a separate
     question about the tuple's contents, decided separately.
 
     **The tuple is still not keyed on the offer, and deliberately.** An offer
     *carries* a consent key rather than adding a dimension to one: two offers
-    that differ in purpose, controller or role already produce different tuples,
+    that differ in purpose, recipient or role already produce different tuples,
     and two agreeing on all of them plus the text version are the same consent
     key by `D-11`, so hashing them identically is correct rather than lossy. A
     negotiated ask (`D-16`) frequently carries no ``offer_id`` at all, so keying
@@ -1378,7 +1378,7 @@ async def get_granted_subjects(
     dataset_id: str,
     consumer_id: str,
     purpose: list[str] | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
     admitted_wildcard_offers: set[str] | None = None,
@@ -1417,7 +1417,7 @@ async def get_granted_subjects(
         allowed, reason, deciding_row = decide_for_subject(
             by_subject[subject_id],
             purpose,
-            controller_role,
+            recipient_role,
             consent_required,
             offer_id,
             admitted_wildcard_offers,
@@ -1449,7 +1449,7 @@ async def get_granted_subject_ids(
     dataset_id: str,
     consumer_id: str,
     purpose: list[str] | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
     consent_required: bool | None = None,
     offer_id: str | None = None,
     admitted_wildcard_offers: set[str] | None = None,
@@ -1466,7 +1466,7 @@ async def get_granted_subject_ids(
             dataset_id,
             consumer_id,
             purpose,
-            controller_role,
+            recipient_role,
             consent_required,
             offer_id,
             admitted_wildcard_offers,

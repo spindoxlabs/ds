@@ -487,7 +487,7 @@ def ephemeral_verifier(anchor: Anchor) -> Registry:
 def dataspace_registry(anchor: Anchor):
     """An anchor populated the way the *shipped* governance assumes.
 
-    Every controller alias `services/connector/governance-*/sharing-offers.yaml`
+    Every **recipient** alias `services/connector/governance-*/sharing-offers.yaml`
     names, enrolled as a real participant.
 
     This is what makes `owner-participant` mean anything: it joins an owner to a
@@ -497,17 +497,17 @@ def dataspace_registry(anchor: Anchor):
     fixture exists to avoid.
 
     **The roles are `provider` because that is what a participant role is.** An
-    earlier version of this fixture enrolled each controller with the
-    `controller_role` its offers declared (`operations`), to satisfy a check that
+    earlier version of this fixture enrolled each recipient with the
+    `recipient_role` its offers declared (`operations`), to satisfy a check that
     compared the two. It could not have worked in the platform: `POST`/`PATCH
     /admin/participants` reject anything outside `{provider, consumer}`
     (`schemas/requests.py`), so the fixture was building a registry state the API
     forbids — only the `ir-cli` enrolment path let it through, which is `GOV-21`.
-    The controller-role vocabulary lives beside the offers now and is checked
+    The recipient-role vocabulary lives beside the offers now and is checked
     offline, in `libs/governance/tests/tests/test_consent_checks.py`.
     """
     started = []
-    for index, alias in enumerate(_governance_controllers()):
+    for index, alias in enumerate(_governance_recipients()):
         started.append(
             _start_participant(f"gov{index}", anchor, alias=alias, roles="provider")
         )
@@ -516,12 +516,17 @@ def dataspace_registry(anchor: Anchor):
         registry.stop()
 
 
-def _governance_controllers() -> list[str]:
-    """The controller aliases the shipped offers name, read from what ships.
+def _governance_recipients() -> list[str]:
+    """The recipient aliases the shipped offers name, read from what ships.
 
-    Derived rather than listed: a producer added tomorrow brings its controllers
+    Derived rather than listed: a producer added tomorrow brings its recipients
     with it, and a hardcoded list here would go stale exactly the way naming one
     producer in CI did.
+
+    **Both spellings**, because `controller:` is still accepted from a governance
+    file and a fixture that read only the new one would enrol nobody for a
+    deployment that has not renamed yet — and the symptom is an
+    `owner-resolvable` failure that points at the wrong file.
     """
     aliases: set[str] = set()
     for offers in sorted(
@@ -529,7 +534,8 @@ def _governance_controllers() -> list[str]:
     ):
         raw = yaml.safe_load(offers.read_text(encoding="utf-8")) or {}
         for offer in raw.get("sharing_offers") or []:
-            alias = (offer.get("recipients") or {}).get("controller")
+            recipients = offer.get("recipients") or {}
+            alias = recipients.get("recipient") or recipients.get("controller")
             if alias:
                 aliases.add(alias)
     return sorted(aliases)

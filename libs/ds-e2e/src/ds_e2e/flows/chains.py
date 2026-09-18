@@ -18,7 +18,7 @@ whose data" — and each fails in a different way if the boundary is not enforce
     3. grid operator (operations) → community → members → grid operator (metering)
        One legal entity, two controllers. Metering holds the readings;
        operations wants them. Unbundling makes them distinct controllers, so the
-       boundary is **controller_role**: a consent naming one does not reach the
+       boundary is **recipient_role**: a consent naming one does not reach the
        other, even though the legal entity is identical.
 
 Run `ds-e2e scenario apply` first — these flows assert against fixtures rather
@@ -98,7 +98,7 @@ class _ChainFlow(BaseFlow):
         consumer_id: str,
         subject_id: str,
         purpose: str,
-        controller_role: str | None = None,
+        recipient_role: str | None = None,
         dataset_id: str | None = None,
     ) -> dict[str, Any]:
         params: dict[str, str] = {
@@ -107,8 +107,8 @@ class _ChainFlow(BaseFlow):
             "subject_id": subject_id,
             "purpose": purpose,
         }
-        if controller_role:
-            params["controller_role"] = controller_role
+        if recipient_role:
+            params["recipient_role"] = recipient_role
         return (
             self.http.get(
                 f"{self.settings.connector_url}/internal/consent/check?"
@@ -255,12 +255,12 @@ class ChainCommunityFlow(_ChainFlow):
             result.fail_step("member consents", str(exc))
             return result
         rows = rows if isinstance(rows, list) else [rows]
-        controllers = {r.get("controller") for r in rows}
+        controllers = {r.get("recipient") for r in rows}
         if controllers != {COMMUNITY_ALIAS}:
             result.fail_step(
                 "member consents",
                 "the consent row does not name the community as controller",
-                controllers=sorted(str(c) for c in controllers),
+                recipients=sorted(str(c) for c in controllers),
             )
             return result
         result.pass_step(
@@ -607,19 +607,19 @@ class ChainUnbundlingFlow(_ChainFlow):
             )
             return result
         recipients = offer.get("recipients") or {}
-        if recipients.get("controller_role") != "operations":
+        if recipients.get("recipient_role") != "operations":
             result.fail_step(
                 "role-scoped offer",
                 "the offer does not name a controller role, so the unbundling "
                 "boundary is not expressed",
-                controller_role=recipients.get("controller_role"),
+                recipient_role=recipients.get("recipient_role"),
             )
             return result
         result.pass_step(
             "role-scoped offer",
             "the offer names one role of the controller, not just the legal entity",
-            controller=recipients.get("controller"),
-            controller_role=recipients.get("controller_role"),
+            recipient=recipients.get("recipient"),
+            recipient_role=recipients.get("recipient_role"),
         )
 
         subject = self._subject_headers(result, svc)
@@ -640,19 +640,19 @@ class ChainUnbundlingFlow(_ChainFlow):
             result.fail_step("member consents to a role", str(exc))
             return result
         rows = rows if isinstance(rows, list) else [rows]
-        roles = {r.get("controller_role") for r in rows}
+        roles = {r.get("recipient_role") for r in rows}
         if roles != {"operations"}:
             result.fail_step(
                 "member consents to a role",
                 "the consent row did not record which role was consented to",
-                controller_role=sorted(str(r) for r in roles),
+                recipient_role=sorted(str(r) for r in roles),
             )
             self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
             return result
         result.pass_step(
             "member consents to a role",
             "the consent row records the controller role, not only the controller",
-            controller_role="operations",
+            recipient_role="operations",
         )
 
         # 3. The consented role is authorised.
@@ -661,7 +661,7 @@ class ChainUnbundlingFlow(_ChainFlow):
             consumer_id=GRID_DID,
             subject_id=s.data_subject_id,
             purpose=GRID_PURPOSE,
-            controller_role="operations",
+            recipient_role="operations",
         )
         if not allowed.get("consent_active"):
             result.fail_step(
@@ -674,7 +674,7 @@ class ChainUnbundlingFlow(_ChainFlow):
         result.pass_step(
             "consented role is authorised",
             "a request in the consented role is allowed",
-            controller_role="operations",
+            recipient_role="operations",
         )
 
         # 4. The other role of the same legal entity is not. This is the
@@ -685,21 +685,21 @@ class ChainUnbundlingFlow(_ChainFlow):
             consumer_id=GRID_DID,
             subject_id=s.data_subject_id,
             purpose=GRID_PURPOSE,
-            controller_role="metering",
+            recipient_role="metering",
         )
         if other.get("consent_active"):
             result.fail_step(
                 "other role is refused",
                 "a consent given to the operations role also authorised the "
                 "metering role of the same legal entity",
-                controller_role="metering",
+                recipient_role="metering",
             )
             self._revoke_share(subject, GRID_OFFER, consumer_id=GRID_DID)
             return result
         result.pass_step(
             "other role is refused",
             "the second controller of the same legal entity is not covered",
-            controller_role="metering",
+            recipient_role="metering",
             reason=other.get("reason"),
         )
 
@@ -710,7 +710,7 @@ class ChainUnbundlingFlow(_ChainFlow):
             consumer_id=GRID_DID,
             subject_id=s.data_subject_id,
             purpose=GRID_PURPOSE,
-            controller_role="operations",
+            recipient_role="operations",
         )
         if after.get("consent_active"):
             result.fail_step(

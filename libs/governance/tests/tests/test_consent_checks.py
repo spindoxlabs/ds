@@ -47,7 +47,7 @@ OWNERS = OwnersRegistry(
         OwnerEntry(id="example-org", name="Example Org", did="did:web:example.org"),
     ]
 )
-# The unbundling `controller_role` is checked against is declared where the real
+# The unbundling `recipient_role` is checked against is declared where the real
 # files declare it — beside the offers — so it is a per-test input rather than a
 # module constant. It used to be
 # `ROLES = {"did:web:example.org": ["provider", "community-operator"]}`, a
@@ -92,7 +92,7 @@ def offer(**overrides) -> dict:
         "purpose": "FlexibilityResearch",
         "legal_basis": "https://w3id.org/dpv#Consent",
         "recipients": {
-            "controller": "example-org",
+            "recipient": "example-org",
             "processors": {
                 "category": "appointed-service-providers",
                 "admitted_by": [{"membership": "example-org"}],
@@ -113,7 +113,7 @@ def run(
     offers: list[dict] | None = None,
     profile: OdrlProfile | None = PROFILE,
     owners: OwnersRegistry | None = OWNERS,
-    controller_roles: dict | None = None,
+    recipient_roles: dict | None = None,
 ) -> ValidationResult:
     gov = write(
         tmp_path,
@@ -127,8 +127,8 @@ def run(
     offers_path = None
     if offers is not None:
         raw: dict = {"sharing_offers": offers}
-        if controller_roles is not None:
-            raw["controller_roles"] = controller_roles
+        if recipient_roles is not None:
+            raw["recipient_roles"] = recipient_roles
         offers_path = write(tmp_path, "sharing-offers.yaml", raw)
     return validate(
         gov,
@@ -319,28 +319,28 @@ class TestSharingOffers:
         assert not result.passed
 
     @pytest.mark.rule("D-11")
-    def test_a_conflicting_unbundling_is_reported_as_a_controller_finding(
+    def test_a_conflicting_unbundling_is_reported_as_a_recipient_finding(
         self, tmp_path: Path
     ):
         """Reported, not raised, and under the right code.
 
         `offer-duplicate` would send a reader looking for two offers sharing an
-        id. This is two files disagreeing about whether one controller is
+        id. This is two files disagreeing about whether one recipient is
         unbundled, which decides which consent a request can reach.
         """
-        run(tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]})
+        run(tmp_path, offers=[offer()], recipient_roles={"example-org": ["a"]})
         contrib = tmp_path / "sharing-offers.d"
         contrib.mkdir()
         (contrib / "other.yaml").write_text(
-            yaml.safe_dump({"controller_roles": {"example-org": ["b"]}}),
+            yaml.safe_dump({"recipient_roles": {"example-org": ["b"]}}),
             encoding="utf-8",
         )
 
         result = run(
-            tmp_path, offers=[offer()], controller_roles={"example-org": ["a"]}
+            tmp_path, offers=[offer()], recipient_roles={"example-org": ["a"]}
         )
 
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
         assert "offer-duplicate" not in codes(result.errors)
         assert not result.passed
 
@@ -401,55 +401,55 @@ class TestSharingOffers:
         )
         assert "offer-dataset-purpose" in codes(result.errors)
 
-    def test_unknown_controller_is_an_error(self, tmp_path: Path):
+    def test_unknown_recipient_is_an_error(self, tmp_path: Path):
         broken = offer()
-        broken["recipients"] = {**broken["recipients"], "controller": "ghost-org"}
+        broken["recipients"] = {**broken["recipients"], "recipient": "ghost-org"}
         result = run(tmp_path, offers=[broken])
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
 
     @pytest.mark.rule("D-11a")
-    def test_a_controller_role_with_no_declared_vocabulary_is_an_error(
+    def test_a_recipient_role_with_no_declared_vocabulary_is_an_error(
         self, tmp_path: Path
     ):
         """The state the whole repository was in until 2026-08-08.
 
-        `governance-rec` declared `controller_role: operations` and no file
+        `governance-rec` declared `recipient_role: operations` and no file
         anywhere said what `operations` was. The old check asked the
         identity-registry for the answer, got an empty set, and passed — so the
         one shape that must never be silent is the one that was.
         """
         broken = offer()
-        broken["recipients"] = {**broken["recipients"], "controller_role": "metering"}
+        broken["recipients"] = {**broken["recipients"], "recipient_role": "metering"}
         result = run(tmp_path, offers=[broken])
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
 
     @pytest.mark.rule("D-11a")
-    def test_a_controller_role_outside_the_declared_vocabulary_is_an_error(
+    def test_a_recipient_role_outside_the_declared_vocabulary_is_an_error(
         self, tmp_path: Path
     ):
         broken = offer()
-        broken["recipients"] = {**broken["recipients"], "controller_role": "metering"}
+        broken["recipients"] = {**broken["recipients"], "recipient_role": "metering"}
         result = run(
             tmp_path,
             offers=[broken],
-            controller_roles={"example-org": ["community-operator"]},
+            recipient_roles={"example-org": ["community-operator"]},
         )
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
 
     @pytest.mark.rule("D-11a")
-    def test_declared_controller_role_passes(self, tmp_path: Path):
+    def test_declared_recipient_role_passes(self, tmp_path: Path):
         ok = offer()
-        ok["recipients"] = {**ok["recipients"], "controller_role": "community-operator"}
+        ok["recipients"] = {**ok["recipients"], "recipient_role": "community-operator"}
         result = run(
             tmp_path,
             offers=[ok],
-            controller_roles={"example-org": ["community-operator", "metering"]},
+            recipient_roles={"example-org": ["community-operator", "metering"]},
         )
-        assert "offer-controller" not in codes(result.errors)
+        assert "offer-recipient" not in codes(result.errors)
 
     @pytest.mark.rule("D-11a", "D-11")
-    def test_an_unbundled_controller_must_be_named_by_role(self, tmp_path: Path):
-        """`D-11`: the consent key is (subject, purpose, controller-role).
+    def test_an_unbundled_recipient_must_be_named_by_role(self, tmp_path: Path):
+        """`D-11`: the consent key is (subject, purpose, recipient-role).
 
         Declaring the entity unbundled and then omitting the function leaves the
         key one element short, and the connector matches on the legal entity —
@@ -458,21 +458,21 @@ class TestSharingOffers:
         result = run(
             tmp_path,
             offers=[offer()],
-            controller_roles={"example-org": ["community-operator", "metering"]},
+            recipient_roles={"example-org": ["community-operator", "metering"]},
         )
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
 
     @pytest.mark.rule("D-5")
-    def test_a_controller_that_is_not_unbundled_needs_no_role(self, tmp_path: Path):
+    def test_a_recipient_that_is_not_unbundled_needs_no_role(self, tmp_path: Path):
         """Most controllers are one controller. Requiring a role from all of them
         would make the ordinary case declare a distinction it does not have."""
         result = run(tmp_path, offers=[offer()])
-        assert "offer-controller" not in codes(result.errors)
+        assert "offer-recipient" not in codes(result.errors)
 
-    def test_controller_existence_not_checked_without_a_registry(self, tmp_path: Path):
+    def test_recipient_existence_not_checked_without_a_registry(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer()], owners=None)
-        assert "offer-controller" not in codes(result.errors)
-        assert "offer-controller" in codes(result.warnings)
+        assert "offer-recipient" not in codes(result.errors)
+        assert "offer-recipient" in codes(result.warnings)
 
     @pytest.mark.rule("D-11a")
     def test_the_role_vocabulary_is_still_checked_without_a_registry(
@@ -485,14 +485,14 @@ class TestSharingOffers:
         an offline run checks it in full instead of downgrading to a warning.
         """
         broken = offer()
-        broken["recipients"] = {**broken["recipients"], "controller_role": "operations"}
+        broken["recipients"] = {**broken["recipients"], "recipient_role": "operations"}
         result = run(
             tmp_path,
             offers=[broken],
             owners=None,
-            controller_roles={"example-org": ["metering"]},
+            recipient_roles={"example-org": ["metering"]},
         )
-        assert "offer-controller" in codes(result.errors)
+        assert "offer-recipient" in codes(result.errors)
 
     def test_unknown_legal_basis_is_an_error(self, tmp_path: Path):
         result = run(tmp_path, offers=[offer(legal_basis="https://example.org#Vibes")])
@@ -625,3 +625,47 @@ class TestOfferPrerequisites:
         assert "offer-prerequisites" not in codes(result.errors)
         warnings = [f for f in result.warnings if f.check == "offer-prerequisites"]
         assert warnings and "not checked" in warnings[0].message
+
+
+# ── the recipient restriction (`access_requirements: partner`) ────────────────
+
+
+class TestRecipientRestriction:
+    """`partner` restricts a dataset to the recipients its offers name.
+
+    The value used to emit `Membership eq owner:<alias>:partner`, which no
+    enrolment granted, so the dataset could be negotiated by nobody. It now emits
+    an `odrl:recipient` set in the access policy — and a dataset that binds no
+    offer would emit no set at all, admitting everybody. That is the direction
+    this check exists for.
+    """
+
+    @staticmethod
+    def _sources(**dataspace) -> dict:
+        rule = dataset(access_requirements=dataspace.pop("access_requirements", None))
+        rule["dataspace"] = {**rule["dataspace"], **dataspace}
+        return {"datasets.silver.meters_15m": rule}
+
+    def test_partner_without_an_offer_is_an_error(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            sources=self._sources(access_requirements="partner", sharing_offers=[]),
+            offers=[offer()],
+        )
+        assert "recipient-restriction" in codes(result.errors)
+
+    def test_partner_with_an_offer_is_clean(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            sources=self._sources(access_requirements="partner"),
+            offers=[offer()],
+        )
+        assert "recipient-restriction" not in codes(result.errors)
+
+    def test_a_dataset_that_asks_for_no_partners_is_not_checked(self, tmp_path: Path):
+        result = run(
+            tmp_path,
+            sources=self._sources(sharing_offers=[]),
+            offers=[offer()],
+        )
+        assert "recipient-restriction" not in codes(result.errors)

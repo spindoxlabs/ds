@@ -31,7 +31,7 @@ from ...dependencies import (
     require_internal_scope,
     require_registry_invalidate,
 )
-from ...registry.participants import HttpParticipantRegistry, ParticipantRegistry
+from ...registry.participants import ParticipantRegistry
 from ...services.agreement_service import get_agreement_status
 
 log = logging.getLogger(__name__)
@@ -358,7 +358,7 @@ async def dataplane_authorize(
                     dataset_id=dataset_id,
                     consumer_id=body.consumer_did,
                     purposes=requested,
-                    controller_role=None,
+                    recipient_role=None,
                 ),
             )
         )
@@ -382,7 +382,7 @@ async def _admitted_wildcard_offers(
     dataset_id: str,
     consumer_id: str,
     purposes: list[str],
-    controller_role: str | None,
+    recipient_role: str | None,
 ) -> set[str]:
     """Offers whose wildcard grant admits this consumer (`D-14`).
 
@@ -393,8 +393,8 @@ async def _admitted_wildcard_offers(
     first of those, so the EDC inherits the same answer without reimplementing
     any of it in Java.
 
-    Per offer, because a controller is a property of an offer and not of a
-    dataset: the same consumer can be the controller of one offer on a dataset
+    Per offer, because a recipient is a property of an offer and not of a
+    dataset: the same consumer can be the recipient of one offer on a dataset
     and a stranger to another.
 
     Returns only the offers that admit. An offer this consumer is outside is
@@ -405,7 +405,7 @@ async def _admitted_wildcard_offers(
     from ...services import circle
     from ...services import consent_vocabulary as vocab
 
-    offers = vocab.offers_covering(dataset_id, purposes, controller_role)
+    offers = vocab.offers_covering(dataset_id, purposes, recipient_role)
     if not offers:
         return set()
     # One cache per app, created on first use. Not a module global: that is one
@@ -594,7 +594,7 @@ async def consent_check(
     consumer_id: str,
     subject_id: str | None = None,
     purpose: str | None = None,
-    controller_role: str | None = None,
+    recipient_role: str | None = None,
     db: AsyncSession = Depends(get_db),
     settings=Depends(get_settings_dep),
     _claims: dict = Depends(require_internal_scope),
@@ -656,7 +656,7 @@ async def consent_check(
         consumer_id=consumer_id,
         subject_id=subject_id,
         purposes=purposes,
-        controller_role=controller_role,
+        recipient_role=recipient_role,
         consent_required=consent_required,
     )
 
@@ -670,7 +670,7 @@ async def consent_check(
         dataset_id=dataset_id,
         consumer_id=consumer_id,
         purposes=purposes,
-        controller_role=controller_role,
+        recipient_role=recipient_role,
     )
 
     if subject_id:
@@ -680,7 +680,7 @@ async def consent_check(
             dataset_id,
             consumer_id,
             purpose=purposes,
-            controller_role=controller_role,
+            recipient_role=recipient_role,
             consent_required=consent_required,
             admitted_wildcard_offers=admitted,
         )
@@ -689,7 +689,7 @@ async def consent_check(
             "dataset_id": dataset_id,
             "consumer_id": consumer_id,
             "purpose": purposes,
-            "controller_role": controller_role,
+            "recipient_role": recipient_role,
             "consent_active": active,
             "reason": reason,
             # The legal-basis evidence of the row that decided — proof of which
@@ -703,7 +703,7 @@ async def consent_check(
         dataset_id,
         consumer_id,
         purpose=purposes,
-        controller_role=controller_role,
+        recipient_role=recipient_role,
         consent_required=consent_required,
         admitted_wildcard_offers=admitted,
     )
@@ -711,7 +711,7 @@ async def consent_check(
         "dataset_id": dataset_id,
         "consumer_id": consumer_id,
         "purpose": purposes,
-        "controller_role": controller_role,
+        "recipient_role": recipient_role,
         "subject_ids": granted,
         **ask,
     }
@@ -726,7 +726,7 @@ async def _ask_projection(
     consumer_id: str,
     subject_id: str | None,
     purposes: list[str],
-    controller_role: str | None,
+    recipient_role: str | None,
     consent_required: bool | None,
 ) -> dict:
     """``should_ask`` and ``pending_request_id`` — the guard's half of the answer.
@@ -766,7 +766,7 @@ async def _ask_projection(
     if not consent_required:
         return projection
 
-    offers = vocab.offers_covering(dataset_id, purposes, controller_role)
+    offers = vocab.offers_covering(dataset_id, purposes, recipient_role)
     covered = await circle.is_covered_processor(
         offers,
         requester_did=consumer_id,
@@ -785,7 +785,7 @@ class ConsentAskRequest(BaseModel):
     dataset_id: str
     consumer_id: str
     purpose: list[str] = []
-    controller_role: str | None = None
+    recipient_role: str | None = None
 
 
 @router.post("/consent/asks", status_code=200)
@@ -852,7 +852,7 @@ async def record_consent_ask(
     except vocab.VocabularyError as exc:
         return refuse("unknown_purpose", detail=str(exc))
 
-    offers = vocab.offers_covering(body.dataset_id, purposes, body.controller_role)
+    offers = vocab.offers_covering(body.dataset_id, purposes, body.recipient_role)
     if await circle.is_covered_processor(
         offers,
         requester_did=body.consumer_id,
@@ -877,10 +877,10 @@ async def record_consent_ask(
             message="A data consumer has requested access; a contract "
             "negotiation is waiting on your decision.",
             notifier=notifier,
-            controller=offer.recipients.controller if offer else None,
-            controller_role=(
-                body.controller_role
-                or (offer.recipients.controller_role if offer else None)
+            recipient=offer.recipients.recipient if offer else None,
+            recipient_role=(
+                body.recipient_role
+                or (offer.recipients.recipient_role if offer else None)
             ),
             offer_id=offer.id if offer else None,
             negotiation_id=body.negotiation_id,
@@ -898,27 +898,18 @@ async def record_consent_ask(
     }
 
 
-@router.get("/participants/check")
-async def participants_check(
-    participant_id: str,
-    scope: str,
-    registry=Depends(get_participant_registry),
-    _claims: dict = Depends(require_internal_scope),
-):
-    """Check whether a participant has a given scope.
-
-    Called by edc-extensions AccessScopeFunction as an HTTP proxy — keeps all
-    participant logic in Python so no YAML parsing happens in Java.
-    """
-    if isinstance(registry, HttpParticipantRegistry):
-        allowed = await registry.check_scope(participant_id, scope)
-        return {"participant_id": participant_id, "scope": scope, "allowed": allowed}
-
-    participant = registry.get_by_id(participant_id)
-    if participant is None:
-        return {"participant_id": participant_id, "scope": scope, "allowed": False}
-    allowed = scope in participant.allowed_scopes
-    return {"participant_id": participant_id, "scope": scope, "allowed": allowed}
+# `GET /participants/check` was here, and it is gone
+# (`the-owner-scope-is-a-string-nobody-grants`, 2026-09-17).
+#
+# It was the connector half of the membership check: `AccessScopeFunction` asked
+# it per negotiation, it asked the anchor's `GET /admin/participants/check`, and
+# the anchor tested a hand-kept string against `participant.allowed_scopes`. No
+# code granted `owner:<alias>:partner`, `PATCH allowed_scopes` did not re-issue
+# the credential that carries the same list, and DCP exists precisely so that a
+# verifier does not make a central call per exchange. Membership is a constraint
+# on the `memberOf` claim of the `MembershipCredential` now, evaluated inside the
+# EDC from a presentation it has already verified — see
+# `services/edc-extensions/.../DataspaceMembershipFunction.java`.
 
 
 @router.post("/audit/query", status_code=202)

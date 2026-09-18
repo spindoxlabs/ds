@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-17 from `2061dfa-dirty`.
+Generated 2026-09-17 from `42a1ce4-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -13,14 +13,14 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | Blueprint requirement rows | 1623 |
 | …of which binding (`must` + `should`) | 783 |
 | …carrying a disposition | 252 |
-| …answered by a **named rule** | 38 |
+| …answered by a **named rule** | 39 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
 | Rulebook rules | 157 |
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 126 |
 | …of those, **evidenced by a test that names them** | 126 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 931 |
+| Test nodes declaring a rule | 951 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -54,9 +54,9 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-16` | Enforced | ✅ evidenced | e2e×2, unit×12 | `uc2`, `user-authority`, `services/connector/tests/test_provider_api.py::test_another_participants_agreements_are_not_listed` +11 more |
 | `C-17` | Enforced | ✅ evidenced | e2e×2, unit×12 | `api-contract`, `authz-perimeter`, `services/connector/tests/test_auth.py::test_internal_without_token_returns_401` +11 more |
 | `C-18` | Enforced | ✅ evidenced | e2e×1 | `catalog-discovery` |
-| `C-19` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×18 | `catalog-discovery`, `services/identity-registry/tests/integration/test_participant_resolve.py::test_an_enrolled_participant_resolves_as_the_admin_listing_has_it`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_without_any_credential_is_refused` +17 more |
+| `C-19` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×17 | `catalog-discovery`, `services/identity-registry/tests/integration/test_participant_resolve.py::test_an_enrolled_participant_resolves_as_the_admin_listing_has_it`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_without_any_credential_is_refused` +16 more |
 | `C-20` | Enforced | ✅ evidenced | e2e×1, unit×4 | `authz-perimeter`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_refuses_a_credential_linked_to_another_participant`, `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused` +2 more |
-| `C-21` | Partly enforced | ✅ evidenced | unit×5 | `libs/governance/tests/tests/test_mapper.py::test_access_requirements_all_no_membership_constraint`, `libs/governance/tests/tests/test_mapper.py::test_access_requirements_partner_adds_membership_constraint`, `libs/governance/tests/tests/test_mapper.py::test_internal_access_level_adds_membership_even_without_access_requirements` +2 more |
+| `C-21` | Enforced | ✅ evidenced | e2e×1, java×1, unit×9 | `recipient-restriction`, `PolicyRegistrationTest#membershipAndRecipientAreBoundInTheCatalogScope`, `libs/governance/tests/tests/test_mapper.py::test_access_requirements_all_no_membership_constraint` +8 more |
 
 ### `data-exchange.md`
 
@@ -68,7 +68,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-4` | Enforced | ✅ evidenced | e2e×1, unit×3 | `smoke`, `services/connector/tests/test_auth.py::test_internal_without_token_returns_401`, `services/connector/tests/test_auth.py::test_internal_wrong_scope_returns_403` +1 more |
 | `X-5` | Enforced | ✅ evidenced | e2e×1, unit×6 | `smoke`, `services/connector/tests/test_dataplane_authorize.py::test_consent_becomes_a_row_filter_spec`, `services/connector/tests/test_dataplane_authorize.py::test_open_dataset_needs_no_filter` +4 more |
 | `X-6` | Enforced | ✅ evidenced | e2e×1, unit×3 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_no_consent_yields_a_refusal_not_an_empty_filter`, `services/connector/tests/test_dataplane_authorize.py::test_unresolvable_subjects_deny` +1 more |
-| `X-6b` | Enforced | ✅ evidenced | e2e×1, unit×2 | `fail-closed`, `services/connector/tests/test_internal_api.py::test_consent_check_no_consent`, `services/connector/tests/test_registry.py::test_http_registry_check_scope_error_returns_false` |
+| `X-6b` | Enforced | ✅ evidenced | e2e×1, unit×1 | `fail-closed`, `services/connector/tests/test_internal_api.py::test_consent_check_no_consent` |
 | `X-6c` | Enforced | ✅ evidenced | e2e×1, unit×5 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_unknown_agreement_is_refused`, `services/connector/tests/test_dataplane_authorize.py::test_terminated_agreement_is_refused` +3 more |
 | `X-7` | Declared | · consistent | — | — |
 | `X-8` | Declared | · consistent | — | — |
@@ -156,11 +156,11 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-8` | Enforced | ✅ evidenced | e2e×1, unit×8 | `consent-purpose`, `services/connector/tests/test_access_request_declaration.py::test_declared_purpose_within_the_offer_is_accepted`, `services/connector/tests/test_access_request_declaration.py::test_narrower_purpose_than_the_offer_names_is_accepted` +6 more |
 | `D-9` | Enforced | ✅ evidenced | e2e×1, unit×3 | `consent-purpose`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_broader_declaration_does_not_satisfy_a_narrower_offer`, `services/connector/tests/test_access_request_declaration.py::test_broader_purpose_than_the_offer_permits_is_refused` +1 more |
 | `D-10` | Enforced | ✅ evidenced | e2e×1, unit×11 | `consent-purpose`, `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_unknown_declared_purpose_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestDatasetPurposes::test_full_iri_declaration_is_accepted` +9 more |
-| `D-11` | Enforced | ✅ evidenced | e2e×3, unit×11 | `chain-community`, `chain-unbundling`, `uc2` +11 more |
-| `D-11a` | Enforced | ✅ evidenced | e2e×1, unit×5 | `chain-unbundling`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_with_no_declared_vocabulary_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_controller_role_outside_the_declared_vocabulary_is_an_error` +3 more |
+| `D-11` | Enforced | ✅ evidenced | e2e×3, unit×14 | `chain-community`, `chain-unbundling`, `uc2` +14 more |
+| `D-11a` | Enforced | ✅ evidenced | e2e×1, unit×5 | `chain-unbundling`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_recipient_role_with_no_declared_vocabulary_is_an_error`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_a_recipient_role_outside_the_declared_vocabulary_is_an_error` +3 more |
 | `D-12` | Enforced | ✅ evidenced | unit×8 | `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_consent_provisioning.py::test_legal_basis_surfaces_in_internal_check`, `services/connector/tests/test_consent_provisioning.py::test_subject_offer_share_records_legal_basis` +5 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
-| `D-14` | Enforced | ✅ evidenced | e2e×6, unit×36 | `chain-community`, `chain-partner`, `collector-holder` +39 more |
+| `D-14` | Enforced | ✅ evidenced | e2e×7, unit×36 | `chain-community`, `chain-partner`, `collector-holder` +40 more |
 | `D-15` | Enforced | ✅ evidenced | e2e×1, unit×18 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +16 more |
 | `D-15a` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_consent_provisioning.py::test_decided_at_is_the_authorising_row_not_the_latest_one`, `services/connector/tests/test_consent_provisioning.py::test_a_dataset_wide_withdrawal_denies_every_offer`, `services/connector/tests/test_consent_provisioning.py::test_a_blanket_withdrawal_closes_an_earlier_per_party_grant` +5 more |
 | `D-15b` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consent_provisioning.py::test_audience_omits_a_subject_who_opted_out_of_this_consumer` |
@@ -185,16 +185,16 @@ None. Every rule claiming enforcement names at least one test node.
 | `A-2` | Enforced | ✅ evidenced | e2e×1, unit×4 | `consent-purpose`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_broader_declaration_does_not_satisfy_a_narrower_offer`, `libs/governance/tests/tests/test_models.py::test_default_profile_roots_are_not_mutually_reachable` +2 more |
 | `A-3` | Declared | · consistent | — | — |
 | `A-4` | Enforced | ✅ evidenced | integration×2, unit×3 | `services/identity-registry/tests/integration/test_governance_runtime_validation.py::test_the_owner_participant_check_has_something_to_compare`, `services/identity-registry/tests/integration/test_governance_runtime_validation.py::test_an_unreadable_registry_is_refused_not_skipped`, `libs/governance/tests/tests/test_compliance_checks.py::TestOwners::test_owner_did_not_a_participant_warns` +2 more |
-| `A-5` | Enforced | ✅ evidenced | unit×5 | `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_keys_differing_only_by_separator_collide`, `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_explicit_duplicate_asset_ids_collide`, `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_distinct_keys_do_not_collide` +2 more |
+| `A-5` | Enforced | ✅ evidenced | unit×6 | `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_keys_differing_only_by_separator_collide`, `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_explicit_duplicate_asset_ids_collide`, `libs/governance/tests/tests/test_compliance_checks.py::TestIdentifierCollisions::test_distinct_keys_do_not_collide` +3 more |
 | `A-6` | Enforced | ✅ evidenced | unit×2 | `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_secret_datasets_are_not_exposed`, `libs/governance/tests/tests/test_mapper.py::test_secret_level_no_permissions` |
 | `A-7` | Enforced | ✅ evidenced | unit×1 | `libs/governance/tests/tests/test_mapper.py::test_pii_prohibits_transfer_and_sublicense` |
 | `A-8` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_mapper.py::test_retention_days_adds_delete_obligation_with_delay_period`, `libs/governance/tests/tests/test_mapper.py::test_attribution_obligation_uses_attribute_to`, `libs/governance/tests/tests/test_mapper.py::test_rdf_is_declared_when_an_obligation_uses_it` +1 more |
 | `A-9` | Not enforced | · consistent | — | — |
 | `A-10` | Enforced | ✅ evidenced | e2e×1, unit×8 | `uc3`, `libs/governance/tests/tests/test_mapper.py::test_open_level_permits_transfer`, `libs/governance/tests/tests/test_mapper.py::test_restricted_level_only_query` +6 more |
-| `A-11` | Enforced | ✅ evidenced | e2e×1, java×30 | `fail-closed`, `ConnectorClientTest#aRequestThatCannotBeSignedIsNotSent`, `ConnectorClientTest#postingAlsoRefusesToSendUnsigned` +28 more |
+| `A-11` | Enforced | ✅ evidenced | e2e×2, java×34, unit×1 | `fail-closed`, `recipient-restriction`, `AccessPolicyFunctionsTest#aMemberOfAnotherDataspaceIsDenied` +34 more |
 | `A-12` | Enforced | ✅ evidenced | e2e×1, java×10 | `consent-withdrawal`, `FailClosedTest#sustainedSilenceTerminates`, `FailClosedTest#aDefiniteNoStillTerminatesImmediately` +8 more |
 | `A-13` | Declared | · consistent | — | — |
-| `A-14` | Enforced | ✅ evidenced | java×7 | `PolicyRegistrationTest#consentStaysBoundInEveryScope`, `PolicyRegistrationTest#consentHasAFunctionForBothOperandFormsInEveryScope`, `PolicyRegistrationTest#everyBoundOperandHasAFunctionSomewhere` +4 more |
+| `A-14` | Enforced | ✅ evidenced | java×12 | `PolicyRegistrationTest#consentStaysBoundInEveryScope`, `PolicyRegistrationTest#consentHasAFunctionForBothOperandFormsInEveryScope`, `PolicyRegistrationTest#everyBoundOperandHasAFunctionSomewhere` +9 more |
 | `CR-1` | — | · precedence | — | — |
 | `CR-2` | — | · precedence | — | — |
 | `CR-3` | — | · precedence | — | — |
@@ -245,7 +245,7 @@ Every binding blueprint row and what answers it. `may` and `recommended` rows ar
 | `DSSC-FND` | 7 | 0 | 0 | 0 | 7 |
 | `DSSC-IAM` | 12 | 12 | 0 | 0 | 0 |
 | `DSSC-PTO` | 39 | 26 | 9 | 0 | 4 |
-| `DSSC-PUB` | 36 | 32 | 2 | 0 | 2 |
+| `DSSC-PUB` | 36 | 33 | 1 | 0 | 2 |
 | `DSSC-SVD` | 14 | 5 | 0 | 0 | 9 |
 | `DSSC-TRF` | 15 | 11 | 0 | 0 | 4 |
 | `DSSC-VCS` | 58 | 0 | 0 | 58 | 0 |
@@ -278,6 +278,7 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-PTO-41` | must | `L-1` | manifest | yes |
 | `DSSC-PTO-59` | must | `L-9` | manifest | n/a — declared |
 | `DSSC-PTO-79` | must | `L-12` | manifest | yes |
+| `DSSC-PUB-03` | must | `C-21` | manifest | yes |
 | `DSSC-PUB-05` | must | `C-1` | manifest | yes |
 | `DSSC-PUB-13` | must | `C-15` | manifest | yes |
 | `DSSC-PUB-14` | must | `C-16` | manifest | yes |
@@ -456,7 +457,6 @@ The strong form: the row inherits its rule's verdict, so a rule nothing tests ma
 | `DSSC-PTO-62` | informative | The blueprint's own statement that no single semantic standard fits. What is missing is this rulebook's answer to it for telemetry — for provenance the answer is PROV-O and is recorded. Informative, so nothing demands it |
 | `DSSC-PTO-63` | recommended | PROV-O **is** adopted, for provenance and traceability, and is the whole of the provenance service's model. PAV is not used, and the observability half aligns with no standard yet. The row stays open for that remainder rather than for the recommendation it names. Recommended, so nothing demands it |
 | `DSSC-PTO-83` | must | Declared and **unmeasured**: no load test, no latency budget and no measurement of what the provenance write and the per-query authorize call cost the exchange. Nothing suggests a problem; nothing rules one out either, which is the gap |
-| `DSSC-PUB-03` | must | Visibility is enforced at **negotiation, not at discovery** (`C-21`, *Partly enforced* and accepted as such on 2026-08-09): a participant outside an offering's audience can still see that the offering exists, and is refused when it tries to contract. What is missing is audience filtering in the catalogue response itself |
 | `DSSC-PUB-45` | must | A catalogue response **embeds** each entry's metadata rather than returning `dcat:record` identifiers for a consumer to dereference. `C-8` emits a `dcat:CatalogRecord` per entry, so the records exist; what is missing is the by-reference response shape this row asks for |
 
 ### Binding rows deliberately declined

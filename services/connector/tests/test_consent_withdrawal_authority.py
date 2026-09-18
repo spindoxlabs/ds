@@ -378,7 +378,7 @@ async def test_the_holder_lifts_a_withdrawal_the_retired_service_path_made(
                 consumer_id=WILDCARD_CONSUMER,
                 offer_id=OFFER,
                 purpose=["FlexibilityResearch"],
-                controller="example-org",
+                recipient="example-org",
                 status="revoked",
                 decided_by="service",
                 requested_at=datetime(2026, 1, 1, tzinfo=UTC),

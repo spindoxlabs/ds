@@ -16,7 +16,7 @@ one case it never sees.
 **What is being asserted, and what is deliberately not.** These tests fix the
 *behaviour*: an independent controller holding nothing but an offer-scoped
 wildcard reads no rows. They do not fix the *mechanism*. How the connector
-decides that a DID is the offer's controller — `recipients.controller` is the
+decides that a DID is the offer's controller — `recipients.recipient` is the
 alias `example-org`, and resolving an alias to a DID is the owner registry's
 job — is Phase 2's to choose, and nothing here constrains it beyond the
 outcome.
@@ -54,7 +54,7 @@ IRI = "https://w3id.org/dsp/policy/purpose/"
 # person consented to, which is the whole point of the offer.
 CONTROLLER = "did:web:example-org.dataspaces.localhost"
 
-# An appointed service provider of that controller: inside the circle, admitted
+# An appointed service provider of that recipient: inside the circle, admitted
 # by `membership: example-org`, disclosed under Art. 13(1)(e) rather than asked.
 PROCESSOR = "did:web:service-provider.dataspaces.localhost"
 
@@ -86,7 +86,7 @@ def _capacity(monkeypatch, capacity: str | None, *, admitted: bool = True):
     logic is left to run, so a refactor of `evaluate`, `is_covered_processor` or
     `admits_wildcard` cannot silently turn these green.
 
-    `_controller_did` is the third: `recipients.controller` is the alias
+    `_recipient_did` is the third: `recipients.recipient` is the alias
     `example-org` and a requester is a DID, so admission resolves the alias
     through the owner registry. There is none in a unit run — the registry is
     built in `main.create_app` from a configured URL — and an unresolvable
@@ -106,7 +106,7 @@ def _capacity(monkeypatch, capacity: str | None, *, admitted: bool = True):
 
     monkeypatch.setattr(circle, "_agreement_capacity", _cap)
     monkeypatch.setattr(circle, "_check_constraint", _constraint)
-    monkeypatch.setattr(circle, "_controller_did", _controller)
+    monkeypatch.setattr(circle, "_recipient_did", _controller)
 
 
 async def _wildcard_grant(engine):
@@ -126,7 +126,7 @@ async def _wildcard_grant(engine):
                 consumer_id=WILDCARD_CONSUMER,
                 enabled=True,
                 purpose=[PURPOSE],
-                controller="example-org",
+                recipient="example-org",
                 offer_id="test-flexibility",
             )
 
@@ -315,7 +315,7 @@ async def test_a_joint_controller_reads_nothing_on_a_wildcard(
     A joint controller (Art. 26) satisfies the offer's `admitted_by` and so is
     `inside`, yet `covered_processor` is `inside and capacity == PROCESSOR` —
     it is asked, not admitted. Para 65 draws no distinction between a joint and
-    an independent controller: both should be named. This pins that the consent
+    an independent recipient: both should be named. This pins that the consent
     path agrees with the path that already gets it right.
     """
     _capacity(monkeypatch, circle.JOINT_CONTROLLER)
@@ -331,7 +331,7 @@ async def test_a_joint_controller_reads_nothing_on_a_wildcard(
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_the_offers_controller_is_still_admitted(engine, client, monkeypatch):
+async def test_the_offers_recipient_is_still_admitted(engine, client, monkeypatch):
     """The party the person actually consented to.
 
     Narrowing the wildcard must not close it. If this goes red the fix has
@@ -384,7 +384,7 @@ async def test_a_per_party_grant_still_admits_an_independent_controller(
                 consumer_id=INDEPENDENT,
                 enabled=True,
                 purpose=[PURPOSE],
-                controller="example-org",
+                recipient="example-org",
                 offer_id="test-flexibility",
             )
 
@@ -445,7 +445,7 @@ async def test_a_wildcard_withdrawal_still_closes_a_per_party_grant(
                 consumer_id=INDEPENDENT,
                 enabled=True,
                 purpose=[PURPOSE],
-                controller="example-org",
+                recipient="example-org",
                 offer_id="test-flexibility",
             )
     assert (await _check(client, INDEPENDENT))["subject_ids"] == [SUBJECT]
@@ -459,7 +459,7 @@ async def test_a_wildcard_withdrawal_still_closes_a_per_party_grant(
                 consumer_id=WILDCARD_CONSUMER,
                 enabled=False,
                 purpose=[PURPOSE],
-                controller="example-org",
+                recipient="example-org",
                 offer_id="test-flexibility",
             )
 
@@ -468,7 +468,7 @@ async def test_a_wildcard_withdrawal_still_closes_a_per_party_grant(
 
 @pytest.mark.rule("D-14")
 @pytest.mark.asyncio
-async def test_an_unresolvable_controller_still_admits_its_processor(
+async def test_an_unresolvable_recipient_still_admits_its_processor(
     engine, client, monkeypatch
 ):
     """The controller branch failing must not take the processor branch with it.
@@ -484,7 +484,7 @@ async def test_an_unresolvable_controller_still_admits_its_processor(
     async def _unresolvable(*_args, **_kwargs):
         return None
 
-    monkeypatch.setattr(circle, "_controller_did", _unresolvable)
+    monkeypatch.setattr(circle, "_recipient_did", _unresolvable)
     await _wildcard_grant(engine)
 
     assert (await _check(client, PROCESSOR))["subject_ids"] == [SUBJECT]

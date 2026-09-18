@@ -223,6 +223,10 @@ _PURPOSE_ONLY = {
     ],
 }
 
+#: What a membership-gated offer looked like when `{ns}Membership` reached the
+#: connector over HTTP. It is no longer a valid target, and no longer published
+#: in the *contract* policy at all — membership moved to the access policy and is
+#: decided inside the EDC JVM from a verified credential.
 _MEMBERSHIP_GATED = {
     "@id": "offer-2",
     "permission": [
@@ -232,7 +236,28 @@ _MEMBERSHIP_GATED = {
                 {
                     "leftOperand": "https://w3id.org/dsp/policy/Membership",
                     "operator": "eq",
-                    "rightOperand": "owner:example-org:member",
+                    "rightOperand": "https://dataspaces.localhost/dataspace",
+                },
+                {
+                    "leftOperand": "odrl:purpose",
+                    "operator": "isAnyOf",
+                    "rightOperand": [],
+                },
+            ],
+        }
+    ],
+}
+
+_CONSENT_GATED = {
+    "@id": "offer-3",
+    "permission": [
+        {
+            "action": "https://w3id.org/dsp/policy/Query",
+            "constraint": [
+                {
+                    "leftOperand": "https://w3id.org/dsp/policy/ConsentStatus",
+                    "operator": "eq",
+                    "rightOperand": "active",
                 },
                 {
                     "leftOperand": "odrl:purpose",
@@ -262,17 +287,35 @@ def test_an_offer_the_edc_decides_alone_fails_the_flow(settings):
     assert result.steps[-1].data["operands"] == ["odrl:purpose"]
 
 
-def test_a_membership_gated_offer_is_a_valid_target(settings):
-    """`Membership` is `AccessScopeFunction`, which calls the connector."""
+def test_a_consent_gated_offer_is_a_valid_target(settings):
+    """`ConsentStatus` reaches `GET /internal/consent/check` — the last one that does."""
+    http = MagicMock(spec=HttpClient)
+    flow = _flow(settings, http)
+    flow._offer = MagicMock(return_value=_CONSENT_GATED)
+
+    result = FlowResult(flow_name="fail-closed")
+    assert flow._assert_offer_needs_the_pdp(result, {}) is True
+    assert result.steps[-1].data["constraints"] == [
+        "https://w3id.org/dsp/policy/ConsentStatus"
+    ]
+
+
+def test_a_membership_gated_offer_is_no_longer_a_valid_target(settings):
+    """The regression this flow would otherwise have reported as a fail-open.
+
+    `AccessScopeFunction` asked the connector per negotiation;
+    `DataspaceMembershipFunction` reads the `memberOf` claim off a credential the
+    EDC has already verified. Stopping the connector cannot change that answer,
+    so a membership-gated target would agree happily with the PDP down and this
+    flow would call it a P0.
+    """
     http = MagicMock(spec=HttpClient)
     flow = _flow(settings, http)
     flow._offer = MagicMock(return_value=_MEMBERSHIP_GATED)
 
     result = FlowResult(flow_name="fail-closed")
-    assert flow._assert_offer_needs_the_pdp(result, {}) is True
-    assert result.steps[-1].data["constraints"] == [
-        "https://w3id.org/dsp/policy/Membership"
-    ]
+    assert flow._assert_offer_needs_the_pdp(result, {}) is False
+    assert result.steps[-1].status == "FAIL"
 
 
 def test_left_operands_reads_both_catalogue_shapes():

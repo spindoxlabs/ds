@@ -205,7 +205,7 @@ def test_no_probe_urls_is_a_declared_skip(monkeypatch):
 
 def test_it_revokes_only_its_own_revocable_requests_for_the_asset(settings):
     http = MagicMock(spec=HttpClient)
-    asset = settings.fail_closed_asset_id
+    asset = settings.organisation_asset_id
     listing = [
         {"id": "a", "asset_id": asset, "can_revoke": True},
         {"id": "b", "asset_id": asset, "can_revoke": False},
@@ -222,7 +222,7 @@ def test_it_revokes_only_its_own_revocable_requests_for_the_asset(settings):
 
 def test_a_failed_revoke_is_reported(settings):
     http = MagicMock(spec=HttpClient)
-    asset = settings.fail_closed_asset_id
+    asset = settings.organisation_asset_id
     http.raw.side_effect = [
         (200, [{"id": "a", "asset_id": asset, "can_revoke": True}]),
         (502, {"detail": "EDC transfer revoke failed"}),

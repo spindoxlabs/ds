@@ -25,7 +25,7 @@ def _offer(version: str = "1.0") -> SharingOffer:
         purpose="FlexibilityResearch",
         legal_basis=CONSENT_BASIS,
         recipients=OfferRecipients(
-            controller="example-org",
+            recipient="example-org",
             processors=ProcessorCategory(category="appointed-service-providers"),
         ),
         consent_text_version=version,

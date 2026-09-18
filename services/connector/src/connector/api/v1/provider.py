@@ -50,12 +50,18 @@ async def sync(
     from ds.governance.models import load_odrl_profile
 
     from ...services.governance import ConnectorGovernanceMapper, load_exposed_datasets
-    from ...services.provider_service import sync_governance
+    from ...services.provider_service import _sibling_offers, sync_governance
 
     yaml_path = (
         req.governance_yaml_path if req else None
     ) or settings.governance_yaml_path
     profile = load_odrl_profile(settings.odrl_profile_path)
+
+    # The offers beside the file being synced: the recipient access policy is
+    # derived from them, so their aliases have to be resolvable to DIDs too. They
+    # used not to be collected at all — only `ownership` was — which would have
+    # left every recipient restriction empty and hidden nothing from nobody.
+    offers = _sibling_offers(yaml_path, settings.governance_overlay_name)
 
     owner_did_resolver = None
     owners_registry = (
@@ -66,6 +72,7 @@ async def sync(
             yaml_path, overlay_name=settings.governance_overlay_name
         )
         owner_aliases = {o.name for rule in datasets.values() for o in rule.ownership}
+        owner_aliases |= {offer.recipients.recipient for offer in offers.offers}
         resolved: dict[str, str | None] = {}
         for alias in owner_aliases:
             resolved[alias] = await owners_registry.canonical_uri(alias)
@@ -77,6 +84,8 @@ async def sync(
         profile=profile,
         owner_did_resolver=owner_did_resolver,
         participant_did=settings.participant_did,
+        dataspace_uri=settings.dataspace_uri,
+        sharing_offers=offers,
     )
     prov = request.app.state.prov
     result = await sync_governance(

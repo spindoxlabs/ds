@@ -103,12 +103,20 @@ class ConsentRequestORM(Base):
     # An empty list is never a wildcard: for a consent-required dataset it means
     # the person was never told the use, so the row fails closed.
     purpose: Mapped[list | None] = mapped_column(JSON)  # list[str]
-    # Who decides the purpose. `controller` is an owner alias; `controller_role`
-    # names which of that participant's roles is acting, because controller is
-    # not the same thing as legal entity — a DSO's grid-operations and metering
-    # functions are distinct controllers under unbundling rules.
-    controller: Mapped[str | None] = mapped_column(Text)
-    controller_role: Mapped[str | None] = mapped_column(Text)
+    # Who the data goes to. `recipient` is an owner alias — the DSP consumer,
+    # ODRL 2.2's `odrl:recipient`, the DSSC data recipient. `recipient_role`
+    # names which function of that entity is acting, because a controller is not
+    # the same thing as a legal entity: a grid operator's grid-operations and
+    # metering functions are distinct controllers under unbundling rules, and
+    # `D-11` makes the role part of the consent key for exactly that reason.
+    #
+    # **Renamed from `controller` / `controller_role` (migration `0013`).** That
+    # name meant three things at once — the recipient, the subject's home
+    # organisation and the GDPR Art. 4(7) controller — and only the first reading
+    # held in every offer. The subject's organisation is the *collecting*
+    # organisation now, established from the caller's token at the write.
+    recipient: Mapped[str | None] = mapped_column(Text)
+    recipient_role: Mapped[str | None] = mapped_column(Text)
     # The sharing offer this row was created from, when it came from one.
     offer_id: Mapped[str | None] = mapped_column(Text)
     # Evidence of the legal basis under which this row was written: the DPV

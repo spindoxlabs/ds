@@ -12,6 +12,12 @@ participant:
   role: provider # provider | consumer | both
   did: "" # "" → did:web:<name>.<baseDomain>
 
+# The dataspace this participant belongs to, as the trust anchor signs it into
+# every MembershipCredential's `memberOf`. "" → https://<global.baseDomain>/dataspace,
+# the same expression ds-identity-registry uses, so the two agree by default.
+# A mismatch denies every negotiation.
+dataspaceUri: ""
+
 image: {registry: "", repository: "", tag: "", digest: "", pullPolicy: ""}
 imagePullSecrets: []
 nameOverride: ""

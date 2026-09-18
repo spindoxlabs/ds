@@ -62,6 +62,7 @@ def sharing_offers_schema() -> dict[str, Any]:
         "A purpose-scoped bundle a person is asked to consent to.",
     )
     defs = offer.pop("$defs", {})
+    _admit_legacy_recipient_spelling(defs)
     defs["sharingOffer"] = offer
     return {
         "$schema": _DIALECT,
@@ -80,14 +81,30 @@ def sharing_offers_schema() -> dict[str, Any]:
             },
             # The file's second key, and it has to be here for the same reason
             # the wrapper does: a schema that omits it makes a producer's
-            # `controller_roles:` look like a typo to every editor that reads
+            # `recipient_roles:` look like a typo to every editor that reads
             # this, while `ds-governance validate` requires it.
-            "controller_roles": {
+            "recipient_roles": {
                 "type": "object",
                 "description": (
-                    "controller alias -> the controller functions that entity is "
-                    "unbundled into. The vocabulary an offer's controller_role is "
+                    "recipient alias -> the controller functions that entity is "
+                    "unbundled into. The vocabulary an offer's recipient_role is "
                     "checked against; not the identity-registry's participant roles."
+                ),
+                "additionalProperties": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+            },
+            # The deprecated spelling, published so that a file still using it
+            # validates against this schema rather than being rejected by an
+            # editor while `ds-governance validate` accepts it. It is read by
+            # `ds.governance.sharing._parse`, which logs when it is.
+            "controller_roles": {
+                "type": "object",
+                "deprecated": True,
+                "description": (
+                    "Deprecated spelling of recipient_roles — still read, still "
+                    "warned about. Rename it."
                 ),
                 "additionalProperties": {
                     "type": "array",
@@ -97,6 +114,37 @@ def sharing_offers_schema() -> dict[str, Any]:
         },
         "$defs": defs,
     }
+
+
+def _admit_legacy_recipient_spelling(defs: dict[str, Any]) -> None:
+    """Let a file that still says ``controller:`` validate against this schema.
+
+    ``OfferRecipients`` accepts the old spelling through a before-validator, and
+    Pydantic cannot see that — so the generated schema would reject exactly the
+    files the model was changed to keep reading. A producer whose editor says
+    "invalid" while ``ds-governance validate`` says "fine" has no way to tell
+    which is wrong, and that is worse than either answer alone.
+
+    The requirement becomes *one of the two spellings*, never neither.
+    """
+    recipients = defs.get("OfferRecipients")
+    if not recipients:
+        return
+    properties = recipients.setdefault("properties", {})
+    properties["controller"] = {
+        "type": "string",
+        "deprecated": True,
+        "description": "Deprecated spelling of `recipient` — still read, still warned about.",
+    }
+    properties["controller_role"] = {
+        "anyOf": [{"type": "string"}, {"type": "null"}],
+        "default": None,
+        "deprecated": True,
+        "description": "Deprecated spelling of `recipient_role`.",
+    }
+    required = [name for name in recipients.get("required", []) if name != "recipient"]
+    recipients["required"] = required
+    recipients["anyOf"] = [{"required": ["recipient"]}, {"required": ["controller"]}]
 
 
 def odrl_profile_schema() -> dict[str, Any]:

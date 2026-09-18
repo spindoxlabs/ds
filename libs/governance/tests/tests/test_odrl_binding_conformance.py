@@ -52,6 +52,12 @@ from ds.governance.models import (
     OdrlProfile,
     PurposeConcept,
 )
+from ds.governance.sharing import (
+    OfferRecipients,
+    ProcessorCategory,
+    SharingOffer,
+    SharingOfferCatalogue,
+)
 
 # `libs/governance/tests/tests/` → repository root
 _REPO_ROOT = Path(__file__).resolve().parents[4]
@@ -175,17 +181,46 @@ def _java_constant(path: Path, field: str) -> str:
     return match.group(1)
 
 
+def _collect(policy: dict, terms: set[str]) -> None:
+    for permission in policy.get("odrl:permission", []):
+        terms.add(permission["odrl:action"]["@id"])
+        for constraint in permission.get("odrl:constraint", []):
+            left = constraint["odrl:leftOperand"]
+            terms.add(left["@id"] if isinstance(left, dict) else left)
+
+
 def _emitted_terms() -> set[str]:
     """Permission actions and left operands, across every rule shape this mapper builds.
 
     Driven through the real mapper rather than read off the source: the point is
     what a deployment can actually publish, and the branches that produce the
     rarest constraints are exactly the ones nobody exercises by hand.
+
+    **Both policies.** Since the access/contract split there are two documents a
+    ContractDefinition points at, and the access one carries the operands that
+    decide who is admitted. Walking only the offer would have left
+    `{ns}Membership` and `odrl:recipient` looking unemitted — i.e. it would have
+    reported the two new bindings as dead, which is the opposite of the truth.
     """
+    catalogue = SharingOfferCatalogue(
+        offers=[
+            SharingOffer(
+                id="offer-1",
+                purpose="EnergyCommunityOperation",
+                legal_basis="https://w3id.org/dpv#Consent",
+                recipients=OfferRecipients(
+                    recipient="third-party",
+                    processors=ProcessorCategory(category="appointed"),
+                ),
+            )
+        ]
+    )
     mapper = GovernanceMapper(
         participant_id="rec",
         base_url="https://rec.dataspaces.localhost",
         profile=_PROFILE,
+        owner_did_resolver=lambda alias: f"did:web:{alias}.dataspaces.localhost",
+        sharing_offers=catalogue,
     )
     terms: set[str] = set()
 
@@ -202,14 +237,12 @@ def _emitted_terms() -> set[str]:
                             purpose=["EnergyCommunityOperation", "GridMonitoring"],
                             consent_required=consent_required,
                             contract_required=contract_required,
+                            sharing_offers=["offer-1"],
                         ),
                     )
-                    offer = mapper.to_odrl_offer("datasets.silver.meters_15m", rule)
-                    for permission in offer["odrl:permission"]:
-                        terms.add(permission["odrl:action"]["@id"])
-                        for constraint in permission.get("odrl:constraint", []):
-                            left = constraint["odrl:leftOperand"]
-                            terms.add(left["@id"] if isinstance(left, dict) else left)
+                    key = "datasets.silver.meters_15m"
+                    _collect(mapper.to_odrl_offer(key, rule), terms)
+                    _collect(mapper.to_access_odrl_set(key, rule), terms)
 
     # One purpose rather than several takes the `odrl:isA` branch, which carries
     # the same operand — asserted here so a change to that branch is covered.
@@ -217,10 +250,7 @@ def _emitted_terms() -> set[str]:
         access_level="open",
         dataspace=DataspaceSpec(purpose=["GridMonitoring"]),
     )
-    for permission in mapper.to_odrl_offer("d", single)["odrl:permission"]:
-        for constraint in permission.get("odrl:constraint", []):
-            left = constraint["odrl:leftOperand"]
-            terms.add(left["@id"] if isinstance(left, dict) else left)
+    _collect(mapper.to_odrl_offer("d", single), terms)
 
     return terms
 

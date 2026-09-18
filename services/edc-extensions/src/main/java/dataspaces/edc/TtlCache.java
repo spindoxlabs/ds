@@ -13,7 +13,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * holding an expiry per entry and evicting nothing: a lookup skipped an expired
  * entry but left it in place, so the map only ever grew. Both are keyed on
  * counterparty-supplied values — a participant identity and scope in
- * {@link AccessScopeFunction}, a dataset, consumer and purpose list in
+ * {@code AccessScopeFunction} (now gone), a dataset, consumer and purpose list in
  * {@link ConsentPendingGuard} — so the key space is not bounded by anything this
  * connector controls. A counterparty negotiating for a stream of distinct asset
  * ids is enough to grow the map for the life of the JVM.

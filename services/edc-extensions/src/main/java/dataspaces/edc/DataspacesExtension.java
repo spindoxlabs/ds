@@ -4,6 +4,7 @@ import org.eclipse.edc.api.auth.spi.AuthorizationService;
 import org.eclipse.edc.connector.controlplane.contract.spi.event.contractnegotiation.ContractNegotiationEvent;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.ContractNegotiationPendingGuard;
 import org.eclipse.edc.connector.controlplane.contract.spi.negotiation.store.ContractNegotiationStore;
+import org.eclipse.edc.connector.controlplane.catalog.spi.policy.CatalogPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.AgreementPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.TransferProcessPolicyContext;
@@ -33,13 +34,21 @@ import java.util.List;
  * EDC extension that registers custom ODRL ConstraintFunctions for the
  * dataspaces platform vocabulary.
  *
- * <p>{@link AccessScopeFunction}, {@link ConsentStatusFunction} and
- * {@link AgreementConsentFunction} are thin HTTP proxies to ds-connector — no
- * business logic lives in Java.
+ * <p>{@link ConsentStatusFunction} and {@link AgreementConsentFunction} are thin
+ * HTTP proxies to ds-connector — no consent logic lives in Java.
+ * {@link DataspaceMembershipFunction} and {@link RecipientFunction} are not:
+ * they read what DCP already verified off the {@link
+ * org.eclipse.edc.participant.spi.ParticipantAgent}, with no call at all.
  *
- * <h2>Three scopes, three questions</h2>
+ * <h2>Four scopes, four questions</h2>
  *
  * <ul>
+ *   <li>{@code catalog} — <em>may this counterparty see and ask for the asset?</em>
+ *       The ContractDefinition's <b>access</b> policy, evaluated by
+ *       {@code ContractDefinitionResolverImpl} when a catalogue is built and
+ *       again by {@code ContractValidationServiceImpl.validateInitialOffer} when
+ *       a negotiation opens. Dataspace membership and {@code odrl:recipient}
+ *       live here and nowhere else.</li>
  *   <li>{@code contract.negotiation} — <em>may an agreement be signed?</em>
  *       Membership, purpose and consent are evaluated against a DCP-verified
  *       participant agent before the agreement exists.</li>
@@ -98,11 +107,19 @@ import java.util.List;
 @Extension("Dataspaces ODRL Constraint Functions")
 public class DataspacesExtension implements ServiceExtension {
 
+    private static final String CATALOG_SCOPE = CatalogPolicyContext.CATALOG_SCOPE;
     private static final String NEGOTIATION_SCOPE = ContractNegotiationPolicyContext.NEGOTIATION_SCOPE;
     private static final String TRANSFER_SCOPE = TransferProcessPolicyContext.TRANSFER_SCOPE;
     private static final String MONITOR_SCOPE = PolicyMonitorContext.POLICY_MONITOR_SCOPE;
 
-    /** Every scope in which this platform's policies are evaluated. */
+    /**
+     * The scopes the <b>contract</b> policy is evaluated in.
+     *
+     * <p>{@code catalog} is not one of them, and that is the whole point of the
+     * split: the access policy is the only thing evaluated there, so a term that
+     * belongs to the terms of use cannot accidentally decide who sees the
+     * dataset — nor the reverse.
+     */
     private static final String[] SCOPES = {NEGOTIATION_SCOPE, TRANSFER_SCOPE, MONITOR_SCOPE};
 
     /**
@@ -192,7 +209,6 @@ public class DataspacesExtension implements ServiceExtension {
         String namespace = context.getSetting(
             "dataspaces.odrl.namespace", "https://w3id.org/dsp/policy/"
         );
-        long cacheTtlSeconds = cacheTtlSeconds(context);
 
         ConnectorClient connector = connector(context);
         ConsentApi consentApi = new ConsentApi(connector);
@@ -235,8 +251,7 @@ public class DataspacesExtension implements ServiceExtension {
         // `ds:accessScope` and the negotiation-scope consent bypass could sit
         // here unnoticed — nothing could see the registration surface.
         registerPolicy(
-            policyEngine, ruleBindingRegistry, connector, consentApi,
-            namespace, cacheTtlSeconds, context.getMonitor()
+            policyEngine, ruleBindingRegistry, consentApi, namespace, context.getMonitor()
         );
     }
 
@@ -250,10 +265,8 @@ public class DataspacesExtension implements ServiceExtension {
     static void registerPolicy(
         PolicyEngine policyEngine,
         RuleBindingRegistry ruleBindingRegistry,
-        ConnectorClient connector,
         ConsentApi consentApi,
         String namespace,
-        long cacheTtlSeconds,
         Monitor monitor
     ) {
         String membershipOperand = namespace + "Membership";
@@ -295,7 +308,44 @@ public class DataspacesExtension implements ServiceExtension {
         // now, and the binding-vs-emission conformance test in `libs/governance`
         // is what stops a dead binding coming back (`EDC-06`, `EDC-10`).
         ruleBindingRegistry.bind("ds:contractRequired", NEGOTIATION_SCOPE);
-        ruleBindingRegistry.bind(membershipOperand, NEGOTIATION_SCOPE);
+
+        // ── The access policy, in the `catalog` scope ─────────────────────────
+        //
+        // Membership and recipient are conditions on being *admitted*, so they
+        // live in the ContractDefinition's access policy, and EDC evaluates that
+        // policy in exactly one scope — `catalog` — at two moments:
+        // `ContractDefinitionResolverImpl.resolveFor` when it builds a catalogue,
+        // and `ContractValidationServiceImpl.validateInitialOffer` when a
+        // counterparty opens a negotiation. One binding covers both, which is why
+        // neither operand is bound in `contract.negotiation`: there it would be a
+        // dead binding, and a dead binding is how `ds:accessScope` survived.
+        //
+        // **The actions are bound here too, and that is not decoration.** EDC's
+        // ScopeFilter *removes* a rule whose action is unbound, and a policy whose
+        // only permission was removed evaluates to success — so an access policy
+        // carrying an action unbound in `catalog` would admit everybody, silently.
+        for (String action : ACTIONS) {
+            ruleBindingRegistry.bind(action, CATALOG_SCOPE);
+        }
+        ruleBindingRegistry.bind(queryAction, CATALOG_SCOPE);
+        ruleBindingRegistry.bind(membershipOperand, CATALOG_SCOPE);
+        ruleBindingRegistry.bind(RecipientFunction.COMPACT, CATALOG_SCOPE);
+        ruleBindingRegistry.bind(RecipientFunction.EXPANDED, CATALOG_SCOPE);
+
+        policyEngine.registerFunction(
+            CatalogPolicyContext.class,
+            Permission.class,
+            membershipOperand,
+            new DataspaceMembershipFunction<>(monitor)
+        );
+        for (String operand : new String[]{RecipientFunction.COMPACT, RecipientFunction.EXPANDED}) {
+            policyEngine.registerFunction(
+                CatalogPolicyContext.class,
+                Permission.class,
+                operand,
+                new RecipientFunction<>(monitor)
+            );
+        }
 
         // ── Negotiation scope: may an agreement be signed? ───────────────────
         //
@@ -307,12 +357,12 @@ public class DataspacesExtension implements ServiceExtension {
         // they would now collide with the agreement-backed consent check on the
         // same operand key (PolicyEvaluator keeps one function per key, and the
         // winner is whichever was registered last).
-        policyEngine.registerFunction(
-            ContractNegotiationPolicyContext.class,
-            Permission.class,
-            membershipOperand,
-            new AccessScopeFunction<>(connector, cacheTtlSeconds, monitor)
-        );
+        //
+        // `AccessScopeFunction` was registered here, on `{namespace}Membership`.
+        // It is gone with its operand: membership moved to the access policy and
+        // stopped being an HTTP question (`DataspaceMembershipFunction`,
+        // `Credentials`).
+        //
         // Both forms: the operand is bound in this scope in both, and a bound
         // operand with *no* function fails evaluation outright. `ds:consentStatus`
         // was bound here and registered only in policy.monitor (`EDC-07`).
@@ -370,9 +420,10 @@ public class DataspacesExtension implements ServiceExtension {
         registerPurpose(policyEngine, PolicyMonitorContext.class, new PurposeFunction<>(monitor));
 
         monitor.info(
-            ("Dataspaces ODRL extensions registered: %sMembership (TTL=%ds), %sConsentStatus "
-                + "(negotiation + transfer.process + policy.monitor), odrl:purpose, namespace=%s")
-                .formatted(namespace, cacheTtlSeconds, namespace, namespace)
+            ("Dataspaces ODRL extensions registered: %sMembership + odrl:recipient (catalog, "
+                + "from verified credentials), %sConsentStatus (negotiation + transfer.process + "
+                + "policy.monitor), odrl:purpose, namespace=%s")
+                .formatted(namespace, namespace, namespace)
         );
     }
 

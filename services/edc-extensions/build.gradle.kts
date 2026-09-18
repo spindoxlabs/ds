@@ -12,6 +12,10 @@ dependencies {
     // Contract agreements + negotiations: the policy-monitor consent check reads
     // the signed agreement, and the pending guard reads the negotiation.
     api("org.eclipse.edc:contract-spi:$edcVersion")
+    // CatalogPolicyContext — the `catalog` scope, where the ContractDefinition's
+    // access policy decides who sees the dataset and who may open a negotiation
+    // for it.
+    api("org.eclipse.edc:catalog-spi:$edcVersion")
     // TransferProcessEvent — the transfer half of the lifecycle the connector
     // cannot see over DSP. Without a producer for it, a provider emitted no
     // `DataTransferCompleted` at all (rulebook L-1).

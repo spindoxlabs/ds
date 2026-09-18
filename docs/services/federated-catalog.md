@@ -12,6 +12,21 @@ collects each one's DCAT-AP catalogue, and republishes the union as a single rea
 serves it over DSP. If the index and the provider disagree, the provider is right — the index
 is at most one crawl interval stale, and it says so.
 
+**It indexes what its own identity is allowed to see, and that is now less than everything.**
+The crawl goes out through a connector, so every provider catalogue it collects is a DSP
+catalogue built *for that participant*. Since `C-21` became enforced at discovery
+(2026-09-17), a provider's access policy filters the catalogue it serves: a dataset restricted
+to named recipients — `access_requirements: partner`, an `odrl:recipient` set derived from its
+sharing offers — is absent from this index unless the crawler's participant is one of them.
+
+That is the accepted consequence of hiding a restricted offering at all, decided 2026-09-17
+and recorded in [rulebook §3.2](../rulebook/scope-and-deviations.md). It narrows the index
+rather than breaking it — the index was never authority — and it is the right direction: an
+index that listed what its reader may not have would leak the existence of exactly the
+datasets a producer restricted. A deployment that wants a dataset discoverable by everyone
+does not restrict it. `ds-e2e --flow catalog-discovery` asserts both halves: the provider's
+open dataset is indexed, and the restricted one is not.
+
 ## Role in the blueprint
 
 | | |

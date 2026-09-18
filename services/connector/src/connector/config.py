@@ -152,6 +152,13 @@ class Settings(BaseSettings):
         "governance.yaml when present.",
     )
     sharing_offers_overlay_name: str | None = None
+    #: The dataspace this connector belongs to, as the `memberOf` claim spells it
+    #: on the `MembershipCredential` the trust anchor signs. It is the right
+    #: operand of the membership constraint in every access policy this connector
+    #: publishes, so it must be **byte-identical** to the anchor's
+    #: `IDENTITY_REGISTRY_DATASPACE_URI` — a mismatch denies every negotiation,
+    #: which is at least the safe direction.
+    dataspace_uri: str = "https://dataspaces.localhost/dataspace"
     owners_registry_cache_ttl: float = 60.0
     odrl_profile_path: str | None = None
     # ── Semantic vocabularies (`/ns/{slug}`) ─────────────────────────────────

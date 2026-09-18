@@ -72,7 +72,6 @@ the subjects decide, and the ask is recorded from EDC's DCP-verified
 - `POST /internal/consent/asks` — record the ask behind a negotiation the pending guard is about to park. Never raises for a business outcome: always 200 with `asked` and a `reason`, so policy stays in Python
 - `POST /consent/register-transfer` — link a transfer process ID to a consent record for revocation
 - `GET /internal/edr-jwks` — proxy the EDC provider's JWKS endpoint for JWT verification
-- `GET /internal/participants/check` — forwards scope checks to identity-registry when HTTP-backed; falls back to local file-based check otherwise
 
 ### Namespace
 
@@ -118,7 +117,7 @@ The `HttpParticipantRegistry` fetches participants from the identity-registry se
 
 - Fetches from `GET {registry_url}/admin/participants` with a configurable TTL cache (default 60s via `CONNECTOR_PARTICIPANT_REGISTRY_CACHE_TTL`)
 - On fetch error, serves stale cached data (fail-open for reads)
-- `GET /internal/participants/check` forwards scope check requests to the identity-registry
+- There is no `GET /internal/participants/check`. It forwarded the EDC's per-negotiation membership question to the anchor's `/admin/participants/check`, which tested a hand-kept string against `allowed_scopes`. Membership is a constraint on the `memberOf` claim of the `MembershipCredential` now, evaluated inside the EDC from a presentation it has already verified (`the-owner-scope-is-a-string-nobody-grants`)
 
 ### File-based (fallback)
 

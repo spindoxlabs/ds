@@ -18,6 +18,7 @@ from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
+from ds_e2e.flows.recipient_restriction import RecipientRestrictionFlow
 from ds_e2e.flows.organisation_token import OrganisationTokenFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
 from ds_e2e.flows.smoke import SmokeFlow
@@ -72,15 +73,21 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     "catalog-discovery": CatalogDiscoveryFlow,
     "lineage": LineageFlow,
     "two-providers": TwoProvidersFlow,
+    # Beside `two-providers`, and for the same reason it exists: both are about
+    # *which* counterparty, and this one is about a provider choosing which
+    # counterparties may see a dataset at all. Read-mostly — it negotiates twice
+    # and writes no consent row — and it needs the provider sync to have run.
+    "recipient-restriction": RecipientRestrictionFlow,
     "smoke": SmokeFlow,
     # After `smoke`, which leaves the scoped wildcard consent behind that this
     # flow has to out-rank with an explicit opt-out (`D-15`) — running it first
     # would assert against a subject state the suite has not produced yet.
     "consent-withdrawal": ConsentWithdrawalFlow,
     # The organisation's own token driving the same exchange (ADR-0014). After
-    # the person-driven flows, whose ledger rows it never touches, and before
-    # `fail-closed`, which negotiates for the same asset as a person: the two
-    # are keyed apart, and this one revokes its own requests on both ends.
+    # the person-driven flows, whose ledger rows it never touches. It pulls
+    # `organisation_asset_id` — its own setting since 2026-09-17, because it used
+    # to borrow `fail_closed_asset_id` and inherited that flow's change of target
+    # for reasons of its own.
     "organisation-token": OrganisationTokenFlow,
     # A collector registers its members' consent at the grid operator, and the
     # consumer organisation pulls with its own token (plan
@@ -92,8 +99,8 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls
     # `cleanup()` in a `finally` so an exception mid-outage still restores the
-    # PDP. It also has to run after `two-providers`: both negotiate the same
-    # consumer/asset pair, and this one revokes the request the other leaves
+    # PDP. It also has to run after `consent-request` and `smoke`: its target is
+    # the consent-gated asset now, and this one revokes the requests they leave
     # behind (`REV-03`).
     "fail-closed": FailClosedFlow,
 }

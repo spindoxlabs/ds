@@ -11,7 +11,7 @@
 # belong to collects the decision and registers it here (plan
 # `a-collector-registers-consent-at-the-holder`).
 
-controller_roles:
+recipient_roles:
   grid-operator: [metering, operations]
 
 sharing_offers:
@@ -21,8 +21,8 @@ sharing_offers:
     purpose: GridMonitoring
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: grid-operator
-      controller_role: metering
+      recipient: grid-operator
+      recipient_role: metering
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -43,7 +43,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: consumer-org
+      recipient: consumer-org
       processors:
         category: appointed-service-providers
         admitted_by:

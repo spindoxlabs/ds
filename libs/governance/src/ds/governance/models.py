@@ -107,17 +107,25 @@ class PolicyObligations(BaseModel):
     anonymize_before_use: bool = False
 
 
-class PolicyAudience(BaseModel):
-    """Who the offer is addressed to. ds's own, and genuinely nested.
-
-    Re-parented onto `DataspaceSpec` with `PolicyObligations`. Neither flattened,
-    because nothing upstream models either one — there is no inherited field for a
-    sub-object to shadow, which is the only reason `consent` had to go.
-    """
-
-    membership: str | None = "dataspaces.localhost"
-    required_role: str | None = None
-    required_scope: str = "dataspaces.query"
+# `PolicyAudience` was here, and the whole block is gone (plans
+# `every-personal-dataset-asks-for-a-local-consent` step 2 and
+# `the-owner-scope-is-a-string-nobody-grants`, 2026-09-17).
+#
+# `membership` and `required_role` had **no reader anywhere** — not in the mapper,
+# not in the connector, not in the published schema, and nothing upstream models
+# either. A field a producer can state and nothing can act on is worse than a
+# missing one, because it reads as configuration.
+#
+# `required_scope` had a reader and still had to go with them. It was the right
+# operand of the membership constraint whenever a dataset declared no
+# `ownership`, and its default — `dataspaces.query` — was an OAuth-shaped string
+# checked against a hand-kept list on the trust anchor. That list is what
+# `the-owner-scope-is-a-string-nobody-grants` removes: membership is now a
+# constraint on the `memberOf` claim of the `MembershipCredential` the anchor
+# already signs, and the value it compares against is the **dataspace's** URI,
+# one per deployment. There is nothing per-dataset left to declare, and a
+# per-dataset override of a dataspace-wide identity would be the same invention
+# under a new name.
 
 
 # `PolicyConsent` was here, and it is the one sub-object the fold did not keep.
@@ -178,7 +186,8 @@ class DataspaceSpec(DataspaceConfig):
     restructured these fields before the canonical placement settled.
 
     So the ODRL view moved in whole: `permitted_actions`, `prohibited_actions`, the
-    validity window, `obligations`, `audience`, and consent's *how*. Two shapes of
+    validity window, `obligations` and consent's *how* (`audience` came with them
+    and has since been removed — see the note above `DataspaceAsset`). Two shapes of
     it did not survive the move, both to avoid re-creating what was removed —
     `consent.required` (upstream's `consent_required` says it) and
     `obligations.contract_required` (upstream's `contract_required` does).
@@ -226,7 +235,6 @@ class DataspaceSpec(DataspaceConfig):
     consent_on_revocation: str = "terminate"  # terminate | suspend
 
     obligations: PolicyObligations = Field(default_factory=PolicyObligations)
-    audience: PolicyAudience = Field(default_factory=PolicyAudience)
 
 
 class DcatSpec(DcatConfig):

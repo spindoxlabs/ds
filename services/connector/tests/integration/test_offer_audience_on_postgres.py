@@ -116,7 +116,7 @@ async def test_the_audience_is_bounded_by_the_offers_circle(
                 consumer_id=WILDCARD_CONSUMER,
                 enabled=True,
                 purpose=["FlexibilityResearch"],
-                controller="example-org",
+                recipient="example-org",
                 offer_id="test-flexibility",
             )
 

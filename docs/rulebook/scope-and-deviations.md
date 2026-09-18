@@ -146,19 +146,42 @@ attested and by what method* rather than implying a level — see `P-5`. When wa
 person supplies their own public key and the hosted store becomes a fallback; nothing here has
 to be undone.
 
-### 3.2 Catalogue visibility is enforced at negotiation, not at discovery
+### 3.2 Catalogue visibility ~~is enforced at negotiation, not at discovery~~ — **closed 2026-09-17**
 
 **Blueprint:** `DSSC-PUB-03` requires visibility *and* access management, where offerings
 may be visible or accessible to all participants or to a subset.
 
-**This platform:** access restriction is expressed as ODRL membership constraints, which
-gate **negotiation**. A restricted offering is visible in the catalogue to any data space
-participant and refuses when negotiated.
+**The deviation, as it stood:** access restriction was an ODRL membership constraint bound
+only in the `contract.negotiation` scope, and one policy definition served as both the
+access and the contract policy of every ContractDefinition. So a restricted offering was
+visible in the catalogue to any participant and refused only when negotiated, leaking its
+existence, title, description and terms — never its data.
 
-**What this leaks:** the existence, title, description and terms of an offering — never its
-data. For most deployments that is acceptable and arguably desirable. For one where the
-existence of a dataset is itself sensitive, it is not, and the offering should not be
-published.
+**What closed it** (`the-owner-scope-is-a-string-nobody-grants`,
+`every-personal-dataset-asks-for-a-local-consent` step 1): the two policies are separate
+now, and the access one carries the admission conditions — dataspace membership, and
+`odrl:recipient` with the DIDs the dataset's sharing offers name. EDC evaluates an access
+policy with a `CatalogPolicyContext`, which it builds both for a catalogue request
+(`ContractDefinitionResolverImpl.resolveFor`) and for an initial offer
+(`ContractValidationServiceImpl.validateInitialOffer`), so one binding covers discovery and
+negotiation. `C-21` is Enforced.
+
+**What a deployment must accept, and it is a real cost.** A restricted offering is invisible
+to a participant outside its set, *including the federated catalogue crawler* — the crawler
+reaches provider catalogues through a connector of its own, so it indexes what that identity
+is admitted to and nothing else. The federated index is advisory (`C-19`), never authority,
+so this narrows it rather than breaking it; it is stated in
+`docs/services/federated-catalog.md` and asserted by `ds-e2e --flow catalog-discovery`. A
+deployment that wants a dataset in the public index does not restrict it.
+
+**The recipient restriction is opt-in, per dataset** (`access_requirements: partner`).
+Deriving it for every dataset that declares a sharing offer would close `D-15`'s per-party
+grant: a person may admit a party the offer does not name, and a negotiation the access
+policy refuses never reaches the consent layer that would have admitted them. A provider
+saying *this goes to these organisations* and a subject saying *this party may have mine*
+are different statements, and only the first belongs in a contract definition. Where a
+dataset does opt in, the provider's restriction is the outer one and a per-party grant
+cannot widen it.
 
 ### 3.3 No cross-participant provenance or consent API
 

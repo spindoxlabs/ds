@@ -62,30 +62,43 @@ inside the EDC JVM: no `/internal/*` call, so no PDP to be unreachable. The flow
 reported a contract agreed with the PDP down and read as a **P0 fail-open**;
 what it had actually found was a negotiation that never asks.
 
-Only two constraint functions call ds-connector, and the target must carry one:
-`AccessScopeFunction` (`{ns}Membership` → `GET /internal/participants/check`) and
-`ConsentStatusFunction` / `AgreementConsentFunction` (`{ns}ConsentStatus` →
-`GET /internal/consent/check`). The REC's `datasets.gold.om_weather_features` is
-membership-gated and **not** consent-gated, so it needs the PDP and its baseline
-still costs one call. `_assert_offer_needs_the_pdp` pins this in the flow rather
+**Exactly one family of constraint functions still calls ds-connector**, and the
+target must carry it: `ConsentStatusFunction` / `NegotiationConsentValidator` /
+`AgreementConsentFunction` (`{ns}ConsentStatus` → `GET /internal/consent/check`).
+
+`AccessScopeFunction` was the other one — `{ns}Membership` →
+`GET /internal/participants/check` — and both are gone
+(`the-owner-scope-is-a-string-nobody-grants`, 2026-09-17). Membership is now a
+constraint on the `memberOf` claim of a `MembershipCredential` EDC has already
+verified, and `odrl:recipient` compares a verified identity against a list: both
+decided inside the JVM, like `odrl:purpose`. A membership-gated target would now
+agree happily with the PDP stopped, and this flow would read that as a fail-open
+while nothing was wrong.
+
+So the target is the REC's consent-gated `datasets.silver.meters_15m`, and the
+flow grants the consent it is gated on **before** its baseline —
+`_grant_consent`, withdrawn again in `cleanup`, and only if this flow was the one
+that added it. `_assert_offer_needs_the_pdp` pins the property in the flow rather
 than in a comment, because "the fixture quietly stopped constraining anything" is
 not a failure any other step here can see.
 
-**2. The outage must outlast the decision cache.** `AccessScopeFunction` caches
-each answer for `ds.access.scope.cache.ttl.seconds` (default 60). Measured on the
-running stack: with the REC connector stopped, a negotiation at ~10s of downtime
-reached **VERIFIED** off a cached `true`; the same negotiation at ~75s
-**TERMINATED** with the `Membership` constraint unfulfilled. Both are correct
-behaviour, and a flow that does not wait is asserting on the cache — the same
-"green check that did not check" this ledger keeps finding. `PDP_CACHE_MARGIN_S`
-is the margin over the configured TTL, and the wait is reported as a step so the
-output says how long the platform was blind.
+**2. The outage must outlast the decision cache.** The consent answers are cached
+for `ds.access.scope.cache.ttl.seconds` (default 60) by `ConsentPendingGuard`,
+and `AgreementConsentFunction` tolerates a bounded streak of unanswerable checks
+in flight. Measured on the running stack when the cache belonged to
+`AccessScopeFunction`: with the REC connector stopped, a negotiation at ~10s of
+downtime reached **VERIFIED** off a cached `true`; the same negotiation at ~75s
+**TERMINATED** on the unfulfilled constraint. Both are correct behaviour, and a
+flow that does not wait is asserting on the cache — the same "green check that
+did not check" this ledger keeps finding. `PDP_CACHE_MARGIN_S` is the margin over
+the configured TTL, and the wait is reported as a step so the output says how
+long the platform was blind.
 
 ## What each enforcement point is expected to do
 
 | Point | With the PDP down | Asserted here |
 |---|---|---|
-| Contract negotiation | refuse | **yes** — `AccessScopeFunction`, deny on error |
+| Contract negotiation | refuse | **yes** — the consent gate, deny on error |
 | Data plane, per query | refuse, no rows | **no** — see below |
 
 **The per-query gate is deliberately not asserted here, and that is a gap, not a
@@ -146,11 +159,22 @@ RECOVERY_RETRY_S = 10
 
 #: Constraint left operands whose EDC function calls ds-connector's
 #: `/internal/*` API — the only ones whose evaluation a stopped PDP can change.
-#: `AccessScopeFunction` → `/internal/participants/check`, and
-#: `ConsentStatusFunction` → `/internal/consent/check`. `odrl:purpose` is
-#: **not** here on purpose: `PurposeFunction` decides it inside the EDC JVM, so
-#: an offer carrying only that has no PDP to fail closed on.
-PDP_BACKED_OPERANDS = ("Membership", "ConsentStatus")
+#:
+#: **`Membership` is no longer one of them**, and that is the change this flow
+#: had to absorb (`the-owner-scope-is-a-string-nobody-grants`, 2026-09-17).
+#: `AccessScopeFunction` asked `GET /internal/participants/check` per
+#: negotiation; `DataspaceMembershipFunction` reads the `memberOf` claim off a
+#: credential EDC has already verified, inside the JVM, with no call to make. So
+#: is `odrl:recipient`, and so was `odrl:purpose` all along. The consent
+#: operands are what is left: `ConsentStatusFunction` and
+#: `NegotiationConsentValidator` both call `GET /internal/consent/check`.
+#:
+#: That is not a weaker test — it is the same property against the only
+#: enforcement point that still has a decision point to lose. What it does mean
+#: is that **the target must be consent-gated**, which is why
+#: `fail_closed_asset_id` moved and why this flow now establishes the consent
+#: itself before its baseline.
+PDP_BACKED_OPERANDS = ("ConsentStatus",)
 
 #: Refusals that came from the **provider side** — the only ones that are
 #: evidence about its policy decision point. `not-started` is excluded on
@@ -425,6 +449,13 @@ class FailClosedFlow(BaseFlow):
         if headers is None:
             return result
 
+        # **Before the baseline, not inside it.** The target is consent-gated
+        # now, so a negotiation without a grant is refused by the gate under
+        # test — and a baseline that cannot succeed makes the bracket meaningless
+        # in the direction that matters.
+        if not self._grant_consent(result):
+            return result
+
         if not self._assert_offer_needs_the_pdp(result, headers):
             return result
 
@@ -448,6 +479,43 @@ class FailClosedFlow(BaseFlow):
 
         self._assert_service_resumes(result, headers)
         return result
+
+    # ── consent, the one remaining PDP-backed constraint ─────────────────────
+
+    def _grant_consent(self, result: FlowResult) -> bool:
+        """Grant the subject's consent for the target offer, as the subject.
+
+        Recorded as `_granted_consent` so `cleanup` withdraws exactly what this
+        flow added — the subject may hold a standing grant from `smoke` or the
+        fixtures, and withdrawing that would leave every later run starting from
+        a state this flow invented.
+        """
+        s = self.settings
+        try:
+            svc = self.http.bearer_headers()
+            subject_vc = self._resolve_user_vc(s.data_subject_email, svc)
+            self.http.post(
+                f"{s.connector_url}/consent/my/shares",
+                {
+                    "offer_id": s.sharing_offer_id,
+                    "consumer_id": s.consumer_did,
+                    "enabled": True,
+                },
+                headers={"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc},
+            )
+        except Exception as exc:  # noqa: BLE001 — any failure is the same verdict
+            result.fail_step(
+                "consent baseline",
+                f"could not grant the consent the target is gated on: {exc}",
+            )
+            return False
+        self._granted_consent = True
+        result.pass_step(
+            "consent baseline",
+            f"the subject consents to {s.sharing_offer_id}, so a refusal below "
+            "is the PDP's absence and not a missing grant",
+        )
+        return True
 
     # ── access-request lifecycle ─────────────────────────────────────────────
 
@@ -793,23 +861,10 @@ class FailClosedFlow(BaseFlow):
         that never worked — the same hole `consent-withdrawal` had to close.
         """
         s = self.settings
-        svc = self.http.bearer_headers()
-        subject_vc = self._resolve_user_vc(s.data_subject_email, svc)
-        subject = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
-        try:
-            self.http.post(
-                f"{s.connector_url}/consent/my/shares",
-                {
-                    "offer_id": s.sharing_offer_id,
-                    "consumer_id": s.consumer_did,
-                    "enabled": True,
-                },
-                headers=subject,
-            )
-        except Exception as exc:
-            result.fail_step("query baseline", f"could not grant consent: {exc}")
-            return None
-        self._granted_consent = True
+        # The consent is already granted — `execute` does it before the
+        # negotiation baseline, because the negotiation target is consent-gated
+        # too now. Granting twice is harmless and granting here alone was not
+        # enough.
 
         # **Clear this asset's requests first, or the negotiation is answered by
         # a 409 dedup** — which `_start_exchange` reports as *not agreed*, i.e.
@@ -1098,7 +1153,7 @@ class FailClosedFlow(BaseFlow):
         Failing closed is only correct if it is also temporary.
 
         **Recovery is bounded by the same cache as the refusal, and this is
-        where that was found.** `AccessScopeFunction` cached the `false` it
+        where that was found.** The constraint function cached the `false` it
         computed during the outage, so the first negotiation after the connector
         came back was refused by a decision taken while it was down: the flow
         reported *"failing closed must be temporary, not permanent"* against a

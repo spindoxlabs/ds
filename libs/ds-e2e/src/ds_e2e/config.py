@@ -113,6 +113,20 @@ class E2ESettings(BaseSettings):
         validation_alias="E2E_GRID_OPERATOR_COUNTER_PARTY_ADDRESS",
     )
 
+    #: The recipient-restricted pair (`flows/recipient_restriction.py`).
+    #:
+    #: Both are the REC's, both `access_requirements: partner`, both `green` with
+    #: a contract-based offer so no consent gate is involved. They differ in
+    #: exactly one thing: whether the dev consumer is the recipient the dataset's
+    #: offer names. One alone proves nothing — a restriction that hides
+    #: everything and one that hides nothing both pass a single-dataset check.
+    recipient_asset_id: str = Field(
+        "datasets.gold.flex_forecast", validation_alias="E2E_RECIPIENT_ASSET_ID"
+    )
+    non_recipient_asset_id: str = Field(
+        "datasets.gold.grid_forecast", validation_alias="E2E_NON_RECIPIENT_ASSET_ID"
+    )
+
     consumer_provenance_url: str = Field(
         "http://172.17.0.1:31000", validation_alias="CONNECTOR_PROVENANCE_URL_CONSUMER"
     )
@@ -392,7 +406,7 @@ class E2ESettings(BaseSettings):
     #:
     #: It was the grid operator's, chosen because that exchange has no consent
     #: gate and so costs one call to baseline. That convenience deleted the
-    #: subject of the test: the grid operator's offer carries only
+    #: subject of the test: the grid operator's open offer carries only
     #: `odrl:purpose`, which the EDC evaluates in-process, so its negotiation
     #: never asks a PDP and stopping one cannot refuse it. See
     #: `flows/fail_closed.py`.
@@ -405,18 +419,36 @@ class E2ESettings(BaseSettings):
         validation_alias="E2E_PDP_CONTAINER",
     )
 
+    #: The dataset the organisation-token flow pulls (`ADR-0014`).
+    #:
+    #: **Its own setting since 2026-09-17**, and that is the point. It used to
+    #: borrow `fail_closed_asset_id` because the two wanted the same thing — a
+    #: dataset with no consent gate, so the flow needs no subject — and when
+    #: fail-closed's requirement changed (its target has to be consent-gated now,
+    #: since consent is the only PDP-backed constraint left) the borrowed setting
+    #: took this flow with it: the offer for the new target does not permit
+    #: `GridMonitoring`, and organisation-token failed on a change that had
+    #: nothing to do with it. Two flows, two reasons, two settings.
+    organisation_asset_id: str = Field(
+        "datasets.gold.om_weather_features",
+        validation_alias="E2E_ORGANISATION_ASSET_ID",
+    )
+
     #: The dataset the fail-closed flow negotiates for (`E2E-06`).
     #:
-    #: Membership-gated and **not** consent-gated, which is the pair of
-    #: properties the flow needs: `{ns}Membership` is evaluated by
-    #: `AccessScopeFunction`, which calls `GET /internal/participants/check` on
-    #: ds-connector — so there is a PDP to be unreachable — while the absence of
-    #: a consent constraint means the baseline needs no prior grant.
+    #: **Consent-gated, and it has to be now.** It was
+    #: `datasets.gold.om_weather_features`, chosen because it was membership-gated
+    #: and needed no prior grant — and `{ns}Membership` was the operand
+    #: `AccessScopeFunction` answered by calling `GET /internal/participants/check`.
+    #: That call is gone (`the-owner-scope-is-a-string-nobody-grants`): membership
+    #: is read off a verified credential inside the EDC JVM, so stopping the
+    #: connector cannot change its answer and a refusal there would prove nothing.
     #:
-    #: Not `asset_id`: `datasets.silver.meters_15m` is consent-gated, and its
-    #: baseline is `consent-request`'s property, not this flow's.
+    #: The consent operands are the only ones left that reach ds-connector, so the
+    #: target is the consent-gated dataset and the flow establishes the grant
+    #: itself before its baseline.
     fail_closed_asset_id: str = Field(
-        "datasets.gold.om_weather_features",
+        "datasets.silver.meters_15m",
         validation_alias="E2E_FAIL_CLOSED_ASSET_ID",
     )
 
@@ -426,9 +458,13 @@ class E2ESettings(BaseSettings):
     #: **The window in which the platform cannot fail closed**, because there is
     #: nothing to ask. Measured on the running stack: a negotiation at ~10s of
     #: PDP downtime reached VERIFIED off a cached `true`; the same one at ~75s
-    #: TERMINATED on the unfulfilled membership constraint. So the flow waits it
+    #: TERMINATED on an unfulfilled PDP-backed constraint. So the flow waits it
     #: out, and reads the same variable the EDC containers are given, or the
     #: harness would wait a number the platform is not using.
+    #:
+    #: The setting still bounds `ConsentPendingGuard`'s cache, which is the one
+    #: this flow now waits on; `AccessScopeFunction`'s cache, which it was named
+    #: for, no longer exists.
     pdp_cache_ttl_s: int = Field(
         60, validation_alias="DS_ACCESS_SCOPE_CACHE_TTL_SECONDS"
     )

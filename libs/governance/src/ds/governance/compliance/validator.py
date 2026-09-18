@@ -11,7 +11,7 @@ from ..mapper import GovernanceMapper
 from ..models import OdrlProfile, load_odrl_profile
 from ..resolver import GovernanceResolver
 from ..sharing import (
-    ConflictingControllerRolesError,
+    ConflictingRecipientRolesError,
     DuplicateOfferError,
     SharingOfferCatalogue,
     load_sharing_offers,
@@ -38,7 +38,7 @@ from .checks import (
 )
 from .consent_checks import (
     CONSENT_CHECKS,
-    ControllerLookup,
+    RecipientLookup,
     check_dataset_purposes,
     check_purpose_taxonomy,
     check_sharing_offers,
@@ -85,30 +85,35 @@ def load_participant_dids(path: Path | None) -> set[str] | None:
     return {entry["id"] for entry in entries}
 
 
-def build_controller_lookup(
+def build_recipient_lookup(
     catalogue: SharingOfferCatalogue,
     owners: OwnerLookup | None,
-) -> ControllerLookup | None:
-    """Which of the offers' controller aliases resolve in the owners registry.
+) -> RecipientLookup | None:
+    """Which of the offers' recipient aliases resolve in the owners registry.
 
     When the owners registry is unavailable there is nothing to resolve against,
-    so the caller gets ``None`` and the controller check downgrades to a warning
+    so the caller gets ``None`` and the recipient check downgrades to a warning
     rather than failing an offline run.
 
     This used to also join each alias to that participant's DSP roles, to check
-    ``controller_role`` against them. It cannot: the registry pins participant
-    roles to ``{provider, consumer}`` and a ``controller_role`` is a controller
+    ``recipient_role`` against them. It cannot: the registry pins participant
+    roles to ``{provider, consumer}`` and a ``recipient_role`` is a controller
     *function*. The vocabulary is declared beside the offers now, so this
     function no longer reads participants at all.
     """
     if owners is None:
         return None
     known = {
-        offer.recipients.controller
+        offer.recipients.recipient
         for offer in catalogue.offers
-        if owners.by_id(offer.recipients.controller) is not None
+        if owners.by_id(offer.recipients.recipient) is not None
     }
-    return ControllerLookup(known)
+    return RecipientLookup(known)
+
+
+#: The name this helper carried before the recipient rename (2026-09-17). Kept as
+#: an alias because `ds.governance.compliance` is a published surface.
+build_controller_lookup = build_recipient_lookup
 
 
 def validate(
@@ -137,7 +142,7 @@ def validate(
 
     When *sharing_offers_path* is given, the consent vocabulary is validated
     too: the purpose taxonomy, each dataset's ``dataspace.purpose[]``, and every
-    offer's purpose, datasets, controller, legal basis and codes.
+    offer's purpose, datasets, recipient, legal basis and codes.
     """
     result = ValidationResult(governance_path=str(governance_path))
     result.checks = list(CHECKS) + list(CONSENT_CHECKS)
@@ -198,7 +203,7 @@ def validate(
     # to pick — but the gate must report it like any other finding. A traceback
     # is a worse answer to "which file should I fix" than a named error.
     #
-    # Two exceptions, two check codes. A conflicting unbundling is a controller
+    # Two exceptions, two check codes. A conflicting unbundling is a recipient
     # finding, not a duplicate offer, and the code is what a machine filters on —
     # reporting it as `offer-duplicate` would send a reader looking for two offers
     # with one id.
@@ -207,8 +212,8 @@ def validate(
     except DuplicateOfferError as exc:
         result.error("offer-duplicate", str(exc))
         return result
-    except ConflictingControllerRolesError as exc:
-        result.error("offer-controller", str(exc))
+    except ConflictingRecipientRolesError as exc:
+        result.error("offer-recipient", str(exc))
         return result
 
     if catalogue.offers:
@@ -217,7 +222,7 @@ def validate(
             catalogue,
             exposed,
             active_profile,
-            build_controller_lookup(catalogue, owners),
+            build_recipient_lookup(catalogue, owners),
         )
         result.offers_checked = len(catalogue.offers)
 

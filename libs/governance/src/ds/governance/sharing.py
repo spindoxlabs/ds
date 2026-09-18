@@ -1,7 +1,7 @@
 """Sharing offers — what a person is actually asked to consent to.
 
 A person does not consent to a dataset.  They consent to a **purpose-scoped
-bundle, from a named controller, for a described category of recipient**.  This
+bundle, for a named recipient, with a described category of processors**.  This
 module models that bundle, loads it from YAML with the same overlay mechanism
 ``governance.yaml`` uses, and derives the hash that decides whether a change is
 material enough to require re-consent.
@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -77,22 +77,81 @@ class ProcessorCategory(BaseModel):
 class OfferRecipients(BaseModel):
     """Who may receive the data, and in what capacity.
 
-    Independent controllers are never listed here — each one is its own offer,
-    because consent under Art. 4(11) is consent to a *specific* controller's
-    processing.  ``controller_role`` names which function of that entity is
-    acting: a DSO's grid-operations and metering functions are different
-    controllers under unbundling rules, same legal entity.
+    ``recipient`` is **the party the data goes to**: the DSP consumer EDC puts in
+    ``counterPartyId``, ODRL 2.2's ``odrl:recipient`` (*"the party receiving the
+    result/outcome of exercising the action of the Rule"*), and the DSSC data
+    recipient.  It is an owner alias, resolved to a DID through the owner
+    registry wherever it is enforced.
 
-    **``controller_role`` is not a participant role.**  A participant's roles are
+    **It was called ``controller`` and meant three things at once** — the
+    recipient, the subject's home organisation, and the GDPR Art. 4(7)
+    controller.  Checked against a real four-hop chain, only the first reading
+    held in every offer, so that is the one the field keeps
+    (plan ``every-personal-dataset-asks-for-a-local-consent``, 2026-09-17).  The
+    subject's home organisation is now the *collecting* organisation, established
+    from the caller's token at the consent write
+    (``a-collector-registers-consent-at-the-holder``); the GDPR controller, where
+    a text needs to name one, is described in the offer's consent text and is not
+    used for enforcement.
+
+    ``controller`` / ``controller_role`` are still **accepted on input** and
+    folded in by :meth:`_accept_legacy_spelling`, so no governance file has to
+    change for this model to.
+
+    Independent recipients are never bundled — each one is its own offer, because
+    consent under Art. 4(11) is consent to a *specific* recipient's processing.
+    ``recipient_role`` names which function of that entity is acting: a grid
+    operator's grid-operations and metering functions are different controllers
+    under unbundling rules, same legal entity (``D-11``).
+
+    **``recipient_role`` is not a participant role.**  A participant's roles are
     DSP capacities — the identity-registry pins them to ``{provider, consumer}``
     (``schemas/requests.py``) — and ``metering`` is neither.  The vocabulary this
-    is checked against is the one declared in ``controller_roles`` beside the
+    is checked against is the one declared in ``recipient_roles`` beside the
     offers; see :class:`SharingOfferCatalogue`.
     """
 
-    controller: str  # owner alias
-    controller_role: str | None = None  # one of controller_roles[controller]
+    recipient: str  # owner alias
+    recipient_role: str | None = None  # one of recipient_roles[recipient]
     processors: ProcessorCategory
+
+    @model_validator(mode="before")
+    @classmethod
+    def _accept_legacy_spelling(cls, data: Any) -> Any:
+        """Read ``controller`` / ``controller_role`` as the new fields.
+
+        The migration path for governance files already deployed.  A file may
+        state either spelling, never both with different values — that is two
+        facts where there is one, and picking a winner silently is how one
+        producer's file redefines another's offer.
+        """
+        if not isinstance(data, dict):
+            return data
+        data = dict(data)
+        for legacy, current in (
+            ("controller", "recipient"),
+            ("controller_role", "recipient_role"),
+        ):
+            if legacy not in data:
+                continue
+            old = data.pop(legacy)
+            new = data.get(current)
+            if new is not None and new != old:
+                raise ValueError(
+                    f"'{legacy}' and '{current}' are the same field under two "
+                    f"names and disagree ({old!r} vs {new!r}). "
+                    f"'{legacy}' is the deprecated spelling — state only "
+                    f"'{current}'."
+                )
+            if new is None:
+                data[current] = old
+                logger.warning(
+                    "sharing offer recipients: '%s' is the deprecated spelling "
+                    "of '%s' and will stop being read — rename it",
+                    legacy,
+                    current,
+                )
+        return data
 
 
 class SharingOffer(BaseModel):
@@ -150,13 +209,23 @@ class SharingOffer(BaseModel):
         not invalidate consent.  It is now a property of the *datasets*, which
         makes the exclusion structural rather than a rule to remember.
         Everything else here was on screen.
+
+        **The payload keys are the facts' canonical names, not this model's
+        field names.**  ``controller`` / ``controller_role`` here are
+        ``recipients.recipient`` / ``recipients.recipient_role``: renaming the
+        field renamed nothing a person read, so renaming the key would
+        invalidate every consent row in the dataspace and ask everybody again
+        for a change that is ours alone (plan
+        ``every-personal-dataset-asks-for-a-local-consent``, 2026-09-17 — the
+        same argument that keeps ``requires_offers`` out of this payload).
+        ``test_user_visible_hash_survives_the_recipient_rename`` pins it.
         """
         return {
             "purpose": self.purpose,
             "purpose_broader": list(broader_chain or []),
             "legal_basis": self.legal_basis,
-            "controller": self.recipients.controller,
-            "controller_role": self.recipients.controller_role,
+            "controller": self.recipients.recipient,
+            "controller_role": self.recipients.recipient_role,
             "processor_category": self.recipients.processors.category,
             "subject_scope": self.subject_scope,
             "measures": sorted(self.measures),
@@ -194,36 +263,43 @@ class DuplicateOfferError(ValueError):
     """
 
 
-class ConflictingControllerRolesError(ValueError):
-    """Two files declared different unbundlings of the same controller.
+class ConflictingRecipientRolesError(ValueError):
+    """Two files declared different unbundlings of the same recipient.
 
     Same argument as :class:`DuplicateOfferError`, one level up: whether a
-    controller is unbundled decides which consent rows a request can reach, so a
+    recipient is unbundled decides which consent rows a request can reach, so a
     silent winner would let one producer widen what another producer's subjects
     agreed to.  An *identical* redeclaration is accepted — it is one fact stated
     twice, not two facts.
     """
 
 
+#: The name this error carried until the recipient rename (2026-09-17). Kept as
+#: an alias because it is part of this library's published surface and an
+#: `except ConflictingControllerRolesError` in a deployment must keep working.
+ConflictingControllerRolesError = ConflictingRecipientRolesError
+
+
 class SharingOfferCatalogue(BaseModel):
     """The loaded set of offers, indexed by id.
 
-    ``controller_roles`` is the vocabulary an offer's ``controller_role`` is
-    checked against: ``{controller alias: the functions that entity is unbundled
+    ``recipient_roles`` is the vocabulary an offer's ``recipient_role`` is
+    checked against: ``{recipient alias: the functions that entity is unbundled
     into}``.  **Declared, never derived**, for the same reason purposes are — and
     declared *here*, by the producer, because there is no other authority for it.
+    ``controller_roles:`` is still read as the deprecated spelling.
 
     The alternative was to read it from the identity-registry's participant
-    ``roles``, and that is what the ``controller_role`` check did until
-    2026-08-08.  It cannot work: those are DSP capacities, pinned to
-    ``{provider, consumer}`` by the registry's own schema, so no legal value of
-    ``controller_role`` could ever be in the set.  The check was unsatisfiable —
-    it either compared against an empty set and passed on anything, or errored on
-    every offer that named a role.  It compared against an empty set everywhere,
-    which is why nothing noticed (``GOV-19``, ``GOV-20``).
+    ``roles``, and that is what the role check did until 2026-08-08.  It cannot
+    work: those are DSP capacities, pinned to ``{provider, consumer}`` by the
+    registry's own schema, so no legal value of ``recipient_role`` could ever be
+    in the set.  The check was unsatisfiable — it either compared against an
+    empty set and passed on anything, or errored on every offer that named a
+    role.  It compared against an empty set everywhere, which is why nothing
+    noticed (``GOV-19``, ``GOV-20``).
 
     An alias absent from this map is *not* unbundled, and an offer naming it may
-    not carry a ``controller_role``.  An alias present in it **is**, so an offer
+    not carry a ``recipient_role``.  An alias present in it **is**, so an offer
     naming it must say which function — matching on the legal entity alone is
     what ``docs/rulebook/personal-data.md`` `D-11` calls insufficient.
     """
@@ -233,8 +309,8 @@ class SharingOfferCatalogue(BaseModel):
     #: duplicate can name both sides. Offers are contributed by whoever declares
     #: the datasets, so "who declared this" must be answerable.
     sources: dict[str, str] = Field(default_factory=dict)
-    #: controller alias → its unbundled controller functions.
-    controller_roles: dict[str, list[str]] = Field(default_factory=dict)
+    #: recipient alias → its unbundled controller functions.
+    recipient_roles: dict[str, list[str]] = Field(default_factory=dict)
 
     @property
     def by_id(self) -> dict[str, SharingOffer]:
@@ -249,9 +325,27 @@ class SharingOfferCatalogue(BaseModel):
     def consent_based(self) -> list[SharingOffer]:
         return [offer for offer in self.offers if offer.requires_consent]
 
-    def roles_of(self, controller: str) -> list[str]:
-        """The functions *controller* is unbundled into; empty when it is not."""
-        return list(self.controller_roles.get(controller) or [])
+    def roles_of(self, recipient: str) -> list[str]:
+        """The functions *recipient* is unbundled into; empty when it is not."""
+        return list(self.recipient_roles.get(recipient) or [])
+
+    def recipients_of(self, offer_ids: Sequence[str]) -> list[str]:
+        """The recipient aliases of *offer_ids*, deduplicated, in first-seen order.
+
+        The one place the set behind an ``odrl:recipient`` access policy is
+        derived.  An unknown offer id contributes nothing: a dangling reference
+        already means *not exposed* (``DataspaceSpec.sharing_offers``), and
+        inventing a recipient for it would widen the policy on a typo.
+        """
+        by_id = self.by_id
+        aliases: list[str] = []
+        for offer_id in offer_ids:
+            offer = by_id.get(offer_id)
+            if offer is None:
+                continue
+            if offer.recipients.recipient not in aliases:
+                aliases.append(offer.recipients.recipient)
+        return aliases
 
 
 def datasets_by_offer(
@@ -278,16 +372,25 @@ def datasets_by_offer(
 
 def _parse(raw: dict[str, Any]) -> SharingOfferCatalogue:
     entries = raw.get("sharing_offers") or []
-    declared = raw.get("controller_roles") or {}
+    # `controller_roles:` is the deprecated spelling, still read so that no
+    # deployed governance file has to change for the rename.
+    declared = raw.get("recipient_roles")
+    if declared is None:
+        declared = raw.get("controller_roles")
+        if declared:
+            logger.warning(
+                "sharing offers: 'controller_roles:' is the deprecated spelling "
+                "of 'recipient_roles:' and will stop being read — rename it"
+            )
     # Sorted and de-duplicated on the way in, so a reordered list is not a
-    # different unbundling — `ConflictingControllerRolesError` compares these.
-    controller_roles = {
+    # different unbundling — `ConflictingRecipientRolesError` compares these.
+    recipient_roles = {
         alias: sorted({str(role) for role in (roles or []) if str(role).strip()})
-        for alias, roles in declared.items()
+        for alias, roles in (declared or {}).items()
     }
     return SharingOfferCatalogue(
         offers=[SharingOffer.model_validate(entry) for entry in entries if entry],
-        controller_roles=controller_roles,
+        recipient_roles=recipient_roles,
     )
 
 
@@ -335,7 +438,7 @@ def load_sharing_offers(
     irrelevant to correctness.
 
     **The overlay is different and stays replace-by-id.** ``sharing-offers.<name>.yaml``
-    is a deliberate, opt-in deployment rebinding (a controller alias for a given
+    is a deliberate, opt-in deployment rebinding (a recipient alias for a given
     site), not a contribution, so it is applied last and may replace.
 
     A missing base file is fine: a deployment with no offers of its own can still
@@ -347,7 +450,7 @@ def load_sharing_offers(
 
     offers: dict[str, SharingOffer] = {}
     sources: dict[str, str] = {}
-    controller_roles: dict[str, list[str]] = {}
+    recipient_roles: dict[str, list[str]] = {}
     role_sources: dict[str, str] = {}
     for file in _contributing_files(base_path):
         contributed = _read(file)
@@ -361,17 +464,17 @@ def load_sharing_offers(
                 )
             offers[offer.id] = offer
             sources[offer.id] = file.name
-        for alias, roles in contributed.controller_roles.items():
-            previous_roles = controller_roles.get(alias)
+        for alias, roles in contributed.recipient_roles.items():
+            previous_roles = recipient_roles.get(alias)
             if previous_roles is not None and previous_roles != roles:
-                raise ConflictingControllerRolesError(
-                    f"Controller '{alias}' is unbundled two different ways — "
+                raise ConflictingRecipientRolesError(
+                    f"Recipient '{alias}' is unbundled two different ways — "
                     f"{previous_roles} in '{role_sources[alias]}' and {roles} in "
-                    f"'{file.name}'. Whether a controller is unbundled decides "
+                    f"'{file.name}'. Whether a recipient is unbundled decides "
                     "which consent a request can reach, so there is no winner to "
                     "pick: agree on one list."
                 )
-            controller_roles[alias] = roles
+            recipient_roles[alias] = roles
             role_sources[alias] = file.name
 
     if not offers and not base_path.exists():
@@ -386,12 +489,12 @@ def load_sharing_offers(
                 offers[offer.id] = offer
                 sources[offer.id] = overlay_path.name
             # The overlay may rebind an unbundling for the same reason it may
-            # rebind a controller alias: it is a deliberate, opt-in deployment
+            # rebind a recipient alias: it is a deliberate, opt-in deployment
             # statement, not a contribution competing with one.
-            controller_roles.update(overlay.controller_roles)
+            recipient_roles.update(overlay.recipient_roles)
 
     return SharingOfferCatalogue(
         offers=list(offers.values()),
         sources=sources,
-        controller_roles=controller_roles,
+        recipient_roles=recipient_roles,
     )

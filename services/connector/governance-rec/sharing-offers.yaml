@@ -1,7 +1,7 @@
 # Sharing offers — what a person is actually asked to consent to.
 #
 # A person does not consent to a dataset; they consent to a purpose-scoped
-# bundle, from a named controller, for a described category of recipient.
+# bundle, for a named recipient, with a described category of processors.
 # Everything here is a CODE plus an English label served by GET /ns/policy:
 # translation is the frontend's job, so a locale can never widen a coverage
 # window or invent a resolution.
@@ -13,17 +13,19 @@
 # the ODRL profile, whose datasets do not resolve, or whose datasets do not
 # declare the offer's purpose in dataspace.purpose[] fails the gate.
 
-# The controller functions each named controller is unbundled into — the
-# vocabulary `recipients.controller_role` is checked against, and the only
-# authority for it. A controller absent here is not unbundled, and an offer
-# naming it may not carry a `controller_role`; a controller present here is, so
+# The controller functions each named recipient is unbundled into — the
+# vocabulary `recipients.recipient_role` is checked against, and the only
+# authority for it. A recipient absent here is not unbundled, and an offer
+# naming it may not carry a `recipient_role`; a recipient present here is, so
 # an offer naming it must say which function (rulebook `D-11`).
 #
 # **Not the identity-registry's participant `roles`.** Those are DSP capacities,
 # pinned to `{provider, consumer}` by the registry's own schema, so no legal
-# `controller_role` could ever be one — the check that compared the two was
+# `recipient_role` could ever be one — the check that compared the two was
 # unsatisfiable and passed by comparing against an empty set (`GOV-20`).
-controller_roles:
+#
+# `controller_roles:` is the deprecated spelling and is still read.
+recipient_roles:
   grid-operator: [metering, operations]
 
 sharing_offers:
@@ -31,9 +33,13 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      # The controller decides the purpose. Processors act on its instructions
-      # under a DPA, so a new one joining the category is disclosed, not asked.
-      controller: example-org
+      # The recipient is the party the data goes to — the DSP consumer, ODRL
+      # 2.2's `odrl:recipient`, the DSSC data recipient. Processors act on its
+      # instructions under a DPA, so a new one joining the category is
+      # disclosed, not asked. It was spelled `controller:`, which also meant the
+      # subject's organisation and the GDPR controller; only this reading held
+      # in every offer.
+      recipient: example-org
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -52,15 +58,15 @@ sharing_offers:
   # Same legal entity, a different controller. A grid operator's operations
   # function and its metering function are unbundled: metering holds the
   # readings, operations wants them for planning, and consent to one is not
-  # consent to the other. `controller_role` is what makes that boundary
+  # consent to the other. `recipient_role` is what makes that boundary
   # checkable — a request arriving in the metering role is refused against a
-  # row consented for operations, even though `controller` matches.
+  # row consented for operations, even though `recipient` matches.
   - id: grid-operations-planning
     purpose: EnergyCommunityOperation
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: grid-operator
-      controller_role: operations
+      recipient: grid-operator
+      recipient_role: operations
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -82,7 +88,7 @@ sharing_offers:
     # choice that does not exist is worse than not asking.
     legal_basis: "https://w3id.org/dpv#Contract"
     recipients:
-      controller: example-org
+      recipient: example-org
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -96,3 +102,43 @@ sharing_offers:
     consent_text_version: "1.0"
     revocable: false
     retention: P5Y
+
+  # ── The recipient-restricted pair ──────────────────────────────────────────
+  #
+  # Contract, not consent: a supply obligation under an agreement, disclosed
+  # rather than asked. They exist to name a *recipient*, which is what the
+  # `odrl:recipient` access policy on `datasets.gold.flex_forecast` and
+  # `datasets.gold.grid_forecast` is derived from — one declaration, read both by
+  # `circle.admits_wildcard` (`D-14`) and by the EDC access policy.
+  - id: flexibility-forecast-supply
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Contract"
+    recipients:
+      recipient: consumer-org
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: consumer-org
+    subject_scope: community
+    measures: [consumption]
+    resolution: PT15M
+    consent_text_version: "1.0"
+    revocable: false
+    retention: P1Y
+
+  - id: grid-forecast-supply
+    purpose: GridMonitoring
+    legal_basis: "https://w3id.org/dpv#Contract"
+    recipients:
+      recipient: grid-operator
+      recipient_role: operations
+      processors:
+        category: appointed-service-providers
+        admitted_by:
+          - membership: grid-operator
+    subject_scope: community
+    measures: [consumption]
+    resolution: PT15M
+    consent_text_version: "1.0"
+    revocable: false
+    retention: P1Y

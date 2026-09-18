@@ -117,18 +117,42 @@ a permission are ANDed).
 | `yellow` | sublicense |
 | `green` (also the default) | *none* |
 
-**Constraints**, in this order:
+**Two policies, and the split is what decides where a constraint goes.** An EDC
+`ContractDefinition` holds an **access** policy — may this counterparty see and ask for the
+asset? — and a **contract** policy — what binds once there is an agreement. ds emitted one
+policy into both slots until 2026-09-17, so every admission condition was published to every
+counterparty and none of them could hide anything
+(`the-owner-scope-is-a-string-nobody-grants`).
+
+**The access policy** (`to_access_policy_create`, `<key>-access-policy`), carrying the same
+permitted actions so EDC's `ScopeFilter` cannot delete its only rule and leave it vacuously
+true:
 
 | Emitted when | Left operand | Right operand |
 |---|---|---|
-| access requires partner/contract, or the level is internal or restricted | `{ns}Membership` | `owner:<alias>:member`, `owner:<alias>:partner`, or the audience scope |
-| access requires a contract | `odrl:industry` | `contract-agreed` |
+| access requires partner/contract, or the level is internal or restricted | `{ns}Membership` `eq` | the **dataspace URI** — the value the trust anchor signs as `memberOf` on every `MembershipCredential` |
+| `access_requirements: partner` | `odrl:recipient` `isAnyOf` | the DIDs the dataset's sharing offers name as their `recipients.recipient` |
+
+`odrl:recipient` is ODRL 2.2's *"the party receiving the result/outcome of exercising the
+action of the Rule"*. The set is **derived** from the offers rather than declared beside
+them, so `circle.admits_wildcard` (`D-14`) and the access policy read one declaration. It is
+opt-in per dataset because a blanket restriction would close `D-15`'s per-party grant — see
+rulebook §3.2.
+
+**The contract policy** (`to_policy_create`, `<key>-policy`), in this order:
+
+| Emitted when | Left operand | Right operand |
+|---|---|---|
 | level is restricted, or `contract_required` | `ds:contractRequired` | `true` |
 | exactly one purpose resolves | `odrl:purpose` `isA` | the purpose IRI |
 | two or more purposes resolve | `odrl:purpose` `isAnyOf` | one flat array of IRIs |
 | consent required, or a row filter exists | `{ns}ConsentStatus` | `active` |
 
 The last condition also attaches an `odrl:obtainConsent` duty.
+
+`odrl:industry eq "contract-agreed"` used to appear here for `access_requirements: contract`.
+It said what `ds:contractRequired` says, under an operand that means the industry *sector*,
+and nothing bound it — so it was shown to counterparties and deleted before evaluation.
 
 !!! note "Why `isAnyOf` and not several constraints"
     Constraints within a permission are ANDed, so one constraint per purpose would demand a
@@ -165,8 +189,19 @@ whose purposes do not resolve.
 ## Sharing offers
 
 A sharing offer is what a data subject is actually shown: a purpose, a legal basis, a
-controller and their role, a processor category, a subject scope, safeguard measures, a
+**recipient** and their role, a processor category, a subject scope, safeguard measures, a
 resolution, a coverage window and a retention period.
+
+`recipients.recipient` is the party the data goes to — the DSP consumer EDC records as
+`counterPartyId`, ODRL 2.2's `odrl:recipient`, the DSSC data recipient. It was
+`recipients.controller` and meant three things at once: the recipient, the subject's home
+organisation, and the GDPR Art. 4(7) controller. Checked against a real four-hop chain only
+the first reading held in every offer, so that is the one the field keeps
+(`every-personal-dataset-asks-for-a-local-consent`). The subject's home organisation is the
+*collecting* organisation, established from the caller's token at the consent write; a GDPR
+controller a text needs to name belongs in the consent text, not in an enforcement field.
+**`controller:` and `controller_role:` are still read** and logged as deprecated, so no
+deployed file has to change.
 
 Two composition rules, and they differ on purpose:
 
@@ -175,30 +210,32 @@ Two composition rules, and they differ on purpose:
   to pick.
 - **Overlays** (`sharing-offers.<name>.yaml`) are applied last and **replace** by offer id.
 
-### `controller_roles` — the unbundling vocabulary
+### `recipient_roles` — the unbundling vocabulary
 
-An offer's `recipients.controller_role` names *which function* of a legal entity is the
+An offer's `recipients.recipient_role` names *which function* of a legal entity is the
 controller. The file declares the vocabulary it uses, beside the offers:
 
 ```yaml
-controller_roles:
+recipient_roles:
   grid-operator: [metering, operations]
 ```
 
-A controller absent from the map is not unbundled, and an offer naming it may not carry a
-`controller_role`. A controller present in it **is**, so an offer naming it must say which
+(`controller_roles:` is the deprecated spelling and is still read.)
+
+A recipient absent from the map is not unbundled, and an offer naming it may not carry a
+`recipient_role`. A recipient present in it **is**, so an offer naming it must say which
 function — matching on the legal entity alone is what [Personal data](../../rulebook/personal-data.md)
 `D-11` calls insufficient. Both directions are errors at the gate.
 
 **This is not the identity-registry's participant `roles`.** Those are DSP capacities, which
-the registry pins to `{provider, consumer}`, so no `controller_role` could ever be one of
+the registry pins to `{provider, consumer}`, so no `recipient_role` could ever be one of
 them. The check compared the two until 2026-08-08 and was therefore unsatisfiable: it could
 only pass by comparing against an empty set, which is what it did against every registry.
 Declaring the vocabulary here also makes the check **offline** — a producer's own file answers
 it, so no registry is needed.
 
 Composition follows the same split as the offers, except that an *identical* redeclaration is
-accepted: two contributing files unbundling the same controller **differently** is an error
+accepted: two contributing files unbundling the same recipient **differently** is an error
 naming both, and an overlay may rebind it.
 
 ### `requires_offers` — an offer admitted only together with another
@@ -213,16 +250,19 @@ When one offer authorises the holder to release data at all, an offer using that
 At a connector where both are bound to a dataset, a subject is admitted for the dependent offer
 only while the required one admits them too — withdrawing the required offer withdraws the
 dependent **admission** and leaves its row. The required offer is read with its own purpose and
-controller role. Where the required offer is not bound to the dataset (another connector's), the
+recipient role. Where the required offer is not bound to the dataset (another connector's), the
 requirement is not checked there, and the gate says so per dataset (`offer-prerequisites`
 warning). An unknown, self-referencing, contract-based or cyclic prerequisite is an error.
 `requires_offers` is not a user-visible fact: it narrows admission and widens nothing a person
 agreed to, so adding one asks nobody again. `GET /ns/sharing-offers` publishes it.
 
 Each offer carries a `user_visible_hash` over the facts a person actually saw — purpose and its
-broader chain, legal basis, controller and role, processor category, subject scope, measures,
-resolution, coverage, retention, revocability. It deliberately excludes the backing datasets
-and the text version. **A changed hash under an unchanged text version is what triggers
+broader chain, legal basis, recipient and role, processor category, subject scope, measures,
+resolution, coverage, retention, revocability. Its payload keys are the canonical names of the
+*facts*, not of this model's fields, so the recipient still appears under `controller` —
+renaming the field renamed nothing a person read, and renaming the key would have invalidated
+every consent row in the dataspace. It deliberately excludes the backing datasets and the text
+version. **A changed hash under an unchanged text version is what triggers
 re-consent.**
 
 ## Validation
@@ -239,7 +279,7 @@ Errors block; warnings do not.
 | Bounds | retention and delete-after ≤ 0; `valid_from` after `valid_until` |
 | Owners | ownership declared, alias resolvable, the owner's DID a registered participant |
 | Purposes | IRI shape, hierarchy cycles, DPV relation validity, labels, and that every dataset's purposes resolve |
-| Offers | purpose in the taxonomy, no duplicate ids, every named offer resolvable, `pii` datasets declaring an offer must require consent, the offer's purpose must be in the dataset's, controller resolvable and its `controller_role` one the file [declares](#controller_roles-the-unbundling-vocabulary), legal basis a DPV term, ISO-8601 durations, hash stability, and `requires_offers` naming known, consent-based offers without a cycle |
+| Offers | purpose in the taxonomy, no duplicate ids, every named offer resolvable, `pii` datasets declaring an offer must require consent, the offer's purpose must be in the dataset's, recipient resolvable and its `recipient_role` one the file [declares](#recipient_roles-the-unbundling-vocabulary), a dataset asking for `access_requirements: partner` must bind an offer for the recipient set to come from, legal basis a DPV term, ISO-8601 durations, hash stability, and `requires_offers` naming known, consent-based offers without a cycle |
 
 ## Configuration
 

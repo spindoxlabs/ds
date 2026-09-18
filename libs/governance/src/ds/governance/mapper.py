@@ -7,11 +7,31 @@ from typing import Any
 
 from .consent import requires_consent as requires_consent
 from .models import GovernanceRuleV2, OdrlProfile, subject_column
+from .sharing import SharingOfferCatalogue
 
 # No module-level tag→purpose mapping — deployers configure this via
 # OdrlProfile.tag_to_purpose so the platform stays domain-neutral.
 
 RDF_NAMESPACE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+
+#: ODRL 2.2 Common Vocabulary: *"The party receiving the result/outcome of
+#: exercising the action of the Rule."* Its right operand must identify parties,
+#: so the operand carries participant DIDs — the same identity EDC puts in
+#: `ParticipantAgent.getIdentity()` and in `counterPartyId`.
+#:
+#: Emitted in the **access** policy only, which is why a counterparty never sees
+#: it: EDC evaluates the access policy in the `catalog` scope, both when it
+#: builds a catalogue (`ContractDefinitionResolverImpl`) and again when it
+#: validates an initial offer (`ContractValidationServiceImpl.validateInitialOffer`
+#: — `new CatalogPolicyContext(agent)`), so one binding covers discovery and
+#: negotiation. The restriction hides the offer rather than refusing it late,
+#: which is the consequence recorded in `docs/services/federated-catalog.md`.
+RECIPIENT_OPERAND = "odrl:recipient"
+
+#: The dev dataspace identity, matching `IDENTITY_REGISTRY_DATASPACE_URI`'s
+#: default. A deployment passes its own; the fallback exists for the same reason
+#: `participant_did`'s does.
+DEFAULT_DATASPACE_URI = "https://dataspaces.localhost/dataspace"
 
 # ── `ds:contractRequired` is deliberately left undeclared (`GOV-10`, half open)
 #
@@ -91,6 +111,8 @@ class GovernanceMapper:
         profile: OdrlProfile | None = None,
         owner_did_resolver: Callable[[str], str | None] | None = None,
         participant_did: str | None = None,
+        dataspace_uri: str | None = None,
+        sharing_offers: SharingOfferCatalogue | None = None,
     ):
         self.participant_id = participant_id
         self.base_url = base_url.rstrip("/")
@@ -101,10 +123,31 @@ class GovernanceMapper:
         self.participant_did = (
             participant_did or f"did:web:{participant_id}.dataspaces.localhost"
         )
+        # What the membership constraint compares against: the value of the
+        # `memberOf` claim on the `MembershipCredential` the trust anchor signs.
+        # One per dataspace, never per dataset — see the note where
+        # `PolicyAudience` used to be, in `models.py`.
+        self.dataspace_uri = dataspace_uri or DEFAULT_DATASPACE_URI
+        # The offers bound to this deployment's datasets. The recipient access
+        # policy is **derived** from them rather than declared beside them: D-14's
+        # wildcard admission and the `odrl:recipient` constraint are one
+        # restriction, and one restriction gets one source (plan
+        # `every-personal-dataset-asks-for-a-local-consent`, "One rule, one
+        # implementation"). Absent, no dataset carries a recipient restriction.
+        self.sharing_offers = sharing_offers
 
     @property
     def owner_did_resolver(self) -> Callable[[str], str | None] | None:
         return self._resolve_owner_did
+
+    def bind_offers(self, catalogue: SharingOfferCatalogue | None) -> None:
+        """Point the recipient derivation at *catalogue*.
+
+        A sync reads the offers from beside the governance file it was handed,
+        which is not always the connector's configured one. Rebinding here keeps
+        one authority per sync instead of two loads that can disagree.
+        """
+        self.sharing_offers = catalogue
 
     # ── A note on operand vocabularies, kept after the code that needed it ────
     #
@@ -202,6 +245,193 @@ class GovernanceMapper:
             offer[f"{p.prefix}:profileVersion"] = p.version
         return offer
 
+    # ── The access policy ─────────────────────────────────────────────────────
+    #
+    # EDC's `ContractDefinition` holds two policies and asks two questions of
+    # them (`ContractDefinition`'s own javadoc): the **access** policy decides
+    # whether a counterparty may see and ask for the asset at all, the
+    # **contract** policy states the terms that bind once an agreement exists.
+    # ds emitted one policy into both slots, so *every* term was published to
+    # every counterparty and none of them could hide anything. Membership and
+    # recipient are conditions on being admitted, not terms of use, so they are
+    # the access policy's and nothing else is.
+
+    def needs_membership(
+        self, rule: GovernanceRuleV2, access_level: str | None = None
+    ) -> bool:
+        """Does this dataset require the counterparty to be a dataspace member?
+
+        Unchanged from when the answer produced an `owner:` string: an `internal`
+        or `restricted` dataset, or one whose `access_requirements` asks for a
+        partner or a contract. Only the *right operand* changed.
+        """
+        level = access_level or rule.access_level or "internal"
+        reqs = rule.access_requirements or "all"
+        return reqs in ("partner", "contract") or level in ("internal", "restricted")
+
+    @staticmethod
+    def restricted_to_recipients(rule: GovernanceRuleV2) -> bool:
+        """Is this dataset offered **only** to the recipients its offers name?
+
+        `access_requirements: partner`, and nothing else. That value used to emit
+        `Membership eq owner:<alias>:partner` — a string no enrolment granted, so
+        the datasets asking for it could not be negotiated at all. What it was
+        trying to say is *named organisations*, and that is now an
+        `odrl:recipient` set in the access policy
+        (`the-owner-scope-is-a-string-nobody-grants`, step 2).
+
+        **Opt-in, per dataset, and it has to be.** Deriving the restriction for
+        every dataset that declares an offer would close the `D-15` per-party
+        path: a person may grant a party the offer does not name, and a negotiation
+        refused by the access policy never reaches the consent layer that would
+        have admitted them. A provider saying "this goes to these organisations
+        and no others" is a different statement from a subject saying "this party
+        may have mine", and only the first belongs in the contract definition.
+
+        Where a dataset does opt in, the provider's restriction is the outer one:
+        a per-party grant cannot widen it, by design.
+        """
+        return (rule.access_requirements or "all") == "partner"
+
+    def recipient_dids(self, rule: GovernanceRuleV2) -> list[str]:
+        """The DIDs an `odrl:recipient` restriction admits, in declaration order.
+
+        Derived from the offers the dataset declares, through
+        `SharingOfferCatalogue.recipients_of` and the owner registry — the same
+        declaration `circle.admits_wildcard` reads for `D-14`. One restriction,
+        one source, two enforcement points.
+
+        **An alias that does not resolve to a DID contributes nothing**, which
+        narrows the set rather than widening it (`CR-4`). It cannot silently pass
+        either: an unresolvable recipient is an error from the `offer-recipient`
+        compliance check, so the publish is refused before this matters.
+        """
+        if not self.restricted_to_recipients(rule):
+            return []
+        if self.sharing_offers is None or self._resolve_owner_did is None:
+            return []
+        dids: list[str] = []
+        for alias in self.sharing_offers.recipients_of(rule.dataspace.sharing_offers):
+            did = self._resolve_owner_did(alias)
+            if did and did not in dids:
+                dids.append(did)
+        return dids
+
+    def access_constraints(self, rule: GovernanceRuleV2) -> list[dict[str, Any]]:
+        """Membership, then recipient — the two conditions on being admitted."""
+        p = self.profile
+        constraints: list[dict[str, Any]] = []
+
+        if self.needs_membership(rule):
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
+                    "odrl:operator": {"@id": "odrl:eq"},
+                    # The `memberOf` claim's value, not a scope: the trust anchor
+                    # signs it into every `MembershipCredential`, and every
+                    # connector already asks for that credential as a DCP DEFAULT
+                    # scope (`edc.iam.dcp.scopes.membership.*`).
+                    "odrl:rightOperand": {
+                        "@value": self.dataspace_uri,
+                        "@type": "xsd:string",
+                    },
+                }
+            )
+
+        recipients = self.recipient_dids(rule)
+        if recipients:
+            constraints.append(
+                {
+                    "odrl:leftOperand": {"@id": RECIPIENT_OPERAND},
+                    # `isAnyOf` even for a single recipient, deliberately. A
+                    # recipient restriction is a *set* — the maintainer's
+                    # 2026-09-17 decision is that readings go to several
+                    # organisations and later to a group — and one shape means one
+                    # branch on the Java side. The multi-valued right operand
+                    # survives serialisation because of the patched
+                    # `JsonObjectFromPolicyTransformer` in
+                    # `services/edc-extensions`; see the purpose constraint below
+                    # for what breaks without it.
+                    "odrl:operator": {"@id": "odrl:isAnyOf"},
+                    "odrl:rightOperand": [{"@id": did} for did in recipients],
+                }
+            )
+        return constraints
+
+    def to_access_odrl_set(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> dict[str, Any]:
+        """The access policy as an ODRL Set: the admitted actions, so constrained.
+
+        The permission's actions are the same ones the contract policy permits.
+        That is not decoration — EDC's `ScopeFilter` **deletes** a rule whose
+        action is not bound in the scope being evaluated, and a policy whose only
+        permission was deleted evaluates to *success*. An access policy carrying
+        an action unbound in `catalog` would therefore admit everybody, silently,
+        which is the failure mode `test_odrl_binding_conformance` exists for.
+        """
+        p = self.profile
+        space = rule.dataspace
+        access_level = rule.access_level or "internal"
+        action_keys = space.permitted_actions or _LEVEL_ACTION_KEYS.get(
+            access_level, ["{query}"]
+        )
+        constraints = self.access_constraints(rule)
+
+        permissions: list[dict[str, Any]] = []
+        for action in self._resolve_actions(action_keys):
+            permission: dict[str, Any] = {"odrl:action": {"@id": action}}
+            if constraints:
+                permission["odrl:constraint"] = constraints
+            permissions.append(permission)
+
+        context: dict[str, Any] = {
+            "odrl": "http://www.w3.org/ns/odrl/2/",
+            p.prefix: p.namespace,
+            "xsd": "http://www.w3.org/2001/XMLSchema#",
+        }
+        return {
+            "@context": context,
+            "@type": "odrl:Set",
+            "@id": self.access_policy_id(dataset_key, rule),
+            "odrl:permission": permissions,
+        }
+
+    @staticmethod
+    def access_policy_id(dataset_key: str, rule: GovernanceRuleV2) -> str:
+        """`<key>-access-policy`, or the deployment's explicit `access_policy_id`.
+
+        `access_policy_id` named the *one* policy before the split, so a
+        deployment that set it now names the access half — which is what the
+        field always said it did.
+        """
+        return (
+            rule.dataspace.contract.access_policy_id
+            or f"{dataset_key.replace('.', '-')}-access-policy"
+        )
+
+    @staticmethod
+    def contract_policy_id(dataset_key: str, rule: GovernanceRuleV2) -> str:
+        """`<key>-policy`, or the deployment's explicit `contract_policy_id`.
+
+        The derived default keeps the id the single policy already had, because
+        it is the one an agreement references and an operator greps for.
+        """
+        return (
+            rule.dataspace.contract.contract_policy_id
+            or f"{dataset_key.replace('.', '-')}-policy"
+        )
+
+    def to_access_policy_create(
+        self, dataset_key: str, rule: GovernanceRuleV2
+    ) -> dict[str, Any]:
+        return {
+            "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
+            "@type": "PolicyDefinition",
+            "@id": self.access_policy_id(dataset_key, rule),
+            "policy": self.to_access_odrl_set(dataset_key, rule),
+        }
+
     def _build_permission(
         self,
         action: str,
@@ -213,29 +443,19 @@ class GovernanceMapper:
         p = self.profile
         space = rule.dataspace
         constraints: list[dict[str, Any]] = []
-
-        # Membership constraint — driven by access_requirements when set, else by access_level
         reqs = access_requirements or "all"
-        needs_membership = reqs in ("partner", "contract") or access_level in (
-            "internal",
-            "restricted",
-        )
-        if needs_membership:
-            scope = space.audience.required_scope
-            if rule.ownership:
-                owner_alias = rule.ownership[0].name
-                if reqs == "partner":
-                    scope = f"owner:{owner_alias}:partner"
-                else:
-                    scope = f"owner:{owner_alias}:member"
-            constraints.append(
-                {
-                    "odrl:leftOperand": {"@id": p.term(p.membership_operand)},
-                    "odrl:operator": {"@id": "odrl:eq"},
-                    "odrl:rightOperand": {"@value": scope, "@type": "xsd:string"},
-                }
-            )
 
+        # ── The membership constraint is **not** here any more ────────────────
+        #
+        # It moved to the access policy (`access_constraints`), with the
+        # recipient restriction beside it, because that is the policy EDC
+        # evaluates in the `catalog` scope — so the offer is *hidden* from a
+        # non-member rather than shown and then refused. It also stopped being a
+        # string nobody grants: `owner:<alias>:member|partner` and
+        # `dataspaces.query` were checked over HTTP against a hand-kept list on
+        # the trust anchor, beside a signed `MembershipCredential` that already
+        # carries the answer (`the-owner-scope-is-a-string-nobody-grants`).
+        #
         # Contract gate — `access_requirements: contract`, `access_level:
         # restricted`, or an explicit `dataspace.contract_required`. The EDC
         # extension evaluates this as the explicit policy acknowledgement
@@ -502,10 +722,13 @@ class GovernanceMapper:
     def to_policy_create(
         self, dataset_key: str, rule: GovernanceRuleV2
     ) -> dict[str, Any]:
-        policy_id = (
-            rule.dataspace.contract.access_policy_id
-            or f"{dataset_key.replace('.', '-')}-policy"
-        )
+        """The **contract** policy definition — the terms, not the admission.
+
+        It used to read `access_policy_id` for its own id, which is how one
+        policy ended up in both slots of the contract definition. The access half
+        is `to_access_policy_create`.
+        """
+        policy_id = self.contract_policy_id(dataset_key, rule)
         odrl_offer = self.to_odrl_offer(dataset_key, rule)
         # EDC expects a Set (not an Offer) for PolicyDefinition
         odrl_set = {**odrl_offer, "@type": "odrl:Set"}
@@ -542,7 +765,11 @@ class GovernanceMapper:
             "@context": {"@vocab": "https://w3id.org/edc/v0.0.1/ns/"},
             "@type": "ContractDefinition",
             "@id": contract_id,
-            "accessPolicyId": ds.contract.access_policy_id or policy_id,
+            # **Two policies now, and they differ** — the access half hides the
+            # asset from anyone the recipient/membership constraints exclude, the
+            # contract half states the terms. `policy_id` is the contract one,
+            # passed in by the caller that created it.
+            "accessPolicyId": self.access_policy_id(dataset_key, rule),
             "contractPolicyId": ds.contract.contract_policy_id or policy_id,
             "assetsSelector": [
                 {

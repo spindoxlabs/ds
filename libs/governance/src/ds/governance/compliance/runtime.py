@@ -105,9 +105,9 @@ class RuntimeOwnerLookup:
 
 
 #: **There is no `fetch_participant_roles`.** There was, and it existed to check
-#: an offer's `controller_role` against the roles a participant holds. Those are
+#: an offer's `recipient_role` against the roles a participant holds. Those are
 #: DSP capacities — the registry pins them to `{provider, consumer}` — and a
-#: `controller_role` is a controller *function* (`operations`, `metering`), so
+#: `recipient_role` is a controller *function* (`operations`, `metering`), so
 #: the comparison could never succeed. The vocabulary is declared beside the
 #: offers instead; see `ds.governance.sharing.SharingOfferCatalogue`. Deleted
 #: rather than left unused, because a second holder of a vocabulary is what

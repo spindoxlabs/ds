@@ -403,8 +403,9 @@ dispositions:
     state: open
     note: "Declared and **unmeasured**: no load test, no latency budget and no measurement of what the provenance write and the per-query authorize call cost the exchange. Nothing suggests a problem; nothing rules one out either, which is the gap"
   DSSC-PUB-03:
-    state: open
-    note: "Visibility is enforced at **negotiation, not at discovery** (`C-21`, *Partly enforced* and accepted as such on 2026-08-09): a participant outside an offering's audience can still see that the offering exists, and is refused when it tries to contract. What is missing is audience filtering in the catalogue response itself"
+    state: covered
+    rules: [C-21]
+    note: "Covered 2026-09-17. Visibility and access are both enforced: the ContractDefinition's **access** policy carries dataspace membership and an `odrl:recipient` set, EDC evaluates it with a `CatalogPolicyContext` at catalogue build and again at initial-offer validation, so a participant outside the set neither sees the offering nor can contract for it. It had been open since 2026-08-09, when one policy served both slots and the operand was bound only in the negotiation scope — scope-and-deviations §3.2 records what closed it and what it costs the federated index"
   DSSC-PUB-41:
     state: covered
     rules: [C-7]

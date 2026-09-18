@@ -1,5 +1,6 @@
 package dataspaces.edc;
 
+import org.eclipse.edc.connector.controlplane.catalog.spi.policy.CatalogPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.ContractNegotiationPolicyContext;
 import org.eclipse.edc.connector.controlplane.contract.spi.policy.TransferProcessPolicyContext;
 import org.eclipse.edc.connector.policy.monitor.spi.PolicyMonitorContext;
@@ -44,10 +45,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class PolicyRegistrationTest {
 
     private static final String NAMESPACE = "https://w3id.org/dsp/policy/";
+    private static final String CATALOG = CatalogPolicyContext.CATALOG_SCOPE;
     private static final String NEGOTIATION = ContractNegotiationPolicyContext.NEGOTIATION_SCOPE;
     private static final String TRANSFER = TransferProcessPolicyContext.TRANSFER_SCOPE;
     private static final String MONITOR = PolicyMonitorContext.POLICY_MONITOR_SCOPE;
+    /** The scopes the **contract** policy is evaluated in. `catalog` is the access policy's. */
     private static final List<String> ALL_SCOPES = List.of(NEGOTIATION, TRANSFER, MONITOR);
+    private static final List<String> EVERY_SCOPE = List.of(CATALOG, NEGOTIATION, TRANSFER, MONITOR);
 
     private RecordingEngine engine;
     private RecordingBindings bindings;
@@ -169,7 +173,7 @@ class PolicyRegistrationTest {
         bindings = new RecordingBindings();
         ConnectorClient connector = new ConnectorClient("http://ds-connector:30001", b -> true, new NoopMonitor());
         DataspacesExtension.registerPolicy(
-            engine, bindings, connector, new ConsentApi(connector), NAMESPACE, 60L, new NoopMonitor()
+            engine, bindings, new ConsentApi(connector), NAMESPACE, new NoopMonitor()
         );
     }
 
@@ -249,7 +253,7 @@ class PolicyRegistrationTest {
         for (Registration r : engine.functions) {
             registered.add(r.key());
         }
-        for (String scope : ALL_SCOPES) {
+        for (String scope : EVERY_SCOPE) {
             for (String operand : bindings.operandsIn(scope)) {
                 if (DataspacesExtension.ACTIONS.contains(operand) || operand.equals(NAMESPACE + "Query")) {
                     continue;   // actions gate the rule; they have no function
@@ -264,14 +268,82 @@ class PolicyRegistrationTest {
     @Tag("rule:A-14")
     @Test
     void negotiationOnlyOperandsAreNotBoundElsewhere() {
-        // Membership and contractRequired are conditions on *entering* an
-        // agreement. Leaving them unbound outside negotiation is how they are
-        // excluded — deliberate, and easy to "fix" by mistake.
-        for (String scope : List.of(TRANSFER, MONITOR)) {
+        // `ds:contractRequired` is a condition on *entering* an agreement.
+        // Leaving it unbound outside negotiation is how it is excluded —
+        // deliberate, and easy to "fix" by mistake.
+        for (String scope : List.of(CATALOG, TRANSFER, MONITOR)) {
+            assertFalse(bindings.operandsIn(scope).contains("ds:contractRequired"),
+                "contractRequired bound in " + scope);
+        }
+    }
+
+    // ── the access policy: `catalog`, and only `catalog` ─────────────────────
+
+    @Tag("rule:C-21") @Tag("rule:A-14")
+    @Test
+    void membershipAndRecipientAreBoundInTheCatalogScope() {
+        // EDC evaluates the ContractDefinition's access policy with a
+        // CatalogPolicyContext — both when it builds a catalogue
+        // (ContractDefinitionResolverImpl) and when it validates an initial offer
+        // (ContractValidationServiceImpl). One binding, both moments.
+        Set<String> operands = bindings.operandsIn(CATALOG);
+        assertTrue(operands.contains(NAMESPACE + "Membership"), "membership unbound in catalog");
+        assertTrue(operands.contains(RecipientFunction.COMPACT), "odrl:recipient unbound in catalog");
+        assertTrue(operands.contains(RecipientFunction.EXPANDED),
+            "the expanded odrl:recipient is unbound in catalog");
+    }
+
+    @Tag("rule:A-14")
+    @Test
+    void everyActionIsBoundInTheCatalogScopeToo() {
+        // ScopeFilter *removes* a rule whose action is unbound, and a policy
+        // whose only permission was removed evaluates to **success** — so an
+        // access policy carrying an action unbound here admits everybody.
+        Set<String> operands = bindings.operandsIn(CATALOG);
+        for (String action : DataspacesExtension.ACTIONS) {
+            assertTrue(operands.contains(action), action + " unbound in catalog");
+        }
+        assertTrue(operands.contains(NAMESPACE + "Query"),
+            "the profile query action is unbound in catalog");
+    }
+
+    @Tag("rule:A-14")
+    @Test
+    void theAccessOperandsHaveFunctionsOnTheCatalogContext() {
+        Set<String> keys = engine.keysFor(CatalogPolicyContext.class);
+        assertTrue(keys.contains(NAMESPACE + "Membership"),
+            "no membership function on the catalog context");
+        assertTrue(keys.contains(RecipientFunction.COMPACT), "no recipient function (compact)");
+        assertTrue(keys.contains(RecipientFunction.EXPANDED), "no recipient function (expanded)");
+    }
+
+    @Tag("rule:A-14")
+    @Test
+    void theAccessOperandsAreNotBoundOutsideTheCatalogScope() {
+        // A dead binding is how `ds:accessScope` survived. These two appear only
+        // in the access policy, which is evaluated only in `catalog`.
+        for (String scope : ALL_SCOPES) {
             Set<String> operands = bindings.operandsIn(scope);
             assertFalse(operands.contains(NAMESPACE + "Membership"), "membership bound in " + scope);
-            assertFalse(operands.contains("ds:contractRequired"), "contractRequired bound in " + scope);
+            assertFalse(operands.contains(RecipientFunction.COMPACT),
+                "odrl:recipient bound in " + scope);
+            assertFalse(operands.contains(RecipientFunction.EXPANDED),
+                "the expanded odrl:recipient is bound in " + scope);
         }
+    }
+
+    @Tag("rule:A-14")
+    @Test
+    void theContractPolicyOperandsAreNotBoundInTheCatalogScope() {
+        // The other direction of the same split: purpose and consent are terms of
+        // use, and binding either here would evaluate a consent gate while a
+        // counterparty merely browses.
+        Set<String> operands = bindings.operandsIn(CATALOG);
+        assertFalse(operands.contains(Purposes.COMPACT), "odrl:purpose bound in catalog");
+        assertFalse(operands.contains(Purposes.EXPANDED), "expanded purpose bound in catalog");
+        assertFalse(operands.contains("ds:consentStatus"), "ds:consentStatus bound in catalog");
+        assertFalse(operands.contains(NAMESPACE + "ConsentStatus"),
+            "the expanded consent operand is bound in catalog");
     }
 
     @Tag("rule:A-14")

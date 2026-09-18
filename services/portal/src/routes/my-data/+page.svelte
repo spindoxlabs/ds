@@ -158,8 +158,8 @@
                   <div>
                     <dt class="inline font-medium text-gray-700">Who receives it:</dt>
                     <dd class="inline">
-                      {offer.recipients.controller}{#if offer.recipients.controller_role}
-                        ({offer.recipients.controller_role}){/if}
+                      {offer.recipients.recipient}{#if offer.recipients.recipient_role}
+                        ({offer.recipients.recipient_role}){/if}
                       and {offer.fallback_text_en.processor_category}
                     </dd>
                   </div>
@@ -190,7 +190,7 @@
                   <p class="text-xs text-gray-600">
                     {#if wildcard}
                       This is a standing decision: it covers any recipient inside
-                      {decision.controller ?? 'this circle'} for this purpose. A choice you
+                      {decision.recipient ?? 'this circle'} for this purpose. A choice you
                       make about one specific recipient overrides it.
                     {:else}
                       This decision applies to one recipient:

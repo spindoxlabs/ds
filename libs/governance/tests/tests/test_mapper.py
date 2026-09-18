@@ -12,6 +12,12 @@ from ds.governance.models import (
     PolicyObligations,
     PurposeConcept,
 )
+from ds.governance.sharing import (
+    OfferRecipients,
+    ProcessorCategory,
+    SharingOffer,
+    SharingOfferCatalogue,
+)
 
 PARTICIPANT = "provider"
 BASE_URL = "https://rec.dataspaces.localhost"
@@ -283,24 +289,41 @@ def test_attribution_obligation_uses_attribute_to():
     assert "odrl:attributeTo" in attr_obs[0]
 
 
-# ── access_requirements → constraints ────────────────────────────────────────
+# ── access_requirements → the access policy ──────────────────────────────────
+#
+# Membership is not in `to_odrl_offer` any more: it is a condition on being
+# admitted, not a term of use, so it belongs to the ContractDefinition's *access*
+# policy — the one EDC evaluates in the `catalog` scope, both when it builds a
+# catalogue and when it validates an initial offer. What it compares against
+# changed too: the `memberOf` claim of a signed `MembershipCredential`, not an
+# `owner:<alias>:member` string the trust anchor kept by hand and nothing granted
+# (`the-owner-scope-is-a-string-nobody-grants`).
+
+
+def _access_values(mapper, rule, operand: str) -> list:
+    """Right operands of *operand* across the access policy's permissions."""
+    access = mapper.to_access_odrl_set("ds", rule)
+    values = []
+    for perm in access["odrl:permission"]:
+        for c in perm.get("odrl:constraint", []):
+            if _left_op(c) == operand:
+                values.append(c["odrl:rightOperand"])
+    return values
+
+
+def _contract_operands(offer: dict) -> set:
+    return {
+        _left_op(c)
+        for perm in offer["odrl:permission"]
+        for c in perm.get("odrl:constraint", [])
+    }
 
 
 @pytest.mark.rule("C-21")
 def test_access_requirements_all_no_membership_constraint():
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green", access_requirements="all")
-    offer = mapper.to_odrl_offer("ds", rule)
-
-    membership_operand = _P.term(_P.membership_operand)
-    for perm in offer["odrl:permission"]:
-        constraints = perm.get("odrl:constraint", [])
-        membership = [
-            c
-            for c in constraints
-            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
-        ]
-        assert len(membership) == 0
+    assert _access_values(mapper, rule, _P.term(_P.membership_operand)) == []
 
 
 @pytest.mark.rule("C-21")
@@ -309,40 +332,63 @@ def test_access_requirements_partner_adds_membership_constraint():
     rule = _rule(
         access_level="open", classification="green", access_requirements="partner"
     )
-    offer = mapper.to_odrl_offer("ds", rule)
+    values = _access_values(mapper, rule, _P.term(_P.membership_operand))
+    assert len(values) == len(mapper.to_access_odrl_set("ds", rule)["odrl:permission"])
 
-    membership_operand = _P.term(_P.membership_operand)
-    for perm in offer["odrl:permission"]:
-        constraints = perm.get("odrl:constraint", [])
-        membership = [
-            c
-            for c in constraints
-            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
-        ]
-        assert len(membership) == 1
+
+@pytest.mark.rule("C-21")
+def test_membership_compares_against_the_dataspace_uri_not_a_scope_string():
+    """`owner:<alias>:member` is gone, and so is the `dataspaces.query` fallback.
+
+    Both were strings checked over HTTP against a hand-kept list on the trust
+    anchor, beside a `MembershipCredential` that already carried the answer. The
+    right operand is now the value the anchor signs as `memberOf`.
+    """
+    mapper = _mapper(dataspace_uri="https://example.test/dataspace")
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        ownership=[GovernanceOwner(name="example-org")],
+    )
+    values = _access_values(mapper, rule, _P.term(_P.membership_operand))
+    assert values
+    for value in values:
+        assert value == {
+            "@value": "https://example.test/dataspace",
+            "@type": "xsd:string",
+        }
+
+
+@pytest.mark.rule("C-21")
+def test_no_owner_scope_string_is_emitted_anywhere():
+    """The counterfactual: no emitted operand may carry the retired grammar."""
+    mapper = _mapper()
+    for reqs in (None, "all", "partner", "contract"):
+        rule = _rule(
+            access_level="internal",
+            classification="green",
+            access_requirements=reqs,
+            ownership=[GovernanceOwner(name="example-org")],
+        )
+        payload = str(mapper.to_odrl_offer("ds", rule)) + str(
+            mapper.to_access_odrl_set("ds", rule)
+        )
+        assert "owner:" not in payload
+        assert "dataspaces.query" not in payload
 
 
 def test_access_requirements_contract_adds_membership_and_contract():
+    """The two halves land in different policies, which is the point of the split."""
     mapper = _mapper()
     rule = _rule(
         access_level="open", classification="green", access_requirements="contract"
     )
-    offer = mapper.to_odrl_offer("ds", rule)
+    assert _access_values(mapper, rule, _P.term(_P.membership_operand))
 
-    membership_operand = _P.term(_P.membership_operand)
+    offer = mapper.to_odrl_offer("ds", rule)
     for perm in offer["odrl:permission"]:
         constraints = perm.get("odrl:constraint", [])
-        membership = [
-            c
-            for c in constraints
-            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
-        ]
-        contract = [
-            c
-            for c in constraints
-            if c.get("odrl:leftOperand", {}).get("@id") == "ds:contractRequired"
-        ]
-        assert len(membership) == 1
+        contract = [c for c in constraints if _left_op(c) == "ds:contractRequired"]
         assert len(contract) == 1
         # Typed, like every sibling constraint (`GOV-11`) — it was the one bare
         # literal this mapper emitted. `ContractRequiredFunction.asBoolean`
@@ -352,6 +398,10 @@ def test_access_requirements_contract_adds_membership_and_contract():
             "@value": "true",
             "@type": "xsd:boolean",
         }
+    assert _P.term(_P.membership_operand) not in _contract_operands(offer), (
+        "membership is an admission condition, not a term of use — publishing it "
+        "in the contract policy shows every counterparty who else is admitted"
+    )
 
 
 def test_access_requirements_contract_does_not_emit_odrl_industry():
@@ -367,31 +417,169 @@ def test_access_requirements_contract_does_not_emit_odrl_industry():
     rule = _rule(
         access_level="open", classification="green", access_requirements="contract"
     )
-    offer = mapper.to_odrl_offer("ds", rule)
-
-    operands = {
-        c.get("odrl:leftOperand", {}).get("@id")
-        for perm in offer["odrl:permission"]
-        for c in perm.get("odrl:constraint", [])
-    }
-    assert "odrl:industry" not in operands
+    assert "odrl:industry" not in _contract_operands(mapper.to_odrl_offer("ds", rule))
 
 
 @pytest.mark.rule("C-21")
 def test_internal_access_level_adds_membership_even_without_access_requirements():
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
-    offer = mapper.to_odrl_offer("ds", rule)
+    values = _access_values(mapper, rule, _P.term(_P.membership_operand))
+    assert len(values) == len(mapper.to_access_odrl_set("ds", rule)["odrl:permission"])
 
-    membership_operand = _P.term(_P.membership_operand)
-    for perm in offer["odrl:permission"]:
-        constraints = perm.get("odrl:constraint", [])
-        membership = [
-            c
-            for c in constraints
-            if c.get("odrl:leftOperand", {}).get("@id") == membership_operand
+
+# ── the recipient restriction ────────────────────────────────────────────────
+
+
+def _catalogue(*pairs) -> SharingOfferCatalogue:
+    """A catalogue of `(offer id, recipient alias)` pairs, minimal but real."""
+    return SharingOfferCatalogue(
+        offers=[
+            SharingOffer(
+                id=offer_id,
+                purpose="EnergyCommunityOperation",
+                legal_basis="https://w3id.org/dpv#Consent",
+                recipients=OfferRecipients(
+                    recipient=alias,
+                    processors=ProcessorCategory(category="appointed"),
+                ),
+            )
+            for offer_id, alias in pairs
         ]
-        assert len(membership) == 1
+    )
+
+
+@pytest.mark.rule("C-21")
+def test_the_recipient_set_comes_from_the_datasets_offers():
+    """One restriction, one source: the offers, which `D-14` also reads."""
+    dids = {
+        "example-org": "did:web:example-org.test",
+        "grid-operator": "did:web:grid-operator.test",
+    }
+    mapper = _mapper(
+        owner_did_resolver=dids.get,
+        sharing_offers=_catalogue(("a", "example-org"), ("b", "grid-operator")),
+    )
+    rule = _rule(
+        access_level="internal",
+        access_requirements="partner",
+        classification="green",
+        dataspace=DataspaceSpec(sharing_offers=["a", "b"]),
+    )
+    values = _access_values(mapper, rule, "odrl:recipient")
+    assert values
+    for value in values:
+        assert value == [
+            {"@id": "did:web:example-org.test"},
+            {"@id": "did:web:grid-operator.test"},
+        ]
+
+
+def test_a_single_recipient_is_still_a_set():
+    """`isAnyOf` for one, so the Java side has one shape to read."""
+    mapper = _mapper(
+        owner_did_resolver=lambda alias: "did:web:example-org.test",
+        sharing_offers=_catalogue(("a", "example-org")),
+    )
+    rule = _rule(
+        access_level="internal",
+        access_requirements="partner",
+        classification="green",
+        dataspace=DataspaceSpec(sharing_offers=["a"]),
+    )
+    access = mapper.to_access_odrl_set("ds", rule)
+    recipient = [
+        c
+        for perm in access["odrl:permission"]
+        for c in perm.get("odrl:constraint", [])
+        if _left_op(c) == "odrl:recipient"
+    ]
+    assert recipient
+    assert all(c["odrl:operator"]["@id"] == "odrl:isAnyOf" for c in recipient)
+
+
+@pytest.mark.rule("C-21")
+def test_a_dataset_with_no_offers_carries_no_recipient_restriction():
+    mapper = _mapper(
+        owner_did_resolver=lambda alias: "did:web:example-org.test",
+        sharing_offers=_catalogue(("a", "example-org")),
+    )
+    rule = _rule(access_level="internal", classification="green")
+    assert _access_values(mapper, rule, "odrl:recipient") == []
+
+
+@pytest.mark.rule("A-11")
+def test_an_unresolvable_recipient_contributes_no_did():
+    """Narrowing, never widening (`CR-4`).
+
+    A dataset whose only recipient alias does not resolve emits no recipient
+    constraint at all here — but the publish never happens: `offer-recipient` is
+    an error in the validation gate. `RecipientFunction` denies on an empty set
+    for the same reason, which is the second line.
+    """
+    mapper = _mapper(
+        owner_did_resolver=lambda alias: None,
+        sharing_offers=_catalogue(("a", "nobody")),
+    )
+    rule = _rule(
+        access_level="internal",
+        access_requirements="partner",
+        classification="green",
+        dataspace=DataspaceSpec(sharing_offers=["a"]),
+    )
+    assert _access_values(mapper, rule, "odrl:recipient") == []
+
+
+@pytest.mark.rule("C-21")
+def test_a_dataset_that_does_not_ask_for_partners_is_not_recipient_restricted():
+    """Opt-in, because otherwise `D-15`'s per-party grant could never be exercised.
+
+    A person may grant a party the offer does not name. If every dataset with an
+    offer carried the restriction, that negotiation would be refused by the
+    access policy before the consent layer that would have admitted them ever
+    ran.
+    """
+    mapper = _mapper(
+        owner_did_resolver=lambda alias: "did:web:example-org.test",
+        sharing_offers=_catalogue(("a", "example-org")),
+    )
+    for reqs in (None, "all", "contract"):
+        rule = _rule(
+            access_level="internal",
+            access_requirements=reqs,
+            classification="green",
+            dataspace=DataspaceSpec(sharing_offers=["a"]),
+        )
+        assert _access_values(mapper, rule, "odrl:recipient") == []
+
+
+@pytest.mark.rule("C-21")
+def test_the_recipient_restriction_is_not_published_to_counterparties():
+    """It is an access policy, so a consumer browsing sees no list of who else is."""
+    mapper = _mapper(
+        owner_did_resolver=lambda alias: "did:web:example-org.test",
+        sharing_offers=_catalogue(("a", "example-org")),
+    )
+    rule = _rule(
+        access_level="internal",
+        access_requirements="partner",
+        classification="green",
+        dataspace=DataspaceSpec(sharing_offers=["a"]),
+    )
+    assert "odrl:recipient" not in _contract_operands(mapper.to_odrl_offer("ds", rule))
+
+
+def test_the_access_policy_carries_the_same_actions_as_the_contract_policy():
+    """ScopeFilter deletes a rule whose action is unbound, and a policy whose only
+    permission was deleted evaluates to success — an access policy with an action
+    nothing binds in `catalog` would admit everybody."""
+    mapper = _mapper()
+    rule = _rule(access_level="open", classification="green")
+    offer_actions = {p["odrl:action"]["@id"] for p in mapper.to_odrl_offer("ds", rule)["odrl:permission"]}
+    access_actions = {
+        p["odrl:action"]["@id"] for p in mapper.to_access_odrl_set("ds", rule)["odrl:permission"]
+    }
+    assert offer_actions == access_actions
 
 
 # ── Owner DID resolution ─────────────────────────────────────────────────────
@@ -431,60 +619,6 @@ def test_assigner_default_without_resolver():
     assert (
         offer["odrl:assigner"]["@id"] == f"did:web:{PARTICIPANT}.dataspaces.localhost"
     )
-
-
-# ── Owner-relative scope generation ─────────────────────────────────────────
-
-
-def _membership_scope_values(offer: dict) -> list[str]:
-    """Extract all membership right-operand values across permissions."""
-    values = []
-    for perm in offer.get("odrl:permission", []):
-        for c in perm.get("odrl:constraint", []):
-            if _left_op(c) == _P.term(_P.membership_operand):
-                values.append(c["odrl:rightOperand"]["@value"])
-    return values
-
-
-@pytest.mark.rule("C-21")
-def test_owner_scope_member_when_internal():
-    mapper = _mapper()
-    rule = _rule(
-        access_level="internal",
-        classification="green",
-        ownership=[GovernanceOwner(name="example-org")],
-    )
-    offer = mapper.to_odrl_offer("ds", rule)
-    values = _membership_scope_values(offer)
-    assert len(values) >= 1
-    assert all(v == "owner:example-org:member" for v in values)
-
-
-@pytest.mark.rule("C-21")
-def test_owner_scope_partner_when_partner_requirements():
-    mapper = _mapper()
-    rule = _rule(
-        access_level="internal",
-        access_requirements="partner",
-        classification="green",
-        ownership=[GovernanceOwner(name="example-org")],
-    )
-    offer = mapper.to_odrl_offer("ds", rule)
-    values = _membership_scope_values(offer)
-    assert len(values) >= 1
-    assert all(v == "owner:example-org:partner" for v in values)
-
-
-def test_no_ownership_uses_required_scope():
-    mapper = _mapper()
-    rule = _rule(
-        access_level="internal",
-        classification="green",
-    )
-    offer = mapper.to_odrl_offer("ds", rule)
-    values = _membership_scope_values(offer)
-    assert len(values) >= 1
-    assert all(v == "dataspaces.query" for v in values)
 
 
 # ── @id wrapping consistency ─────────────────────────────────────────────────

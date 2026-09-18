@@ -11,7 +11,14 @@ from urllib.parse import urlparse
 from ds.governance.dataplane import split_key
 from ds_auth.user_credentials import verify_user_vc_jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -79,8 +86,8 @@ async def _emit_consent_events(
                 consumer_id=consent.consumer_id,
                 offer_id=consent.offer_id,
                 purpose=list(consent.purpose or []),
-                controller=consent.controller,
-                controller_role=consent.controller_role,
+                recipient=consent.recipient,
+                recipient_role=consent.recipient_role,
                 legal_basis=consent.legal_basis,
                 event_id=f"consent-granted:{consent.id}",
                 **_decision_kwargs(consent, acted_by),
@@ -93,8 +100,8 @@ async def _emit_consent_events(
                 consumer_id=consent.consumer_id,
                 offer_id=consent.offer_id,
                 purpose=list(consent.purpose or []),
-                controller=consent.controller,
-                controller_role=consent.controller_role,
+                recipient=consent.recipient,
+                recipient_role=consent.recipient_role,
                 reason=reason or consent.revocation_reason,
                 event_id=f"consent-revoked:{consent.id}",
                 **_decision_kwargs(consent, acted_by),
@@ -126,11 +133,24 @@ class ConsentRequestCreate(BaseModel):
     purpose: list[str] = []
     message: str | None = None
     notification_url: str | None = None
-    # Who is asking, and in what capacity. `consumer_id` alone cannot answer
-    # that: it names a connector, not the controller deciding the purpose.
-    controller: str | None = None
-    controller_role: str | None = None
+    # Who the data goes to, and in what capacity. `consumer_id` alone cannot
+    # answer that: it names a connector, not the party the offer is addressed to.
+    #
+    # `controller` / `controller_role` are accepted as the deprecated spellings.
+    # This model does not forbid extras, so dropping the old names would have
+    # made an old caller's recipient vanish silently rather than 422 — the
+    # quietest possible way to lose the dimension `D-14` says the wildcard must
+    # never cross.
+    recipient: str | None = Field(
+        default=None, validation_alias=AliasChoices("recipient", "controller")
+    )
+    recipient_role: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("recipient_role", "controller_role"),
+    )
     offer_id: str | None = None
+
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class ConsentResponse(BaseModel):
@@ -139,8 +159,8 @@ class ConsentResponse(BaseModel):
     consumer_id: str
     dataset_id: str
     purpose: list[str] = []
-    controller: str | None = None
-    controller_role: str | None = None
+    recipient: str | None = None
+    recipient_role: str | None = None
     offer_id: str | None = None
     legal_basis: dict | None = None
     message: str | None = None
@@ -208,7 +228,7 @@ class AdminShareLegalBasis(BaseModel):
     """Evidence a service records when provisioning consent on a subject's behalf.
 
     Codes, versions and hashes only — never a name, email, CF or POD. The
-    connector supplies ``offer_id``, ``controller``, ``controller_role`` and
+    connector supplies ``offer_id``, ``recipient``, ``recipient_role`` and
     ``user_visible_hash`` itself from the resolved offer, so the caller cannot
     drift from what the person read.
 
@@ -535,8 +555,8 @@ async def create_consent_request(
                     message=body.message,
                     notification_url=body.notification_url,
                     notifier=notifier,
-                    controller=body.controller,
-                    controller_role=body.controller_role,
+                    recipient=body.recipient,
+                    recipient_role=body.recipient_role,
                     offer_id=body.offer_id,
                 )
                 request_ids.append(consent.id)
@@ -581,7 +601,7 @@ async def _reject_if_already_covered(
 ) -> None:
     """Refuse a request from a party the offer already covers as a processor.
 
-    A processor of the offer's controller acts on its instructions under a DPA;
+    A processor of the offer's recipient acts on its instructions under a DPA;
     the controller has not changed and neither has the processing operation.
     Art. 13(1)(e) requires *disclosing* such a recipient, and disclosure is not
     consent — asking anyway would imply a choice that does not exist and would
@@ -604,7 +624,7 @@ async def _reject_if_already_covered(
         raise HTTPException(
             409,
             f"Consumer '{body.consumer_id}' is already covered by offer "
-            f"'{offer.id}' as a processor of '{offer.recipients.controller}' — "
+            f"'{offer.id}' as a processor of '{offer.recipients.recipient}' — "
             "this recipient must be disclosed and notified, not asked for consent",
         )
 
@@ -802,7 +822,7 @@ async def list_my_data_shares(
         },
     )
     # One current decision per *question asked*, not per dataset. Several offers
-    # can name the same dataset for different purposes and controllers; collapsing
+    # can name the same dataset for different purposes and recipients; collapsing
     # them on the dataset alone hides every decision but the first, so a subject
     # who granted two purposes would see only one of them.
     latest: dict[tuple[str, str | None], ConsentResponse] = {}
@@ -827,7 +847,7 @@ async def set_my_data_share(
 
     Two forms, one table.  Naming an ``offer_id`` is preferred: the connector
     expands the offer into per-dataset rows and stamps the purpose and
-    controller from it, so the decision cannot drift from what the person read.
+    recipient from it, so the decision cannot drift from what the person read.
     Naming a ``dataset_id`` directly remains available for a subject managing
     one dataset from ``/my-data``.
 
@@ -835,7 +855,7 @@ async def set_my_data_share(
     It used to be keyed on ``settings.consumer_participant_did`` — the party this
     connector negotiates against when it *consumes*, which is a transfer fact and
     has no bearing on who a member discloses to. Every reader evaluates
-    ``{consumer_id, WILDCARD_CONSUMER}`` and asks about the offer's *controller*,
+    ``{consumer_id, WILDCARD_CONSUMER}`` and asks about the offer's *recipient*,
     so a genuinely recorded consent was in neither set and every audience read
     answered ``[]`` — a well-formed 200 indistinguishable from "nobody
     consented", and an export built on it wrote a correctly-headed file with zero
@@ -845,14 +865,14 @@ async def set_my_data_share(
     an offer onboarding provisioned for them instead of forking a second row.
 
     D-14 is what bounds it: the wildcard admits any party inside the circle *for
-    that controller and purpose*, both stamped here from the offer, and never a
-    new controller or purpose. A caller that names ``consumer_id`` explicitly
+    that recipient and purpose*, both stamped here from the offer, and never a
+    new recipient or purpose. A caller that names ``consumer_id`` explicitly
     still writes a per-party row, which D-15 lets override the standing one.
 
     **Bounded on the read side, not here.** This route writes one row; who that
     row admits is decided when it is read, by
-    :func:`connector.services.circle.admits_wildcard` — the offer's controller,
-    resolved from ``recipients.controller`` through the owner registry, or a
+    :func:`connector.services.circle.admits_wildcard` — the offer's recipient,
+    resolved from ``recipients.recipient`` through the owner registry, or a
     processor inside its circle. Until 2026-09-15 nothing applied that bound
     while consent was present, so the sentence above described an intention
     rather than the code; it is enforced now, and the place to change it is
@@ -873,7 +893,7 @@ async def set_my_data_share(
     # which is the reading Art. 7(3) rules out.
     #
     # *Enabling* stays aimed at the configured counterparty. A bare dataset grant
-    # names no offer, so it carries no `controller` and no `controller_role` —
+    # names no offer, so it carries no `recipient` and no `recipient_role` —
     # and `consent_satisfies` compares the role only when both sides hold one, so
     # a wildcard row with neither would authorise any party in any role for the
     # purpose. That is a widening nobody asked for; it is refused by keeping the
@@ -917,8 +937,8 @@ async def set_my_data_share(
                             consumer_id=consumer_id,
                             enabled=body.enabled,
                             purpose=[offer.purpose],
-                            controller=offer.recipients.controller,
-                            controller_role=offer.recipients.controller_role,
+                            recipient=offer.recipients.recipient,
+                            recipient_role=offer.recipients.recipient_role,
                             offer_id=offer.id,
                             legal_basis=legal_basis,
                             decided_by="subject",
@@ -963,7 +983,7 @@ def _offer_legal_basis_record(
     """Assemble the stored legal-basis evidence for a provisioned share.
 
     The connector, not the caller, is authoritative for anything that ties the
-    record to the offer — ``offer_id``, ``controller``, ``controller_role`` and
+    record to the offer — ``offer_id``, ``recipient``, ``recipient_role`` and
     the user-visible-facts hash — so a service cannot record consent to
     something other than what the offer describes. The caller supplies only the
     evidence it holds: source, versions, locale, the rendered-text hash and a
@@ -979,8 +999,8 @@ def _offer_legal_basis_record(
         "rec_slug": sent.get("rec_slug"),
         "offer_id": offer.id,
         "basis_iri": sent.get("basis_iri") or offer.legal_basis,
-        "controller": offer.recipients.controller,
-        "controller_role": offer.recipients.controller_role,
+        "recipient": offer.recipients.recipient,
+        "recipient_role": offer.recipients.recipient_role,
         "consent_text_version": sent.get("consent_text_version")
         or offer.consent_text_version,
         "locale": sent.get("locale"),
@@ -1133,7 +1153,7 @@ async def admin_provision_share(
 
     It names an ``offer_id``, never a dataset, so it cannot drift from the copy
     the person read: the connector expands the offer into one **wildcard-scoped**
-    row per resolved dataset (§3.1), stamping purpose, controller-role and the
+    row per resolved dataset (§3.1), stamping purpose, recipient-role and the
     user-visible-facts hash from the offer itself. An offer that resolves to no
     dataset here is a 422 — an empty answer would read as "recorded".
 
@@ -1224,8 +1244,8 @@ async def admin_provision_share(
                         consumer_id=consent_service.WILDCARD_CONSUMER,
                         enabled=body.enabled,
                         purpose=[offer.purpose],
-                        controller=offer.recipients.controller,
-                        controller_role=offer.recipients.controller_role,
+                        recipient=offer.recipients.recipient,
+                        recipient_role=offer.recipients.recipient_role,
                         offer_id=offer.id,
                         legal_basis=legal_basis,
                         decided_by=decided_by,
@@ -1397,7 +1417,7 @@ class OfferAudienceDataset(BaseModel):
 class OfferAudience(BaseModel):
     """Who currently consents to an offer, for the consumer it is disclosed to.
 
-    ``purpose`` and ``controller_role`` are echoed because they were *stamped*
+    ``purpose`` and ``recipient_role`` are echoed because they were *stamped*
     rather than supplied: a caller reconciling its own audit trail needs to see
     which question the connector actually answered.
     """
@@ -1405,7 +1425,7 @@ class OfferAudience(BaseModel):
     offer_id: str
     consumer_id: str
     purpose: list[str]
-    controller_role: str | None
+    recipient_role: str | None
     datasets: list[OfferAudienceDataset]
 
 
@@ -1427,7 +1447,7 @@ async def admin_read_offer_audience(
     *who currently consents to this offer* — and the asymmetry, not a permission
     width, was the gap.
 
-    **The caller supplies no ``purpose`` and no ``controller_role``, and that is
+    **The caller supplies no ``purpose`` and no ``recipient_role``, and that is
     the point.** They are stamped from the offer through ``resolve_offer``,
     exactly as ``POST /consent/admin/shares`` and ``POST /admin/disclosure``
     already stamp them. ``GET /internal/consent/check`` answers
@@ -1468,11 +1488,11 @@ async def admin_read_offer_audience(
     **The answer is keyed on the offer, not just filtered by its purpose.**
     ``offer_id`` is passed down to ``get_granted_subject_ids``, so a subject who
     granted a *different* offer over the same dataset is not in this one's
-    audience even when the two share a purpose and a controller role — and,
+    audience even when the two share a purpose and a recipient role — and,
     conversely, declining a different offer no longer erases this one's grant.
     Purpose alone very nearly separates them and does not quite: two offers may
-    name one purpose with different controllers, and `test-flexibility` in the
-    connector's own fixture declares no ``controller_role`` at all.
+    name one purpose with different recipients, and `test-flexibility` in the
+    connector's own fixture declares no ``recipient_role`` at all.
 
     **Bounded by `D-14`, as the data plane is.** A wildcard row reaches this
     consumer only if ``_admitted_wildcard_offers`` admits it — the helper
@@ -1531,14 +1551,14 @@ async def admin_read_offer_audience(
             dataset_id=dataset_id,
             consumer_id=consumer_id,
             purposes=[offer.purpose],
-            controller_role=offer.recipients.controller_role,
+            recipient_role=offer.recipients.recipient_role,
         )
         granted = await consent_service.get_granted_subjects(
             db,
             dataset_id,
             consumer_id,
             purpose=[offer.purpose],
-            controller_role=offer.recipients.controller_role,
+            recipient_role=offer.recipients.recipient_role,
             consent_required=True,
             offer_id=offer.id,
             admitted_wildcard_offers=admitted,
@@ -1565,7 +1585,7 @@ async def admin_read_offer_audience(
         offer_id=offer.id,
         consumer_id=consumer_id,
         purpose=[offer.purpose],
-        controller_role=offer.recipients.controller_role,
+        recipient_role=offer.recipients.recipient_role,
         datasets=datasets,
     )
 

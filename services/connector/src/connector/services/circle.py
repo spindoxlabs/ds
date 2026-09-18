@@ -5,7 +5,7 @@
 
 The distinction this module draws is the consent boundary:
 
-- A **processor** of the offer's controller acts on its instructions under a
+- A **processor** of the offer's recipient acts on its instructions under a
   DPA (GDPR Art. 28).  The controller has not changed and neither has the
   processing operation, so the party is *disclosed and notified*, never asked.
 - An **independent controller** decides its own purposes.  Consent under
@@ -69,7 +69,7 @@ async def evaluate(
     """Decide whether *requester_did* is inside the circle of *offer*.
 
     Both halves of the definition are checked against the identity-registry, so
-    the wildcard in a standing consent means "anyone the controller has a signed
+    the wildcard in a standing consent means "anyone the recipient has a signed
     agreement with, for this purpose" rather than "anyone governance admits".
     """
     if not identity_registry_url:
@@ -105,12 +105,12 @@ async def admits_wildcard(
 
     A person who consents to an offer rather than to a named counterparty gets a
     ``consumer_id = "*"`` row.  D-14 says what that row means: it "admits any
-    party **inside the circle** for that controller and purpose", and "never
-    admits a new controller".  Two parties qualify, and no others:
+    party **inside the circle** for that recipient and purpose", and "never
+    admits a new recipient".  Two parties qualify, and no others:
 
-    - **the offer's controller** — the party the person was actually told about,
+    - **the offer's recipient** — the party the person was actually told about,
       and whose processing they consented to;
-    - **a processor of that controller**, inside the circle, disclosed under
+    - **a processor of that recipient**, inside the circle, disclosed under
       Art. 13(1)(e) rather than asked.
 
     Everyone else is *not consented*, including a joint controller that satisfies
@@ -124,33 +124,33 @@ async def admits_wildcard(
     The remedy for a refusal is not a closed door: the guard parks, the person is
     asked, and a per-party grant (`D-15`) admits them.
 
-    **The controller is an alias and the requester is a DID**, so the comparison
+    **The recipient is an alias and the requester is a DID**, so the comparison
     goes through the owner registry — `example-org` and
     ``did:web:rec.dataspaces.localhost`` are the same organisation and compare
     unequal as strings.  Without a registry the alias cannot be resolved, and an
-    unresolvable controller resolves to *not admitted*: the same safe direction
+    unresolvable recipient resolves to *not admitted*: the same safe direction
     the rest of this module takes, because a redundant question is recoverable
     and a skipped one is not.
     """
-    controller_alias = offer.recipients.controller
+    recipient_alias = offer.recipients.recipient
     cached = _admission_cached(cache, offer.id, requester_did, cache_ttl)
     if cached is not None:
         return cached
 
-    # An unresolvable controller disables **this branch only**. Whether the
+    # An unresolvable recipient disables **this branch only**. Whether the
     # requester is a processor is independent evidence — it comes from what that
     # organisation signed and from the offer's own `admitted_by` — so returning
     # early here would deny a covered processor for a reason that has nothing to
     # do with it, and `D-5` says a processor is disclosed rather than asked.
-    controller_did = await _controller_did(controller_alias, owners_registry)
+    recipient_did = await _recipient_did(recipient_alias, owners_registry)
 
-    if controller_did is not None and requester_did == controller_did:
+    if recipient_did is not None and requester_did == recipient_did:
         return _admission_remember(
             cache,
             offer.id,
             requester_did,
             cache_ttl,
-            (True, f"the offer's controller ({controller_alias})"),
+            (True, f"the offer's recipient ({recipient_alias})"),
         )
 
     verdict = await evaluate(
@@ -165,30 +165,30 @@ async def admits_wildcard(
             offer.id,
             requester_did,
             cache_ttl,
-            (True, f"a processor inside the circle of {controller_alias}"),
+            (True, f"a processor inside the circle of {recipient_alias}"),
         )
     return _admission_remember(
         cache,
         offer.id,
         requester_did,
         cache_ttl,
-        (False, f"not the controller and not its processor: {verdict.reason}"),
+        (False, f"not the recipient and not its processor: {verdict.reason}"),
     )
 
 
-async def _controller_did(alias: str, owners_registry) -> str | None:
+async def _recipient_did(alias: str, owners_registry) -> str | None:
     """The DID behind an owner alias, or ``None`` when it cannot be resolved."""
     if owners_registry is None:
         log.warning(
-            "No owners registry: controller alias %r cannot be resolved to a DID, "
-            "so the wildcard admits nobody by the controller branch",
+            "No owners registry: recipient alias %r cannot be resolved to a DID, "
+            "so the wildcard admits nobody by the recipient branch",
             alias,
         )
         return None
     try:
         entry = await owners_registry.by_id(alias)
     except Exception as exc:  # noqa: BLE001 — a registry blip must not admit
-        log.error("Owner lookup failed for controller %r: %s", alias, exc)
+        log.error("Owner lookup failed for recipient %r: %s", alias, exc)
         return None
     return getattr(entry, "did", None) if entry is not None else None
 
@@ -241,7 +241,7 @@ async def is_covered_processor(
 
     Every offer that bundles this dataset and purpose must cover the requester
     as a processor before the question is suppressed.  Coverage by one offer and
-    not another means there is a controller whose processing the person has not
+    not another means there is a recipient whose processing the person has not
     been asked about, and that question still has to be put.
 
     An empty offer list is *not* coverage.  It means no consent-based offer was

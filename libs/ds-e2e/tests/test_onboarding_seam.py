@@ -45,7 +45,7 @@ def test_the_flow_names_d14():
     assert "D-14" in FLOW_REGISTRY["onboarding-seam"].rules
 
 
-def test_the_audience_is_read_for_the_offers_controller(settings):
+def test_the_audience_is_read_for_the_offers_recipient(settings):
     http = MagicMock()
     http.raw.side_effect = [
         (200, _audience(settings, [settings.data_subject_id])),

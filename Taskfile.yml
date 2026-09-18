@@ -1477,6 +1477,11 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow catalog-discovery
 
+  e2e:recipient-restriction:
+    desc: "E2E: a dataset restricted to named recipients — visible to one, hidden from the other"
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow recipient-restriction
+
   e2e:semantic-model:
     desc: "E2E: the declared payload model and the one every data plane renders agree"
     cmds:

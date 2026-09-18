@@ -12,6 +12,14 @@ with a resolvable IRI and a policy, search narrows rather than merely returning
 everything, and paging is honoured. It also checks the JSON-LD contract, since
 a consumer parses this as linked data and not as an ad-hoc JSON blob.
 
+**Faithful is not the same as complete**, and since the recipient access policy
+landed it is worth saying which this is. The crawl runs through the consumer
+connector, so it sees what that identity is admitted to — a dataset restricted to
+another organisation is not in the index, and that is the decision recorded in
+`docs/services/federated-catalog.md`, not a gap. The flow asserts it, because a
+restriction that leaks the dataset's existence into a public index has failed at
+the only thing hiding it was for.
+
 Needs the provider EDC to be running and synced, since the catalogue is a
 projection of what the provider publishes over DSP.
 """
@@ -158,6 +166,36 @@ class CatalogDiscoveryFlow(BaseFlow):
             "provider dataset discoverable",
             "the provider's dataset appears with an IRI and its ODRL terms",
             iri=iri,
+        )
+
+        # ── 3a. A dataset restricted to somebody else is not in it ──────────
+        #     The crawler reaches provider catalogues **through the consumer
+        #     connector**, so its DSP identity is the consumer's — and the
+        #     provider's access policy answers a catalogue request the same way
+        #     it answers a direct one. A dataset whose `odrl:recipient` set does
+        #     not name the crawler's identity is therefore invisible here, which
+        #     is the accepted consequence recorded in
+        #     `docs/services/federated-catalog.md` and in the catalogue rulebook:
+        #     the federated index is advisory, and it indexes what the crawler is
+        #     allowed to see.
+        #
+        #     Asserted *here* rather than only in `recipient-restriction`, because
+        #     this is the surface a stranger browses: a restriction that holds at
+        #     negotiation and leaks the dataset's existence into a public index
+        #     has failed at the only thing hiding it was for.
+        restricted_away = self._find_dataset(datasets, s.non_recipient_asset_id)
+        if restricted_away is not None:
+            result.fail_step(
+                "a restricted dataset stays out of the index",
+                f"{s.non_recipient_asset_id} is restricted to an organisation the "
+                "crawler is not, and it is in the federated catalogue anyway",
+                iri=self._iri(restricted_away),
+            )
+            return result
+        result.pass_step(
+            "a restricted dataset stays out of the index",
+            f"{s.non_recipient_asset_id} is restricted to another organisation "
+            "and the crawler, which is not one, does not index it",
         )
 
         # ── 3b. Its operands survived the round trip ─────────────────────────

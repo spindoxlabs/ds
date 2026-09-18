@@ -85,7 +85,7 @@ def wildcard_admits(monkeypatch):
 
     monkeypatch.setattr(circle, "_agreement_capacity", _capacity)
     monkeypatch.setattr(circle, "_check_constraint", _constraint)
-    monkeypatch.setattr(circle, "_controller_did", _controller)
+    monkeypatch.setattr(circle, "_recipient_did", _controller)
 
 
 def _row(**overrides) -> ConsentRequestORM:
@@ -95,8 +95,8 @@ def _row(**overrides) -> ConsentRequestORM:
         consumer_id=WILDCARD_CONSUMER,
         status="granted",
         purpose=["FlexibilityResearch"],
-        controller="example-org",
-        controller_role=None,
+        recipient="example-org",
+        recipient_role=None,
         requested_at=datetime(2026, 1, 1, tzinfo=UTC),
         decided_at=datetime(2026, 1, 1, 1, tzinfo=UTC),
         transfer_ids=[],
@@ -208,14 +208,14 @@ async def test_admin_shares_expands_offer_to_wildcard_rows(client):
     assert row["consumer_id"] == WILDCARD_CONSUMER
     assert row["status"] == "granted"
     assert row["purpose"] == ["FlexibilityResearch"]
-    assert row["controller"] == "example-org"
+    assert row["recipient"] == "example-org"
     assert row["offer_id"] == "test-flexibility"
 
     lb = row["legal_basis"]
     # Server is authoritative for offer-derived fields.
     assert lb["offer_id"] == "test-flexibility"
     assert lb["basis_iri"] == "https://w3id.org/dpv#Consent"
-    assert lb["controller"] == "example-org"
+    assert lb["recipient"] == "example-org"
     assert lb["user_visible_hash"]
     # Caller-supplied evidence is carried through.
     assert lb["source"] == "onboarding"
@@ -413,11 +413,11 @@ async def test_wildcard_purpose_must_match(engine):
 
 @pytest.mark.rule("D-11", "D-14")
 @pytest.mark.asyncio
-async def test_wildcard_controller_role_must_match(engine):
+async def test_wildcard_recipient_role_must_match(engine):
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as session:
         async with session.begin():
-            session.add(_row(controller_role="community-operator"))
+            session.add(_row(recipient_role="community-operator"))
 
         allowed, _ = await check_consent(
             session,
@@ -425,7 +425,7 @@ async def test_wildcard_controller_role_must_match(engine):
             DATASET,
             CONSUMER,
             purpose=["FlexibilityResearch"],
-            controller_role="metering-operator",
+            recipient_role="metering-operator",
         )
         assert allowed is False
 
@@ -505,7 +505,7 @@ async def test_subject_offer_share_records_legal_basis(client):
     # supplies none of it, so the portal cannot drift from what was shown.
     assert lb["offer_id"] == "test-flexibility"
     assert lb["basis_iri"] == "https://w3id.org/dpv#Consent"
-    assert lb["controller"] == "example-org"
+    assert lb["recipient"] == "example-org"
     assert lb["consent_text_version"]
     assert lb["user_visible_hash"]
 
@@ -641,7 +641,7 @@ async def test_granting_a_second_offer_on_the_same_dataset_is_recorded(client):
     # Each carries its own offer's purpose and controller, not the other's.
     assert by_offer[OFFER_A]["purpose"] == ["FlexibilityResearch"]
     assert by_offer[OFFER_B]["purpose"] == ["EnergyCommunityOperation"]
-    assert by_offer[OFFER_B]["controller"] == "grid-operator"
+    assert by_offer[OFFER_B]["recipient"] == "grid-operator"
 
 
 @pytest.mark.rule("D-15")
@@ -774,7 +774,7 @@ async def test_audience_returns_the_provisioned_subjects_per_dataset(
     assert body["consumer_id"] == CONSUMER
     # Stamped from the offer, never supplied by the caller.
     assert body["purpose"] == ["FlexibilityResearch"]
-    assert body["controller_role"] is None
+    assert body["recipient_role"] is None
     assert len(body["datasets"]) == 1
     dataset = body["datasets"][0]
     assert dataset["dataset_id"] == DATASET
@@ -1100,7 +1100,7 @@ async def test_a_grant_on_one_offer_is_not_an_audience_for_another(
 
     Purpose very nearly separates the fixture's two consent offers and does not
     quite — two offers may name one purpose with different controllers, and
-    `test-flexibility` declares no `controller_role` at all. A caller asking who
+    `test-flexibility` declares no `recipient_role` at all. A caller asking who
     consents to an offer must get people who decided about *that* offer.
     """
     await _provision_offer(client, "test-flexibility", True)
@@ -1265,7 +1265,7 @@ async def test_internal_consent_check_does_not_contradict_itself(
 # zero, and the export built on it wrote a well-formed file with no rows.
 #
 # `CONTROLLER` below is what a PEP-side caller passes: the offer's
-# `recipients.controller` resolved to a DID, which is *not* this connector's
+# `recipients.recipient` resolved to a DID, which is *not* this connector's
 # counterparty. That difference is the whole defect, and it is why the fixture
 # suite could not see it — `CONSUMER` happens to equal the configured setting.
 
@@ -1411,7 +1411,7 @@ async def test_my_shares_shows_the_standing_decision_onboarding_recorded(client)
     rows = (await client.get("/consent/my/shares", headers=make_vc_headers())).json()
     by_offer = {row["offer_id"]: row for row in rows}
     assert by_offer["test-flexibility"]["status"] == "granted"
-    assert by_offer["test-flexibility"]["controller"] == "example-org"
+    assert by_offer["test-flexibility"]["recipient"] == "example-org"
 
 
 # ── the rule: a withdrawal outranks what it covers ───────────────────────────

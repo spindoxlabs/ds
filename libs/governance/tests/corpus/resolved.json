@@ -10,11 +10,6 @@
           "content_type": "application/json",
           "id": "datasets.gold.grid_capacity"
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -91,11 +86,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.silver.grid_meter_readings"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": true,
@@ -177,6 +167,162 @@
     }
   },
   "connector/governance-rec": {
+    "datasets.gold.flex_forecast": {
+      "access_level": "internal",
+      "access_requirements": "partner",
+      "attribution": null,
+      "classification": "green",
+      "dataspace": {
+        "asset": {
+          "content_type": "application/json",
+          "id": "datasets.gold.flex_forecast"
+        },
+        "consent_on_revocation": "terminate",
+        "consent_required": false,
+        "consent_scope": "per_subject",
+        "contract": {
+          "access_policy_id": null,
+          "contract_definition_id": null,
+          "contract_policy_id": null
+        },
+        "contract_required": false,
+        "data_address": {
+          "base_url": "http://dataset-api-rec:30002/query",
+          "proxy_path": false,
+          "proxy_query_params": true,
+          "query_params": {},
+          "type": "HttpData"
+        },
+        "expose": true,
+        "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
+        "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
+        "purpose": [
+          "FlexibilityResearch"
+        ],
+        "sharing_offers": [
+          "flexibility-forecast-supply"
+        ],
+        "valid_from": null,
+        "valid_until": null
+      },
+      "dcat": {
+        "accrual_periodicity": null,
+        "conforms_to": null,
+        "language_uris": [],
+        "publisher_uri": null,
+        "spatial_uris": [],
+        "temporal": null,
+        "themes": []
+      },
+      "description": "Day-ahead flexibility forecast for the community, supplied to the aggregator named in the offer under contract.",
+      "documentation_url": null,
+      "expose": null,
+      "extra": {},
+      "license": "CC-BY-4.0",
+      "ontology": null,
+      "ownership": [
+        [
+          "example-org",
+          "DATA_OWNER"
+        ]
+      ],
+      "retention_days": 365,
+      "row_filters": [],
+      "source_system": "REC forecasting",
+      "tags": [
+        "flexibility",
+        "forecast",
+        "gold"
+      ],
+      "title": "Flexibility Forecast (Gold)",
+      "user_filter_column": null
+    },
+    "datasets.gold.grid_forecast": {
+      "access_level": "internal",
+      "access_requirements": "partner",
+      "attribution": null,
+      "classification": "green",
+      "dataspace": {
+        "asset": {
+          "content_type": "application/json",
+          "id": "datasets.gold.grid_forecast"
+        },
+        "consent_on_revocation": "terminate",
+        "consent_required": false,
+        "consent_scope": "per_subject",
+        "contract": {
+          "access_policy_id": null,
+          "contract_definition_id": null,
+          "contract_policy_id": null
+        },
+        "contract_required": false,
+        "data_address": {
+          "base_url": "http://dataset-api-rec:30002/query",
+          "proxy_path": false,
+          "proxy_query_params": true,
+          "query_params": {},
+          "type": "HttpData"
+        },
+        "expose": true,
+        "medallion": "gold",
+        "obligations": {
+          "anonymize_before_use": false,
+          "attribution": false,
+          "delete_after_days": null,
+          "notify_on_access": false
+        },
+        "odrl_action": "use",
+        "permitted_actions": null,
+        "prohibited_actions": null,
+        "purpose": [
+          "GridMonitoring"
+        ],
+        "sharing_offers": [
+          "grid-forecast-supply"
+        ],
+        "valid_from": null,
+        "valid_until": null
+      },
+      "dcat": {
+        "accrual_periodicity": null,
+        "conforms_to": null,
+        "language_uris": [],
+        "publisher_uri": null,
+        "spatial_uris": [],
+        "temporal": null,
+        "themes": []
+      },
+      "description": "Day-ahead headroom forecast, supplied to the grid operator named in the offer under contract. The dev consumer is deliberately not a recipient.",
+      "documentation_url": null,
+      "expose": null,
+      "extra": {},
+      "license": "CC-BY-4.0",
+      "ontology": null,
+      "ownership": [
+        [
+          "example-org",
+          "DATA_OWNER"
+        ]
+      ],
+      "retention_days": 365,
+      "row_filters": [],
+      "source_system": "REC forecasting",
+      "tags": [
+        "forecast",
+        "gold",
+        "grid"
+      ],
+      "title": "Grid Headroom Forecast (Gold)",
+      "user_filter_column": null
+    },
     "datasets.gold.om_weather_features": {
       "access_level": "internal",
       "access_requirements": null,
@@ -186,11 +332,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -268,11 +409,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": true,
@@ -366,11 +502,6 @@
           "content_type": "application/json",
           "id": "datasets.gold.weather"
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -445,11 +576,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.silver.grid_meters"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": true,
@@ -539,11 +665,6 @@
           "content_type": "application/json",
           "id": "datasets.silver.meters"
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": true,
         "consent_scope": "per_subject",
@@ -627,11 +748,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -717,11 +833,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -809,11 +920,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -898,11 +1004,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -985,11 +1086,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -1075,11 +1171,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1163,11 +1254,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -1253,11 +1339,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1342,11 +1423,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1430,11 +1506,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -1521,11 +1592,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1610,11 +1676,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -1704,11 +1765,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1797,11 +1853,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -1883,11 +1934,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -1978,11 +2024,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2071,11 +2112,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2156,11 +2192,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -2249,11 +2280,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -2344,11 +2370,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2437,11 +2458,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -2534,11 +2550,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2623,11 +2634,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2710,11 +2716,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -2796,11 +2797,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -2890,11 +2886,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -2987,11 +2978,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -3081,11 +3067,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -3174,11 +3155,6 @@
         "asset": {
           "content_type": "application/json",
           "id": null
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -3271,11 +3247,6 @@
           "content_type": "application/json",
           "id": null
         },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
-        },
         "consent_on_revocation": "terminate",
         "consent_required": false,
         "consent_scope": "per_subject",
@@ -3349,11 +3320,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.gold.om_weather_features"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": false,
@@ -3433,11 +3399,6 @@
         "asset": {
           "content_type": "application/json",
           "id": "datasets.silver.meters_15m"
-        },
-        "audience": {
-          "membership": "dataspaces.localhost",
-          "required_role": null,
-          "required_scope": "dataspaces.query"
         },
         "consent_on_revocation": "terminate",
         "consent_required": true,

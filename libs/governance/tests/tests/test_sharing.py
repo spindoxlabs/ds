@@ -11,7 +11,7 @@ from ds.governance.models import (
 )
 from ds.governance.sharing import (
     CONSENT_BASIS,
-    ConflictingControllerRolesError,
+    ConflictingRecipientRolesError,
     DuplicateOfferError,
     OfferCoverage,
     OfferRecipients,
@@ -49,7 +49,7 @@ def _offer(**kwargs) -> SharingOffer:
         purpose="FlexibilityResearch",
         legal_basis=CONSENT_BASIS,
         recipients=OfferRecipients(
-            controller="example-org",
+            recipient="example-org",
             processors=ProcessorCategory(
                 category="appointed-service-providers",
                 admitted_by=[{"membership": "example-org"}],
@@ -245,10 +245,10 @@ def test_hash_reacts_to_user_visible_changes(change):
     assert _hash(_offer(**change)) != _hash(_offer())
 
 
-def test_hash_reacts_to_a_new_controller():
-    """A different controller is a different processing operation (Art. 4(11))."""
+def test_hash_reacts_to_a_new_recipient():
+    """A different recipient is a different processing operation (Art. 4(11))."""
     other = OfferRecipients(
-        controller="other-org",
+        recipient="other-org",
         processors=ProcessorCategory(
             category="appointed-service-providers",
             admitted_by=[{"membership": "example-org"}],
@@ -257,11 +257,11 @@ def test_hash_reacts_to_a_new_controller():
     assert _hash(_offer(recipients=other)) != _hash(_offer())
 
 
-def test_hash_reacts_to_a_controller_role_change():
+def test_hash_reacts_to_a_recipient_role_change():
     """Controller ≠ legal entity: a DSO's grid and metering roles are distinct."""
     role = OfferRecipients(
-        controller="example-org",
-        controller_role="metering",
+        recipient="example-org",
+        recipient_role="metering",
         processors=ProcessorCategory(
             category="appointed-service-providers",
             admitted_by=[{"membership": "example-org"}],
@@ -272,16 +272,16 @@ def test_hash_reacts_to_a_controller_role_change():
 
 def test_hash_reacts_to_a_processor_category_change():
     swapped = OfferRecipients(
-        controller="example-org",
+        recipient="example-org",
         processors=ProcessorCategory(category="research-partners", admitted_by=[]),
     )
     assert _hash(_offer(recipients=swapped)) != _hash(_offer())
 
 
 def test_hash_ignores_new_processors_inside_the_declared_category():
-    """Same controller, same operation — disclosed and notified, never re-asked."""
+    """Same recipient, same operation — disclosed and notified, never re-asked."""
     widened = OfferRecipients(
-        controller="example-org",
+        recipient="example-org",
         processors=ProcessorCategory(
             category="appointed-service-providers",
             admitted_by=[{"membership": "example-org"}, {"membership": "partner-org"}],
@@ -312,7 +312,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: example-org
+      recipient: example-org
       processors:
         category: appointed-service-providers
         admitted_by:
@@ -347,7 +347,7 @@ sharing_offers:
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: site-org
+      recipient: site-org
       processors:
         category: appointed-service-providers
     consent_text_version: "1.0"
@@ -355,7 +355,7 @@ sharing_offers:
     purpose: GridMonitoring
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: dso-org
+      recipient: dso-org
       processors:
         category: grid-operators
     consent_text_version: "1.0"
@@ -364,9 +364,9 @@ sharing_offers:
         tmp_path / "sharing-offers.yaml", overlay_name="site"
     )
     assert len(catalogue.offers) == 2
-    # Rebinding a controller for a deployment must not fork the base file.
+    # Rebinding a recipient for a deployment must not fork the base file.
     assert (
-        catalogue.get("household-energy-flexibility").recipients.controller
+        catalogue.get("household-energy-flexibility").recipients.recipient
         == "site-org"
     )
     assert catalogue.get("grid-monitoring") is not None
@@ -409,14 +409,14 @@ def test_an_offer_nothing_declares_simply_has_no_datasets():
 # ── Contributed offer files (T24 / T33) ──────────────────────────────────────
 
 
-def _offer_yaml(offer_id: str, controller: str = "example-org") -> str:
+def _offer_yaml(offer_id: str, recipient: str = "example-org") -> str:
     return f"""\
 sharing_offers:
   - id: {offer_id}
     purpose: FlexibilityResearch
     legal_basis: "https://w3id.org/dpv#Consent"
     recipients:
-      controller: {controller}
+      recipient: {recipient}
       processors:
         category: appointed-service-providers
     consent_text_version: "1.0"
@@ -465,7 +465,7 @@ def test_duplicate_id_across_files_names_both(tmp_path):
     """No baseline means no winner to pick — and picking one silently would let
     one producer redefine consent text another producer's subjects agreed to."""
     (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("shared-id"))
-    _contrib(tmp_path, "acme.yaml", _offer_yaml("shared-id", controller="other-org"))
+    _contrib(tmp_path, "acme.yaml", _offer_yaml("shared-id", recipient="other-org"))
 
     with pytest.raises(DuplicateOfferError) as exc:
         load_sharing_offers(tmp_path / "sharing-offers.yaml")
@@ -500,11 +500,11 @@ def test_the_overlay_still_replaces_and_is_not_a_contribution(tmp_path):
     """`sharing-offers.<name>.yaml` is an opt-in deployment rebinding.
 
     It must keep replace-by-id, and must not be swept up as a contribution —
-    otherwise rebinding a controller would collide with the offer it rebinds.
+    otherwise rebinding a recipient would collide with the offer it rebinds.
     """
     (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
     (tmp_path / "sharing-offers.site.yaml").write_text(
-        _offer_yaml("local-offer", controller="site-org")
+        _offer_yaml("local-offer", recipient="site-org")
     )
 
     catalogue = load_sharing_offers(
@@ -512,28 +512,28 @@ def test_the_overlay_still_replaces_and_is_not_a_contribution(tmp_path):
     )
 
     assert len(catalogue.offers) == 1
-    assert catalogue.get("local-offer").recipients.controller == "site-org"
+    assert catalogue.get("local-offer").recipients.recipient == "site-org"
     assert catalogue.source_of("local-offer") == "sharing-offers.site.yaml"
 
 
-# ── The controller-role vocabulary (GOV-20) ──────────────────────────────────
+# ── The recipient-role vocabulary (GOV-20) ───────────────────────────────────
 #
-# `controller_role` was checked against the identity-registry's participant
+# `recipient_role` was checked against the identity-registry's participant
 # roles until 2026-08-08. Those are DSP capacities the registry pins to
-# `{provider, consumer}`, so no legal `controller_role` could be one of them —
+# `{provider, consumer}`, so no legal `recipient_role` could be one of them —
 # the check could only pass by comparing against an empty set, which is what it
 # did against every registry. The vocabulary lives here now, in the file that
 # uses it.
 
 
-def _roles_yaml(offer_id: str, controller: str, roles: list[str]) -> str:
+def _roles_yaml(offer_id: str, recipient: str, roles: list[str]) -> str:
     listed = ", ".join(roles)
-    return _offer_yaml(offer_id, controller=controller) + (
-        f"controller_roles:\n  {controller}: [{listed}]\n"
+    return _offer_yaml(offer_id, recipient=recipient) + (
+        f"recipient_roles:\n  {recipient}: [{listed}]\n"
     )
 
 
-def test_controller_roles_are_read_from_the_file(tmp_path):
+def test_recipient_roles_are_read_from_the_file(tmp_path):
     (tmp_path / "sharing-offers.yaml").write_text(
         _roles_yaml("local-offer", "grid-operator", ["operations", "metering"])
     )
@@ -541,7 +541,7 @@ def test_controller_roles_are_read_from_the_file(tmp_path):
     assert catalogue.roles_of("grid-operator") == ["metering", "operations"]
 
 
-def test_a_controller_that_declares_nothing_is_not_unbundled(tmp_path):
+def test_a_recipient_that_declares_nothing_is_not_unbundled(tmp_path):
     (tmp_path / "sharing-offers.yaml").write_text(_offer_yaml("local-offer"))
     catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
     assert catalogue.roles_of("example-org") == []
@@ -551,7 +551,7 @@ def test_declaration_order_is_not_a_different_unbundling(tmp_path):
     """Sorted on the way in, so `[a, b]` and `[b, a]` are one fact, not two.
 
     Without this, two producers stating the same unbundling in a different order
-    would be a `ConflictingControllerRolesError`.
+    would be a `ConflictingRecipientRolesError`.
     """
     (tmp_path / "sharing-offers.yaml").write_text(
         _roles_yaml("local-offer", "grid-operator", ["operations", "metering"])
@@ -565,7 +565,7 @@ def test_declaration_order_is_not_a_different_unbundling(tmp_path):
     assert catalogue.roles_of("grid-operator") == ["metering", "operations"]
 
 
-def test_two_files_unbundling_a_controller_differently_names_both(tmp_path):
+def test_two_files_unbundling_a_recipient_differently_names_both(tmp_path):
     """Whether a controller is unbundled decides which consent a request reaches,
     so there is no winner to pick silently."""
     (tmp_path / "sharing-offers.yaml").write_text(
@@ -577,7 +577,7 @@ def test_two_files_unbundling_a_controller_differently_names_both(tmp_path):
         _roles_yaml("acme-offer", "grid-operator", ["operations", "metering"]),
     )
 
-    with pytest.raises(ConflictingControllerRolesError) as exc:
+    with pytest.raises(ConflictingRecipientRolesError) as exc:
         load_sharing_offers(tmp_path / "sharing-offers.yaml")
 
     assert "grid-operator" in str(exc.value)
@@ -624,3 +624,100 @@ def test_a_prerequisite_does_not_ask_anybody_again():
 
 def test_an_offer_requires_nothing_by_default():
     assert _offer().requires_offers == []
+
+
+# ── the deprecated spelling (the recipient rename, 2026-09-17) ────────────────
+#
+# `recipients.controller` meant the recipient, the subject's home organisation
+# and the GDPR Art. 4(7) controller at once, and only the first reading held in
+# every offer of a real four-hop chain. The field says what it is now. A
+# governance file is a producer's artefact in another repository, so the old
+# spelling stays readable — and is tested, because a migration path nothing
+# exercises is a migration path that stops working.
+
+
+def _legacy_yaml(offer_id: str = "legacy-offer") -> str:
+    return f"""\
+sharing_offers:
+  - id: {offer_id}
+    purpose: FlexibilityResearch
+    legal_basis: "https://w3id.org/dpv#Consent"
+    recipients:
+      controller: grid-operator
+      controller_role: metering
+      processors:
+        category: appointed-service-providers
+    consent_text_version: "1.0"
+controller_roles:
+  grid-operator: [metering, operations]
+"""
+
+
+def test_the_deprecated_controller_spelling_is_still_read(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(_legacy_yaml())
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+
+    offer = catalogue.get("legacy-offer")
+    assert offer.recipients.recipient == "grid-operator"
+    assert offer.recipients.recipient_role == "metering"
+    assert catalogue.recipient_roles == {"grid-operator": ["metering", "operations"]}
+
+
+def test_both_spellings_agreeing_is_one_fact_stated_twice(tmp_path):
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _legacy_yaml().replace(
+            "      controller: grid-operator",
+            "      controller: grid-operator\n      recipient: grid-operator",
+        )
+    )
+    catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.get("legacy-offer").recipients.recipient == "grid-operator"
+
+
+def test_both_spellings_disagreeing_is_refused(tmp_path):
+    """No winner to pick. Choosing one silently is how a file starts meaning
+    something other than what it says — the same argument as a duplicate offer
+    id, one field down."""
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _legacy_yaml().replace(
+            "      controller: grid-operator",
+            "      controller: grid-operator\n      recipient: example-org",
+        )
+    )
+    with pytest.raises(Exception) as exc:
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert "deprecated" in str(exc.value)
+
+
+@pytest.mark.rule("D-11")
+def test_user_visible_hash_survives_the_recipient_rename():
+    """**The rename must ask nobody again.**
+
+    `user_visible_facts` keys are the canonical names of the *facts*, not of this
+    model's fields — so the recipient is still `controller` in the payload.
+    Renaming the key would have changed every offer's hash, and a changed hash
+    under an unchanged text version is exactly what triggers re-consent: the
+    whole dataspace would have been re-asked for a change that is ours alone.
+    """
+    offer = SharingOffer(
+        id="o",
+        purpose="FlexibilityResearch",
+        legal_basis=CONSENT_BASIS,
+        recipients=OfferRecipients(
+            recipient="example-org",
+            recipient_role="metering",
+            processors=ProcessorCategory(category="appointed"),
+        ),
+    )
+    facts = offer.user_visible_facts()
+    assert facts["controller"] == "example-org"
+    assert facts["controller_role"] == "metering"
+    assert "recipient" not in facts
+    # The digest, pinned by value rather than by recomputation: a test that
+    # recomputes the hash from the same code cannot tell that the code changed.
+    # Cross-checked by hashing the canonical payload by hand, outside this
+    # library, 2026-09-17.
+    assert (
+        offer.user_visible_hash()
+        == "e09e6c9cc32e77b997e01b6bb740980be285cbbe2bde897cb03e300c77090fc9"
+    )

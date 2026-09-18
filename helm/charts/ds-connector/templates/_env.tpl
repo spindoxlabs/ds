@@ -33,6 +33,16 @@ addressable from the participant name alone — NOT from this release's name.
 - name: CONNECTOR_PARTICIPANT_DID
   value: {{ include "ds.participantDid" . | quote }}
 {{/*
+The dataspace this participant belongs to, as the trust anchor signs it into
+every MembershipCredential's `memberOf`. It is the right operand of the
+membership constraint in every access policy this connector publishes, so it
+must match `IDENTITY_REGISTRY_DATASPACE_URI` byte for byte — hence the same
+default expression as the ds-identity-registry chart, rather than a second
+literal.
+*/}}
+- name: CONNECTOR_DATASPACE_URI
+  value: {{ .Values.dataspaceUri | default (printf "https://%s/dataspace" (.Values.global).baseDomain) | quote }}
+{{/*
 Management only. The connector never dials a protocol (DSP) endpoint: a
 counter-party is resolved by DSP address through the identity registry, and this
 participant's own callback address is `edc.dsp.callback.address` in the ds-edc

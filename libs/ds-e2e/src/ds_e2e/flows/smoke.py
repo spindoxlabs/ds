@@ -142,7 +142,7 @@ class SmokeFlow(BaseFlow):
                 "public offer vocabulary served",
                 offer=offer.get("id"),
                 purpose=offer.get("purpose"),
-                controller=offer.get("recipients", {}).get("controller"),
+                recipient=offer.get("recipients", {}).get("recipient"),
             )
         except Exception as exc:
             result.fail_step("sharing offers", str(exc))
@@ -258,14 +258,14 @@ class SmokeFlow(BaseFlow):
         # The positive half, so the step still proves the wildcard *does*
         # something: the party the offer names as controller reads the rows the
         # subject consented to share.
-        controller_check = _wildcard_check(s.provider_did)
-        if not controller_check.get("consent_active"):
+        recipient_check = _wildcard_check(s.provider_did)
+        if not recipient_check.get("consent_active"):
             result.fail_step(
                 "wildcard consent",
                 "the offer's own controller was not authorised by the wildcard "
                 "provisioned against that offer",
-                controller=s.provider_did,
-                reason=controller_check.get("reason"),
+                recipient=s.provider_did,
+                reason=recipient_check.get("reason"),
             )
             return result
         result.pass_step(

@@ -277,8 +277,12 @@ unknown, inactive or ambiguous key gets the same `404`. It accepts `identity-reg
 which the connector's organisation client already holds, so no new permission was needed. It is
 anchor-only, like `/admin/participants`. The admin listing remains for callers that genuinely
 enumerate: the federated catalogue's crawler and the connector's operator view.
-`/admin/participants/check` remains for the EDC's scope check, because allowed scopes are
-exactly what the narrow route does not disclose.
+`/admin/participants/check` remains, but **nothing in the exchange path calls it any more**:
+it answered the connector's `/internal/participants/check`, which answered the EDC's
+per-negotiation membership question, and both are gone — membership is read off the
+`MembershipCredential` this registry already signs
+(`the-owner-scope-is-a-string-nobody-grants`). It is now an operator's route, for asking
+whether a participant holds a grant; `ds-e2e --flow org-onboarding` is what still reads it.
 
 `GET /credentials/check` also decides **validity** — active, and unexpired — rather than
 returning state for the caller to interpret. The connector used to read the roster and judge

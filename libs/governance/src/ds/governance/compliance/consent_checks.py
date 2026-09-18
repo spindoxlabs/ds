@@ -37,7 +37,8 @@ CONSENT_CHECKS = (
     "offer-datasets",
     "offer-consent-required",
     "offer-dataset-purpose",
-    "offer-controller",
+    "offer-recipient",
+    "recipient-restriction",
     "offer-legal-basis",
     "offer-durations",
     "offer-codes",
@@ -46,17 +47,25 @@ CONSENT_CHECKS = (
 )
 
 
-class ControllerLookup:
-    """Which controller aliases resolve, for ``offer-controller``.
+class RecipientLookup:
+    """Which recipient aliases resolve, for ``offer-recipient``.
 
     Built from whatever the caller has: the owners YAML seed, or a live
     identity-registry.  ``available`` is explicit rather than inferred from
     emptiness — "no registry to check against" (warn) and "the registry has no
-    such controller" (error) are different findings, and an empty set is a
+    such recipient" (error) are different findings, and an empty set is a
     legitimate result of the second.
 
+    **The error matters more than it used to.** The recipient alias is now
+    resolved to a DID and emitted as the ``odrl:recipient`` set of the dataset's
+    access policy, so an alias that does not resolve contributes no DID and the
+    restriction narrows. `RecipientFunction` denies on an empty set rather than
+    admitting everybody, so the failure direction is safe — but a dataset
+    reachable by nobody is still a publish that should not have happened, which
+    is why this is an error and refuses the sync.
+
     It used to be ``RoleLookup`` and carry ``alias -> participant roles`` as
-    well. That half is gone: an offer's ``controller_role`` is a controller
+    well. That half is gone: an offer's ``recipient_role`` is a controller
     *function*, and participant roles are DSP capacities the registry pins to
     ``{provider, consumer}``, so the two could never be compared. The vocabulary
     now lives beside the offers that use it
@@ -189,7 +198,7 @@ def check_sharing_offers(
     catalogue: SharingOfferCatalogue,
     exposed: list[DatasetEvidence],
     profile: OdrlProfile,
-    controllers: ControllerLookup | None = None,
+    recipients: RecipientLookup | None = None,
 ) -> None:
     """Validate the offers a person will actually be shown.
 
@@ -199,7 +208,7 @@ def check_sharing_offers(
     """
     for offer in catalogue.offers:
         _check_offer_purpose(result, offer, profile)
-        _check_offer_controller(result, offer, controllers, catalogue)
+        _check_offer_recipient(result, offer, recipients, catalogue)
         _check_offer_legal_basis(result, offer)
         _check_offer_durations(result, offer)
         _check_offer_codes(result, offer)
@@ -207,6 +216,41 @@ def check_sharing_offers(
 
     _check_dataset_offer_references(result, catalogue, exposed, profile)
     _check_offer_prerequisites(result, catalogue, exposed)
+    _check_recipient_restriction(result, catalogue, exposed)
+
+
+def _check_recipient_restriction(
+    result: ValidationResult,
+    catalogue: SharingOfferCatalogue,
+    exposed: list[DatasetEvidence],
+) -> None:
+    """``access_requirements: partner`` needs a recipient list to mean anything.
+
+    It used to emit ``Membership eq owner:<alias>:partner``, a string no
+    enrolment granted — so a dataset asking for it could not be negotiated by
+    anybody, and nothing said why. It now emits an ``odrl:recipient`` set derived
+    from the dataset's offers, which means a dataset that declares no offer
+    declares no recipient, and the access policy would carry the membership
+    constraint alone: a restriction silently weaker than the file asked for.
+
+    An error, not a warning, and this is the direction that matters. The mapper
+    would emit *no* recipient constraint, so the failure is open — everybody
+    admitted, where the producer asked for a named few.
+    """
+    for item in exposed:
+        if (item.rule.access_requirements or "all") != "partner":
+            continue
+        aliases = catalogue.recipients_of(item.rule.dataspace.sharing_offers)
+        if not aliases:
+            result.error(
+                "recipient-restriction",
+                "declares access_requirements: partner, which restricts the "
+                "dataset to the recipients its sharing offers name — and it "
+                "names no resolvable offer, so the restriction would admit "
+                "everybody instead of a named few. Bind an offer in "
+                "dataspace.sharing_offers, or drop the requirement.",
+                item.key,
+            )
 
 
 def _check_dataset_offer_references(
@@ -371,69 +415,70 @@ def _check_offer_purpose(
         )
 
 
-def _check_offer_controller(
+def _check_offer_recipient(
     result: ValidationResult,
     offer: SharingOffer,
-    controllers: ControllerLookup | None,
+    recipients: RecipientLookup | None,
     catalogue: SharingOfferCatalogue,
 ) -> None:
     """Two separate questions, and only the first one needs a registry.
 
-    **Does the controller exist?** The owners registry answers that, and without
+    **Does the recipient exist?** The owners registry answers that, and without
     one the finding downgrades to a warning — an offline run has nothing to
     resolve against and should say so rather than fail.
 
-    **Is the named function one this controller has?** *catalogue* answers that,
+    **Is the named function one this recipient has?** *catalogue* answers that,
     offline, always. It used to be asked of the identity-registry's participant
     ``roles``, which are DSP capacities pinned to ``{provider, consumer}`` — so
-    the answer could not be *yes* for any legal ``controller_role`` and the check
+    the answer could not be *yes* for any legal ``recipient_role`` and the check
     was unsatisfiable. See
     :class:`~ds.governance.sharing.SharingOfferCatalogue`.
     """
-    alias = offer.recipients.controller
+    alias = offer.recipients.recipient
     if not alias.strip():
-        result.error("offer-controller", f"Offer '{offer.id}' names no controller")
+        result.error("offer-recipient", f"Offer '{offer.id}' names no recipient")
         return
 
-    if controllers is None or not controllers.available:
+    if recipients is None or not recipients.available:
         result.warning(
-            "offer-controller",
-            f"Offer '{offer.id}' controller '{alias}' was not checked — no owners "
+            "offer-recipient",
+            f"Offer '{offer.id}' recipient '{alias}' was not checked — no owners "
             "registry available to this run",
         )
-    elif not controllers.known(alias):
+    elif not recipients.known(alias):
         result.error(
-            "offer-controller",
-            f"Offer '{offer.id}' controller '{alias}' does not resolve in the owners registry",
+            "offer-recipient",
+            f"Offer '{offer.id}' recipient '{alias}' does not resolve in the owners "
+            "registry, so it contributes no DID to the dataset's odrl:recipient set",
         )
         return
 
-    role = offer.recipients.controller_role
+    role = offer.recipients.recipient_role
     declared = catalogue.roles_of(alias)
 
     if role and not declared:
         result.error(
-            "offer-controller",
-            f"Offer '{offer.id}' declares controller_role '{role}', but controller "
-            f"'{alias}' declares no controller_roles — a role naming nothing cannot "
+            "offer-recipient",
+            f"Offer '{offer.id}' declares recipient_role '{role}', but recipient "
+            f"'{alias}' declares no recipient_roles — a role naming nothing cannot "
             "keep consent to one function from reaching another. Declare "
-            f"controller_roles['{alias}'] beside the offers, or drop the role",
+            f"recipient_roles['{alias}'] beside the offers, or drop the role",
         )
     elif role and role not in declared:
         result.error(
-            "offer-controller",
-            f"Offer '{offer.id}' declares controller_role '{role}', which is not one "
-            f"of '{alias}' declared controller_roles {declared}",
+            "offer-recipient",
+            f"Offer '{offer.id}' declares recipient_role '{role}', which is not one "
+            f"of '{alias}' declared recipient_roles {declared}",
         )
     elif declared and not role:
-        # `D-11`: the consent key is (subject, purpose, controller-role). Naming
+        # `D-11`: the consent key is (subject, purpose, recipient-role). Naming
         # an unbundled entity without saying which function is consenting leaves
         # that key one element short, and the connector then matches on the legal
         # entity alone — which is what `D-11` calls insufficient.
         result.error(
-            "offer-controller",
-            f"Offer '{offer.id}' names controller '{alias}', which is unbundled into "
-            f"{declared}, but declares no controller_role — consent to one function "
+            "offer-recipient",
+            f"Offer '{offer.id}' names recipient '{alias}', which is unbundled into "
+            f"{declared}, but declares no recipient_role — consent to one function "
             "would reach the others",
         )
 

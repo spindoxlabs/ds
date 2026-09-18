@@ -54,7 +54,6 @@ collector back. See [A collector registers consent](#a-collector-registers-conse
 
 | Endpoint | Asked by | Question |
 |---|---|---|
-| `GET /internal/participants/check` | EDC constraint function | is this participant in the dataspace, with this scope? |
 | `GET /internal/consent/check` | EDC constraint functions, pending guard | does anyone consent to this dataset for this consumer and purpose? |
 | `POST /internal/consent/asks` | EDC pending guard | park this negotiation and ask the subjects |
 | `POST /internal/dataplane/authorize` | the dataset API | may these rows leave, and which ones? |

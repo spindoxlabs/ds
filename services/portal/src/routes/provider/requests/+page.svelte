@@ -86,10 +86,10 @@
               <dt class="inline text-gray-500">Waiting:</dt>
               <dd class="inline"> {waitingSince(ask)}</dd>
             </div>
-            {#if ask.controller}
+            {#if ask.recipient}
               <div>
                 <dt class="inline text-gray-500">Controller:</dt>
-                <dd class="inline"> {ask.controller}{#if ask.controller_role} ({ask.controller_role}){/if}</dd>
+                <dd class="inline"> {ask.recipient}{#if ask.recipient_role} ({ask.recipient_role}){/if}</dd>
               </div>
             {/if}
             {#if ask.negotiation_id}

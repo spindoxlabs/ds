@@ -263,8 +263,8 @@ class ScenarioRunner:
                 continue
             recipients = offer.get("recipients") or {}
             for field_name, source in (
-                ("controller", recipients),
-                ("controller_role", recipients),
+                ("recipient", recipients),
+                ("recipient_role", recipients),
                 ("purpose", offer),
             ):
                 expected = want.get(field_name)

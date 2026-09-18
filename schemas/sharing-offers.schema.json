@@ -32,10 +32,23 @@
       "type": "object"
     },
     "OfferRecipients": {
-      "description": "Who may receive the data, and in what capacity.\n\nIndependent controllers are never listed here — each one is its own offer,\nbecause consent under Art. 4(11) is consent to a *specific* controller's\nprocessing.  ``controller_role`` names which function of that entity is\nacting: a DSO's grid-operations and metering functions are different\ncontrollers under unbundling rules, same legal entity.\n\n**``controller_role`` is not a participant role.**  A participant's roles are\nDSP capacities — the identity-registry pins them to ``{provider, consumer}``\n(``schemas/requests.py``) — and ``metering`` is neither.  The vocabulary this\nis checked against is the one declared in ``controller_roles`` beside the\noffers; see :class:`SharingOfferCatalogue`.",
+      "anyOf": [
+        {
+          "required": [
+            "recipient"
+          ]
+        },
+        {
+          "required": [
+            "controller"
+          ]
+        }
+      ],
+      "description": "Who may receive the data, and in what capacity.\n\n``recipient`` is **the party the data goes to**: the DSP consumer EDC puts in\n``counterPartyId``, ODRL 2.2's ``odrl:recipient`` (*\"the party receiving the\nresult/outcome of exercising the action of the Rule\"*), and the DSSC data\nrecipient.  It is an owner alias, resolved to a DID through the owner\nregistry wherever it is enforced.\n\n**It was called ``controller`` and meant three things at once** — the\nrecipient, the subject's home organisation, and the GDPR Art. 4(7)\ncontroller.  Checked against a real four-hop chain, only the first reading\nheld in every offer, so that is the one the field keeps\n(plan ``every-personal-dataset-asks-for-a-local-consent``, 2026-09-17).  The\nsubject's home organisation is now the *collecting* organisation, established\nfrom the caller's token at the consent write\n(``a-collector-registers-consent-at-the-holder``); the GDPR controller, where\na text needs to name one, is described in the offer's consent text and is not\nused for enforcement.\n\n``controller`` / ``controller_role`` are still **accepted on input** and\nfolded in by :meth:`_accept_legacy_spelling`, so no governance file has to\nchange for this model to.\n\nIndependent recipients are never bundled — each one is its own offer, because\nconsent under Art. 4(11) is consent to a *specific* recipient's processing.\n``recipient_role`` names which function of that entity is acting: a grid\noperator's grid-operations and metering functions are different controllers\nunder unbundling rules, same legal entity (``D-11``).\n\n**``recipient_role`` is not a participant role.**  A participant's roles are\nDSP capacities — the identity-registry pins them to ``{provider, consumer}``\n(``schemas/requests.py``) — and ``metering`` is neither.  The vocabulary this\nis checked against is the one declared in ``recipient_roles`` beside the\noffers; see :class:`SharingOfferCatalogue`.",
       "properties": {
         "controller": {
-          "title": "Controller",
+          "deprecated": true,
+          "description": "Deprecated spelling of `recipient` — still read, still warned about.",
           "type": "string"
         },
         "controller_role": {
@@ -48,14 +61,30 @@
             }
           ],
           "default": null,
-          "title": "Controller Role"
+          "deprecated": true,
+          "description": "Deprecated spelling of `recipient_role`."
         },
         "processors": {
           "$ref": "#/$defs/ProcessorCategory"
+        },
+        "recipient": {
+          "title": "Recipient",
+          "type": "string"
+        },
+        "recipient_role": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recipient Role"
         }
       },
       "required": [
-        "controller",
         "processors"
       ],
       "title": "OfferRecipients",
@@ -180,7 +209,18 @@
         },
         "type": "array"
       },
-      "description": "controller alias -> the controller functions that entity is unbundled into. The vocabulary an offer's controller_role is checked against; not the identity-registry's participant roles.",
+      "deprecated": true,
+      "description": "Deprecated spelling of recipient_roles — still read, still warned about. Rename it.",
+      "type": "object"
+    },
+    "recipient_roles": {
+      "additionalProperties": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "description": "recipient alias -> the controller functions that entity is unbundled into. The vocabulary an offer's recipient_role is checked against; not the identity-registry's participant roles.",
       "type": "object"
     },
     "sharing_offers": {

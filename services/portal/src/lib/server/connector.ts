@@ -43,8 +43,8 @@ export interface LegalBasis {
 	rec_slug?: string | null;
 	offer_id?: string | null;
 	basis_iri?: string | null;
-	controller?: string | null;
-	controller_role?: string | null;
+	recipient?: string | null;
+	recipient_role?: string | null;
 	consent_text_version?: string | null;
 	locale?: string | null;
 	rendered_text_sha256?: string | null;
@@ -64,10 +64,10 @@ export interface ConsentRequest {
 	consumer_id: string;
 	status: 'pending' | 'granted' | 'rejected' | 'revoked';
 	purpose: string[] | null;
-	/** Owner alias of the controller that decides the purpose. */
-	controller?: string | null;
-	/** Which role of that participant is acting — controller ≠ legal entity. */
-	controller_role?: string | null;
+	/** Owner alias of the recipient — the DSP consumer the data goes to. */
+	recipient?: string | null;
+	/** Which function of that entity is acting — a controller is not a legal entity. */
+	recipient_role?: string | null;
 	/** Set when the row came from a sharing offer rather than a raw dataset toggle. */
 	offer_id?: string | null;
 	/**
@@ -169,7 +169,7 @@ export async function setMyDataShare(
 // ── Sharing offers ───────────────────────────────────────────────────────────
 //
 // What a person is actually asked about: a purpose-scoped bundle from a named
-// controller, for a described category of recipient. Served as codes plus an
+// recipient, with a described category of processors. Served as codes plus an
 // English fallback — the portal composes the sentence, ds serves the facts.
 
 export interface SharingOffer {
@@ -180,8 +180,8 @@ export interface SharingOffer {
 	/** false for contract/legitimate-interest offers — disclose, never toggle. */
 	requires_consent: boolean;
 	recipients: {
-		controller: string;
-		controller_role: string | null;
+		recipient: string;
+		recipient_role: string | null;
 		processors: { category: string };
 	};
 	subject_scope: string;
@@ -216,7 +216,7 @@ export async function setMyOfferShare(
 ): Promise<DataShareDecision[]> {
 	// Naming the offer rather than a dataset is what keeps the decision tied to
 	// the copy the person read: the connector expands it into per-dataset rows
-	// and stamps the purpose and controller from the offer itself.
+	// and stamps the purpose and recipient from the offer itself.
 	return apiFetch<DataShareDecision[]>(
 		connectorUrl('/consent/my/shares'),
 		{

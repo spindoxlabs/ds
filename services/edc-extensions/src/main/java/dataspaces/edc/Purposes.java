@@ -158,6 +158,20 @@ public final class Purposes {
      * object dump. Every caller treats {@code null} as "cannot read this
      * operand" and denies.
      */
+    /**
+     * A right operand (or a credential claim) flattened to the strings it holds.
+     *
+     * <p>The list form of {@link #unwrapScalar}, for the operands that are
+     * genuinely sets — {@code odrl:recipient}, which ODRL 2.2 defines as
+     * identifying parties or party categories — and for a credential claim,
+     * which may be a scalar or an array depending on the credential.
+     */
+    public static List<String> unwrapList(Object value) {
+        List<String> flattened = new java.util.ArrayList<>();
+        unwrap(value, flattened, 0);
+        return flattened;
+    }
+
     public static String unwrapScalar(Object value) {
         List<String> flattened = new java.util.ArrayList<>();
         unwrap(value, flattened, 0);
