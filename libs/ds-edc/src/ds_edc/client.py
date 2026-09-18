@@ -173,13 +173,33 @@ class EdcManagementClient:
         carries the status line and not the body — so an EDC that explains a 400
         in its response ("policy definition not found", "asset already exists")
         reached the operator as a bare *Client error '400 Bad Request'*.
+
+        **An empty body is not an explanation, and it used to read as one.** The
+        message was `f"EDC {operation} {status}: {body}"`, so a failure answered
+        with no body rendered as ``EDC delete_asset 400:`` — a sentence ending in
+        a colon, which looks like a truncated log line rather than a fact. That is
+        exactly the shape a servlet container produces when it rejects a request
+        *before* EDC routes it (a `%2F` inside a path segment, a body it will not
+        read), i.e. the case where the operator most needs to be told what was
+        attempted. When there is no body, the message names the method and the
+        path instead, and says the body was empty rather than leaving a gap where
+        one would be.
         """
         if r.is_success:
             return
-        body = r.text[:500]
-        log.error("EDC %s failed (%s): %s", operation, r.status_code, body)
+        body = r.text[:500].strip()
+        log.error("EDC %s failed (%s): %s", operation, r.status_code, body or "<empty>")
+        if body:
+            detail = body
+        else:
+            detail = (
+                f"empty response body — {r.request.method} {r.request.url.path} "
+                "was refused without an explanation, which usually means the "
+                "request never reached EDC (an unaddressable id, or a malformed "
+                "path)"
+            )
         raise httpx.HTTPStatusError(
-            f"EDC {operation} {r.status_code}: {body}",
+            f"EDC {operation} {r.status_code}: {detail}",
             request=r.request,
             response=r,
         )
@@ -224,6 +244,31 @@ class EdcManagementClient:
         self._raise_with_body(r, "list_assets")
         data: list[dict[str, Any]] = r.json()
         return data
+
+    async def update_asset(self, asset: AssetCreate) -> None:
+        """Replace an asset in place — `PUT …/assets`, addressed by the **body**.
+
+        The one call in this client that does not take an id in the path, because
+        EDC does not offer one here (`AssetApiV5Controller.updateAssetV5`). A 404
+        means EDC has no such asset, and EDC's own contract is that it then "takes
+        no further action" — so it is **not** tolerated here: the caller asked to
+        update something and nothing was updated, which is a different outcome
+        from the delete case where absence is the goal.
+
+        Used where `delete_asset` + `create_asset` cannot run: EDC refuses to
+        delete an asset referenced by a contract agreement or an ongoing
+        negotiation (409), and before this the sync simply *kept* the old one —
+        so **an asset under agreement never received a property change again**.
+        Measured on 2026-09-18: three of a dev stack's four assets had agreements,
+        and none of them carried the `datasetKey` property the sync had just
+        written for all four.
+
+        EDC's own annotation calls updating an asset a danger zone, for offers
+        already sent out. That is the trade ds makes deliberately: the alternative
+        is publishing a governance change that silently does not apply.
+        """
+        r = await self._http.put(self._path("assets"), json=asset.to_edc())
+        self._raise_with_body(r, "update_asset")
 
     async def delete_asset(self, asset_id: str) -> None:
         # A 404 on a *delete* is the requested end state reached by another

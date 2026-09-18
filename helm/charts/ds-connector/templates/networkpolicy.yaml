@@ -5,9 +5,15 @@
 # /webhooks) reach the connector, in this namespace only. No public path — a
 # truly external dataset API needs connectivity arranged separately (see
 # docs/deployment/exposure.md).
+# The third caller is this chart's own publishing hook Job (`syncjob.yaml`),
+# which posts `POST /provider/sync`. It carries this chart's labels, so it is
+# matched by `app.kubernetes.io/name: <this chart>` — and without this row it is
+# denied by the default-deny baseline and the catalogue silently stays empty,
+# which is the exact failure the Job exists to prevent.
 {{ include "ds.networkPolicy.fromWorkloads" (dict "ctx" . "ports" (list .Values.service.port) "from" (list
     (dict "namespace" .Release.Namespace "name" "ds-portal")
-    (dict "namespace" .Release.Namespace "name" "ds-edc"))) }}
+    (dict "namespace" .Release.Namespace "name" "ds-edc")
+    (dict "namespace" .Release.Namespace "name" (include "ds.name" .)))) }}
 ---
 {{- if ((.Values.global).monitoring).serviceMonitor }}
 # /metrics is unauthenticated by decision (docs/rulebook/provenance-and-logging.md
@@ -38,7 +44,9 @@ spec:
       ports:
         - protocol: TCP
           port: 30005
-    # EDC and provenance in this participant's namespace.
+    # EDC and provenance in this participant's namespace — and the connector's
+    # own port, for the publishing hook Job, which is selected by these same
+    # labels and calls the Service in front of them.
     - to:
         - podSelector: {}
       ports:
@@ -46,6 +54,8 @@ spec:
           port: {{ .Values.edc.managementPort }}
         - protocol: TCP
           port: 30000
+        - protocol: TCP
+          port: {{ .Values.service.port }}
     # Keycloak and the (external) dataset API over TLS.
     - to:
         - ipBlock:

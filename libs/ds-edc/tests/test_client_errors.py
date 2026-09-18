@@ -9,6 +9,7 @@ and the explanation was thrown away at the one place it was in hand.
 from __future__ import annotations
 
 import inspect
+import re
 
 import httpx
 import pytest
@@ -43,6 +44,7 @@ def _calls(client: EdcManagementClient):
         "create_asset": lambda: client.create_asset(asset),
         "get_asset": lambda: client.get_asset("a"),
         "list_assets": client.list_assets,
+        "update_asset": lambda: client.update_asset(asset),
         "delete_asset": lambda: client.delete_asset("a"),
         "create_policy": lambda: client.create_policy(
             PolicyCreate(id="p", policy={"@type": "odrl:Set"})
@@ -122,6 +124,32 @@ async def test_a_refusal_reaches_the_caller_with_edc_s_own_words(edc_client, nam
         await _calls(client)[name]()
     assert REFUSAL in str(exc.value), f"{name} discarded EDC's response body"
     assert "400" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "name", list(_calls(EdcManagementClient("http://x", "did:web:x")))
+)
+async def test_an_empty_body_still_says_what_was_attempted(edc_client, name):
+    """A refusal with no body is where the caller most needs to be told something.
+
+    `EDC delete_asset 400:` — a sentence ending in a colon — is what a live
+    deployment's operators read for a fortnight while both DSP catalogues stayed
+    empty (2026-09-18). It reads like a truncated log line rather than a fact,
+    and it is the *signature* of a request refused by the servlet container
+    before EDC ever routed it: a `%2F` inside a path segment, a body Jetty will
+    not read. The message must name the request instead of trailing off.
+    """
+    client, _ = edc_client(lambda _r: status_only(400, ""))
+    with pytest.raises(httpx.HTTPStatusError) as exc:
+        await _calls(client)[name]()
+    message = str(exc.value)
+    assert not message.rstrip().endswith(":"), f"{name} said nothing after the colon"
+    assert "empty response body" in message
+    # The request itself — method and path — so the reader can see what was
+    # asked. Not asserted against a fixed prefix: `resume_negotiation` is served
+    # by this repository's EDC extension on its own path, and a test that pinned
+    # `/v5beta/participants/` would quietly exempt it.
+    assert re.search(r"\b(GET|POST|PUT|DELETE) /\S+", message), message
 
 
 @pytest.mark.parametrize(
@@ -227,3 +255,31 @@ async def test_the_client_sends_no_api_key():
     client = EdcManagementClient("http://edc.test", "did:web:x")
     assert "X-Api-Key" not in client._http.headers
     await client.close()
+
+
+# -- `PUT` is the only body-addressed write, and a 404 is not tolerated there ---
+
+
+async def test_update_asset_is_addressed_by_the_body(edc_client):
+    """No id in the path — `AssetApiV5Controller.updateAssetV5` takes the asset.
+
+    Worth pinning, because every other single-resource call on this client puts
+    the id in a path segment and this one deliberately does not.
+    """
+    client, edc = edc_client(lambda _r: status_only(204, ""))
+    await client.update_asset(AssetCreate(id="a/b", data_address=DataAddress()))
+    assert edc.last.url.path.endswith("/assets")
+    assert "a%2Fb" not in str(edc.last.url)
+    assert edc.last.method == "PUT"
+
+
+async def test_update_asset_does_not_tolerate_a_404(edc_client):
+    """EDC answers 404 and "takes no further action" — nothing was updated.
+
+    The opposite of `delete_asset`, where absence is the goal. A caller that
+    asked for a property change and got none has not had its request honoured,
+    and the sync uses this exactly where it must not fail quietly.
+    """
+    client, _ = edc_client(lambda _r: status_only(404, "not found"))
+    with pytest.raises(httpx.HTTPStatusError):
+        await client.update_asset(AssetCreate(id="a", data_address=DataAddress()))

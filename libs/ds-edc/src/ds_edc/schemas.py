@@ -425,7 +425,21 @@ class EdrResponse(BaseModel):
 
 
 class SyncResult(BaseModel):
+    """What one `POST /provider/sync` did — published, withdrew, skipped, failed.
+
+    ``synced`` and ``skipped`` are **dataset keys**; ``withdrawn`` is **asset
+    ids**, because what a reconcile removes is an EDC object and a still-declared
+    dataset can have one removed (an id that moved). ``errors`` entries carry a
+    ``dataset`` or ``offer`` key where one applies, and always an ``error``.
+
+    Reading ``len(synced)`` alone is what made the defect this shape exists for
+    invisible: a run in which *every* dataset failed at `delete_asset` reported a
+    higher `synced` count than the run before it, and answered 200.
+    """
+
     synced: list[str] = []
+    #: Asset ids removed from EDC because governance no longer declares them.
+    withdrawn: list[str] = []
     skipped: list[str] = []
     errors: list[dict[str, str]] = []
 

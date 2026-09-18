@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from ds_auth import Principal
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,6 +20,7 @@ from ...dependencies import (
     require_provider_write,
     require_provider_write_own,
 )
+from ...schemas.edc import SyncResult
 from ...services.authorization_service import get_authorized_datasets
 from ...services.prov_bridge import acting_principal
 
@@ -26,6 +29,40 @@ router = APIRouter(prefix="/provider", tags=["provider"])
 
 class SyncRequest(BaseModel):
     governance_yaml_path: str | None = None
+
+
+def _sync_response(result: SyncResult) -> JSONResponse:
+    """The sync's answer, with a status code that agrees with its body.
+
+    **The route used to answer `200` whatever happened.** Measured in a live
+    deployment on 2026-09-18: every one of eight datasets came back in `errors`
+    as `EDC delete_asset 400:` and the call still succeeded, so the deployment's
+    publishing step — which checked the status code — reported success against
+    two empty catalogues. That is the defect this function is.
+
+    Three answers, and the body is the same `SyncResult` in all three so no
+    caller loses information by the code changing:
+
+    * **200** — nothing failed.
+    * **207 Multi-Status** — some datasets published and some did not. A partial
+      publish is a real state and has to stay readable: collapsing it into a bare
+      failure would throw away the list of what *did* land, which is what an
+      operator fixes forward from.
+    * **502 Bad Gateway** — nothing published and something failed. The sync's
+      only downstream is the EDC management API, so a run that published nothing
+      is a statement about EDC (or about governance being unusable), not about
+      the caller's request: `4xx` would blame the wrong party.
+
+    A run with no datasets at all and no errors is a `200` with empty lists,
+    which is correct — a deployment may legitimately publish nothing.
+    """
+    if not result.errors:
+        status = 200
+    elif result.synced or result.withdrawn:
+        status = 207
+    else:
+        status = 502
+    return JSONResponse(status_code=status, content=jsonable_encoder(result))
 
 
 @router.post("/sync")
@@ -111,7 +148,7 @@ async def sync(
     from ...services import consent_vocabulary as vocab
 
     vocab.reset_caches()
-    return result
+    return _sync_response(result)
 
 
 @router.get("/authorizations")

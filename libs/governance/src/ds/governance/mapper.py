@@ -81,6 +81,72 @@ _CLASS_PROHIBITIONS: dict[str, list[str]] = {
 }
 
 
+class UnaddressableAssetId(ValueError):
+    """An asset id the Management API client cannot address.
+
+    Not a style objection. `ds_edc.client._path_id` percent-encodes an id into a
+    **path segment** (`quote(value, safe="")`), and Jetty refuses `%2F` inside
+    one — answering **400 with an empty body**, before EDC routes the request.
+    The sync deletes before it creates, so the delete is what fails and nothing
+    is ever published. Measured against a running EDC 0.18.0 on 2026-09-18:
+
+    ====================================  ===================
+    id                                    answer
+    ====================================  ===================
+    ``simple-id``                         404 ObjectNotFound
+    ``a:b``                               404 ObjectNotFound
+    ``http://host:8001/query/a/b``        **400, empty body**
+    ====================================  ===================
+
+    EDC has no body-addressed delete for assets, policy definitions or contract
+    definitions (`AssetApiV5Controller` at `v0.18.0`: `POST …/assets/request` is
+    a *query* returning a list), so there is no call shape that would carry such
+    an id. Refusing at mapping time turns an unattributable empty-bodied 400 into
+    a named error against the dataset that declared it.
+    """
+
+
+def asset_id_for(dataset_key: str, rule: GovernanceRuleV2) -> str:
+    """The EDC asset id for a dataset — the dataspace-wide name it is negotiated by.
+
+    A declared ``dataspace.asset.id`` wins. When none is declared the **dataset
+    key** is used, and that is a change of default: it used to be
+    ``f"{base_url}/datasets/{key.replace('.', '/')}"``, which contains slashes and
+    is therefore unpublishable (:class:`UnaddressableAssetId`), and which writes
+    *this deployment's data-plane address* into the identifier a counterparty
+    negotiates against — so the id changed whenever the data plane moved.
+
+    The dataset key is not a new spelling: it is already the name governance,
+    the consent vocabulary and `/internal/dataplane/authorize` all use for a
+    dataset. Deployments that pinned ids by hand to work around the old default
+    pinned them to the key.
+
+    **Breaking** for a deployment that published under the derived form and does
+    not pin the id: its assets are republished under the key, and the old ones
+    are removed by the reconcile in the same sync.
+    """
+    declared = (rule.dataspace.asset.id or "").strip()
+    asset_id = declared or dataset_key
+    if not asset_id:
+        raise UnaddressableAssetId(
+            f"dataset {dataset_key!r} yields an empty asset id — an asset has to "
+            "be addressable by name"
+        )
+    if "/" in asset_id or "\\" in asset_id:
+        source = (
+            f"declares dataspace.asset.id {asset_id!r}"
+            if declared
+            else f"has a key containing a slash ({asset_id!r})"
+        )
+        raise UnaddressableAssetId(
+            f"dataset {dataset_key!r} {source}. An asset id is addressed as one "
+            "path segment on the EDC Management API, and a slash in it is "
+            "refused by the servlet container with an empty-bodied 400 before "
+            "EDC sees the request. Give it a path-safe id."
+        )
+    return asset_id
+
+
 # `requires_consent` was defined here, in full, and the connector then grew a
 # byte-identical second copy of it (`connector.services.consent_vocabulary`). It
 # now lives in `consent.py` and both spellings delegate to it —
@@ -646,9 +712,7 @@ class GovernanceMapper:
         self, dataset_key: str, rule: GovernanceRuleV2
     ) -> dict[str, Any]:
         ds = rule.dataspace
-        asset_id = (
-            ds.asset.id or f"{self.base_url}/datasets/{dataset_key.replace('.', '/')}"
-        )
+        asset_id = asset_id_for(dataset_key, rule)
         medallion = ds.medallion or self._infer_medallion(dataset_key)
         pfx = self.profile.prefix
 
@@ -676,6 +740,20 @@ class GovernanceMapper:
                 "name": rule.title or dataset_key,
                 "description": rule.description or "",
                 "contenttype": ds.asset.content_type,
+                # The governance key this asset was published from, and the one
+                # thing on the asset that says **ds published it**.
+                #
+                # The sync withdraws what governance no longer declares, and it
+                # may only withdraw its own work: an EDC runtime is allowed to
+                # hold objects ds did not create, and "EDC has it and governance
+                # does not" is not a licence to delete. An asset's `@id` cannot
+                # answer that — a deployment may pin any id it likes — so the
+                # answer is written on the asset at publish time.
+                #
+                # It is also what a stale asset is *named by* when it is
+                # withdrawn: the id is an EDC handle, the key is what a producer
+                # removed from a file.
+                f"{pfx}:datasetKey": dataset_key,
                 # The payload semantic model (`M-4`), carried into the DSP
                 # catalogue so a consumer discovers it at browse time rather than
                 # after negotiating. A `dct:` term where every sibling is

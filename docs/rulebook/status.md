@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-18 from `1b6b69b-dirty`.
+Generated 2026-09-18 from `718a8f0-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 126 |
 | …of those, **evidenced by a test that names them** | 126 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 951 |
+| Test nodes declaring a rule | 952 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -41,7 +41,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-4` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_accepts_the_crawler_and_names_no_person` |
 | `C-5` | Enforced | ✅ evidenced | e2e×1, unit×2 | `uc3`, `libs/governance/tests/tests/test_mapper.py::test_odrl_offer_basic_structure`, `libs/governance/tests/tests/test_mapper.py::test_odrl_context_uses_profile_prefix` |
 | `C-6` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_canonical_schema.py::test_purpose_is_read_from_the_canonical_location`, `libs/governance/tests/tests/test_mapper.py::test_purpose_comes_from_policy_declaration`, `libs/governance/tests/tests/test_mapper.py::test_tags_alone_produce_no_purpose_constraint` +1 more |
-| `C-7` | Enforced | ✅ evidenced | e2e×1, unit×5 | `two-providers`, `libs/governance/tests/tests/test_dcat_shapes.py::TestDataService::test_serves_dataset_is_emitted_as_references`, `libs/governance/tests/tests/test_dcat_shapes.py::TestDataService::test_conforms_to_distinguishes_a_negotiable_endpoint` +3 more |
+| `C-7` | Enforced | ✅ evidenced | e2e×2, unit×5 | `provider-withdrawal`, `two-providers`, `libs/governance/tests/tests/test_dcat_shapes.py::TestDataService::test_serves_dataset_is_emitted_as_references` +4 more |
 | `C-8` | Enforced | ✅ evidenced | unit×6 | `libs/governance/tests/tests/test_dcat_shapes.py::TestCatalogRecord::test_points_at_its_dataset_via_primary_topic`, `libs/governance/tests/tests/test_dcat_shapes.py::test_the_context_defines_foaf`, `services/federated-catalog/tests/test_dcat_shape.py::test_every_entry_carries_a_catalogue_record` +3 more |
 | `C-9` | Enforced | ✅ evidenced | unit×10 | `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_missing_file_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_no_sources_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_valid_file_passes_cleanly` +7 more |
 | `C-10` | Enforced | ✅ evidenced | unit×13 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_consent_required_without_filter_warns`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_consent_required_with_filter_column_is_clean`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_pii_without_row_filtering_warns` +10 more |

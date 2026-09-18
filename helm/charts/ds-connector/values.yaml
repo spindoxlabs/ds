@@ -95,6 +95,37 @@ governance:
   configMap: ""
   mountPath: /governance
 
+# ── Publishing (POST /provider/sync) ──────────────────────────────────────────
+# Who turns this participant's governance into EDC assets, policies and contract
+# definitions, and when.
+#
+# ds has always treated the sync as part of *starting* a provider — the Taskfile
+# posts it right after the connector's health check — and the charts had no
+# equivalent, so a provider could be installed, healthy, registered and reachable
+# with an **empty catalogue** and nothing would report it. This is a
+# post-install/post-upgrade hook Job, and it is rendered only for a
+# provider-role participant that has `governance.configMap` set: a consumer
+# publishes nothing, and a provider with no governance mounted has nothing to
+# publish.
+#
+# **Identity.** By default the participant's own organisation client
+# (`clientId`), which is already in this release's Secret and which the
+# connector's perimeter binds to this participant. Set `sync.clientId` to
+# `svc-ds-publisher` — plus `secrets.publisherSecret` — where the credential that
+# drives a deployment should not also carry `management-api:*`; that client holds
+# `connector.provider.read` + `.write` and nothing else.
+sync:
+  enabled: true
+  # "" → the organisation client in `clientId`. Naming one here switches the job
+  # to `secrets.publisherSecret`.
+  clientId: ""
+  # How long to wait for the connector to answer /health before giving up. The
+  # hook runs after the rollout, so this covers the rollout's tail, not a cold
+  # start.
+  timeoutSeconds: 60
+  backoffLimit: 3
+  ttlSecondsAfterFinished: 600
+
 # ── Semantic vocabularies (GET /ns/{slug}) ────────────────────────────────────
 # The models a dataset's `dcat.conforms_to` points at — SAREF, CIM, COSEM.
 #
@@ -139,6 +170,9 @@ secrets:
   dbUser: ""
   dbPassword: ""
   clientSecret: "" # the organisation client's Keycloak secret (svc-ds-connector-<alias>)
+  # Only when `sync.clientId` names a separate publisher (svc-ds-publisher).
+  # Unused otherwise, and required when it is set.
+  publisherSecret: ""
   edcCallbackKey: "" # EDR callback header value; same as ds-edc secrets.edcCallbackKey
 
 global:

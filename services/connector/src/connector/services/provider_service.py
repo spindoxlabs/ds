@@ -166,6 +166,191 @@ def _reject_unpublishable(
     return set(rejected)
 
 
+def _local_name(key: str) -> str:
+    """The last segment of a JSON-LD key, whatever prefix or IRI form it came back in.
+
+    Same rule and the same reason as `dependencies._asset_owner`: the property is
+    written as ``f"{prefix}:datasetKey"`` with the prefix from the active ODRL
+    profile, EDC returns properties JSON-LD-compacted, and a deployment may
+    change the prefix. A hardcoded key reads as *this asset is not ds's*, which
+    for a reconcile is a silent refusal to withdraw anything — the failure mode
+    this whole item exists to remove.
+    """
+    return key.rsplit("#", 1)[-1].rsplit("/", 1)[-1].rsplit(":", 1)[-1]
+
+
+def _published_dataset_key(asset: dict) -> str:
+    """The governance key an asset was published from.
+
+    ``""`` when ds did not publish it — an EDC runtime may hold objects ds never
+    wrote, and they are not ds's to withdraw.
+    """
+    for key, value in (asset.get("properties") or {}).items():
+        if isinstance(key, str) and isinstance(value, str) and value.strip():
+            if _local_name(key) == "datasetKey":
+                return value.strip()
+    return ""
+
+
+def _selector_asset_ids(definition: dict) -> set[str]:
+    """Every asset id a contract definition's ``assetsSelector`` names.
+
+    The selector is a list of `Criterion`, and ds emits exactly one — ``id = <asset>``
+    (`ConnectorGovernanceMapper.to_contract_definition`). Read defensively rather
+    than by position: the list comes back from EDC, compacted, and a definition
+    that selects several assets is legitimate even though ds does not write one.
+    """
+    selector = (
+        definition.get("assetsSelector") or definition.get("assetsselector") or []
+    )
+    if isinstance(selector, dict):
+        selector = [selector]
+    ids: set[str] = set()
+    for criterion in selector:
+        if not isinstance(criterion, dict):
+            continue
+        for key, value in criterion.items():
+            if isinstance(key, str) and _local_name(key) == "operandRight":
+                if isinstance(value, str):
+                    ids.add(value)
+                elif isinstance(value, list):
+                    ids.update(v for v in value if isinstance(v, str))
+    return ids
+
+
+async def _withdraw_stale(
+    edc: EdcManagementClient,
+    declared_keys: set[str],
+    published_asset_ids: dict[str, str],
+    result: SyncResult,
+) -> None:
+    """Remove what EDC still holds and this connector's governance no longer declares.
+
+    **The sync owned creation and not withdrawal**, which is worse than it
+    sounds: removing a dataset from `governance.yaml` left EDC holding its asset,
+    both policies and its contract definition, *still offered over DSP* — and the
+    next sync reported a publish count that had gone **up**, because the count is
+    of what published rather than of what is on offer. Nothing distinguished it
+    from a healthy run. Measured in a live deployment on 2026-09-18.
+
+    Three bounds, and they are the decision rather than the implementation:
+
+    * **Only assets ds published**, identified by the `datasetKey` property the
+      mapper writes. An EDC runtime may legitimately hold objects ds did not
+      create, and *governance does not declare it* is not evidence that ds did.
+      An asset published by a ds old enough not to write that property is left
+      alone; one sync under this version labels it, and only then can it be
+      withdrawn. That is the safe direction, and it is a migration note rather
+      than a gap.
+    * **Only datasets governance no longer declares at all** — removed, or no
+      longer `expose`d. A dataset that is declared but was *rejected* by
+      `_reject_unpublishable`, or that failed mid-publish, keeps whatever it had:
+      that gate deliberately leaves a previously published version standing
+      rather than tearing it down over a bad edit, and a reconcile that removed
+      it anyway would undo that decision by another route.
+    * **Plus the asset a still-declared dataset has just been republished
+      *away* from**, when its id changed in this run. Without it, renaming an
+      `asset.id` — or upgrading past the derived-id default that this change
+      replaces — leaves the old asset on offer for ever, which is the same defect
+      under a different name.
+
+    **The order is EDC's, not a preference**: the contract definition references
+    both policies and the asset, so it goes first; a policy still referenced by a
+    definition is refused. A 409 on the asset (it has agreements) is reported,
+    not swallowed — a withdrawn dataset that is still under contract is precisely
+    the state an operator has to be told about.
+    """
+    try:
+        assets = await edc.list_assets()
+    except Exception as exc:  # noqa: BLE001 — a reconcile that cannot read is not a pass
+        log.exception("Could not list EDC assets to reconcile")
+        result.errors.append({"error": f"Could not reconcile what EDC holds: {exc}"})
+        return
+
+    stale: list[tuple[str, str, bool]] = []
+    for asset in assets:
+        asset_id = str(asset.get("@id") or asset.get("id") or "")
+        key = _published_dataset_key(asset)
+        if not asset_id or not key:
+            continue
+        undeclared = key not in declared_keys
+        superseded = key in published_asset_ids and published_asset_ids[key] != asset_id
+        if undeclared or superseded:
+            stale.append((asset_id, key, undeclared))
+    if not stale:
+        return
+
+    try:
+        definitions = await edc.list_contract_definitions()
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Could not list EDC contract definitions to reconcile")
+        result.errors.append({"error": f"Could not reconcile what EDC holds: {exc}"})
+        return
+
+    for asset_id, key, undeclared in sorted(stale):
+        try:
+            policy_ids: set[str] = set()
+            for definition in definitions:
+                if asset_id not in _selector_asset_ids(definition):
+                    continue
+                for field in ("accessPolicyId", "contractPolicyId"):
+                    value = definition.get(field)
+                    if isinstance(value, str) and value:
+                        policy_ids.add(value)
+                definition_id = str(definition.get("@id") or definition.get("id") or "")
+                if definition_id:
+                    await edc.delete_contract_definition(definition_id)
+
+            if undeclared:
+                # The derived default ids too, so a graph whose contract
+                # definition was already gone does not leave its policies behind
+                # for ever. A delete of something absent is a 404, which the
+                # client tolerates.
+                #
+                # **Only when the dataset is gone.** Policy and contract ids are
+                # derived from the *key*, not from the asset id, so a dataset
+                # that merely moved to a new asset id has just been republished
+                # under these very ids — deleting them here would delete the live
+                # policies of a dataset that is still on offer, and EDC would
+                # refuse only because its new contract definition still
+                # references them. Found by
+                # `test_an_asset_id_that_moved_takes_the_old_asset_with_it`.
+                slug = key.replace(".", "-")
+                policy_ids.update({f"{slug}-policy", f"{slug}-access-policy"})
+            for policy_id in sorted(policy_ids):
+                await edc.delete_policy(policy_id)
+
+            await edc.delete_asset(asset_id)
+            # The **asset id**, not the key: it is what was removed, it is
+            # unambiguous, and it is directly comparable with what
+            # `GET /provider/assets` reads back. A rename removes an asset whose
+            # key is still declared, so a list of keys would be a lie for that
+            # case.
+            result.withdrawn.append(asset_id)
+            log.info("Withdrew dataset %s — asset %s removed from EDC", key, asset_id)
+        except Exception as exc:  # noqa: BLE001
+            log.exception("Failed to withdraw dataset %s (asset %s)", key, asset_id)
+            why = (
+                "governance no longer declares it"
+                if undeclared
+                else "it was republished under a different asset id"
+            )
+            result.errors.append(
+                {
+                    "dataset": key,
+                    # The asset id as well as the key. They coincide wherever an
+                    # id is unset or pinned to the key, and a caller reconciling
+                    # this against `GET /provider/assets` must not depend on that
+                    # coincidence.
+                    "asset": asset_id,
+                    "error": (
+                        f"Not withdrawn — {why}, but asset {asset_id!r} could not "
+                        f"be removed from EDC: {exc}"
+                    ),
+                }
+            )
+
+
 async def sync_governance(
     governance_yaml_path: str,
     edc: EdcManagementClient,
@@ -215,6 +400,10 @@ async def sync_governance(
 
     rejected = _reject_unpublishable(datasets, mapper, catalogue, result, set(drifted))
 
+    #: What each dataset was published *as* in this run, so the reconcile below
+    #: can tell an id that moved from one that is simply gone.
+    published_asset_ids: dict[str, str] = {}
+
     for key, rule in datasets.items():
         if key in rejected:
             continue
@@ -247,10 +436,26 @@ async def sync_governance(
                 await edc.create_asset(asset_create)
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 409:
-                    log.debug(
-                        "Asset %s already exists (has agreements) — keeping",
+                    # EDC refuses to delete an asset referenced by a contract
+                    # agreement or an ongoing negotiation. This used to *keep*
+                    # the old one and move on — so **an asset under agreement
+                    # never received a property change again**, silently, and a
+                    # governance edit to it published nothing at all.
+                    #
+                    # Measured on 2026-09-18 on a dev stack: three of four assets
+                    # had agreements, and none of the three carried the
+                    # `datasetKey` property the same sync had just written for
+                    # all four — which also made them permanently invisible to
+                    # the reconcile below.
+                    #
+                    # `PUT` is the call EDC provides for exactly this, and it is
+                    # body-addressed, so it is also unaffected by the id-in-a-
+                    # path-segment problem that started this plan.
+                    log.info(
+                        "Asset %s is under agreement — updating in place",
                         asset_create.id,
                     )
+                    await edc.update_asset(asset_create)
                 else:
                     raise
 
@@ -268,15 +473,26 @@ async def sync_governance(
             )
 
             result.synced.append(key)
+            published_asset_ids[key] = asset_create.id
             log.info("Synced dataset %s → asset %s", key, asset_create.id)
         except Exception as exc:
             log.exception("Failed to sync dataset %s", key)
             result.errors.append({"dataset": key, "error": str(exc)})
 
-    skipped_count = len(datasets) - len(result.synced) - len(result.errors)
+    # Counted from the datasets themselves, not from `len(result.errors)`.
+    # `errors` also carries offer-level entries and, since the reconcile below,
+    # withdrawal failures — none of which is a dataset that was skipped, and all
+    # of which used to subtract from this number.
+    failed = {e.get("dataset") for e in result.errors if e.get("dataset") in datasets}
+    skipped_count = len(datasets) - len(result.synced) - len(failed)
     if skipped_count > 0:
         result.skipped.append(
             f"{skipped_count} datasets skipped (not exposed or secret)"
         )
+
+    # **After** publishing, deliberately. Withdrawing first would take a renamed
+    # dataset off offer before its replacement exists; withdrawing after closes
+    # the window to nothing.
+    await _withdraw_stale(edc, set(datasets), published_asset_ids, result)
 
     return result

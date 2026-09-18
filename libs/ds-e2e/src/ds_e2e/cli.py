@@ -49,6 +49,7 @@ class FlowName(StrEnum):
     catalog_discovery = "catalog-discovery"
     lineage = "lineage"
     two_providers = "two-providers"
+    provider_withdrawal = "provider-withdrawal"
     recipient_restriction = "recipient-restriction"
     smoke = "smoke"
     consent_withdrawal = "consent-withdrawal"
@@ -278,7 +279,9 @@ def sync_providers(
     settings = E2ESettings()
     http = HttpClient(settings)
     try:
-        headers = http.bearer_headers()
+        # The publisher, not the harness client: `svc-ds-e2e` no longer holds
+        # `connector.provider.write` (item 7 of the publishing plan).
+        headers = http.publisher_headers()
         failures: list[str] = []
         for url, label in provider_sync_targets(settings):
             try:
@@ -286,8 +289,16 @@ def sync_providers(
                 synced = (
                     (result or {}).get("synced", []) if isinstance(result, dict) else []
                 )
+                errors = (
+                    (result or {}).get("errors", []) if isinstance(result, dict) else []
+                )
                 console.print(f"  synced {label}: {len(synced)} asset(s)")
-                if not synced:
+                # A sync that reported errors is not a sync, whatever it
+                # answered: the route used to say 200 with every dataset in
+                # `errors`, and a caller reading the status saw success.
+                if errors:
+                    failures.append(f"{label}: {errors}")
+                elif not synced:
                     failures.append(f"{label} published nothing")
             except Exception as exc:
                 failures.append(f"{label}: {exc}")

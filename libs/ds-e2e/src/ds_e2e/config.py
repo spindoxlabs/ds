@@ -168,6 +168,28 @@ class E2ESettings(BaseSettings):
     service_client_secret: str = Field(
         "svc-ds-e2e", validation_alias="SVC_DS_E2E_SECRET"
     )
+    # The publisher — the driver's identity for `POST /provider/sync`
+    # (`services/keycloak/clients.yaml`). The harness held
+    # `connector.provider.write` itself until 2026-09-18, which is what made "who
+    # may publish" untestable: a client holding every grant can never be refused,
+    # so the perimeter had nothing to prove itself against. This one holds
+    # exactly two grants and no `management-api:*`.
+    publisher_client_id: str = Field(
+        "svc-ds-publisher", validation_alias="SVC_DS_PUBLISHER_ID"
+    )
+    publisher_client_secret: str = Field(
+        "svc-ds-publisher", validation_alias="SVC_DS_PUBLISHER_SECRET"
+    )
+    #: A governance file declaring **no** dataset, mounted beside the REC
+    #: connector's own (`services/connector/e2e-governance-probe/`).
+    #: `provider-withdrawal` syncs against it to prove the sync removes what
+    #: governance no longer declares — the connector's real governance is
+    #: read-only, so this is how the flow changes what is declared without
+    #: restarting anything. The path is the connector's, not this harness's.
+    withdrawal_probe_path: str = Field(
+        "/governance-probe/governance.yaml",
+        validation_alias="E2E_WITHDRAWAL_PROBE_GOVERNANCE",
+    )
     # An identity-registry.admin-capable client, for the org-onboarding flow —
     # the portal client above only holds read/resolve scopes.
     ir_admin_client_id: str = Field(

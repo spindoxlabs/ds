@@ -311,6 +311,49 @@ clients:
     scopes_prefix: connector
     default_scopes: []
 
+  # **Who calls `POST /provider/sync`.** Publishing a participant's governance
+  # into its EDC is a *driver's* act — part of starting a stack, not of building
+  # one — and until now no production identity existed for it. `rec:start` and
+  # `grid-operator:start` borrowed the e2e harness, which is declared in
+  # `clients.dataspaces.yaml` and therefore exists in no host realm; a deployment
+  # that is a guest in someone else's realm had nothing at all, and its
+  # catalogues stayed empty for a fortnight with nothing reporting it.
+  #
+  # **There are two legitimate publishers and this is the second one.** A
+  # participant's own organisation client (`svc-ds-connector-<alias>`) publishes
+  # that participant's catalogue — self-service, and bound to its own connector by
+  # `_own_participant_only`. This client is for the *driver*: a bring-up script, a
+  # CI job, a cluster hook, an operator who is not publishing as any one
+  # organisation.
+  #
+  # **What it deliberately does not hold, and why each omission matters:**
+  #
+  # - **no `management-api:*`.** It talks to the connector, never to an EDC
+  #   (ADR-0014 decision 3). EDC's OAuth2 filter does not check `aud`, so a token
+  #   carrying those scopes administers that participant's contracts from
+  #   anywhere the management port is reachable. A bring-up script is exactly the
+  #   kind of place a credential ends up in a log; this one cannot be spent there.
+  # - **no `connector.admin`.** Admin crosses participants and satisfies every
+  #   `connector.*` permission, including ones this client has no business with.
+  #   Two grants is the whole of what publishing needs.
+  # - **not the portal's client.** A deployment granting its portal
+  #   `connector.admin` can publish, and one did. That is the borrowing
+  #   `svc-ds-e2e` was created to stop, arrived at from the other direction.
+  #
+  # `connector.provider.read` is here because a publisher that cannot read back
+  # what it published cannot tell whether it worked — which is how the defect
+  # this client exists for went unnoticed.
+  - client_id: svc-ds-publisher
+    name: Dataspace Publisher
+    secret: ${SVC_DS_PUBLISHER_SECRET:-svc-ds-publisher}
+    service_account_enabled: true
+    scopes_prefix: null
+    default_scopes:
+      - connector.provider.read
+      - connector.provider.write
+    extra_audiences:
+      - svc-ds-connector
+
   # Declared so the audience the provenance service verifies is a real identity.
   # It appears in four `extra_audiences` lists above and used to be defined as a
   # client in **neither** ds's file nor celine-policies': audience mappers emit a

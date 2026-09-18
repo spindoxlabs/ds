@@ -26,11 +26,12 @@ The EDC is the protocol engine; this is the thing with an opinion.
 
 ## What it does
 
-**Publishes governance into the EDC.** `POST /provider/sync` reads `governance.yaml`,
-compiles each exposed dataset into an EDC asset, an ODRL policy definition and a contract
-definition, and pushes all three. The compilation lives in [`libs/governance`](libs/governance.md);
-this service owns the sync, the ordering and the refusal to publish a dataset whose purposes
-cannot be resolved.
+**Publishes governance into the EDC, and withdraws what it no longer declares.**
+`POST /provider/sync` reads `governance.yaml`, compiles each exposed dataset into an EDC
+asset, an ODRL policy definition and a contract definition, and pushes all three. The
+compilation lives in [`libs/governance`](libs/governance.md); this service owns the sync,
+the ordering and the refusal to publish a dataset whose purposes cannot be resolved. It is
+a **reconcile**, not an append — see [What the sync removes](#what-the-sync-removes).
 
 **Holds the consent registry.** `/consent/*` is where a data subject grants, rejects or
 revokes sharing of their own rows. Subjects authenticate with a Verifiable Credential
@@ -276,6 +277,84 @@ asked for the EDR afterwards, so such a transfer would be useless. A consumer pr
 
 The callback carries no bearer token, because EDC's callback client sends only the
 configured header. That header is the route's whole authentication.
+
+### What the sync removes
+
+`POST /provider/sync` makes EDC match the governance it was given. Everything it publishes
+it also owns the withdrawal of: a dataset removed from `governance.yaml`, or one whose
+`dataspace.expose` is turned off, has its **contract definition, then its policies, then
+its asset** deleted — the only order EDC accepts, because a policy a definition still
+references cannot be deleted. The asset ids removed come back in `withdrawn`.
+
+Before this, the sync created and updated and never removed, so a withdrawn dataset kept
+its asset, both policies and its contract definition and went on being offered over DSP —
+while the run reported a *higher* published count than the one before it, because the count
+is of what published rather than of what is on offer.
+
+Three bounds:
+
+- **Only assets this platform published.** Each carries the governance key it came from
+  (`{profile-prefix}:datasetKey`); anything else in the runtime is left alone. An asset
+  published by a version of ds that predates that property is also left alone — one sync
+  under this version labels it, and only then can it be withdrawn.
+- **Only datasets governance no longer declares.** A declared dataset that was *refused*
+  (an unresolvable purpose, a dangling offer, an exposure conflict) keeps whatever it had:
+  the refusal deliberately leaves a previously published version standing rather than
+  tearing it down over a bad edit.
+- **Plus an asset a still-declared dataset has just moved away from**, when its
+  `dataspace.asset.id` changed in this run — otherwise renaming an id leaves the old asset
+  on offer for ever.
+
+An asset EDC refuses to delete because it has contract agreements (409) is reported in
+`errors`, never swallowed.
+
+**An asset under agreement is updated in place rather than replaced.** EDC refuses to delete
+an asset a counterparty has negotiated for, and the sync used to keep the old one and move
+on — so a governance edit to it published *nothing*, silently, for as long as the agreement
+stood. It is now written with `PUT …/assets`, which is the call EDC provides for exactly
+this. EDC's own documentation calls updating an asset a danger zone for offers already sent
+out; the alternative is publishing a change that does not apply.
+
+**`governance_yaml_path` in the request body reconciles too.** Pointing the sync at another
+governance file withdraws everything that file does not declare — it is one rule ("make EDC
+match this file"), not two. Do not use it as an ad-hoc publish.
+
+### What the sync answers
+
+The route's status code agrees with its body, and the body is the same `SyncResult` in
+every case:
+
+| Code | Meaning |
+|---|---|
+| `200` | nothing failed |
+| `207 Multi-Status` | some datasets published or were withdrawn, and some failed |
+| `502 Bad Gateway` | nothing published or was withdrawn, and something failed |
+
+It answered `200` unconditionally before. In a live deployment every dataset failed at
+`delete_asset` and the route still said `200`, so the deployment's publishing step — which
+checked the status code — reported success against two empty catalogues. **Check `errors`,
+not only the code**; the code is a summary of it.
+
+### Who may publish
+
+`POST /provider/sync` acts on the participant as a whole, so it is bounded by
+**participant**, not by owner:
+
+| Caller | Bound by |
+|---|---|
+| an organisation client (`svc-ds-connector-<alias>`) | its `sub` must name this connector's participant context |
+| a person | an organisation claim resolving, in the owners registry, to this connector's participant DID — unless the deployment models no organisations and `CONNECTOR_OWNER_SCOPING_STRICT` is off |
+| `connector.admin` | nothing — the deployment operator's grant crosses participants by design |
+| any other service token | nothing — it names no participant; see below |
+
+A participant's own organisation client may publish its own catalogue. `ds-participant-admin`
+is a realm group and a realm group is bound to no connector, which is why the person case is
+checked against the owners registry rather than taken on trust.
+
+A plain service token names no participant, so there is nothing to bind it to. The control
+is that the identity which publishes holds nothing else: `svc-ds-publisher` carries
+`connector.provider.read` and `connector.provider.write`, and no `management-api:*` and no
+`connector.admin`. See [operations](../deployment/operations.md#who-publishes).
 
 ### The owner perimeter
 

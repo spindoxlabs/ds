@@ -117,9 +117,9 @@ pre-conditions, success paths and denial paths for each.
 
 | Operation | How | Denial path |
 |---|---|---|
-| Publish | `POST /provider/sync` pushes `governance.yaml` into EDC as assets, policy definitions and contract definitions | Caller must hold `connector.provider.write`; a dataset failing validation is not published |
+| Publish | `POST /provider/sync` pushes `governance.yaml` into EDC as assets, policy definitions and contract definitions | Caller must hold `connector.provider.write` **and act for this connector's participant**; a dataset failing validation is not published |
 | Update | The same call. The sync recomputes from the file — it is declarative, not incremental | Same |
-| Remove | `dataspace.expose: false`, then sync | Same |
+| Remove | `dataspace.expose: false`, or delete the dataset, then sync. The sync **reconciles**: contract definition, policies and asset are deleted, in that order, and the removed asset ids come back in `withdrawn` | Same. An asset EDC refuses to delete because it has agreements is reported, not swallowed |
 | Discover | DSP catalogue request against the provider, or `GET /catalog` against the index | Provider-side: DSP requires a DCP-verified counterparty |
 
 | # | Rule | Status |

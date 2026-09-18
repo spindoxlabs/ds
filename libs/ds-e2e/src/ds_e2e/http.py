@@ -189,6 +189,23 @@ class HttpClient:
     def bearer_headers_for(self, client_id: str, client_secret: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token_for(client_id, client_secret)}"}
 
+    def publisher_headers(self) -> dict[str, str]:
+        """The driver's identity for `POST /provider/sync`.
+
+        The harness client does **not** hold `connector.provider.write` any more
+        (plan `a-participant-publishes-and-the-sync-reconciles`, item 7). That is
+        not bookkeeping: while one client held every grant, no flow could be
+        refused, so the publishing perimeter had nothing to prove itself against
+        and "who may publish" was a question this suite could not ask.
+
+        `svc-ds-publisher` holds two grants and no `management-api:*`, so a flow
+        that publishes exercises the same identity a cluster's sync job uses.
+        """
+        return self.bearer_headers_for(
+            self._settings.publisher_client_id,
+            self._settings.publisher_client_secret,
+        )
+
     def user_token(self, username: str, password: str) -> str:
         """A real **user** access token, via the password grant.
 

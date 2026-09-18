@@ -211,7 +211,11 @@ class ConsentWithdrawalFlow(BaseFlow):
         svc = self.http.bearer_headers()
 
         try:
-            self.http.post(f"{s.connector_url}/provider/sync", {}, headers=svc)
+            self.http.post(
+                f"{s.connector_url}/provider/sync",
+                {},
+                headers=self.http.publisher_headers(),
+            )
         except Exception as exc:
             result.fail_step("provider sync", str(exc))
             return result

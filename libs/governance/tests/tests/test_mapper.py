@@ -1,8 +1,10 @@
 """Tests for GovernanceMapper — ODRL offer and EDC payload generation."""
 
+from urllib.parse import quote, unquote
+
 import pytest
 
-from ds.governance.mapper import GovernanceMapper
+from ds.governance.mapper import GovernanceMapper, UnaddressableAssetId
 from ds.governance.models import (
     DataspaceAsset,
     DataspaceSpec,
@@ -696,11 +698,85 @@ def test_asset_create_basic():
     assert "meters" in asset["properties"][f"{_P.prefix}:tags"]
 
 
-def test_asset_id_inferred_from_base_url():
+def test_asset_id_defaults_to_the_dataset_key():
+    """An unset `asset.id` yields the dataset key, not a URL built from `base_url`.
+
+    This replaces `test_asset_id_inferred_from_base_url`, which asserted
+    `asset["@id"].startswith(BASE_URL)` — the behaviour measured to be
+    unpublishable: the derived id contains slashes, the sync addresses an asset
+    **by path**, and the servlet container answers 400 with an empty body before
+    EDC routes the request. That old assertion is part of why the defect
+    survived: it pinned the broken default *as the specification*.
+    """
     mapper = _mapper()
     rule = _rule(access_level="internal", classification="green")
     asset = mapper.to_asset_create("datasets.gold.meters", rule)
-    assert asset["@id"].startswith(BASE_URL)
+    assert asset["@id"] == "datasets.gold.meters"
+    assert BASE_URL not in asset["@id"]
+
+
+def test_the_default_asset_id_is_addressable_as_one_path_segment():
+    """The property that matters, asserted as itself rather than as a spelling.
+
+    `ds_edc.client._path_id` is `quote(value, safe="")`, so the id has to survive
+    being one path segment. An id containing a slash becomes `%2F`, which Jetty
+    refuses with an empty-bodied 400.
+    """
+    mapper = _mapper()
+    asset = mapper.to_asset_create(
+        "datasets.gold.meters", _rule(access_level="internal", classification="green")
+    )
+    assert "/" not in asset["@id"]
+    assert unquote(quote(asset["@id"], safe="")) == asset["@id"]
+
+
+def test_an_asset_id_with_a_slash_is_refused_rather_than_published():
+    """A *pinned* id can be unaddressable too, and the guard covers that case.
+
+    A safe default is not enough on its own — a producer may declare anything.
+    The failure moves from an unattributable empty-bodied 400 at publish time to
+    a named error against the dataset that declared it.
+    """
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        dataspace=DataspaceSpec(
+            asset=DataspaceAsset(id="http://host:8001/query/datasets/a/b")
+        ),
+    )
+    with pytest.raises(UnaddressableAssetId) as exc:
+        mapper.to_asset_create("datasets.gold.meters", rule)
+    assert "datasets.gold.meters" in str(exc.value)
+    assert "path segment" in str(exc.value)
+
+
+def test_a_dataset_key_with_a_slash_is_refused_too():
+    """The derived id inherits the key, so the key has to be addressable as well."""
+    mapper = _mapper()
+    with pytest.raises(UnaddressableAssetId):
+        mapper.to_asset_create(
+            "datasets/gold/meters",
+            _rule(access_level="internal", classification="green"),
+        )
+
+
+def test_the_asset_names_the_governance_key_it_was_published_from():
+    """The one property that says *ds published this*, and from which key.
+
+    The sync's reconcile may withdraw only its own work, and an asset's `@id`
+    cannot answer that — a deployment may pin any id it likes. Without this
+    property the reconcile finds nothing to withdraw and the stale-asset defect
+    is silently unfixed.
+    """
+    mapper = _mapper()
+    rule = _rule(
+        access_level="internal",
+        classification="green",
+        dataspace=DataspaceSpec(asset=DataspaceAsset(id="pinned-id")),
+    )
+    asset = mapper.to_asset_create("datasets.gold.meters", rule)
+    assert asset["properties"][f"{_P.prefix}:datasetKey"] == "datasets.gold.meters"
 
 
 def test_asset_id_overridden_by_spec():

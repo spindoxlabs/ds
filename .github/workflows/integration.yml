@@ -198,6 +198,7 @@ jobs:
             -e SVC_DS_ONBOARDING_SECRET=svc-ds-onboarding \
             -e SVC_DS_PORTAL_SECRET=svc-ds-portal \
             -e SVC_DS_E2E_SECRET=svc-ds-e2e \
+            -e SVC_DS_PUBLISHER_SECRET=svc-ds-publisher \
             -e SVC_DS_CONNECTOR_SECRET=svc-ds-connector \
             -e SVC_DS_PROVENANCE_SECRET=svc-ds-provenance \
             -e SVC_DS_FEDERATED_CATALOG_SECRET=svc-ds-federated-catalog \

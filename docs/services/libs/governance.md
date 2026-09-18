@@ -94,6 +94,30 @@ inherited licence rather than inheriting it. This page said the opposite until 2
 when the top-level merge moved off a `None`-means-unstated rule onto the same
 `exclude_unset` the nested blocks already used.
 
+## The asset id a dataset is published under
+
+`dataspace.asset.id`, when the file states one. **When it does not, the id is the dataset
+key** — `datasets.gold.meters`, not a URL.
+
+It used to be derived from the data plane's address
+(`{base_url}/datasets/{key-with-slashes}`), and that was wrong twice over:
+
+- **Unpublishable.** The Management API addresses an asset as one path segment, so a slash
+  becomes `%2F`, which the servlet container refuses with an empty-bodied `400` before EDC
+  routes the request. The sync deletes before it creates, so the *delete* failed and nothing
+  was ever published. There is no body-addressed form to fall back on: EDC has no query
+  variant of `GET`/`DELETE` for a single asset, policy definition or contract definition.
+- **The wrong thing to name a dataset by.** The asset id is the dataspace-wide identifier a
+  counterparty negotiates against; deriving it from the data plane's address changes it
+  whenever the plane moves.
+
+An id containing a slash — declared or derived — is now refused at mapping time with a
+message naming the dataset, rather than at publish time with an empty 400.
+
+**Migration.** A deployment that published under the derived form and does not pin
+`asset.id` republishes under the key on its next sync, and the sync removes the old asset in
+the same run. A deployment that pins its ids is unaffected.
+
 ## The ODRL a rule becomes
 
 One permission per permitted action, all carrying the same constraint list (constraints inside

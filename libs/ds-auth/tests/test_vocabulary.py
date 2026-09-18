@@ -342,3 +342,69 @@ def test_every_other_client_does_cross():
     } - {"svc-ds-e2e"}
     crossed = {c["client_id"] for c in _crossing()["clients"]}
     assert declared == crossed
+
+
+# ── Who publishes a participant's catalogue ──────────────────────────────────
+#
+# Plan `a-participant-publishes-and-the-sync-reconciles`, item 7. A live
+# deployment had **no** identity that could call `POST /provider/sync`: the
+# Taskfile used `svc-ds-e2e`, which is declared in the file that does not cross,
+# so in a host realm it does not exist. Its catalogues stayed empty for a
+# fortnight and nothing said so.
+
+
+def _client(client_id: str) -> dict:
+    for doc in (_crossing(), _owned_realm_only()):
+        for client in doc["clients"]:
+            if client["client_id"] == client_id:
+                return client
+    raise AssertionError(f"{client_id} is declared in neither file")
+
+
+def test_the_publisher_crosses_into_a_host_realm():
+    """The whole reason it exists rather than the harness being reused."""
+    assert "svc-ds-publisher" in {c["client_id"] for c in _crossing()["clients"]}
+
+
+def test_the_publisher_holds_exactly_what_publishing_needs():
+    """Two grants, and the omissions are the security argument.
+
+    No `management-api:*`: EDC's OAuth2 filter never checks `aud`, so a token
+    carrying those scopes administers that participant's contracts from anywhere
+    the management port is reachable (ADR-0014 decision 3). No `connector.admin`:
+    admin satisfies every `connector.*` permission, and a bring-up credential
+    should not. Both omissions are invisible in the YAML, which is why they are
+    asserted here.
+    """
+    publisher = _client("svc-ds-publisher")
+    assert set(publisher["default_scopes"]) == {
+        "connector.provider.read",
+        "connector.provider.write",
+    }
+    assert publisher["extra_audiences"] == ["svc-ds-connector"]
+
+
+def test_the_test_identity_no_longer_publishes():
+    """`svc-ds-e2e` reads assets back; it does not publish them.
+
+    While one client held every grant, no e2e flow could be *refused* — so the
+    publishing perimeter had nothing to prove itself against and "who may
+    publish" was a question the suite could not ask.
+    """
+    harness = _client("svc-ds-e2e")
+    assert "connector.provider.write" not in harness["default_scopes"]
+    assert "connector.provider.read" in harness["default_scopes"]
+
+
+def test_an_organisation_client_may_publish_its_own_catalogue():
+    """Item 5, in the one list that decides what an organisation client holds.
+
+    Bounded by the connector's `_own_participant_only` perimeter, not by this
+    list — see that function. Asserted here so removing the grant is a visible
+    decision rather than a quiet regression of the approved behaviour.
+    """
+    from ds_auth import ORGANISATION_CLIENT_SCOPES
+
+    assert "connector.provider.write" in ORGANISATION_CLIENT_SCOPES
+    assert "connector.provider.read" in ORGANISATION_CLIENT_SCOPES
+    assert "connector.admin" not in ORGANISATION_CLIENT_SCOPES

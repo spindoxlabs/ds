@@ -71,6 +71,7 @@ keypair. It is idempotent — existing key files are preserved, never overwritte
 | `participants.<name>.connectorClientSecret` | ds-edc | this EDC's own Keycloak client for the connector's internal API and webhooks. **The extension refuses to start without it** |
 | `participants.<name>.edcVault.edrSigningPrivateJwk` | ds-edc | signs Endpoint Data References. Distinct from any DID key |
 | `participants.<name>.stsSecret` | ds-edc | the participant's STS client secret, as registered in the identity registry |
+| `participants.<name>.publisherSecret` *(optional)* | ds-connector's sync hook Job | `svc-ds-publisher`'s Keycloak secret, and only where `sync.clientId` names it. Blast radius **deliberately small**: that client holds `connector.provider.read` + `.write` and no `management-api:*`, so a leak publishes and unpublishes this participant's catalogue and reaches no EDC. That is the whole reason to prefer it over the organisation client for a credential that drives a deployment |
 
 !!! danger "`identityRegistryEncryptionKey` must be backed up outside the cluster"
     **Losing it makes every stored private key unrecoverable.** A cluster Secret is not a

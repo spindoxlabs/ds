@@ -256,6 +256,14 @@ services:
       # this file.
       - ./services/connector/config/rec-vault.properties:/edc-config/rec-vault.properties:ro
       - ./services/connector/governance-rec:/governance:ro
+      # A governance file declaring no dataset, for `ds-e2e --flow
+      # provider-withdrawal`. The sync removes what the governance it was handed
+      # does not declare, and proving that end to end needs a file with datasets
+      # missing from it — the real one is mounted read-only, which is the point
+      # of it. The flow syncs against this, asserts the catalogue is empty, and
+      # restores the real one in its `cleanup()`. Never a deployment's
+      # governance path.
+      - ./services/connector/e2e-governance-probe:/governance-probe:ro
       # Shared with the host on purpose: `task vocab:fetch` fills it from
       # outside, and anything the container fetches lands there too — so a
       # restart is never the thing that repairs a cache. Narrow by design: `./data`

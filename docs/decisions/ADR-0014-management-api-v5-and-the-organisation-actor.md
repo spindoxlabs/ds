@@ -41,7 +41,9 @@ Measured against the v0.18.0 tag and a running runtime:
    per-resource scopes and never `admin`. The classic runtime keeps its single participant
    context, `edc.participant.context.id`, which is set to the participant DID.
 2. **One client per organisation**, `svc-ds-connector-<alias>`, shared by its connector and
-   its batch jobs:
+   its batch jobs — and, since **ADR-0017 decision 5**, the identity with which a
+   participant **publishes its own catalogue** (`connector.provider.write` +
+   `.read`, bounded to its own participant by the connector's perimeter):
    - `ir-cli keycloak org-sync` and the provisioning bundle create it, because the realm sync
      cannot add the mapper;
    - a hardcoded-claim mapper sets `sub` to the organisation's participant context;
@@ -107,6 +109,11 @@ Measured against the v0.18.0 tag and a running runtime:
 - EDC 0.19 changes one setting (`v5beta` → `v5`), and nothing else ds calls.
 - A data plane under the Data Plane Signaling protocol is a follow-on. It starts in
   `services/dataset-api-mock`.
+
+**Amended 2026-09-18 by ADR-0017**, decision 5: an organisation actor may also *publish*,
+not only discover and negotiate — bounded to its own participant, which is what decision 4's
+first bullet already required of it on `/consumer/*` and what the provider side had no
+equivalent of at all.
 
 An ADR is not a rule (ADR-0004). What an organisation token may and may not reach is rulebook
 material, and lives in `D-20`. How the platform gets there is recorded here.

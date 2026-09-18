@@ -21,6 +21,8 @@ from ds.governance.models import (
 from connector.services.governance import ConnectorGovernanceMapper
 from connector.services.provider_service import sync_governance
 
+from .fake_edc import FakeEdc, NullProv
+
 
 def _mapper() -> ConnectorGovernanceMapper:
     # The bundled energy profile, matching what `POST /provider/sync` builds.
@@ -51,24 +53,11 @@ def _rule(
     )
 
 
-class _RecordingEdc:
-    """Records what reached EDC. Anything published is a real publication."""
-
-    def __init__(self) -> None:
-        self.created_assets: list[str] = []
-
-    async def delete_contract_definition(self, _id): ...
-    async def delete_policy(self, _id): ...
-    async def delete_asset(self, _id): ...
-    async def create_policy(self, _payload): ...
-    async def create_contract_definition(self, _payload): ...
-
-    async def create_asset(self, payload):
-        self.created_assets.append(payload.id)
-
-
-class _NullProv:
-    async def catalogue_published(self, **_kwargs): ...
+# The stand-in holds state (`tests/fake_edc.py`). It used to record only the
+# assets it was asked to create, which is why nothing here could see that the
+# sync never withdrew anything: there was no "what EDC holds" to compare against.
+_RecordingEdc = FakeEdc
+_NullProv = NullProv
 
 
 @pytest.fixture

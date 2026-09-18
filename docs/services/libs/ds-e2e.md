@@ -51,6 +51,7 @@ pair, the dataset API, both provenance instances and the identity registry.
 | `catalog-discovery` | catalogue freshness, shape, resolution, search and paging |
 | `lineage` | ingestion → provenance events → lineage traversal → audit log |
 | `two-providers` | that a second provider with no members keeps its own catalogue, governance and counterparty |
+| `provider-withdrawal` | that a dataset removed from governance is removed from EDC — asset, policies and contract definition — and comes back on the next sync. It syncs against a governance file that declares nothing (`services/connector/e2e-governance-probe/`, mounted at `/governance-probe`), because the connector's own governance is read-only; it restores in `execute` and again in `cleanup` |
 | `organisation-token` | an organisation's own client token drives catalogue → negotiation → transfer → data, and is refused where it is not its own |
 | `collector-holder` | a community (an accepted collector) registers its members' consent at the grid operator with their supply points, the consumer organisation pulls exactly those rows by key, a relayed withdrawal narrows them; refuses an unlisted organisation, another organisation's member and both participant operator seats; a use offer without its required offer is recorded and not admitted. Needs `ds-e2e scenario apply` and the grid operator's own mock plane (`:32022`) |
 | `fail-closed` | **stops `ds-connector` and proves the negotiation gate denies**, then that service resumes. Runs last, takes ~3 minutes — it must outlast the EDC's decision cache in both directions — and needs the Docker topology |
@@ -94,6 +95,7 @@ That is the pattern: assert the positive, then assert the negative, then assert 
 | Path | Grant | As |
 |---|---|---|
 | service token | `client_credentials`, cached | `svc-ds-e2e` |
+| the publisher | `client_credentials`, uncached | `svc-ds-publisher` — every `POST /provider/sync` the harness makes. The harness client no longer holds `connector.provider.write`, which is what makes *who may publish* a question these flows can ask |
 | a second service token | `client_credentials`, uncached | any client — used for an admin client and a low-privilege one, to probe the boundary |
 | user token | `password` grant | a dev-realm user, through the browser login client |
 | subject credential | `X-Subject-Id` + `X-User-VC`, fetched from the identity registry | the dev subject and consumer users |
@@ -116,9 +118,15 @@ organisations the three chain flows need.
 
 ## `clean` is destructive
 
-`ds-e2e clean` truncates the connector and provenance application tables in both participants'
-databases, **drops and recreates** both EDC databases, clears the EDC management stores, and
-then re-syncs the provider's governance.
+`ds-e2e clean` truncates the connector and provenance application tables in every
+participant's database and **drops and recreates** every EDC database.
+
+**It does not re-sync, and it cannot.** An EDC runs its schema migration at boot, so
+immediately after the drop every control plane is talking to a database with no tables. The
+EDCs have to be restarted first, and then the providers re-synced: `task e2e:prepare` does
+exactly that, in that order, and `task e2e:sync-providers` is the publish. Until 2026-09-18
+`clean` did try to sync here, and it looked like it worked only because
+`POST /provider/sync` answered `200` with every dataset in `errors`.
 
 It is the reset used before a full run. It is not a thing to point at anything you care about.
 
@@ -131,7 +139,7 @@ deliberately reuses another unit's variable name, so one `.env.local` configures
 |---|---|
 | Service URLs | `CONNECTOR_URL`, `CATALOG_CONNECTOR_URL`, `CONNECTOR_DATASET_API_URL`, `CONNECTOR_PROVENANCE_URL_PROVIDER` / `_CONSUMER`, `CONNECTOR_IDENTITY_REGISTRY_URL`, `FEDERATED_CATALOG_URL` |
 | DSP | `E2E_COUNTER_PARTY_ADDRESS`, `CONNECTOR_PARTICIPANT_DID`, `CONNECTOR_CONSUMER_PARTICIPANT_DID` |
-| Clients | `KEYCLOAK_TOKEN_URL`, `SVC_DS_E2E_ID` / `_SECRET`, `SVC_DS_IDENTITY_REGISTRY_*`, `SVC_DS_FEDERATED_CATALOG_*`, `OAUTH2_PROXY_CLIENT_ID` / `_SECRET` |
+| Clients | `KEYCLOAK_TOKEN_URL`, `SVC_DS_E2E_ID` / `_SECRET`, `SVC_DS_PUBLISHER_ID` / `_SECRET`, `SVC_DS_IDENTITY_REGISTRY_*`, `SVC_DS_FEDERATED_CATALOG_*`, `OAUTH2_PROXY_CLIENT_ID` / `_SECRET` |
 | Dev users | `ADMIN_*`, `PROVIDER_*`, `GRID_OPERATOR_*`, `CONSUMER_*`, `DATA_SUBJECT_*`, `OWNING_ORG`, `OTHER_ORG` |
 | Fixtures | `ASSET_ID`, `SHARING_OFFER_ID`, `CONSENTED_PURPOSE`, `UNCONSENTED_PURPOSE`, `ORG_*` |
 | Timing | `POLL_TIMEOUT` (120), `POLL_INTERVAL` (2.0), `REQUEST_TIMEOUT` (30) |

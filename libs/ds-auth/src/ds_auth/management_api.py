@@ -67,6 +67,22 @@ CONNECTOR_SERVICE_SCOPES: tuple[str, ...] = (
     # plan `a-collector-registers-consent-at-the-holder`). The holder's
     # connector decides *where* it may; the scope only says it may ask.
     "connector.consent.provision",
+    # The organisation publishes **its own** catalogue: `POST /provider/sync`
+    # turns its governance into EDC assets, policies and contract definitions
+    # (plan `a-participant-publishes-and-the-sync-reconciles` item 5; ADR-0014
+    # decision 2, amended). A registered participant that may negotiate for
+    # another's datasets may offer its own.
+    #
+    # **It is bounded, and the bound is not here.** The token names a participant
+    # context in `sub`, and the connector's `_own_participant_only` perimeter
+    # refuses one that is not this connector's. Without that perimeter this line
+    # would let every organisation in a shared realm sync every connector it can
+    # reach; the two are one change.
+    "connector.provider.write",
+    # Read-back. A publisher that cannot list what it published cannot tell
+    # whether it worked — which is how a live deployment's publishing path stayed
+    # broken, and green, for a fortnight.
+    "connector.provider.read",
 )
 
 #: The services a connector's token must be accepted by — every ds service

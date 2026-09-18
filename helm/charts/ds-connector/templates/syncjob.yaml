@@ -1,0 +1,82 @@
+{{- /*
+Publish this participant's governance into its EDC, after the connector rolls.
+
+**The gap this closes.** `POST /provider/sync` is what turns an assembled
+`governance.yaml` into EDC assets, policies and contract definitions. ds has
+always treated it as part of *starting* a stack — the Taskfile posts it right
+after the connector's health check — and the charts had no equivalent. Nothing in
+`docs/deployment/operations.md` said who calls it in a cluster either, so a
+provider could be installed, healthy, registered and reachable with an **empty
+catalogue**, and no probe would report anything wrong. A deployment ran that way
+for a fortnight.
+
+**Only where it means something.** A consumer-role participant publishes nothing,
+and a provider with no governance mounted has nothing to publish
+(`governance.configMap` empty means no governance at all — see values.yaml), so
+the job is rendered only for a provider that has one.
+
+**Who it authenticates as.** By default this participant's own organisation
+client — the same credential the connector itself uses, already in the release's
+Secret, and bounded by the connector's `_own_participant_only` perimeter to this
+participant. Set `sync.clientId` and `secrets.publisherSecret` to use a separate
+publisher identity (`svc-ds-publisher`) instead, which holds
+`connector.provider.read` + `.write` and no `management-api:*` — prefer it where
+the credential that drives a deployment should not also open an EDC management
+API.
+
+**It asserts on the body, not on the status code.** The route's code and its body
+agree since the sync learnt to fail, but this is the one thing a caller must not
+get wrong: a run where every dataset failed used to answer `200`, and a job that
+checked only the code reported success over an empty catalogue.
+*/}}
+{{- $isProvider := has .Values.participant.role (list "provider" "both") -}}
+{{- if and .Values.sync.enabled $isProvider .Values.governance.configMap }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "ds.fullname" . }}-sync
+  labels:
+    {{- include "ds.labels" . | nindent 4 }}
+  annotations:
+    # After the connector is rolled out and ready, and on every upgrade —
+    # governance changes are what an upgrade usually *is*.
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: {{ .Values.sync.backoffLimit }}
+  ttlSecondsAfterFinished: {{ .Values.sync.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "ds.labels" . | nindent 8 }}
+    spec:
+      restartPolicy: Never
+      {{- include "ds.imagePullSecrets" . | nindent 6 }}
+      serviceAccountName: {{ include "ds.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "ds.podSecurityContext" . | nindent 8 }}
+      containers:
+        - name: sync
+          image: {{ include "ds.image" . }}
+          imagePullPolicy: {{ include "ds.imagePullPolicy" . }}
+          command: ["python", "-c", {{ include "conn.syncScript" . | quote }}]
+          env:
+            - name: SYNC_TOKEN_URL
+              value: {{ ((.Values.global).keycloak).tokenUrl | quote }}
+            - name: SYNC_CLIENT_ID
+              value: {{ .Values.sync.clientId | default (.Values.clientId | default (printf "svc-ds-connector-%s" .Values.participant.name)) | quote }}
+            - name: SYNC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "ds.secretName" . }}
+                  key: {{ if .Values.sync.clientId }}PUBLISHER_CLIENT_SECRET{{ else }}CONNECTOR_CLIENT_SECRET{{ end }}
+            - name: SYNC_CONNECTOR_URL
+              value: "http://{{ include "ds.fullname" . }}:{{ .Values.service.port }}"
+            - name: SYNC_TIMEOUT
+              value: {{ .Values.sync.timeoutSeconds | quote }}
+          securityContext:
+            {{- include "ds.containerSecurityContext" . | nindent 12 }}
+          {{- include "ds.resources" . | nindent 10 }}
+{{- end }}

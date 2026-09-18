@@ -47,7 +47,9 @@ class UC2Flow(BaseFlow):
         try:
             sync = (
                 self.http.post(
-                    f"{s.connector_url}/provider/sync", {}, headers=svc_headers
+                    f"{s.connector_url}/provider/sync",
+                    {},
+                    headers=self.http.publisher_headers(),
                 )
                 or {}
             )

@@ -135,18 +135,29 @@ def run_cleanup(settings: E2ESettings, http: HttpClient) -> None:
             log.warning("Could not reset %s: %s", edc_db, exc)
             failures.append(f"reset {edc_db}: {exc}")
 
-    # **Both providers re-sync.** Dropping an EDC's database empties its
-    # catalogue, so a provider that is not re-synced afterwards is a provider
-    # with nothing to negotiate for — and the failure surfaces as "asset not
-    # found" in whichever flow happens to reach it first (`DID-15`).
-    token_headers = http.bearer_headers()
-    for url, label in provider_sync_targets(settings):
-        try:
-            http.post(f"{url}/provider/sync", {}, headers=token_headers)
-            log.info("Provider sync completed (%s)", label)
-        except Exception as exc:
-            log.warning("Provider sync after cleanup failed (%s): %s", label, exc)
-            failures.append(f"provider sync {label}: {exc}")
+    # **No provider sync here, and its removal is a finding rather than a tidy-up.**
+    #
+    # This used to re-sync both providers at this point, "because dropping an
+    # EDC's database empties its catalogue". It could never have worked: the
+    # comment fifteen lines above says the EDCs must be restarted immediately
+    # afterwards, because an EDC only runs its schema migration at boot — so at
+    # *this* line every control plane is talking to a database with no tables,
+    # and every write answers 500.
+    #
+    # It looked like it worked because `POST /provider/sync` answered **200**
+    # with every dataset in `errors`, which is the defect
+    # `a-participant-publishes-and-the-sync-reconciles` item 3 fixed. The moment
+    # the route started answering 502, this step failed the whole of
+    # `task e2e:all` — on the first run, which is how it was found.
+    #
+    # The publish that does work is `task e2e:sync-providers`, which
+    # `e2e:prepare` runs **after** the restart and the readiness gate. Callers of
+    # this function must do the same; `ds-e2e clean` now says so on the way out.
+    log.info(
+        "Cleanup done. The EDCs are running against a database with no schema — "
+        "restart them and re-sync the providers before running a flow "
+        "(`task e2e:prepare` does both, in that order)."
+    )
 
     if failures:
         raise CleanupIncomplete(

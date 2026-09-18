@@ -61,6 +61,36 @@ A participant's connector will not start before its EDC and the authority regist
 and the portal will not start before its oauth2-proxy — **an Ingress whose `auth-url` backend
 does not resolve fails closed**, so every request would 500.
 
+### Who publishes
+
+`POST /provider/sync` is what turns a participant's assembled `governance.yaml`
+into EDC assets, policies and contract definitions. Nothing else does: a provider
+can be installed, healthy, registered and reachable with an **empty catalogue**,
+and no probe reports it. A deployment ran that way for a fortnight because this
+page did not say who makes the call and the charts had no job that made it.
+
+The `ds-connector` chart carries one now — a `post-install`/`post-upgrade` hook
+Job, rendered only for a **provider-role** participant that has
+`governance.configMap` set. It fails the release when the sync reports errors or
+publishes nothing, and it reads the body rather than the status code.
+
+Two identities may make the call, and the choice is a real one:
+
+| | When |
+|---|---|
+| the participant's **organisation client** (`svc-ds-connector-<alias>`) | the default. It already exists, it is already in the release's Secret, and the connector binds it to its own participant. Self-service publishing |
+| **`svc-ds-publisher`** | set `sync.clientId` and `secrets.publisherSecret`. It holds `connector.provider.read` + `.write` and **no** `management-api:*`, so a credential that drives a deployment cannot also administer that participant's contracts through the EDC management API (ADR-0014 decision 3 makes port reachability the only control there) |
+
+Prefer the publisher wherever the credential is handled outside the cluster — a
+CI job, a bootstrap script, an operator's terminal. Prefer the organisation
+client where the publish is the participant's own act.
+
+The hook runs on every `helmfile apply`, which is how a governance change reaches
+the catalogue: update the ConfigMap and apply. A sync is idempotent, and because
+it **reconciles**, applying also removes what governance no longer declares — see
+[the connector's page](../services/connector.md#what-the-sync-removes). The Job's
+log names what was published and what was withdrawn.
+
 ## Validate before you apply
 
 ```bash

@@ -71,9 +71,8 @@ def get_prov(request: Request):
 # forbids `*.admin` on one; the guard existed, was declared by no route, and its
 # presence invited exactly that.
 require_provider_read = require_permission("connector.provider.read", "connector.admin")
-require_provider_write = require_permission(
-    "connector.provider.write", "connector.admin"
-)
+# `require_provider_write` is defined further down, beside the perimeter it now
+# carries (`_own_participant_only`). It was here, with no perimeter at all.
 
 
 def _asset_owner(properties: dict) -> str:
@@ -409,9 +408,96 @@ async def _organisation_owns_target(principal: Principal, request: Request) -> b
     return entry is not None and entry.did == context
 
 
-# Owner-scoped variant. Used where the target carries an owner; the unscoped
-# `require_provider_write` remains for endpoints that act on the participant as a
-# whole (e.g. the governance sync, which publishes every owner's datasets at once).
+async def _own_participant_only(principal: Principal, request: Request) -> bool:
+    """Confine a provider write to callers acting for **this connector's participant**.
+
+    `connector.provider.write` said *what* a caller may do and never *whose
+    connector*, and the governance sync is the route that acts on the participant
+    as a whole, so it had no owner to scope against and therefore no perimeter at
+    all. Two callers walked through it:
+
+    * **a participant operator.** `ds-participant-admin` is a *realm group*; a
+      group is not bound to a connector. In a realm serving several participants
+      — which is the deployment shape ds ships — one participant's operator could
+      publish, and republish, at every other participant's connector.
+    * **an organisation client**, from the moment it is granted the permission
+      (plan `a-participant-publishes-and-the-sync-reconciles`, item 5). That grant
+      is *why* this function exists now: self-service publishing without it would
+      let any organisation in the realm sync any connector it can reach. The two
+      items land together or not at all.
+
+    One question — *does this caller act for this participant?* — answered per
+    caller class:
+
+    * **an organisation token** carries the participant context in `sub` (the
+      hardcoded-claim mapper; `Principal.organisation_context`). It must equal
+      this connector's. Same rule as `_bind_organisation` applies on
+      `/consumer/*`, stated once per plane because the two planes authenticate
+      differently.
+    * **`connector.admin`** crosses participants by design — it is the
+      *deployment* operator's grant, and that is exactly what distinguishes it
+      from `ds-participant-admin`. Unbound, as it is in `_own_owner_only`.
+    * **a person** must hold an organisation claim that resolves, through the
+      owners registry, to this connector's participant DID. Exempt where the
+      deployment models no organisations and `owner_scoping_strict` is off — the
+      same exemption `_own_owner_only` makes, for the same reason: refusing there
+      pushes operators towards `connector.admin`, which is strictly worse than
+      what it prevents.
+    * **a plain service token** names no participant, so there is nothing here to
+      bind it to. It is a deployment-level actor in the same class as
+      `connector.admin`, and the control is that the publisher client
+      (`svc-ds-publisher`) holds `connector.provider.read` + `.write` and nothing
+      else — no `management-api:*`, no `connector.admin`. Stated rather than left
+      implicit, because it is the one class this perimeter does not narrow.
+    """
+    settings = get_settings()
+    if principal.is_organisation:
+        if principal.organisation_context == settings.participant_context_id:
+            return True
+        raise PermissionDenied(
+            "an organisation token may publish only at its own participant's "
+            f"connector — this connector is {settings.participant_context_id!r}"
+        )
+    if principal.grants("connector.admin"):
+        return True
+    if principal.is_service:
+        return True
+    if _models_no_organisations(principal):
+        return True
+    if not principal.organizations:
+        return False
+
+    registry = getattr(request.app.state, "owners_registry", None)
+    if registry is None:
+        # No registry means no way to tell one participant's operator from
+        # another's. `ENV-09`: the absence of an answer is not a yes.
+        raise PermissionDenied(
+            "the owners registry is not configured, so this connector cannot "
+            "tell which participant you act for — refusing rather than allowing "
+            "a publish that may cross a participant boundary"
+        )
+    aliases = _owner_aliases(settings.owner_aliases)
+    for alias in principal.organization_aliases:
+        if not principal.grants_in(alias, "connector.provider.write"):
+            continue
+        try:
+            entry = await registry.by_id(aliases.get(alias, alias))
+        except Exception:  # noqa: BLE001 — a registry blip is not a yes
+            continue
+        if entry is not None and entry.did == settings.participant_did:
+            return True
+    raise PermissionDenied(
+        "you hold connector.provider.write, but for no organisation that is this "
+        f"connector's participant ({settings.participant_did})"
+    )
+
+
+# The governance sync acts on the participant as a whole — it publishes every
+# owner's datasets at once — so it is scoped by *participant*, not by owner.
+require_provider_write = require_permission(
+    "connector.provider.write", "connector.admin", perimeter=_own_participant_only
+)
+# Owner-scoped variant. Used where the target carries an owner.
 require_provider_write_own = require_permission(
     "connector.provider.write", "connector.admin", perimeter=_own_owner_only
 )

@@ -55,11 +55,13 @@ def test_cleanup_truncates_databases():
     assert mock_cursor.execute.call_count == len(DATABASES) + 3 * len(EDC_DATABASES)
     executed = [c.args[0] for c in mock_cursor.execute.call_args_list]
     assert sum("pg_terminate_backend" in sql for sql in executed) == len(EDC_DATABASES)
-    # Every provider re-syncs, and the assertion names *which* — a count alone
-    # went stale the moment `DID-15` added the second one.
-    assert [c.args[0] for c in http.post.call_args_list] == [
-        f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
-    ]
+    # **The clean makes no HTTP call at all** (2026-09-18). It used to re-sync
+    # both providers here, which could never have worked: an EDC runs its schema
+    # migration at boot, so at that point every control plane was talking to a
+    # database with no tables and every write answered 500. It *looked* fine
+    # because `POST /provider/sync` answered 200 with everything in `errors`.
+    # The publish that works is `task e2e:sync-providers`, after the restart.
+    assert http.post.call_count == 0
 
 
 def test_cleanup_continues_on_db_error():
@@ -83,12 +85,7 @@ def test_cleanup_continues_on_db_error():
         with pytest.raises(CleanupIncomplete) as excinfo:
             run_cleanup(settings, http)
 
-    # A database that refused every connection must not stop the provider syncs:
-    # the point of the clean is that the *next* run starts from a known state.
-    assert [c.args[0] for c in http.post.call_args_list] == [
-        f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
-    ]
-    # And every store that refused is named, so the failure says what survived
+    # Every store that refused is named, so the failure says what survived
     # rather than that something did.
     message = str(excinfo.value)
     for db_name in (*DATABASES, *EDC_DATABASES):
@@ -107,16 +104,26 @@ def test_the_harness_has_no_edc_management_setting_or_key():
     assert not [f for f in fields if "management_url" in f]
 
 
-def test_cleanup_issues_no_http_call_but_the_provider_syncs():
+def test_cleanup_issues_no_http_call_at_all():
+    """Not one — not to an EDC, and since 2026-09-18 not to a connector either.
+
+    The re-sync that used to live here ran *before* `e2e:prepare` restarts the
+    EDCs, i.e. against a database whose schema had just been dropped. It is
+    `task e2e:sync-providers` that publishes, after the restart and the
+    readiness gate. `provider_sync_targets` stays: the Taskfile's own re-sync
+    (`ds-e2e resync-providers`) enumerates the providers through it.
+    """
     settings = E2ESettings(_env_file=None)
     http = MagicMock(spec=HttpClient)
-    http.bearer_headers.return_value = {}
     with patch("ds_e2e.cleanup.psycopg.connect"):
         run_cleanup(settings, http)
-    assert [c.args[0] for c in http.post.call_args_list] == [
-        f"{url}/provider/sync" for url, _ in provider_sync_targets(settings)
-    ]
+    assert http.post.call_count == 0
     assert http.get.call_count == 0
+    # The list itself is still the one place the providers are enumerated.
+    assert [label for _, label in provider_sync_targets(settings)] == [
+        "provider",
+        "grid-operator",
+    ]
 
 
 def test_the_keycloak_token_url_is_too():
@@ -135,18 +142,21 @@ def test_a_clean_that_could_not_finish_raises():
     and the next run started on the previous run's agreements — surfacing as an
     unrelated flow failing on stale state, with nothing connecting it back.
     """
+    import psycopg
+
     settings = E2ESettings(_env_file=None)
     http = MagicMock()
-    http.bearer_headers.return_value = {}
-    http.post.side_effect = RuntimeError("connector refused")
 
-    with patch("ds_e2e.cleanup.psycopg.connect"):
+    with patch(
+        "ds_e2e.cleanup.psycopg.connect",
+        side_effect=psycopg.Error("connection refused"),
+    ):
         with pytest.raises(CleanupIncomplete) as exc:
             run_cleanup(settings, http)
 
-    # Every provider named, not just the first one to fail.
-    for _, label in provider_sync_targets(settings):
-        assert label in str(exc.value)
+    # Every store named, not just the first one to fail.
+    for db_name in (*DATABASES, *EDC_DATABASES):
+        assert db_name in str(exc.value)
 
 
 def test_a_clean_that_finished_returns_quietly():

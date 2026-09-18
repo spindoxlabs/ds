@@ -34,7 +34,12 @@ def test_asset_create_basic():
         dataspace=DataspaceSpec(expose=True),
     )
     asset = mapper.to_asset_create("datasets.gold.test", rule)
-    assert asset.id.startswith("https://rec.dataspaces.localhost")
+    # The dataset key, not a URL derived from `base_url`. This assertion used to
+    # read `asset.id.startswith("https://rec.dataspaces.localhost")`, which
+    # pinned an id containing slashes — unaddressable on the Management API, and
+    # the reason every dataset in a live deployment failed at `delete_asset` with
+    # an empty-bodied 400.
+    assert asset.id == "datasets.gold.test"
     assert asset.properties["name"] == "Test Dataset"
     # Asset properties are namespaced by the **active profile's** prefix, which a
     # deployment may change (`CONNECTOR_ODRL_PROFILE_PATH`). Asserting the literal

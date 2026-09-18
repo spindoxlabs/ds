@@ -209,17 +209,26 @@ tasks:
         }
         echo "Waiting for provider connector..."
         wait_for_health http://localhost:30001/health dataspaces-ds-connector-rec-1
-        # `svc-ds-e2e`, not `svc-ds-portal`. Publishing a participant's offers is
-        # a *driver's* act, and this used to borrow the portal's client for it —
-        # which is precisely why `svc-ds-e2e` exists (see
-        # `libs/ds-e2e/src/ds_e2e/config.py`). Borrowing it back meant the portal
-        # had to hold `connector.provider.write` for a call the portal never
-        # makes, and that grant is what kept `KC-06` open. Dev/CI realms only.
+        # `svc-ds-publisher` — the driver's identity, and a *real* one: it is
+        # declared in `clients.yaml`, so it exists in a host realm too. That is
+        # what this step needs and what `svc-ds-e2e` could never be, since that
+        # client lives in `clients.dataspaces.yaml`, which posture B does not
+        # mount — a deployment following this task had no credential at all,
+        # published nothing, and said nothing about it for a fortnight.
+        #
+        # It holds `connector.provider.read` + `.write` and **no**
+        # `management-api:*`: publishing a participant's offers is a call to the
+        # *connector*, never to an EDC (ADR-0014 decision 3). This step borrowed
+        # `svc-ds-portal` before it borrowed the harness, which is how the portal
+        # came to hold `connector.provider.write` for a call it never makes
+        # (`KC-06`); the answer to both borrowings is an identity that publishes
+        # and does nothing else. A *participant* publishing its own catalogue
+        # uses its organisation client instead (`_own_participant_only`).
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_E2E_ID}" \
-          -d "client_secret=${SVC_DS_E2E_SECRET}" \
+          -d "client_id=${SVC_DS_PUBLISHER_ID:-svc-ds-publisher}" \
+          -d "client_secret=${SVC_DS_PUBLISHER_SECRET:-svc-ds-publisher}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null
@@ -312,8 +321,8 @@ tasks:
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_E2E_ID}" \
-          -d "client_secret=${SVC_DS_E2E_SECRET}" \
+          -d "client_id=${SVC_DS_PUBLISHER_ID:-svc-ds-publisher}" \
+          -d "client_secret=${SVC_DS_PUBLISHER_SECRET:-svc-ds-publisher}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
         # Same as `rec:start`: publishing the governance-derived assets and
         # policies into this EDC is part of *starting*, not of building. Without
@@ -772,8 +781,8 @@ tasks:
         KC_URL="${KEYCLOAK_TOKEN_URL}"
         TOKEN=$(curl -fsS -X POST "$KC_URL" \
           -d grant_type=client_credentials \
-          -d "client_id=${SVC_DS_E2E_ID}" \
-          -d "client_secret=${SVC_DS_E2E_SECRET}" \
+          -d "client_id=${SVC_DS_PUBLISHER_ID:-svc-ds-publisher}" \
+          -d "client_secret=${SVC_DS_PUBLISHER_SECRET:-svc-ds-publisher}" \
           | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])" 2>/dev/null) || true
         curl -fsS -X POST http://localhost:30001/provider/sync \
           -H "Authorization: Bearer $TOKEN" >/dev/null 2>&1 || true
@@ -1559,7 +1568,7 @@ tasks:
           SVC_DS_CONNECTOR_GRID_OPERATOR_SECRET \
           SVC_DS_FEDERATED_CATALOG_SECRET SVC_DS_DATASET_API_SECRET \
           SVC_DS_PROVENANCE_SECRET \
-          SVC_DS_E2E_SECRET SVC_REC_REGISTRY_SECRET \
+          SVC_DS_E2E_SECRET SVC_DS_PUBLISHER_SECRET SVC_REC_REGISTRY_SECRET \
           SVC_EDC_SECRET KEYCLOAK_CLIENT_SECRET \
           OAUTH2_PROXY_CLIENT_SECRET OAUTH2_PROXY_COOKIE_SECRET"
         # No `PORTAL_SERVICE_CLIENT_SECRET`. It names the same client as

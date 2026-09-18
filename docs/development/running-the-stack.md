@@ -76,6 +76,13 @@ which is the state a re-run repairs.
 governance-derived assets and policies into the provider EDC. Without it the catalogue is
 empty.
 
+It is posted as **`svc-ds-publisher`**, which holds `connector.provider.read` + `.write` and
+nothing else. Not the portal's client (a call the portal never makes), and no longer the e2e
+harness: the harness client lives in `clients.dataspaces.yaml`, which a host realm never
+mounts, so a deployment following these steps had no credential that could make the call at
+all. In a cluster the same step is a Helm hook Job — see
+[operations](../deployment/operations.md#who-publishes).
+
 The provider and consumer compose files declare the `dataspaces` network as **external**, so
 `infra:start` must run first and the root `down` is what removes it.
 

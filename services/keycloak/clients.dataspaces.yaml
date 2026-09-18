@@ -109,7 +109,13 @@ clients:
       - identity-registry.read
       - identity-registry.membership.read
       - connector.provider.read
-      - connector.provider.write
+      # **No `connector.provider.write`** (plan
+      # `a-participant-publishes-and-the-sync-reconciles`, item 7). The harness
+      # used to publish, and one client holding every grant is what made "who may
+      # publish" untestable: no flow could be refused. Publishing is
+      # `svc-ds-publisher` (the driver) or a participant's own organisation
+      # client (self-service); a flow uses whichever it is asserting about. The
+      # read stays — flows read assets back.
       - connector.history.read
       # No `connector.consent.provision`: the connector refuses a plain service
       # token there. The flows register consent with the organisation clients.

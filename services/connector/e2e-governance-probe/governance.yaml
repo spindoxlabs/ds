@@ -1,0 +1,46 @@
+# A governance file that declares **nothing**, so a sync against it withdraws
+# everything this connector published.
+#
+# `POST /provider/sync` creates *and removes*: what EDC holds and the governance
+# it was given does not declare is taken off offer (plan
+# `a-participant-publishes-and-the-sync-reconciles`, item 4). Proving that
+# end-to-end needs a governance file with a dataset missing from it, and the real
+# one is mounted read-only — so this is the extreme of that, and the extreme is
+# the cheaper fixture: a subset would have to be kept in step with
+# `governance-rec/governance.yaml` for ever and would drift the first time a
+# dataset is added there.
+#
+# `ds-e2e --flow provider-withdrawal` syncs against this file, asserts that every
+# published asset was either withdrawn or named in `errors` — EDC refuses to
+# delete one a counterparty has negotiated for, and that refusal is a correct and
+# *reported* outcome — and then re-syncs against the real file to restore it. The
+# restore runs in the flow's `cleanup()` too, so an exception in the middle still
+# puts the catalogue back.
+#
+# **Named `e2e-governance-probe`, not `governance-something`.** Two globs walk
+# `services/connector/governance-*/governance.yaml` — the owner-index test and
+# the `compliance:validate` task — and both treat every match as a participant's
+# real governance. A probe matching that pattern fails them by being exactly what
+# it is: a file with no datasets. The name is what keeps it out.
+#
+# **Its own directory, deliberately.** A governance overlay is looked up as
+# `governance.<name>.yaml` beside the base file, so a probe sitting in
+# `governance-rec/` would pick up that deployment's overlay and silently
+# re-declare the very datasets it exists to omit — the probe would pass while
+# withdrawing nothing.
+#
+# Not a deployment fixture: nothing but the e2e flow should ever point a
+# connector at this.
+
+defaults:
+  access_level: internal
+  classification: green
+  tags: []
+  retention_days: 365
+  ownership:
+    - name: example-org
+      type: DATA_OWNER
+  dataspace:
+    expose: false
+
+sources: {}

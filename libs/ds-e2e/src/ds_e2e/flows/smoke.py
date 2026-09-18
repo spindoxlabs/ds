@@ -57,14 +57,37 @@ class SmokeFlow(BaseFlow):
         try:
             sync = (
                 self.http.post(
-                    f"{s.connector_url}/provider/sync", {}, headers=svc_headers
+                    f"{s.connector_url}/provider/sync",
+                    {},
+                    headers=self.http.publisher_headers(),
                 )
                 or {}
             )
+            # **On `errors`, not on the status code.** The route answered `200`
+            # while every dataset failed, in a live deployment, for a fortnight:
+            # a caller that reads the status alone cannot tell a publish from a
+            # total failure. The code is fixed (207 / 502), and this asserts the
+            # property rather than the code, so it holds whatever the route
+            # answers next.
+            if sync.get("errors"):
+                result.fail_step(
+                    "provider sync",
+                    "the sync reported errors — nothing downstream can be trusted",
+                    errors=sync["errors"],
+                )
+                return result
+            if not sync.get("synced"):
+                result.fail_step(
+                    "provider sync",
+                    "the sync published no dataset; the catalogue is empty and "
+                    "every later step would blame the platform for it",
+                )
+                return result
             result.pass_step(
                 "provider sync",
                 "governance published to provider EDC",
                 synced=len(sync.get("synced") or []),
+                withdrawn=len(sync.get("withdrawn") or []),
             )
         except Exception as exc:
             result.fail_step("provider sync", str(exc))

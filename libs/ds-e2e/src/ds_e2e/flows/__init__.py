@@ -18,6 +18,7 @@ from ds_e2e.flows.fail_closed import FailClosedFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
+from ds_e2e.flows.provider_withdrawal import ProviderWithdrawalFlow
 from ds_e2e.flows.recipient_restriction import RecipientRestrictionFlow
 from ds_e2e.flows.organisation_token import OrganisationTokenFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
@@ -60,6 +61,16 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # them would be a large mistake made quietly, so they run next to each other
     # where the difference is visible.
     "onboarding-seam": OnboardingSeamFlow,
+    # **Before every negotiating flow, and that is a requirement rather than a
+    # preference.** It takes the provider's whole catalogue off offer and puts it
+    # back, and EDC refuses to delete an asset a counterparty has negotiated for
+    # (409, correctly reported). Run after `uc1`, most assets are under agreement
+    # and the flow can prove very little; run here, straight after a clean, and
+    # it proves the whole cycle.
+    #
+    # It restores in `execute` and again in `cleanup`, so a failure costs the
+    # flows after it nothing.
+    "provider-withdrawal": ProviderWithdrawalFlow,
     "uc1": UC1Flow,
     "uc2": UC2Flow,
     "uc3": UC3Flow,
