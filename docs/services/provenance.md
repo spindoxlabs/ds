@@ -27,7 +27,7 @@ forwarded by the connector.
 
 | Group | Events |
 |---|---|
-| Discovery | `CataloguePublished`, `CatalogViewed` |
+| Discovery | `CataloguePublished`, `CatalogueWithdrawn`, `CatalogViewed` |
 | Contracting | `AccessRequested`, `NegotiationStarted`, `NegotiationFinalized`, `NegotiationTerminated`, `ContractAgreementSigned` |
 | Exchange | `TransferStarted`, `DataTransferCompleted`, `QueryExecuted`, `AccessRevoked` |
 | Personal data | `ConsentGranted`, `ConsentRevoked`, `DataIngested`, `DataDisclosed` |

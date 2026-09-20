@@ -410,7 +410,7 @@ database-touching command verifies the schema revision first, and every command 
 | `org` | `register`, `verify`, `agreement`, `issue-credential`, `promote`, `apply`, `import`, `list`, `show`, `suspend`, `reinstate`, `revoke`, `bundle`, `enrolment-token` |
 | `key` | `rotate`, `custody-check` |
 | `status` | `export`, `check-indices` |
-| `keycloak` | `org-sync`, `map-user` |
+| `keycloak` | `org-sync`, `map-user`, `unmap-user` |
 | `collector` | `add`, `revoke`, `list` — which organisations a holder accepts consent from |
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
@@ -468,6 +468,16 @@ itself, so a host realm mounts [`services/keycloak/clients.yaml`](keycloak.md) d
 `ir-cli keycloak map-user` writes a Keycloak-user-to-DID mapping row and **does not contact
 Keycloak** — it was called `sync`, which is also the name of a command that really does apply
 a realm (`celine-policies keycloak sync`). Realm writes are `org-sync` and the promotion path.
+
+`ir-cli keycloak unmap-user` deletes that row, and `DELETE /admin/keycloak/mappings/{did}` is the
+same act over HTTP. **Neither requires the DID to be active, or to exist**, because the rows they
+are for outlive their identity: `DELETE /admin/dids/{did}` deactivates a DID and keeps the mapping
+on purpose — the mapping carries the continuity key `(realm, user_id)`, which is the evidence for
+a rebinding decision this service insists an operator makes. What a kept mapping then does is
+**refuse the next binding** for that Keycloak user (`409` from `POST /admin/keycloak/sync`), so
+leaving one behind is not cosmetic: a deployment that tore down test members accumulated 22 rows
+it could not re-provision. The DID deletion now names its residue in the response rather than
+answering a bare `204`.
 
 Both realm writes create the same thing for an organisation, its
 [organisation client](keycloak.md#organisation-clients) `svc-ds-connector-<alias>`

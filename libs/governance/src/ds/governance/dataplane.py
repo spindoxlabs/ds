@@ -21,6 +21,12 @@ that adds a narrowing an older PEP silently ignores serves rows it should have
 withheld. `extra="forbid"` turns that into a loud parse failure on the PEP side,
 which is a denial. The cost is real and accepted — upgrading the connector ahead
 of a PEP stops the data plane rather than widening it. Rulebook `CR-4`.
+
+**So every new field is added with a default, at both ends.** `forbid` only
+governs fields the reader has never heard of; whether a field it *does* know is
+required is a separate choice, and making one required would mean a newer PEP
+refusing an older PDP as well — two impossible directions instead of one. With a
+default there is always a safe order: **the PEP first, the PDP second.**
 """
 
 from __future__ import annotations
@@ -98,9 +104,51 @@ class DataplaneRowFilter(BaseModel):
     #: arguments and the PDP does not interpret them.
     args: dict[str, Any] = Field(default_factory=dict)
     #: Identifiers **native to the receiving system** — usernames the handler can
-    #: resolve, never subject DIDs. A DID here is derived from an unsalted email
-    #: hash, so it re-identifies the subject to whoever later holds the payload.
+    #: resolve, never subject DIDs, because the column holds usernames and a DID
+    #: would match nothing.
+    #:
+    #: **They are personal data.** In a realm where the username is the person's
+    #: email — which is the common case, and the one this platform is deployed
+    #: into — this list *is* a list of addresses. It may reach a predicate and
+    #: nothing else: a PEP that echoes it into an audit or provenance call is
+    #: writing PII into a record that admits codes, pseudonyms and hashes only
+    #: (rulebook `L-3`). `POST /internal/audit/query` drops non-DID values for
+    #: exactly that reason; a PEP reports `subject_dids` below, never these.
+    #:
+    #: This field carried a second justification until 2026-09-20 — *"a DID is
+    #: derived from an unsalted email hash, so it re-identifies the subject"* —
+    #: which argued for sending the address in place of a hash of it. The
+    #: derivation weakness is real, is a property of DID minting rather than of
+    #: this field, and is recorded as its own open question.
     principals: list[str] = Field(default_factory=list)
+    #: The **subject DIDs** of the same consenting people — the pseudonyms this
+    #: platform already circulates (registry, credentials, trust anchor, every
+    #: other `subject_id` in provenance).
+    #:
+    #: **It narrows nothing.** It never reaches a predicate: the handler matches
+    #: rows on `principals` and `keys`, and a DID would match no column. It
+    #: exists so the PEP has something safe to *report*. `QueryExecuted`
+    #: `authorized_subject_ids` admits codes, pseudonymous DIDs and hashes only
+    #: (rulebook `L-3`), and before this field the only list a PEP held was
+    #: `principals` — registry-native, and in a realm where the username is the
+    #: email, a list of addresses. Measured 2026-09-20: 22 of them in one run's
+    #: provenance. `POST /internal/audit/query` now drops non-DIDs, which left
+    #: the record *empty* rather than wrong; this is what makes it complete
+    #: again.
+    #:
+    #: **Every subject the consent admits**, not only the ones whose username
+    #: resolved: a subject named to the data plane by a key alone is just as
+    #: authorised as one named by a username, and the accountability record is
+    #: about consent, not about resolution. Sorted and de-duplicated — the order
+    #: must not pair a DID with the `principals` entry at the same index.
+    #:
+    #: Added 2026-09-20, and **optional on purpose**. `extra="forbid"` is here
+    #: so that a narrowing a PEP does not understand is a refusal rather than a
+    #: silent widening; this is not a narrowing, so a decision that omits it
+    #: degrades to a thinner audit record — exactly today's behaviour — instead
+    #: of a 502 that serves nobody. A required field would make an older PDP
+    #: unusable by a newer PEP, and then *no* deployment order would be safe.
+    subject_dids: list[str] = Field(default_factory=list)
     #: **Typed data keys** of the same consenting subjects, `"<type>:<value>"`
     #: (e.g. `pod:…`) — the values the holder stores their data under, sent with
     #: the consent by the organisation that collected it (plan

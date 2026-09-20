@@ -77,6 +77,15 @@ class QueryAuditRequest(BaseModel):
     agreement_id: str | None = None
     transfer_id: str | None = None
     row_count: int | None = None
+    #: The subjects whose rows were disclosed, **as pseudonymous DIDs**. Every
+    #: other `subject_id` in this platform is a DID — `ConsentGranted`,
+    #: `GET /prov/my/events`, and `GET /audit/log?subject_id=` which filters the
+    #: access log on exactly this list — so a registry-native identifier here is
+    #: not merely more exposing, it does not *match*: a person asking which
+    #: queries touched their rows asks with a DID.
+    #:
+    #: A PEP that sends something else is not refused (see :func:`audit_query`),
+    #: but only the DIDs are recorded.
     authorized_subject_ids: list[str] | None = None
 
 
@@ -546,10 +555,47 @@ async def _authorize_dataset(
         row_filter=DataplaneRowFilter(
             handler=spec["handler"],
             args=spec["args"],
-            # Registry-native identifiers. Never DIDs: a DID is derived from an
-            # unsalted email hash, so it is re-identifiable by anyone who later
-            # holds the payload.
+            # **Registry-native identifiers, because the handler matches on
+            # them** — that is the whole reason this translation exists, and it
+            # is why a DID cannot go here: the column holds usernames, so a DID
+            # would match nothing, or match by coincidence.
+            #
+            # This comment used to give a second reason — *"never DIDs: a DID is
+            # derived from an unsalted email hash, so it is re-identifiable by
+            # anyone who later holds the payload"* — and that reason was
+            # inverted by what it admitted. In this realm the username **is**
+            # the email (`identity-registry` `/users/identities`:
+            # `username or email`), so the field defended against a hash of an
+            # address by sending the address. The derivation weakness is real
+            # and it is not this field's: it is a property of how every DID in
+            # this system is minted, it is filed as its own question, and
+            # nothing here makes it better or worse.
+            #
+            # The consequence that *was* this field's — the PEP echoing these
+            # into `POST /internal/audit/query` and so into a `QueryExecuted`
+            # event — is closed at that route (`_subject_dids_only`) and, from
+            # 2026-09-20, given a correct answer by `subject_dids` below.
             principals=principals,
+            # **The same people, named the way a record may name them.** This
+            # narrows nothing — no handler matches a column against a DID — and
+            # it is here so the PEP has something safe to report back at
+            # `POST /internal/audit/query`. Before it, the only list a PEP held
+            # was `principals`, and the real data plane echoed it: 22 raw
+            # addresses in one measured run's `QueryExecuted` events
+            # (2026-09-20). `_subject_dids_only` closed the leak by dropping
+            # them, which left the record empty; this is what makes it complete.
+            #
+            # **Every granted subject, not only the ones a username resolved
+            # for.** A subject the data plane can reach only by a registered key
+            # is no less authorised, and this field answers "whose consent
+            # permitted this disclosure", not "who could be looked up".
+            #
+            # Sorted and de-duplicated, like `keys`, and for a sharper reason:
+            # left in `subject_ids` order it would sit index-for-index against
+            # `principals`, handing every reader of the decision the
+            # DID-to-address pairing that the registry keeps behind a keyed
+            # derivation.
+            subject_dids=sorted(set(subject_ids)),
             # Typed keys (`pod:…`), never DIDs either. Personal data like the
             # principals, and sent for the same reason: the holder's data plane
             # matches on them without calling the collector back.
@@ -912,6 +958,45 @@ async def record_consent_ask(
 # `services/edc-extensions/.../DataspaceMembershipFunction.java`.
 
 
+def _subject_dids_only(values: list[str] | None, dataset_id: str) -> list[str] | None:
+    """Keep the DIDs; drop anything else, and never log what was dropped.
+
+    **Measured 2026-09-20:** a live run recorded 22 raw email addresses in
+    `QueryExecuted.authorized_subject_ids`. The PEP is not at fault in isolation
+    — ds hands it the row filter's `principals`, which are registry-native by
+    necessity (the receiving system keys rows on them, and in this realm the
+    username *is* the email), and the real data plane echoes that list into its
+    audit call. The filter needs them. The provenance record does not, and
+    rulebook `L-3`/`D-2` admit codes, pseudonymous DIDs and hashes only.
+
+    ds cannot change what another repository sends. It decides what it *writes*,
+    and that decision belongs here, at the boundary into its own store.
+
+    **Dropped, not refused.** Rejecting the call would lose the whole record —
+    the consumer, the agreement, the row count, which are the accountability
+    facts — and `services/dataset-api-mock` refuses the query outright when the
+    audit call fails, so a 4xx here would stop every read. A thinner true record
+    beats a complete false one.
+
+    ``None`` is preserved as ``None``: "the PEP said nothing" is not "authorised
+    for nobody", and the mock sends ``None`` on purpose.
+    """
+    if values is None:
+        return None
+    kept = [value for value in values if value.startswith("did:")]
+    dropped = len(values) - len(kept)
+    if dropped:
+        # The count and the dataset, never a value — this log line exists
+        # because the values are personal data.
+        log.warning(
+            "audit/query: dropped %d non-DID subject identifier(s) for %s — a PEP "
+            "is echoing the row filter's principals; provenance records DIDs",
+            dropped,
+            dataset_id,
+        )
+    return kept
+
+
 @router.post("/audit/query", status_code=202)
 async def audit_query(
     req: QueryAuditRequest,
@@ -931,7 +1016,9 @@ async def audit_query(
             agreement_id=req.agreement_id,
             transfer_id=req.transfer_id,
             row_count=req.row_count,
-            authorized_subject_ids=req.authorized_subject_ids,
+            authorized_subject_ids=_subject_dids_only(
+                req.authorized_subject_ids, req.dataset_id
+            ),
         )
     return {"status": "accepted"}
 

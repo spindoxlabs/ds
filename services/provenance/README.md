@@ -45,6 +45,7 @@ All responses use `Content-Type: application/ld+json` with the `@context` served
 
 Domain event types:
 - `CataloguePublished` — creates Entity + CatalogPublicationActivity + wasGeneratedBy + wasAttributedTo
+- `CatalogueWithdrawn` — its counterpart: a Catalogue Withdrawal Activity and `wasInvalidatedBy` **from the dataset**, beside the `wasGeneratedBy` its publication wrote. `data_product_id` is the EDC asset id on both, so one entity carries both facts. Emitted by the connector's sync reconcile for a dataset governance no longer declares ([ADR-0017](../../docs/decisions/ADR-0017-the-sync-reconciles-and-says-so.md))
 - `ContractAgreementSigned` — creates NegotiationActivity + ContractAgreement entity + two wasAssociatedWith edges
 - `DataTransferCompleted` — creates DataTransferActivity + derived Entity at consumer + wasGeneratedBy + wasDerivedFrom + wasAttributedTo
 - `ConsentGranted` / `ConsentRevoked` — consent Activity + dataset Entity + subject Agent (`used`/`invalidated` + `wasAssociatedWith`)

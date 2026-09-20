@@ -175,11 +175,12 @@ provider-role participant with governance mounted, using either identity.
 - An operator who holds `connector.provider.write` through a realm group, for an
   organisation that is not this connector's participant, is refused where they previously
   were not.
-- **A withdrawal emits no provenance event.** `CataloguePublished` has no counterpart, and
-  adding one is a change to the provenance service's PROV-O vocabulary (an entity
-  invalidation, `prov:wasInvalidatedBy`, not another generation) with readers in the portal
-  and the graph builder. It is a decision for that service, not a side effect of this one,
-  and it is owed rather than done.
+- ~~**A withdrawal emits no provenance event.**~~ **Settled on 2026-09-20 — see the
+  amendment below.** It read: *"`CataloguePublished` has no counterpart, and adding one is a
+  change to the provenance service's PROV-O vocabulary (an entity invalidation,
+  `prov:wasInvalidatedBy`, not another generation) with readers in the portal and the graph
+  builder. It is a decision for that service, not a side effect of this one, and it is owed
+  rather than done."* The shape it named is the shape that was built.
 - `services/connector/e2e-governance-probe/` exists solely so `ds-e2e --flow
   provider-withdrawal` can change what governance declares without restarting a container.
   It is not a deployment fixture.
@@ -189,3 +190,66 @@ provider-role participant with governance mounted, using either identity.
   boot, so every write answered 500. It had never worked; it looked like it had because the
   route answered `200` with everything in `errors`. The publish that works is
   `task e2e:sync-providers`, after the restart and the readiness gate.
+
+## Amendment, 2026-09-20 — the withdrawal is recorded
+
+**Status:** accepted. **Rules affected:** `L-1` (fifteen event types → sixteen), `L-7`,
+`L-15`.
+
+The consequence above left the record in a worse state than "incomplete". A dataset removed
+from governance came off offer in EDC and produced nothing, so the last thing provenance
+said about it was that it had been **published** — and a graph that asserts a withdrawn
+dataset is still offered is wrong, not merely short. This amendment closes it with the shape
+the consequence itself named.
+
+### 1. A sixteenth event type, `CatalogueWithdrawn`
+
+`data_product_id`, `provider_did`, an optional `reason` code and the usual `acted_by`.
+`data_product_id` is the **EDC asset id** — the same argument `CataloguePublished` carries —
+because the two events have to name one entity: a governance key would invalidate a node
+nobody generated.
+
+### 2. It is an invalidation, and the direction is the decision
+
+The materialiser writes `prov:wasInvalidatedBy(dataset, activity)` — Entity→Activity —
+beside the `prov:wasGeneratedBy` the publication wrote on the same node.
+
+PROV-O offers both directions, and this service already writes the other one
+(`prov:invalidated`, Activity→Entity, from `AccessRevoked` and `ConsentRevoked`). They are
+not duplicates and the choice is not cosmetic: `lineage_service.get_lineage` walks the edge
+table, and every relation this service writes points backwards in time *from the thing it is
+about*. An invalidation written from the activity is invisible to a walk that starts at the
+dataset, which is the walk a person asking "what happened to this dataset" makes. The older
+edges are **not** rewritten — a graph records what was written, not how it would be written
+today — and `services/provenance/src/provenance/schemas/prov.py` now says which materialiser
+writes which, and why.
+
+### 3. Only a dataset governance no longer declares
+
+The reconcile also deletes the asset a still-declared dataset has been republished *away*
+from, when its id changed in the same run. That is a move, not a withdrawal: the dataset is
+on offer, under a new id, from the same sync. Emitting `CatalogueWithdrawn` for it would put
+"no longer available" in the graph about something that is available. The `reason` code is
+`undeclared`, and it is the only one emitted.
+
+### 4. Emitted after EDC accepts the delete, and non-fatal
+
+Ordered so the graph never claims a withdrawal EDC refused — a 409 on an asset under
+agreement leaves an error in the sync result and nothing in provenance, which is true: the
+dataset really is still on offer. Emission failure itself is logged and swallowed, as it is
+for every other event the connector emits about something that has *already happened*
+(`POST /admin/disclosure` is the deliberate exception, and for the opposite reason: there the
+handover has not happened yet).
+
+### Consequences of the amendment
+
+- `L-1`'s count is **sixteen** again, and `test_prov_bridge_emitters.py` holds it: the
+  type is in `RULEBOOK_EVENT_TYPES`, so the emitter needs a call site or the suite fails.
+- `POST /prov/relations` now accepts `wasInvalidatedBy`, and `PROV_CONTEXT` defines it.
+  `test_relation_vocabulary.py` is what ties the three files together.
+- A reader that enumerates event types — the portal's observability filter, a consumer of
+  `GET /prov/events` — sees a type it did not before. Nothing breaks: the filter is a list of
+  strings and unknown types were already passed through.
+- Graphs written before this date carry no withdrawal for datasets already taken off offer.
+  They are not backfilled: the event says *when* a withdrawal happened, and a date invented
+  today would be a false one.

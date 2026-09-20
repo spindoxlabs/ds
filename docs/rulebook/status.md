@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-18 from `b2b08dc-dirty`.
+Generated 2026-09-20 from `dc2207f-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 127 |
 | …of those, **evidenced by a test that names them** | 127 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 960 |
+| Test nodes declaring a rule | 977 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -145,7 +145,7 @@ None. Every rule claiming enforcement names at least one test node.
 | Rule | Claimed | Verdict | Layers | Evidence |
 |---|---|---|---|---|
 | `D-1` | Declared | · consistent | — | — |
-| `D-2` | Enforced | ✅ evidenced | unit×7 | `services/connector/tests/test_access_request_declaration.py::test_justification_ref_rejects_an_email`, `services/connector/tests/test_access_request_declaration.py::test_justification_ref_accepts_an_opaque_reference`, `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously` +4 more |
+| `D-2` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_access_request_declaration.py::test_justification_ref_rejects_an_email`, `services/connector/tests/test_access_request_declaration.py::test_justification_ref_accepts_an_opaque_reference`, `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously` +5 more |
 | `D-3` | Declared | · consistent | — | — |
 | `D-3a` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_consent_gate.py::test_the_mapper_spelling_is_the_same_object_not_a_second_copy`, `libs/governance/tests/tests/test_consent_gate.py::test_each_signal_alone_gates_and_names_itself`, `libs/governance/tests/tests/test_consent_gate.py::test_every_signal_is_collected_not_short_circuited` +1 more |
 | `D-3b` | Enforced | ✅ evidenced | unit×4 | `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_filters_without_a_personal_declaration_is_an_error`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_the_legacy_filter_spelling_is_caught_too`, `libs/governance/tests/tests/test_compliance_checks.py::TestConsentCoherence::test_either_declaration_makes_the_filters_coherent` +1 more |
@@ -162,7 +162,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-12a` | Enforced | ✅ evidenced | integration×1, unit×6 | `services/connector/tests/integration/test_withdrawal_reason_on_postgres.py::test_a_collector_s_reason_is_stored_where_no_read_projects_it`, `services/connector/tests/test_consent_collectors.py::test_a_collector_s_withdrawal_records_why_on_the_row_and_in_provenance`, `services/connector/tests/test_consent_collectors.py::test_a_withdrawal_with_nothing_granted_records_why_too` +4 more |
 | `D-13` | Enforced | ✅ evidenced | e2e×1, unit×10 | `onboarding-seam`, `libs/governance/tests/tests/test_consent_checks.py::TestSharingOffers::test_missing_consent_text_version_is_an_error`, `services/connector/tests/test_offer_drift.py::test_no_recorded_consent_is_never_drift` +8 more |
 | `D-14` | Enforced | ✅ evidenced | e2e×7, unit×36 | `chain-community`, `chain-partner`, `collector-holder` +40 more |
-| `D-15` | Enforced | ✅ evidenced | e2e×1, unit×18 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +16 more |
+| `D-15` | Enforced | ✅ evidenced | e2e×1, unit×19 | `wildcard-admission`, `services/connector/tests/test_consent_provisioning.py::test_specific_revoke_overrides_wildcard`, `services/connector/tests/test_consent_provisioning.py::test_specific_grant_authorises_without_wildcard` +17 more |
 | `D-15a` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_consent_provisioning.py::test_decided_at_is_the_authorising_row_not_the_latest_one`, `services/connector/tests/test_consent_provisioning.py::test_a_dataset_wide_withdrawal_denies_every_offer`, `services/connector/tests/test_consent_provisioning.py::test_a_blanket_withdrawal_closes_an_earlier_per_party_grant` +5 more |
 | `D-15b` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_consent_provisioning.py::test_audience_omits_a_subject_who_opted_out_of_this_consumer` |
 | `D-15c` | Enforced | ✅ evidenced | e2e×1, unit×16 | `collector-holder`, `libs/ds-e2e/tests/test_collector_holder.py::test_it_declares_the_rules_it_evidences`, `services/connector/tests/test_consent_collectors.py::test_a_relayed_withdrawal_is_the_member_s_and_no_service_lifts_it` +14 more |
@@ -206,10 +206,10 @@ None. Every rule claiming enforcement names at least one test node.
 
 | Rule | Claimed | Verdict | Layers | Evidence |
 |---|---|---|---|---|
-| `L-1` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_prov_bridge_emitters.py::test_the_scan_finds_the_emitters`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitter_has_a_call_site`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitted_type_is_a_rulebook_type` +1 more |
+| `L-1` | Enforced | ✅ evidenced | e2e×1, unit×6 | `provider-withdrawal`, `services/connector/tests/test_prov_bridge_emitters.py::test_the_scan_finds_the_emitters`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitter_has_a_call_site` +4 more |
 | `L-1a` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_prov_bridge_emitters.py::test_the_unemitted_types_are_exactly_the_declared_ones` |
 | `L-2` | Enforced | ✅ evidenced | e2e×1, unit×18 | `onboarding-seam`, `services/connector/tests/test_consent_provisioning.py::test_declining_one_offer_does_not_erase_a_grant_on_another`, `services/connector/tests/test_provenance_events.py::test_disclosure_computes_the_snapshot_the_caller_cannot` +16 more |
-| `L-3` | Enforced | ✅ evidenced | unit×6 | `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously`, `services/connector/tests/test_acting_principal.py::test_no_personal_data_reaches_the_record`, `services/connector/tests/test_consent_collectors.py::test_provenance_names_the_collector_and_never_the_keys` +3 more |
+| `L-3` | Enforced | ✅ evidenced | unit×11 | `services/connector/tests/test_acting_principal.py::test_the_act_names_a_human_pseudonymously`, `services/connector/tests/test_acting_principal.py::test_no_personal_data_reaches_the_record`, `services/connector/tests/test_consent_collectors.py::test_provenance_names_the_collector_and_never_the_keys` +8 more |
 | `L-4` | Enforced | ✅ evidenced | e2e×1, unit×9 | `onboarding-seam`, `services/connector/tests/test_provenance_events.py::test_disclosure_by_offer_keys_each_event_distinctly`, `services/provenance/tests/test_event_idempotency.py::test_an_event_without_an_id_is_stored_once` +7 more |
 | `L-5` | Enforced | ✅ evidenced | e2e×2, unit×13 | `lineage`, `organisation-token`, `services/provenance/tests/test_event_agents.py::test_access_revoked_names_the_subject_as_an_agent` +12 more |
 | `L-6` | Declared | · consistent | — | — |
@@ -219,9 +219,9 @@ None. Every rule claiming enforcement names at least one test node.
 | `L-10` | Enforced | ✅ evidenced | e2e×1, unit×4 | `authz-perimeter`, `services/provenance/tests/test_auth.py::test_write_without_token_returns_401`, `services/provenance/tests/test_auth.py::test_read_without_token_returns_401` +2 more |
 | `L-11` | Enforced | ✅ evidenced | unit×2 | `services/provenance/tests/test_events_query.py::test_my_events_needs_a_credential`, `services/provenance/tests/test_events_query.py::test_my_events_rejects_a_read_scope_alone` |
 | `L-12` | Enforced | ✅ evidenced | e2e×1, unit×9 | `lineage`, `services/provenance/tests/test_audit_log.py::test_a_query_event_writes_a_compliance_row`, `services/provenance/tests/test_audit_log.py::test_the_summary_counts_real_queries` +7 more |
-| `L-13` | Enforced | ✅ evidenced | unit×8 | `services/connector/tests/test_provenance_events.py::test_ingestion_requires_scope`, `services/connector/tests/test_provenance_events.py::test_disclosure_requires_its_own_scope`, `services/provenance/tests/test_auth.py::test_write_without_token_returns_401` +5 more |
+| `L-13` | Enforced | ✅ evidenced | unit×12 | `services/connector/tests/test_provenance_events.py::test_ingestion_requires_scope`, `services/connector/tests/test_provenance_events.py::test_disclosure_requires_its_own_scope`, `services/provenance/tests/test_auth.py::test_write_without_token_returns_401` +9 more |
 | `L-14` | Declared | · consistent | — | — |
-| `L-15` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_prov_bridge_emitters.py::test_the_scan_finds_the_emitters`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitter_has_a_call_site`, `services/provenance/tests/test_events.py::test_an_unknown_event_type_is_refused` +1 more |
+| `L-15` | Enforced | ✅ evidenced | e2e×1, unit×6 | `provider-withdrawal`, `services/connector/tests/test_prov_bridge_emitters.py::test_the_scan_finds_the_emitters`, `services/connector/tests/test_prov_bridge_emitters.py::test_every_emitter_has_a_call_site` +4 more |
 | `L-16` | Declared | · consistent | — | — |
 
 ## Blueprint coverage

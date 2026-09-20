@@ -67,6 +67,12 @@ class FakeProv:
     async def data_disclosed(self, **kwargs) -> None:
         await self._record("data_disclosed", **kwargs)
 
+    # `POST /internal/audit/query` is the only producer of `QueryExecuted`, and
+    # it reads `app.state.prov` rather than the `get_prov` dependency — so the
+    # fixture below sets it there.
+    async def query_executed(self, **kwargs) -> None:
+        await self._record("query_executed", **kwargs)
+
     def of(self, name: str) -> list[dict]:
         return [kw for n, kw in self.calls if n == name]
 
@@ -865,3 +871,113 @@ async def test_the_same_recipient_still_fingerprints_the_same(engine):
             return digest
 
     assert await snapshot() == await snapshot()
+
+
+# ── `QueryExecuted` carries pseudonyms, not addresses ────────────────────────
+#
+# Measured live on 2026-09-20: one run put **22 raw email addresses** into
+# `QueryExecuted.authorized_subject_ids` in a provenance store that, until the
+# same day's scope split, any realm client holding `provenance.write` could read.
+#
+# The addresses are not invented by the data plane. ds hands them over: the row
+# filter's `principals` are registry-native identifiers (in this realm the
+# username *is* the email), the PEP filters on them and then echoes them into its
+# audit call. The filter needs them — that is what the receiving system keys on —
+# and the provenance record does not.
+
+
+@pytest_asyncio.fixture(scope="function")
+async def audit_client(engine):
+    """A client whose `app.state.prov` records, which is where this route looks."""
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def override_get_db():
+        async with factory() as session:
+            yield session
+
+    fake = FakeProv()
+    app = create_app()
+    app.dependency_overrides[get_db] = override_get_db
+    app.state.prov = fake
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as ac:
+        yield ac, fake
+
+
+AUDIT = make_headers(scope="connector.internal")
+
+
+async def _audit(client, subject_ids):
+    return await client.post(
+        "/internal/audit/query",
+        json={
+            "dataset_id": DATASET,
+            "consumer_id": "did:web:example-org",
+            "agreement_id": "urn:uuid:agreement-1",
+            "row_count": 3,
+            "authorized_subject_ids": subject_ids,
+        },
+        headers=AUDIT,
+    )
+
+
+@pytest.mark.rule("L-3", "D-2")
+@pytest.mark.asyncio
+async def test_an_address_never_reaches_a_provenance_event(audit_client):
+    """A PEP echoing the filter's principals must not put PII in the graph.
+
+    ds cannot stop a data plane sending them — it is another repository, and in
+    one case another organisation's — but it decides what it *writes*. The
+    non-DID entries are dropped, and the rest of the record stands: row count,
+    consumer and agreement are the accountability facts, and losing them to
+    protect a field would trade one gap for a bigger one.
+    """
+    client, prov = audit_client
+    r = await _audit(
+        client,
+        [
+            "someone@example.org",
+            SUBJECT_DID,
+            "another.person@example.org",
+        ],
+    )
+    assert r.status_code == 202, r.text
+
+    [event] = prov.of("query_executed")
+    assert event["authorized_subject_ids"] == [SUBJECT_DID]
+    assert not any("@" in str(value) for value in event.values())
+    # The record itself survives; only the addresses are gone.
+    assert event["row_count"] == 3
+    assert event["agreement_id"] == "urn:uuid:agreement-1"
+
+
+@pytest.mark.rule("L-3")
+@pytest.mark.asyncio
+async def test_a_list_of_dids_passes_through_unchanged(audit_client):
+    """The shape ds asks for is not filtered — order and membership stand."""
+    client, prov = audit_client
+    dids = ["did:web:example.org:users:b", "did:web:example.org:users:a"]
+    r = await _audit(client, dids)
+    assert r.status_code == 202, r.text
+
+    [event] = prov.of("query_executed")
+    assert event["authorized_subject_ids"] == dids
+
+
+@pytest.mark.rule("L-3")
+@pytest.mark.asyncio
+async def test_no_subject_list_stays_no_subject_list(audit_client):
+    """`None` is "the PEP said nothing", not "nobody" — and must not become `[]`.
+
+    `services/dataset-api-mock` sends `None` deliberately. Turning that into an
+    empty list would assert in the graph that a query was authorised for *no
+    subject*, which is a different and false statement.
+    """
+    client, prov = audit_client
+    r = await _audit(client, None)
+    assert r.status_code == 202, r.text
+
+    [event] = prov.of("query_executed")
+    assert event["authorized_subject_ids"] is None

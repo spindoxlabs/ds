@@ -64,8 +64,8 @@ def datasets(monkeypatch):
     return _install
 
 
-async def _sync(edc):
-    return await sync_governance("unused.yaml", edc, _mapper(), NullProv())
+async def _sync(edc, prov: NullProv | None = None):
+    return await sync_governance("unused.yaml", edc, _mapper(), prov or NullProv())
 
 
 @pytest.mark.asyncio
@@ -185,6 +185,88 @@ async def test_an_asset_id_that_moved_takes_the_old_asset_with_it(datasets):
     assert result.withdrawn == ["https://old/datasets/gold/moved"]
     assert "https://old/datasets/gold/moved" not in edc.assets
     assert "datasets.gold.moved" in edc.assets
+
+
+# ── The withdrawal is recorded, not only performed ───────────────────────────
+#
+# `ADR-0017` shipped the reconcile and recorded, in its own consequences, that a
+# withdrawal emitted **no provenance event** — so the graph's last word on a
+# dataset taken off offer was that it had been published. That is the gap these
+# three close.
+
+
+@pytest.mark.rule("L-1", "L-15")
+@pytest.mark.asyncio
+async def test_a_withdrawn_dataset_is_recorded_in_provenance(datasets):
+    """The event names the **asset id**, which is what the publication named.
+
+    Not the governance key: `CataloguePublished` carries `asset_create.id`, and
+    the two events have to invalidate and generate one entity node.
+    """
+    edc = FakeEdc()
+    edc.seed_published(
+        "datasets.gold.gone",
+        "datasets.gold.gone",
+        prefix=PROFILE_PREFIX,
+        policy_ids=("datasets-gold-gone-access-policy", "datasets-gold-gone-policy"),
+        contract_id="datasets-gold-gone-contract",
+    )
+    datasets({"datasets.gold.kept": _rule()})
+    prov = NullProv()
+
+    result = await _sync(edc, prov)
+
+    assert result.withdrawn == ["datasets.gold.gone"]
+    [event] = prov.emitted("CatalogueWithdrawn")
+    assert event["data_product_id"] == "datasets.gold.gone"
+    assert event["reason"] == "undeclared"
+
+
+@pytest.mark.asyncio
+async def test_a_republished_dataset_is_not_recorded_as_withdrawn(datasets):
+    """A new asset id is a move, not a withdrawal — the dataset is still on offer.
+
+    The reconcile deletes the old asset either way (that is what
+    `test_an_asset_id_that_moved_takes_the_old_asset_with_it` pins), but saying
+    so in provenance would put "no longer available" in the graph about a
+    dataset that is available, under a new id, from the same run.
+    """
+    edc = FakeEdc()
+    edc.seed_published(
+        "https://old/datasets/gold/moved",
+        "datasets.gold.moved",
+        prefix=PROFILE_PREFIX,
+    )
+    datasets({"datasets.gold.moved": _rule(asset_id="datasets.gold.moved")})
+    prov = NullProv()
+
+    result = await _sync(edc, prov)
+
+    assert result.withdrawn == ["https://old/datasets/gold/moved"]
+    assert prov.emitted("CatalogueWithdrawn") == []
+    assert len(prov.emitted("CataloguePublished")) == 1
+
+
+@pytest.mark.asyncio
+async def test_a_withdrawal_edc_refused_is_not_recorded(datasets):
+    """The graph must not claim a withdrawal that did not happen.
+
+    EDC answers 409 for an asset with agreements. The event is emitted after the
+    delete is accepted, so a refusal leaves an error in the result and nothing
+    in provenance — the dataset really is still on offer.
+    """
+    edc = FakeEdc()
+    edc.seed_published(
+        "datasets.gold.stuck", "datasets.gold.stuck", prefix=PROFILE_PREFIX
+    )
+    edc.pinned_assets.add("datasets.gold.stuck")
+    datasets({})
+    prov = NullProv()
+
+    result = await _sync(edc, prov)
+
+    assert result.errors
+    assert prov.emitted("CatalogueWithdrawn") == []
 
 
 @pytest.mark.asyncio

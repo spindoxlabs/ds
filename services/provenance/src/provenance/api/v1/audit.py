@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...dependencies import get_db, require_write_scope
+from ...dependencies import get_db, require_read_scope, require_write_scope
 from ...db.models import AccessLogORM
 from ...schemas.audit import AccessLogEntry, AccessLogRead, AccessLogSummary
 
@@ -54,7 +54,11 @@ async def write_log_entry(
     return orm
 
 
-@router.get("/audit/log", response_model=list[AccessLogRead])
+@router.get(
+    "/audit/log",
+    response_model=list[AccessLogRead],
+    dependencies=[Depends(require_read_scope)],
+)
 async def query_log(
     consumer_id: str | None = None,
     dataset_id: str | None = None,
@@ -87,7 +91,11 @@ async def query_log(
     return list(result.scalars().all())
 
 
-@router.get("/audit/log/summary", response_model=AccessLogSummary)
+@router.get(
+    "/audit/log/summary",
+    response_model=AccessLogSummary,
+    dependencies=[Depends(require_read_scope)],
+)
 async def log_summary(
     dataset_id: str,
     from_: datetime | None = Query(default=None, alias="from"),

@@ -58,3 +58,39 @@ this caller to supply one.
   Until it does, the withdrawal is still a `422`.
 - A withdrawal over a withdrawal that already stands changes nothing, and that includes
   its reason. The first cause recorded is the one that stays.
+
+## Amendment, 2026-09-20 — "returned by no read" was true of ds's consent reads and false of the graph
+
+**Status:** accepted. **Rules affected:** `D-12a` (wording), `L-13`.
+
+Measured live against a deployment where two participants share one realm: three separate
+organisation clients — the collector's, the holder's own, and the community's onboarding
+service — each holding `provenance.write` and **nothing else**, read every event in the
+holder's provenance store over `GET /prov/events`, `reason` included.
+
+Decision 5 was written about ds's *consent* surface, and there it holds: no consent read
+projects `revocation_reason`. What it did not account for is that the same fact reaches
+provenance by design (`ConsentRevoked` carries it, and this ADR says so in its Context), and
+that **provenance's read guard accepted a write scope**. So the field was reachable by any
+realm client that could write anywhere.
+
+The defect is not in this decision and the field is not withdrawn from the event. It is a
+provenance authorization defect, fixed in the same change as this amendment: the scopes are
+split per route, so `provenance.write` no longer reads. See `provenance/dependencies.py`,
+rulebook `L-13`.
+
+What stands after the fix is what this ADR already said in decision 5's own rationale:
+**who sees it is the holder** — its own operators, who hold `provenance.read` at their own
+participant — **and the subject**, through `GET /prov/my/events`, which authenticates a
+person by credential and is not scope-guarded at all.
+
+Two things this amendment does **not** do, deliberately:
+
+- **It does not scope the projection to the caller's participant.** A provenance store *is*
+  one participant's by deployment; adding a per-event participant filter would be a second
+  mechanism guarding a boundary the deployment already draws, and it cannot be done
+  uniformly — `provider_did`/`consumer_did` exist on the exchange events, while
+  `ConsentRevoked` is keyed on a subject and a collector. Splitting the scope is the fix
+  that matches the authority model; a filter would be a guess layered over it.
+- **It does not clean the rows already written.** Any event a deployment has already
+  recorded still carries whatever it carried. See the rulebook note under `L-13`.

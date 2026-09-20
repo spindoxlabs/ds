@@ -158,4 +158,22 @@ class FakeEdc:
 
 
 class NullProv:
-    async def catalogue_published(self, **_kwargs): ...
+    """A `ProvBridge` that records nothing — for tests about EDC, not the graph.
+
+    ``events`` is here so a test that *is* about the graph can read it without a
+    second double: a null object that silently swallows an emitter it does not
+    declare would let a missing call site pass as success, which is the failure
+    `test_prov_bridge_emitters.py` exists to prevent.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict]] = []
+
+    async def catalogue_published(self, **kwargs):
+        self.events.append(("CataloguePublished", kwargs))
+
+    async def catalogue_withdrawn(self, **kwargs):
+        self.events.append(("CatalogueWithdrawn", kwargs))
+
+    def emitted(self, event_type: str) -> list[dict]:
+        return [payload for name, payload in self.events if name == event_type]

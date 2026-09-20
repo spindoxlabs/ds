@@ -26,7 +26,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0014](ADR-0014-management-api-v5-and-the-organisation-actor.md) | The management API is v5beta behind OAuth2, and an organisation can act as itself |
 | [ADR-0015](ADR-0015-a-collector-registers-consent-at-the-holder.md) | A collector registers consent at the holder |
 | [ADR-0016](ADR-0016-access-policy-and-contract-policy-are-two-policies.md) | The access policy and the contract policy are two policies, and membership is a credential claim |
-| [ADR-0017](ADR-0017-the-sync-reconciles-and-says-so.md) | The provider sync reconciles, and its answer agrees with what happened |
+| [ADR-0017](ADR-0017-the-sync-reconciles-and-says-so.md) | The provider sync reconciles, and its answer agrees with what happened — *amended 2026-09-20: the withdrawal is recorded, as `CatalogueWithdrawn`* |
 | [ADR-0018](ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md) | The EDC schema migrates through EDC's own bootstrapper |
 | [ADR-0019](ADR-0019-a-collector-says-why-it-withdrew.md) | A collector says why it withdrew |
 

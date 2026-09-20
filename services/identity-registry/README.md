@@ -87,7 +87,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `DELETE` | `/admin/participants/{did}` | Deactivate participant + revoke credentials |
 | `POST` | `/admin/dids` | Create DID with auto-generated key |
 | `GET` | `/admin/dids/{did}` | Get DID details |
-| `DELETE` | `/admin/dids/{did}` | Deactivate DID + revoke credentials |
+| `DELETE` | `/admin/dids/{did}` | Deactivate DID + revoke credentials. **Answers a body, not `204`**: it does not erase, and it names what it kept — a surviving `keycloak_mappings` row refuses the next binding for that Keycloak user |
 | `POST` | `/admin/credentials/membership` | Issue MembershipCredential |
 | `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential (idempotent per role) |
 | `POST` | `/admin/credentials/data-subject/transition` | Change a `communityRole`: suspend the superseded credential, issue its successor |
@@ -104,6 +104,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `GET` | `/admin/credentials` | List credentials (optional `?subject_did=`) |
 | `DELETE` | `/admin/credentials/{id}` | Revoke credential |
 | `POST` | `/admin/keycloak/sync` | Sync DID-to-Keycloak mapping |
+| `DELETE` | `/admin/keycloak/mappings/{did}` | Unbind a DID from its Keycloak user — a real delete. Its own act, not a step inside the DID deletion, and it does **not** require the DID to be active: clearing the orphan a past teardown left is what it is for |
 | `POST` | `/admin/keys/rotate/{did}` | Rotate key for DID |
 | `GET` | `/keycloak/mapping/{did}` | Get KC mapping by DID |
 | `GET` | `/keycloak/mapping?subject_id=` | Get KC mapping by subject ID |

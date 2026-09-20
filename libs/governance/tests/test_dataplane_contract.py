@@ -226,6 +226,111 @@ def test_a_decision_with_keys_is_refused_by_a_reader_without_them():
         OldRowFilter.model_validate(payload)
 
 
+# ── the subject DIDs travel beside the principals ─────────────────────────────
+#
+# Plan `a-write-scope-reads-the-whole-store`, finding 2: the PEP echoes the row
+# filter's `principals` into `POST /internal/audit/query`, and `principals` are
+# registry-native — in a realm where the username is the email, a list of
+# addresses. 22 of them reached `QueryExecuted.authorized_subject_ids` in one
+# measured run. The filter needs the usernames; the record needs the DIDs; so
+# the decision carries both.
+
+SUBJECT_A = "did:web:rec.example.org:users:ex-00001"
+SUBJECT_B = "did:web:rec.example.org:users:ex-00002"
+
+
+def test_the_filter_carries_the_subject_dids_beside_the_principals():
+    """Both lists, distinct, neither replacing the other.
+
+    `principals` is what the handler matches on; `subject_dids` is what the PEP
+    is permitted to report. Collapsing them either way breaks one of the two —
+    a DID matches no column, and an address belongs in no provenance event.
+    """
+    decision = DataplaneDecision.model_validate(
+        _allow(
+            {
+                "handler": DIRECT_USER_MATCH,
+                "args": {"column": "owner"},
+                "principals": ["someone@example.org"],
+                "subject_dids": [SUBJECT_A],
+            }
+        )
+    )
+    row_filter = decision.verdict_for(GATED).row_filter
+    assert row_filter.principals == ["someone@example.org"]
+    assert row_filter.subject_dids == [SUBJECT_A]
+
+
+def test_subject_dids_default_to_an_empty_list():
+    assert DataplaneRowFilter(handler=DIRECT_USER_MATCH).subject_dids == []
+
+
+def test_a_pdp_that_sends_no_subject_dids_still_parses():
+    """**The skew test.** A newer PEP against an older PDP must keep serving.
+
+    This is the half `extra="forbid"` does not cover, and a required field would
+    have broken it. `subject_dids` narrows nothing — it never reaches a
+    predicate — so its absence can only thin an audit record, never widen a
+    disclosure. If this raised, the only safe deployment order would be "both at
+    once", which is not an order.
+    """
+    row_filter = (
+        DataplaneDecision.model_validate(
+            _allow(
+                {
+                    "handler": DIRECT_USER_MATCH,
+                    "args": {"column": "owner"},
+                    "principals": ["someone@example.org"],
+                }
+            )
+        )
+        .verdict_for(GATED)
+        .row_filter
+    )
+
+    assert row_filter.subject_dids == []
+    assert row_filter.principals == ["someone@example.org"]
+
+
+def test_a_decision_with_subject_dids_is_refused_by_a_reader_without_them():
+    """**The other half of the skew**, and the one that takes a deployment down.
+
+    A PEP that predates the field refuses the whole decision and answers 502.
+    That is `extra="forbid"` working as designed, and it is why the data plane
+    is rebuilt *before* the connector, never after.
+    """
+    from pydantic import BaseModel, ConfigDict
+
+    class OldRowFilter(BaseModel):
+        model_config = ConfigDict(extra="forbid")
+        handler: str
+        args: dict = {}
+        principals: list[str] = []
+        keys: list[str] = []
+
+    payload = DataplaneRowFilter(
+        handler=DIRECT_USER_MATCH, subject_dids=[SUBJECT_A]
+    ).model_dump()
+    with pytest.raises(ValidationError):
+        OldRowFilter.model_validate(payload)
+
+
+def test_the_two_lists_are_not_positionally_paired():
+    """The DIDs are sorted; the principals keep the order consent resolved in.
+
+    A shared index would hand every reader of the decision a DID-to-address
+    mapping it was never given, which is the correlation the split exists to
+    avoid.
+    """
+    row_filter = DataplaneRowFilter(
+        handler=DIRECT_USER_MATCH,
+        principals=["b@example.org", "a@example.org"],
+        subject_dids=sorted([SUBJECT_B, SUBJECT_A]),
+    )
+    assert row_filter.subject_dids == [SUBJECT_A, SUBJECT_B]
+    assert row_filter.principals == ["b@example.org", "a@example.org"]
+
+
 @pytest.mark.parametrize(
     ("key", "expected"),
     [

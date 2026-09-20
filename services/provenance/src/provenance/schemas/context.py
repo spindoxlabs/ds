@@ -25,6 +25,11 @@ PROV_CONTEXT: dict = {
     # consumer that expands it (rulebook `L-7`). `prov:invalidated` is the
     # Activity→Entity direction, which is exactly what the materialisers write.
     "invalidated": {"@id": "prov:invalidated", "@type": "@id"},
+    # The other direction, written by `CatalogueWithdrawn`: Entity→Activity, so
+    # a dataset's withdrawal sits on the dataset beside the `wasGeneratedBy` its
+    # publication wrote. Both terms are real PROV-O and both are defined here;
+    # `schemas/prov.py` says which materialiser writes which and why.
+    "wasInvalidatedBy": {"@id": "prov:wasInvalidatedBy", "@type": "@id"},
     # Edge endpoints. `prov:entity` / `prov:activity` / `prov:agent` say *what
     # each end is*; these two say *which way the edge points*, which a typed key
     # cannot when both ends share a type (`wasDerivedFrom`, `actedOnBehalfOf`).

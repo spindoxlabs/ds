@@ -32,6 +32,10 @@ BRIDGE = SRC / "services" / "prov_bridge.py"
 RULEBOOK_EVENT_TYPES = frozenset(
     {
         "CataloguePublished",
+        # The counterpart `CataloguePublished` went without until 2026-09-20,
+        # which `ADR-0017` named owed: a dataset removed from governance came
+        # off offer and left the graph asserting it was still published.
+        "CatalogueWithdrawn",
         "CatalogViewed",
         "AccessRequested",
         "NegotiationStarted",

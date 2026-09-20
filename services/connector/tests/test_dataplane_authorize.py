@@ -238,10 +238,74 @@ async def test_consent_becomes_a_row_filter_spec(engine, client):
     row_filter = body["datasets"][0]["row_filter"]
     assert row_filter["handler"]
     assert row_filter["args"]["column"]
-    # Registry-native identifiers, never the DID — a DID is derived from an
-    # unsalted email hash and so is re-identifiable by whoever holds the payload.
+    # Registry-native identifiers, because the handler matches rows on them: the
+    # column holds usernames, so a DID here would match nothing. (Until
+    # 2026-09-20 this comment also claimed a DID is "derived from an unsalted
+    # email hash"; the derivation is an HMAC keyed by the registry, the claim is
+    # false as stated, and it is filed as `is-a-subject-did-a-safe-pseudonym`.)
     assert row_filter["principals"] == [f"user-{SUBJECT.rsplit(':', 1)[-1]}"]
-    assert SUBJECT not in str(row_filter)
+
+
+@pytest.mark.rule("D-15", "L-3")
+@pytest.mark.asyncio
+async def test_the_filter_carries_the_subject_dids_for_the_pep_to_report(
+    engine, client
+):
+    """The DIDs travel beside the principals, so a PEP can report safely.
+
+    Before this the decision named the consenting people only as registry-native
+    principals, and the real data plane echoed that list into
+    `POST /internal/audit/query` — 22 raw addresses in one measured run's
+    `QueryExecuted` events (2026-09-20). A PEP had nothing else to send. It has
+    now.
+
+    This assertion is the **reverse** of what this file asserted until
+    2026-09-20 (`SUBJECT not in str(row_filter)`). That assertion was right
+    about `principals` and wrong as a property of the whole filter: the DID is
+    the only identifier that may be *recorded*, and withholding it is what left
+    `authorized_subject_ids` empty.
+    """
+    await _agreement(engine, "agr-1", GATED)
+    await _consent(engine, purpose=["FlexibilityResearch"])
+    row_filter = (await _authorize(client)).json()["datasets"][0]["row_filter"]
+
+    assert row_filter["subject_dids"] == [SUBJECT]
+    # Two lists, not one renamed: the handler still matches on the principals.
+    assert SUBJECT not in row_filter["principals"]
+
+
+@pytest.mark.rule("L-3")
+@pytest.mark.asyncio
+async def test_the_dids_are_sorted_so_no_index_pairs_one_with_an_address(
+    engine, client, monkeypatch
+):
+    """Order must not turn the two lists into a DID-to-username mapping.
+
+    `principals` keeps the order consent resolved in. If `subject_dids` did too,
+    every reader of a decision would be handed the pairing the identity registry
+    keeps behind a keyed derivation.
+    """
+    later, earlier = (
+        "did:web:rec.dataspaces.localhost:users:sub-900",
+        "did:web:rec.dataspaces.localhost:users:sub-100",
+    )
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    async with factory() as session:
+        async with session.begin():
+            for subject in (later, earlier):
+                await set_subject_data_sharing(
+                    session,
+                    subject_id=subject,
+                    dataset_id=GATED,
+                    consumer_id=CONSUMER,
+                    enabled=True,
+                    purpose=["FlexibilityResearch"],
+                )
+    await _agreement(engine, "agr-1", GATED)
+    row_filter = (await _authorize(client)).json()["datasets"][0]["row_filter"]
+
+    assert row_filter["subject_dids"] == sorted(row_filter["subject_dids"])
+    assert set(row_filter["subject_dids"]) == {later, earlier}
 
 
 @pytest.mark.rule("X-6", "X-6c")

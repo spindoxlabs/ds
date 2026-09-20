@@ -843,14 +843,23 @@ async def _dataspace_query(
         agreement_id=agreement_id,
         transfer_id=transfer_id,
         row_count=len(rows),
-        # **Deliberately not the filter's principals.** `/internal/audit/query`
-        # declares `authorized_subject_ids`, and a PEP structurally cannot fill
-        # it: ds translates subject DIDs into registry-native principals before
-        # the filter leaves, precisely so a DID does not travel with the payload.
-        # Sending the principals instead would put usernames into a `QueryExecuted`
-        # provenance event, which rulebook `L-3` limits to codes, pseudonymous
-        # DIDs and hashes. The field is the PDP's to fill, not this one's.
-        authorized_subject_ids=None,
+        # **The filter's `subject_dids`, never its `principals`.**
+        # `authorized_subject_ids` is a list of pseudonymous DIDs (rulebook
+        # `L-3`: codes, DIDs and hashes only), and the principals are
+        # registry-native — in this realm, the person's email. The real data
+        # plane echoed the principals here until 2026-09-20 and put 22 raw
+        # addresses into one run's `QueryExecuted` events.
+        #
+        # Until the same day a PEP had nothing else to send, so this sent
+        # `None` — "I am not telling you", which was honest but left the record
+        # empty. `subject_dids` is the decision's answer to that, and this is
+        # the reference PEP: what it does here is what the real one is expected
+        # to do.
+        #
+        # `None` when there is no filter at all, which is not the same fact: an
+        # unfiltered allow has no list of subjects, and an empty list would read
+        # as "authorised for nobody".
+        authorized_subject_ids=(list(verdict.row_filter.subject_dids) if verdict.row_filter is not None else None),
     )
     return _page(rows, body)
 

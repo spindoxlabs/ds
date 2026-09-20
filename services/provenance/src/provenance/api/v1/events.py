@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import DomainEventORM
-from ...dependencies import get_db, get_settings_dep, require_write_scope
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_read_scope,
+    require_write_scope,
+)
 from ...schemas.context import JSONLDResponse
 from ...schemas.events import DomainEvent, EventIngestResponse
 from ...services.event_service import ingest_event
@@ -158,7 +163,7 @@ async def _page(
     )
 
 
-@router.get("/events")
+@router.get("/events", dependencies=[Depends(require_read_scope)])
 async def list_events(
     event_type: Annotated[list[str] | None, Query()] = None,
     subject_id: str | None = None,

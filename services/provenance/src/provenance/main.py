@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from .config import get_settings
 from .db.engine import verify_schema
-from .dependencies import require_read_or_write_scope, require_write_scope
+from .dependencies import require_read_scope, require_write_scope
 from .schemas.context import PROV_CONTEXT
 from .api.v1.nodes import router as nodes_router
 from .api.v1.relations import router as relations_router
@@ -123,39 +123,39 @@ def create_app() -> FastAPI:
             headers={"Cache-Control": "public, max-age=86400"},
         )
 
-    app.include_router(
-        nodes_router,
-        prefix="/prov",
-        dependencies=[Depends(require_read_or_write_scope)],
-    )
+    # **Mixed routers carry no scope floor; their routes carry their own.**
+    # `nodes_router`, `events_router` and `audit_router` each serve reads and
+    # writes, and a router-level dependency is **and**ed with the route's — so a
+    # floor here can only ever be the *weaker* of the two, which is how
+    # `provenance.write` became a read credential for the whole store
+    # (`dependencies.py` has the measurement). `require_read_scope` on each GET
+    # and `require_write_scope` on each write is the only arrangement that says
+    # what it means, and the sweep in `tests/test_auth.py` enforces it.
+    app.include_router(nodes_router, prefix="/prov")
+    app.include_router(events_router, prefix="/prov")
+    app.include_router(audit_router)
+
+    # Single-purpose routers keep their floor, because for them it is exact.
     app.include_router(
         relations_router,
         prefix="/prov",
         dependencies=[Depends(require_write_scope)],
     )
+    # Reads only. This was `read or write` because `ProvenanceClient.get_lineage`
+    # held `provenance.write` and nothing else — but that method has since been
+    # **deleted** ("this client writes; it does not read"), so the caller the
+    # widening existed for no longer exists. Nothing in ds reads lineage with a
+    # write token: the portal's `/lineage/[iri]` page calls under the *person's*
+    # token, and all three operator bundles carry `provenance.read`.
     app.include_router(
-        events_router,
+        lineage_router,
         prefix="/prov",
-        dependencies=[Depends(require_read_or_write_scope)],
+        dependencies=[Depends(require_read_scope)],
     )
     # No scope dependency: a data subject reading their own history authenticates
     # with a verifiable credential, verified inside the route. See
     # `services/subject.py` for why the two models stay on separate routers.
     app.include_router(subject_events_router, prefix="/prov")
-    # Read **or** write, as the nodes and events routers already do. Requiring
-    # `provenance.read` alone locked out the only service that would call it:
-    # `svc-ds-connector` holds `provenance.write` and nothing else here, so every
-    # lineage read 403'd (rulebook `L-13`). A caller trusted to write the graph is
-    # not a narrower principal than one trusted to read it.
-    app.include_router(
-        lineage_router,
-        prefix="/prov",
-        dependencies=[Depends(require_read_or_write_scope)],
-    )
-    app.include_router(
-        audit_router,
-        dependencies=[Depends(require_read_or_write_scope)],
-    )
 
     return app
 

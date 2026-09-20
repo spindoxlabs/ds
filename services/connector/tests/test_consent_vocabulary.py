@@ -131,6 +131,20 @@ class TestWriteValidation:
         )
         assert r.status_code == 422
 
+    def test_expanding_an_offer_bound_to_no_dataset_raises(self):
+        """The rule lives with the vocabulary, not with one of its callers.
+
+        Both consent write routes expand an offer through this function, so
+        "an offer that reaches nothing here cannot carry a decision" is stated
+        once. `datasets_for_offer` stays non-raising: the public projection
+        counts datasets with it and an offer bound to none is a fact there, not
+        an error.
+        """
+        assert vocab.datasets_for_offer("test-unbound") == []
+        with pytest.raises(vocab.VocabularyError, match="resolves to no dataset"):
+            vocab.datasets_for_offer_or_raise("test-unbound")
+        assert vocab.datasets_for_offer_or_raise("test-flexibility") == [PII]
+
 
 # ── Enforcement ──────────────────────────────────────────────────────────────
 
@@ -456,3 +470,29 @@ class TestOfferDrivenShares:
             headers=SUBJECT,
         )
         assert r.status_code == 422
+
+    @pytest.mark.asyncio
+    async def test_an_offer_bound_to_no_dataset_here_is_422(self, client):
+        """The member's route refuses what the organisation's route refuses.
+
+        `test-unbound` is consent-based and declared by no dataset in these
+        fixtures, so the expansion has nothing to iterate. The handler looped
+        over the empty list, wrote no row and answered `200 []` — a well-formed
+        acceptance of a decision it had not recorded, and the one answer a
+        person's share decision must never get. `POST /consent/admin/shares`
+        has refused the same offer with a `422` since
+        `a-collector-registers-consent-at-the-holder`; a member's decision is
+        the same decision and now gets the same refusal.
+        """
+        r = await client.post(
+            "/consent/my/shares",
+            json={"offer_id": "test-unbound", "enabled": True},
+            headers=SUBJECT,
+        )
+        assert r.status_code == 422, r.text
+        assert "resolves to no dataset" in r.json()["detail"]
+
+        # And nothing was recorded — the read-back is the surface the portal
+        # renders a person's standing decisions from.
+        rows = (await client.get("/consent/my/shares", headers=SUBJECT)).json()
+        assert rows == []

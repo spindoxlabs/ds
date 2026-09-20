@@ -48,6 +48,18 @@ class AgentCreate(NodeBase):
 #: general PROV-O graph API, and refusing a valid PROV-O relation because ds does
 #: not happen to derive it yet would make the manual door narrower than the
 #: vocabulary it publishes.
+#:
+#: **Both invalidation directions are here, and they are not duplicates.** PROV-O
+#: defines `prov:invalidated` (Activity→Entity) and `prov:wasInvalidatedBy`
+#: (Entity→Activity), and which one a materialiser writes decides where the fact
+#: can be *found*: `lineage_service.get_lineage` walks the edge table, and every
+#: relation this service writes points backwards in time from the thing it is
+#: about. `CatalogueWithdrawn` writes `wasInvalidatedBy(dataset, activity)` — the
+#: dataset's own history, beside the `wasGeneratedBy` its publication wrote, so
+#: "what happened to this dataset" is answerable from the dataset node.
+#: `AccessRevoked` and `ConsentRevoked` write `invalidated` from the activity;
+#: they predate this and their stored edges are **not** rewritten, because a
+#: graph records what was written, not how it would be written today.
 RelationType = Literal[
     "wasGeneratedBy",
     "wasAttributedTo",
@@ -55,6 +67,7 @@ RelationType = Literal[
     "wasAssociatedWith",
     "used",
     "invalidated",
+    "wasInvalidatedBy",
     "actedOnBehalfOf",
     "wasInformedBy",
 ]

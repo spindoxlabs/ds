@@ -43,11 +43,18 @@ may publish" a question this suite can ask at all.
 from __future__ import annotations
 
 import logging
+import time
+import urllib.parse
 
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
 log = logging.getLogger(__name__)
+
+#: The sync awaits the provenance POST inline, so the event is written before the
+#: sync answers. Polled anyway, briefly: emission is non-fatal by design, and a
+#: flow that asserted once would turn a slow store into a false regression.
+PROVENANCE_WAIT_S = 15.0
 
 
 class ProviderWithdrawalFlow(BaseFlow):
@@ -56,7 +63,26 @@ class ProviderWithdrawalFlow(BaseFlow):
         "A dataset removed from governance is removed from EDC — asset, "
         "policies and contract definition — and the sync says what it withdrew"
     )
-    rules = ("C-7",)
+    rules = ("C-7", "L-1", "L-15")
+
+    def _withdrawal_events(self, asset_id: str) -> list[dict]:
+        """`CatalogueWithdrawn` events naming this asset, as the graph has them.
+
+        Read with the **harness** client, not the publisher: `svc-ds-e2e` holds
+        `provenance.read` and `svc-ds-publisher` holds neither provenance grant.
+        Since 2026-09-20 that distinction bites — `provenance.write` no longer
+        satisfies a read, so a flow reading the graph must hold the read scope
+        rather than any provenance scope.
+        """
+        query = urllib.parse.urlencode(
+            {"event_type": "CatalogueWithdrawn", "dataset_id": asset_id}
+        )
+        body = self.http.get(
+            f"{self.settings.provenance_url}/prov/events?{query}",
+            headers=self.http.bearer_headers(),
+        )
+        graph = body.get("@graph") if isinstance(body, dict) else body
+        return [item for item in (graph or []) if isinstance(item, dict)]
 
     def _asset_ids(self, headers: dict[str, str]) -> set[str]:
         body = self.http.get(
@@ -184,7 +210,40 @@ class ProviderWithdrawalFlow(BaseFlow):
             remaining=len(after),
         )
 
-        # 4. Restored in the same run, so this is a cycle rather than a one-way
+        # 4. The graph says so too. Until 2026-09-20 a dataset came off offer and
+        #    left no trace, so provenance's last word on it was its publication —
+        #    a record that is wrong rather than merely short (ADR-0017's
+        #    amendment). Every asset withdrawn here is withdrawn because the probe
+        #    governance declares nothing, which is the `undeclared` case and the
+        #    only one that emits.
+        deadline = time.monotonic() + PROVENANCE_WAIT_S
+        unrecorded = sorted(withdrawn)
+        try:
+            while time.monotonic() < deadline:
+                unrecorded = sorted(
+                    asset for asset in withdrawn if not self._withdrawal_events(asset)
+                )
+                if not unrecorded:
+                    break
+                time.sleep(1.0)
+        except Exception as exc:
+            result.fail_step("the withdrawal is in the graph", str(exc))
+            return result
+        if unrecorded:
+            result.fail_step(
+                "the withdrawal is in the graph",
+                "these assets were withdrawn at the EDC and no CatalogueWithdrawn "
+                "names them — the graph still says they are published",
+                assets=unrecorded,
+            )
+            return result
+        result.pass_step(
+            "the withdrawal is in the graph",
+            "every withdrawn asset has a CatalogueWithdrawn event of its own",
+            assets=sorted(withdrawn),
+        )
+
+        # 5. Restored in the same run, so this is a cycle rather than a one-way
         #    door. `cleanup()` repeats it on the exception path.
         try:
             self._sync(headers)

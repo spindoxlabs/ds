@@ -361,7 +361,7 @@ has readers the connector does not ship with: the celine `dataset-api` in a depl
 |---|---|
 | `DataplaneDecision` | the envelope — `decision`, `reason`, `agreement_id`, `transfer_id`, `purpose`, `datasets[]`, `cache` |
 | `DatasetVerdict` | one dataset's answer, because a single SQL statement can touch several and the envelope is the strictest of them |
-| `DataplaneRowFilter` | `handler`, `args`, `principals`, `keys` |
+| `DataplaneRowFilter` | `handler`, `args`, `principals`, `subject_dids`, `keys` |
 
 Two properties are the point of it:
 
@@ -393,10 +393,29 @@ outlived the work it described by a day.
 **Contract change, still true:** a PEP that parses the row filter with `extra="forbid"` and
 predates the field refuses every decision carrying a filter, which is the intended direction.
 
+**`subject_dids` — the same people, named for the record (2026-09-20).** The consenting
+subjects' DIDs, sorted and de-duplicated. It **narrows nothing**: no handler matches a column
+against a DID, and it is sent so that a PEP has something it may safely *report*. Until it
+existed the only list a PEP held was `principals`, the real `dataset-api` echoed them into
+`POST /internal/audit/query`, and 22 raw email addresses reached one run's `QueryExecuted`
+events (see [personal data](../../rulebook/personal-data.md), `L-3`). The connector now drops
+non-DIDs at that route, which made the record empty rather than wrong; this field is what
+makes it complete. It carries **every granted subject**, including one the data plane can
+reach only by a registered key — the question it answers is whose consent permitted the
+disclosure, not who could be looked up.
+
 **Unknown fields are refused** (`extra="forbid"`). The dangerous drift is one-way — a PDP that
 adds a narrowing an older PEP ignores serves rows it should have withheld. A parse failure is
 a denial, which is the side [rulebook `CR-4`](../../rulebook/policies.md) chooses. The cost is
 accepted: upgrading the connector ahead of a PEP stops the data plane rather than widening it.
+
+**Which is why every field here has a default, at both ends.** `forbid` governs only what a
+reader has never heard of. Whether a field it *does* know is required is a separate choice,
+and requiring one would break the other direction too — a newer PEP would refuse an older
+PDP. One impossible direction leaves a deployment order; two leave none. **The order is: the
+PEP first, the connector second.** A data plane that merely *accepts* `subject_dids` is
+harmless against a connector that does not send it; the reverse is a `502` on every filtered
+dataspace query.
 
 A PEP that cannot apply a filter it was given has **not** been permitted to serve unfiltered
 rows. An *allow* carrying a filter says *these rows*.

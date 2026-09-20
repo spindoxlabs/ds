@@ -111,6 +111,32 @@ def datasets_for_offer(offer_id: str) -> list[str]:
     return list(_datasets_by_offer().get(offer_id, []))
 
 
+def datasets_for_offer_or_raise(offer_id: str) -> list[str]:
+    """The datasets an offer reaches, never empty — for a consent *write*.
+
+    An offer is a question about datasets, and a deployment may publish one no
+    dataset here declares: the offers catalogue is dataspace-wide, the datasets
+    are this connector's. Expanding such an offer yields no row, so a write
+    path that loops over the result records nothing — and, having raised
+    nothing, answers as if it had. That is the one answer a decision must never
+    get, so the emptiness is refused here, where the expansion is defined,
+    rather than at each route that performs it.
+
+    :func:`datasets_for_offer` stays non-raising on purpose. `/ns/sharing-offers`
+    counts an offer's datasets with it, and an offer bound to none is a fact to
+    publish there, not an error.
+
+    :raises VocabularyError: mapped to a `422` by every consent write route.
+    """
+    dataset_ids = datasets_for_offer(offer_id)
+    if not dataset_ids:
+        raise VocabularyError(
+            f"Offer '{offer_id}' resolves to no dataset at this connector — "
+            "there is nothing here to record the decision against"
+        )
+    return dataset_ids
+
+
 def offers_for_dataset(dataset_id: str) -> list[str]:
     """The offer ids this dataset declares, as authored."""
     if dataset_id not in known_dataset_keys():

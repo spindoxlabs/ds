@@ -1127,6 +1127,54 @@ def keycloak_map_user(
     _run(_sync())
 
 
+@keycloak_app.command("unmap-user")
+def keycloak_unmap_user(
+    did: str = typer.Option(..., help="User DID to unbind"),
+):
+    """Delete a DID's `keycloak_mappings` row — the counterpart of `map-user`.
+
+    Local bookkeeping only, like its counterpart: this removes a row and never
+    contacts Keycloak.
+
+    **It does not require the DID to be active, or to exist.** The rows this
+    exists for were left by a member teardown that deactivated the DID first —
+    `DELETE /admin/dids/{did}` keeps the mapping deliberately — and a surviving
+    mapping makes the next `keycloak map-user` for that Keycloak user collide.
+    An operator clearing residue has no live identity to point at.
+    """
+
+    async def _unmap():
+        factory = await _ensure_db()
+        from sqlalchemy import select
+
+        async with factory() as session:
+            result = await session.execute(
+                select(KeycloakMapping).where(KeycloakMapping.did == did)
+            )
+            mapping = result.scalar_one_or_none()
+            if not mapping:
+                typer.echo(f"No Keycloak mapping for {did}", err=True)
+                raise typer.Exit(1)
+
+            realm, user_id = mapping.keycloak_realm, mapping.keycloak_user_id
+            did_result = await session.execute(select(Did).where(Did.did == did))
+            did_record = did_result.scalar_one_or_none()
+
+            await session.delete(mapping)
+            await session.commit()
+            typer.echo(f"Unbound {did} from Keycloak user {user_id} in realm {realm}")
+            if did_record is not None and did_record.active:
+                # Loud on purpose: unbinding a *live* identity is a different
+                # act from clearing residue, and they look identical afterwards.
+                typer.echo(
+                    "warning: that DID is still active — a live identity has "
+                    "just been unbound, not an orphan cleared",
+                    err=True,
+                )
+
+    _run(_unmap())
+
+
 def _owner_verification_fields(
     *,
     status: str | None,

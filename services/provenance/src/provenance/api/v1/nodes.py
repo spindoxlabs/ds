@@ -6,7 +6,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...dependencies import get_db, require_write_scope, get_settings_dep
+from ...dependencies import (
+    get_db,
+    get_settings_dep,
+    require_read_scope,
+    require_write_scope,
+)
 from ...schemas.context import JSONLDResponse
 from ...schemas.prov import ActivityCreate, AgentCreate, EntityCreate
 from ...services import prov_service
@@ -43,7 +48,7 @@ async def create_entity(
     )
 
 
-@router.get("/entities")
+@router.get("/entities", dependencies=[Depends(require_read_scope)])
 async def list_entities(
     limit: int = Limit,
     offset: int = Offset,
@@ -56,7 +61,7 @@ async def list_entities(
     return JSONLDResponse([node_to_jsonld(n) for n in nodes], _context_url(settings))
 
 
-@router.get("/entities/{iri:path}")
+@router.get("/entities/{iri:path}", dependencies=[Depends(require_read_scope)])
 async def get_entity(
     iri: str,
     db: AsyncSession = Depends(get_db),
@@ -97,7 +102,7 @@ async def create_activity(
     )
 
 
-@router.get("/activities")
+@router.get("/activities", dependencies=[Depends(require_read_scope)])
 async def list_activities(
     limit: int = Limit,
     offset: int = Offset,
@@ -110,7 +115,7 @@ async def list_activities(
     return JSONLDResponse([node_to_jsonld(n) for n in nodes], _context_url(settings))
 
 
-@router.get("/activities/{iri:path}")
+@router.get("/activities/{iri:path}", dependencies=[Depends(require_read_scope)])
 async def get_activity(
     iri: str,
     db: AsyncSession = Depends(get_db),
@@ -151,7 +156,7 @@ async def create_agent(
     )
 
 
-@router.get("/agents")
+@router.get("/agents", dependencies=[Depends(require_read_scope)])
 async def list_agents(
     limit: int = Limit,
     offset: int = Offset,
@@ -166,7 +171,7 @@ async def list_agents(
 
 # Declared after the literal `/agents`, which is the only ordering that keeps the
 # listing reachable: a `{iri:path}` route mounted first swallows it.
-@router.get("/agents/{iri:path}")
+@router.get("/agents/{iri:path}", dependencies=[Depends(require_read_scope)])
 async def get_agent(
     iri: str,
     db: AsyncSession = Depends(get_db),

@@ -106,6 +106,47 @@ class KeycloakMappingResponse(BaseModel):
     subject_id: str
 
 
+class KeycloakMappingDeleteResponse(BaseModel):
+    """What `DELETE /admin/keycloak/mappings/{did}` removed, and what stood.
+
+    A body rather than a `204`, because the row's **absence** changes how
+    another route behaves — `POST /admin/keycloak/sync` stops answering `409`
+    for that Keycloak user — and because unbinding a DID that is still
+    **active** is a state an operator must be told they created. A `204` says
+    "done" to both cases identically.
+    """
+
+    deleted: bool
+    did: str
+    keycloak_realm: str
+    keycloak_user_id: str
+    #: Whether the DID the mapping named is still active. `False` is the orphan
+    #: case — the identity was deactivated earlier and this clears the residue;
+    #: `True` means a live identity has just been unbound.
+    did_active: bool
+
+
+class DidDeleteResponse(BaseModel):
+    """What the deactivation did, and what it deliberately left standing.
+
+    This route answered `204` until 2026-09-20 and left a `keycloak_mappings`
+    row behind with nothing saying so. That row is not inert: it makes
+    `POST /admin/keycloak/sync` refuse the next binding for the same Keycloak
+    user (`409`), so a caller reading `204` as "removed" accumulated identities
+    it could never re-provision — 22 of them in one deployment, reported by its
+    consistency check as a *note* rather than a failure.
+
+    A delete that does not erase has to say what it kept. `residue` is the call
+    to make, not a hint to go looking.
+    """
+
+    deactivated: bool
+    did: str
+    credentials_revoked: int
+    keycloak_mapping_retained: bool
+    residue: str | None = None
+
+
 class UserCredentialResponse(BaseModel):
     """One presentable credential held by a user."""
 

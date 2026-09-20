@@ -77,9 +77,17 @@ async def test_get_did(client, db_session):
 
 @pytest.mark.asyncio
 async def test_delete_did(client, db_session):
+    """`204` until 2026-09-20; now a body naming what the deactivation kept.
+
+    The act is unchanged — deactivate, revoke, keep the evidence. What changed
+    is that a route which does not erase now says so; see
+    `tests/test_keycloak_mapping_lifecycle.py` for the residue that made a
+    silent `204` costly.
+    """
     await seed_did(db_session)
     r = await client.delete(f"/admin/dids/{TEST_DID}", headers=HEADERS)
-    assert r.status_code == 204
+    assert r.status_code == 200
+    assert r.json()["deactivated"] is True
 
     r = await client.get(f"/admin/dids/{TEST_DID}", headers=HEADERS)
     assert r.json()["active"] is False

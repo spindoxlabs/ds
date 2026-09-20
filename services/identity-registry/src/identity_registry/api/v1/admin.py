@@ -38,7 +38,9 @@ from ...schemas.responses import (
     CredentialResponse,
     CredentialSummary,
     DataSubjectCredentialResponse,
+    DidDeleteResponse,
     DidResponse,
+    KeycloakMappingDeleteResponse,
     KeycloakMappingResponse,
     KeyRotationResponse,
     ParticipantCheckResponse,
@@ -440,12 +442,30 @@ async def get_did(
     )
 
 
-@router.delete("/dids/{did:path}", status_code=204)
+@router.delete("/dids/{did:path}", response_model=DidDeleteResponse)
 async def delete_did(
     did: str,
     db: AsyncSession = Depends(get_db),
     _claims: dict = Depends(require_admin_scope),
 ):
+    """Deactivate a DID and revoke its credentials — and **say what stands**.
+
+    The act itself is unchanged: this is a deactivation, not an erasure. The
+    `dids` row stays with `deactivated_at` set and credentials are marked
+    revoked, because both are evidence and evidence is not deleted.
+
+    **The answer changed on 2026-09-20, from `204` to a body.** What this route
+    leaves behind is not inert: the `keycloak_mappings` row binding the DID to a
+    Keycloak user survives, and `POST /admin/keycloak/sync` refuses the next
+    binding for that user with a `409` naming this DID — *"Rebinding is an
+    explicit operator act"*. A caller that read `204` as "removed" therefore
+    built up identities it could never re-provision, silently: a deployment
+    reached **22** such rows, its consistency check reporting them as a note.
+
+    The mapping is **still not deleted here**, and that is the decision rather
+    than an omission — see `DELETE /admin/keycloak/mappings/{did}`. What changes
+    is that the caller is told, and told the call to make.
+    """
     result = await db.execute(select(Did).where(Did.did == did))
     did_record = result.scalar_one_or_none()
     if not did_record:
@@ -460,13 +480,34 @@ async def delete_did(
             Credential.status == "active",
         )
     )
+    revoked = 0
     for cred in cred_result.scalars().all():
         cred.status = "revoked"
         cred.revoked_at = datetime.now(UTC)
         if cred.status_list_index is not None:
             await revoke_status_list_index(db, cred.status_list_index)
+        revoked += 1
+
+    mapping_result = await db.execute(
+        select(KeycloakMapping).where(KeycloakMapping.did == did)
+    )
+    mapping = mapping_result.scalar_one_or_none()
 
     await db.commit()
+
+    return DidDeleteResponse(
+        deactivated=True,
+        did=did,
+        credentials_revoked=revoked,
+        keycloak_mapping_retained=mapping is not None,
+        residue=(
+            f"a keycloak_mappings row survives and will refuse the next binding "
+            f"for this Keycloak user (409). Remove it with "
+            f"DELETE /admin/keycloak/mappings/{did}"
+            if mapping is not None
+            else None
+        ),
+    )
 
 
 # ── Credentials ───────────────────────────────────────────────────
@@ -1086,6 +1127,83 @@ async def keycloak_sync(
     # `keycloak_attribute_synced` and `warning` fields were only ever read
     # defensively, with `.get()`, to log a partial-sync warning.
     return {"status": "synced", "did": data.did}
+
+
+@router.delete(
+    "/keycloak/mappings/{did:path}", response_model=KeycloakMappingDeleteResponse
+)
+async def delete_keycloak_mapping(
+    did: str,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_admin_scope),
+):
+    """Unbind a DID from its Keycloak user — the operator's half of rebinding.
+
+    **Its own route, not a step inside `DELETE /admin/dids/{did}`**, and the
+    anchor's own code decided that twice over:
+
+    - `POST /admin/keycloak/sync` refuses to rebind a Keycloak user as a side
+      effect and says why — *"Rebinding is an explicit operator act, never a
+      side effect of a sync"*. Unbinding is the same act in the other
+      direction, so it is explicit too;
+    - the only other *binding* row in this service, `OrganizationMembership`,
+      is removed by its own `DELETE /admin/memberships/{did}/{alias}` with a
+      real delete — not folded into the deletion of either side it joins.
+
+    There is a second reason, which is what the mapping is *for*. It carries the
+    continuity key `(keycloak_realm, keycloak_user_id)`, and `resolve_mapping`
+    documents that this is the one identifier an IdP does not let people change
+    — the evidence used to tell "the same human, account re-created" from "an
+    address recycled to a different human", a distinction this service refuses
+    to guess at. Destroying that automatically whenever an identity is
+    deactivated would throw away the evidence for a decision it insists an
+    operator must make.
+
+    **An orphan is the normal case here, not an edge one.** This deliberately
+    does not require the DID to be active, or to exist: the rows it was written
+    for have a DID deactivated by an earlier teardown, and a route that demanded
+    a live identity could not clear a single one of them. It answers on the
+    mapping and *reports* the DID's state instead of demanding it — `did_active`
+    is `False` for residue, `True` when a live binding has just been cut.
+
+    **Erasure, and it says so.** `db.delete`, not a flag: there is no
+    deactivated state for a join row, and a "deleted" mapping that still
+    answered `resolve_mapping` would be the worst of both — the `409` would
+    persist while the operator believed it was gone. The response names what
+    went, so a caller never has to infer it from a bare `204`.
+    """
+    result = await db.execute(select(KeycloakMapping).where(KeycloakMapping.did == did))
+    mapping = result.scalar_one_or_none()
+    if not mapping:
+        raise HTTPException(status_code=404, detail="Keycloak mapping not found")
+
+    realm = mapping.keycloak_realm
+    keycloak_user_id = mapping.keycloak_user_id
+
+    # Read before the delete: after it, the DID is no longer reachable from the
+    # row. Absent entirely is reported as inactive — the foreign key makes that
+    # unreachable today, and answering it honestly costs one `or None`.
+    did_result = await db.execute(select(Did).where(Did.did == did))
+    did_record = did_result.scalar_one_or_none()
+    did_active = bool(did_record and did_record.active)
+
+    await db.delete(mapping)
+    await db.commit()
+
+    log.info(
+        "Unbound %s from Keycloak user %s in realm %s (DID active: %s)",
+        did,
+        keycloak_user_id,
+        realm,
+        did_active,
+    )
+    return KeycloakMappingDeleteResponse(
+        deleted=True,
+        did=did,
+        keycloak_realm=realm,
+        keycloak_user_id=keycloak_user_id,
+        did_active=did_active,
+    )
 
 
 # ── Keys ──────────────────────────────────────────────────────────

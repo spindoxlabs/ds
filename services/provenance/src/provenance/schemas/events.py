@@ -66,6 +66,36 @@ class CataloguePublished(BaseModel):
     acted_by: ActingPrincipal | None = None
 
 
+class CatalogueWithdrawn(BaseModel):
+    """A dataset this participant published is no longer on offer.
+
+    The counterpart :class:`CataloguePublished` never had. Until 2026-09-20 a
+    dataset removed from governance was taken off offer in EDC and left **no
+    trace in the graph** — which does not leave the record merely incomplete, it
+    leaves it *wrong*: the last thing provenance says about that dataset is that
+    it was published, and nothing since. `ADR-0017` named this owed and named
+    its shape: an **entity invalidation**, `prov:wasInvalidatedBy`, not another
+    generation.
+
+    ``data_product_id`` is the **EDC asset id**, which is what
+    `CataloguePublished` names — the two events must invalidate and generate the
+    *same* entity node, and a governance key would silently create a second one.
+
+    ``reason`` is a code, never prose and never a person: `undeclared` is the
+    only one emitted today, for a dataset governance stopped declaring. A
+    dataset republished under a new asset id is **not** withdrawn — it is still
+    on offer — so the reconcile does not emit this for it.
+    """
+
+    event_type: Literal["CatalogueWithdrawn"] = "CatalogueWithdrawn"
+    event_id: str | None = None
+    occurred_at: datetime
+    data_product_id: str  # IRI of the withdrawn dataset/asset — the asset id
+    provider_did: str
+    reason: str | None = None
+    acted_by: ActingPrincipal | None = None
+
+
 class CatalogViewed(BaseModel):
     event_type: Literal["CatalogViewed"] = "CatalogViewed"
     event_id: str | None = None
@@ -347,6 +377,7 @@ class DataDisclosed(BaseModel):
 
 DomainEvent = Annotated[
     CataloguePublished
+    | CatalogueWithdrawn
     | CatalogViewed
     | AccessRequested
     | NegotiationStarted

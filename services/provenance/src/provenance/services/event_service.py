@@ -16,6 +16,7 @@ from ..schemas.events import (
     ActingPrincipal,
     CatalogViewed,
     CataloguePublished,
+    CatalogueWithdrawn,
     ConsentGranted,
     ConsentRevoked,
     ContractAgreementSigned,
@@ -69,6 +70,8 @@ async def ingest_event(
 
     if isinstance(event, CataloguePublished):
         prov_node = await _materialise_catalogue_published(session, event)
+    elif isinstance(event, CatalogueWithdrawn):
+        prov_node = await _materialise_catalogue_withdrawn(session, event)
     elif isinstance(event, CatalogViewed):
         prov_node = await _materialise_catalog_viewed(session, event)
     elif isinstance(event, AccessRequested):
@@ -270,6 +273,49 @@ async def _materialise_catalogue_published(
     await _edge(session, "wasGeneratedBy", dataset.id, activity.id)
     await _edge(session, "wasAttributedTo", dataset.id, publisher.id)
     await _edge(session, "wasAssociatedWith", activity.id, publisher.id)
+    await _materialise_acting_principal(session, activity, event.acted_by)
+    return activity
+
+
+async def _materialise_catalogue_withdrawn(
+    session: AsyncSession, event: CatalogueWithdrawn
+) -> ProvNodeORM:
+    """The dataset stops being offered, on the dataset's own record.
+
+    `ADR-0017` chose the shape: an **invalidation**, not another generation. So
+    the edge is `wasInvalidatedBy(dataset, activity)` — the Entity→Activity
+    direction, beside the `wasGeneratedBy` the publication wrote on the same
+    node, which is what makes a withdrawal visible to a walk that starts at the
+    dataset. Writing `invalidated` from the activity instead would be equally
+    valid PROV-O and would put the fact where nobody looking at the dataset
+    finds it.
+
+    The entity is upserted with **no label or description**: `upsert_node` skips
+    `None` fields, so a withdrawal never overwrites what the publication
+    recorded about the dataset. It is the same node — `data_product_id` is the
+    asset id on both events — and that identity is the whole point.
+    """
+    dataset = await upsert_node(
+        session,
+        event.data_product_id,
+        "Entity",
+        energy_type="DataProduct",
+    )
+    activity = await upsert_node(
+        session,
+        f"urn:activity:catalogue-withdrawal:{event.data_product_id}",
+        "Activity",
+        label="Catalogue Withdrawal",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={"reason": event.reason},
+    )
+    provider = await upsert_node(
+        session, event.provider_did, "Agent", label=event.provider_did
+    )
+    await session.flush()
+    await _edge(session, "wasInvalidatedBy", dataset.id, activity.id)
+    await _edge(session, "wasAssociatedWith", activity.id, provider.id)
     await _materialise_acting_principal(session, activity, event.acted_by)
     return activity
 

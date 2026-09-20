@@ -143,6 +143,12 @@ A decision that names an **offer** is wildcard-scoped, on both routes that recor
 `POST /consent/admin/shares`, where a service records it, and `POST /consent/my/shares`,
 where the subject does. Naming a `consumer_id` is what makes either a per-party decision.
 
+**Both expand the offer the same way, and both refuse the same offer.** The offers
+catalogue is dataspace-wide while the datasets are one connector's, so a member can be shown
+an offer this node holds nothing for; expanding it produces no row. **On either route that
+is a `422`** — a decision recorded nowhere must not be answered as if it had been. The
+member's route answered `200 []` until 2026-09-20.
+
 **Who decided is recorded, and it decides who may change it.** Every consent row carries
 `decided_by` — `subject`, `operator`, `collector`, or `service` for a row the retired
 plain-service path wrote — and a withdrawal may only be lifted by the authority that made it,
@@ -202,7 +208,8 @@ What is recorded:
 
 `missing_prerequisites` on each returned row names the offers this one is admitted only
 together with (`requires_offers`) that the subject has not granted here. An offer that resolves
-to no dataset at this connector is a `422`.
+to no dataset at this connector is a `422`, here and on the member's own route alike — see
+"The consent wildcard" above.
 
 `GET /consent/admin/subject-shares?subject_id=…` is the read-back: one subject's decisions and
 outstanding asks here, for the organisation that speaks for them, under the same two checks. It

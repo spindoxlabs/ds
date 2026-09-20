@@ -1,5 +1,7 @@
 """Tests for domain event ingest and PROV-O materialisation."""
 
+import urllib.parse
+
 import pytest
 
 
@@ -11,6 +13,19 @@ CATALOGUE_EVENT = {
     "provider_did": "did:web:rec.dataspaces.localhost",
     "title": "Meter Readings 15m",
 }
+
+WITHDRAWAL_EVENT = {
+    "event_type": "CatalogueWithdrawn",
+    "event_id": "test-cat-withdraw-001",
+    "occurred_at": "2026-01-04T10:00:00Z",
+    "data_product_id": CATALOGUE_EVENT["data_product_id"],
+    "provider_did": "did:web:rec.dataspaces.localhost",
+    "reason": "undeclared",
+}
+
+WITHDRAWAL_ACTIVITY = (
+    f"urn:activity:catalogue-withdrawal:{CATALOGUE_EVENT['data_product_id']}"
+)
 
 CONTRACT_EVENT = {
     "event_type": "ContractAgreementSigned",
@@ -68,6 +83,67 @@ async def test_catalogue_materialises_entity_and_activity(client):
     # CatalogPublication activity should exist
     activity_labels = [n.get("prov:label", "") for n in activities.json()["@graph"]]
     assert any("Catalog" in lbl or "Publication" in lbl for lbl in activity_labels)
+
+
+@pytest.mark.rule("L-1", "L-15")
+@pytest.mark.asyncio
+async def test_a_withdrawal_invalidates_the_dataset_the_publication_generated(client):
+    """`ADR-0017`'s owed counterpart: going off offer is now in the graph.
+
+    A dataset removed from governance was taken off offer in EDC and recorded
+    nowhere, so the last thing provenance said about it was that it had been
+    published — not an incomplete record but a wrong one.
+
+    Three things are asserted, and the middle one is the decision:
+
+    1. the event is accepted and materialises a node;
+    2. the edge is `prov:wasInvalidatedBy` **from the dataset to the
+       withdrawal** — an invalidation on the entity's own record, not another
+       generation and not the Activity→Entity direction, which would be equally
+       valid PROV-O and would hide the fact from anything walking the dataset;
+    3. it is the **same entity node** the publication generated — both events
+       name the EDC asset id, so a withdrawal cannot invent a second dataset.
+    """
+    await client.post("/prov/events", json=CATALOGUE_EVENT)
+
+    response = await client.post("/prov/events", json=WITHDRAWAL_EVENT)
+    assert response.status_code == 201, response.text
+    assert response.json()["prov_node_id"] is not None
+
+    iri = urllib.parse.quote(str(CATALOGUE_EVENT["data_product_id"]), safe="")
+    graph = (
+        await client.get(f"/prov/lineage/{iri}?direction=both&max_depth=3")
+    ).json()["@graph"]
+
+    edges = [item for item in graph if "ds:source" in item]
+    invalidations = [e for e in edges if e["@type"] == "prov:wasInvalidatedBy"]
+    assert len(invalidations) == 1, edges
+    assert invalidations[0]["ds:source"] == CATALOGUE_EVENT["data_product_id"]
+    assert invalidations[0]["ds:target"] == WITHDRAWAL_ACTIVITY
+
+    # The publication's own edge is untouched: one dataset, both facts.
+    assert any(
+        e["@type"] == "prov:wasGeneratedBy"
+        and e["ds:source"] == CATALOGUE_EVENT["data_product_id"]
+        for e in edges
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_withdrawal_keeps_what_the_publication_said_about_the_dataset(client):
+    """`upsert_node` skips `None`, and this is where that matters.
+
+    The withdrawal names the dataset to invalidate it and knows nothing about
+    its title — so it must not blank the one the publication recorded.
+    """
+    await client.post("/prov/events", json=CATALOGUE_EVENT)
+    await client.post("/prov/events", json=WITHDRAWAL_EVENT)
+
+    entities = (await client.get("/prov/entities")).json()["@graph"]
+    dataset = next(
+        n for n in entities if n["@id"] == CATALOGUE_EVENT["data_product_id"]
+    )
+    assert dataset.get("prov:label") == CATALOGUE_EVENT["title"]
 
 
 @pytest.mark.asyncio

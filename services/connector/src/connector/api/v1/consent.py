@@ -903,6 +903,13 @@ async def set_my_data_share(
     Naming a ``dataset_id`` directly remains available for a subject managing
     one dataset from ``/my-data``.
 
+    **An offer that resolves to no dataset here is a 422**, exactly as it is on
+    ``POST /consent/admin/shares``: the offers catalogue is dataspace-wide and
+    the datasets are this connector's, so a member can be shown an offer this
+    node holds nothing for. Until 2026-09-20 the expansion simply ran zero
+    times and the route answered ``200 []`` — a decision accepted, recorded
+    nowhere, and indistinguishable at the caller from one that was.
+
     **An offer-scoped decision is wildcard-scoped (§3.1), whoever records it.**
     It used to be keyed on ``settings.consumer_participant_did`` — the party this
     connector negotiates against when it *consumes*, which is a transfer fact and
@@ -968,6 +975,16 @@ async def set_my_data_share(
                     f"(legal basis {offer.legal_basis}) — it is disclosed, not "
                     "consented",
                 )
+            # Expanded before anything is written, and refused when it reaches
+            # nothing: this is the same expansion `POST /consent/admin/shares`
+            # performs and the same refusal, from the one place that defines it
+            # (`vocab.datasets_for_offer_or_raise` → the 422 below). Iterating
+            # the list where it was fetched let an offer no dataset here
+            # declares run the loop zero times and answer `200 []` — a member's
+            # share decision accepted and lost, while the organisation route
+            # answered 422 for the same offer.
+            dataset_ids = vocab.datasets_for_offer_or_raise(offer.id)
+
             # The subject's own decision deserves the same evidence record a
             # service-provisioned one gets. Without it there is no record of
             # *which* consent text this person saw — `user_visible_hash` exists
@@ -980,7 +997,7 @@ async def set_my_data_share(
 
             consents = []
             async with db.begin():
-                for dataset_id in vocab.datasets_for_offer(offer.id):
+                for dataset_id in dataset_ids:
                     consents.append(
                         await consent_service.set_subject_data_sharing(
                             session=db,
@@ -1255,16 +1272,12 @@ async def admin_provision_share(
             f"{offer.legal_basis}) — it is disclosed, not consented",
         )
 
+    # Same expansion, same refusal, same words as `POST /consent/my/shares` —
+    # they are one rule, and it is stated in `consent_vocabulary`.
     try:
-        dataset_ids = vocab.datasets_for_offer(offer.id)
+        dataset_ids = vocab.datasets_for_offer_or_raise(offer.id)
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
-    if not dataset_ids:
-        raise HTTPException(
-            422,
-            f"Offer '{offer.id}' resolves to no dataset at this connector — there "
-            "is nothing here to record the decision against",
-        )
 
     await _admit_writer(request, settings, writer, body.subject_id)
 

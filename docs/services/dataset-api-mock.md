@@ -128,9 +128,12 @@ option. This one can still refuse.
 
 ### The row filter's handlers
 
-The filter arrives whole — `{handler, args, principals, keys}` — because the handler is what knows
-how a person maps to values in the column. ds names the person by an identifier **native to
-the receiving system**, never by DID.
+The filter arrives whole — `{handler, args, principals, subject_dids, keys}` — because the
+handler is what knows how a person maps to values in the column. ds names the person by an
+identifier **native to the receiving system** for the *matching*, never by DID; `subject_dids`
+names the same people for the *record*, and is what this service sends as
+`authorized_subject_ids` (it sent `None` until 2026-09-20, because a decision gave it no DIDs
+and the principals are personal data).
 
 | Handler | Resolves |
 |---|---|

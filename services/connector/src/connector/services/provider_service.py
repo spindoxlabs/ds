@@ -223,6 +223,8 @@ async def _withdraw_stale(
     declared_keys: set[str],
     published_asset_ids: dict[str, str],
     result: SyncResult,
+    prov: ProvBridge,
+    acted_by: dict | None = None,
 ) -> None:
     """Remove what EDC still holds and this connector's governance no longer declares.
 
@@ -259,6 +261,16 @@ async def _withdraw_stale(
     definition is refused. A 409 on the asset (it has agreements) is reported,
     not swallowed — a withdrawn dataset that is still under contract is precisely
     the state an operator has to be told about.
+
+    **A successful withdrawal is recorded in provenance** (`CatalogueWithdrawn`,
+    `ADR-0017`), and only for the `undeclared` case. A dataset republished under
+    a new asset id is *still on offer*: recording its old asset as withdrawn
+    would put "this dataset is no longer available" in the graph about a dataset
+    that is. The event is emitted **after** EDC has accepted the delete, so the
+    graph never claims a withdrawal EDC refused; emission itself is non-fatal
+    (`ProvenanceClient.emit_event` logs and returns), because the dataset is
+    already off offer and losing the record is better than failing the reconcile
+    that achieved it.
     """
     try:
         assets = await edc.list_assets()
@@ -328,6 +340,12 @@ async def _withdraw_stale(
             # case.
             result.withdrawn.append(asset_id)
             log.info("Withdrew dataset %s — asset %s removed from EDC", key, asset_id)
+            if undeclared:
+                await prov.catalogue_withdrawn(
+                    data_product_id=asset_id,
+                    reason="undeclared",
+                    acted_by=acted_by,
+                )
         except Exception as exc:  # noqa: BLE001
             log.exception("Failed to withdraw dataset %s (asset %s)", key, asset_id)
             why = (
@@ -493,6 +511,8 @@ async def sync_governance(
     # **After** publishing, deliberately. Withdrawing first would take a renamed
     # dataset off offer before its replacement exists; withdrawing after closes
     # the window to nothing.
-    await _withdraw_stale(edc, set(datasets), published_asset_ids, result)
+    await _withdraw_stale(
+        edc, set(datasets), published_asset_ids, result, prov, acted_by
+    )
 
     return result

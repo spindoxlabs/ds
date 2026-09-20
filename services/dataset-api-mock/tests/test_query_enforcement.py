@@ -171,3 +171,67 @@ def test_a_deny_serves_nothing_and_relays_the_gate(client, monkeypatch):
     response = _query(client)
     assert response.status_code == 403
     assert "purpose_required" in response.json()["detail"]
+
+
+# ── what the PEP reports back ────────────────────────────────────────────────
+#
+# This service is the reference PEP, and until 2026-09-20 it and the real one
+# disagreed about this field: the mock sent `None` because a decision gave it no
+# DIDs, and the real `dataset-api` sent the `principals` — 22 raw addresses into
+# one run's `QueryExecuted` events. `subject_dids` is what removed the choice.
+
+SUBJECT_DID = "did:web:rec.example.org:users:ex-00001"
+
+
+@pytest.fixture
+def audits(client, monkeypatch):
+    """The audit calls this PEP makes, recorded rather than swallowed."""
+    recorded: list[dict] = []
+
+    async def record(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(main, "_audit_query", record)
+    return recorded
+
+
+def test_the_pep_reports_the_subject_dids_and_never_the_principals(client, monkeypatch, audits):
+    """`authorized_subject_ids` admits codes, DIDs and hashes only (`L-3`).
+
+    The principals are registry-native — in a realm where the username is the
+    email, a list of addresses — and they are exactly what a PEP used to have
+    and send. `/internal/audit/query` drops a non-DID whatever arrives, so a
+    leak here is caught on ds's side; that is a backstop, and this is the fix.
+    """
+    allow = _rec_allow([SUBJECT])
+    allow["row_filter"]["subject_dids"] = [SUBJECT_DID]
+    _answers(monkeypatch, _decision(allow))
+
+    assert _query(client).status_code == 200
+    assert audits[0]["authorized_subject_ids"] == [SUBJECT_DID]
+    assert SUBJECT not in str(audits[0]["authorized_subject_ids"])
+
+
+def test_an_older_control_plane_leaves_the_record_thin_not_broken(client, monkeypatch, audits):
+    """**The skew test.** A PDP that sends no `subject_dids` still serves rows.
+
+    This is the deployment state a new data plane meets while the connector is
+    still on the old pin. The rows must flow and the record must be empty — the
+    behaviour ds already has since it started dropping non-DIDs — rather than
+    the query failing over a field that narrows nothing.
+    """
+    _answers(monkeypatch, _decision(_rec_allow([SUBJECT])))
+
+    response = _query(client)
+    assert response.status_code == 200
+    assert response.json()["count"] == 2
+    assert audits[0]["authorized_subject_ids"] == []
+
+
+def test_an_unfiltered_allow_reports_nothing_rather_than_nobody(client, monkeypatch, audits):
+    """`None`, not `[]`. An allow with no filter names no subjects at all, and
+    an empty list would read as "authorised for nobody"."""
+    _answers(monkeypatch, _decision({"dataset_id": GATED, "decision": ALLOW}))
+
+    assert _query(client).status_code == 200
+    assert audits[0]["authorized_subject_ids"] is None

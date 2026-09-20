@@ -126,6 +126,39 @@ class ProvBridge:
             }
         )
 
+    async def catalogue_withdrawn(
+        self,
+        data_product_id: str,
+        reason: str | None = None,
+        acted_by: dict | None = None,
+    ) -> None:
+        """A dataset this connector published is no longer on offer (`ADR-0017`).
+
+        ``data_product_id`` is the **EDC asset id**, the same argument
+        :meth:`catalogue_published` is given, because the two events have to name
+        one entity — the graph invalidates the node the publication generated, or
+        it invalidates a node nobody has heard of.
+
+        **No `event_id`, deliberately, and that is the difference from the
+        publish.** A sync republishes everything every run, so
+        `CataloguePublished` pins `sync:<asset id>` to keep a healthy re-run from
+        writing a second publication of the same dataset. A withdrawal happens
+        once — the next sync cannot see an asset EDC no longer holds — and a
+        dataset that is re-declared and later withdrawn again *is* a second
+        withdrawal. A stable key would swallow it as a duplicate (`L-4`), so the
+        content hash, which includes `occurred_at`, is the honest key here.
+        """
+        await self._prov.emit_event(
+            {
+                "event_type": "CatalogueWithdrawn",
+                "occurred_at": _now(),
+                "data_product_id": data_product_id,
+                "provider_did": _did(self._participant_id),
+                "reason": reason,
+                "acted_by": acted_by,
+            }
+        )
+
     async def catalog_viewed(
         self,
         provider_id: str,

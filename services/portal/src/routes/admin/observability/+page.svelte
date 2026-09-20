@@ -7,7 +7,7 @@
   // Every type the provenance service can record. Listing them explicitly beats a
   // free-text box: an operator filtering by a typo silently sees nothing.
   const EVENT_TYPES = [
-    'CataloguePublished', 'CatalogViewed', 'AccessRequested',
+    'CataloguePublished', 'CatalogueWithdrawn', 'CatalogViewed', 'AccessRequested',
     'NegotiationStarted', 'NegotiationFinalized', 'NegotiationTerminated',
     'ContractAgreementSigned', 'TransferStarted', 'DataTransferCompleted',
     'QueryExecuted', 'AccessRevoked',
