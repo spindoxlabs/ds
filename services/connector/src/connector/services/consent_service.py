@@ -491,6 +491,7 @@ async def set_subject_data_sharing(
     collector: str | None = None,
     keys: list[str] | None = None,
     holder: str | None = None,
+    reason: str | None = None,
 ) -> ConsentRequestORM:
     """Set a data subject's standing sharing decision for a dataset.
 
@@ -511,6 +512,11 @@ async def set_subject_data_sharing(
     that is already standing has them **replaced** when the call sends any — and
     a withdrawal drops them with the grant. ``None`` means "not sent" and leaves
     a standing grant's keys alone.
+
+    ``reason`` is why a withdrawal was taken. It goes to ``revocation_reason``
+    and nowhere else — **not** to ``message``, which every consent read projects
+    (`D-12a`). A withdrawal over a standing refusal changes nothing, its reason
+    included.
 
     Raises :class:`ConsentWithdrawalStands` when the caller would re-open a
     refusal it has no authority to re-open (`D-15c`).
@@ -587,7 +593,7 @@ async def set_subject_data_sharing(
     if latest and latest.status == "granted":
         latest.status = "revoked"
         latest.revoked_at = now
-        latest.revocation_reason = message or "Data owner disabled sharing."
+        latest.revocation_reason = reason or message or "Data owner disabled sharing."
         # The row now records *this* decision, so it records who took it. Leaving
         # the granter's authority here would let a service lift a withdrawal the
         # subject made over a grant that service had provisioned — the exact case
@@ -626,7 +632,7 @@ async def set_subject_data_sharing(
         collector=collector,
         requested_at=now,
         revoked_at=now,
-        revocation_reason=message or "Data owner disabled sharing.",
+        revocation_reason=reason or message or "Data owner disabled sharing.",
         transfer_ids=[],
     )
     session.add(consent)

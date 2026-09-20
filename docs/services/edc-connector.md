@@ -169,11 +169,21 @@ setting with no reader is added back.
 ### Schema creation
 
 `edc.sql.schema.autocreate=true` means the runtime creates its own tables at first boot from
-DDL resources inside the JAR. **Flyway is not on the classpath**, so "run migrations
-out-of-band" means applying those `*-schema.sql` resources yourself. The deployment keeps
+DDL resources inside the JAR. **Flyway is not on the classpath.** The deployment keeps
 autocreate on and instead gives each EDC a least-privilege role that owns only its own
-database, which removes the real risk — DDL as a superuser — while keeping the connector
-self-migrating.
+database. That removes the real risk, DDL as a superuser, and the connector still migrates
+itself.
+
+**Autocreate alone cannot upgrade a database.** Every store file is
+`CREATE TABLE IF NOT EXISTS`, so a column a newer EDC adds never reaches a table an older
+one created. ds's `EdcSchemaMigrationExtension` queues its own migrations,
+`ds-edc-schema/<store>/V<edc version>__*.sql` in the JAR, on the same bootstrapper and
+datasource as each store. They are guarded additions
+(`ALTER TABLE IF EXISTS … ADD COLUMN IF NOT EXISTS`), so a database created by EDC 0.16.0
+or later comes up with the pinned schema at boot. The boot log says
+`Queued 3 schema migration(s)`. With autocreate off, apply the store files and those
+migrations yourself, and the runtime warns with the files named. Why this rather than
+Flyway: [ADR-0018](../decisions/ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md).
 
 ## Persistence
 

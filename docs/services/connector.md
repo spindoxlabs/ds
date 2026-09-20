@@ -194,6 +194,11 @@ What is recorded:
   only the registering organisation gets the keys back;
 - a relayed withdrawal as the member's (`decided_by="subject"`), so neither a service nor the
   collector acting on its own can lift it.
+- **why the organisation withdrew**, when it withdraws on its own (`decided_by="collector"`,
+  e.g. a membership ending) and sends `reason`: one line, at most 200 characters, no `@`. It
+  is stored as the row's `revocation_reason` and carried by the `ConsentRevoked` event, and
+  no read returns it (`D-12a`). `reason` anywhere else — a grant, a relayed withdrawal, the
+  operator — is a `422`, and so is `message`, which is not a spelling of it.
 
 `missing_prerequisites` on each returned row names the offers this one is admitted only
 together with (`requires_offers`) that the subject has not granted here. An offer that resolves

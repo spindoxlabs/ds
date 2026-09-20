@@ -331,6 +331,10 @@ class SubjectWithdrawalOverride(BaseModel):
         return v
 
 
+#: The longest cause a withdrawal may record — one line, not a notes field.
+REASON_MAX_LENGTH = 200
+
+
 class AdminShareRequest(BaseModel):
     """A service recording a subject's standing decision.
 
@@ -358,6 +362,46 @@ class AdminShareRequest(BaseModel):
     #: relayed withdrawal is then the member's, `D-15c`); `collector` — the
     #: organisation decided itself (e.g. the member left it).
     decided_by: Literal["subject", "collector"] | None = None
+    #: **Why the organisation withdrew**, on its own withdrawal only
+    #: (``enabled: false`` with ``decided_by: "collector"`` — a membership
+    #: ending). A cause, not a narrative: it is stored as the row's
+    #: ``revocation_reason`` and carried by the ``ConsentRevoked`` provenance
+    #: event, and projected by no read (`D-12a`). Not ``message``: that is the
+    #: text a row is created with, and ``ConsentResponse`` returns it to every
+    #: reader.
+    reason: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=REASON_MAX_LENGTH,
+        description=(
+            "Why the organisation withdrew — accepted only with enabled=false and "
+            "decided_by='collector'. One line, at most "
+            f"{REASON_MAX_LENGTH} characters, no personal data (an '@' is refused). "
+            "Recorded on the row and in provenance; returned by no read."
+        ),
+    )
+
+    @field_validator("reason", mode="before")
+    @classmethod
+    def _reason_is_one_line_and_no_address(cls, v):
+        """A cause, in one line, and not the obvious way PII gets in.
+
+        It reaches provenance, where `D-2` allows codes, DIDs and hashes only, so
+        the value is trimmed, a line break or control character is refused (a
+        cause is one line; a paragraph is a notes field), and an ``@`` is refused
+        the way `AdminShareLegalBasis` refuses one — the obvious case, not every
+        case.
+        """
+        if not isinstance(v, str):
+            return v
+        v = v.strip()
+        if any(ord(c) < 32 or ord(c) == 127 for c in v):
+            raise ValueError("must be a single line with no control characters")
+        if "@" in v:
+            raise ValueError(
+                "must not carry an email address or other identifier — say why, not who"
+            )
+        return v
 
     @field_validator("keys")
     @classmethod
@@ -393,6 +437,14 @@ class AdminShareRequest(BaseModel):
         if self.keys is not None and not self.enabled:
             raise ValueError(
                 "keys travel with a grant; a withdrawal drops them and takes none"
+            )
+        if self.reason is not None and (self.enabled or self.decided_by != "collector"):
+            # A grant has no cause to record. A relayed withdrawal is the member's
+            # (`D-15c`), so the organisation's words would be filed as the cause
+            # of a decision it did not take; the operator has no stated need.
+            raise ValueError(
+                "reason is recorded only on an organisation's own withdrawal: "
+                "enabled=false with decided_by='collector'"
             )
         return self
 
@@ -1253,6 +1305,7 @@ async def admin_provision_share(
                         collector=writer.collector_did,
                         keys=body.keys,
                         holder=settings.participant_did if writer.is_holder else None,
+                        reason=body.reason,
                         message=(
                             f"Operator override of the data subject's withdrawal: "
                             f"{override.reason}"

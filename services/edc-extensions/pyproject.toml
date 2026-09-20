@@ -1,0 +1,31 @@
+# The Python half of a Java unit, and only a test harness.
+#
+# The EDC schema migrations in `src/main/resources/ds-edc-schema/` are SQL, and what
+# has to be proven about them is what PostgreSQL does with them: that a database an
+# older EDC created comes out with exactly the columns of a fresh one. JUnit here runs
+# in a Gradle container with no database and no Docker socket, while ds's integration
+# layer is pytest against a real PostgreSQL (ADR-0010). So the SQL is tested there,
+# and `EdcSchemaMigrationExtensionTest` covers the Java that queues it.
+[project]
+name = "edc-extensions-schema-tests"
+version = "0.1.0"
+description = "Integration tests for the EDC schema migrations shipped in edc-extensions"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "psycopg[binary]>=3.2",
+    "ruff>=0.6",
+]
+
+[tool.uv]
+# Nothing to build or install: this project is its tests.
+package = false
+
+[tool.pytest.ini_options]
+markers = ["integration: needs a real PostgreSQL on 172.17.0.1:35432"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

@@ -17,7 +17,7 @@ name: Integration
 # test, and no model is ever exercised against Postgres. A model changed without
 # a revision keeps every suite green and is found by a deployment.
 #
-# **Scope, and why it is three units and not thirteen.** A `test:integration`
+# **Scope, and why it is four units and not thirteen.** A `test:integration`
 # task with nothing behind it is the `EDCL-10` shape — configuration for a suite
 # that does not exist — and a job that is red on arrival is the `CI-01` shape,
 # since a red `main` is how a workflow stops being read. So this lists the units
@@ -77,6 +77,9 @@ jobs:
           - services/connector
           - services/identity-registry
           - services/provenance
+          # The EDC schema migrations, against Postgres: a Java unit whose SQL is
+          # proven here because the Gradle container has no database (ADR-0018).
+          - services/edc-extensions
 
     services:
       postgres:
@@ -103,6 +106,7 @@ jobs:
       CONNECTOR_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
       PROVENANCE_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
       IDENTITY_REGISTRY_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
+      EDC_EXTENSIONS_TEST_PG: postgresql://postgres:postgres@localhost:5432/postgres
 
     steps:
       - uses: actions/checkout@v4

@@ -49,9 +49,13 @@ the upstream package so it wins on the shaded classpath. The fork fixes multi-va
 operands — without it an `isAnyOf` purpose list does not survive JSON-LD rendering. A build
 task fails the build if the fork is not the copy that got packaged.
 
-Two smaller extensions ride along: a **filesystem vault seeder** that loads a `.properties`
-file into the EDC vault at boot, and an **HttpData endpoint generator** that rewrites the
-public base URL advertised in an EDR.
+Three smaller extensions ride along. A **filesystem vault seeder** loads a `.properties`
+file into the EDC vault at boot. An **HttpData endpoint generator** rewrites the public base
+URL advertised in an EDR. **`EdcSchemaMigrationExtension`** queues ds's schema migrations
+(`src/main/resources/ds-edc-schema/`) on EDC's SQL schema bootstrapper, so a database an
+older EDC created gets the columns the pinned one writes
+([ADR-0018](../decisions/ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md)).
+The SQL is tested against PostgreSQL by `task -d services/edc-extensions test:integration`.
 
 ## How it works
 

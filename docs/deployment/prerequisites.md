@@ -46,9 +46,12 @@ shipped in `helm/values.yaml`. Each role owns its own database and has no rights
 CNPG's `spec.managed.roles` and `spec.bootstrap.initdb.postInitApplicationSQL` handle this
 declaratively; see the example manifest.
 
-**The EDC needs DDL rights on its own database at first boot.** It creates its schema itself
-from resources inside its JAR, and **Flyway is not on its classpath**, so "run migrations
-out-of-band" means applying those `*-schema.sql` resources yourself. The least-privilege role
+**The EDC needs DDL rights on its own database at every boot.** It creates its schema itself
+from resources inside its JAR, and brings a database created by an older EDC (0.16.0 or
+later) up to date with ds's migrations in the same JAR
+([ADR-0018](../decisions/ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md)).
+**Flyway is not on its classpath**, so "run migrations out-of-band" means applying the
+`*-schema.sql` resources and then `ds-edc-schema/*/V*.sql`, in version order, yourself. The least-privilege role
 above is what removes the actual risk — DDL as a cluster superuser — while keeping the connector
 self-migrating. Set `sqlSchemaAutocreate: false` on the `ds-edc` chart if you want the stricter
 posture and are prepared to apply the DDL as a gated step.

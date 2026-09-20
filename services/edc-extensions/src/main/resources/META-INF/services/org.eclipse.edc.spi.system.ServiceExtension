@@ -1,3 +1,4 @@
 dataspaces.edc.DataspacesExtension
 dataspaces.edc.FilesystemVaultSeederExtension
 dataspaces.edc.HttpDataEndpointExtension
+dataspaces.edc.EdcSchemaMigrationExtension

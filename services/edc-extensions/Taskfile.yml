@@ -15,6 +15,32 @@ vars:
     sh: git rev-parse --show-toplevel
 
 tasks:
+  setup:
+    desc: Install the Python harness of the integration suite (idempotent)
+    cmds:
+      - uv sync --extra dev
+    sources: [pyproject.toml]
+    generates: [.venv/bin/pytest]
+
+  test:integration:
+    desc: |
+      The EDC schema migrations (src/main/resources/ds-edc-schema) against a real
+      PostgreSQL on 172.17.0.1:35432, or EDC_EXTENSIONS_TEST_PG. From each older
+      EDC schema under tests/integration/edc-schema, the upgrade must give the
+      pinned schema exactly. Creates and drops its own databases, never an EDC's.
+      Python, because that is where ds's database layer is tested (ADR-0010) and
+      the Gradle container has no database; see pyproject.toml.
+    deps: [setup]
+    cmds:
+      - uv run pytest tests/integration -v {{.CLI_ARGS}}
+
+  lint:
+    desc: Lint and format-check the Python harness
+    deps: [setup]
+    cmds:
+      - uv run ruff check tests
+      - uv run ruff format --check tests
+
   test:
     desc: Run the edc-extensions unit tests
     cmds:

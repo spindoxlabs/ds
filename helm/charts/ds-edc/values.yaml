@@ -70,9 +70,11 @@ trustAnchor:
 
 # ── SQL schema management ─────────────────────────────────────────────────────
 # `edc.sql.schema.autocreate` — read by SqlSchemaBootstrapperExtension, which
-# applies the *-schema.sql resources packaged in connector.jar. **Flyway is not
-# on the classpath**, so "run migrations out-of-band" means applying those same
-# resources yourself, with whatever tool the deployment uses.
+# applies the *-schema.sql resources packaged in connector.jar, and ds's schema
+# migrations (ds-edc-schema/*/V*.sql, ADR-0018) that bring a database an older
+# EDC created up to date. **Flyway is not on the classpath**, so with this false,
+# "run migrations out-of-band" means applying both sets of resources yourself,
+# with whatever tool the deployment uses.
 #
 # The security contract prefers false. It is left configurable and
 # defaults to true here BECAUSE each EDC connects as a least-privilege role that

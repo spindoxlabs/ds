@@ -46,7 +46,7 @@ evidence.
 | `QueryExecuted` | the data plane serves rows | **data** |
 | `AccessRevoked` | access is withdrawn | control |
 | `ConsentGranted` | a subject grants | control |
-| `ConsentRevoked` | a subject revokes | control |
+| `ConsentRevoked` | a subject revokes, or the organisation that speaks for them withdraws (with its `reason`, `D-12a`) | control |
 | `DataIngested` | an operator records a manual handover into the platform | data |
 | `DataDisclosed` | data leaves the platform to a named recipient | data |
 

@@ -27,6 +27,8 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0015](ADR-0015-a-collector-registers-consent-at-the-holder.md) | A collector registers consent at the holder |
 | [ADR-0016](ADR-0016-access-policy-and-contract-policy-are-two-policies.md) | The access policy and the contract policy are two policies, and membership is a credential claim |
 | [ADR-0017](ADR-0017-the-sync-reconciles-and-says-so.md) | The provider sync reconciles, and its answer agrees with what happened |
+| [ADR-0018](ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md) | The EDC schema migrates through EDC's own bootstrapper |
+| [ADR-0019](ADR-0019-a-collector-says-why-it-withdrew.md) | A collector says why it withdrew |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule

@@ -47,6 +47,10 @@ dependencies {
     // operands as JsonString/JsonObject, not String — see Purposes.
     compileOnly("jakarta.json:jakarta.json-api:2.1.3")
     compileOnly("org.eclipse.edc:runtime-metamodel:$edcVersion")
+    // SqlSchemaBootstrapper — EdcSchemaMigrationExtension queues ds's schema migrations
+    // on it. The interface lives in the extension module, not an SPI; the runtime
+    // packages it through `control-plane-sql`, so compileOnly.
+    compileOnly("org.eclipse.edc:sql-bootstrapper:$edcVersion")
     // HTTP client for consent check
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
@@ -66,6 +70,7 @@ dependencies {
     // be on the test classpath explicitly.
     testImplementation("org.eclipse.edc:json-ld-spi:$edcVersion")
     testImplementation("org.eclipse.edc:transform-spi:$edcVersion")
+    testImplementation("org.eclipse.edc:sql-bootstrapper:$edcVersion")
     testRuntimeOnly("org.eclipse.parsson:parsson:1.1.5")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }

@@ -201,6 +201,8 @@ tasks.withType<Test>().configureEach {
         rootDir.resolve("services/edc-extensions/build.gradle.kts"),
         rootDir.resolve(".github/workflows/edc-base.yml"),
         rootDir.resolve(".github/workflows/release.yml"),
+        // SchemaFixtureTest: the committed store schema per EDC version, held to the jar.
+        fileTree(rootDir.resolve("services/edc-extensions/tests/integration/edc-schema")) { include("**/*.sql") },
     ).withPropertyName("dsConfigurationUnderTest")
 
     testLogging {

@@ -673,3 +673,183 @@ async def test_the_read_back_is_not_a_subject_surface_or_a_roster(client):
     # The subject is required — there is no "all my members".
     r = await client.get("/consent/admin/subject-shares", headers=collector_headers())
     assert r.status_code == 422
+
+
+# ── why a collector withdrew (`D-12a`) ───────────────────────────────────────
+#
+# Maintainer decision 2026-09-19: an organisation's own withdrawal — a
+# membership ending — may say why. Before it, the field did not exist, the model
+# forbids extras, and the withdrawal an onboarding service sends with a reason
+# was a 422: revoking a membership failed its share step.
+
+WHY = "Membership ended in example-rec"
+
+
+@pytest.mark.rule("D-12a")
+@pytest.mark.asyncio
+async def test_a_collector_s_withdrawal_records_why_on_the_row_and_in_provenance(
+    engine, client, prov
+):
+    headers = collector_headers()
+    granted = await _post(client, headers, **_share(decided_by="subject", keys=KEYS))
+    assert granted.status_code == 200, granted.text
+
+    r = await _post(
+        client,
+        headers,
+        **_share(enabled=False, decided_by="collector", reason=f"  {WHY} "),
+    )
+    assert r.status_code == 200, r.text
+
+    [row] = await _rows(engine)
+    assert row.status == "revoked"
+    assert row.decided_by == "collector"
+    assert row.revocation_reason == WHY  # trimmed
+    # The row's creation text is not where the cause goes: it is projected.
+    assert row.message != WHY
+
+    [revoked] = [kw for name, kw in prov.calls if name == "consent_revoked"]
+    assert revoked["reason"] == WHY
+    assert revoked["decided_by"] == "collector"
+    assert revoked["collector"] == COLLECTOR
+
+
+@pytest.mark.rule("D-12a")
+@pytest.mark.asyncio
+async def test_a_withdrawal_with_nothing_granted_records_why_too(engine, client, prov):
+    """The other branch: no grant to mutate, so the refusal is a new row."""
+    r = await _post(
+        client,
+        collector_headers(),
+        **_share(enabled=False, decided_by="collector", reason=WHY),
+    )
+    assert r.status_code == 200, r.text
+    [row] = await _rows(engine)
+    assert row.status == "revoked"
+    assert row.revocation_reason == WHY
+    assert row.message != WHY
+    [revoked] = [kw for name, kw in prov.calls if name == "consent_revoked"]
+    assert revoked["reason"] == WHY
+
+
+@pytest.mark.rule("D-12a")
+@pytest.mark.asyncio
+async def test_message_is_not_a_spelling_of_reason(engine, client):
+    """`message` never worked on this route, so there is no caller to keep, and
+    it names another field of the same row. It stays refused, by decision."""
+    await _post(client, collector_headers(), **_share(decided_by="subject"))
+    r = await _post(
+        client,
+        collector_headers(),
+        **_share(enabled=False, decided_by="collector", message=WHY),
+    )
+    assert r.status_code == 422, r.text
+    assert "extra_forbidden" in r.text
+    [row] = await _rows(engine)
+    assert row.status == "granted"
+
+
+@pytest.mark.rule("D-12a")
+@pytest.mark.parametrize(
+    ("reason", "accepted"),
+    [
+        ("x" * 200, True),
+        ("x" * 201, False),
+        ("   ", False),
+        ("", False),
+        ("left\nthe community", False),
+        ("asked by member@example.test", False),
+    ],
+    ids=["200-chars", "201-chars", "blank", "empty", "two-lines", "an-address"],
+)
+@pytest.mark.asyncio
+async def test_the_reason_is_one_short_line(engine, client, reason, accepted):
+    await _post(client, collector_headers(), **_share(decided_by="subject"))
+    r = await _post(
+        client,
+        collector_headers(),
+        **_share(enabled=False, decided_by="collector", reason=reason),
+    )
+    [row] = await _rows(engine)
+    if accepted:
+        assert r.status_code == 200, r.text
+        assert row.revocation_reason == reason
+    else:
+        assert r.status_code == 422, r.text
+        # Refused for what it says, not because the field is unknown.
+        assert "extra_forbidden" not in r.text
+        assert row.status == "granted"
+        assert row.revocation_reason is None
+
+
+@pytest.mark.rule("D-12a", "D-15c")
+@pytest.mark.parametrize(
+    ("headers", "body"),
+    [
+        (collector_headers, _share(decided_by="collector", reason=WHY)),
+        (collector_headers, _share(enabled=False, decided_by="subject", reason=WHY)),
+        (
+            lambda: make_user_headers(["ds-admin"]),
+            _share(subject=HOLDERS_MEMBER, enabled=False, reason=WHY),
+        ),
+    ],
+    ids=["with-a-grant", "on-a-relayed-withdrawal", "from-the-operator"],
+)
+@pytest.mark.asyncio
+async def test_only_an_organisation_s_own_withdrawal_carries_a_reason(
+    engine, client, headers, body
+):
+    r = await _post(client, headers(), **body)
+    assert r.status_code == 422, r.text
+    assert "decided_by='collector'" in r.text
+    assert await _rows(engine, body["subject_id"]) == []
+
+
+@pytest.mark.rule("D-12a")
+@pytest.mark.parametrize("granted_first", [True, False], ids=["over-a-grant", "fresh"])
+@pytest.mark.asyncio
+async def test_the_reason_is_returned_by_no_read(client, monkeypatch, granted_first):
+    """Not in the writer's answer, and not in the read-back — which another
+    organisation that speaks for the same member may call. Both withdrawal
+    branches: the fresh one is where a reason passed as ``message`` would land
+    in a projected field."""
+    headers = collector_headers()
+    if granted_first:
+        await _post(client, headers, **_share(decided_by="subject"))
+    r = await _post(
+        client,
+        headers,
+        **_share(enabled=False, decided_by="collector", reason=WHY),
+    )
+    assert r.status_code == 200, r.text
+    assert WHY not in r.text
+
+    async def _two(_request, holder_did, collector_did):
+        if collector_did in (COLLECTOR, "did:web:second.example.org"):
+            return CollectorAnswer(True, "example-coll", "accepted")
+        return CollectorAnswer(holder_did == collector_did, "example-org", "self")
+
+    monkeypatch.setattr(consent_route, "check_collector", _two)
+    second = collector_headers(context="did:web:second.example.org", alias="second")
+    for reader in (headers, second):
+        back = await client.get(
+            "/consent/admin/subject-shares",
+            params={"subject_id": MEMBER},
+            headers=reader,
+        )
+        assert back.status_code == 200, back.text
+        [share] = back.json()
+        assert share["status"] == "revoked"
+        assert WHY not in back.text
+
+
+def test_the_reason_is_in_the_published_contract():
+    from connector.main import create_app
+
+    schema = create_app().openapi()["components"]["schemas"]["AdminShareRequest"]
+    reason = schema["properties"]["reason"]
+    variants = reason.get("anyOf", [reason])
+    [string] = [v for v in variants if v.get("type") == "string"]
+    assert string["maxLength"] == 200
+    assert string["minLength"] == 1
+    assert "decided_by='collector'" in reason["description"]
