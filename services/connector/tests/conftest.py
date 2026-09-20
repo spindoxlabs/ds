@@ -5,6 +5,29 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+# **The suite declares its own environment; it does not inherit one.**
+#
+# `ds_auth.production.current_env()` defaults to `production` when `DS_ENV` is
+# unset — deliberately, so a chart that forgets the variable fails closed. The
+# cost is that a test which enters `create_app`'s lifespan asks the *shell* what
+# environment it is in: `task -d services/connector test` used to supply
+# `DS_ENV=dev` from its own `env:` block, so the same tree answered `603 passed`
+# through the task and `2 failed, 601 passed` under a bare `uv run pytest` —
+# `test_roles.py::test_a_both_roles_process_uses_one_edc_client` and
+# `test_settings_are_read.py::test_the_app_passes_both_intervals_through`, both
+# `InsecureProductionConfig`. A suite whose answer depends on who invoked it is
+# not evidence of anything.
+#
+# So the pin lives here, where **every** invocation route passes, and it is an
+# assignment rather than a `setdefault`: a `DS_ENV=production` exported in the
+# shell must not change the result either. This is the only pin — the task no
+# longer sets one, so deleting this line fails the suite rather than only the
+# runs nobody makes. `test_the_suite_pins_its_environment.py` asserts it.
+#
+# Production *behaviour* is not tested by pretending this suite is production:
+# `libs/ds-auth/tests/test_production.py` owns that, per test, with monkeypatch.
+os.environ["DS_ENV"] = "dev"
+
 os.environ.setdefault("CONNECTOR_ROLE", "provider")
 
 # Point the consent vocabulary at the test fixtures before any settings are

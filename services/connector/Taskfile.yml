@@ -40,13 +40,14 @@ tasks:
 
   test:
     deps: [setup]
-    # A test suite is a development context, and it has to say so: since
-    # `DS_ENV` defaults to `production`, a suite that builds the app hits the
-    # ProductionGuard and the whole module fails to *collect*. Declared here for
-    # the same reason compose declares it — this is the dev topology, so it opts
-    # out explicitly rather than relying on the variable being absent.
-    env:
-      DS_ENV: dev
+    # **No `env: DS_ENV: dev` here, deliberately.** A test suite is a
+    # development context and has to say so, since `DS_ENV` defaults to
+    # `production` and a test that enters the app's lifespan then hits the
+    # ProductionGuard. It used to say so *here*, which made the answer depend on
+    # the invocation: green through `task`, two `InsecureProductionConfig`
+    # failures under a bare `uv run pytest tests/` on the same tree.
+    # `tests/conftest.py` pins it now, on the route every invocation takes, and
+    # a second pin here would hide that one's removal from the common route.
     cmds:
       - uv run pytest tests/ -v --cov={{.SRC}} --cov-report=term-missing
 
@@ -58,8 +59,9 @@ tasks:
       the eight migrations run nowhere and no model is ever exercised against
       Postgres.
     deps: [setup]
-    env:
-      DS_ENV: dev
+    # `DS_ENV` likewise comes from `tests/conftest.py`, which pytest loads for
+    # `tests/integration` too. The subprocesses these tests spawn pass it on
+    # explicitly, because a child process inherits the pin only if it is asked.
     cmds:
       - uv run pytest tests/integration -v
 
