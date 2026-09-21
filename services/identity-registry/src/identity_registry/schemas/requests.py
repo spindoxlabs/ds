@@ -62,6 +62,10 @@ class IssueMembershipRequest(BaseModel):
 
 
 class IssueDataSubjectRequest(BaseModel):
+    #: The `<id>` of the person's DID, joined in verbatim. It must be opaque —
+    #: not an email or its local part, not a member code, not a date-bearing
+    #: reference — and opacity is not checked here: the obligation is the
+    #: caller's (rulebook `D-22c`).
     subject_id: str
     role: str | None = None
     linked_participant_did: str | None = None

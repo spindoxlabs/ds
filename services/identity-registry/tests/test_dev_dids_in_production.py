@@ -222,7 +222,7 @@ def test_org_apply_refuses_a_dev_did_in_production(tmp_path, monkeypatch):
 
     result = runner.invoke(
         cli,
-        ["org", "apply", "--file", str(owners), "--verified-by", "demo3-deployment"],
+        ["org", "apply", "--file", str(owners), "--verified-by", "example-deployment"],
     )
 
     assert result.exit_code == 1
@@ -260,7 +260,7 @@ def test_org_apply_ignores_a_dev_did_on_an_entry_it_would_not_write(
             "--governance",
             str(gov),
             "--verified-by",
-            "demo3-deployment",
+            "example-deployment",
         ],
     )
 
@@ -307,7 +307,7 @@ def test_org_apply_guards_an_unselected_entry_that_carries_a_dataspace_block(
             "--governance",
             str(gov),
             "--verified-by",
-            "demo3-deployment",
+            "example-deployment",
         ],
     )
 

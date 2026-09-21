@@ -225,7 +225,8 @@ the first reading held in every offer, so that is the one the field keeps
 *collecting* organisation, established from the caller's token at the consent write; a GDPR
 controller a text needs to name belongs in the consent text, not in an enforcement field.
 **`controller:` and `controller_role:` are still read** and logged as deprecated, so no
-deployed file has to change.
+deployed file has to change. An offer stating both spellings of one field with different
+values is refused, naming both keys and both values — there is no winner to pick.
 
 Two composition rules, and they differ on purpose:
 
@@ -244,7 +245,10 @@ recipient_roles:
   grid-operator: [metering, operations]
 ```
 
-(`controller_roles:` is the deprecated spelling and is still read.)
+(`controller_roles:` is the deprecated spelling and is still read, with a deprecation
+warning. The rule is the offer-level one: a file stating both keys is read when they agree,
+with the same warning, and refused when they disagree, naming both keys and both values.
+Lists are compared sorted and de-duplicated, so a reordering is not a disagreement.)
 
 A recipient absent from the map is not unbundled, and an offer naming it may not carry a
 `recipient_role`. A recipient present in it **is**, so an offer naming it must say which

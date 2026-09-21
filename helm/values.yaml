@@ -167,9 +167,6 @@ global:
   monitoring:
     serviceMonitor: false
     prometheusNamespace: monitoring
-  externalSecrets:
-    enabled: false # true → emit ExternalSecret CRs instead of Secrets
-    secretStoreRef: {} # {name: vault-backend, kind: ClusterSecretStore}
 
   # Resource profile applied to every service unless overridden per-service.
   resources:

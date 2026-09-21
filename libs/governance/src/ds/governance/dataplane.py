@@ -117,9 +117,14 @@ class DataplaneRowFilter(BaseModel):
     #:
     #: This field carried a second justification until 2026-09-20 — *"a DID is
     #: derived from an unsalted email hash, so it re-identifies the subject"* —
-    #: which argued for sending the address in place of a hash of it. The
-    #: derivation weakness is real, is a property of DID minting rather than of
-    #: this field, and is recorded as its own open question.
+    #: which was false, and argued for sending the address in place of a
+    #: pseudonym of it. A subject DID is required to be an opaque, one-shot,
+    #: non-reversible identifier (rulebook `D-22c`): nothing converts it back, and the
+    #: mapping lives in the registry that owns the member. Where that registry
+    #: mints the id it is an HMAC of the email keyed with its `ENCRYPTION_KEY`,
+    #: truncated to 96 bits (`identity_registry.services.crypto.
+    #: derive_email_subject_id`); where the issuing caller supplies `subject_id`,
+    #: the DID carries it verbatim. Neither is this field's concern.
     principals: list[str] = Field(default_factory=list)
     #: The **subject DIDs** of the same consenting people — the pseudonyms this
     #: platform already circulates (registry, credentials, trust anchor, every

@@ -373,25 +373,43 @@ def datasets_by_offer(
 def _parse(raw: dict[str, Any]) -> SharingOfferCatalogue:
     entries = raw.get("sharing_offers") or []
     # `controller_roles:` is the deprecated spelling, still read so that no
-    # deployed governance file has to change for the rename.
+    # deployed governance file has to change for the rename. Same rule as
+    # `OfferRecipients._accept_legacy_spelling`, one level up: either spelling,
+    # never both with different values — keeping one and dropping the other
+    # silently is how a file starts meaning something it does not say.
     declared = raw.get("recipient_roles")
-    if declared is None:
-        declared = raw.get("controller_roles")
-        if declared:
+    if "controller_roles" in raw:
+        legacy = raw["controller_roles"]
+        if declared is not None and _normalise_roles(declared) != _normalise_roles(
+            legacy
+        ):
+            raise ValueError(
+                "'controller_roles' and 'recipient_roles' are the same key under "
+                f"two names and disagree ({legacy!r} vs {declared!r}). "
+                "'controller_roles' is the deprecated spelling — state only "
+                "'recipient_roles'."
+            )
+        if declared is None:
+            declared = legacy
+        if legacy:
             logger.warning(
                 "sharing offers: 'controller_roles:' is the deprecated spelling "
                 "of 'recipient_roles:' and will stop being read — rename it"
             )
-    # Sorted and de-duplicated on the way in, so a reordered list is not a
-    # different unbundling — `ConflictingRecipientRolesError` compares these.
-    recipient_roles = {
+    return SharingOfferCatalogue(
+        offers=[SharingOffer.model_validate(entry) for entry in entries if entry],
+        recipient_roles=_normalise_roles(declared),
+    )
+
+
+def _normalise_roles(declared: Any) -> dict[str, list[str]]:
+    """Sorted and de-duplicated, so a reordered list is not a different
+    unbundling — `ConflictingRecipientRolesError` and the spelling check in
+    :func:`_parse` both compare these."""
+    return {
         alias: sorted({str(role) for role in (roles or []) if str(role).strip()})
         for alias, roles in (declared or {}).items()
     }
-    return SharingOfferCatalogue(
-        offers=[SharingOffer.model_validate(entry) for entry in entries if entry],
-        recipient_roles=recipient_roles,
-    )
 
 
 #: Producer-contributed offer files, collected beside the base file.

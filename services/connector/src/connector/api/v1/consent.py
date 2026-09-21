@@ -1412,7 +1412,13 @@ async def admin_read_subject_shares(
         session=db, subject_id=subject_id
     )
     latest: dict[tuple[str, str | None, str], ConsentRequestORM] = {}
-    for row in sorted(rows, key=consent_service.decision_time, reverse=True):
+    # Newest decision first, then each cell's presented decision first within
+    # it: a subject's standing withdrawal under a newer one by anybody else is
+    # what this lists, so an organisation relaying for the member still sees
+    # the member's own decision (ADR-0020).
+    for row in consent_service.present_current(
+        sorted(rows, key=consent_service.decision_time, reverse=True)
+    ):
         if row.status == "pending":
             latest.setdefault((row.dataset_id, row.offer_id, f"ask:{row.id}"), row)
             continue

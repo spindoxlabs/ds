@@ -562,14 +562,24 @@ async def _authorize_dataset(
             #
             # This comment used to give a second reason — *"never DIDs: a DID is
             # derived from an unsalted email hash, so it is re-identifiable by
-            # anyone who later holds the payload"* — and that reason was
+            # anyone who later holds the payload"* — and it was false, and
             # inverted by what it admitted. In this realm the username **is**
             # the email (`identity-registry` `/users/identities`:
             # `username or email`), so the field defended against a hash of an
-            # address by sending the address. The derivation weakness is real
-            # and it is not this field's: it is a property of how every DID in
-            # this system is minted, it is filed as its own question, and
-            # nothing here makes it better or worse.
+            # address by sending the address.
+            #
+            # **What a subject DID is required to be** (rulebook `D-22c`): an
+            # opaque, one-shot, non-reversible identifier. Nothing converts it
+            # back to a person; the mapping lives in the registry that owns the
+            # member. What the code does: where the registry mints the id, it is
+            # an HMAC of the email keyed with the registry's `ENCRYPTION_KEY`,
+            # truncated to 96 bits (`identity_registry.services.crypto.
+            # derive_email_subject_id`) — not reversible without that key. Where
+            # the issuing caller supplies `subject_id`, the DID carries it
+            # verbatim (`subject_did_for`), so it is as opaque as the caller made
+            # it. Neither is a reason for this field: it holds usernames because
+            # the handler matches on them, and nothing here makes a DID more or
+            # less opaque.
             #
             # The consequence that *was* this field's — the PEP echoing these
             # into `POST /internal/audit/query` and so into a `QueryExecuted`

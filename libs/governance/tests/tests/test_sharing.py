@@ -1,5 +1,7 @@
 """Tests for the consent vocabulary — purpose hierarchy, offers, re-consent hash."""
 
+import logging
+
 import pytest
 from pydantic import ValidationError
 
@@ -687,6 +689,54 @@ def test_both_spellings_disagreeing_is_refused(tmp_path):
     with pytest.raises(Exception) as exc:
         load_sharing_offers(tmp_path / "sharing-offers.yaml")
     assert "deprecated" in str(exc.value)
+
+
+# The same rule one level up: `recipient_roles:` / `controller_roles:` are one
+# file-level key under two names. Until 2026-09-21 a file stating both kept
+# `recipient_roles:` and dropped the other without a word, so a disagreement
+# was invisible — the offer-level fold above refused the same thing.
+
+
+def _both_roles_yaml(recipient_roles: str) -> str:
+    return _legacy_yaml() + f"recipient_roles:\n  grid-operator: {recipient_roles}\n"
+
+
+def test_both_roles_spellings_disagreeing_is_refused(tmp_path):
+    """Refused, and the message names both keys and both values — the same shape
+    as the offer-level refusal, so a producer reads one kind of error."""
+    (tmp_path / "sharing-offers.yaml").write_text(_both_roles_yaml("[metering]"))
+    with pytest.raises(ValueError) as exc:
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    message = str(exc.value)
+    assert "'controller_roles'" in message
+    assert "'recipient_roles'" in message
+    assert "deprecated" in message
+    assert "operations" in message  # only the legacy value carries it
+
+
+def test_both_roles_spellings_agreeing_warn_as_the_old_one_alone(tmp_path, caplog):
+    """Order and duplicates are not a disagreement: the lists are normalised
+    before comparison, exactly as they are before being stored."""
+    (tmp_path / "sharing-offers.yaml").write_text(
+        _both_roles_yaml("[operations, metering, metering]")
+    )
+    with caplog.at_level(logging.WARNING, logger="ds.governance.sharing"):
+        catalogue = load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert catalogue.recipient_roles == {"grid-operator": ["metering", "operations"]}
+    assert any(
+        "'controller_roles:' is the deprecated spelling" in r.getMessage()
+        for r in caplog.records
+    )
+
+
+def test_the_old_roles_spelling_alone_warns(tmp_path, caplog):
+    (tmp_path / "sharing-offers.yaml").write_text(_legacy_yaml())
+    with caplog.at_level(logging.WARNING, logger="ds.governance.sharing"):
+        load_sharing_offers(tmp_path / "sharing-offers.yaml")
+    assert any(
+        "'controller_roles:' is the deprecated spelling" in r.getMessage()
+        for r in caplog.records
+    )
 
 
 @pytest.mark.rule("D-11")

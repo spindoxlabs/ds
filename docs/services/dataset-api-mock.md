@@ -201,8 +201,10 @@ who consented to nothing, so the platform's one consent-gated dataset was unserv
 the mock and no test said so. A test now reads both files and fails when they drift.
 
 A DID no longer appears in any payload column, which is also what rulebook `L-3` requires of
-anything that travels with the rows: a DID here is derived from an unsalted email hash, so it
-re-identifies the subject to whoever later holds them.
+anything that travels with the rows. A subject DID is required to be an opaque, non-reversible
+identifier whose mapping stays in the registry that owns the member, but it is still personal
+data (`D-1`) and the one identifier every record about that person shares, so rows carrying it
+could be joined to all of them.
 
 Resolving a member to their meters needs two registries the real data plane has behind it and
 a stand-in does not, so `REC_MEMBERS` collapses both hops into one fixture — the

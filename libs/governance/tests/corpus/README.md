@@ -13,7 +13,7 @@ field by field — and runs `celine.governance` over the same corpus as a second
 
 | Path | Provenance | What it exercises |
 |---|---|---|
-| `demo3/*.governance.yaml` | **Vendored copies** of `celine-eu/demo3` `pipelines/apps.legacy/{grid,rec_flexibility,rec_it,rec_metering}/governance.yaml` | Producer-authored files, in the canonical grammar, written by nobody in this repository: `defaults` carrying a whole `dcat` block and `dataspace.purpose`, per-dataset overlay of `tags` / `expose` / `row_filters` / `ownership` / `access_level`, `license: null` and `documentation_url: null` stated explicitly, and `dataspace.odrl_action` — a field ds models nowhere. 29 dataset keys. |
+| `pipelines/*.governance.yaml` | **Vendored snapshots** of CELINE producer-authored `{grid,rec_flexibility,rec_it,rec_metering}/governance.yaml`; the current versions are public in `celine-eu/celine-pipelines` under `apps/` | Producer-authored files, in the canonical grammar, written by nobody in this repository: `defaults` carrying a whole `dcat` block and `dataspace.purpose`, per-dataset overlay of `tags` / `expose` / `row_filters` / `ownership` / `access_level`, `license: null` and `documentation_url: null` stated explicitly, and `dataspace.odrl_action` — a field ds models nowhere. 29 dataset keys. |
 | `overlay/governance.yaml` | Copy of `services/connector/governance-rec/governance.yaml` | The base half of an overlay pair. |
 | `overlay/governance.deployment.yaml` | Written for this corpus | The deployer overlay. Every merge rule that is *not* "override wins" — `ownership` replacement, `tags` union, `purpose` union, `consent_required` OR, `expose` withdrawal, nested `data_address.base_url` rebinding with the siblings surviving — plus a source only the overlay declares. |
 
@@ -22,7 +22,7 @@ rather than copied: `services/connector/governance-{rec,grid-operator}/governanc
 `services/connector/tests/fixtures/governance.yaml`. Copying those would let the copy drift
 from the file the stack actually syncs, which is the one thing this corpus must not do.
 
-## Why the demo3 files are copies
+## Why the pipeline files are copies
 
 They are the opposite case: they live in another repository, on another release cycle, and
 this repository has no checkout of it in CI. A copy is the only way a producer-authored file

@@ -72,9 +72,13 @@ def test_the_gated_dataset_rows_carry_that_column():
 def test_no_row_is_keyed_by_a_subject_did():
     """The old vocabulary, pinned as gone.
 
-    A DID in a payload column is also a privacy defect in its own right: it is
-    derived from an unsalted email hash, so it re-identifies the subject to
-    whoever later holds the rows. Rulebook `L-3`.
+    A DID in a payload column is also a privacy concern in its own right: it is
+    personal data (rulebook `D-1`), and it is the one identifier every record
+    about the subject shares, so rows carrying it can be joined to all of them.
+    Rulebook `L-3`. (Until 2026-09-21 this said a DID is derived from an
+    unsalted email hash. It is not: the registry's derivation is an HMAC keyed
+    with its `ENCRYPTION_KEY`, and a subject DID is required to be opaque and
+    non-reversible, the mapping kept in the registry that owns the member.)
     """
     for name, spec in DATASETS.items():
         for row in spec.get("rows") or []:

@@ -121,8 +121,6 @@ authority depends on which service answered.
 | `global.networkPolicy.enabled` | `true` | default-deny ingress **and** egress |
 | `global.monitoring.serviceMonitor` | `false` | also gates the `/metrics` NetworkPolicy |
 | `global.monitoring.prometheusNamespace` | `monitoring` | the only namespace allowed to reach `/metrics` |
-| `global.externalSecrets.enabled` | `false` | true → emit `ExternalSecret` CRs instead of `Secret`s |
-| `global.externalSecrets.secretStoreRef` | `{}` | e.g. `{name: vault-backend, kind: ClusterSecretStore}` |
 | `global.resources` | 100m/256Mi requests, 512Mi limit | per service unless overridden per chart |
 
 `/metrics` is **unauthenticated** on the connector, provenance and the federated catalogue. It

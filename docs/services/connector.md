@@ -159,6 +159,20 @@ lifts as before. An operator with the person's instruction sends
 `override_subject_withdrawal` on `POST /consent/admin/shares`, which records who authorised
 it inside the row's evidence and stamps the row `operator`.
 
+**Each withdrawal is its own record** ([ADR-0020](../decisions/ADR-0020-each-withdrawal-is-its-own-record.md)).
+When an authority withdraws over a withdrawal another authority made, in either order (the
+subject over a collector's, a collector over the subject's, one collector over another), the
+new withdrawal is a row of its own with its own time and reason. The standing row keeps its
+authority, time and reason as written. A repeat by the same authority records nothing. The
+data is refused from the first withdrawal on.
+
+**The member's withdrawal is the one presented.** Whenever the subject's own withdrawal
+stands, every current-decision read returns it, even under a newer withdrawal by somebody
+else: `/consent/my/shares`, `/consent/admin/subject-shares`, `/consent/status`, the consent
+checks and the row filter. Lifting the cell needs authority over every withdrawal standing in
+it, so only the subject (or the operator's evidenced override) lifts a cell the subject
+withdrew. The writer's own answer is the row it recorded.
+
 ### A collector registers consent
 
 Plan `a-collector-registers-consent-at-the-holder`. `POST /consent/admin/shares` classifies its
@@ -199,7 +213,8 @@ What is recorded:
   them; sending keys with a withdrawal is a `422`. Provenance records only `keys_supplied`, and
   only the registering organisation gets the keys back;
 - a relayed withdrawal as the member's (`decided_by="subject"`), so neither a service nor the
-  collector acting on its own can lift it.
+  collector acting on its own can lift it. Relayed over the collector's own withdrawal, it is
+  a second row and the collector's is left as written (ADR-0020).
 - **why the organisation withdrew**, when it withdraws on its own (`decided_by="collector"`,
   e.g. a membership ending) and sends `reason`: one line, at most 200 characters, no `@`. It
   is stored as the row's `revocation_reason` and carried by the `ConsentRevoked` event, and

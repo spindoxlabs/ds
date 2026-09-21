@@ -141,6 +141,101 @@ def _latest_decision_first():
     )
 
 
+_REFUSED = ("revoked", "rejected")
+_EPOCH = datetime.min.replace(tzinfo=UTC)
+
+
+def _aware(moment: datetime | None) -> datetime:
+    if moment is None:
+        return _EPOCH
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _decision_order(row: ConsentRequestORM) -> tuple[datetime, datetime]:
+    """:func:`_latest_decision_first`, in Python, for rows already loaded."""
+    return (
+        _aware(row.revoked_at or row.decided_at or row.requested_at),
+        _aware(row.requested_at),
+    )
+
+
+def _authority(decided_by: str, collector: str | None) -> tuple:
+    """Who a withdrawal is *by*, for "one record per withdrawing authority".
+
+    The subject is one authority however their decision arrived — directly, or
+    relayed by any organisation that speaks for them. Anybody else is the
+    authority they stated *and* the organisation whose token wrote it, so two
+    collectors are two authorities.
+    """
+    return ("subject",) if decided_by == "subject" else (decided_by, collector)
+
+
+def standing_refusals(rows: Iterable[ConsentRequestORM]) -> list[ConsentRequestORM]:
+    """The withdrawals standing in one cell, newest first (ADR-0020).
+
+    Each withdrawing authority's withdrawal is its own row, so a cell can hold
+    several refusals at once. They stand from the newest decision back to the
+    last grant: a ``granted`` or ``pending`` row ends the run, and so does a
+    row that *was* a grant and was withdrawn (``revoked`` with a ``decided_at``)
+    — it is itself a refusal, and the grant it withdrew had already lifted
+    everything older.
+    """
+    run: list[ConsentRequestORM] = []
+    for row in sorted(rows, key=_decision_order, reverse=True):
+        if row.status not in _REFUSED:
+            break
+        run.append(row)
+        if row.status == "revoked" and row.decided_at is not None:
+            break
+    return run
+
+
+def _presented(rows: list[ConsentRequestORM]) -> ConsentRequestORM | None:
+    """The row a cell presents as its current decision; ``rows`` newest first.
+
+    Its newest decision — except that **a standing withdrawal by the subject is
+    presented whenever there is one**, even under a newer withdrawal by another
+    authority (the maintainer, 2026-09-21: "prioritize the member if both").
+    The cell is withdrawn either way; what the choice decides is which
+    withdrawal every reader sees and which authority a lift must answer to, and
+    only the subject may lift the subject's.
+    """
+    return _subject_refusal(rows) or (rows[0] if rows else None)
+
+
+def _subject_refusal(rows: Iterable[ConsentRequestORM]) -> ConsentRequestORM | None:
+    for row in standing_refusals(rows):
+        if row.decided_by == "subject":
+            return row
+    return None
+
+
+def present_current(rows: Iterable[ConsentRequestORM]) -> list[ConsentRequestORM]:
+    """``rows``, with each cell's presented decision first within that cell.
+
+    A cell is ``(subject, dataset, consumer, offer)``. Every other row keeps
+    its place and the input order is otherwise kept (only a subject's standing
+    withdrawal moves), so a reader that takes "the first row per key" — as every
+    current-decision reader here does — reads :func:`_presented` without
+    knowing about it. Readers that list every row are unaffected but for the
+    order inside one cell.
+    """
+    rows = list(rows)
+    cells: dict[tuple, list[ConsentRequestORM]] = {}
+    for row in rows:
+        key = (row.subject_id, row.dataset_id, row.consumer_id, row.offer_id)
+        cells.setdefault(key, []).append(row)
+    queues: dict[tuple, list[ConsentRequestORM]] = {}
+    for key, cell in cells.items():
+        first = _subject_refusal(cell)
+        rest = [row for row in cell if row is not first]
+        queues[key] = [first, *rest] if first is not None else rest
+    return [
+        queues[(row.subject_id, row.dataset_id, row.consumer_id, row.offer_id)].pop(0)
+        for row in rows
+    ]
+
+
 def _validated(dataset_id: str, purpose: list[str] | None) -> list[str]:
     """Resolve the dataset and normalise purposes, or raise ``VocabularyError``.
 
@@ -238,24 +333,37 @@ async def subject_pool_for_dataset(session: AsyncSession, dataset_id: str) -> li
     )
 
 
+async def _decision_rows(
+    session: AsyncSession,
+    subject_id: str,
+    dataset_id: str,
+    consumer_id: str,
+    offer_id: str | None = None,
+) -> list[ConsentRequestORM]:
+    """One subject's rows for a dataset and consumer — and one offer, when
+    named — newest decision first."""
+    stmt = select(ConsentRequestORM).where(
+        ConsentRequestORM.subject_id == subject_id,
+        ConsentRequestORM.dataset_id == dataset_id,
+        ConsentRequestORM.consumer_id == consumer_id,
+    )
+    if offer_id is not None:
+        stmt = stmt.where(ConsentRequestORM.offer_id == offer_id)
+    result = await session.execute(stmt.order_by(*_latest_decision_first()))
+    return list(result.scalars().all())
+
+
 async def get_latest_consent(
     session: AsyncSession,
     subject_id: str,
     dataset_id: str,
     consumer_id: str,
 ) -> ConsentRequestORM | None:
-    result = await session.execute(
-        select(ConsentRequestORM)
-        .where(
-            ConsentRequestORM.subject_id == subject_id,
-            ConsentRequestORM.dataset_id == dataset_id,
-            ConsentRequestORM.consumer_id == consumer_id,
-        )
-        .order_by(
-            *_latest_decision_first(),
-        )
+    """The presented decision of whichever cell decided last (ADR-0020)."""
+    rows = present_current(
+        await _decision_rows(session, subject_id, dataset_id, consumer_id)
     )
-    return result.scalars().first()
+    return rows[0] if rows else None
 
 
 async def get_latest_offer_consent(
@@ -265,7 +373,8 @@ async def get_latest_offer_consent(
     consumer_id: str,
     offer_id: str,
 ) -> ConsentRequestORM | None:
-    """The subject's most recent decision **about one offer**.
+    """The subject's current decision **about one offer**: the newest, or a
+    standing withdrawal of their own under a newer one (ADR-0020).
 
     Distinct from :func:`get_latest_consent`, which keys on the dataset alone.
     Several offers can name the same dataset for different purposes and different
@@ -274,19 +383,9 @@ async def get_latest_offer_consent(
     on the dataset, the second decision would collide with the first — granting
     would be a silent no-op and withdrawing would revoke the wrong purpose.
     """
-    result = await session.execute(
-        select(ConsentRequestORM)
-        .where(
-            ConsentRequestORM.subject_id == subject_id,
-            ConsentRequestORM.dataset_id == dataset_id,
-            ConsentRequestORM.consumer_id == consumer_id,
-            ConsentRequestORM.offer_id == offer_id,
-        )
-        .order_by(
-            *_latest_decision_first(),
-        )
+    return _presented(
+        await _decision_rows(session, subject_id, dataset_id, consumer_id, offer_id)
     )
-    return result.scalars().first()
 
 
 async def find_pending_request(
@@ -417,7 +516,9 @@ async def list_subject_consents(
         stmt = stmt.where(ConsentRequestORM.consumer_id.in_(keys))
     stmt = stmt.order_by(ConsentRequestORM.requested_at.desc())
     result = await session.execute(stmt)
-    return list(result.scalars().all())
+    # Every row, with a subject's standing withdrawal first in its cell, so
+    # the readers that take the first row per key present it (ADR-0020).
+    return present_current(result.scalars().all())
 
 
 async def approve_consent(
@@ -516,7 +617,10 @@ async def set_subject_data_sharing(
     ``reason`` is why a withdrawal was taken. It goes to ``revocation_reason``
     and nowhere else — **not** to ``message``, which every consent read projects
     (`D-12a`). A withdrawal over a standing refusal changes nothing, its reason
-    included.
+    included, when the same authority's withdrawal already stands. Another
+    authority's withdrawal is appended as a record of its own and leaves the
+    standing one as it was, and a subject's standing withdrawal stays the
+    presented decision (ADR-0020).
 
     Raises :class:`ConsentWithdrawalStands` when the caller would re-open a
     refusal it has no authority to re-open (`D-15c`).
@@ -538,12 +642,17 @@ async def set_subject_data_sharing(
     # the same dataset for different purposes and recipients; treating them as
     # one row makes granting the second a silent no-op and makes withdrawing it
     # revoke the first. Decisions made about a bare dataset keep the old key.
-    latest = (
-        await get_latest_offer_consent(
-            session, subject_id, dataset_id, consumer_id, offer_id
-        )
-        if offer_id
-        else await get_latest_consent(session, subject_id, dataset_id, consumer_id)
+    #
+    # `latest` is the cell's *presented* decision (ADR-0020): the newest, or
+    # the subject's own standing withdrawal under a newer one. `standing` is
+    # every withdrawal standing in that cell — one per withdrawing authority.
+    rows = await _decision_rows(session, subject_id, dataset_id, consumer_id, offer_id)
+    ordered = present_current(rows)
+    latest = ordered[0] if ordered else None
+    standing = (
+        standing_refusals(r for r in rows if r.offer_id == latest.offer_id)
+        if latest is not None
+        else []
     )
     now = datetime.now(UTC)
 
@@ -563,11 +672,17 @@ async def set_subject_data_sharing(
         # with a fresh evidence record attached to it (issue #34). `rejected` is
         # the same act reached from a consumer's ask rather than the subject's own
         # control, and is refused on the same terms.
-        if latest and latest.status in {"revoked", "rejected"}:
+        #
+        # **Every withdrawal standing has to be liftable by this caller**, not
+        # only the presented one (ADR-0020): with one record per authority, a
+        # collector's own withdrawal can sit on top of another authority's, and
+        # lifting the cell lifts them all. The presented one is asked first, so
+        # a refusal names the member's own withdrawal whenever there is one.
+        for refusal in sorted(standing, key=lambda r: r is not latest):
             if not _may_lift(
-                latest, decided_by, override_subject_withdrawal, collector, holder
+                refusal, decided_by, override_subject_withdrawal, collector, holder
             ):
-                raise ConsentWithdrawalStands(latest)
+                raise ConsentWithdrawalStands(refusal)
         consent = ConsentRequestORM(
             subject_id=subject_id,
             consumer_id=consumer_id,
@@ -605,17 +720,26 @@ async def set_subject_data_sharing(
         latest.subject_keys = None
         return latest
 
-    if latest and latest.status in {"revoked", "rejected"}:
-        # The refusal already stands, so nothing about the decision changes — but
-        # *whose* refusal it is can. A subject repeating "stop" over a withdrawal
-        # a service made for them makes it theirs, and `_may_lift` then refuses
-        # the next service that would re-provision over it. The escalation is
-        # one-way on purpose: a service re-withdrawing a subject's refusal must
-        # not be able to launder it into one a service may lift.
-        if decided_by == "subject" and latest.decided_by != "subject":
-            latest.decided_by = "subject"
-            latest.collector = collector
-        return latest
+    if standing:
+        # **Each withdrawal is its own record** (ADR-0020). A withdrawal over a
+        # refusal another authority made — the subject over a collector's, a
+        # collector over the subject's, one collector over another — is a second
+        # decision by a second authority, so it gets a row of its own, with its
+        # own time and reason, and the standing refusal is left exactly as its
+        # authority wrote it. This used to re-stamp a collector's row as the
+        # subject's and keep the collector's `revoked_at` and
+        # `revocation_reason`, and to drop a collector's withdrawal over the
+        # subject's altogether, reason included.
+        #
+        # A repeat by an authority whose withdrawal already stands records
+        # nothing: one record per withdrawing authority, not one per call, so
+        # the first cause recorded is the one that stays (ADR-0019).
+        mine = _authority(decided_by, collector)
+        if any(_authority(r.decided_by, r.collector) == mine for r in standing):
+            return latest
+        # Otherwise: fall through, and append this authority's refusal below.
+        # Enforcement does not move — the cell was withdrawn already — and a
+        # subject's standing withdrawal stays the presented one.
 
     consent = ConsentRequestORM(
         subject_id=subject_id,
@@ -877,7 +1001,9 @@ async def _consent_rows_for(
             *_latest_decision_first(),
         )
     )
-    return list(result.scalars().all())
+    # "Latest first" means the presented decision first (ADR-0020): a
+    # subject's standing withdrawal outranks a newer one by anybody else.
+    return present_current(result.scalars().all())
 
 
 async def subject_rows_for(

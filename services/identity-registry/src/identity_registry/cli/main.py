@@ -546,7 +546,14 @@ async def _deliver_member_credential(
 
 @credential_app.command("issue-data-subject")
 def credential_issue_data_subject(
-    subject_id: str = typer.Option(..., help="Subject identifier"),
+    subject_id: str = typer.Option(
+        ...,
+        help=(
+            "Subject identifier, the <id> of the person's DID. Must be opaque: "
+            "never an email, member code or dated reference (rulebook D-22c). "
+            "Opacity is not checked."
+        ),
+    ),
     role: str = typer.Option(None),
     linked_participant_did: str = typer.Option(None),
     ttl_days: int = typer.Option(365),

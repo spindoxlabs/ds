@@ -69,7 +69,7 @@ def corpus_files() -> dict[str, Path]:
 
     The three in-repo files are read **where they live**, not copied: a copy of the
     file the stack actually syncs would drift from it, and then this harness would
-    be pinning the copy. The demo3 files are copies because their repository is not
+    be pinning the copy. The pipeline files are copies because their repository is not
     checked out here — see `corpus/README.md`.
     """
     files = {
@@ -80,8 +80,8 @@ def corpus_files() -> dict[str, Path]:
         "connector/tests-fixture": REPO
         / "services/connector/tests/fixtures/governance.yaml",
     }
-    for path in sorted(CORPUS.glob("demo3/*.governance.yaml")):
-        files[f"demo3/{path.name.removesuffix('.governance.yaml')}"] = path
+    for path in sorted(CORPUS.glob("pipelines/*.governance.yaml")):
+        files[f"pipelines/{path.name.removesuffix('.governance.yaml')}"] = path
     return files
 
 
@@ -460,7 +460,7 @@ class TestDeclaredDivergences:
     def test_odrl_action_was_dropped_and_is_now_carried(self, tmp_path):
         """**Closed by phase 1**, and it was a third dropped field nobody had named.
 
-        `dataspace.odrl_action` is in the canonical schema and in every demo3 file
+        `dataspace.odrl_action` is in the canonical schema and in every pipeline file
         in the corpus. Before phase 1, `DataspaceSpec` had no such field and
         `dataspace` is excluded from `extra`, so ds did not merely fail to read it —
         it could not see that it had been said. `ADR-0013` names `expose` and
@@ -562,7 +562,7 @@ class TestDeclaredDivergences:
         Phase 0 declared this before it was made rather than discovering it
         afterwards, which is the only reason it is a decision and not a regression.
         It is unreachable from the corpus — `license: null` and
-        `documentation_url: null` appear in every demo3 file's `defaults`, but no
+        `documentation_url: null` appear in every pipeline file's `defaults`, but no
         overlay states one — so the snapshot did not move by a single field when the
         merge changed underneath it.
 

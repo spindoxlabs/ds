@@ -51,7 +51,6 @@ global:
   keycloak: {issuerUrl: "", tokenUrl: ""}
   networkPolicy: {enabled: true}
   monitoring: {serviceMonitor: false, prometheusNamespace: monitoring}
-  externalSecrets: {enabled: false, secretStoreRef: {}}
   resources:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}

@@ -11,8 +11,7 @@ owned by a platform team rather than by an application release.
 | **cert-manager** and a `ClusterIssuer` | The charts reference an issuer, or a pre-created secret |
 | **An ingress controller** (nginx assumed) | Cluster-wide singleton |
 
-Optional: the Prometheus Operator (for `ServiceMonitor`), the External Secrets Operator (for
-`ExternalSecret` delivery).
+Optional: the Prometheus Operator (for `ServiceMonitor`).
 
 ---
 

@@ -211,10 +211,9 @@ Extra plain env from .Values.env (map form).
 ================================================================================
 Secrets
 
-Three modes, one call site:
-  existingSecret set              → reference it, create nothing
-  global.externalSecrets.enabled  → an ExternalSecret CR produces it
-  otherwise                       → this chart renders a Secret from values
+Two modes, one call site:
+  existingSecret set  → reference it, create nothing
+  otherwise           → this chart renders a Secret from values
 ================================================================================
 */}}
 
@@ -229,8 +228,6 @@ Three modes, one call site:
 {{/* True when this chart is responsible for creating the Secret object. */}}
 {{- define "ds.createSecret" -}}
 {{- if .Values.existingSecret -}}
-false
-{{- else if ((.Values.global).externalSecrets).enabled -}}
 false
 {{- else -}}
 true

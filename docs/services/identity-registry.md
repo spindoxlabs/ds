@@ -234,6 +234,17 @@ half. Custody, unlike the identifier, follows each credential.
 branch, where a person has no DID yet. A `subject_id` that is itself a DID is refused with a
 **422** rather than concatenated into a nested one, which is how one person used to become two.
 
+**The caller must pass an opaque `subject_id`** — to `POST /admin/credentials/data-subject`
+and to `ir-cli credential issue-data-subject --subject-id` alike. It
+becomes the `<id>` of the person's DID verbatim, travels in every consent record, provenance
+event and credential that names them, and is never converted back. So it must not reveal the
+person: not an email or its local part, not a member code or a username another system
+resolves, not a date-bearing reference such as an onboarding submission number. The mapping
+from the person to the id is the calling registry's to keep. The simplest compliant source is
+this service's own derivation, `GET /users/resolve?derive=true`, which answers a keyed HMAC of
+the email. The registry does **not** check opacity; the obligation is the caller's
+([rulebook `D-22c`](../rulebook/personal-data.md)).
+
 ## How it works
 
 ### Five ways to authenticate, one service

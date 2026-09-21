@@ -250,9 +250,6 @@ global:
   monitoring:
     serviceMonitor: false
     prometheusNamespace: monitoring
-  externalSecrets:
-    enabled: false
-    secretStoreRef: {}
   resources:
     requests:
       cpu: 100m

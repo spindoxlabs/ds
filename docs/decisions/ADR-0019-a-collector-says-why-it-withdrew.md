@@ -58,6 +58,9 @@ this caller to supply one.
   Until it does, the withdrawal is still a `422`.
 - A withdrawal over a withdrawal that already stands changes nothing, and that includes
   its reason. The first cause recorded is the one that stays.
+  *Refined by [ADR-0020](ADR-0020-each-withdrawal-is-its-own-record.md), 2026-09-21:* this
+  holds for a repeat by the same authority. A member's withdrawal over a collector's is a
+  record of its own, and the collector's reason and time are left as written.
 
 ## Amendment, 2026-09-20 — "returned by no read" was true of ds's consent reads and false of the graph
 

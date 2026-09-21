@@ -103,38 +103,3 @@ spec:
       {{- include "ds.selectorLabels" . | nindent 6 }}
 {{- end }}
 {{- end -}}
-
-{{/*
-ExternalSecret CR. Emitted instead of a Secret when
-global.externalSecrets.enabled and no existingSecret is set. The chart declares
-WHICH keys it needs and where they live; it never carries their values.
-
-Args: dict "ctx" $ "remoteKey" <path in the store>
-      "keys" (list of dict "secretKey" <k8s key> "property" <property in store>)
-*/}}
-{{- define "ds.externalSecret" -}}
-{{- $ctx := .ctx -}}
-{{- if and (($ctx.Values.global).externalSecrets).enabled (not $ctx.Values.existingSecret) }}
-apiVersion: external-secrets.io/v1beta1
-kind: ExternalSecret
-metadata:
-  name: {{ include "ds.fullname" $ctx }}
-  labels:
-    {{- include "ds.labels" $ctx | nindent 4 }}
-spec:
-  refreshInterval: {{ (($ctx.Values.global).externalSecrets).refreshInterval | default "1h" }}
-  secretStoreRef:
-    {{- toYaml (($ctx.Values.global).externalSecrets).secretStoreRef | nindent 4 }}
-  target:
-    name: {{ include "ds.fullname" $ctx }}
-    creationPolicy: Owner
-  data:
-{{- $prefix := (($ctx.Values.global).externalSecrets).remotePrefix | default "dataspace" }}
-{{- range .keys }}
-    - secretKey: {{ .secretKey }}
-      remoteRef:
-        key: {{ printf "%s/%s" $prefix $.remoteKey }}
-        property: {{ .property }}
-{{- end }}
-{{- end }}
-{{- end -}}

@@ -72,12 +72,11 @@ helmfile -e production apply
 render time. Its plaintext form must never be committed — the `.gitignore` here
 blocks the usual staging names, but the responsibility is yours.
 
-Three delivery modes, switchable without template changes:
+Two delivery modes, switchable without template changes:
 
 | Mode | How |
 |------|-----|
 | SOPS (default) | values in `secrets.sops.yaml` → rendered `Secret` per service |
-| External Secrets | `global.externalSecrets.enabled=true` → `ExternalSecret` CRs against your store |
 | Pre-created | set `existingSecret: <name>` per service → chart references, creates nothing |
 
 The chart never invents a secret value: templates use `required`, so a missing

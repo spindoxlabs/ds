@@ -786,7 +786,7 @@ async def test_run_evidence_onboards_an_entry_with_no_dataspace_block(
         settings,
         entry,
         ops.RunEvidence(
-            verified_by="demo3-deployment", evidence_ref="recs/owners.yaml@abc1234"
+            verified_by="example-deployment", evidence_ref="recs/owners.yaml@abc1234"
         ),
     )
 
@@ -804,7 +804,7 @@ async def test_run_evidence_onboards_an_entry_with_no_dataspace_block(
     assert owner.did == "did:web:dso.dataspaces.localhost"
     assert owner.aliases == ["dso"]
     assert owner.status == "verified"
-    assert owner.verified_by == "demo3-deployment"
+    assert owner.verified_by == "example-deployment"
 
 
 @pytest.mark.asyncio
@@ -814,7 +814,7 @@ async def test_run_evidence_never_overwrites_the_entrys_own_evidence(
     """The trap the flags open, and the guard for it.
 
     A per-entry block says `ops@example.test / TICKET-42`; a later run passing
-    `--verified-by demo3-deployment` must not rewrite that to the generic string,
+    `--verified-by example-deployment` must not rewrite that to the generic string,
     which would silently downgrade the evidence behind an issued credential.
     Free verification is the state T30 closed; this is the same hole from the
     other side.
@@ -836,7 +836,7 @@ async def test_run_evidence_never_overwrites_the_entrys_own_evidence(
         db_session,
         settings,
         plain,
-        ops.RunEvidence(verified_by="demo3-deployment", evidence_ref="owners.yaml"),
+        ops.RunEvidence(verified_by="example-deployment", evidence_ref="owners.yaml"),
     )
     await db_session.commit()
 
@@ -910,7 +910,7 @@ async def test_run_evidence_does_not_overwrite_an_owner_seeded_by_owner_import(
         settings,
         {"id": ALIAS, "name": "Example Community", "did": ORG_DID},
         ops.RunEvidence(
-            verified_by="demo3-dataspace-prod", evidence_ref="env/prod/owners.yaml"
+            verified_by="example-dataspace-prod", evidence_ref="env/prod/owners.yaml"
         ),
     )
     await db_session.commit()
@@ -929,7 +929,7 @@ async def test_run_evidence_does_not_overwrite_an_owner_seeded_by_owner_import(
     verification = next(s for s in outcome.steps if s.step == "verification")
     assert verification.action == "unchanged"
     assert "dev-seed" in verification.detail
-    assert "demo3-dataspace-prod" not in verification.detail
+    assert "example-dataspace-prod" not in verification.detail
 
 
 @pytest.mark.rule("P-4")
@@ -939,7 +939,7 @@ async def test_a_second_run_with_the_same_evidence_is_a_no_op(db_session, tmp_pa
     report of a change that did not happen."""
     settings = await _seed(db_session, tmp_path)
     entry = _owners()[1]
-    evidence = ops.RunEvidence(verified_by="demo3-deployment", evidence_ref="o.yaml")
+    evidence = ops.RunEvidence(verified_by="example-deployment", evidence_ref="o.yaml")
 
     first = await ops.apply_owner_entry(db_session, settings, entry, evidence)
     await db_session.commit()
@@ -977,7 +977,7 @@ async def test_run_evidence_does_not_blank_a_legal_identity_it_cannot_carry(
         db_session,
         settings,
         plain,
-        ops.RunEvidence(verified_by="demo3-deployment"),
+        ops.RunEvidence(verified_by="example-deployment"),
     )
     await db_session.commit()
 
@@ -1011,7 +1011,7 @@ async def test_a_first_run_still_writes_a_complete_row(db_session, tmp_path):
         db_session,
         settings,
         _owners()[1],
-        ops.RunEvidence(verified_by="demo3-deployment"),
+        ops.RunEvidence(verified_by="example-deployment"),
     )
     await db_session.commit()
 

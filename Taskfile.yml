@@ -1806,6 +1806,19 @@ tasks:
         [ "$rc" -eq 0 ] && echo "✓ $FILE and the EDC vault material carry no dev defaults"
         exit $rc
 
+  # ── Helm charts ──────────────────────────────────────────────────────────
+  helm:test:
+    desc: Lint every chart and render the example helmfile, asserting over the objects (no cluster)
+    cmds:
+      # Local only, by decision: chart tests are a task over helm, not a CI job.
+      # Needs `helm` and `helmfile` on the path. The tests copy `helm/` to a
+      # temporary directory, so `helm dependency update` never writes the tree.
+      - >-
+        uv run --no-project
+        --with pytest
+        --with pyyaml
+        pytest helm/tests -q -p no:cacheprovider
+
   # ── Documentation ────────────────────────────────────────────────────────
   docs:serve:
     desc: Serve docs locally with live reload (http://127.0.0.1:8000)

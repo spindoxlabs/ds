@@ -89,7 +89,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | `GET` | `/admin/dids/{did}` | Get DID details |
 | `DELETE` | `/admin/dids/{did}` | Deactivate DID + revoke credentials. **Answers a body, not `204`**: it does not erase, and it names what it kept — a surviving `keycloak_mappings` row refuses the next binding for that Keycloak user |
 | `POST` | `/admin/credentials/membership` | Issue MembershipCredential |
-| `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential (idempotent per role) |
+| `POST` | `/admin/credentials/data-subject` | Issue DataSubjectCredential (idempotent per role). `subject_id` must be opaque — never an email, member code or dated reference ([`D-22c`](../../docs/rulebook/personal-data.md)) |
 | `POST` | `/admin/credentials/data-subject/transition` | Change a `communityRole`: suspend the superseded credential, issue its successor |
 | `POST` | `/admin/credentials/organization` | Issue OrganizationCredential (gate: verified + agreement) |
 | `POST` | `/admin/organizations/applications` | Register an organisation application |
@@ -122,7 +122,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli participant list` | List all participants |
 | `ir-cli participant remove` | Deactivate a participant |
 | `ir-cli credential issue-membership` | Issue MembershipCredential |
-| `ir-cli credential issue-data-subject` | Issue DataSubjectCredential |
+| `ir-cli credential issue-data-subject` | Issue DataSubjectCredential. `--subject-id` must be opaque (`D-22c`) |
 | `ir-cli credential revoke` | Revoke a credential |
 | `ir-cli credential list` | List all credentials |
 | `ir-cli key rotate` | Rotate key for a DID |

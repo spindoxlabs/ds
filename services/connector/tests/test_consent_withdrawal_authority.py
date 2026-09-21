@@ -269,21 +269,24 @@ async def test_a_subject_withdrawing_a_service_grant_makes_it_theirs(client, eng
 
 @pytest.mark.rule("D-15c")
 @pytest.mark.asyncio
-async def test_a_subject_repeating_stop_takes_ownership_of_the_refusal(client, engine):
-    """A standing service withdrawal, then the person says stop as well.
+async def test_a_subject_repeating_stop_adds_a_refusal_of_their_own(client, engine):
+    """A standing withdrawal the holder made, then the person says stop as well.
 
-    The decision does not change, so no row is written — but whose refusal it is
-    does change, and it can only escalate. Without this, a service could withdraw
-    on someone's behalf, that person could confirm it, and the next service could
-    still lift it.
+    The person's stop is a record of its own (ADR-0020) — it used to re-stamp
+    the holder's row as the person's, keeping the holder's time. The holder's
+    row stays the holder's, and the person's, being the newest, is what the next
+    provision meets. Without it, the holder could withdraw on someone's behalf,
+    that person could confirm it, and the next provision could still lift it.
     """
     await _service_provisions(client)
     await _service_provisions(client, enabled=False)
     await _subject_sets(client, enabled=False)
 
-    assert [r.decided_by for r in await _rows(engine) if r.status == "revoked"] == [
-        "subject"
-    ]
+    revoked = sorted(
+        (r for r in await _rows(engine) if r.status == "revoked"),
+        key=lambda r: r.revoked_at,
+    )
+    assert [r.decided_by for r in revoked] == [HOLDER_DECIDES, "subject"]
     assert (await _service_provisions(client)).status_code == 409
 
 

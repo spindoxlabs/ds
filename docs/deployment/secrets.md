@@ -7,7 +7,7 @@ missing value **fails the render and names the key** instead of deploying a defa
 does and its blast radius if leaked. `helm/secrets.example.yaml` mirrors the subset the charts
 need.
 
-## Three delivery modes
+## Two delivery modes
 
 Switchable without touching a template, because all consumption already goes through `envFrom`
 and `secretKeyRef`:
@@ -15,11 +15,11 @@ and `secretKeyRef`:
 | Mode | How | When |
 |---|---|---|
 | **SOPS** (default) | values in `secrets.sops.yaml` → one rendered `Secret` per service | single source, GitOps-friendly, no extra operator |
-| **External Secrets** | `global.externalSecrets.enabled: true` → `ExternalSecret` CRs against your store | you already run Vault / AWS SM / GCP SM |
 | **Pre-created** | `existingSecret: <name>` per chart → the chart references it and creates nothing | secrets provisioned by another process entirely |
 
-With External Secrets the chart declares **which** keys it needs and where they live, never
-their values.
+The charts emit no `ExternalSecret`. A deployment that keeps its values in an external store
+(Vault, a cloud secret manager) has that store produce the Secret, and sets `existingSecret`
+to its name; the keys it must carry are the ones the chart's `templates/secret.yaml` renders.
 
 ## The SOPS path
 
