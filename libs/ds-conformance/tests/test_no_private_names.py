@@ -62,7 +62,11 @@ def local_terms() -> dict[str, int]:
     path = Path(os.environ.get("DS_PRIVATE_NAMES_FILE") or REPO / ".private-names")
     if not path.is_file():
         return {}
-    terms = (normalise(line) for line in path.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#"))
+    terms = (
+        normalise(line)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if not line.lstrip().startswith("#")
+    )
     return {sha(t): len(t) for t in terms if t}
 
 
@@ -78,7 +82,9 @@ def candidate_files(root: Path) -> list[Path]:
         paths = [root / p for p in out.split("\0") if p]
     except (OSError, subprocess.CalledProcessError):
         paths = [
-            p for p in root.rglob("*") if p.is_file() and not SKIP_DIRS.intersection(p.relative_to(root).parts)
+            p
+            for p in root.rglob("*")
+            if p.is_file() and not SKIP_DIRS.intersection(p.relative_to(root).parts)
         ]
     return [p for p in paths if p.is_file() and p.suffix.lower() not in SKIP_SUFFIXES]
 

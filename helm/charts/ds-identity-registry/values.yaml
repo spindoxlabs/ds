@@ -154,7 +154,7 @@ bootstrap:
     # It is **run-level** evidence: it applies only where the entry supplies
     # none of its own, and an owner already verified by something else is left
     # alone. A deployment's owners file at a known revision is the honest claim
-    # here — e.g. verifiedBy: demo3-dataspace-prod,
+    # here — e.g. verifiedBy: example-dataspace-prod,
     # evidenceRef: env/prod/owners.yaml.
     verifiedBy: ""
     evidenceRef: ""

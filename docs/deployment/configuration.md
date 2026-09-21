@@ -168,7 +168,7 @@ authority:
       governanceConfigMap: ds-governance
       orgApply:
         governance: [grid.yaml, rec_it.yaml]
-        verifiedBy: demo3-dataspace-prod
+        verifiedBy: example-dataspace-prod
         evidenceRef: env/prod/owners.yaml
 ```
 

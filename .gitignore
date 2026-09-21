@@ -98,3 +98,6 @@ site/
 services/connector/governance-rec/sharing-offers.d/
 
 .docs.**
+
+# Local plain-text private-names list for the no-private-names guard (never commit)
+.private-names
