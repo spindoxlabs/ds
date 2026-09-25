@@ -9,7 +9,7 @@ from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import CONSENT_DECIDERS, ConsentRequestORM
@@ -1604,3 +1604,114 @@ async def get_granted_subject_ids(
             admitted_wildcard_offers,
         )
     ]
+
+
+# ── An organisation's own decisions, as a list ───────────────────────────────
+
+
+def collected_by(row: ConsentRequestORM, organisation: str) -> bool:
+    """Did *organisation* collect a decision in this row?
+
+    The row's ``collector`` is the organisation whose token decided the row's
+    *current* state, and a withdrawal over a grant rewrites it. The evidence
+    record keeps who collected the grant (``legal_basis.collector``), and the
+    writer never rewrites that. Either one is the organisation's hand in the
+    cell. The row a member's withdrawal left behind, relayed by anybody, still
+    carries the grant's evidence, so the organisation that registered the grant
+    sees that it was withdrawn.
+    """
+    if row.collector == organisation:
+        return True
+    return (row.legal_basis or {}).get("collector") == organisation
+
+
+def _collected_by_clause(organisation: str):
+    return or_(
+        ConsentRequestORM.collector == organisation,
+        ConsentRequestORM.legal_basis["collector"].as_string() == organisation,
+    )
+
+
+async def collected_subjects_page(
+    session: AsyncSession,
+    *,
+    organisation: str,
+    offer_id: str,
+    dataset_ids: Collection[str],
+    after: str | None,
+    limit: int,
+) -> tuple[list[str], bool]:
+    """The next *limit* subjects *organisation* registered a decision for.
+
+    Scoped to one offer's standing (``WILDCARD_CONSUMER``) cells over
+    *dataset_ids*, which is the only kind of cell ``POST /consent/admin/shares``
+    writes. Ordered by subject id and resumed strictly after *after*. Returns
+    the subjects and whether any follow them. That is the page boundary, and
+    it is known here, not guessed from a short page.
+    """
+    stmt = (
+        select(ConsentRequestORM.subject_id)
+        .where(
+            ConsentRequestORM.offer_id == offer_id,
+            ConsentRequestORM.consumer_id == WILDCARD_CONSUMER,
+            ConsentRequestORM.dataset_id.in_(list(dataset_ids)),
+            _collected_by_clause(organisation),
+        )
+        .distinct()
+        .order_by(ConsentRequestORM.subject_id)
+        .limit(limit + 1)
+    )
+    if after is not None:
+        stmt = stmt.where(ConsentRequestORM.subject_id > after)
+    subjects = list((await session.execute(stmt)).scalars().all())
+    return subjects[:limit], len(subjects) > limit
+
+
+async def collected_decisions(
+    session: AsyncSession,
+    *,
+    organisation: str,
+    offer_id: str,
+    dataset_ids: Collection[str],
+    subject_ids: Collection[str],
+) -> dict[tuple[str, str], ConsentRequestORM]:
+    """Each cell's presented decision, for the cells *organisation* has a hand in.
+
+    Keyed ``(subject_id, dataset_id)``. A cell is one subject's standing
+    decision on one offer over one dataset. It is listed when the organisation
+    collected any row in it (:func:`collected_by`), and what is listed is the
+    cell's **presented** decision, whoever took it. That is the decision
+    ``GET /consent/admin/subject-shares`` returns for the same cell, and the one
+    every enforcement reader decides from (ADR-0020). So a member's withdrawal
+    over the organisation's own is what the organisation sees.
+
+    A cell the organisation never touched is absent, not "never asked". The
+    caller cannot tell those two apart and is not meant to. A cell with no
+    decision at all is absent as well.
+    """
+    if not subject_ids:
+        return {}
+    stmt = select(ConsentRequestORM).where(
+        ConsentRequestORM.offer_id == offer_id,
+        ConsentRequestORM.consumer_id == WILDCARD_CONSUMER,
+        ConsentRequestORM.dataset_id.in_(list(dataset_ids)),
+        ConsentRequestORM.subject_id.in_(list(subject_ids)),
+    )
+    # Newest row first, as `list_subject_consents` loads them, before the
+    # decision-time sort below: ties then break the same way in both reads.
+    stmt = stmt.order_by(ConsentRequestORM.requested_at.desc())
+    rows = list((await session.execute(stmt)).scalars().all())
+    ours = {
+        (row.subject_id, row.dataset_id)
+        for row in rows
+        if collected_by(row, organisation)
+    }
+    presented: dict[tuple[str, str], ConsentRequestORM] = {}
+    # The same ordering `GET /consent/admin/subject-shares` takes the first row
+    # per cell from, so the two reads cannot disagree about a cell.
+    for row in present_current(sorted(rows, key=decision_time, reverse=True)):
+        cell = (row.subject_id, row.dataset_id)
+        if cell not in ours or row.status == "pending":
+            continue
+        presented.setdefault(cell, row)
+    return presented

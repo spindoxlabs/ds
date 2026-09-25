@@ -9,7 +9,8 @@ The consumer organisation then pulls with **its** own client token:
 
     relation → refusals → register (keys, prerequisite) → read back
       → catalogue → negotiate → transfer → EDR → rows (by key)
-      → relayed withdrawal → rows narrowed → read back → provenance → D-15c
+      → relayed withdrawal → rows narrowed → read back → the list read
+      → provenance → D-15c
 
 What must be refused, live:
 
@@ -26,7 +27,12 @@ What must be refused, live:
   prerequisite that was ignored returns it;
 - after a relayed withdrawal (the member's, `decided_by="subject"`), the
   community deciding on its own (`decided_by="collector"`) may not lift it
-  (`D-15c`).
+  (`D-15c`);
+- the list read (`GET /consent/admin/decisions`, ADR-0021) for an organisation
+  the registry does not list — `403`, not an empty list. For the community it
+  lists the withdrawn member as withdrawn, and the same row the per-subject
+  read-back presents. It lists the member still sharing with their keys, and
+  never another organisation's member, whether read as one page or page by page.
 
 Data plane: the grid operator's own mock (`E2E_GRID_OPERATOR_MOCK_DATA_PLANE_URL`),
 the only plane bound to the grid operator's connector and EDC; the step names it.
@@ -134,6 +140,7 @@ class CollectorHolderFlow(BaseFlow):
             {POD_DUAL},
         )
         self._check_withdrawn_read_back(result)
+        self._check_decisions_list(result)
         self._check_provenance(result)
         self._check_authority(result)
 
@@ -689,6 +696,112 @@ class CollectorHolderFlow(BaseFlow):
         result.pass_step(
             "the dependent row stands, its admission does not",
             "withdrawing the release withdrew the use offer's admission, not its row",
+        )
+
+    def _decisions(
+        self, offer: str, headers: dict[str, str], **params: Any
+    ) -> tuple[int, Any]:
+        s = self.settings
+        return self.http.raw(
+            "GET",
+            f"{s.grid_operator_connector_url}/consent/admin/decisions?"
+            + urllib.parse.urlencode({"offer_id": offer, **params}),
+            headers=headers,
+        )
+
+    def _all_decisions(self, offer: str, limit: int) -> tuple[int, dict, int]:
+        """Every page, joined: ``(status, {subject: decisions}, pages)``."""
+        listed: dict[str, list[dict[str, Any]]] = {}
+        cursor = None
+        pages = 0
+        while True:
+            params: dict[str, Any] = {"limit": limit}
+            if cursor:
+                params["cursor"] = cursor
+            status, body = self._decisions(offer, self.collector, **params)
+            if status != 200 or not isinstance(body, dict):
+                return status, {"body": body}, pages
+            pages += 1
+            for entry in body.get("subjects") or []:
+                if entry["subject_id"] in listed:
+                    return 0, {"repeated": entry["subject_id"]}, pages
+                listed[entry["subject_id"]] = entry["decisions"]
+            cursor = body.get("next_cursor")
+            if not cursor:
+                return status, listed, pages
+
+    def _check_decisions_list(self, result: FlowResult) -> None:
+        """ADR-0021 live: the community lists its members' decisions, every
+        state, bounded as the per-subject read-back is."""
+        s = self.settings
+        release = s.grid_release_offer_id
+        step = "the list read says who withdrew"
+
+        unlisted, body = self._decisions(release, self.consumer)
+        if unlisted != 403 or "not an accepted consent collector" not in _detail(body):
+            result.fail_step(
+                step,
+                "an organisation the registry does not list must be refused, not "
+                "answered with an empty list",
+                status_code=unlisted,
+                body=body,
+            )
+            return
+
+        status, listed, _ = self._all_decisions(release, limit=100)
+        paged_status, paged, pages = self._all_decisions(release, limit=1)
+        _, back = self._read_back(s.data_subject_id, self.collector)
+        presented = next(
+            (
+                item
+                for item in (back if isinstance(back, list) else [])
+                if isinstance(item, dict)
+                and item.get("offer_id") == release
+                and item.get("status") != "pending"
+            ),
+            {},
+        )
+        member = (listed.get(s.data_subject_id) or [{}])[0]
+        dual = (listed.get(s.dual_subject_id) or [{}])[0]
+        problems = {
+            "status": status if status != 200 else None,
+            "paged": None
+            if (paged_status, paged) == (200, listed)
+            else {"status": paged_status, "pages": pages},
+            "withdrawn member": None
+            if (
+                member.get("state") == "withdrawn"
+                and member.get("decided_by") == "subject"
+                and member.get("consent_id") == presented.get("id")
+            )
+            else {"listed": member, "subject-shares": presented.get("id")},
+            "member still sharing": None
+            if (
+                dual.get("state") == "granted"
+                and dual.get("keys") == [f"pod:{POD_DUAL}"]
+            )
+            else dual,
+            "another organisation's member": s.partner_member_id
+            if s.partner_member_id in listed
+            else None,
+        }
+        wrong = {k: v for k, v in problems.items() if v is not None}
+        if wrong:
+            result.fail_step(
+                step,
+                "the list read must agree with the per-subject read-back, list "
+                "every state and only the community's own members",
+                wrong=wrong,
+            )
+            return
+        result.pass_step(
+            step,
+            "403 for an unlisted organisation; for the community the withdrawn "
+            "member is listed as withdrawn (the row subject-shares presents), the "
+            "member still sharing with their keys, and no other organisation's "
+            "member — the same whole list one subject per page",
+            subjects=len(listed),
+            pages=pages,
         )
 
     def _check_provenance(self, result: FlowResult) -> None:

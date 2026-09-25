@@ -214,3 +214,112 @@ def test_cleanup_withdraws_as_the_collector_and_revokes_its_requests(settings):
     )
     revoked = [u for m, u, b in calls if u.endswith("/revoke")]
     assert revoked == [f"{settings.consumer_connector_url}/consumer/requests/r1/revoke"]
+
+
+# ── the list read (ADR-0021) ─────────────────────────────────────────────────
+
+
+def _holder_lists(settings, **override):
+    """A grid operator answering `GET /consent/admin/decisions` page by page,
+    and `subject-shares` for the withdrawn member, as the connector does."""
+    import urllib.parse as up
+
+    member_row = "row-member"
+    entries = {
+        settings.data_subject_id: [
+            {
+                "dataset_id": "grid-meters",
+                "consent_id": member_row,
+                "state": "withdrawn",
+                "decided_by": "subject",
+                "keys": [],
+            }
+        ],
+        settings.dual_subject_id: [
+            {
+                "dataset_id": "grid-meters",
+                "consent_id": "row-dual",
+                "state": "granted",
+                "decided_by": "subject",
+                "keys": [f"pod:{POD_DUAL}"],
+            }
+        ],
+    }
+    entries.update(override.pop("entries", {}))
+    unlisted = override.pop(
+        "unlisted", (403, {"detail": "not an accepted consent collector"})
+    )
+    ordered = sorted(entries)
+
+    def raw(method, url, body=None, headers=None, **_):
+        query = dict(up.parse_qsl(up.urlparse(url).query))
+        if "/consent/admin/subject-shares" in url:
+            return 200, [{"offer_id": settings.grid_release_offer_id, "id": member_row}]
+        if headers == {"Authorization": "Bearer consumer"}:
+            return unlisted
+        start = ordered.index(query["cursor"]) + 1 if "cursor" in query else 0
+        limit = int(query["limit"])
+        page = ordered[start : start + limit]
+        more = start + limit < len(ordered)
+        return 200, {
+            "subjects": [{"subject_id": s, "decisions": entries[s]} for s in page],
+            "next_cursor": page[-1] if more else None,
+        }
+
+    return raw
+
+
+def test_the_list_read_passes_when_it_agrees_with_the_read_back(settings):
+    flow, _ = _flow(settings, _holder_lists(settings))
+    result = FlowResult(flow_name="collector-holder")
+    flow._check_decisions_list(result)
+    step = _step(result, "the list read says who withdrew")
+    assert step.status == "PASS", step
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["unlisted-empty", "member-granted", "other-row", "partner-listed"],
+)
+def test_the_list_read_fails_on_what_it_exists_to_catch(settings, case):
+    member = settings.data_subject_id
+    override = {
+        "unlisted-empty": {"unlisted": (200, {"subjects": [], "next_cursor": None})},
+        "member-granted": {
+            "entries": {member: [{"consent_id": "row-member", "state": "granted"}]}
+        },
+        "other-row": {
+            "entries": {
+                member: [
+                    {
+                        "consent_id": "the-collector-s-row",
+                        "state": "withdrawn",
+                        "decided_by": "collector",
+                    }
+                ]
+            }
+        },
+        "partner-listed": {
+            "entries": {settings.partner_member_id: [{"state": "granted"}]}
+        },
+    }[case]
+    flow, _ = _flow(settings, _holder_lists(settings, **override))
+    result = FlowResult(flow_name="collector-holder")
+    flow._check_decisions_list(result)
+    assert _step(result, "the list read says who withdrew").status == "FAIL"
+
+
+def test_a_page_that_repeats_a_subject_fails(settings):
+    listed = _holder_lists(settings)
+
+    def raw(method, url, body=None, headers=None, **kwargs):
+        status, answer = listed(method, url, body, headers, **kwargs)
+        if isinstance(answer, dict) and "cursor" in url:
+            # Every page after the first starts over: a cursor that is ignored.
+            return listed(method, url.split("&cursor=")[0], body, headers)
+        return status, answer
+
+    flow, _ = _flow(settings, raw)
+    result = FlowResult(flow_name="collector-holder")
+    flow._check_decisions_list(result)
+    assert _step(result, "the list read says who withdrew").status == "FAIL"

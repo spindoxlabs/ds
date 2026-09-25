@@ -42,7 +42,9 @@ subject's standing decision (`connector.consent.provision`), and `GET /consent/a
 reads back **who currently consents to one sharing offer**, for one named consumer
 (`connector.consent.audience`). The read is a separate permission on purpose — a write grant
 must not carry bulk subject enumeration with it, which is why `.audience` is in no bundle and
-is reached by a person only through `connector.admin`.
+is reached by a person only through `connector.admin`. What a writer can read back is only its
+own members' decisions: one subject at a time with `GET /consent/admin/subject-shares`, or
+listed per offer, every state, with `GET /consent/admin/decisions`.
 
 **Registers consent another organisation collected.** A person consents where they are a
 member; the organisation holding their data runs this connector. An **accepted collector** —
@@ -228,7 +230,41 @@ to no dataset at this connector is a `422`, here and on the member's own route a
 
 `GET /consent/admin/subject-shares?subject_id=…` is the read-back: one subject's decisions and
 outstanding asks here, for the organisation that speaks for them, under the same two checks. It
-is the narrow exception to `D-20`, and it is not a roster.
+is the narrow exception to `D-20`.
+
+`GET /consent/admin/decisions?offer_id=…` is the same read-back as a list, for one offer
+([ADR-0021](../decisions/ADR-0021-an-organisation-lists-its-own-members-decisions.md)). It
+answers *who withdrew*, which the audience cannot: the audience lists grants only, so a
+withdrawn subject is absent from it. The bound is exactly the per-subject one:
+
+- the acceptance check runs once. A caller not accepted gets `403` (`503` when the registry
+  cannot say), never an empty list;
+- the membership check runs per subject on the page. A subject who is no longer a member is
+  left out. A subject the registry cannot answer for makes the call a `503`;
+- only the cells the caller's organisation collected are listed. The organisation collected
+  a cell if a row there carries its `collector`, or if it registered the grant's evidence
+  (`legal_basis.collector`). A member's withdrawal relayed by another organisation over this
+  organisation's grant is still listed to it.
+
+Each cell shows its presented decision, which is the row `subject-shares` returns for it (the
+member's own withdrawal whenever one stands). A subject who never decided is absent.
+
+```json
+{
+  "offer_id": "…", "datasets": ["…"], "limit": 50, "next_cursor": "…",
+  "subjects": [{"subject_id": "did:…", "decisions": [{
+    "dataset_id": "…", "consent_id": "…", "state": "granted | withdrawn",
+    "decided_by": "subject | collector | service | operator", "collector": "did:… | null",
+    "decided_at": "…", "revoked_at": "…", "keys": ["pod:…"]}]}]
+}
+```
+
+`limit` runs from 1 to 100 subjects per page (default 50), and `cursor` takes the previous
+page's `next_cursor`. A page can be short, or even empty, and still not be the last. Only
+`next_cursor: null` ends the list. `keys` go back only to the organisation that registered them,
+and the withdrawal `reason` to nobody (`D-12a`). An unknown offer or one resolving to no
+dataset here is a `422`, a contract-based offer a `409`, and a cursor the route did not issue a
+`422`. It is a holder route: a collector that registers at several holders asks each one.
 
 ### Parking a negotiation
 

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import base64
 import inspect
 import logging
 from datetime import datetime
@@ -1126,6 +1128,42 @@ async def _admit_writer(
 
     A deployment with no identity registry keeps today's behaviour for its own
     services (no membership check) and accepts no collector.
+
+    The two halves are :func:`_admit_organisation` and :func:`_member_of`, so
+    the list read (`GET /consent/admin/decisions`) asks exactly these two
+    questions and no weaker ones: the first once per call, the second once per
+    subject it would list.
+    """
+    owner = await _admit_organisation(request, settings, writer)
+    if owner is None:
+        return
+    membership = await _member_of(request, settings, subject_id, owner)
+    # Retryable, not refused — see the same split on the consent-request
+    # route. Provisioning is driven by a service working through approved
+    # records, and a 403 is what tells it to stop and file the failure.
+    if membership is Membership.UNKNOWN:
+        raise HTTPException(
+            503,
+            f"Identity registry unavailable, cannot verify that "
+            f"'{subject_id}' is a member of organisation '{owner}'",
+        )
+    if membership is Membership.NOT_MEMBER:
+        raise HTTPException(
+            403,
+            f"Subject '{subject_id}' is not a member of organisation "
+            f"'{owner}', which this caller speaks for",
+        )
+
+
+async def _admit_organisation(
+    request: Request, settings: Settings, writer: ConsentWriter
+) -> str | None:
+    """Is the organisation this writer speaks for accepted here?
+
+    Returns the owner id whose members it may speak for, or ``None`` when no
+    membership check applies (a deployment with no identity registry, for this
+    connector's own organisation only). Refuses — ``403`` not accepted, ``503``
+    the registry cannot say — exactly as the write does.
     """
     try:
         answer = await check_collector(
@@ -1150,35 +1188,26 @@ async def _admit_writer(
                 "no identity registry is configured, so no collector's "
                 "membership can be verified",
             )
-        return
+        return None
     if not answer.collector_owner:
         raise HTTPException(
             403,
             f"'{writer.organisation}' is not the DID of a registered organisation, "
             "so whose members it speaks for cannot be checked",
         )
-    membership = await check_subject_membership(
+    return answer.collector_owner
+
+
+async def _member_of(
+    request: Request, settings: Settings, subject_id: str, owner: str
+) -> Membership:
+    """Is *subject_id* a current member of *owner*? The registry's answer, as is."""
+    return await check_subject_membership(
         settings.identity_registry_url,
         user_did=subject_id,
-        organization_alias=answer.collector_owner,
+        organization_alias=owner,
         token_provider=getattr(request.app.state, "ir_token_provider", None),
     )
-    # Retryable, not refused — see the same split on the consent-request
-    # route. Provisioning is driven by a service working through approved
-    # records, and a 403 is what tells it to stop and file the failure.
-    if membership is Membership.UNKNOWN:
-        raise HTTPException(
-            503,
-            f"Identity registry unavailable, cannot verify that "
-            f"'{subject_id}' is a member of organisation "
-            f"'{answer.collector_owner}'",
-        )
-    if membership is Membership.NOT_MEMBER:
-        raise HTTPException(
-            403,
-            f"Subject '{subject_id}' is not a member of organisation "
-            f"'{answer.collector_owner}', which this caller speaks for",
-        )
 
 
 @router.post("/admin/shares", response_model=list[RegisteredConsentResponse])
@@ -1374,6 +1403,14 @@ async def admin_provision_share(
     ]
 
 
+def _keys_for(writer: ConsentWriter, row: ConsentRequestORM) -> list[str]:
+    """The row's data keys, for the organisation that registered them only."""
+    own = (
+        writer.collector_did is not None and row.collector == writer.collector_did
+    ) or (writer.collector_did is None and row.collector is None)
+    return list(row.subject_keys or []) if own else []
+
+
 class SubjectShare(ConsentResponse):
     """One of a subject's decisions at this connector, for the organisation that
     speaks for them — with the data keys it registered, and nothing it did not."""
@@ -1398,8 +1435,10 @@ async def admin_read_subject_shares(
     the narrow exception, and it is **per subject and limited to the caller's own
     members** — the same acceptance and membership check the write makes, so an
     organisation reads back exactly the people it may write for, one at a time.
-    Never a roster: `GET /consent/admin/shares` is the cross-subject read, and an
-    organisation client does not hold its permission.
+    ``GET /consent/admin/decisions`` is the same read as a list per offer, under
+    the same bound (ADR-0021). Anyone else's cross-subject read is
+    `GET /consent/admin/shares`, and an organisation client does not hold its
+    permission.
 
     It lists the latest decision per ``(dataset, offer, consumer)``, the asks
     outstanding against the subject here (`D-18`: a member cannot see a holder's
@@ -1430,13 +1469,10 @@ async def admin_read_subject_shares(
 
     shares = []
     for row in latest.values():
-        own_keys = (
-            writer.collector_did is not None and row.collector == writer.collector_did
-        ) or (writer.collector_did is None and row.collector is None)
         shares.append(
             SubjectShare(
                 **ConsentResponse.model_validate(row).model_dump(),
-                keys=list(row.subject_keys or []) if own_keys else [],
+                keys=_keys_for(writer, row),
                 missing_prerequisites=(
                     consent_service.missing_prerequisites(
                         await consent_service.subject_rows_for(
@@ -1659,6 +1695,214 @@ async def admin_read_offer_audience(
         purpose=[offer.purpose],
         recipient_role=offer.recipients.recipient_role,
         datasets=datasets,
+    )
+
+
+# ── An organisation's own decisions, as a list ───────────────────────────────
+
+#: The most subjects one page of `GET /consent/admin/decisions` covers. Each
+#: subject on a page costs one membership check at the identity registry, so
+#: this bounds the calls one request makes as well as the answer's size.
+DECISIONS_PAGE_MAX = 100
+DECISIONS_PAGE_DEFAULT = 50
+
+
+def _encode_cursor(subject_id: str) -> str:
+    return base64.urlsafe_b64encode(subject_id.encode()).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> str:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        subject_id = base64.urlsafe_b64decode(padded.encode()).decode()
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            422, "cursor is not one this route issued; start again without it"
+        ) from exc
+    if not subject_id:
+        raise HTTPException(
+            422, "cursor is not one this route issued; start again without it"
+        )
+    return subject_id
+
+
+class SubjectDecision(BaseModel):
+    """One subject's current decision on the offer, over one dataset.
+
+    ``state`` is the cell's: ``granted`` while a grant stands, ``withdrawn``
+    once any withdrawal stands. Who withdrew is ``decided_by`` (``subject`` for
+    the member, relayed or direct; ``collector``, ``service``, ``operator``
+    otherwise). DPV's `ConsentWithdrawn` / `ConsentRevoked` split by actor is
+    that field, not a third state. ``collector`` is the organisation whose
+    token decided this row. ``keys`` are returned only to the organisation
+    that registered them, as on ``GET /consent/admin/subject-shares``.
+    """
+
+    dataset_id: str
+    consent_id: str
+    state: Literal["granted", "withdrawn"]
+    decided_by: str
+    collector: str | None = None
+    decided_at: datetime | None = None
+    revoked_at: datetime | None = None
+    keys: list[str] = []
+
+
+class SubjectDecisions(BaseModel):
+    """One subject, and their decision per dataset, never flattened."""
+
+    subject_id: str
+    decisions: list[SubjectDecision]
+
+
+class OfferDecisions(BaseModel):
+    """One page of an organisation's members' decisions on one offer, here.
+
+    ``next_cursor`` is ``null`` only on the last page. A page may hold fewer
+    than ``limit`` subjects, or none, and still not be the last: a subject who
+    is no longer the caller's member is dropped after the page is cut. Only
+    ``next_cursor: null`` ends the list.
+    """
+
+    offer_id: str
+    datasets: list[str]
+    limit: int
+    subjects: list[SubjectDecisions]
+    next_cursor: str | None = None
+
+
+@router.get("/admin/decisions", response_model=OfferDecisions)
+async def admin_read_offer_decisions(
+    request: Request,
+    offer_id: str = Query(..., min_length=1),
+    limit: int = Query(DECISIONS_PAGE_DEFAULT, ge=1, le=DECISIONS_PAGE_MAX),
+    cursor: str | None = Query(None, min_length=1),
+    writer: ConsentWriter = Depends(require_consent_writer),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """Every decision the calling organisation registered here on this offer.
+
+    Plan `an-audience-says-who-consents-not-who-withdrew`, ADR-0021. The
+    audience route (``GET /consent/admin/shares``) lists who **may be
+    served**, so a subject who withdrew is absent from it, and absent looks the
+    same as never asked. This lists the other states too. It is a separate
+    route so that a reader of the audience can never mistake a withdrawn
+    subject for a present one.
+
+    **Bounded exactly as ``GET /consent/admin/subject-shares`` is** (`D-20`).
+    It makes the same acceptance check and the same membership check as the
+    write, and it adds nothing to what that route already reaches:
+
+    - the caller must be accepted for this holder, and is refused (``403``, or
+      ``503`` when the registry cannot say) otherwise. It gets a refusal, never
+      an empty list, because an empty list reads as "nobody decided";
+    - a subject is listed only while a **current member** of the organisation
+      the caller speaks for. Membership is checked per subject, as the write
+      checks it. One subject the registry cannot answer for makes the call a
+      ``503``, since leaving them out would shorten the list silently;
+    - only cells the organisation **collected** are listed. A cell is one
+      subject's standing decision on this offer over one dataset. The
+      organisation collected it when it wrote a row there (``collector``) or
+      registered the grant's evidence (``legal_basis.collector``). Another
+      organisation's registrations and a consumer's per-party ask are never
+      listed.
+
+    The decision listed for a cell is its **presented** decision
+    (`present_current`, ADR-0020): the member's own withdrawal whenever one
+    stands, else the newest. It is the decision ``subject-shares`` returns for
+    the same cell and the one enforcement decides from. A subject who never
+    decided is absent, not a state: coverage is the caller's diff against its
+    own member list.
+
+    **A holder route.** It answers for the rows this connector holds. A
+    collector registering at several holders asks each one. Nothing here
+    speaks for another connector.
+
+    **Paged by subject**, ordered by subject id: ``limit`` (default
+    50, at most 100) subjects per page,
+    and ``cursor`` is the previous page's ``next_cursor``. Nothing is truncated
+    silently. ``next_cursor`` is ``null`` on the last page only.
+
+    An unknown offer is a ``422``, a contract-based offer a ``409`` and an
+    offer resolving to no dataset here a ``422``, as on the write. A cursor
+    this route did not issue is a ``422``.
+    """
+    owner = await _admit_organisation(request, settings, writer)
+
+    try:
+        offer = vocab.resolve_offer(offer_id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not offer.requires_consent:
+        raise HTTPException(
+            409,
+            f"Offer '{offer.id}' is not consent-based (legal basis "
+            f"{offer.legal_basis}) — it is disclosed, not consented",
+        )
+    try:
+        dataset_ids = vocab.datasets_for_offer_or_raise(offer.id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+
+    after = _decode_cursor(cursor) if cursor is not None else None
+    page, more = await consent_service.collected_subjects_page(
+        db,
+        organisation=writer.organisation,
+        offer_id=offer.id,
+        dataset_ids=dataset_ids,
+        after=after,
+        limit=limit,
+    )
+
+    members = page
+    if owner is not None:
+        answers = await asyncio.gather(
+            *(_member_of(request, settings, subject, owner) for subject in page)
+        )
+        unknown = [s for s, a in zip(page, answers) if a is Membership.UNKNOWN]
+        if unknown:
+            raise HTTPException(
+                503,
+                f"Identity registry unavailable, cannot verify that "
+                f"'{unknown[0]}' is a member of organisation '{owner}'",
+            )
+        members = [s for s, a in zip(page, answers) if a is Membership.MEMBER]
+
+    presented = await consent_service.collected_decisions(
+        db,
+        organisation=writer.organisation,
+        offer_id=offer.id,
+        dataset_ids=dataset_ids,
+        subject_ids=members,
+    )
+    subjects = []
+    for subject_id in members:
+        decisions = [
+            SubjectDecision(
+                dataset_id=dataset_id,
+                consent_id=row.id,
+                state="granted" if row.status == "granted" else "withdrawn",
+                decided_by=row.decided_by,
+                collector=row.collector,
+                decided_at=row.decided_at,
+                revoked_at=row.revoked_at,
+                keys=_keys_for(writer, row),
+            )
+            for dataset_id in sorted(dataset_ids)
+            if (row := presented.get((subject_id, dataset_id))) is not None
+        ]
+        if decisions:
+            subjects.append(
+                SubjectDecisions(subject_id=subject_id, decisions=decisions)
+            )
+
+    return OfferDecisions(
+        offer_id=offer.id,
+        datasets=sorted(dataset_ids),
+        limit=limit,
+        subjects=subjects,
+        next_cursor=_encode_cursor(page[-1]) if more else None,
     )
 
 

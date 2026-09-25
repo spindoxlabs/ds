@@ -30,6 +30,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0018](ADR-0018-the-edc-schema-migrates-through-edcs-own-bootstrapper.md) | The EDC schema migrates through EDC's own bootstrapper |
 | [ADR-0019](ADR-0019-a-collector-says-why-it-withdrew.md) | A collector says why it withdrew |
 | [ADR-0020](ADR-0020-each-withdrawal-is-its-own-record.md) | Each withdrawal is its own record, and the member's is the one presented |
+| [ADR-0021](ADR-0021-an-organisation-lists-its-own-members-decisions.md) | An organisation lists its own members' decisions, every state, bounded as the per-subject read-back |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule
