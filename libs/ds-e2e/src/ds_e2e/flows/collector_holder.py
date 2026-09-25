@@ -709,7 +709,7 @@ class CollectorHolderFlow(BaseFlow):
             headers=headers,
         )
 
-    def _all_decisions(self, offer: str, limit: int) -> tuple[int, dict, int]:
+    def _all_decisions(self, offer: str, limit: int) -> tuple[int, dict[str, Any], int]:
         """Every page, joined: ``(status, {subject: decisions}, pages)``."""
         listed: dict[str, list[dict[str, Any]]] = {}
         cursor = None
