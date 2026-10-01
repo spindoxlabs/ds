@@ -1,5 +1,9 @@
 <script lang="ts">
   import ConsentBadge from '$lib/components/ConsentBadge.svelte';
+  import ManagedElsewhere from '$lib/components/ManagedElsewhere.svelte';
+  import ProblemNotice from '$lib/components/ProblemNotice.svelte';
+  import TechnicalDetails from '$lib/components/TechnicalDetails.svelte';
+  import type { Problem } from '$lib/subject-problems';
   import { WILDCARD_CONSUMER } from '$lib/consent';
   import type { DataShareDecision, OwnedDataset, SharingOffer } from '$lib/server/connector';
 
@@ -49,6 +53,10 @@
     }
   }
 
+
+  const problems = $derived(data.problems as Problem[]);
+  const problemsIn = (section: Problem['section']) => problems.filter((p) => p.section === section);
+  const allProblems = $derived(form?.problem ? [...problems, form.problem as Problem] : problems);
 
   const sharesByDataset = $derived(
     new Map((data.shares as DataShareDecision[]).map((share) => [share.dataset_id, share])),
@@ -102,17 +110,19 @@
   <div class="flex flex-col gap-1">
     <h1 class="text-2xl font-bold text-gray-900">My Data</h1>
     <p class="text-sm text-gray-600">
-      Subject identity: <code>{data.subjectId}</code>
+      What you share, with whom, and what has happened with your data.
     </p>
   </div>
 
-  {#if data.error}
-    <div class="ds-card border-red-200 bg-red-50 text-sm text-red-700">{data.error}</div>
-  {/if}
-
-  {#if form?.error}
+  {#if form?.problem}
+    <ProblemNotice problem={form.problem} />
+  {:else if form?.error}
     <div class="ds-card border-red-200 bg-red-50 text-sm text-red-700">{form.error}</div>
   {/if}
+
+  {#if !data.custody.isHome}
+    <ManagedElsewhere custody={data.custody} isProvider={data.persona?.isProvider} />
+  {:else}
 
   <!-- What you are actually asked about: purpose-scoped bundles, not datasets. -->
   <section class="space-y-4">
@@ -123,12 +133,14 @@
       </p>
     </div>
 
-    {#if data.offersError}
-      <div class="ds-card border-amber-200 bg-amber-50 text-sm text-amber-800">
-        {data.offersError}
-      </div>
-    {:else if data.offers.length === 0}
-      <div class="ds-card text-sm text-gray-600">No sharing offers are published.</div>
+    {#each problemsIn('sharing') as problem}
+      <ProblemNotice {problem} />
+    {/each}
+
+    {#if data.offers.length === 0}
+      {#if problemsIn('sharing').length === 0}
+        <div class="ds-card text-sm text-gray-600">Nobody has asked to use your data yet.</div>
+      {/if}
     {:else}
       <div class="grid gap-4">
         {#each data.offers as offer (offer.id)}
@@ -143,6 +155,8 @@
                   </h3>
                   {#if !offer.requires_consent}
                     <span class="ds-badge bg-slate-100 text-slate-700">required by contract</span>
+                  {:else if !data.sharesKnown}
+                    <span class="ds-badge bg-gray-100 text-gray-600">your choice is unavailable</span>
                   {:else if decision}
                     <ConsentBadge status={decision.status} />
                   {:else}
@@ -233,7 +247,7 @@
                 {/if}
               </div>
 
-              {#if offer.requires_consent}
+              {#if offer.requires_consent && data.sharesKnown}
                 <form method="POST" action="?/shareOffer" class="shrink-0">
                   <input type="hidden" name="offer_id" value={offer.id} />
                   <input type="hidden" name="enabled" value={shared ? 'false' : 'true'} />
@@ -244,7 +258,7 @@
                     {shared ? 'Stop sharing' : 'Share'}
                   </button>
                 </form>
-              {:else}
+              {:else if !offer.requires_consent}
                 <!-- Contract-based processing is disclosed, not toggled: offering
                      a choice that does not exist is what invalidates consent. -->
                 <p class="shrink-0 text-xs text-gray-500 sm:w-32 sm:text-right">
@@ -267,10 +281,16 @@
       </p>
     </div>
 
-    {#if data.datasets.length === 0 && !data.error}
-      <div class="ds-card text-sm text-gray-600">
-        No data products are currently mapped to your subject identity.
-      </div>
+    {#each problemsIn('datasets') as problem}
+      <ProblemNotice {problem} />
+    {/each}
+
+    {#if data.datasets.length === 0}
+      {#if problemsIn('datasets').length === 0}
+        <div class="ds-card text-sm text-gray-600">
+          No dataset holds data about you at the moment.
+        </div>
+      {/if}
     {:else}
       <div class="grid gap-4">
         {#each data.datasets as dataset}
@@ -285,21 +305,22 @@
                   <span class="ds-badge bg-gray-100 text-gray-600">not shared</span>
                 {/if}
               </div>
-              <p class="mt-1 break-all text-sm text-gray-600">{dataset.asset_id}</p>
-              <div class="mt-3 flex flex-wrap gap-2 text-xs text-gray-600">
-                <span class="ds-badge bg-blue-50 text-blue-700">{dataset.source ?? 'local'}</span>
-                <span class="ds-badge bg-gray-100 text-gray-700">
-                  owner column: {dataset.subject_column ?? 'n/a'}
-                </span>
-                <span class="ds-badge bg-gray-100 text-gray-700">
-                  sample rows: {dataset.sample_rows ?? 0}
-                </span>
-                {#if decision?.purpose?.length}
-                  <span class="ds-badge bg-emerald-50 text-emerald-700">
-                    purpose: {decision.purpose.join(', ')}
-                  </span>
-                {/if}
-              </div>
+              {#if decision?.purpose?.length}
+                <p class="mt-1 text-sm text-gray-600">Shared for: {decision.purpose.join(', ')}</p>
+              {/if}
+              <details class="mt-2 text-xs text-gray-600">
+                <summary class="cursor-pointer text-gray-500">Details</summary>
+                <dl class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
+                  <div class="sm:col-span-2"><dt class="inline text-gray-500">Dataset id:</dt>
+                    <dd class="inline font-mono break-all"> {dataset.asset_id}</dd></div>
+                  <div><dt class="inline text-gray-500">Source:</dt>
+                    <dd class="inline"> {dataset.source ?? 'local'}</dd></div>
+                  <div><dt class="inline text-gray-500">Identified by column:</dt>
+                    <dd class="inline"> {dataset.subject_column ?? 'n/a'}</dd></div>
+                  <div><dt class="inline text-gray-500">Sample rows:</dt>
+                    <dd class="inline"> {dataset.sample_rows ?? 0}</dd></div>
+                </dl>
+              </details>
             </div>
           </article>
         {/each}
@@ -317,11 +338,11 @@
       </p>
     </div>
 
-    {#if data.timelineError}
-      <div class="ds-card border-amber-200 bg-amber-50 text-sm text-amber-900">
-        {data.timelineError}
-      </div>
-    {:else if data.timeline.events.length === 0}
+    {#each problemsIn('activity') as problem}
+      <ProblemNotice {problem} />
+    {/each}
+
+    {#if problemsIn('activity').length}{:else if data.timeline.events.length === 0}
       <p class="text-sm text-gray-500">Nothing has been recorded about your data yet.</p>
     {:else}
       <ol class="space-y-2">
@@ -342,4 +363,14 @@
       {/if}
     {/if}
   </section>
+  {/if}
+
+  <TechnicalDetails
+    problems={allProblems}
+    facts={[
+      { label: 'Your identity', value: data.subjectId },
+      { label: 'This portal’s participant', value: data.custody.here },
+      { label: 'Your data is held by', value: data.custody.home },
+    ]}
+  />
 </div>

@@ -571,15 +571,14 @@ async def _authorize_dataset(
             # **What a subject DID is required to be** (rulebook `D-22c`): an
             # opaque, one-shot, non-reversible identifier. Nothing converts it
             # back to a person; the mapping lives in the registry that owns the
-            # member. What the code does: where the registry mints the id, it is
-            # an HMAC of the email keyed with the registry's `ENCRYPTION_KEY`,
-            # truncated to 96 bits (`identity_registry.services.crypto.
-            # derive_email_subject_id`) — not reversible without that key. Where
-            # the issuing caller supplies `subject_id`, the DID carries it
-            # verbatim (`subject_did_for`), so it is as opaque as the caller made
-            # it. Neither is a reason for this field: it holds usernames because
-            # the handler matches on them, and nothing here makes a DID more or
-            # less opaque.
+            # member. What the code does: the identity registry mints no id; the
+            # issuing caller supplies `subject_id` (onboarding mints a random
+            # UUID) and the DID carries it verbatim (`subject_did_for`), so it is
+            # as opaque as the caller made it. DIDs issued before 2026-10-01 as
+            # `…:users:email-<24hex>`, from the registry's since-removed HMAC
+            # derivation, stay valid and are not re-derived. Neither is a reason
+            # for this field: it holds usernames because the handler matches on
+            # them, and nothing here makes a DID more or less opaque.
             #
             # The consequence that *was* this field's — the PEP echoing these
             # into `POST /internal/audit/query` and so into a `QueryExecuted`

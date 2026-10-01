@@ -3,6 +3,7 @@
  */
 import { env } from '$env/dynamic/private';
 import { env as pubEnv } from '$env/dynamic/public';
+import { ServiceError } from '$lib/service-error';
 
 function provUrl(path: string): string {
 	const base = env.PROVENANCE_URL ?? pubEnv.PUBLIC_PROVENANCE_URL ?? 'http://ds-provenance:30000';
@@ -18,7 +19,7 @@ async function apiFetch<T>(url: string, options: RequestInit = {}, token?: strin
 	const res = await fetch(url, { ...options, headers });
 	if (!res.ok) {
 		const text = await res.text().catch(() => res.statusText);
-		throw new Error(`${res.status} ${url}: ${text}`);
+		throw new ServiceError(res.status, url, text);
 	}
 	return res.json() as Promise<T>;
 }

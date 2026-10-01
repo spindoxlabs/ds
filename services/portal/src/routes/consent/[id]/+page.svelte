@@ -1,8 +1,15 @@
 <script lang="ts">
   import ConsentBadge from '$lib/components/ConsentBadge.svelte';
+  import ManagedElsewhere from '$lib/components/ManagedElsewhere.svelte';
   import PolicySummary from '$lib/components/PolicySummary.svelte';
+  import ProblemNotice from '$lib/components/ProblemNotice.svelte';
+  import TechnicalDetails from '$lib/components/TechnicalDetails.svelte';
+  import type { Problem } from '$lib/subject-problems';
 
-  let { data } = $props();
+  let { data, form } = $props();
+  const allProblems = $derived(
+    form?.problem ? [...(data.problems as Problem[]), form.problem as Problem] : (data.problems as Problem[]),
+  );
   const consent = $derived(data.consent);
 </script>
 
@@ -13,8 +20,18 @@
 <div class="max-w-lg mx-auto space-y-5">
   <a href="/consent" class="text-sm text-brand-600 hover:underline">← Back to My Consents</a>
 
-  {#if data.error || !consent}
-    <div class="ds-card border-red-200 bg-red-50 text-red-700">{data.error ?? 'Consent not found'}</div>
+  {#if form?.problem}
+    <ProblemNotice problem={form.problem} />
+  {/if}
+
+  {#if !data.custody.isHome}
+    <ManagedElsewhere custody={data.custody} isProvider={data.persona?.isProvider} />
+  {:else if data.problems.length}
+    {#each data.problems as problem}
+      <ProblemNotice {problem} />
+    {/each}
+  {:else if !consent}
+    <div class="ds-card text-sm text-gray-600">This consent request was not found.</div>
   {:else}
     <div class="ds-card space-y-4">
       <div class="flex items-start justify-between gap-3">
@@ -80,4 +97,14 @@
       <p class="text-center text-sm text-gray-500">This consent request is {consent.status}.</p>
     {/if}
   {/if}
+
+  <TechnicalDetails
+    problems={allProblems}
+    facts={[
+      { label: 'Your identity', value: data.subjectId },
+      { label: 'Request id', value: consent?.id ?? null },
+      { label: 'This portal’s participant', value: data.custody.here },
+      { label: 'Your data is held by', value: data.custody.home },
+    ]}
+  />
 </div>

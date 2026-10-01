@@ -4,6 +4,7 @@
  */
 import { env } from '$env/dynamic/private';
 import { env as pubEnv } from '$env/dynamic/public';
+import { ServiceError } from '$lib/service-error';
 
 function connectorUrl(path: string): string {
 	const base = env.CONNECTOR_URL ?? pubEnv.PUBLIC_CONNECTOR_URL ?? 'http://ds-connector:30001';
@@ -24,7 +25,7 @@ async function apiFetch<T>(
 	const res = await fetch(url, { ...options, headers });
 	if (!res.ok) {
 		const text = await res.text().catch(() => res.statusText);
-		throw new Error(`${res.status} ${url}: ${text}`);
+		throw new ServiceError(res.status, url, text);
 	}
 	if (res.status === 204) return undefined as T;
 	return res.json() as Promise<T>;

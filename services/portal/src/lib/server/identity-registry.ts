@@ -1,5 +1,6 @@
 import { env } from '$env/dynamic/private';
 import { resolveIssuer } from './token';
+import { custodianOf } from '$lib/subject-problems';
 
 function identityRegistryUrl(): string {
 	return env.IDENTITY_REGISTRY_URL ?? 'http://172.17.0.1:30005';
@@ -161,13 +162,6 @@ interface HeldCredentials {
 	credentials?: Array<{ role?: string | null; vc_jws?: string | null }> | null;
 	role?: string | null;
 	vc_jws?: string | null;
-}
-
-/** The organisation a person's DID is filed under — `did:web:<custodian>:users:<id>`. */
-function custodianOf(did: string): string | null {
-	const marker = ':users:';
-	const at = did.lastIndexOf(marker);
-	return at === -1 || !did.startsWith('did:web:') ? null : did.slice(0, at);
 }
 
 /**

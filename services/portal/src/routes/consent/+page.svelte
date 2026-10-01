@@ -1,5 +1,8 @@
 <script lang="ts">
   import ConsentBadge from '$lib/components/ConsentBadge.svelte';
+  import ManagedElsewhere from '$lib/components/ManagedElsewhere.svelte';
+  import ProblemNotice from '$lib/components/ProblemNotice.svelte';
+  import TechnicalDetails from '$lib/components/TechnicalDetails.svelte';
   import type { ConsentRequest } from '$lib/server/connector';
 
   let { data } = $props();
@@ -31,9 +34,13 @@
     <span class="text-2xl">🔔</span>
   </div>
 
-  {#if data.error}
-    <div class="ds-card border-red-200 bg-red-50 text-red-700 text-sm">{data.error}</div>
+  {#if !data.custody.isHome}
+    <ManagedElsewhere custody={data.custody} isProvider={data.persona?.isProvider} />
   {/if}
+
+  {#each data.problems as problem}
+    <ProblemNotice {problem} />
+  {/each}
 
   <!-- Pending requests -->
   {#if pending.length > 0}
@@ -117,10 +124,19 @@
     </section>
   {/if}
 
-  {#if data.consents.length === 0 && !data.error}
+  {#if data.consents.length === 0 && data.custody.isHome && data.problems.length === 0}
     <div class="text-center py-12 text-gray-500">
       <p class="text-4xl mb-3">📋</p>
       <p>No consent requests yet.</p>
     </div>
   {/if}
+
+  <TechnicalDetails
+    problems={data.problems}
+    facts={[
+      { label: 'Your identity', value: data.subjectId },
+      { label: 'This portal’s participant', value: data.custody.here },
+      { label: 'Your data is held by', value: data.custody.home },
+    ]}
+  />
 </div>
