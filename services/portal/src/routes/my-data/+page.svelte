@@ -5,7 +5,7 @@
   import TechnicalDetails from '$lib/components/TechnicalDetails.svelte';
   import type { Problem } from '$lib/subject-problems';
   import { WILDCARD_CONSUMER } from '$lib/consent';
-  import type { DataShareDecision, OwnedDataset, SharingOffer } from '$lib/server/connector';
+  import type { DataShareDecision, SharingOffer } from '$lib/server/connector';
 
   let { data, form } = $props();
 
@@ -58,10 +58,6 @@
   const problemsIn = (section: Problem['section']) => problems.filter((p) => p.section === section);
   const allProblems = $derived(form?.problem ? [...problems, form.problem as Problem] : problems);
 
-  const sharesByDataset = $derived(
-    new Map((data.shares as DataShareDecision[]).map((share) => [share.dataset_id, share])),
-  );
-
   const sharesByOffer = $derived(
     new Map(
       (data.shares as DataShareDecision[])
@@ -69,14 +65,6 @@
         .map((share) => [share.offer_id as string, share]),
     ),
   );
-
-  function decisionFor(dataset: OwnedDataset): DataShareDecision | undefined {
-    return sharesByDataset.get(dataset.asset_id) ?? sharesByDataset.get(dataset.name);
-  }
-
-  function titleFor(dataset: OwnedDataset): string {
-    return dataset.title ?? dataset.name.replaceAll('_', ' ').replaceAll('.', ' / ');
-  }
 
   // ds serves ISO 8601 codes; rendering them as sentences is the frontend's job.
   // An unmapped code degrades to the code itself rather than disappearing.
@@ -265,62 +253,6 @@
                   No choice to make — this is part of your membership agreement.
                 </p>
               {/if}
-            </div>
-          </article>
-        {/each}
-      </div>
-    {/if}
-  </section>
-
-  <!-- Detail view: the datasets that actually hold rows for this subject. -->
-  <section class="space-y-4">
-    <div>
-      <h2 class="text-lg font-semibold text-gray-900">Data held about you</h2>
-      <p class="text-sm text-gray-600">
-        The individual datasets your identity appears in. Sharing decisions are made above.
-      </p>
-    </div>
-
-    {#each problemsIn('datasets') as problem}
-      <ProblemNotice {problem} />
-    {/each}
-
-    {#if data.datasets.length === 0}
-      {#if problemsIn('datasets').length === 0}
-        <div class="ds-card text-sm text-gray-600">
-          No dataset holds data about you at the moment.
-        </div>
-      {/if}
-    {:else}
-      <div class="grid gap-4">
-        {#each data.datasets as dataset}
-          {@const decision = decisionFor(dataset)}
-          <article class="ds-card">
-            <div class="min-w-0">
-              <div class="flex flex-wrap items-center gap-2">
-                <h3 class="font-semibold text-gray-900">{titleFor(dataset)}</h3>
-                {#if decision}
-                  <ConsentBadge status={decision.status} />
-                {:else}
-                  <span class="ds-badge bg-gray-100 text-gray-600">not shared</span>
-                {/if}
-              </div>
-              {#if decision?.purpose?.length}
-                <p class="mt-1 text-sm text-gray-600">Shared for: {decision.purpose.join(', ')}</p>
-              {/if}
-              <details class="mt-2 text-xs text-gray-600">
-                <summary class="cursor-pointer text-gray-500">Details</summary>
-                <dl class="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-2">
-                  <div class="sm:col-span-2"><dt class="inline text-gray-500">Dataset id:</dt>
-                    <dd class="inline font-mono break-all"> {dataset.asset_id}</dd></div>
-                  <div><dt class="inline text-gray-500">Source:</dt>
-                    <dd class="inline"> {dataset.source ?? 'local'}</dd></div>
-                  <div><dt class="inline text-gray-500">Identified by column:</dt>
-                    <dd class="inline"> {dataset.subject_column ?? 'n/a'}</dd></div>
-                  <div><dt class="inline text-gray-500">Sample rows:</dt>
-                    <dd class="inline"> {dataset.sample_rows ?? 0}</dd></div>
-                </dl>
-              </details>
             </div>
           </article>
         {/each}

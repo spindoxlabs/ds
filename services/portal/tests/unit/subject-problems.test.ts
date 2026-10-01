@@ -50,13 +50,6 @@ describe('what a subject page says when a call failed', () => {
 		expect(p.title).toMatch(/another organisation/);
 	});
 
-	it('reads a missing per-person dataset list as not offered, not as a failure', () => {
-		const e = new ServiceError(404, 'http://dp.example.org/subjects/x/datasets', '{"detail":"Not Found"}');
-		const p = explainSubjectFailure('datasets', e);
-		expect(p.tone).toBe('info');
-		expect(p.message).not.toMatch(/404|Not Found/);
-	});
-
 	it('asks to sign in again on 401', () => {
 		expect(explainSubjectFailure('sharing', refusal(401, 'expired')).title).toMatch(/sign in/i);
 	});

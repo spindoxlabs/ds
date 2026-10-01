@@ -133,5 +133,5 @@ The service is declared in `services/connector/docker-compose.yml` alongside the
 
 Implements aspects of:
 
-- **BB04** (Data Offerings & Descriptions) — DCAT-AP 3.0 metadata aggregation
-- **BB05** (Publication & Discovery) — federated catalog pattern with periodic crawling
+- **Data, Services, and Offerings Descriptions** — DCAT-AP 3.0 metadata aggregation
+- **Publication and Discovery** — federated catalog pattern with periodic crawling

@@ -20,11 +20,10 @@ export interface Problem {
 	technical: string;
 }
 
-export type SubjectSection = 'sharing' | 'datasets' | 'activity' | 'consents' | 'consent' | 'change';
+export type SubjectSection = 'sharing' | 'activity' | 'consents' | 'consent' | 'change';
 
 const SECTIONS: Record<SubjectSection, { verb: string; noun: string; label: string }> = {
 	sharing: { verb: 'load', noun: 'your sharing choices', label: 'Sharing' },
-	datasets: { verb: 'load', noun: 'the datasets that hold your data', label: 'Data held about you' },
 	activity: { verb: 'load', noun: 'your activity history', label: 'What happened with your data' },
 	consents: { verb: 'load', noun: 'your consent requests', label: 'Consent requests' },
 	consent: { verb: 'load', noun: 'this consent request', label: 'Consent request' },
@@ -75,14 +74,6 @@ export function explainSubjectFailure(section: SubjectSection, error: unknown): 
 		case 403:
 			return problem('warning', 'Not available to you here', `You cannot see ${noun} on this portal.`);
 		case 404:
-			if (section === 'datasets') {
-				return problem(
-					'info',
-					'Not available yet',
-					'This organisation’s data service does not list the individual datasets ' +
-						'that hold your data. Your sharing choices are not affected.',
-				);
-			}
 			if (section === 'consent') {
 				return problem('warning', 'Request not found', 'This consent request does not exist, or it is not yours.');
 			}

@@ -133,27 +133,3 @@ def test_a_statement_naming_two_datasets_is_refused(client):
 def test_a_statement_naming_no_known_dataset_is_refused(client):
     assert _plain(client, "SELECT 1").status_code == 400
 
-
-# ── The subject's own inventory view ──────────────────────────────────────────
-
-
-def test_a_subject_sees_the_dataset_holding_their_rows(client):
-    """`GET /subjects/{did}/datasets` is what the portal's *my-data* page calls.
-
-    It compared the DID to the subject column directly, which worked only while
-    the rows were keyed by DID. Once they are keyed by device — as governance
-    declares and as the real dataset-api holds them — the comparison finds
-    nothing and the page tells the person they own no data. Resolving through the
-    handler is the same hop `_apply_row_filter` makes, for the same reason.
-    """
-    did = "did:web:rec.dataspaces.localhost:users:data-subject"
-    owned = client.get(f"/subjects/{did}/datasets").json()["datasets"]
-    assert [d["name"] for d in owned] == [GATED]
-    assert owned[0]["subject_column"] == "device_id"
-    assert owned[0]["sample_rows"] == 2
-
-
-def test_a_subject_sees_nothing_of_anyone_elses(client):
-    """Including the rows the negative-control device holds."""
-    did = "did:web:rec.dataspaces.localhost:users:outsider"
-    assert client.get(f"/subjects/{did}/datasets").json()["datasets"] == []

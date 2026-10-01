@@ -4,7 +4,7 @@ Centralized identity service for the dataspace. Manages participant identities, 
 
 Port: `30005`
 
-DSSC alignment: BB02 (Identity & Attestation) — participant identity management, DID resolution, VC lifecycle, trust anchor bootstrapping.
+DSSC alignment: Identity & Attestation Management — participant identity management, DID resolution, VC lifecycle, trust anchor bootstrapping.
 
 > **Concepts live in the docs site, not here.** This README is the local entry
 > point: what runs, which endpoints exist, how to configure and start it. The

@@ -126,43 +126,12 @@ export async function revokeConsent(id: string, token: string, subjectId: string
 	);
 }
 
-export interface OwnedDataset {
-	name: string;
-	asset_id: string;
-	title?: string;
-	requires_consent: boolean;
-	subject_column?: string;
-	sample_rows?: number;
-	source?: string;
-}
-
 export type DataShareDecision = ConsentRequest;
 
 export async function getMyDataShares(token: string, subjectId: string, vcJws?: string | null): Promise<DataShareDecision[]> {
 	return apiFetch<DataShareDecision[]>(
 		connectorUrl('/consent/my/shares'),
 		{ headers: subjectCredentialHeaders(subjectId, vcJws) },
-		token,
-	);
-}
-
-export async function setMyDataShare(
-	token: string,
-	subjectId: string,
-	datasetId: string,
-	enabled: boolean,
-	vcJws?: string | null,
-	purpose: string[] = [],
-): Promise<DataShareDecision> {
-	return apiFetch<DataShareDecision>(
-		connectorUrl('/consent/my/shares'),
-		{
-			method: 'POST',
-			headers: subjectCredentialHeaders(subjectId, vcJws),
-			// `purpose` is validated against the ODRL profile taxonomy on write.
-			// The portal never invents one: it passes what the offer declares.
-			body: JSON.stringify({ dataset_id: datasetId, enabled, purpose }),
-		},
 		token,
 	);
 }

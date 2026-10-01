@@ -122,24 +122,17 @@ GRID_PODS = ("EX000E00000001", "EX000E00000002", "EX000E00000009")
 
 # The REC registry, collapsed into a fixture.
 #
-# The real data plane resolves a `rec_registry` filter against two systems: the
-# identity-registry bridges a subject DID to the Keycloak username ds sends as a
-# *principal*, and the REC registry resolves that member to the meters they own.
-# A stand-in has neither behind it, so both hops live here — and the member and
-# sensor ids are `fixtures/ds_e2e_rec.yaml`'s, so a query answers the same
-# whichever backend holds :30002.
+# ds sends the Keycloak username as the *principal* — the connector has already
+# bridged the subject DID to it — and the real data plane asks the REC registry
+# which meters that member owns. A stand-in has no registry behind it, so that
+# hop lives here — and the member and sensor ids are `fixtures/ds_e2e_rec.yaml`'s,
+# so a query answers the same whichever backend holds :30002.
 #
 # `ds-e2e-METER-9999` deliberately belongs to nobody: a run that returns it has
 # lost the filter, and that must look like a failure rather than a bigger result.
 REC_MEMBERS: dict[str, dict[str, list[str]]] = {
-    "subject@example.test": {
-        "dids": ["did:web:rec.dataspaces.localhost:users:data-subject"],
-        "devices": ["ds-e2e-METER-0001"],
-    },
-    "dual@example.test": {
-        "dids": ["did:web:rec.dataspaces.localhost:users:dual-user"],
-        "devices": ["ds-e2e-METER-0002"],
-    },
+    "subject@example.test": {"devices": ["ds-e2e-METER-0001"]},
+    "dual@example.test": {"devices": ["ds-e2e-METER-0002"]},
 }
 
 
@@ -532,49 +525,6 @@ async def datasets() -> dict[str, list[dict[str, Any]]]:
     }
 
 
-@app.get("/subjects/{subject_id}/datasets")
-async def subject_datasets(subject_id: str) -> dict[str, Any]:
-    """Return datasets containing data owned by a data subject.
-
-    This endpoint is the data adapter's inventory view. It does not grant
-    access; sharing is still enforced by ds-connector consent checks.
-    """
-    owned: list[dict[str, Any]] = []
-    for name, spec in _enabled_datasets().items():
-        row_filter = _row_filter_spec(spec)
-        if not row_filter:
-            continue
-        subject_column = row_filter["args"].get("column")
-        if not subject_column:
-            continue
-
-        # The caller names the person as the dataspace does — by DID — while the
-        # rows are keyed by whatever the *handler* resolves from them. Asking the
-        # handler is the whole point: a `rec_registry` dataset keys rows by
-        # device, so comparing the DID to the column directly finds nothing and
-        # reports the subject owns no data.
-        values = _handler_values(row_filter["handler"], [subject_id])
-        sample_rows = list(spec.get("rows") or [])
-        subject_match = spec.get("subject_id") == subject_id or any(
-            row.get(subject_column) in values for row in sample_rows
-        )
-        if not subject_match:
-            continue
-
-        owned.append(
-            {
-                "name": name,
-                "asset_id": spec["asset_id"],
-                "title": name.replace("_", " ").replace(".", " / "),
-                "requires_consent": spec["requires_consent"],
-                "subject_column": subject_column,
-                "sample_rows": sum(1 for row in sample_rows if row.get(subject_column) in values),
-                "source": spec.get("source", "local"),
-            }
-        )
-    return {"subject_id": subject_id, "datasets": owned}
-
-
 def _handler_values(handler: str, principals: list[str]) -> set[str]:
     """The column values `principals` admit, under `handler`.
 
@@ -590,13 +540,10 @@ def _handler_values(handler: str, principals: list[str]) -> set[str]:
         # The column holds the principal itself, so there is nothing to resolve.
         return set(principals)
     if handler == REC_REGISTRY:
-        # Keyed by username, because that is what ds sends as a principal. The
-        # DIDs are accepted too so `/subjects/{did}/datasets` can use the same
-        # resolution — that route is the subject's own inventory view and names
-        # them the way the portal holds them.
+        # Keyed by username, because that is what ds sends as a principal.
         values: set[str] = set()
         for username, member in REC_MEMBERS.items():
-            if username in principals or set(member["dids"]) & set(principals):
+            if username in principals:
                 values.update(member["devices"])
         return values
     return set()

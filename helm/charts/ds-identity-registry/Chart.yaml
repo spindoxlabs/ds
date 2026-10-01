@@ -1,7 +1,7 @@
 apiVersion: v2
 name: ds-identity-registry
 description: |
-  Dataspace trust anchor (DSSC BB02) — DID lifecycle, STS, DCP credential
+  Dataspace trust anchor (DSSC Identity & Attestation Management) — DID lifecycle, STS, DCP credential
   service, participant/owner/membership registry and StatusList2021.
   Deployed once per dataspace, not once per participant.
 type: application

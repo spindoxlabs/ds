@@ -28,7 +28,6 @@ It also runs as `dataset-api-rec` in `docker-compose.rec.yml`.
 | `GET \| POST /query` | Query a dataset. Applies transfer, agreement and consent gates |
 | `GET /catalogue` | List available datasets |
 | `GET /catalogue/{asset_id}` | One dataset's catalogue entry |
-| `GET /subjects/{subject_id}/datasets` | Datasets containing rows for a subject |
 | `GET /health` | Liveness |
 | `GET /metrics` | Prometheus metrics (currently unauthenticated — a known gap) |
 
