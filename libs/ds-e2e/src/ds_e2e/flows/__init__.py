@@ -15,6 +15,7 @@ from ds_e2e.flows.consent_request import ConsentRequestFlow
 from ds_e2e.flows.consent_withdrawal import ConsentWithdrawalFlow
 from ds_e2e.flows.dcp_trust import DcpTrustFlow
 from ds_e2e.flows.fail_closed import FailClosedFlow
+from ds_e2e.flows.holder_keys import HolderKeysFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
@@ -106,6 +107,9 @@ FLOW_REGISTRY: dict[str, type[BaseFlow]] = {
     # whose machinery it reuses, and before `fail-closed`: it withdraws its own
     # registrations and revokes its own requests, on a different asset.
     "collector-holder": CollectorHolderFlow,
+    # After `collector-holder`, on the same registrations: the grid operator
+    # reads back the keys it serves (ADR-0022). Both reset what they write.
+    "holder-keys": HolderKeysFlow,
     # **Last, and deliberately.** It stops a container and restarts it, so it is
     # the one flow whose failure mode is *the next flow fails for reasons of its
     # own*. Running it last bounds that to zero, and `runner.run_flow` calls

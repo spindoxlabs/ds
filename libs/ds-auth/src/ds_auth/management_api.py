@@ -67,6 +67,11 @@ CONNECTOR_SERVICE_SCOPES: tuple[str, ...] = (
     # plan `a-collector-registers-consent-at-the-holder`). The holder's
     # connector decides *where* it may; the scope only says it may ask.
     "connector.consent.provision",
+    # The holder reads the data keys its own data plane serves, per offer, and
+    # their history (ADR-0022). Every organisation client holds it; the bound is
+    # in the connector, which accepts only its own organisation's client and
+    # refuses a collector, as `_own_participant_only` refuses a foreign publish.
+    "connector.consent.holder.read",
     # The organisation publishes **its own** catalogue: `POST /provider/sync`
     # turns its governance into EDC assets, policies and contract definitions
     # (plan `a-participant-publishes-and-the-sync-reconciles` item 5; ADR-0014

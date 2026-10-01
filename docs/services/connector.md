@@ -266,6 +266,70 @@ and the withdrawal `reason` to nobody (`D-12a`). An unknown offer or one resolvi
 dataset here is a `422`, a contract-based offer a `409`, and a cursor the route did not issue a
 `422`. It is a holder route: a collector that registers at several holders asks each one.
 
+### The holder reads the keys it serves
+
+The routes above are the collector's. The holder — the organisation this connector serves —
+reads its own enforcement state with two routes of its own
+([ADR-0022](../decisions/ADR-0022-a-holder-reads-the-keys-it-serves.md)). They answer the
+holder's operational question: *which of my keys may I release under this offer, and since
+when?*
+
+| Route | Answers |
+|---|---|
+| `GET /consent/admin/holder/keys?offer_id=…` | the typed keys the data plane serves the offer's recipient **now**, per dataset |
+| `GET /consent/admin/holder/key-events?offer_id=…` | every key a decision here started or stopped carrying, oldest first |
+
+**Who may call them.** This connector's own organisation client (the caller for a scheduled
+export), the deployment operator (`connector.admin`), or a person granted
+`connector.consent.holder.read` for an organisation that resolves to this participant. A
+collector is refused (`403`, naming `GET /consent/admin/decisions`), and so is a plain service
+token. The permission is held by every organisation client and is in no bundle: a key list is a
+roster of authorised households, so no operator seat carries it by default.
+
+**Keys only.** Neither route names a subject, counts subjects or returns a withdrawal reason.
+
+**The current list is the row filter's answer.** It is computed with `get_granted_subjects`
+and the same `D-14` admission `GET /internal/consent/check` applies, for the offer's
+`recipients.recipient` resolved to a DID through the owner registry. So it cannot disagree with
+what the data plane serves: a use offer whose prerequisite is missing lists nothing for that
+subject. An unresolvable recipient is a `503`.
+
+```json
+{
+  "offer_id": "…", "recipient": "example-dso", "recipient_did": "did:…",
+  "purpose": ["…"], "recipient_role": "metering",
+  "datasets": [{"dataset_id": "…", "key_count": 2, "grants_without_keys": false}],
+  "limit": 100, "next_cursor": null,
+  "keys": [{"dataset_id": "…", "key": "pod:…", "key_type": "pod", "value": "…",
+            "authorised_since": "…"}]
+}
+```
+
+`grants_without_keys` says that some standing grant carries no key, so nothing is served for it:
+an empty key list must not read as "nobody consents" when the truth is "no key was sent".
+
+**The history is a key ledger.** `consent_key_events` is appended by a flush listener
+(`db/key_ledger.py`) in the same transaction as the decision row, for every path that moves a
+row's keys: a grant, a withdrawal (the subject's own revoke by id included), and a new
+registration with other keys. Entries hold no subject id; they reference the decision row and
+are deleted with it. The ledger records **decisions**, not the served set: a key two decisions
+carry stays served after one withdraws, so the current list is the one to act on. Migration
+`0014` seeds one `backfill` entry per key of each grant standing when it runs; withdrawals
+before then cannot be recovered, and every history page says so in `note`.
+
+```json
+{
+  "offer_id": "…", "datasets": ["…"], "limit": 100, "note": "…", "next_cursor": null,
+  "events": [{"dataset_id": "…", "consumer_id": "*", "key": "pod:…",
+              "event": "added | removed", "cause": "grant | withdrawal | key_change | backfill",
+              "at": "…", "decided_by": "subject", "collector": "did:…"}]
+}
+```
+
+Both routes page with an opaque `cursor`, `limit` 1–500 (default 100); the history also takes
+`since`. An unknown offer or one resolving to no dataset here is a `422`, a contract-based offer
+a `409`. The portal shows both at **Provider → Authorised keys**.
+
 ### Parking a negotiation
 
 When a consumer negotiates for a consent-gated dataset and nobody has consented yet, the

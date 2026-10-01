@@ -5,8 +5,17 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, String, Text, func
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
 from .engine import Base
@@ -266,3 +275,63 @@ class EdrEntryORM(Base):
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+#: What happened to a key in a decision, and why. `added`/`removed` say whether
+#: the decision started or stopped carrying the key while granted; the cause says
+#: which act moved it. Declared once, like `CONSENT_STATUSES`.
+KEY_EVENTS: tuple[str, ...] = ("added", "removed")
+KEY_EVENT_CAUSES: tuple[str, ...] = ("grant", "withdrawal", "key_change", "backfill")
+
+
+class ConsentKeyEventORM(Base):
+    """One key a granted decision started or stopped carrying (ADR-0022).
+
+    The holder's history of the keys its data plane filters on. The consent rows
+    cannot give it: a withdrawal drops `subject_keys` from the row and a new
+    registration replaces them in place, and provenance carries no personal data
+    (`L-3`). So every change is appended here, by `db/key_ledger.py`, in the flush
+    that changes the row — it cannot drift from the rows, and no write path has
+    to remember it.
+
+    **No subject id.** The holder reads keys, never who stands behind them.
+    `consent_id` ties the entry to its decision row, so erasing the row erases
+    its history with it (`ON DELETE CASCADE`), and it is never returned by a
+    route.
+    """
+
+    __tablename__ = "consent_key_events"
+    __table_args__ = (
+        CheckConstraint(
+            "event IN ({})".format(", ".join(f"'{e}'" for e in KEY_EVENTS)),
+            name="ck_consent_key_event",
+        ),
+        CheckConstraint(
+            "cause IN ({})".format(", ".join(f"'{c}'" for c in KEY_EVENT_CAUSES)),
+            name="ck_consent_key_event_cause",
+        ),
+        Index("ix_consent_key_events_offer_at", "offer_id", "at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    consent_id: Mapped[str] = mapped_column(
+        String, ForeignKey("consent_requests.id", ondelete="CASCADE"), nullable=False
+    )
+    offer_id: Mapped[str | None] = mapped_column(Text)
+    dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
+    consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
+    key: Mapped[str] = mapped_column(Text, nullable=False)
+    event: Mapped[str] = mapped_column(Text, nullable=False)
+    cause: Mapped[str] = mapped_column(Text, nullable=False)
+    decided_by: Mapped[str | None] = mapped_column(Text)
+    collector: Mapped[str | None] = mapped_column(Text)
+    at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Only so the unit of work inserts the decision row before its entries: a
+    # bare foreign key does not order a flush, and Postgres enforces it. Never
+    # read — `lazy="raise"` makes an accidental load an error, not a query.
+    decision: Mapped[ConsentRequestORM] = relationship(lazy="raise")
+
+
+# The ledger's writer listens on every flush; importing it here is what makes it
+# impossible to load the models without it.
+from . import key_ledger  # noqa: E402, F401

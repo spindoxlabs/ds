@@ -180,6 +180,13 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # the coverage test would otherwise report it as a permission nobody can
         # be granted.
         "connector.consent.audience",
+        # The holder's key list and history (ADR-0022). Held by organisation
+        # clients (`management_api.CONNECTOR_SERVICE_SCOPES`), and reachable by a
+        # human only through `connector.admin` — deliberately not in
+        # `ds-participant-admin`, for the reason `.audience` is not: a key list
+        # is a roster of authorised households, and nobody should hold one as a
+        # side effect of an operator seat.
+        "connector.consent.holder.read",
         # Not ds endpoints — `dataset.*` belongs to the data-plane service, and is
         # here only because ds service clients call it.
         #

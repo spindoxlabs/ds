@@ -1481,6 +1481,12 @@ tasks:
     cmds:
       - cd libs/ds-e2e && uv run ds-e2e run --flow collector-holder
 
+  e2e:holder-keys:
+    desc: "E2E: the grid operator reads the keys it serves, per offer, and their history"
+    deps: [e2e:scenario:apply]
+    cmds:
+      - cd libs/ds-e2e && uv run ds-e2e run --flow holder-keys
+
   e2e:catalog:
     desc: "E2E: federated catalogue crawl freshness, discovery and search"
     cmds:

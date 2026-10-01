@@ -244,6 +244,16 @@ class E2ESettings(BaseSettings):
         "svc-ds-connector-example-org",
         validation_alias="SVC_DS_CONNECTOR_EXAMPLE_ORG_SECRET",
     )
+    #: The grid operator's own organisation client — the holder reading the keys
+    #: its connector serves (`holder-keys`, ADR-0022).
+    grid_operator_org_client_id: str = Field(
+        "svc-ds-connector-grid-operator",
+        validation_alias="E2E_GRID_OPERATOR_ORG_CLIENT_ID",
+    )
+    grid_operator_org_client_secret: str = Field(
+        "svc-ds-connector-grid-operator",
+        validation_alias="SVC_DS_CONNECTOR_GRID_OPERATOR_SECRET",
+    )
     #: The mock data plane, named on its own. `organisation-token` queries a
     #: dataset only the mock serves, so it must reach the mock even when
     #: `E2E_DATA_PLANES` names the real plane alone (as `.env.local` does).

@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-09-25 from `d0b1623-dirty`.
+Generated 2026-10-01 from `66f988f-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 127 |
 | …of those, **evidenced by a test that names them** | 127 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1007 |
+| Test nodes declaring a rule | 1014 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -72,7 +72,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `X-6c` | Enforced | ✅ evidenced | e2e×1, unit×5 | `fail-closed`, `services/connector/tests/test_dataplane_authorize.py::test_unknown_agreement_is_refused`, `services/connector/tests/test_dataplane_authorize.py::test_terminated_agreement_is_refused` +3 more |
 | `X-7` | Declared | · consistent | — | — |
 | `X-8` | Declared | · consistent | — | — |
-| `X-9` | Enforced | ✅ evidenced | e2e×1, unit×7 | `collector-holder`, `services/connector/tests/test_consent_collectors.py::test_the_row_filter_carries_the_registered_keys`, `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused` +5 more |
+| `X-9` | Enforced | ✅ evidenced | e2e×1, unit×8 | `collector-holder`, `services/connector/tests/test_consent_collectors.py::test_the_row_filter_carries_the_registered_keys`, `services/connector/tests/test_consent_holder_keys.py::test_the_list_is_what_the_row_filter_carries` +6 more |
 | `X-10` | Enforced | ✅ evidenced | unit×4 | `services/connector/tests/test_internal_api.py::test_agreement_status_unreachable_edc_is_not_a_404`, `services/connector/tests/test_internal_api.py::test_agreement_status_edc_5xx_is_not_a_404`, `services/connector/tests/test_internal_api.py::test_transfer_status_unreachable_edc_denies_and_says_so` +1 more |
 | `X-11` | Enforced | ✅ evidenced | unit×1 | `services/connector/tests/test_pending_sweep.py::test_a_failed_termination_leaves_the_negotiation_for_the_next_pass` |
 | `X-12` | Declared | · consistent | — | — |
@@ -170,7 +170,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-17` | Enforced | ✅ evidenced | e2e×1, unit×1 | `consent-withdrawal`, `services/connector/tests/test_stacked_withdrawals.py::test_refused_from_the_first_withdrawal_and_after_the_second` |
 | `D-18` | Enforced | ✅ evidenced | e2e×2, unit×11 | `collector-holder`, `consent-request`, `services/connector/tests/test_consent_ask_projection.py::test_consent_gated_dataset_asks_when_capacity_is_unprovable` +10 more |
 | `D-19` | Enforced | ✅ evidenced | e2e×2, unit×7 | `collector-holder`, `consent-request`, `services/connector/tests/test_authorizations.py::test_authorizations_empty` +6 more |
-| `D-20` | Enforced | ✅ evidenced | e2e×3, integration×1, unit×35 | `authz-perimeter`, `collector-holder`, `organisation-token` +36 more |
+| `D-20` | Enforced | ✅ evidenced | e2e×4, integration×1, unit×40 | `authz-perimeter`, `collector-holder`, `holder-keys` +42 more |
 | `D-21` | Enforced | ✅ evidenced | e2e×2, integration×1, unit×20 | `collector-holder`, `uc1`, `services/identity-registry/tests/integration/test_consent_collectors.py::test_the_cli_the_admin_api_and_the_check_agree` +20 more |
 | `D-22` | Enforced | ✅ evidenced | unit×3 | `services/identity-registry/tests/test_did.py::test_user_did_document_no_auth`, `services/identity-registry/tests/test_did.py::test_the_did_path_route_does_not_shadow_dids`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |
 | `D-22a` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_custody.py::test_the_credential_records_who_attested_the_person`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |

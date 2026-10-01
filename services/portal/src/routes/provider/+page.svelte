@@ -10,6 +10,7 @@
     { href: '/provider/assets', title: 'Datasets', hint: 'What is published, and its sync state' },
     { href: '/provider/contracts', title: 'Agreements', hint: 'Active and past contracts' },
     { href: '/provider/requests', title: 'Consent requests', hint: 'Which decision is holding up which negotiation' },
+    { href: '/provider/keys', title: 'Authorised keys', hint: 'Which keys this connector releases, per offer, and their history' },
     { href: '/provider/activity', title: 'Activity', hint: 'What happened to the data you publish' },
   ];
 </script>

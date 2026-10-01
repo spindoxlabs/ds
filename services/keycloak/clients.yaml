@@ -124,6 +124,10 @@ scopes:
     description: Is a negotiation awaiting a consent decision (GET /consent/pending)
   - name: connector.consent.audience
     description: Who consents to a sharing offer (GET /consent/admin/shares)
+  # The holder reading the keys its own data plane serves, keys only (ADR-0022).
+  # Held by organisation clients; the connector accepts only its own one.
+  - name: connector.consent.holder.read
+    description: Which data keys this holder serves per offer, and their history
   - name: connector.ingestion.record
     description: Record a DSO/offline data handover (POST /admin/ingestion)
   - name: connector.disclosure.record

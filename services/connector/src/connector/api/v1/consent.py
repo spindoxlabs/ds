@@ -21,10 +21,11 @@ from pydantic import (
     field_validator,
     model_validator,
 )
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...db.models import ConsentRequestORM
+from ...db.models import ConsentKeyEventORM, ConsentRequestORM
 from ...dependencies import (
     WRITER_COLLECTOR,
     ConsentWriter,
@@ -34,6 +35,7 @@ from ...dependencies import (
     get_prov,
     get_settings_dep,
     require_consent_audience,
+    require_consent_holder,
     require_consent_provision,
     require_consent_read,
     require_consent_writer,
@@ -1903,6 +1905,309 @@ async def admin_read_offer_decisions(
         limit=limit,
         subjects=subjects,
         next_cursor=_encode_cursor(page[-1]) if more else None,
+    )
+
+
+# ── The holder's own keys (ADR-0022) ─────────────────────────────────────────
+
+#: The most keys or ledger entries one page of the holder routes returns. No
+#: registry call is made per entry, so this bounds only the answer's size.
+HOLDER_PAGE_MAX = 500
+HOLDER_PAGE_DEFAULT = 100
+
+#: Said on every history page, because a reader cannot see it otherwise.
+KEY_LEDGER_NOTE = (
+    "Entries with cause 'backfill' were written when this connector's key ledger "
+    "was created, for the decisions granted at that moment. A withdrawal made "
+    "before then is not in the history: the decision rows no longer hold its keys."
+)
+
+
+def _encode_parts(*parts: str) -> str:
+    raw = "\x00".join(parts).encode()
+    return base64.urlsafe_b64encode(raw).decode().rstrip("=")
+
+
+def _decode_parts(cursor: str, count: int) -> list[str]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        parts = base64.urlsafe_b64decode(padded.encode()).decode().split("\x00")
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise HTTPException(
+            422, "cursor is not one this route issued; start again without it"
+        ) from exc
+    if len(parts) != count or not all(parts):
+        raise HTTPException(
+            422, "cursor is not one this route issued; start again without it"
+        )
+    return parts
+
+
+def _holder_offer(offer_id: str):
+    """The offer and its datasets here, with the answers ADR-0021's route gives."""
+    try:
+        offer = vocab.resolve_offer(offer_id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    if not offer.requires_consent:
+        raise HTTPException(
+            409,
+            f"Offer '{offer.id}' is not consent-based (legal basis "
+            f"{offer.legal_basis}) — it is disclosed, not consented",
+        )
+    try:
+        dataset_ids = vocab.datasets_for_offer_or_raise(offer.id)
+    except vocab.VocabularyError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return offer, sorted(dataset_ids)
+
+
+class HolderKey(BaseModel):
+    """One key this connector's data plane serves now, over one dataset."""
+
+    dataset_id: str
+    key: str
+    key_type: str
+    value: str
+    #: The earliest decision among the standing grants that carry this key.
+    authorised_since: datetime | None = None
+
+
+class HolderKeysDataset(BaseModel):
+    """What one dataset of the offer serves, in total."""
+
+    dataset_id: str
+    key_count: int
+    #: Some standing grant here carries no key, so the data plane serves
+    #: nothing for it. Said rather than hidden, because an empty key list must
+    #: not read as "nobody consents" when the truth is "no key was sent".
+    grants_without_keys: bool
+
+
+class HolderKeys(BaseModel):
+    """One page of the keys this holder serves the offer's recipient, now."""
+
+    offer_id: str
+    recipient: str
+    recipient_did: str
+    purpose: list[str]
+    recipient_role: str | None = None
+    datasets: list[HolderKeysDataset]
+    limit: int
+    keys: list[HolderKey]
+    next_cursor: str | None = None
+
+
+@router.get("/admin/holder/keys", response_model=HolderKeys)
+async def holder_read_keys(
+    request: Request,
+    offer_id: str = Query(..., min_length=1),
+    limit: int = Query(HOLDER_PAGE_DEFAULT, ge=1, le=HOLDER_PAGE_MAX),
+    cursor: str | None = Query(None, min_length=1),
+    _principal=Depends(require_consent_holder),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+):
+    """The data keys this connector serves the offer's recipient, now (ADR-0022).
+
+    **The holder reading its own enforcement state.** A collector registers its
+    members' decisions here with their typed keys (ADR-0015), and the data
+    plane serves rows by those keys. This lists them for the holder — its own
+    organisation client, the deployment operator, or a person granted the
+    permission for this participant (`require_consent_holder`).
+
+    **Keys only.** No subject id, no count of subjects, no withdrawal reason.
+    The holder learns which of its own keys are authorised and since when,
+    nothing about who stands behind them — which is why no membership check
+    applies: the holder speaks for its data, not for anyone's members.
+
+    **The row filter's answer, not a second computation.** Per dataset, the
+    keys are those of ``get_granted_subjects`` for the offer's recipient — with
+    the same `D-14` admission ``GET /internal/consent/check`` applies — so this
+    list and what the data plane serves cannot disagree.
+
+    The recipient is the offer's ``recipients.recipient``, resolved to a DID
+    through the owner registry; a recipient that cannot be resolved is a
+    ``503``, since the answer depends on it. Paged by ``(dataset, key)``.
+    """
+    offer, dataset_ids = _holder_offer(offer_id)
+    recipient = offer.recipients.recipient
+    recipient_did = await circle._recipient_did(
+        recipient, getattr(request.app.state, "owners_registry", None)
+    )
+    if recipient_did is None:
+        raise HTTPException(
+            503,
+            f"Cannot resolve the offer's recipient '{recipient}' to a DID, so "
+            "this connector cannot say which keys it serves that recipient",
+        )
+
+    summaries: list[HolderKeysDataset] = []
+    entries: list[HolderKey] = []
+    for dataset_id in dataset_ids:
+        admitted = await _admitted_wildcard_offers(
+            request,
+            settings,
+            dataset_id=dataset_id,
+            consumer_id=recipient_did,
+            purposes=[offer.purpose],
+            recipient_role=offer.recipients.recipient_role,
+        )
+        granted = await consent_service.get_granted_subjects(
+            db,
+            dataset_id,
+            recipient_did,
+            purpose=[offer.purpose],
+            recipient_role=offer.recipients.recipient_role,
+            consent_required=True,
+            offer_id=offer.id,
+            admitted_wildcard_offers=admitted,
+        )
+        since: dict[str, datetime | None] = {}
+        for subject in granted:
+            for key in subject.keys:
+                current = since.get(key)
+                if key not in since or (
+                    subject.decided_at is not None
+                    and (current is None or subject.decided_at < current)
+                ):
+                    since[key] = subject.decided_at
+        summaries.append(
+            HolderKeysDataset(
+                dataset_id=dataset_id,
+                key_count=len(since),
+                grants_without_keys=any(not subject.keys for subject in granted),
+            )
+        )
+        for key in sorted(since):
+            try:
+                key_type, value = split_key(key)
+            except ValueError:
+                key_type, value = "", key
+            entries.append(
+                HolderKey(
+                    dataset_id=dataset_id,
+                    key=key,
+                    key_type=key_type,
+                    value=value,
+                    authorised_since=since[key],
+                )
+            )
+
+    if cursor is not None:
+        after = tuple(_decode_parts(cursor, 2))
+        entries = [e for e in entries if (e.dataset_id, e.key) > after]
+    page, more = entries[:limit], len(entries) > limit
+
+    return HolderKeys(
+        offer_id=offer.id,
+        recipient=recipient,
+        recipient_did=recipient_did,
+        purpose=[offer.purpose],
+        recipient_role=offer.recipients.recipient_role,
+        datasets=summaries,
+        limit=limit,
+        keys=page,
+        next_cursor=_encode_parts(page[-1].dataset_id, page[-1].key) if more else None,
+    )
+
+
+class HolderKeyEvent(BaseModel):
+    """One key a decision here started or stopped carrying."""
+
+    dataset_id: str
+    consumer_id: str
+    key: str
+    event: Literal["added", "removed"]
+    cause: Literal["grant", "withdrawal", "key_change", "backfill"]
+    at: datetime
+    decided_by: str | None = None
+    collector: str | None = None
+
+
+class HolderKeyEvents(BaseModel):
+    """One page of the key history for an offer, oldest first."""
+
+    offer_id: str
+    datasets: list[str]
+    limit: int
+    note: str = KEY_LEDGER_NOTE
+    events: list[HolderKeyEvent]
+    next_cursor: str | None = None
+
+
+@router.get("/admin/holder/key-events", response_model=HolderKeyEvents)
+async def holder_read_key_events(
+    offer_id: str = Query(..., min_length=1),
+    since: datetime | None = Query(None),
+    limit: int = Query(HOLDER_PAGE_DEFAULT, ge=1, le=HOLDER_PAGE_MAX),
+    cursor: str | None = Query(None, min_length=1),
+    _principal=Depends(require_consent_holder),
+    db: AsyncSession = Depends(get_db),
+):
+    """The history of the keys decisions here carried, for one offer (ADR-0022).
+
+    Read from the key ledger (`consent_key_events`), which every flush that
+    changes a decision's keys appends to. It records **decisions**, not the
+    served set: a key two decisions carry is still served after one of them
+    withdraws, so a ``removed`` here can stand beside the same key in
+    ``GET /consent/admin/holder/keys``. That route is authoritative for *now*;
+    this one says what happened and when.
+
+    Same callers as the key list, and the same keys-only bound: no subject id,
+    no withdrawal reason. Oldest first, paged by ``(at, id)``; ``since`` keeps
+    entries at or after a moment.
+    """
+    offer, dataset_ids = _holder_offer(offer_id)
+    query = select(ConsentKeyEventORM).where(
+        ConsentKeyEventORM.offer_id == offer.id,
+        ConsentKeyEventORM.dataset_id.in_(dataset_ids),
+    )
+    if since is not None:
+        query = query.where(ConsentKeyEventORM.at >= since)
+    if cursor is not None:
+        at_raw, entry_id = _decode_parts(cursor, 2)
+        try:
+            after_at = datetime.fromisoformat(at_raw)
+        except ValueError as exc:
+            raise HTTPException(
+                422, "cursor is not one this route issued; start again without it"
+            ) from exc
+        query = query.where(
+            or_(
+                ConsentKeyEventORM.at > after_at,
+                and_(
+                    ConsentKeyEventORM.at == after_at,
+                    ConsentKeyEventORM.id > entry_id,
+                ),
+            )
+        )
+    query = query.order_by(ConsentKeyEventORM.at, ConsentKeyEventORM.id).limit(
+        limit + 1
+    )
+    rows = list((await db.execute(query)).scalars())
+    page, more = rows[:limit], len(rows) > limit
+
+    return HolderKeyEvents(
+        offer_id=offer.id,
+        datasets=dataset_ids,
+        limit=limit,
+        events=[
+            HolderKeyEvent(
+                dataset_id=row.dataset_id,
+                consumer_id=row.consumer_id,
+                key=row.key,
+                event=row.event,
+                cause=row.cause,
+                at=row.at,
+                decided_by=row.decided_by,
+                collector=row.collector,
+            )
+            for row in page
+        ],
+        next_cursor=_encode_parts(page[-1].at.isoformat(), page[-1].id)
+        if more
+        else None,
     )
 
 

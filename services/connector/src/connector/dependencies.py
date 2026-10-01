@@ -649,6 +649,69 @@ require_consent_read = require_permission("connector.consent.read", "connector.a
 require_consent_audience = require_permission(
     "connector.consent.audience", "connector.admin"
 )
+_require_consent_holder_read = require_permission(
+    "connector.consent.holder.read", "connector.admin"
+)
+
+
+async def require_consent_holder(
+    request: Request,
+    principal: Principal = Depends(_require_consent_holder_read),
+) -> Principal:
+    """The holder, and only the holder, reading the keys it serves (ADR-0022).
+
+    Every organisation client holds `connector.consent.holder.read`, so the
+    scope says only that a caller may ask; this decides who is the holder:
+
+    * **this connector's own organisation client** (`sub` = this participant) —
+      the caller for a scheduled export;
+    * **the deployment operator** (`connector.admin`);
+    * **a person granted the permission** for an organisation that resolves, in
+      the owners registry, to this connector's participant.
+
+    A **collector** — another organisation's client — is refused: it reads the
+    decisions it collected through `GET /consent/admin/decisions`, never the
+    holder's whole key set. A **plain service token** is refused: it names no
+    organisation, the same reason it may not register consent.
+    """
+    settings = get_settings()
+    if principal.is_organisation:
+        if principal.organisation_context == settings.participant_context_id:
+            return principal
+        raise HTTPException(
+            403,
+            "only this connector's own organisation reads the keys it serves — a "
+            "collector reads the decisions it registered at "
+            "GET /consent/admin/decisions",
+        )
+    if principal.is_service:
+        raise HTTPException(
+            403,
+            "the holder's key list is read by the holder's own organisation client "
+            "(svc-ds-connector-<alias>) — a service token names no organisation",
+        )
+    if principal.grants("connector.admin"):
+        return principal
+
+    registry = getattr(request.app.state, "owners_registry", None)
+    if registry is not None:
+        aliases = _owner_aliases(settings.owner_aliases)
+        for alias in principal.organization_aliases:
+            if not principal.grants_in(alias, "connector.consent.holder.read"):
+                continue
+            try:
+                entry = await registry.by_id(aliases.get(alias, alias))
+            except Exception:  # noqa: BLE001 — a registry blip is not a yes
+                continue
+            if entry is not None and entry.did == settings.participant_did:
+                return principal
+    raise HTTPException(
+        403,
+        "you hold connector.consent.holder.read, but for no organisation that is "
+        f"this connector's participant ({settings.participant_did})",
+    )
+
+
 # An operator records a DSO/offline data handover as they perform it (the DSO
 # leg is manual in phase A), so the ingestion event has a human trigger rather
 # than an automatic one. connector.admin is a superset.
