@@ -267,12 +267,6 @@ async def test_invalidate_drops_the_resolved_answers():
         await registry.close()
 
 
-
-
-
-
-
-
 # ── The collector relation: GET /consent-collectors/check ─────────────────────
 #
 # Plan `a-collector-registers-consent-at-the-holder`, decision 1: a cached lookup

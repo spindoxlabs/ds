@@ -48,7 +48,9 @@ DENY = "deny"
 #: A typed data key, `"<type>:<value>"`. The type is a lowercase token; the value
 #: is whatever the holder stores the data under, split off at the **first** colon
 #: so a value may itself contain one.
-SUBJECT_KEY_PATTERN = re.compile(r"^(?P<type>[a-z][a-z0-9_-]{0,31}):(?P<value>\S{1,256})$")
+SUBJECT_KEY_PATTERN = re.compile(
+    r"^(?P<type>[a-z][a-z0-9_-]{0,31}):(?P<value>\S{1,256})$"
+)
 
 
 def split_key(key: str) -> tuple[str, str]:

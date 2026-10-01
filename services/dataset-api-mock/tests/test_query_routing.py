@@ -132,4 +132,3 @@ def test_a_statement_naming_two_datasets_is_refused(client):
 
 def test_a_statement_naming_no_known_dataset_is_refused(client):
     assert _plain(client, "SELECT 1").status_code == 400
-

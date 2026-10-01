@@ -339,7 +339,7 @@ class HolderKeysFlow(BaseFlow):
 
     def _check_history(self, result: FlowResult) -> None:
         s = self.settings
-        events: list[dict] = []
+        events: list[dict[str, Any]] = []
         cursor = None
         while True:
             query = f"offer_id={s.grid_use_offer_id}&since={self.started.isoformat()}"

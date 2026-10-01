@@ -224,7 +224,6 @@ class RecipientRestrictionFlow(BaseFlow):
         datasets: list[Any],
         asset_id: str,
     ) -> None:
-        s = self.settings
         dataset = next(
             (
                 d
@@ -238,7 +237,11 @@ class RecipientRestrictionFlow(BaseFlow):
         offer_id = str(policy.get("@id") or f"{asset_id}#offer")
 
         negotiation_id = self._negotiate(
-            headers, asset_id, offer_id, policy, declared_purpose=["FlexibilityResearch"]
+            headers,
+            asset_id,
+            offer_id,
+            policy,
+            declared_purpose=["FlexibilityResearch"],
         )
         if negotiation_id is None:
             result.fail_step(
@@ -448,8 +451,10 @@ class RecipientRestrictionFlow(BaseFlow):
             return (
                 self.http.poll_until(
                     url,
-                    lambda p: bool(p.get("contractAgreementId"))
-                    or str(p.get("state")) in REFUSED_STATES,
+                    lambda p: (
+                        bool(p.get("contractAgreementId"))
+                        or str(p.get("state")) in REFUSED_STATES
+                    ),
                     headers=headers,
                 )
                 or {}

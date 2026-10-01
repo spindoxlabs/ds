@@ -48,6 +48,7 @@ HOLDER_DECIDES = "collector"
 def holder_headers(http: Any, settings: Any) -> dict[str, str]:
     """The provider organisation's own client — the one consent writer the
     provider connector accepts for its own members."""
-    return http.bearer_headers_for(
+    headers: dict[str, str] = http.bearer_headers_for(
         settings.provider_org_client_id, settings.provider_org_client_secret
     )
+    return headers

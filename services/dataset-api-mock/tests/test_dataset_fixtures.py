@@ -181,9 +181,7 @@ def test_every_committed_dataset_passes_the_same_check():
 
 # ── The grid operator's holder dataset agrees with its governance ─────────────
 
-GRID_GOVERNANCE = (
-    REPO / "services" / "connector" / "governance-grid-operator" / "governance.yaml"
-)
+GRID_GOVERNANCE = REPO / "services" / "connector" / "governance-grid-operator" / "governance.yaml"
 GRID = "datasets.silver.grid_meter_readings"
 
 

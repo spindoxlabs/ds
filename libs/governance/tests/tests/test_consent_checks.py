@@ -336,9 +336,7 @@ class TestSharingOffers:
             encoding="utf-8",
         )
 
-        result = run(
-            tmp_path, offers=[offer()], recipient_roles={"example-org": ["a"]}
-        )
+        result = run(tmp_path, offers=[offer()], recipient_roles={"example-org": ["a"]})
 
         assert "offer-recipient" in codes(result.errors)
         assert "offer-duplicate" not in codes(result.errors)

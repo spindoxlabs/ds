@@ -89,9 +89,7 @@ def entries_for(
         cause, at = "key_change", now
     # A key change is the re-sender's act, not the granter's (`key_change_by`).
     decided_by = (
-        row.key_change_by or row.decided_by
-        if cause == "key_change"
-        else row.decided_by
+        row.key_change_by or row.decided_by if cause == "key_change" else row.decided_by
     )
 
     if row.id is None:

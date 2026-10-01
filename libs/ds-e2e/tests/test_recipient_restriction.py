@@ -59,9 +59,7 @@ def test_a_recipient_missing_from_its_own_catalogue_fails(settings):
 
 def test_a_restricted_dataset_in_the_catalogue_fails(settings):
     result = FlowResult(flow_name="recipient-restriction")
-    assert (
-        _flow(settings)._assert_hidden(result, {"datasets.b"}, "datasets.b") is False
-    )
+    assert _flow(settings)._assert_hidden(result, {"datasets.b"}, "datasets.b") is False
     assert _last(result).status == "FAIL"
 
 

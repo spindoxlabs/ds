@@ -577,9 +577,13 @@ def test_the_access_policy_carries_the_same_actions_as_the_contract_policy():
     nothing binds in `catalog` would admit everybody."""
     mapper = _mapper()
     rule = _rule(access_level="open", classification="green")
-    offer_actions = {p["odrl:action"]["@id"] for p in mapper.to_odrl_offer("ds", rule)["odrl:permission"]}
+    offer_actions = {
+        p["odrl:action"]["@id"]
+        for p in mapper.to_odrl_offer("ds", rule)["odrl:permission"]
+    }
     access_actions = {
-        p["odrl:action"]["@id"] for p in mapper.to_access_odrl_set("ds", rule)["odrl:permission"]
+        p["odrl:action"]["@id"]
+        for p in mapper.to_access_odrl_set("ds", rule)["odrl:permission"]
     }
     assert offer_actions == access_actions
 

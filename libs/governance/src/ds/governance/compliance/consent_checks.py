@@ -383,12 +383,11 @@ def _check_offer_prerequisites(
                     )
 
 
-def _requires_itself_transitively(
-    catalogue: SharingOfferCatalogue, start: str
-) -> bool:
+def _requires_itself_transitively(catalogue: SharingOfferCatalogue, start: str) -> bool:
     seen: set[str] = set()
     stack = [
-        r for r in (catalogue.get(start).requires_offers if catalogue.get(start) else [])
+        r
+        for r in (catalogue.get(start).requires_offers if catalogue.get(start) else [])
         if r != start
     ]
     while stack:

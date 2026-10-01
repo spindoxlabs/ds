@@ -368,8 +368,7 @@ sharing_offers:
     assert len(catalogue.offers) == 2
     # Rebinding a recipient for a deployment must not fork the base file.
     assert (
-        catalogue.get("household-energy-flexibility").recipients.recipient
-        == "site-org"
+        catalogue.get("household-energy-flexibility").recipients.recipient == "site-org"
     )
     assert catalogue.get("grid-monitoring") is not None
 

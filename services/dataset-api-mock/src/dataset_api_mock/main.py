@@ -236,9 +236,7 @@ DATASETS: dict[str, dict[str, Any]] = {
     "datasets.silver.grid_meter_readings": {
         "asset_id": "datasets.silver.grid_meter_readings",
         "requires_consent": True,
-        "row_filters": [
-            {"handler": SUBJECT_KEY_MATCH, "args": {"column": "pod", "key_type": "pod"}}
-        ],
+        "row_filters": [{"handler": SUBJECT_KEY_MATCH, "args": {"column": "pod", "key_type": "pod"}}],
         "rows": [
             {"timestamp": "2026-05-11T08:00:00Z", "pod": GRID_PODS[0], "kwh": 0.31},
             {"timestamp": "2026-05-11T08:15:00Z", "pod": GRID_PODS[0], "kwh": 0.29},

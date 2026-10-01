@@ -288,7 +288,7 @@ def test_an_offer_the_edc_decides_alone_fails_the_flow(settings):
 
 
 def test_a_consent_gated_offer_is_a_valid_target(settings):
-    """`ConsentStatus` reaches `GET /internal/consent/check` — the last one that does."""
+    """`ConsentStatus` reaches `GET /internal/consent/check` — the last that does."""
     http = MagicMock(spec=HttpClient)
     flow = _flow(settings, http)
     flow._offer = MagicMock(return_value=_CONSENT_GATED)

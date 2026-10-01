@@ -587,7 +587,7 @@ class TrustedIssuer(Base):
 
 
 class ConsentCollector(Base):
-    """"This organisation is an accepted consent collector for this holder."
+    """ "This organisation is an accepted consent collector for this holder."
 
     Plan `a-collector-registers-consent-at-the-holder`. A holder's connector
     (the organisation that holds a person's data) accepts consent registrations

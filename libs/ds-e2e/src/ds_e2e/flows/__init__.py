@@ -19,9 +19,9 @@ from ds_e2e.flows.holder_keys import HolderKeysFlow
 from ds_e2e.flows.lineage import LineageFlow
 from ds_e2e.flows.onboarding_seam import OnboardingSeamFlow
 from ds_e2e.flows.org_onboarding import OrgOnboardingFlow
+from ds_e2e.flows.organisation_token import OrganisationTokenFlow
 from ds_e2e.flows.provider_withdrawal import ProviderWithdrawalFlow
 from ds_e2e.flows.recipient_restriction import RecipientRestrictionFlow
-from ds_e2e.flows.organisation_token import OrganisationTokenFlow
 from ds_e2e.flows.semantic_model import SemanticModelFlow
 from ds_e2e.flows.smoke import SmokeFlow
 from ds_e2e.flows.two_providers import TwoProvidersFlow

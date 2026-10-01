@@ -45,6 +45,7 @@ from __future__ import annotations
 import logging
 import time
 import urllib.parse
+from typing import Any
 
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
@@ -65,7 +66,7 @@ class ProviderWithdrawalFlow(BaseFlow):
     )
     rules = ("C-7", "L-1", "L-15")
 
-    def _withdrawal_events(self, asset_id: str) -> list[dict]:
+    def _withdrawal_events(self, asset_id: str) -> list[dict[str, Any]]:
         """`CatalogueWithdrawn` events naming this asset, as the graph has them.
 
         Read with the **harness** client, not the publisher: `svc-ds-e2e` holds
@@ -95,7 +96,7 @@ class ProviderWithdrawalFlow(BaseFlow):
             if isinstance(row, dict) and (row.get("@id") or row.get("id"))
         }
 
-    def _sync(self, headers: dict[str, str], governance_path: str | None = None):
+    def _sync(self, headers: dict[str, str], governance_path: str | None = None) -> Any:
         payload = {"governance_yaml_path": governance_path} if governance_path else {}
         return (
             self.http.post(

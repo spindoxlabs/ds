@@ -355,6 +355,4 @@ def test_a_malformed_key_is_refused(key):
 def test_values_of_one_type_ignore_the_others_and_the_malformed():
     from ds.governance.dataplane import values_of_type
 
-    assert values_of_type(
-        ["pod:A", "meter:B", "junk", "pod:C"], "pod"
-    ) == {"A", "C"}
+    assert values_of_type(["pod:A", "meter:B", "junk", "pod:C"], "pod") == {"A", "C"}

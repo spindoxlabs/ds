@@ -79,7 +79,14 @@ def _edc_runs_in_docker() -> bool:
     """
     try:
         proc = subprocess.run(
-            ["docker", "ps", "--filter", "name=^dataspaces-edc-rec-1$", "--format", "{{.Names}}"],
+            [
+                "docker",
+                "ps",
+                "--filter",
+                "name=^dataspaces-edc-rec-1$",
+                "--format",
+                "{{.Names}}",
+            ],
             capture_output=True,
             text=True,
             timeout=15,
