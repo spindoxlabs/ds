@@ -40,7 +40,11 @@ class ServiceTokenProvider:
         self._expires_at: float = 0.0
 
     async def __call__(self) -> str:
-        now = time.monotonic()
+        # Wall clock, not `time.monotonic()`: the token's `exp` is wall-clock
+        # time, and the monotonic clock stops while a host is suspended, so a
+        # cache on it hands out an expired token after a sleep. A clock step
+        # can still misjudge it by the step; the 30 s margin absorbs NTP's.
+        now = time.time()
         if self._token and now < self._expires_at:
             return self._token
 
