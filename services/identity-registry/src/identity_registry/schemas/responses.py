@@ -177,8 +177,9 @@ class UserResolveResponse(BaseModel):
     so which one a caller got depended on state it could not see (ds#31).
     """
 
-    #: Present only when a mapping exists. Absent on the ``derive=true`` branch,
-    #: where the person has no DID yet — which is the state that branch is for.
+    #: Always set by ``/users/resolve`` now, which answers only a mapped person.
+    #: Optional because it used to be absent on the removed ``derive=true``
+    #: branch, and a client generated from the old schema may still expect that.
     did: str | None = None
     subject_id: str
     roles: list[str] = []

@@ -31,9 +31,10 @@ The three event flags are the only Keycloak-side audit trail available. **Ship t
 log sink as the application logs** — an audit trail that expires inside Keycloak's own database
 is not evidence.
 
-**Do not use email-as-username.** A person's DID derives from their email while the data plane
-joins on their username, so in such a realm one address change moves both at once. See
-[Identifier changes](#identifier-changes).
+**Do not use email-as-username.** The data plane joins on the username, so in such a realm an
+address change moves the join. DIDs no longer depend on the email (the identity registry derives
+no subject id), but those issued before that, `…:users:email-<24hex>`, embed an HMAC of the
+address the person had then. See [Identifier changes](#identifier-changes).
 
 ## 2. What ds actually asks of a realm
 
@@ -44,7 +45,7 @@ Five requirements. They are not equally portable, and treating them as one thing
 |---|---|---|
 | 1 | The confidential clients in `clients.yaml`, with `client_credentials`, their scopes and their audiences | Yes — any OIDC provider. Somebody must perform the **registration** |
 | 2 | A login client emitting `groups`, `organization.<alias>.groups` and `email` | Yes — the group vocabulary is **five names**, not one per endpoint |
-| 3 | Resolving a user to a DID (realm, user id, email) | Yes — ds resolves on demand and derives a subject id when no mapping exists |
+| 3 | Resolving a user to a DID (realm, user id, email) | Yes — ds resolves on demand; a person with no mapping is a 404, and the enrolling caller mints an opaque subject id |
 | 4 | **Write** access to the realm | ✗ Not required. Off by default |
 | 5 | Native organisations | Convenience only. The identity registry is the authority for data decisions |
 
@@ -201,7 +202,7 @@ ds keys a person on three identifiers with three different jobs, and only one of
 |---|---|---|
 | `(realm, user_id)` | **continuity key** | no, within a realm |
 | `username` | **data-plane join** — external systems resolve members by it | yes → refreshed, never an identity |
-| `email` | **bootstrap seed only** | yes → never a lookup key once a mapping exists |
+| `email` | **last lookup rung** for callers that hold nothing else | yes → never a lookup key once a mapping exists |
 
 Two consequences for whoever runs the realm:
 

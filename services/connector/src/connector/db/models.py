@@ -194,6 +194,13 @@ class ConsentRequestORM(Base):
         DateTime(timezone=True)
     )
 
+    # **Not a column.** The authority that just replaced this row's keys, for the
+    # key ledger's `key_change` entries (`db/key_ledger.py`). A key update leaves
+    # `decided_by` alone, since it still names who *granted* and `D-15c` reads it;
+    # the ledger still has to say who changed the keys. Set by the write path,
+    # read and cleared by the flush listener.
+    key_change_by = None
+
 
 class ConsumerTransferORM(Base):
     """Transfer ownership for user-scoped consumer views."""

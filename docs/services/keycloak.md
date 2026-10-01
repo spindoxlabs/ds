@@ -151,8 +151,10 @@ their username, a literal client secret, `directAccessGrantsEnabled: true`, and
 | `eventsExpiration` | ≥ your retention window | an audit trail that expires inside Keycloak's own database is not evidence |
 | `directAccessGrantsEnabled` (per client) | `false` | dev enables the password grant on every client |
 
-**Do not use email-as-username.** A person's DID derives from their email while the data plane
-joins on their username; in such a realm one address change moves both at once.
+**Do not use email-as-username.** The data plane joins on the username, so in such a realm an
+address change moves the join. DIDs no longer depend on the email (the identity registry derives
+no subject id), but those issued before that, `…:users:email-<24hex>`, embed an HMAC of the
+address the person had then.
 
 ## Only two things here are Keycloak-specific
 

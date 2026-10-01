@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-01 from `66f988f-dirty`.
+Generated 2026-10-01 from `a756790-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 127 |
 | …of those, **evidenced by a test that names them** | 127 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1014 |
+| Test nodes declaring a rule | 1015 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -174,7 +174,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-21` | Enforced | ✅ evidenced | e2e×2, integration×1, unit×20 | `collector-holder`, `uc1`, `services/identity-registry/tests/integration/test_consent_collectors.py::test_the_cli_the_admin_api_and_the_check_agree` +20 more |
 | `D-22` | Enforced | ✅ evidenced | unit×3 | `services/identity-registry/tests/test_did.py::test_user_did_document_no_auth`, `services/identity-registry/tests/test_did.py::test_the_did_path_route_does_not_shadow_dids`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |
 | `D-22a` | Enforced | ✅ evidenced | unit×2 | `services/identity-registry/tests/test_custody.py::test_the_credential_records_who_attested_the_person`, `services/identity-registry/tests/test_did.py::test_path_form_resolves_a_user_did` |
-| `D-22b` | Enforced | ✅ evidenced | unit×5 | `services/identity-registry/tests/test_identifier_cascade.py::test_the_continuity_key_wins_over_a_changed_email`, `services/identity-registry/tests/test_identifier_cascade.py::test_a_recycled_identifier_is_quarantined`, `services/identity-registry/tests/test_identifier_cascade.py::test_derivation_happens_only_when_every_rung_misses` +2 more |
+| `D-22b` | Enforced | ✅ evidenced | unit×6 | `services/identity-registry/tests/test_identifier_cascade.py::test_the_continuity_key_wins_over_a_changed_email`, `services/identity-registry/tests/test_identifier_cascade.py::test_a_recycled_identifier_is_quarantined`, `services/identity-registry/tests/test_identifier_cascade.py::test_an_unknown_person_is_never_given_an_id_by_the_registry` +3 more |
 | `D-22c` | Declared | · consistent | — | — |
 | `D-54` | Enforced | ✅ evidenced | unit×3 | `services/connector/tests/test_circle_admission.py::test_the_claim_and_value_reach_the_registry`, `services/connector/tests/test_circle_admission.py::test_a_negative_claim_answer_does_not_admit`, `services/connector/tests/test_circle_admission.py::test_a_malformed_spec_admits_nobody` |
 | `D-55` | Enforced | ✅ evidenced | unit×6 | `services/identity-registry/tests/test_credential_check.py::test_a_matching_claim_is_held`, `services/identity-registry/tests/test_credential_check.py::test_a_different_claim_value_is_not_held`, `services/identity-registry/tests/test_credential_check.py::test_a_credential_without_the_claim_is_not_held` +3 more |

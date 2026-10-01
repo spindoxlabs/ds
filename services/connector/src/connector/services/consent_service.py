@@ -664,6 +664,8 @@ async def set_subject_data_sharing(
                 latest.subject_keys = list(keys)
                 if collector is not None:
                     latest.collector = collector
+                # The row keeps who granted; the key ledger names who re-sent.
+                latest.key_change_by = decided_by
             return latest
         # **A standing refusal is not a gap to be filled.** This asked only "is it
         # already granted?", so a `latest` of `revoked` fell through to the append

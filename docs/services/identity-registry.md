@@ -230,9 +230,17 @@ half. Custody, unlike the identifier, follows each credential.
 
 `/users/resolve` returns both halves under separate names and they are not interchangeable:
 `did` is the DID, `subject_id` is the `<id>` inside it — the value
-`POST /admin/credentials/data-subject` takes, and the same kind of value on the `derive=true`
-branch, where a person has no DID yet. A `subject_id` that is itself a DID is refused with a
+`POST /admin/credentials/data-subject` takes. A person with no mapping is a **404**: the
+registry does not invent an identifier. A `subject_id` that is itself a DID is refused with a
 **422** rather than concatenated into a nested one, which is how one person used to become two.
+
+**`derive` is deprecated, and the registry derives nothing.** `GET /users/resolve?derive=true`
+used to answer an unmapped person with `email-` and a keyed HMAC of their email. That generator
+is removed: an id derived from an address ties a DID to something the person can change. With
+no mapping, `derive=true` now answers **422** saying what to do instead; with a mapping, and with
+`derive=false`, the parameter changes nothing. DIDs issued as `…:users:email-<24hex>` before the
+removal keep working: the id is stored with the DID and the mapping and was never re-derived,
+so they resolve, verify and are found through their mapping like any other.
 
 **The caller must pass an opaque `subject_id`** — to `POST /admin/credentials/data-subject`
 and to `ir-cli credential issue-data-subject --subject-id` alike. It
@@ -241,8 +249,9 @@ event and credential that names them, and is never converted back. So it must no
 person: not an email or its local part, not a member code or a username another system
 resolves, not a date-bearing reference such as an onboarding submission number. The mapping
 from the person to the id is the calling registry's to keep. The simplest compliant source is
-this service's own derivation, `GET /users/resolve?derive=true`, which answers a keyed HMAC of
-the email. The registry does **not** check opacity; the obligation is the caller's
+a random UUID, minted by the caller and recorded in the mapping (`POST /admin/keycloak/sync`)
+once the DID exists; a UUID that is never mapped cannot be found again, and the next attempt
+mints a second identity. The registry does **not** check opacity; the obligation is the caller's
 ([rulebook `D-22c`](../rulebook/personal-data.md)).
 
 ## How it works
@@ -326,7 +335,7 @@ same human":
 |---|---|---|
 | `(realm, user_id)` | **continuity key** | no, within a realm |
 | `username` | **data-plane join** — external systems resolve members by it | yes, refreshed |
-| `email` | **bootstrap seed only** | yes, never a lookup key once mapped |
+| `email` | **last lookup rung** for callers that hold nothing else | yes, never a lookup key once mapped |
 
 A weaker-identifier match that conflicts with a recorded stronger one is **quarantined, not
 reconciled**. "The account was deleted and re-created" and "the username was recycled to a

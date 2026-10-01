@@ -87,6 +87,12 @@ def entries_for(
         cause, at = "grant", row.decided_at or now
     else:
         cause, at = "key_change", now
+    # A key change is the re-sender's act, not the granter's (`key_change_by`).
+    decided_by = (
+        row.key_change_by or row.decided_by
+        if cause == "key_change"
+        else row.decided_by
+    )
 
     if row.id is None:
         # The primary key's default is applied at insert, after this listener.
@@ -106,7 +112,7 @@ def entries_for(
             key=key,
             event=kind,
             cause=cause,
-            decided_by=row.decided_by,
+            decided_by=decided_by,
             collector=row.collector,
             at=at,
         )
@@ -124,3 +130,4 @@ def _record_key_changes(session: Session, _flush_context, _instances) -> None:
         before_status, before_keys = _before(row)
         for entry in entries_for(row, before_status, before_keys):
             session.add(entry)
+        row.key_change_by = None

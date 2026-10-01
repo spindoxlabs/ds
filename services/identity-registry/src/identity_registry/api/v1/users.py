@@ -20,7 +20,6 @@ from ...schemas.responses import (
     UserCredentialResponse,
     UserResolveResponse,
 )
-from ...services.crypto import derive_email_subject_id
 from ...services.did import subject_id_of
 
 router = APIRouter(prefix="/users", tags=["users"])
@@ -134,10 +133,14 @@ async def resolve_user_by_email(
     username: str | None = Query(None, description="Keycloak preferred_username"),
     derive: bool = Query(
         False,
-        description="When true, derive a subject_id if no mapping exists yet",
+        deprecated=True,
+        description=(
+            "Removed. The registry no longer derives a subject id: with no "
+            "mapping, `derive=true` answers 422. Accepted so existing callers "
+            "sending `derive=false` keep working"
+        ),
     ),
     db: AsyncSession = Depends(get_db),
-    ir_settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_resolve_scope),
 ):
     """Resolve a user's DID and **every** credential they can present.
@@ -146,19 +149,27 @@ async def resolve_user_by_email(
     lets the caller select the credential the operation requires. See
     ``UserResolveResponse`` for why the singular fields remain.
 
-    With ``derive=true``, a missing mapping is not a 404 — the endpoint derives
-    a deterministic ``subject_id`` from the email so the caller can use it for
-    first-time credential issuance. The derivation is keyed by the registry's
-    ``ENCRYPTION_KEY``, keeping the mapping between emails and DID paths inside
-    one service.
+    A person with no mapping is a **404**: the registry does not invent an
+    identifier. A caller enrolling someone for the first time mints an opaque
+    subject id itself (a random UUID is the simple compliant choice, `D-22c`)
+    and passes it to ``POST /admin/credentials/data-subject``.
 
-    **``subject_id`` is the same kind of value on both branches**: the person's
-    identifier within their custodian's namespace, which is what
-    ``POST /admin/credentials/data-subject`` takes. ``did`` is the field that
-    carries the DID, and it is present only on the mapped branch. The two used
-    to be the same string when a mapping existed, which made the documented
-    round trip — resolve, then issue with ``subject_id`` — mint a second
-    identity for a person who already had one (ds#31).
+    **``derive`` is deprecated.** It used to answer an unmapped person with
+    ``email-`` and an HMAC of their email. That generator is removed: an
+    identifier derived from the email ties the DID to an address that can
+    change. ``derive=true`` with no mapping now answers **422** naming what to
+    do instead, rather than a 404 a caller could read as "unknown, go ahead"
+    without learning that the behaviour it relied on is gone. With a mapping,
+    and with ``derive=false``, the parameter changes nothing. DIDs issued as
+    ``…:users:email-<24hex>`` before the removal are stored ids like any other
+    and resolve through their mapping; nothing re-derives them.
+
+    ``subject_id`` is the person's identifier within their custodian's
+    namespace, which is what ``POST /admin/credentials/data-subject`` takes;
+    ``did`` is the field that carries the DID. The two used to be the same
+    string when a mapping existed, which made the documented round trip —
+    resolve, then issue with ``subject_id`` — mint a second identity for a
+    person who already had one (ds#31).
     """
     if not any((email, username, (realm and user_id))):
         raise HTTPException(
@@ -182,22 +193,21 @@ async def resolve_user_by_email(
             ),
         )
     if not mapping:
-        if not derive:
-            raise HTTPException(
-                status_code=404, detail="No mapping found for this user"
-            )
-        if not email:
-            # Derivation is seeded by the email and nothing else. Without one there
-            # is nothing to derive *from*, and inventing a subject id from a
-            # username would mint a second identity for a person who may already
-            # have one.
+        if derive:
+            # Refused exactly where the removed generator used to answer, so a
+            # caller that relied on it learns so here, not from a 404 that reads
+            # as "unknown person, go ahead".
             raise HTTPException(
                 status_code=422,
-                detail="derive=true requires an email to derive the subject id from",
+                detail=(
+                    "derive=true is no longer supported: the registry does not "
+                    "derive subject ids. No mapping exists for this user; mint an "
+                    "opaque subject id (for example a random UUID), pass it to "
+                    "POST /admin/credentials/data-subject, and record the mapping "
+                    "(POST /admin/keycloak/sync)"
+                ),
             )
-        return UserResolveResponse(
-            subject_id=derive_email_subject_id(email, ir_settings.encryption_key),
-        )
+        raise HTTPException(status_code=404, detail="No mapping found for this user")
 
     cred_result = await db.execute(
         select(Credential)
@@ -220,9 +230,9 @@ async def resolve_user_by_email(
     presentable = [c for c in credentials if c.vc_jws]
     newest = presentable[0] if presentable else None
 
-    # **`subject_id` means one thing on both branches** — the person's
-    # identifier *within their custodian's namespace*, which is what the derive
-    # branch above returns and what `subject_did_for` takes. It used to be
+    # **`subject_id` is the id inside the DID** — the person's identifier
+    # *within their custodian's namespace*, which is what `subject_did_for`
+    # takes. It used to be
     # `mapping.subject_id`, and both write paths store the full DID there, so
     # this field answered with a DID when a mapping existed and a short id when
     # it did not. A caller following the docstring — resolve, then reuse

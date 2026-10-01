@@ -193,51 +193,42 @@ async def test_user_with_no_credential_still_resolves_its_did(client, db_session
     assert body["role"] is None
 
 
-# ── derive=true ──────────────────────────────────────────────────
+# ── derive is deprecated: the registry no longer derives subject ids ────────
+#
+# `derive=true` used to answer an unmapped person with `email-` and an HMAC of
+# their email. The generator is removed: an id derived from an address ties a
+# DID to something that changes, and every caller now mints its own opaque id.
+# The parameter stays so callers sending `derive=false` keep working; `true`
+# is refused exactly where the generator used to answer.
 
 
 @pytest.mark.asyncio
-async def test_derive_returns_subject_id_without_mapping(client):
-    """No mapping → derive a subject_id from the email, no 404."""
+async def test_derive_true_without_a_mapping_is_refused_with_guidance(client):
     r = await client.get(
         "/users/resolve?email=new@example.test&derive=true",
         headers=_headers(),
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["did"] is None
-    assert body["subject_id"].startswith("email-")
-    assert body["roles"] == []
-    assert body["credentials"] == []
+    assert r.status_code == 422
+    detail = r.json()["detail"]
+    assert "no longer supported" in detail
+    assert "POST /admin/credentials/data-subject" in detail
+    assert "email-" not in r.text, "nothing derived is handed out"
 
 
 @pytest.mark.asyncio
-async def test_derive_is_deterministic(client):
-    r1 = await client.get(
-        "/users/resolve?email=new@example.test&derive=true",
-        headers=_headers(),
-    )
-    r2 = await client.get(
-        "/users/resolve?email=New@Example.TEST&derive=true",
-        headers=_headers(),
-    )
-    assert r1.json()["subject_id"] == r2.json()["subject_id"]
+async def test_without_a_mapping_and_without_derive_it_is_a_404(client):
+    """No mapping is not an error: it is how a first-time caller learns to mint."""
+    for query in (
+        "email=unknown@example.test",
+        "email=unknown@example.test&derive=false",
+    ):
+        r = await client.get(f"/users/resolve?{query}", headers=_headers())
+        assert r.status_code == 404, query
 
 
 @pytest.mark.asyncio
-async def test_derive_false_still_404s(client):
-    """Backwards compat: without derive, unknown email is a 404."""
-    r = await client.get(
-        "/users/resolve?email=unknown@example.test",
-        headers=_headers(),
-    )
-    assert r.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_derive_prefers_existing_mapping(client, db_session):
-    """When a mapping exists, derive=true returns the existing identity, not a
-    fresh derivation."""
+async def test_derive_true_with_a_mapping_answers_the_mapping(client, db_session):
+    """The parameter changes nothing for a person the registry knows."""
     await _seed_user(db_session)
 
     r = await client.get(
@@ -248,6 +239,68 @@ async def test_derive_prefers_existing_mapping(client, db_session):
     body = r.json()
     assert body["did"] == USER_DID
     assert body["subject_id"] == SUBJECT_ID
+
+
+def test_derive_is_marked_deprecated_in_the_contract(client):
+    schema = client._transport.app.openapi()
+    params = schema["paths"]["/users/resolve"]["get"]["parameters"]
+    [derive] = [p for p in params if p["name"] == "derive"]
+    assert derive.get("deprecated") is True
+
+
+# ── DIDs issued by the removed generator keep working ───────────────────────
+
+LEGACY_SUBJECT_ID = "email-9f2c1ab4d7e60351cc2f8b19"
+
+
+@pytest.mark.rule("D-22b")
+@pytest.mark.asyncio
+async def test_an_email_derived_did_issued_before_the_removal_still_resolves(
+    client, anchor_identity
+):
+    """Issued, mapped, then found by every rung, and its DID document served.
+
+    The id is stored, never re-derived, so the removal cannot reach it: what
+    the registry holds is a DID like any other."""
+    admin = make_headers()
+    r = await client.post(
+        "/admin/credentials/data-subject",
+        json={"subject_id": LEGACY_SUBJECT_ID, "linked_participant_did": CUSTODIAN},
+        headers=admin,
+    )
+    assert r.status_code == 201, r.text
+    legacy_did = r.json()["subjectDid"]
+    assert legacy_did == f"{CUSTODIAN}:users:{LEGACY_SUBJECT_ID}"
+
+    r = await client.post(
+        "/admin/keycloak/sync",
+        json={
+            "did": legacy_did,
+            "keycloak_realm": "dataspaces",
+            "keycloak_user_id": "legacy-user-id",
+            "email": "legacy@example.test",
+            "username": "legacy-user",
+        },
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+
+    for query in (
+        "realm=dataspaces&user_id=legacy-user-id",
+        "username=legacy-user",
+        "email=legacy@example.test",
+        "email=legacy@example.test&derive=true",
+    ):
+        r = await client.get(f"/users/resolve?{query}", headers=_headers())
+        assert r.status_code == 200, (query, r.text)
+        body = r.json()
+        assert body["did"] == legacy_did, query
+        assert body["subject_id"] == LEGACY_SUBJECT_ID, query
+        assert [c["role"] for c in body["credentials"]], query
+
+    r = await client.get(f"/dids/{legacy_did}/did.json")
+    assert r.status_code == 200, r.text
+    assert r.json()["id"] == legacy_did
 
 
 # ── One field, one kind of value ─────────────────────────────────
@@ -312,16 +365,3 @@ async def test_the_stored_mapping_still_keys_on_the_did(client, db_session):
     )
     assert r.status_code == 200
     assert r.json()["did"] == USER_DID
-
-
-@pytest.mark.asyncio
-async def test_a_derived_subject_id_is_usable_where_a_resolved_one_is(client):
-    """Both branches return something `subject_did_for` accepts. That is the
-    property the field name promised all along."""
-    r = await client.get(
-        "/users/resolve?email=new@example.test&derive=true", headers=_headers()
-    )
-    assert r.status_code == 200
-    derived = r.json()["subject_id"]
-    assert r.json().get("did") is None
-    assert subject_did_for(CUSTODIAN, derived) == f"{CUSTODIAN}:users:{derived}"

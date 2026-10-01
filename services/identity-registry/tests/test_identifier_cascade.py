@@ -6,8 +6,9 @@ human":
 * `(realm, user_id)` — the **continuity key**. Stable within a realm.
 * `username` — the **data-plane join**. The REC registry resolves a member by it,
   so it is load-bearing *and* mutable.
-* `email` — a **bootstrap seed** for a first-time user, and the identifier that
-  actually moves.
+* `email` — the rung for callers that hold nothing else, and the identifier that
+  actually moves. (It also seeded the registry's own subject-id derivation,
+  which is removed: no identifier is derived from it any more.)
 
 Resolution used to be email-only, and derived a fresh subject id whenever that
 lookup missed. So an ordinary email change minted a *second* DID for the same
@@ -100,27 +101,19 @@ async def test_a_recycled_identifier_is_quarantined(client, db_session):
 
 @pytest.mark.rule("D-22b")
 @pytest.mark.asyncio
-async def test_derivation_happens_only_when_every_rung_misses(client, db_session):
-    """Deriving on an *email* miss is what minted duplicates. It may only happen
-    when the person is genuinely unknown."""
+async def test_an_unknown_person_is_never_given_an_id_by_the_registry(
+    client, db_session
+):
+    """Deriving on an *email* miss is what minted duplicates, and the registry no
+    longer derives at all. Every rung missing is a 404 (the caller mints its own
+    opaque id), and `derive=true` there is a 422 naming that, by any rung."""
     await _seed(db_session)
-    r = await client.get(
-        "/users/resolve?email=nobody@example.test&derive=true", headers=RESOLVE
-    )
-    assert r.status_code == 200
-    body = r.json()
-    assert body.get("did") is None
-    assert body["subject_id"], "a first-time user still gets a derived subject id"
-
-
-@pytest.mark.asyncio
-async def test_derive_without_an_email_is_refused(client, db_session):
-    """A subject id is seeded by the email and nothing else. Inventing one from a
-    username would mint an identity for someone who may already have one."""
-    r = await client.get(
-        "/users/resolve?username=unknown-person&derive=true", headers=RESOLVE
-    )
-    assert r.status_code == 422
+    r = await client.get("/users/resolve?email=nobody@example.test", headers=RESOLVE)
+    assert r.status_code == 404
+    for query in ("email=nobody@example.test", "username=unknown-person"):
+        r = await client.get(f"/users/resolve?{query}&derive=true", headers=RESOLVE)
+        assert r.status_code == 422, query
+        assert "no longer supported" in r.json()["detail"]
 
 
 @pytest.mark.asyncio

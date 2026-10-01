@@ -250,19 +250,22 @@ async def test_a_withdrawal_leaves_the_list_and_stays_in_the_history(client):
 
 @pytest.mark.asyncio
 async def test_a_new_registration_with_other_keys_is_a_key_change(client):
+    # Granted as the member's relayed decision, then re-sent by the collector
+    # itself with a corrected key: the history names the re-sender for the key
+    # change, and the granter for the grant.
     await _share(client, A, keys=[KEY_A])
-    await _share(client, A, keys=[KEY_A2])
+    await _share(client, A, keys=[KEY_A2], decided_by="collector")
 
     keys = [k["key"] for k in (await _keys(client)).json()["keys"]]
     assert keys == [KEY_A2]
     trail = [
-        (e["key"], e["event"], e["cause"])
+        (e["key"], e["event"], e["cause"], e["decided_by"], e["collector"])
         for e in (await _events(client)).json()["events"]
     ]
     assert trail == [
-        (KEY_A, "added", "grant"),
-        (KEY_A, "removed", "key_change"),
-        (KEY_A2, "added", "key_change"),
+        (KEY_A, "added", "grant", "subject", COLLECTOR),
+        (KEY_A, "removed", "key_change", "collector", COLLECTOR),
+        (KEY_A2, "added", "key_change", "collector", COLLECTOR),
     ]
 
 

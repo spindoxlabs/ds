@@ -326,6 +326,9 @@ before then cannot be recovered, and every history page says so in `note`.
 }
 ```
 
+`decided_by` and `collector` name who took the decision behind the entry. For a `key_change`
+that is whoever re-sent the keys, while the decision row keeps naming who granted.
+
 Both routes page with an opaque `cursor`, `limit` 1–500 (default 100); the history also takes
 `since`. An unknown offer or one resolving to no dataset here is a `422`, a contract-based offer
 a `409`. The portal shows both at **Provider → Authorised keys**.

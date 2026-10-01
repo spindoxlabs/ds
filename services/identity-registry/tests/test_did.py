@@ -196,8 +196,8 @@ def test_an_empty_subject_id_is_refused(subject_id):
     "subject_id", ["alice", "member-001", "email-9f2c1ab4d7e60351cc2f8b19"]
 )
 def test_an_unqualified_subject_id_round_trips(subject_id):
-    """Including the shape `derive_email_subject_id` returns, which is the value
-    `/users/resolve` hands a caller for first-time issuance."""
+    """Including `email-<24hex>`, the shape of ids the registry derived before
+    that generator was removed: those DIDs are still held, and still round-trip."""
     from identity_registry.services.did import subject_did_for, subject_id_of
 
     did = subject_did_for("did:web:rec.dataspaces.localhost", subject_id)
