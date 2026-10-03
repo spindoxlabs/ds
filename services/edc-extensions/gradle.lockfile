@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :edc-extensions:dependencies --write-locks
 com.apicatalog:carbon-did:0.3.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.apicatalog:copper-multibase:0.5.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.apicatalog:copper-multicodec:0.1.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
@@ -11,9 +12,10 @@ com.fasterxml.jackson.core:jackson-core:2.22.3=compileClasspath,runtimeClasspath
 com.fasterxml.jackson.core:jackson-databind:2.22.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.fasterxml.jackson:jackson-bom:2.22.3=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 com.nimbusds:nimbus-jose-jwt:10.9.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.squareup.okhttp3:okhttp:4.12.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.squareup.okio:okio-jvm:3.6.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-com.squareup.okio:okio:3.6.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.squareup.okhttp3:okhttp-jvm:5.5.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.squareup.okhttp3:okhttp:5.5.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.squareup.okio:okio-jvm:3.18.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+com.squareup.okio:okio:3.18.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 dev.failsafe:failsafe:3.3.2=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 io.opentelemetry:opentelemetry-api:1.32.0=runtimeClasspath,testRuntimeClasspath
 io.opentelemetry:opentelemetry-context:1.32.0=runtimeClasspath,testRuntimeClasspath
@@ -59,10 +61,7 @@ org.eclipse.edc:verifiable-credentials-spi:0.18.0=compileClasspath,runtimeClassp
 org.eclipse.edc:web-spi:0.18.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.eclipse.parsson:parsson:1.1.7=testRuntimeClasspath
 org.glassfish:jakarta.json:2.0.1=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-org.jetbrains.kotlin:kotlin-stdlib-common:1.9.10=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-org.jetbrains.kotlin:kotlin-stdlib-jdk7:1.9.10=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.9.10=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
-org.jetbrains.kotlin:kotlin-stdlib:1.9.10=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
+org.jetbrains.kotlin:kotlin-stdlib:2.2.21=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.jetbrains:annotations:26.1.0=compileClasspath,runtimeClasspath,testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-api:5.10.2=testCompileClasspath,testRuntimeClasspath
 org.junit.jupiter:junit-jupiter-engine:5.10.2=testRuntimeClasspath
