@@ -24,7 +24,7 @@
     "@playwright/test": "^1.62.0",
     "@sveltejs/adapter-node": "^5.0.0",
     "@sveltejs/kit": "^2.0.0",
-    "@sveltejs/vite-plugin-svelte": "^5.0.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
     "@tailwindcss/vite": "^4.0.0",
     "@types/dagre": "^0.7.54",
     "@types/node": "^22.19.18",
