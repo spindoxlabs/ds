@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :edc-connector:dependencies --write-locks
 com.apicatalog:carbon-did:0.3.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multibase:0.5.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multicodec:0.1.1=runtimeClasspath,testRuntimeClasspath
