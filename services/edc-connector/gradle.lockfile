@@ -1,6 +1,7 @@
 # This is a Gradle generated file for dependency locking.
 # Manual edits can break the build and are not advised.
 # This file is expected to be part of source control.
+# To regenerate this file, run: ./gradlew :edc-connector:dependencies --write-locks
 com.apicatalog:carbon-did:0.3.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multibase:0.5.0=runtimeClasspath,testRuntimeClasspath
 com.apicatalog:copper-multicodec:0.1.1=runtimeClasspath,testRuntimeClasspath
@@ -29,10 +30,10 @@ com.google.protobuf:protobuf-java:4.33.0=runtimeClasspath,testRuntimeClasspath
 com.networknt:json-schema-validator:2.0.0=runtimeClasspath,testRuntimeClasspath
 com.nimbusds:nimbus-jose-jwt:10.9.1=runtimeClasspath,testRuntimeClasspath
 com.squareup.okhttp3:okhttp-dnsoverhttps:5.3.2=runtimeClasspath,testRuntimeClasspath
-com.squareup.okhttp3:okhttp-jvm:5.3.2=runtimeClasspath,testRuntimeClasspath
-com.squareup.okhttp3:okhttp:5.3.2=runtimeClasspath,testRuntimeClasspath
-com.squareup.okio:okio-jvm:3.16.4=runtimeClasspath,testRuntimeClasspath
-com.squareup.okio:okio:3.16.4=runtimeClasspath,testRuntimeClasspath
+com.squareup.okhttp3:okhttp-jvm:5.5.0=runtimeClasspath,testRuntimeClasspath
+com.squareup.okhttp3:okhttp:5.5.0=runtimeClasspath,testRuntimeClasspath
+com.squareup.okio:okio-jvm:3.18.1=runtimeClasspath,testRuntimeClasspath
+com.squareup.okio:okio:3.18.1=runtimeClasspath,testRuntimeClasspath
 dev.failsafe:failsafe-okhttp:3.3.2=runtimeClasspath,testRuntimeClasspath
 dev.failsafe:failsafe:3.3.2=runtimeClasspath,testRuntimeClasspath
 io.github.classgraph:classgraph:4.8.184=runtimeClasspath,testRuntimeClasspath
