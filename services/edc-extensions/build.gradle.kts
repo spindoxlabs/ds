@@ -61,7 +61,7 @@ dependencies {
     // Purposes reads the shape a policy arrives in, and that shape varies by how
     // the policy reached the store — the one place here worth unit-testing
     // directly, since getting it wrong denies access silently.
-    testImplementation(platform("org.junit:junit-bom:5.10.2"))
+    testImplementation(platform("org.junit:junit-bom:6.1.3"))
     testImplementation("org.junit.jupiter:junit-jupiter")
     testImplementation("jakarta.json:jakarta.json-api:2.1.3")
     // The resume route takes the caller's `SecurityContext`; compileOnly for main.
