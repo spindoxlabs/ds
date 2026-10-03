@@ -18,7 +18,7 @@ COPY services/edc-connector/  services/edc-connector/
 
 RUN gradle :edc-connector:shadowJar --no-daemon -q
 
-FROM eclipse-temurin:21-jre-alpine AS runtime
+FROM eclipse-temurin:25-jre-alpine AS runtime
 LABEL org.opencontainers.image.description="dataspaces EDC connector — DCP-enabled with custom ODRL extensions"
 
 RUN apk add --no-cache curl
