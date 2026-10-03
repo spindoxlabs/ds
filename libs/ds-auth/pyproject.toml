@@ -22,7 +22,7 @@ requires-python = ">=3.12"
 # `permissions`/`principal`; it stopped being true of the package the day the VC
 # verifier landed, and the packaging now says so rather than the docstring.
 dependencies = [
-    "pyjwt[crypto]>=2.9",
+    "pyjwt[crypto]>=2.14",
     "pydantic>=2.7",
     "pydantic-settings>=2.4",
     # user_credentials verifies ES256 VC-JWTs against the trust anchor key

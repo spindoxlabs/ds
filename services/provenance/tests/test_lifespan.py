@@ -99,8 +99,61 @@ async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
     monkeypatch.setenv("PROVENANCE_TRUST_LIST_URL", "https://ta.example.org/trust")
     monkeypatch.setenv("PROVENANCE_DID_WEB_USE_HTTPS", "true")
     monkeypatch.setenv("PROVENANCE_VC_INSECURE_DEV", "false")
+    monkeypatch.setenv(
+        "PROVENANCE_DATABASE_URL",
+        "postgresql+asyncpg://provenance:Xk3v9-generated@db.example.org:5432/provenance",
+    )
 
     await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.parametrize("env", ["prod", "staging", "test", ""])
+@pytest.mark.asyncio
+async def test_any_ds_env_but_dev_is_production(monkeypatch, env):
+    """Only `DS_ENV=dev` relaxes the guard; a near-miss value must not disarm it."""
+    monkeypatch.setenv("DS_ENV", env)
+
+    with pytest.raises(InsecureProductionConfig):
+        await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        # The dev default itself.
+        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/provenance",
+        # The dev password on a production-looking host: a whole-value compare
+        # against the default would miss it.
+        "postgresql+asyncpg://postgres:postgres@db.example.org:5432/provenance",
+        "postgresql+asyncpg://provenance:changeme@db.example.org:5432/provenance",
+    ],
+)
+@pytest.mark.asyncio
+async def test_production_refuses_a_dev_database_password(monkeypatch, url):
+    monkeypatch.setenv("DS_ENV", "production")
+    monkeypatch.setenv("PROVENANCE_DATABASE_URL", url)
+
+    with pytest.raises(InsecureProductionConfig, match="PROVENANCE_DATABASE_URL"):
+        await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_production_refuses_before_the_schema_check(monkeypatch):
+    """The dev database names whichever stack publishes the port: a refused
+    deployment must not have connected to it first."""
+    from provenance import main as main_module
+
+    touched: list[str] = []
+
+    async def _verify_schema():
+        touched.append("verify_schema")
+
+    monkeypatch.setattr(main_module, "verify_schema", _verify_schema)
+    monkeypatch.setenv("DS_ENV", "production")
+
+    with pytest.raises(InsecureProductionConfig):
+        await _run_lifespan(monkeypatch, skip_schema=False)
+    assert touched == []
 
 
 @pytest.mark.asyncio

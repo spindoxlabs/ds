@@ -57,6 +57,72 @@ describe('DS_ENV', () => {
 		const { isProduction } = await load();
 		expect(isProduction()).toBe(false);
 	});
+
+	// Only `dev` relaxes. The exact-match check on `production` let every other
+	// value — `prod`, `staging`, an empty `${DS_ENV:-}`, a typo — disarm the guard.
+	it.each(['production', 'prod', 'staging', 'test', '', '   ', 'devv', 'development'])(
+		'treats DS_ENV=%j as production',
+		async (value) => {
+			setEnv({ DS_ENV: value });
+			const { isProduction } = await load();
+			expect(isProduction()).toBe(true);
+		},
+	);
+
+	it.each(['dev', 'DEV', ' dev '])('relaxes only for DS_ENV=%j', async (value) => {
+		setEnv({ DS_ENV: value });
+		const { currentEnv, isProduction } = await load();
+		expect(currentEnv()).toBe('dev');
+		expect(isProduction()).toBe(false);
+	});
+
+	it('reads an empty DS_ENV as production', async () => {
+		setEnv({ DS_ENV: '' });
+		const { currentEnv } = await load();
+		expect(currentEnv()).toBe('production');
+	});
+
+	it.each(['prod', 'staging', 'test', '', 'typo'])(
+		'the guard throws under DS_ENV=%j and names the value',
+		async (value) => {
+			const { ProductionGuard } = await load();
+			const guard = new ProductionGuard('svc', value);
+			guard.add('KEY', 'is bad', 'fix it');
+			expect(guard.isProduction).toBe(true);
+			expect(() => guard.enforce()).toThrow(/only DS_ENV=dev relaxes/);
+			expect(() => guard.enforce()).toThrow(
+				new RegExp(`DS_ENV="${value.trim().toLowerCase() || 'production'}"`),
+			);
+		},
+	);
+});
+
+describe('forbidDefault — universal weak values, as in ds_auth', () => {
+	it.each(['admin', 'changeme', 'change-me', 'Password', 'postgres', 'secret', 'test', ' '])(
+		'flags %j whatever the setting',
+		async (value) => {
+			const { ProductionGuard } = await load();
+			const guard = new ProductionGuard('svc', 'production');
+			guard.forbidDefault('SOME_SECRET', value, ['the-dev-default'], 'fix it');
+			expect(guard.violations).toHaveLength(1);
+			expect(guard.violations[0].problem).toMatch(/trivially weak/);
+		},
+	);
+
+	it('leaves an absent value to requireSet', async () => {
+		const { ProductionGuard } = await load();
+		const guard = new ProductionGuard('svc', 'production');
+		guard.forbidDefault('SOME_SECRET', undefined, ['the-dev-default'], 'fix it');
+		guard.forbidDefault('SOME_SECRET', null, ['the-dev-default'], 'fix it');
+		expect(guard.violations).toHaveLength(0);
+	});
+
+	it('passes a real secret', async () => {
+		const { ProductionGuard } = await load();
+		const guard = new ProductionGuard('svc', 'production');
+		guard.forbidDefault('SOME_SECRET', 'b3b1f0c2e4d5a7', ['the-dev-default'], 'fix it');
+		expect(guard.violations).toHaveLength(0);
+	});
 });
 
 describe('the portal guard', () => {

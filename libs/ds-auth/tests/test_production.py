@@ -229,3 +229,132 @@ def test_require_https_accepts_https_and_an_unset_value():
     guard.require_https("ISSUER", "https://sso.example.org/realms/ds", "use https")
     guard.require_https("ABSENT", None, "use https")
     guard.enforce()  # must not raise
+
+
+# ── Only `dev` relaxes: an allow-list of one ─────────────────────────────────
+#
+# The guard used to arm only on the exact string `production`, so every other
+# value — `prod`, `staging`, `test`, an empty string from a compose
+# `${DS_ENV:-}`, a typo — disarmed every guard on the platform with nothing but
+# a warning. Unset, empty and unknown values are production now.
+
+_NOT_DEV = [
+    "production",
+    "PRODUCTION",
+    "prod",
+    "staging",
+    "test",
+    "",
+    "  ",
+    "devv",
+    "development",
+]
+
+
+@pytest.mark.parametrize("value", _NOT_DEV)
+def test_every_value_but_dev_is_production(monkeypatch, value):
+    from ds_auth.production import is_production
+
+    monkeypatch.setenv("DS_ENV", value)
+    assert is_production() is True
+
+
+@pytest.mark.parametrize("value", ["dev", "DEV", " dev ", "Dev\n"])
+def test_only_dev_relaxes(monkeypatch, value):
+    from ds_auth.production import is_production
+
+    monkeypatch.setenv("DS_ENV", value)
+    assert is_production() is False
+    assert current_env() == "dev"
+
+
+def test_an_empty_value_reads_as_production(monkeypatch):
+    monkeypatch.setenv("DS_ENV", "")
+    assert current_env() == "production"
+
+
+@pytest.mark.parametrize("value", _NOT_DEV)
+def test_the_guard_raises_for_every_value_but_dev(monkeypatch, value):
+    monkeypatch.setenv("DS_ENV", value)
+    guard = ProductionGuard("svc")
+    guard.forbid_default("KEY", "insecure-dev-key", {"insecure-dev-key"}, "rotate it")
+    assert guard.is_production is True
+    with pytest.raises(InsecureProductionConfig) as exc:
+        guard.enforce()
+    assert "only DS_ENV=dev relaxes" in str(exc.value)
+
+
+@pytest.mark.parametrize("value", ["prod", "staging", "test", "", "typo"])
+def test_an_explicit_env_argument_follows_the_same_rule(value):
+    guard = ProductionGuard("svc", env=value)
+    guard.add("KEY", "bad", "fix")
+    with pytest.raises(InsecureProductionConfig) as exc:
+        guard.enforce()
+    # The message names the value actually seen, not a hard-coded `production`.
+    expected = value.strip().lower() or "production"
+    assert f"DS_ENV={expected!r}" in str(exc.value)
+
+
+@pytest.mark.parametrize("value", ["dev", "DEV", " dev "])
+def test_an_explicit_dev_argument_only_warns(value):
+    guard = ProductionGuard("svc", env=value)
+    guard.add("KEY", "bad", "fix")
+    assert guard.is_production is False
+    guard.enforce()  # must not raise
+
+
+# ── forbid_dev_database_url ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/connector",
+        "postgresql+asyncpg://postgres:postgres@db.internal:5432/provenance",
+        "postgresql://app:changeme@db/app",
+        "postgresql://app:Password@db/app",
+        "postgresql://app:secret@db/app",
+        "postgresql://app:@db/app",
+        "postgresql://app:%70ostgres@db/app",  # percent-encoded `postgres`
+        "postgresql://app:dev@db/app",
+    ],
+)
+def test_a_dev_or_weak_database_password_is_flagged(url):
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_dev_database_url("DB_URL", url, "use a real password")
+    assert [v.setting for v in guard.violations] == ["DB_URL"]
+    with pytest.raises(InsecureProductionConfig):
+        guard.enforce()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "postgresql+asyncpg://app:Xk3v9-long-random@db:5432/app",
+        "postgresql://app@db/app",  # no password: peer / IAM auth
+        "sqlite+aiosqlite:///./local.db",
+        "",
+        None,
+    ],
+)
+def test_a_real_or_absent_database_password_passes(url):
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_dev_database_url("DB_URL", url, "use a real password")
+    assert guard.violations == []
+
+
+def test_extra_weak_database_passwords_can_be_registered():
+    guard = ProductionGuard("svc", env="production")
+    guard.forbid_dev_database_url(
+        "DB_URL", "postgresql://app:hunter2@db/app", "fix", weak_passwords={"hunter2"}
+    )
+    assert len(guard.violations) == 1
+
+
+def test_a_dev_database_url_only_warns_under_dev():
+    guard = ProductionGuard("svc", env="dev")
+    guard.forbid_dev_database_url(
+        "DB_URL", "postgresql+asyncpg://postgres:postgres@172.17.0.1:35432/x", "fix"
+    )
+    assert len(guard.violations) == 1
+    guard.enforce()  # must not raise

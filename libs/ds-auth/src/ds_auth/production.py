@@ -5,8 +5,15 @@ no `.env`. That convenience becomes a liability the moment a chart forgets to
 override one of those values, because an insecure default fails *silently*.
 
 This module makes the failure loud, and makes it loud at exactly one point:
-the deployment declares `DS_ENV=production` and every registered dev default
+unless the deployment declares `DS_ENV=dev`, every registered dev default
 becomes a boot-time error instead of a log line.
+
+**Only the explicit value ``dev`` relaxes.** ``DS_ENV`` unset, empty, or set to
+*any* other value — ``production``, ``prod``, ``staging``, ``test``, a typo — is
+production. An allow-list of one, not a deny-list of one: the old check armed
+the guards only on the exact string ``production``, so ``DS_ENV=prod`` or a
+compose ``${DS_ENV:-}`` that rendered an empty string disarmed every guard on
+the platform and said nothing.
 
 Usage in a service lifespan::
 
@@ -21,8 +28,8 @@ Usage in a service lifespan::
     )
     guard.enforce()
 
-In dev (`DS_ENV` unset or `dev`) every violation is logged as a warning and
-startup proceeds unchanged. In production the guard collects *all* violations
+In dev (`DS_ENV=dev`, and nothing else) every violation is logged as a warning
+and startup proceeds unchanged. Otherwise the guard collects *all* violations
 and raises once, so a chart author gets the complete list in a single deploy
 cycle rather than discovering them one at a time.
 """
@@ -32,10 +39,15 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass
+from urllib.parse import unquote, urlsplit
 
 log = logging.getLogger(__name__)
 
 ENV_VAR = "DS_ENV"
+#: The one value that relaxes the guards. Compared after strip + lower.
+DEV = "dev"
+#: What an unset or empty ``DS_ENV`` reads as. Not the only production value —
+#: anything other than :data:`DEV` is production — but the one reported.
 PRODUCTION = "production"
 
 #: Values that are never acceptable as a secret, whatever the setting is named.
@@ -55,8 +67,15 @@ UNIVERSAL_WEAK_VALUES = frozenset(
 )
 
 
+#: Database passwords that mark a URL as the dev compose database (or as one
+#: nobody chose). Checked on the *password* of a URL, because a whole-value
+#: compare against :data:`UNIVERSAL_WEAK_VALUES` never matches a URL.
+#: ``postgres`` (the compose default) is already a universal weak value.
+WEAK_DATABASE_PASSWORDS = UNIVERSAL_WEAK_VALUES | {"dev"}
+
+
 class InsecureProductionConfig(RuntimeError):
-    """Raised at startup when DS_ENV=production and dev defaults are in use."""
+    """Raised at startup when ``DS_ENV`` is not ``dev`` and dev defaults are in use."""
 
 
 @dataclass(frozen=True)
@@ -67,6 +86,17 @@ class Violation:
 
     def render(self) -> str:
         return f"  - {self.setting}: {self.reason}\n    → {self.remediation}"
+
+
+def normalise_env(value: str | None) -> str:
+    """Strip and lowercase; ``None`` and the empty string both read as production."""
+    text = (value or "").strip().lower()
+    return text or PRODUCTION
+
+
+def is_dev_env(value: str | None) -> bool:
+    """True only for the explicit value ``dev`` (any case, surrounding space)."""
+    return normalise_env(value) == DEV
 
 
 def current_env() -> str:
@@ -84,15 +114,40 @@ def current_env() -> str:
     anything that does not is treated as production and refuses to start on a
     dev default. Forgetting the variable now fails loudly instead of silently.
 
+    An *empty* value counts as unset (compose renders ``${DS_ENV:-}`` as
+    ``""``), and the value is returned as given otherwise — callers must not
+    compare it with ``production``; ask :func:`is_production` instead, which
+    treats every value but ``dev`` as production.
+
     The charts are unaffected — ``ds.env.common`` has always pinned
     ``DS_ENV=production`` as a constant rather than a value, which is the same
     reasoning arrived at from the other end.
     """
-    return os.environ.get(ENV_VAR, PRODUCTION).strip().lower()
+    return normalise_env(os.environ.get(ENV_VAR))
 
 
 def is_production() -> bool:
-    return current_env() == PRODUCTION
+    """True unless ``DS_ENV`` is exactly ``dev`` (after strip + lower).
+
+    ``prod``, ``staging``, ``test``, an empty string and a typo are all
+    production: the safe posture is the one you get without asking.
+    """
+    return not is_dev_env(current_env())
+
+
+def database_url_password(url: object) -> str | None:
+    """The password component of a database URL, percent-decoded, or ``None``.
+
+    Tolerates SQLAlchemy driver suffixes (``postgresql+asyncpg://``) — they are
+    part of the scheme, which ``urlsplit`` ignores for the netloc.
+    """
+    if url is None:
+        return None
+    try:
+        password = urlsplit(str(url).strip()).password
+    except ValueError:
+        return None
+    return None if password is None else unquote(password)
 
 
 class ProductionGuard:
@@ -105,8 +160,13 @@ class ProductionGuard:
 
     def __init__(self, service: str, env: str | None = None) -> None:
         self.service = service
-        self.env = (env or current_env()).strip().lower()
+        self.env = normalise_env(env) if env is not None else current_env()
         self._violations: list[Violation] = []
+
+    @property
+    def is_production(self) -> bool:
+        """True unless this guard's environment is exactly ``dev``."""
+        return not is_dev_env(self.env)
 
     @property
     def violations(self) -> list[Violation]:
@@ -172,6 +232,38 @@ class ProductionGuard:
                 remediation,
             )
 
+    def forbid_dev_database_url(
+        self,
+        setting: str,
+        url: object,
+        remediation: str,
+        weak_passwords: set[str] | frozenset[str] | None = None,
+    ) -> None:
+        """Flag a database URL whose password is a dev or trivially weak value.
+
+        :meth:`forbid_default` compares the *whole* value, so a dev URL is caught
+        only if somebody registers that exact string — and the host or database
+        name changing (``172.17.0.1`` → ``postgres``) defeats it while the
+        password stays ``postgres``. This parses the URL and checks the
+        password, which is the part that matters: a URL with no password at all
+        (peer / IAM auth, a socket) is not flagged.
+        """
+        if url is None:
+            return
+        text = str(url).strip()
+        if not text:
+            return
+        password = database_url_password(text)
+        if password is None:
+            return
+        weak = WEAK_DATABASE_PASSWORDS | set(weak_passwords or ())
+        if password.strip().lower() in weak:
+            self.add(
+                setting,
+                "uses a dev or trivially weak database password",
+                remediation,
+            )
+
     def require_set(self, setting: str, value: object, remediation: str) -> None:
         """Flag a value that must be present in production."""
         if value is None or (isinstance(value, str) and not value.strip()):
@@ -191,9 +283,12 @@ class ProductionGuard:
             self.add(setting, f"is not https ({text!r})", remediation)
 
     def enforce(self) -> None:
-        """Warn in dev; raise in production. Safe to call with no violations."""
+        """Warn under ``DS_ENV=dev``; raise under every other value.
+
+        Safe to call with no violations.
+        """
         if not self._violations:
-            if self.env == PRODUCTION:
+            if self.is_production:
                 log.info(
                     "%s: production configuration guard passed (%s=%s)",
                     self.service,
@@ -204,20 +299,23 @@ class ProductionGuard:
 
         detail = "\n".join(v.render() for v in self._violations)
 
-        if self.env == PRODUCTION:
+        if self.is_production:
             raise InsecureProductionConfig(
                 f"{self.service}: refusing to start — {len(self._violations)} "
-                f"insecure default(s) detected with {ENV_VAR}={PRODUCTION}:\n"
+                f"insecure default(s) detected with {ENV_VAR}={self.env!r} "
+                f"(only {ENV_VAR}={DEV} relaxes this guard; unset, empty or any "
+                "other value is production):\n"
                 f"{detail}\n"
                 "See .env.example for the required production values."
             )
 
         log.warning(
             "%s: %d insecure development default(s) in use "
-            "(acceptable for local dev; set %s=%s to enforce):\n%s",
+            "(acceptable for local dev only because %s=%s; any other value "
+            "enforces):\n%s",
             self.service,
             len(self._violations),
             ENV_VAR,
-            PRODUCTION,
+            DEV,
             detail,
         )

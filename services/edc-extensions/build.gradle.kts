@@ -53,7 +53,10 @@ dependencies {
     compileOnly("org.eclipse.edc:sql-bootstrapper:$edcVersion")
     // HTTP client for consent check
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation("com.fasterxml.jackson.core:jackson-databind:2.17.0")
+    // Matches (or exceeds) the jackson EDC's own BOMs resolve to at runtime
+    // (2.22.x at 0.18.0); 2.17.0 was the version this module compiled and
+    // tested against while the packaged connector ran 2.22.
+    implementation("com.fasterxml.jackson.core:jackson-databind:2.22.3")
 
     // Purposes reads the shape a policy arrives in, and that shape varies by how
     // the policy reached the store — the one place here worth unit-testing

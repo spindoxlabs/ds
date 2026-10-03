@@ -1758,11 +1758,13 @@ tasks:
         if printf '%s\n' "$values" | grep -nE '^DS_DEMO_IDENTITY_ENABLED=true$'; then
           echo "✗ DS_DEMO_IDENTITY_ENABLED is set — the demo identity bypass was removed; a deployment that re-adds it bypasses DSP authentication"; rc=1
         fi
-        # `DS_ENV` now defaults to production, so an absent one is safe and is
+        # `DS_ENV` unset, empty or any value other than `dev` is production
+        # (`ds_auth.production.is_production`), so an absent one is safe and is
         # no longer worth failing on. What IS worth failing on is a production
         # env file that explicitly asks for dev — the only value that downgrades
-        # every guard to a warning.
-        if printf '%s\n' "$values" | grep -qE '^DS_ENV=dev$'; then
+        # every guard to a warning. Matched the way the guard reads it: any
+        # case, surrounding spaces, optionally quoted.
+        if printf '%s\n' "$values" | grep -qiE '^DS_ENV=["'"'"']?[[:space:]]*dev[[:space:]]*["'"'"']?$'; then
           echo "✗ DS_ENV=dev in a production env file — every ProductionGuard degrades to a warning"; rc=1
         fi
 

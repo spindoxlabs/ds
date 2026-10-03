@@ -1,0 +1,81 @@
+# Dependabot — version updates for every dependency manifest in the repository.
+#
+# Iterate, never forget: each uv project, the portal, the Gradle build, every
+# Dockerfile directory and the workflows are listed. A new unit with its own
+# `pyproject.toml`/`uv.lock` or `Dockerfile` must be added here in the same
+# change, or nothing will ever propose an update for it.
+#
+# Security updates (Dependabot alerts) are independent of this file; these are
+# the routine weekly version bumps. Minor and patch updates are grouped per
+# ecosystem so a week produces one PR per directory rather than one per package.
+version: 2
+
+updates:
+  # ── Python (uv) — one entry per uv project ──────────────────────────────────
+  - package-ecosystem: "uv"
+    directories:
+      - "/libs/ds-auth"
+      - "/libs/ds-conformance"
+      - "/libs/ds-e2e"
+      - "/libs/ds-edc"
+      - "/libs/ds-obs"
+      - "/libs/governance"
+      - "/services/connector"
+      - "/services/dataset-api-fiware-adapter"
+      - "/services/dataset-api-mock"
+      - "/services/edc-extensions"
+      - "/services/federated-catalog"
+      - "/services/identity-registry"
+      - "/services/provenance"
+    schedule:
+      interval: "weekly"
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # ── Portal (npm) ────────────────────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/services/portal"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # ── Java (Gradle, root build with :edc-extensions and :edc-connector) ──────
+  #
+  # The EDC artifacts all follow `edcVersion` in gradle.properties, which a
+  # deliberate upgrade moves (see BuildConsistencyTest); they are ignored here
+  # so Dependabot does not propose a half-applied EDC bump. After merging a
+  # Gradle update, regenerate the lockfiles (command in build.gradle.kts).
+  - package-ecosystem: "gradle"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "org.eclipse.edc:*"
+    groups:
+      gradle-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      actions:
+        patterns: ["*"]
+
+  # ── Container base images — every directory holding a Dockerfile ───────────
+  - package-ecosystem: "docker"
+    directories:
+      - "/services/connector"
+      - "/services/dataset-api-mock"
+      - "/services/edc-connector"
+      - "/services/federated-catalog"
+      - "/services/identity-registry"
+      - "/services/portal"
+      - "/services/provenance"
+    schedule:
+      interval: "weekly"

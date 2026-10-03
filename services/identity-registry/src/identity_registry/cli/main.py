@@ -1330,8 +1330,9 @@ def _refuse_dev_dids(pairs: list[tuple[str, str]]) -> None:
     path fetches it, so the mistake surfaces only at negotiation, long after
     those records are made.
 
-    `DS_ENV` defaults to production when unset (`ds_auth.production`), so
-    forgetting the variable refuses rather than permits. In dev this is silent:
+    `DS_ENV` unset, empty or any value other than `dev` is production
+    (`ds_auth.production`), so forgetting the variable refuses rather than
+    permits. In dev this is silent:
     the dev DIDs *are* `.localhost`, and that is correct there.
 
     Every violation is reported before exiting — a fourteen-owner deployment file
@@ -1342,7 +1343,7 @@ def _refuse_dev_dids(pairs: list[tuple[str, str]]) -> None:
     # type-checked like any other import. The comment that stood here said the
     # opposite and the suppression with it was stale —
     # [#24](https://github.com/spindoxlabs/ds/issues/24).
-    from ds_auth.production import is_production
+    from ds_auth.production import current_env, is_production
 
     from ..services.did import dev_only_did_reason
 
@@ -1360,8 +1361,8 @@ def _refuse_dev_dids(pairs: list[tuple[str, str]]) -> None:
         return
 
     typer.echo(
-        "DS_ENV=production, and this seed carries DIDs that only resolve on a "
-        "developer's machine:",
+        f"DS_ENV={current_env()!r} (production — only DS_ENV=dev relaxes this), "
+        "and this seed carries DIDs that only resolve on a developer's machine:",
         err=True,
     )
     for alias, did, reason in violations:

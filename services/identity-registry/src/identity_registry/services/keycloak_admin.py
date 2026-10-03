@@ -471,9 +471,10 @@ def organisation_client_secret(
 ) -> str:
     """The secret an organisation client is created with.
 
-    Dev keeps the zero-config default every ds client has — the client id. Under
-    `DS_ENV=production` there is no default: the variable must be set, and set to
-    something other than the client id, or the client is not provisioned.
+    Dev (`DS_ENV=dev`, and only that) keeps the zero-config default every ds
+    client has — the client id. Under any other `DS_ENV` there is no default:
+    the variable must be set, and set to something other than the client id, or
+    the client is not provisioned.
     """
     environ = os.environ if environ is None else environ
     production = is_production() if production is None else production
@@ -482,7 +483,7 @@ def organisation_client_secret(
     if production:
         if not value:
             raise OrganisationClientSecretError(
-                f"{client_id}: {name} is not set (DS_ENV=production has no default)"
+                f"{client_id}: {name} is not set (only DS_ENV=dev has a default)"
             )
         if value == client_id:
             raise OrganisationClientSecretError(

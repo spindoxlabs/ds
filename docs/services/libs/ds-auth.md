@@ -150,17 +150,23 @@ verifier is a `503`.
 
 ## The production guard
 
-`DS_ENV` is the switch, read in exactly one place, defaulting to `dev`.
+`DS_ENV` is the switch, read in exactly one place. **Unset, empty, or any value other than
+`dev` is production.**
 
 | `DS_ENV` | Behaviour |
 |---|---|
-| `production` | **all** violations are collected and the service refuses to start, naming every one |
-| anything else | the same violations are logged as one warning; startup proceeds |
+| `dev` (any case, surrounding spaces ignored) | violations are logged as one warning; startup proceeds |
+| anything else — unset, empty, `production`, `prod`, `staging`, `test`, a typo | **all** violations are collected and the service refuses to start, naming every one |
 
-Only the literal string `production` enforces — `prod` and `staging` behave as dev.
+It is an allow-list of one: only the explicit value `dev` relaxes. An exact match on
+`production` would let `prod`, an empty `${DS_ENV:-}` or a typo disarm every guard silently.
+`is_production()` and `ProductionGuard.is_production` are the only questions to ask — never
+compare `current_env()` with `"production"`.
 
-Five predicates: `forbid_default` (the value equals a declared dev default, **or** is one of
+The predicates: `forbid_default` (the value equals a declared dev default, **or** is one of
 `""`, `admin`, `changeme`, `change-me`, `password`, `postgres`, `secret`, `test`),
+`forbid_dev_database_url` (the **password** of a database URL is `dev` or one of those weak
+values — a whole-value compare never matches a URL), `forbid_secret_equal_to_client_id`,
 `require_set`, `forbid_true`, `require_https`, and `add` for a bespoke reason.
 
 Every service registers its own dangerous defaults at startup. The reason all violations are

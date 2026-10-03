@@ -24,11 +24,19 @@ log = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await verify_schema()
-
     settings = get_settings()
 
+    # The guard runs **before** `verify_schema`: the dev database default names
+    # whichever stack publishes 172.17.0.1:35432, and outside `DS_ENV=dev` a
+    # deployment that never set its own URL must refuse before connecting to it.
     guard = ProductionGuard("ds-provenance")
+    guard.forbid_dev_database_url(
+        "PROVENANCE_DATABASE_URL",
+        settings.database_url,
+        "Set PROVENANCE_DATABASE_URL to this deployment's own database, with a "
+        "generated password. The default is the dev compose Postgres on "
+        "172.17.0.1:35432 (postgres/postgres).",
+    )
     guard.require_set(
         "PROVENANCE_OIDC_ISSUER_URL",
         settings.oidc_issuer_url,
@@ -75,6 +83,8 @@ async def lifespan(app: FastAPI):
         "Set PROVENANCE_VC_INSECURE_DEV=false so signatures are verified.",
     )
     guard.enforce()
+
+    await verify_schema()
 
     yield
 

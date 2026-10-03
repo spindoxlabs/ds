@@ -132,8 +132,9 @@ request 500s. Ordering makes that a deploy-time wait instead of an outage.
 Invariants of the charts, not options:
 
 - **`DS_ENV=production` is hardcoded** on every container. It is not a value and cannot be
-  turned off. It flips every Python service's startup guard from warn-only to fail-closed, so a
-  service that inherited a dev default refuses to start.
+  turned off. Every service's startup guard is fail-closed under any `DS_ENV` other than `dev`
+  (unset and empty included); the constant just makes it explicit. A service that inherited a
+  dev default refuses to start.
 - **`DS_DEMO_IDENTITY_ENABLED` appears nowhere in the charts.** The EDC extension it enables
   accepts self-issued DCP tokens *without verifying their signature* — a complete DSP
   authentication bypass. An absent key cannot be set to `true`.

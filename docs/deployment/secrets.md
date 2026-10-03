@@ -168,4 +168,5 @@ helmfile -e production template >/dev/null && echo "every required secret is wir
 
 This is the check to wire into CI, together with `task secrets:check`, which refuses any file
 still carrying a `CHANGE_ME`, a known dev default, a service secret equal to its own client id,
-the demo-identity flag, or a missing `DS_ENV=production`.
+the demo-identity flag, or `DS_ENV=dev` (unset, empty or any other value is production, so only
+an explicit `dev` is refused).

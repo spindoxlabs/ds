@@ -16,6 +16,10 @@ WORKDIR /cache
 COPY settings.gradle.kts build.gradle.kts gradle.properties ./
 COPY services/edc-extensions/build.gradle.kts services/edc-extensions/build.gradle.kts
 COPY services/edc-connector/build.gradle.kts  services/edc-connector/build.gradle.kts
+# The dependency lockfiles (root `dependencyLocking`), so the cache holds the
+# locked versions — the ones the real build in `Dockerfile` will then resolve.
+COPY services/edc-extensions/gradle.lockfile services/edc-extensions/gradle.lockfile
+COPY services/edc-connector/gradle.lockfile  services/edc-connector/gradle.lockfile
 
 # Stub source roots so the dependency resolution task succeeds
 RUN mkdir -p services/edc-extensions/src/main/java \

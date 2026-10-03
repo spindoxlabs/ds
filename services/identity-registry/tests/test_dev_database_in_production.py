@@ -120,3 +120,43 @@ async def test_dev_keeps_the_zero_config_default(monkeypatch):
         pass
 
     assert touched == ["verify_schema", "custody", "indices"]
+
+
+def test_the_guard_flags_the_dev_password_on_another_host():
+    """The whole-value compare misses the dev password once the host changes."""
+    guard = ProductionGuard("identity-registry", env="production")
+    register_database_url(
+        guard,
+        Settings(
+            database_url="postgresql+asyncpg://postgres:postgres@db.example.org:5432/identity_registry"
+        ),
+    )
+    assert [v.setting for v in guard.violations] == ["IDENTITY_REGISTRY_DATABASE_URL"]
+
+
+def test_the_dev_default_is_reported_once():
+    guard = ProductionGuard("identity-registry", env="production")
+    register_database_url(guard, Settings(database_url=DEV_DATABASE_URL))
+    assert len(guard.violations) == 1
+
+
+@pytest.mark.parametrize("env", ["prod", "staging", "test", "", "productoin"])
+def test_the_one_shot_check_refuses_under_any_value_but_dev(monkeypatch, env):
+    """Only `DS_ENV=dev` relaxes: a near-miss value must not disarm the check."""
+    _use_url(monkeypatch, env, DEV_DATABASE_URL)
+    with pytest.raises(
+        InsecureProductionConfig, match="IDENTITY_REGISTRY_DATABASE_URL"
+    ):
+        refuse_dev_database_in_production("ir-cli")
+
+
+@pytest.mark.parametrize("env", ["prod", "staging", ""])
+async def test_the_service_refuses_under_any_value_but_dev(monkeypatch, env):
+    _use_url(monkeypatch, env, DEV_DATABASE_URL)
+    touched = _record_db_access(monkeypatch)
+
+    with pytest.raises(InsecureProductionConfig):
+        async with main_module.lifespan(None):
+            pass
+
+    assert touched == []

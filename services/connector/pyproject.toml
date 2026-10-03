@@ -25,7 +25,7 @@ dependencies = [
     "ds-auth",
     "ds-obs[tracing]",
     "ds-edc",
-    "pyjwt[crypto]>=2.9",
+    "pyjwt[crypto]>=2.14",
 ]
 
 [project.optional-dependencies]

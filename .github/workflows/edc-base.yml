@@ -22,6 +22,8 @@ on:
     branches: [main]
     paths:
       - "**/*.gradle.kts"
+      # A locked-version change (`--write-locks`) changes what the base caches.
+      - "**/gradle.lockfile"
       # `edcVersion` lives here, and a bump that touches only this file has to
       # publish the matching base image. Without this path a version bump that
       # edits no `.gradle.kts` leaves `ds-edc-base:<new>` unpublished, and

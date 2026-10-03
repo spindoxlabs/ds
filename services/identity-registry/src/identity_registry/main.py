@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager
 
-from ds_auth.production import PRODUCTION, ProductionGuard
+from ds_auth.production import ProductionGuard
 from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import FastAPI
 
@@ -120,7 +120,7 @@ async def lifespan(app: FastAPI):
     # refuses *here*, before `verify_schema` opens the first connection — the
     # dev database default names whichever stack publishes that port, and the
     # custody sweep below would otherwise run against it.
-    if guard.env == PRODUCTION and guard.violations:
+    if guard.is_production and guard.violations:
         guard.enforce()
     await verify_schema()
     await _check_key_custody(guard, settings)

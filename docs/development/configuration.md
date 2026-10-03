@@ -82,14 +82,16 @@ secret-bearing EDC setting comes from the environment. See
 
 ## `DS_ENV` — the production guard
 
-One variable, read in one place, defaulting to `dev`.
+One variable, read in one place. **Unset, empty, or any value other than `dev` is production.**
 
 | Value | Behaviour |
 |---|---|
-| `production` | every registered violation is collected and the service **refuses to start**, listing all of them |
-| anything else | the same violations are logged as one warning; startup proceeds |
+| `dev` (any case, surrounding spaces ignored) | the same violations are logged as one warning; startup proceeds |
+| anything else — unset, empty, `production`, `prod`, `staging`, `test`, a typo | every registered violation is collected and the service **refuses to start**, listing all of them |
 
-Only the literal string `production` enforces. `prod` and `staging` behave as dev.
+Only the explicit value `dev` relaxes. `.env.local` and the compose files (the dev topology)
+set it; the Helm charts pin `DS_ENV=production` as a constant. The portal's guard
+(`services/portal/src/lib/server/production.ts`) follows the same rule.
 
 This is the mechanism that makes zero-config dev safe: every service registers its own dangerous
 defaults at boot, so a chart author gets the complete list from one failed deploy.
@@ -98,14 +100,16 @@ What each service registers:
 
 | Service | Refuses to start when |
 |---|---|
-| ds-connector | the OIDC issuer or the trust-anchor key path is unset; `OIDC_INSECURE_DEV` or `VC_INSECURE_DEV` is true; the EDC API key or the service secret is still at its dev default; a configured ODRL profile path does not exist |
-| identity-registry | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the database URL, the encryption key or the Keycloak client secret is still at its dev default (the database URL is also refused by `ir-cli` and the migrations, before any connection); the realm admin password is a dev default **while** `KEYCLOAK_MUTATE` is on |
-| ds-provenance | the OIDC issuer or the trust-anchor key path is unset; either `*_INSECURE_DEV` flag is true |
+| ds-connector | the database URL carries the dev (or a trivially weak) password — refused before the schema check connects; the OIDC issuer or the trust-anchor key path is unset; `OIDC_INSECURE_DEV` or `VC_INSECURE_DEV` is true; the EDC API key or the service secret is still at its dev default; a configured ODRL profile path does not exist |
+| identity-registry | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the database URL, the encryption key or the Keycloak client secret is still at its dev default, or the database URL carries the dev password on another host (the database URL is also refused by `ir-cli` and the migrations, before any connection); the realm admin password is a dev default **while** `KEYCLOAK_MUTATE` is on |
+| ds-provenance | the database URL carries the dev (or a trivially weak) password — refused before the schema check connects; the OIDC issuer or the trust-anchor key path is unset; either `*_INSECURE_DEV` flag is true |
 | ds-federated-catalog | the OIDC issuer is unset; `OIDC_INSECURE_DEV` is true; the service secret is still at its dev default |
 | dataset-api-mock | the service secret is still at its dev default; EDR verification is off |
 
 Beyond the per-service defaults, a set of values is refused **unconditionally**, registered or
-not: empty, `admin`, `changeme`, `change-me`, `password`, `postgres`, `secret`, `test`.
+not: empty, `admin`, `changeme`, `change-me`, `password`, `postgres`, `secret`, `test` — in the
+Python guard and the portal's alike. A database URL is checked by its **password**
+(`forbid_dev_database_url`), against the same list plus `dev`.
 
 **Register a new dev default with the guard in the same change that introduces it**, or the
 deployment cannot see it.

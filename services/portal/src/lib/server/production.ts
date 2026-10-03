@@ -2,7 +2,7 @@
  * The portal's `ProductionGuard` — `AUTH-04`.
  *
  * Every Python service builds one of these at startup, registers its dangerous
- * dev defaults, and under `DS_ENV=production` logs every violation and refuses
+ * dev defaults, and unless `DS_ENV=dev` logs every violation and refuses
  * to start (`libs/ds-auth/src/ds_auth/production.py`). The portal had no
  * equivalent, so `PORTAL_SERVICE_CLIENT_SECRET` fell back to the client id
  * behind a one-time `console.warn` — a line in a log nobody reads, on the
@@ -14,10 +14,13 @@
  *
  * ## Two details that are not free choices
  *
- * `DS_ENV` **defaults to `production`**, exactly as `ds_auth.current_env` does.
- * Defaulting to dev means an unset variable is the insecure mode, and the whole
- * point is that forgetting is the safe direction. `docker-compose.yml` and the
- * dev tasks set `DS_ENV=dev` explicitly, which is the declaration this asks for.
+ * **Only `DS_ENV=dev` relaxes**, exactly as `ds_auth.is_production` decides.
+ * Unset, empty (`${DS_ENV:-}` in compose renders `""`), `production`, `prod`,
+ * `staging`, `test`, a typo — every value but `dev` is production. Comparing
+ * against the exact string `production` meant any other value disarmed the
+ * guard, and the whole point is that forgetting (or misspelling) is the safe
+ * direction. `docker-compose.yml` and the dev tasks set `DS_ENV=dev`
+ * explicitly, which is the declaration this asks for.
  *
  * `enforce()` **throws**, and it is called at module scope from
  * `hooks.server.ts`, so a misconfigured production portal fails to boot rather
@@ -26,14 +29,39 @@
  */
 import { env } from '$env/dynamic/private';
 
+/** The one value that relaxes the guard (compared after trim + lowercase). */
+const DEV = 'dev';
+/** What an unset or empty `DS_ENV` reads as. */
 const PRODUCTION = 'production';
 
-export function currentEnv(): string {
-	return (env.DS_ENV ?? PRODUCTION).trim().toLowerCase();
+/**
+ * Values never acceptable as a secret, whatever the setting is named — the same
+ * list as `ds_auth.production.UNIVERSAL_WEAK_VALUES`.
+ */
+export const UNIVERSAL_WEAK_VALUES: ReadonlySet<string> = new Set([
+	'',
+	'admin',
+	'changeme',
+	'change-me',
+	'password',
+	'postgres',
+	'secret',
+	'test',
+]);
+
+/** Trim + lowercase; unset and empty both read as `production`. */
+export function normaliseEnv(value: string | undefined | null): string {
+	const text = (value ?? '').trim().toLowerCase();
+	return text || PRODUCTION;
 }
 
+export function currentEnv(): string {
+	return normaliseEnv(env.DS_ENV);
+}
+
+/** True unless `DS_ENV` is exactly `dev` — every other value is production. */
 export function isProduction(): boolean {
-	return currentEnv() === PRODUCTION;
+	return currentEnv() !== DEV;
 }
 
 export class InsecureProductionConfig extends Error {}
@@ -46,11 +74,19 @@ export interface Violation {
 
 export class ProductionGuard {
 	readonly violations: Violation[] = [];
+	private readonly envName: string;
 
 	constructor(
 		private readonly service: string,
-		private readonly envName: string = currentEnv(),
-	) {}
+		envName: string = currentEnv(),
+	) {
+		this.envName = normaliseEnv(envName);
+	}
+
+	/** True unless this guard's environment is exactly `dev`. */
+	get isProduction(): boolean {
+		return this.envName !== DEV;
+	}
 
 	add(setting: string, problem: string, remediation: string): void {
 		this.violations.push({ setting, problem, remediation });
@@ -63,16 +99,24 @@ export class ProductionGuard {
 		}
 	}
 
-	/** Flag a value still equal to one of the shipped dev defaults. */
+	/**
+	 * Flag a value still equal to one of the shipped dev defaults, or trivially
+	 * weak (`UNIVERSAL_WEAK_VALUES`) — the same two checks as the Python guard's
+	 * `forbid_default`. An absent value (`undefined`/`null`) is `requireSet`'s
+	 * job and is not reported here.
+	 */
 	forbidDefault(
 		setting: string,
 		value: unknown,
 		insecureDefaults: Iterable<string>,
 		remediation: string,
 	): void {
-		const text = String(value ?? '').trim();
+		if (value === undefined || value === null) return;
+		const text = String(value).trim();
 		if (text && [...insecureDefaults].includes(text)) {
 			this.add(setting, `is still the development default (${text})`, remediation);
+		} else if (UNIVERSAL_WEAK_VALUES.has(text.toLowerCase())) {
+			this.add(setting, 'is set to a trivially weak value', remediation);
 		}
 	}
 
@@ -106,7 +150,7 @@ export class ProductionGuard {
 		}
 	}
 
-	/** Warn in dev; throw in production. Safe to call with no violations. */
+	/** Warn under `DS_ENV=dev`; throw under every other value. Safe with no violations. */
 	enforce(): void {
 		if (this.violations.length === 0) return;
 
@@ -115,9 +159,11 @@ export class ProductionGuard {
 		);
 		const summary = `[${this.service}] insecure configuration:\n${lines.join('\n')}`;
 
-		if (this.envName === PRODUCTION) {
+		if (this.isProduction) {
 			throw new InsecureProductionConfig(
-				`${summary}\n\nRefusing to start with DS_ENV=${PRODUCTION}.`,
+				`${summary}\n\nRefusing to start with DS_ENV=${JSON.stringify(this.envName)} ` +
+					'(only DS_ENV=dev relaxes this guard; unset, empty or any other value ' +
+					'is production).',
 			);
 		}
 		console.warn(`${summary}\n\n(DS_ENV=${this.envName}, so this is a warning.)`);

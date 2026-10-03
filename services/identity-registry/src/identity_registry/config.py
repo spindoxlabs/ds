@@ -375,13 +375,25 @@ def register_database_url(guard, settings: Settings) -> None:
     lifespan, `ir-cli` and alembic — so the three cannot disagree about what
     counts as the dev value.
     """
+    remediation = (
+        "Set IDENTITY_REGISTRY_DATABASE_URL to this deployment's own database. "
+        "The default is the dev compose Postgres on 172.17.0.1:35432."
+    )
     guard.forbid_default(
         "IDENTITY_REGISTRY_DATABASE_URL",
         settings.database_url,
         {DEV_DATABASE_URL},
-        "Set IDENTITY_REGISTRY_DATABASE_URL to this deployment's own database. "
-        "The default is the dev compose Postgres on 172.17.0.1:35432.",
+        remediation,
     )
+    # The whole-value compare above misses the dev password on any other host
+    # (`postgres:postgres@db:5432/...`). Checked only when the default itself was
+    # not used, so the dev default is reported once, not twice.
+    if settings.database_url != DEV_DATABASE_URL:
+        guard.forbid_dev_database_url(
+            "IDENTITY_REGISTRY_DATABASE_URL",
+            settings.database_url,
+            "Give this deployment's database role a generated password.",
+        )
 
 
 def refuse_dev_database_in_production(entry_point: str) -> None:
