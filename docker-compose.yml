@@ -205,10 +205,9 @@ services:
       identity-registry-db-create:
         condition: service_completed_successfully
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
       #
       # `identity-registry` above has carried this since DS_ENV started
       # defaulting to production. The four containers built from the *same
@@ -218,7 +217,7 @@ services:
       # DS_ENV=production — so `task docker:restart` aborted at
       # `identity:bootstrap` and the whole stack never came up. Invisible in
       # `dev:*`, which runs these as host processes off `.env.local`.
-      DS_ENV: ${DS_ENV:-dev}
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
     networks: [dataspaces]
 
@@ -238,11 +237,10 @@ services:
       # deployment turns tracing on for the whole exchange with one value, and
       # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # A presentation query is authorized by the *verifier's* self-issued token,
@@ -305,10 +303,9 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
       #
       # `identity-registry` above has carried this since DS_ENV started
       # defaulting to production. The four containers built from the *same
@@ -318,7 +315,7 @@ services:
       # DS_ENV=production — so `task docker:restart` aborted at
       # `identity:bootstrap` and the whole stack never came up. Invisible in
       # `dev:*`, which runs these as host processes off `.env.local`.
-      DS_ENV: ${DS_ENV:-dev}
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       # This container is what *issues* the credentials, so the StatusList URL
@@ -405,10 +402,9 @@ services:
       identity-registry:
         condition: service_healthy
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
       #
       # `identity-registry` above has carried this since DS_ENV started
       # defaulting to production. The four containers built from the *same
@@ -418,7 +414,7 @@ services:
       # DS_ENV=production — so `task docker:restart` aborted at
       # `identity:bootstrap` and the whole stack never came up. Invisible in
       # `dev:*`, which runs these as host processes off `.env.local`.
-      DS_ENV: ${DS_ENV:-dev}
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/identity_registry
       IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN: trust-anchor.dataspaces.localhost
       IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL: http://trust-anchor.dataspaces.localhost
@@ -704,10 +700,9 @@ services:
     volumes:
       - ./services/keycloak/organizations.yaml:/app/organizations.yaml:ro
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
       #
       # `identity-registry` above has carried this since DS_ENV started
       # defaulting to production. The four containers built from the *same
@@ -717,7 +712,7 @@ services:
       # DS_ENV=production — so `task docker:restart` aborted at
       # `identity:bootstrap` and the whole stack never came up. Invisible in
       # `dev:*`, which runs these as host processes off `.env.local`.
-      DS_ENV: ${DS_ENV:-dev}
+      DS_ENV: ${DS_ENV:-}
       # Same two variables as `keycloak-sync` above, for the same reason.
       KEYCLOAK_ADMIN_USERNAME: ${KEYCLOAK_ADMIN_USERNAME:-admin}
       KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:-admin}

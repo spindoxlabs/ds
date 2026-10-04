@@ -160,7 +160,11 @@ async def test_production_refuses_before_the_schema_check(monkeypatch):
 async def test_startup_refuses_a_database_alembic_does_not_own(monkeypatch):
     """`verify_schema` is the other half of startup. Against a database with no
     `alembic_version` it must refuse, not build the schema itself — a half-built
-    schema surfaces later as a 500 on whichever read touched the missing column."""
+    schema surfaces later as a 500 on whichever read touched the missing column.
+
+    `DS_ENV=dev` pinned like its neighbours: unset is the strict guard, which
+    refuses the dev defaults before the schema check is ever reached."""
+    monkeypatch.setenv("DS_ENV", "dev")
     monkeypatch.delenv("DB_SKIP_SCHEMA_CHECK", raising=False)
     monkeypatch.setenv("PROVENANCE_DATABASE_URL", "sqlite+aiosqlite:///:memory:")
     monkeypatch.setattr(engine_module, "_engine", None)

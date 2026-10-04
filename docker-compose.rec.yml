@@ -190,11 +190,10 @@ services:
       # deployment turns tracing on for the whole exchange with one value, and
       # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       CONNECTOR_ROLE: provider
       # Drives the server *and* the image's HEALTHCHECK — see the Dockerfile.
       CONNECTOR_PORT: 30001
@@ -298,11 +297,10 @@ services:
       # deployment turns tracing on for the whole exchange with one value, and
       # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       PROVENANCE_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/provenance_rec
       # Verify bearer tokens in dev too. With no issuer, PROVENANCE_OIDC_INSECURE_DEV
       # defaults true and ds_auth decodes without checking the signature — so every
@@ -348,11 +346,10 @@ services:
       # `dataset-api-rec:30002` by name.
       - "${DATASET_API_MOCK_PORT:-30022}:30002"
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       DATASET_API_CONNECTOR_INTERNAL_URL: http://172.17.0.1:30001
       DATASET_API_EXTERNAL_QUERY_URL: ${DATASET_API_EXTERNAL_QUERY_URL:-}
       # The PEP authenticates to /internal/* as itself, not with the shared
@@ -376,11 +373,10 @@ services:
       - path: .env.celine
         required: false
     environment:
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       CONNECTOR_URL: http://ds-connector-rec:30001
       PROVENANCE_URL: http://ds-provenance-rec:30000
       FEDERATED_CATALOG_URL: http://ds-federated-catalog-rec:30003
@@ -444,11 +440,10 @@ services:
       # deployment turns tracing on for the whole exchange with one value, and
       # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       CATALOG_CONNECTOR_URL: http://172.17.0.1:31001
       CATALOG_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       # **Every identifier this catalogue publishes is built from this.** It is
@@ -516,6 +511,8 @@ services:
       ir-rec-db-create:
         condition: service_completed_successfully
     environment:
+      # Same guard as the service it migrates/bootstraps; see above.
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
     networks: [dataspaces]
 
@@ -532,11 +529,10 @@ services:
       # deployment turns tracing on for the whole exchange with one value, and
       # cannot turn it on for half of it. Blank means off (`ds_obs.tracing`).
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Compose IS the development topology, so it declares the unsafe mode
-      # explicitly. ProductionGuard defaults to `production`; a service that
-      # never hears about DS_ENV now refuses to start on a dev default
-      # instead of quietly accepting one.
-      DS_ENV: ${DS_ENV:-dev}
+      # No dev default here: unset is production (ProductionGuard). The
+      # Taskfile loads `.env.local` (`DS_ENV=dev`) for the local topology; a
+      # bare `docker compose up` refuses the dev defaults instead of serving them.
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_ROLE: participant
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:rec.dataspaces.localhost
@@ -595,6 +591,8 @@ services:
       ir-rec:
         condition: service_healthy
     environment:
+      # Same guard as the service it migrates/bootstraps; see above.
+      DS_ENV: ${DS_ENV:-}
       IDENTITY_REGISTRY_ROLE: participant
       IDENTITY_REGISTRY_DATABASE_URL: postgresql+asyncpg://postgres:${POSTGRES_PASSWORD:-postgres}@172.17.0.1:35432/ir_rec
       IDENTITY_REGISTRY_PARTICIPANT_DID: did:web:rec.dataspaces.localhost
