@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-01 from `a756790-dirty`.
+Generated 2026-10-03 from `fa0ead4-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -20,7 +20,7 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …claiming enforcement (`Enforced` / `Partly enforced`) | 127 |
 | …of those, **evidenced by a test that names them** | 127 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1015 |
+| Test nodes declaring a rule | 1022 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -51,8 +51,8 @@ None. Every rule claiming enforcement names at least one test node.
 | `C-13` | Not enforced | · consistent | — | — |
 | `C-14` | Enforced | ✅ evidenced | unit×3 | `libs/governance/tests/tests/test_compliance_checks.py::TestGovernanceFile::test_valid_file_passes_cleanly`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_dataset_missing_a_mandatory_dcat_property_fails`, `libs/governance/tests/tests/test_declared_not_enforced.py::test_a_complete_dataset_raises_no_dcat_ap_error` |
 | `C-15` | Enforced | ✅ evidenced | e2e×1, unit×3 | `user-authority`, `services/connector/tests/test_provider_api.py::test_provider_read_alone_can_list_agreements`, `services/connector/tests/test_provider_api.py::test_an_anonymous_caller_is_refused` +1 more |
-| `C-16` | Enforced | ✅ evidenced | e2e×2, unit×12 | `uc2`, `user-authority`, `services/connector/tests/test_provider_api.py::test_another_participants_agreements_are_not_listed` +11 more |
-| `C-17` | Enforced | ✅ evidenced | e2e×2, unit×12 | `api-contract`, `authz-perimeter`, `services/connector/tests/test_auth.py::test_internal_without_token_returns_401` +11 more |
+| `C-16` | Enforced | ✅ evidenced | e2e×2, integration×1, unit×14 | `uc2`, `user-authority`, `libs/ds-auth/tests/integration/test_two_levels_real_tokens.py::<module>` +14 more |
+| `C-17` | Enforced | ✅ evidenced | e2e×2, integration×1, unit×15 | `api-contract`, `authz-perimeter`, `libs/ds-auth/tests/integration/test_two_levels_real_tokens.py::<module>` +15 more |
 | `C-18` | Enforced | ✅ evidenced | e2e×1 | `catalog-discovery` |
 | `C-19` | Enforced | ✅ evidenced | e2e×1, integration×1, unit×17 | `catalog-discovery`, `services/identity-registry/tests/integration/test_participant_resolve.py::test_an_enrolled_participant_resolves_as_the_admin_listing_has_it`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_without_any_credential_is_refused` +16 more |
 | `C-20` | Enforced | ✅ evidenced | e2e×1, unit×4 | `authz-perimeter`, `services/connector/tests/test_consumer_catalog_auth.py::test_catalog_refuses_a_credential_linked_to_another_participant`, `services/connector/tests/test_dataplane_authorize.py::test_another_consumers_agreement_is_refused` +2 more |

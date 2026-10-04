@@ -44,7 +44,7 @@ Five requirements. They are not equally portable, and treating them as one thing
 | # | Requirement | Portable? |
 |---|---|---|
 | 1 | The confidential clients in `clients.yaml`, with `client_credentials`, their scopes and their audiences | Yes — any OIDC provider. Somebody must perform the **registration** |
-| 2 | A login client emitting `groups`, `organization.<alias>.groups` and `email` | Yes — the group vocabulary is **five names**, not one per endpoint |
+| 2 | A login client emitting `realm_access.roles` (the `roles` scope), `organization.<alias>.groups` and `email` | Yes — the vocabulary is **five names** on two levels, not one per endpoint; a top-level `groups` claim is never read |
 | 3 | Resolving a user to a DID (realm, user id, email) | Yes — ds resolves on demand; a person with no mapping is a 404, and the enrolling caller mints an opaque subject id |
 | 4 | **Write** access to the realm | ✗ Not required. Off by default |
 | 5 | Native organisations | Convenience only. The identity registry is the authority for data decisions |
@@ -83,17 +83,21 @@ client — `client_id` plus grants, nothing else, since ds owns those clients' i
     `clients.dataspaces.yaml` declares `requires: [ds]`, so a sync missing `clients.yaml` is
     refused before it authenticates.
 
-### The group vocabulary — five names, not thirty
+### The vocabulary — two levels, five names
 
-A human's authority arrives as Keycloak **groups**, never roles. Each group names a *role
-bundle* that ds expands into capabilities in its own code:
+A human's authority has two levels and nothing in between
+([ADR-0023](../decisions/ADR-0023-a-persons-authority-has-two-levels.md)). Each name below is
+a *role bundle* that ds expands into capabilities in its own code:
 
 ```
-ds-admin                 the deployment operator
-ds-participant-admin     acts for a participant: publish, sync, manage assets (not consent registration)
-ds-participant-viewer    read-only within a participant
-ds-onboarding-operator   reviews organisation applications
-ds-member                an authenticated human who may browse the catalogue
+platform level — a realm role, valid everywhere
+  platform-admin           -> ds-admin, the platform administrator
+  ds-onboarding-operator   reviews organisation applications (cannot promote)
+
+organisation level — a group inside one organisation, valid there only
+  ds-participant-admin     acts for that participant: publish, sync, manage assets (not consent registration)
+  ds-participant-viewer    read-only within that participant
+  ds-member                may browse the catalogue
 ```
 
 This is the part an external realm owner has to reproduce, which is why it is five names and
@@ -101,15 +105,16 @@ not one per endpoint family. What each bundle may do is ds's code, versioned wit
 enforcement it feeds — **adding an endpoint is a ds release, not a change request against your
 realm**.
 
-Realm-level groups carry deployment-wide seats; `organization.<alias>.groups` carries
-participant-scoped ones. An unrecognised group passes through as its own literal capability, so
-a realm still carrying older group names keeps working.
+A realm-level **group** grants nothing, whatever it is called, and neither does a role on any
+client other than the realm's own roles. An organisation group naming a platform bundle or an
+`*.admin` superset grants nothing either. The `roles` client scope must reach the login
+client's access token, or no platform role arrives.
 
-**If your realm cannot use these names, do not rename anything — map them.**
-`global.keycloak.aliases.groups` translates your group names into bundle names, and
-`.owners` translates your organisation aliases into ds owner ids. Both are deployment
-configuration; a group alias may only name a *bundle*, never a raw capability, and anything else
-is dropped and logged.
+**If your realm's organisations cannot use these names, do not rename anything — map them.**
+`global.keycloak.aliases.groups` translates your organisation-group names into organisation
+bundle names, and `.owners` translates your organisation aliases into ds owner ids. Both are
+deployment configuration; a group alias may only name an *organisation* bundle — never a
+platform bundle and never a raw capability — and anything else is dropped and logged.
 
 ## 3. The two Keycloak-specific things
 

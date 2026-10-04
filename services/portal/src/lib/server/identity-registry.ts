@@ -210,7 +210,7 @@ async function credentialsHeldFor(
 // These forward the **operator's own token**, not the portal service account.
 // `svc-ds-portal` deliberately holds no onboarding grant: admin is an operator
 // grant, and a long-lived process should not carry it (see `clients.yaml`). So a
-// 403 here means the signed-in user lacks the Keycloak group, which is a fact
+// 403 here means the signed-in user lacks the platform role, which is a fact
 // worth showing them rather than hiding.
 //
 // Every call is the same endpoint `ir-cli` uses. The CLI stays the reference

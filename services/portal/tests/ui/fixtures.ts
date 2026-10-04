@@ -6,8 +6,10 @@ import { expect, type Page } from '@playwright/test';
  * Two independent axes decide what each one may do, and the journeys exist
  * largely to prove they stay independent:
  *
- * - **Keycloak groups** grant service permissions (`connector.provider.*`,
- *   `identity-registry.organizations.*`). `provider` and `operator` are these.
+ * - **Keycloak authority** grants service permissions (`connector.provider.*`,
+ *   `identity-registry.organizations.*`) on two levels (ADR-0023): `operator`
+ *   through the `platform-admin` realm role, `provider` through a group inside
+ *   its organisation.
  * - **Verifiable credentials** issued by the identity registry decide the
  *   person-facing roles (`ConsumerUser`, `DataSubject`). `consumer`, `subject`
  *   and `dual` are these.

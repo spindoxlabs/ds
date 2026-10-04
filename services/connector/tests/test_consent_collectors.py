@@ -245,7 +245,7 @@ async def test_the_operator_is_checked_against_this_connector_s_organisation(
     operator's, and the subject is still checked against this participant."""
     r = await _post(
         client,
-        make_user_headers(["ds-admin"]),
+        make_user_headers(roles=["platform-admin"]),
         **_share("test-grid-planning", subject=HOLDERS_MEMBER),
     )
     assert r.status_code == 200, r.text
@@ -259,12 +259,14 @@ async def test_the_operator_is_checked_against_this_connector_s_organisation(
 async def test_a_participant_operator_seat_no_longer_registers_consent(client):
     r = await _post(
         client,
-        make_user_headers(["ds-participant-admin"]),
+        make_user_headers(organizations={"example-org": ["ds-participant-admin"]}),
         **_share(subject=HOLDERS_MEMBER),
     )
     assert r.status_code == 403
     r = await _post(
-        client, make_user_headers(["ds-admin"]), **_share(subject=HOLDERS_MEMBER)
+        client,
+        make_user_headers(roles=["platform-admin"]),
+        **_share(subject=HOLDERS_MEMBER),
     )
     assert r.status_code == 200, r.text
 
@@ -287,7 +289,7 @@ async def test_an_organisation_token_without_the_permission_is_refused(client):
     [
         (collector_headers, {}, "must say whose decision"),
         (
-            lambda: make_user_headers(["ds-admin"]),
+            lambda: make_user_headers(roles=["platform-admin"]),
             {"decided_by": "subject"},
             "organisation token only",
         ),
@@ -323,7 +325,7 @@ async def test_a_relayed_withdrawal_is_the_member_s_and_no_service_lifts_it(
     """The own organisation relays; the deployment operator then re-provisions
     without an override — the holder's authority, and still not the member's."""
     headers = own_headers()
-    operator = make_user_headers(["ds-admin"])
+    operator = make_user_headers(roles=["platform-admin"])
     body = _share(subject=HOLDERS_MEMBER)
     assert (await _post(client, operator, **body)).status_code == 200
     r = await _post(
@@ -656,7 +658,7 @@ async def test_the_keys_go_back_only_to_the_organisation_that_registered_them(
     r = await client.get(
         "/consent/admin/subject-shares",
         params={"subject_id": MEMBER},
-        headers=make_user_headers(["ds-admin"]),
+        headers=make_user_headers(roles=["platform-admin"]),
     )
     assert r.status_code == 200, r.text
     [share] = r.json()
@@ -789,7 +791,7 @@ async def test_the_reason_is_one_short_line(engine, client, reason, accepted):
         (collector_headers, _share(decided_by="collector", reason=WHY)),
         (collector_headers, _share(enabled=False, decided_by="subject", reason=WHY)),
         (
-            lambda: make_user_headers(["ds-admin"]),
+            lambda: make_user_headers(roles=["platform-admin"]),
             _share(subject=HOLDERS_MEMBER, enabled=False, reason=WHY),
         ),
     ],

@@ -6,23 +6,33 @@ function tokenWith(claims: Record<string, unknown>): string {
 	return `${b64({ alg: 'RS256', typ: 'JWT' })}.${b64(claims)}.sig`;
 }
 
-const session = (groups: string[]) => ({ accessToken: tokenWith({ groups }), user: { email: 'u@example.test' } });
-const admits = (groups: string[]) => hasGrant(session(groups), ...ADMIN_SECTION_GRANTS);
+const session = (claims: Record<string, unknown>) => ({
+	accessToken: tokenWith(claims),
+	user: { email: 'u@example.test' },
+});
+const admits = (claims: Record<string, unknown>) => hasGrant(session(claims), ...ADMIN_SECTION_GRANTS);
+const roles = (...r: string[]) => ({ realm_access: { roles: r } });
+const inOrg = (...g: string[]) => ({ organization: { 'example-org': { groups: g.map((x) => `/${x}`) } } });
 
 describe('/admin section membership', () => {
 	it('admits an onboarding operator — the seat the layout used to lock out', () => {
-		expect(admits(['ds-onboarding-operator'])).toBe(true);
+		expect(admits(roles('ds-onboarding-operator'))).toBe(true);
 	});
 
-	it('admits a full admin', () => {
-		expect(admits(['ds-admin'])).toBe(true);
+	it('admits the platform administrator', () => {
+		expect(admits(roles('platform-admin'))).toBe(true);
 	});
 
 	it('refuses a plain member', () => {
-		expect(admits(['ds-member'])).toBe(false);
+		expect(admits(inOrg('ds-member'))).toBe(false);
 	});
 
 	it('refuses a provider (ds-participant-admin holds no admin-section grant)', () => {
-		expect(admits(['ds-participant-admin'])).toBe(false);
+		expect(admits(inOrg('ds-participant-admin'))).toBe(false);
+	});
+
+	it('refuses the platform seats when they arrive as an organisation group or a realm group', () => {
+		expect(admits(inOrg('ds-admin', 'ds-onboarding-operator'))).toBe(false);
+		expect(admits({ groups: ['ds-admin', 'ds-onboarding-operator'] })).toBe(false);
 	});
 });

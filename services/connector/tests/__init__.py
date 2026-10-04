@@ -87,17 +87,25 @@ def _b64url(value: str | bytes) -> str:
     return base64.urlsafe_b64encode(raw).decode().rstrip("=")
 
 
-def make_user_headers(groups: list[str] | None = None) -> dict:
-    """A user bearer (group-based authority)."""
-    token = pyjwt.encode(
-        _claims(
-            sub="user-test",
-            email="user@example.test",
-            groups=list(groups or []),
-        ),
-        "secret",
-        algorithm="HS256",
-    )
+def make_user_headers(
+    roles: list[str] | None = None, organizations: dict[str, list[str]] | None = None
+) -> dict:
+    """A user bearer, authorised on the two levels ds reads.
+
+    ``roles`` are realm roles (``realm_access.roles``) — the platform level, e.g.
+    ``["platform-admin"]``. ``organizations`` maps an organisation alias to the
+    groups held **inside** it — the organisation level. There is no realm-group
+    argument: a realm group grants nothing.
+    """
+    claims: dict = {"sub": "user-test", "email": "user@example.test"}
+    if roles:
+        claims["realm_access"] = {"roles": list(roles)}
+    if organizations:
+        claims["organization"] = {
+            alias: {"groups": [f"/{g}" for g in groups]}
+            for alias, groups in organizations.items()
+        }
+    token = pyjwt.encode(_claims(**claims), "secret", algorithm="HS256")
     return {"Authorization": f"Bearer {token}"}
 
 

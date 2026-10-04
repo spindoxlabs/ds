@@ -1,22 +1,29 @@
 import logging
 
-from ds_auth import Principal, extract_groups, is_service_account
+from ds_auth import Principal, extract_realm_roles, is_service_account
 from ds_auth.jwt import extract_organizations, extract_scopes
 
 
-def test_extract_groups_realm_and_org():
+def test_groups_stay_with_their_level():
+    """Nothing flattens realm groups and organisation groups into one list."""
     claims = {
         "groups": ["/ds-admin", "managers"],
+        "realm_access": {"roles": ["platform-admin"]},
         "organization": {
             "acme": {"groups": ["/viewers"]},
-            "other": {"groups": ["managers"]},  # dup across sources
+            "other": {"groups": ["managers"]},
         },
     }
-    assert extract_groups(claims) == ["ds-admin", "managers", "viewers"]
+    p = Principal.from_claims({"sub": "u", "email": "u@example.test", **claims})
+    assert p.realm_roles == ("platform-admin",)
+    assert p.get_organization("acme").groups == ("viewers",)
+    assert p.get_organization("other").groups == ("managers",)
+    assert not hasattr(p, "groups")
+    assert not hasattr(p, "realm_groups")
 
 
-def test_extract_groups_absent():
-    assert extract_groups({}) == []
+def test_extract_realm_roles_absent():
+    assert extract_realm_roles({}) == []
 
 
 def test_extract_scopes_string_and_list():
@@ -136,13 +143,15 @@ def test_principal_service_authorizes_on_scopes():
     assert not p.grants("dataset.admin")
 
 
-def test_principal_user_authorizes_on_groups():
+def test_principal_user_authorizes_on_organisation_groups():
     p = Principal.from_claims(
         {
             "sub": "u-1",
             "email": "alice@example.test",
-            "groups": ["/connector.provider.write"],
-            # A user's scope claim (openid/profile) must NOT grant permissions.
+            "organization": {"acme": {"groups": ["/connector.provider.write"]}},
+            # A realm-level group grants nothing…
+            "groups": ["/connector.admin"],
+            # …and a user's scope claim (openid/profile) must NOT grant permissions.
             "scope": "openid profile email",
         }
     )
@@ -209,13 +218,13 @@ def test_principal_organizations():
     assert p.get_organization("unknown") is None
 
 
-def test_extract_groups_ignores_org_roles():
+def test_organisation_roles_are_ignored():
     """Org roles are NOT emitted by the KC organization membership mapper."""
     claims = {
         "organization": {
             "org1": {"groups": ["admins"], "roles": ["should-be-ignored"]},
         },
     }
-    groups = extract_groups(claims)
-    assert "admins" in groups
-    assert "should-be-ignored" not in groups
+    (org,) = extract_organizations(claims)
+    assert org.groups == ("admins",)
+    assert "should-be-ignored" not in org.groups

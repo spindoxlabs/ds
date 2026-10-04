@@ -1,11 +1,15 @@
 """JWT decoding and claim extraction.
 
-The claim-shape helpers (:func:`extract_groups`, :func:`is_service_account`)
-deliberately mirror the semantics of ``celine-sdk``'s ``auth.jwt`` so that the
-*same* Keycloak realm — synced from ``clients.yaml`` by the shared
-``celine-policies`` CLI — authorizes identically in both projects. This is a
-verbatim *approach*, not a code dependency: there is no import edge between the
-repos.
+The claim-shape helpers (:func:`extract_realm_roles`, :func:`is_service_account`)
+deliberately mirror the semantics of ``celine-sdk``'s ``auth.jwt``
+(``realm_roles``, ``is_service_account``) so that the *same* Keycloak realm —
+synced from ``clients.yaml`` by the shared ``celine-policies`` CLI — authorizes
+identically in both projects. This is a verbatim *approach*, not a code
+dependency: there is no import edge between the repos.
+
+There is deliberately **no** helper that flattens groups across levels. A
+person's authority has two sources — realm roles (platform) and each
+organisation's own groups — and :class:`ds_auth.Principal` keeps them apart.
 """
 
 from __future__ import annotations
@@ -41,62 +45,52 @@ def get_bearer_token(authorization_header: str | None) -> str:
     return token
 
 
-def extract_groups(claims: dict) -> list[str]:
-    """Merge realm-level and org-level groups into a flat, deduped list.
+def extract_realm_roles(claims: dict) -> list[str]:
+    """The realm roles in ``realm_access.roles`` — and nowhere else.
 
-    Realm groups come from the top-level ``groups`` claim. Org groups come from
-    ``organization.<alias>.groups`` (emitted by the KC 26
-    ``oidc-organization-membership-mapper``). Leading slashes are stripped so
-    ``/managers`` and ``managers`` compare equal.
+    Never the ``groups`` claim (a realm group grants nothing), never a top-level
+    ``roles`` claim, never ``resource_access.<client>.roles`` (a role on some
+    other client is that client's business). Deduplicated, order kept, non-strings
+    skipped; a missing or malformed claim is ``[]``. Same contract as
+    ``celine.sdk.auth.realm_roles``.
     """
-    raw: list[str] = []
+    access = claims.get("realm_access")
+    if not isinstance(access, dict):
+        return []
+    roles = access.get("roles")
+    if not isinstance(roles, list):
+        return []
+    seen: set[str] = set()
+    result: list[str] = []
+    for role in roles:
+        if isinstance(role, str) and role and role not in seen:
+            seen.add(role)
+            result.append(role)
+    return result
 
+
+def _holds_any_group(claims: dict) -> bool:
+    """Whether the token names *any* group, at either level.
+
+    Classification only — a human carries groups, a client-credentials token does
+    not. It grants nothing: a realm-level group is not authority, and an
+    organisation's groups are read per organisation by :class:`Principal`.
+    """
     realm = claims.get("groups")
-    if isinstance(realm, list):
-        raw.extend(realm)
-
+    if isinstance(realm, list) and any(
+        isinstance(g, str) and g.lstrip("/") for g in realm
+    ):
+        return True
     orgs = claims.get("organization")
     if isinstance(orgs, dict):
         for org_data in orgs.values():
             if isinstance(org_data, dict):
-                org_groups = org_data.get("groups")
-                if isinstance(org_groups, list):
-                    raw.extend(org_groups)
-
-    seen: set[str] = set()
-    result: list[str] = []
-    for g in raw:
-        if not isinstance(g, str):
-            continue
-        normalized = g.lstrip("/")
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            result.append(normalized)
-    return result
-
-
-def extract_realm_groups(claims: dict) -> list[str]:
-    """Realm-level groups only, without any organisation's.
-
-    A realm group is a **deployment-wide** grant; an organisation group is scoped
-    to that organisation. Keeping them apart is what lets
-    :meth:`ds_auth.Principal.grants_in` answer "may this caller act on *this
-    owner's* data" — :func:`extract_groups` deliberately loses the distinction,
-    and every existing call site wants it to.
-    """
-    realm = claims.get("groups")
-    if not isinstance(realm, list):
-        return []
-    seen: set[str] = set()
-    result: list[str] = []
-    for g in realm:
-        if not isinstance(g, str):
-            continue
-        normalized = g.lstrip("/")
-        if normalized and normalized not in seen:
-            seen.add(normalized)
-            result.append(normalized)
-    return result
+                groups = org_data.get("groups")
+                if isinstance(groups, list) and any(
+                    isinstance(g, str) and g.lstrip("/") for g in groups
+                ):
+                    return True
+    return False
 
 
 def extract_organizations(claims: dict) -> list[Organization]:
@@ -155,7 +149,7 @@ def is_service_account(claims: dict) -> bool:
 
     if claims.get("email"):
         return False
-    if extract_groups(claims):
+    if _holds_any_group(claims):
         return False
     if preferred_username and not preferred_username.startswith("service-account-"):
         return False

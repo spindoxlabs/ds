@@ -18,8 +18,10 @@ export const actions: Actions = {
 	sync: async (event) => {
 		const { session, roles } = await requireProvider(event);
 		const token = session?.accessToken ?? '';
-		if (!roles.isAdmin && roles.organizations.length === 0) {
-			return fail(403, { error: 'You must belong to a dataset owner organization to sync' });
+		if (!roles.isAdmin && roles.writableOrganizations.length === 0) {
+			return fail(403, {
+				error: 'You must hold publish rights in a dataset owner organization to sync',
+			});
 		}
 		try {
 			const result = await syncGovernance(token);

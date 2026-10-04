@@ -14,12 +14,12 @@ describe('derivePersona', () => {
 	it('shows the Provider persona for a bundle group the guard admits', () => {
 		// The defect: the client store read groups unexpanded, so this group never
 		// became connector.provider.read and the Provider nav was hidden.
-		const p = derivePersona(session({ groups: ['ds-participant-admin'] }));
+		const p = derivePersona(session({ organization: { 'example-org': { groups: ['/ds-participant-admin'] } } }));
 		expect(p.isProvider).toBe(true);
 	});
 
-	it('shows Admin (and thus provider) for connector.admin', () => {
-		const p = derivePersona(session({ realm_access: { roles: ['connector.admin'] } }));
+	it('shows Admin (and thus provider) for the platform-admin realm role', () => {
+		const p = derivePersona(session({ realm_access: { roles: ['platform-admin'] } }));
 		expect(p.isAdmin).toBe(true);
 		expect(p.isProvider).toBe(true);
 	});
@@ -35,7 +35,7 @@ describe('derivePersona', () => {
 	});
 
 	it('carries the org aliases through', () => {
-		const p = derivePersona(session({ groups: ['ds-member'], organization: { 'grid-operator': {} } }));
+		const p = derivePersona(session({ organization: { 'grid-operator': { groups: ['/ds-member'] } } }));
 		expect(p.organizations).toContain('grid-operator');
 	});
 });

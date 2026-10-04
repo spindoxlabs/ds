@@ -29,6 +29,21 @@ configuration: a permission table that can be edited at deploy time is a
 privilege-escalation surface, and this one is small enough to review. Mapping
 *someone else's* group names onto these bundles is a separate concern (Layer B),
 because that is about a foreign IAM's naming rather than about what ds permits.
+
+**Two levels, and nothing in between.** A bundle is granted at exactly one level:
+
+* **platform** — by a Keycloak **realm role** from an explicit allowlist
+  (:data:`REALM_ROLE_BUNDLES`). ``platform-admin`` is the platform administrator.
+  Read from ``realm_access.roles`` only: never from the ``groups`` claim, never from
+  another client's ``resource_access`` roles.
+* **organisation** — by a group *inside* one organisation
+  (``organization.<alias>.groups``), valid for that organisation only.
+
+A realm-level **group** grants nothing at all, and an organisation group can never
+reach a platform bundle or a ``{service}.admin`` superset — that is what used to make
+an organisation group named ``ds-admin`` a deployment-wide grant. The portal's
+TypeScript twin is generated from this module (``bundles_export.py``), so the UI and
+the API read a token the same way by construction.
 """
 
 from __future__ import annotations
@@ -80,7 +95,7 @@ ROLE_BUNDLES: dict[str, tuple[str, ...]] = {
     #
     # **No `connector.consent.provision`** (plan
     # `a-collector-registers-consent-at-the-holder`, decision 5, 2026-09-17). A
-    # realm group is not bound to a connector, so the grant let any
+    # participant seat is not bound to a connector, so the grant let any
     # participant's operator register consent at any connector, for anyone's
     # members. Consent is registered by an organisation's own client (an
     # accepted collector, or the holder itself); a person overriding a
@@ -128,6 +143,54 @@ ROLE_BUNDLES: dict[str, tuple[str, ...]] = {
     # once, which a group-based split would model as mutually exclusive.
     "ds-member": ("catalog.read",),
 }
+
+# ── The two levels ───────────────────────────────────────────────────────────
+#
+# Every bundle is granted at exactly one level. `test_two_levels.py` asserts the
+# two sets partition `ROLE_BUNDLES`, so a new bundle cannot be added without
+# deciding where it may be granted.
+
+#: The realm role that makes a person the platform administrator. The same name
+#: celine-sdk exports as ``PLATFORM_ADMIN_ROLE``; mirrored, not imported.
+PLATFORM_ADMIN_ROLE = "platform-admin"
+
+#: Deployment-wide seats. Granted **only** by a realm role in
+#: :data:`REALM_ROLE_BUNDLES`; an organisation group naming one grants nothing.
+PLATFORM_BUNDLES: frozenset[str] = frozenset({"ds-admin", "ds-onboarding-operator"})
+
+#: Seats that only mean something *for an organisation*. Granted **only** by a
+#: group inside that organisation; a realm role naming one grants nothing.
+ORGANISATION_BUNDLES: frozenset[str] = frozenset(
+    {"ds-participant-admin", "ds-participant-viewer", "ds-member"}
+)
+
+#: The explicit allowlist: realm role → platform bundle. A realm role not listed
+#: here grants nothing (`offline_access`, `default-roles-<realm>`, a retired
+#: `admin` …), and so does every client's `resource_access` role.
+#:
+#: `ds-onboarding-operator` is the one platform seat besides the administrator:
+#: it reviews organisation applications, which is the dataspace authority's job
+#: and not any one organisation's, and it deliberately stops short of promotion.
+REALM_ROLE_BUNDLES: dict[str, str] = {
+    PLATFORM_ADMIN_ROLE: "ds-admin",
+    "ds-onboarding-operator": "ds-onboarding-operator",
+}
+
+#: Literal permissions an organisation group may name directly, besides a
+#: bundle name. Everything an organisation bundle grants, plus:
+#:
+#: * ``connector.consent.holder.read`` — a person granted the holder's key list
+#:   *for one organisation* (ADR-0022); the connector checks the organisation.
+#:
+#: Anything else an organisation group names grants nothing: no
+#: ``{service}.admin`` superset, no platform-only permission, no machine identity.
+ORGANISATION_PERMISSIONS: frozenset[str] = frozenset(
+    {
+        *(p for b in sorted(ORGANISATION_BUNDLES) for p in ROLE_BUNDLES[b]),
+        "connector.consent.holder.read",
+    }
+)
+
 
 # ── Permissions no bundle expands to, on purpose ─────────────────────────────
 #
@@ -220,17 +283,19 @@ def all_bundled_permissions() -> frozenset[str]:
 def parse_group_aliases(raw: str | None) -> dict[str, str]:
     """Parse and **validate** a Layer B alias map from its JSON env form.
 
-    Layer B maps a *foreign* IdP's group names onto ds bundles::
+    Layer B maps a *foreign* IdP's **organisation group** names onto ds
+    organisation bundles::
 
         {"celine-manager": "ds-participant-admin",
          "celine-viewer": "ds-participant-viewer"}
 
-    The values must be **bundle names**, never capabilities. An alias pointing
-    straight at ``connector.provider.write`` would make deployment configuration a
-    permission table, which is the thing Layer A exists to prevent — so an unknown
-    target is dropped and named in the log rather than honoured. Dropping is the
-    safe direction: the group then falls through to pass-through and grants only
-    itself, which matches nothing.
+    The values must be **organisation bundle names**, never capabilities and never
+    a platform bundle. An alias pointing straight at ``connector.provider.write``
+    would make deployment configuration a permission table, which is the thing
+    Layer A exists to prevent; one pointing at ``ds-admin`` would make an
+    organisation group a platform grant, which is the thing the two levels exist
+    to prevent. Either is dropped and named in the log rather than honoured.
+    Dropping is the safe direction: the group then grants nothing.
 
     Malformed JSON yields an empty map and a loud error. That is deliberate: a
     typo'd alias map must not silently become a *different* map, and an empty one
@@ -264,15 +329,15 @@ def parse_group_aliases(raw: str | None) -> dict[str, str]:
                 "ds-auth: ignoring non-string alias entry %r -> %r", foreign, target
             )
             continue
-        if target not in ROLE_BUNDLES:
+        if target not in ORGANISATION_BUNDLES:
             logger.error(
-                "ds-auth: ignoring alias %r -> %r: %r is not a role bundle. An alias "
-                "may only name a bundle (%s), never a capability — otherwise the "
-                "permission table becomes deployment configuration.",
+                "ds-auth: ignoring alias %r -> %r: %r is not an organisation role "
+                "bundle. An alias may only name one of %s — never a capability, and "
+                "never a platform bundle, which only a realm role grants.",
                 foreign,
                 target,
                 target,
-                ", ".join(sorted(ROLE_BUNDLES)),
+                ", ".join(sorted(ORGANISATION_BUNDLES)),
             )
             continue
         aliases[foreign] = target
@@ -285,52 +350,59 @@ def parse_group_aliases(raw: str | None) -> dict[str, str]:
     return aliases
 
 
-def expand_bundles(
+def _ordered_unique(values: Iterable[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    out: list[str] = []
+    for value in values:
+        if value and value not in seen:
+            seen.add(value)
+            out.append(value)
+    return tuple(out)
+
+
+def platform_authority(realm_roles: Iterable[str]) -> tuple[str, ...]:
+    """The capabilities a person's **realm roles** grant, deployment-wide.
+
+    Only a role in :data:`REALM_ROLE_BUNDLES` counts, and it expands to its
+    platform bundle. Every other role grants nothing — there is no pass-through
+    at this level, so a realm role that happens to be named like a permission
+    (``connector.admin``) is not one.
+    """
+    capabilities: list[str] = []
+    for role in realm_roles:
+        if not isinstance(role, str):
+            continue
+        bundle = REALM_ROLE_BUNDLES.get(role)
+        if bundle is not None:
+            capabilities.extend(ROLE_BUNDLES[bundle])
+    return _ordered_unique(capabilities)
+
+
+def organisation_authority(
     groups: Iterable[str], aliases: Mapping[str, str] | None = None
 ) -> tuple[str, ...]:
-    """Expand bundle names into capabilities, preserving order and deduping.
+    """The capabilities one organisation's groups grant, **within** it.
 
-    Four rules, in order:
+    Three rules per group, in order:
 
-    0. A **Layer B alias** is translated first: a foreign IdP's group name becomes
-       the ds bundle a deployment mapped it to. Aliases are validated at parse time
-       (:func:`parse_group_aliases`) so they can only name bundles, never
-       capabilities — the permission table stays in Layer A, in code.
-    1. A known bundle name expands to its capability set.
-    2. A **machine-identity** permission is dropped. It is not grantable to a
-       human however the group is named — a realm that defines a group called
-       ``connector.internal`` must not thereby hand out the connector's own
-       identity. This is checked **after** aliasing, so an alias cannot smuggle one
-       in either.
-    3. Anything else passes through **verbatim**, as its own capability.
+    0. a **Layer B alias** translates a foreign group name into an organisation
+       bundle (validated at parse time; :func:`parse_group_aliases`);
+    1. an **organisation bundle** expands into its capabilities;
+    2. a name in :data:`ORGANISATION_PERMISSIONS` grants itself.
 
-    Rule 3 is what makes the migration free: a realm still carrying the old
-    scope-named groups keeps authorizing exactly as it does today, so bundles can
-    be introduced additively and the mirror deleted once nothing depends on it.
-    It is also why an unrecognised group is harmless rather than an error — it
-    grants precisely itself, which matches nothing unless a call site asks for
-    that name.
+    Anything else grants nothing — a platform bundle (``ds-admin``), a
+    ``{service}.admin`` superset, a machine identity, a permission only the
+    platform holds, or an unrecognised name. That is the whole difference from the
+    flat expansion this replaced, whose rule 3 let *any* group pass through as its
+    own capability.
     """
-    result: list[str] = []
-    seen: set[str] = set()
-
-    def add(permission: str) -> None:
-        if permission and permission not in seen:
-            seen.add(permission)
-            result.append(permission)
-
+    capabilities: list[str] = []
     for raw_group in groups:
         if not isinstance(raw_group, str) or not raw_group:
             continue
-        # Rule 0: translate a foreign name before anything else looks at it.
         group = (aliases or {}).get(raw_group, raw_group)
-        capabilities = ROLE_BUNDLES.get(group)
-        if capabilities is not None:
-            for capability in capabilities:
-                add(capability)
-        elif group in MACHINE_IDENTITY_PERMISSIONS:
-            continue
-        else:
-            add(group)
-
-    return tuple(result)
+        if group in ORGANISATION_BUNDLES:
+            capabilities.extend(ROLE_BUNDLES[group])
+        elif group in ORGANISATION_PERMISSIONS:
+            capabilities.append(group)
+    return _ordered_unique(capabilities)

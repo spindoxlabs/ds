@@ -8,7 +8,10 @@
   let search = $state('');
 
   const roles = $derived(data.roles as ServerRoles);
-  const userOrgs = $derived(new Set(roles?.organizations ?? []));
+  // Organisations where `connector.provider.write` holds *within* the
+  // organisation — not mere membership, which is what a viewer also has. The
+  // connector's owner perimeter (`grants_in`) asks the same question.
+  const userOrgs = $derived(new Set(roles?.writableOrganizations ?? []));
   const canSync = $derived(roles?.isAdmin || userOrgs.size > 0);
 
   const assets = $derived(

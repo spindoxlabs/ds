@@ -51,8 +51,10 @@ PERMISSION_SCHEME_NAME = "DataspacePermission"
 _permission_scheme = HTTPBearer(
     scheme_name=PERMISSION_SCHEME_NAME,
     description=(
-        "A Keycloak access token. Service clients authorise on the `scope` claim, "
-        "users on their groups expanded through the ds role bundles. The values "
+        "A Keycloak access token. Service clients authorise on the `scope` claim; "
+        "users on allowlisted realm roles (platform-wide) and on each "
+        "organisation's own groups (that organisation only), expanded through the "
+        "ds role bundles. A realm-level group grants nothing. The values "
         "listed beside this scheme are the permissions the route accepts — any "
         "one of them is enough."
     ),
@@ -144,7 +146,8 @@ def require_permission(
     """Dependency factory: require *any* of ``perms``, then an optional perimeter.
 
     ``perms`` are permission strings (``connector.provider.write``). A service
-    token satisfies them via its scopes, a user token via its groups —
+    token satisfies them via its scopes, a user token via its platform roles or
+    its organisations' groups (:attr:`Principal.authority`) —
     ``{service}.admin`` is a superset.
 
     ``perimeter`` optionally narrows an already-permitted principal to the

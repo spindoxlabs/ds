@@ -60,8 +60,9 @@ def get_prov(request: Request):
 # ── Authorization guards ────────────────────────────────────────────────────
 #
 # One unified guard (ds_auth.require_permission) authorizes BOTH service tokens
-# (via the `scope` claim) and user tokens (via Keycloak groups). ``{service}.admin``
-# is a superset, so an admin service token or an admin-group user both satisfy the
+# (via the `scope` claim) and user tokens (via an allowlisted realm role, or a group
+# inside the organisation concerned, ADR-0023). ``{service}.admin`` is a superset, so
+# an admin service token or a platform-admin user both satisfy the
 # finer provider permissions below.
 
 # There is deliberately no bare `require_admin` guard. `connector.admin` enters
@@ -416,10 +417,11 @@ async def _own_participant_only(principal: Principal, request: Request) -> bool:
     as a whole, so it had no owner to scope against and therefore no perimeter at
     all. Two callers walked through it:
 
-    * **a participant operator.** `ds-participant-admin` is a *realm group*; a
-      group is not bound to a connector. In a realm serving several participants
-      — which is the deployment shape ds ships — one participant's operator could
-      publish, and republish, at every other participant's connector.
+    * **a participant operator.** `ds-participant-admin` is held inside an
+      organisation, and an organisation is not bound to a connector. In a realm
+      serving several participants — which is the deployment shape ds ships — one
+      participant's operator could publish, and republish, at every other
+      participant's connector.
     * **an organisation client**, from the moment it is granted the permission
       (plan `a-participant-publishes-and-the-sync-reconciles`, item 5). That grant
       is *why* this function exists now: self-service publishing without it would

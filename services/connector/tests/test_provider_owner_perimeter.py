@@ -24,13 +24,14 @@ import pytest
 from tests import _claims
 
 
-def _user_headers(*groups: str, organizations: dict | None = None) -> dict:
-    """A *user* bearer: authority from groups, not from a scope claim."""
+def _user_headers(*realm_roles: str, organizations: dict | None = None) -> dict:
+    """A *user* bearer: authority from realm roles (platform) and organisation
+    groups (that organisation only), never from a scope claim."""
     claims: dict = _claims(
         sub="operator-1",
         email="operator@example.test",
         preferred_username="operator@example.test",
-        groups=list(groups),
+        realm_access={"roles": list(realm_roles)},
     )
     if organizations:
         claims["organization"] = organizations
@@ -124,34 +125,19 @@ async def test_operator_of_another_org_is_refused(client, owned_by):
     assert edc.deleted == []
 
 
+@pytest.mark.rule("C-16", "C-17")
 @pytest.mark.asyncio
-async def test_holder_with_no_organisations_is_allowed_by_default(client, owned_by):
-    """A deployment that models no organisations is not one where every operator
-    has lost their rights.
-
-    This is a deliberate reversal of the first cut, which refused. Refusing here
-    breaks every single-owner deployment that never declared a Keycloak
-    organisation, and the way operators "fix" that is by granting
-    ``connector.admin`` — which crosses **every** owner and is strictly worse than
-    the thing being prevented. So the default allows and says so in the log, and
-    deployments that do model owners tighten it with the flag below.
-    """
-    edc = owned_by("example-org")
-    r = await client.delete(
-        f"/provider/assets/{ASSET}",
-        headers=_user_headers("ds-participant-admin"),
-    )
-    assert r.status_code == 204
-    assert edc.deleted == [ASSET]
-
-
-@pytest.mark.rule("C-16")
-@pytest.mark.asyncio
-async def test_strict_mode_refuses_a_holder_with_no_organisations(
-    client, owned_by, monkeypatch
+@pytest.mark.parametrize("strict", [False, True], ids=["default", "strict"])
+async def test_a_realm_level_participant_seat_grants_nothing(
+    client, owned_by, monkeypatch, strict
 ):
-    """Where organisations *are* modelled, a missing claim means the caller was
-    never scoped — not that scoping is off."""
+    """There is no realm-level participant seat any more, in either mode.
+
+    A person's authority is a platform role or an organisation's own group. A
+    realm group named `ds-participant-admin` — and a realm *role* of that name,
+    which is not on the platform allowlist — is refused at the route, before the
+    owner perimeter (and its no-organisations exemption) is ever consulted.
+    """
     from connector import dependencies
     from connector.config import get_settings
 
@@ -159,13 +145,19 @@ async def test_strict_mode_refuses_a_holder_with_no_organisations(
     monkeypatch.setattr(
         dependencies,
         "get_settings",
-        lambda: settings.model_copy(update={"owner_scoping_strict": True}),
+        lambda: settings.model_copy(update={"owner_scoping_strict": strict}),
     )
+    claims = _claims(
+        sub="operator-1",
+        email="operator@example.test",
+        groups=["ds-participant-admin", "/ds-participant-admin"],
+        realm_access={"roles": ["ds-participant-admin"]},
+    )
+    token = pyjwt.encode(claims, "secret", algorithm="HS256")
 
     edc = owned_by("example-org")
     r = await client.delete(
-        f"/provider/assets/{ASSET}",
-        headers=_user_headers("ds-participant-admin"),
+        f"/provider/assets/{ASSET}", headers={"Authorization": f"Bearer {token}"}
     )
     assert r.status_code == 403
     assert edc.deleted == []
@@ -217,20 +209,22 @@ async def test_admin_in_the_owning_org_passes_while_holding_other_seats(
     assert edc.deleted == [ASSET]
 
 
+@pytest.mark.rule("C-16")
 @pytest.mark.asyncio
-async def test_realm_level_grant_is_deployment_wide(client, owned_by):
-    """A realm-level bundle is not organisation-scoped. A single-participant
-    deployment grants at realm level and must keep working."""
-    edc = owned_by("example-org")
+async def test_an_organisation_admins_group_is_not_a_platform_grant(client, owned_by):
+    """A host realm's organisation group `admins`, or one named after a platform
+    bundle or a superset, reads as nothing — not as `connector.admin`."""
+    edc = owned_by("someone-elses-org")
     r = await client.delete(
         f"/provider/assets/{ASSET}",
         headers=_user_headers(
-            "ds-participant-admin",
-            organizations={"example-org": {"groups": []}},
+            organizations={
+                "example-org": {"groups": ["/admins", "/ds-admin", "/connector.admin"]}
+            },
         ),
     )
-    assert r.status_code == 204
-    assert edc.deleted == [ASSET]
+    assert r.status_code == 403
+    assert edc.deleted == []
 
 
 # ── Owner aliases resolve through the registry ───────────────────────────────
@@ -295,7 +289,9 @@ async def test_unowned_asset_is_not_confined(client, owned_by):
     edc = owned_by(None)
     r = await client.delete(
         f"/provider/assets/{ASSET}",
-        headers=_user_headers("ds-participant-admin"),
+        headers=_user_headers(
+            organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
+        ),
     )
     assert r.status_code == 204
     assert edc.deleted == [ASSET]
@@ -303,13 +299,14 @@ async def test_unowned_asset_is_not_confined(client, owned_by):
 
 @pytest.mark.asyncio
 async def test_operator_grant_is_not_owner_scoped(client, owned_by):
-    """`connector.admin` is the deployment operator's grant, not a participant's.
-    It crosses owners by design — that is what distinguishes it from
-    `ds-participant-admin`."""
+    """`connector.admin` is the platform administrator's grant, not a
+    participant's. It crosses owners by design — that is what distinguishes it
+    from `ds-participant-admin` — and it arrives as the `platform-admin` realm
+    role, member of nothing."""
     edc = owned_by("someone-elses-org")
     r = await client.delete(
         f"/provider/assets/{ASSET}",
-        headers=_user_headers("ds-admin"),
+        headers=_user_headers("platform-admin"),
     )
     assert r.status_code == 204
     assert edc.deleted == [ASSET]
@@ -690,43 +687,6 @@ async def test_an_unreadable_governance_file_refuses_a_policy_delete(
 
 
 @pytest.mark.asyncio
-async def test_a_caller_with_no_organisations_is_unaffected_by_a_failed_lookup(
-    client, lookup_fails
-):
-    """No security gain, so no availability cost.
-
-    Owner scoping already allows this caller whatever the owner turns out to be
-    (non-strict), so a failed lookup decides nothing for them. Refusing would
-    take out every deployment that models no organisations the moment its EDC
-    hiccups.
-    """
-    edc = lookup_fails(httpx.ConnectError("connection refused"))
-    r = await client.delete(
-        f"/provider/assets/{ASSET}", headers=_user_headers("ds-participant-admin")
-    )
-    assert r.status_code != 403
-    assert edc.deleted == [ASSET]
-
-
-@pytest.mark.asyncio
-async def test_strict_mode_refuses_that_caller_too(client, lookup_fails, monkeypatch):
-    """A deployment that models owners gets the tighter posture on both paths."""
-    from connector.config import get_settings
-
-    monkeypatch.setenv("CONNECTOR_OWNER_SCOPING_STRICT", "true")
-    get_settings.cache_clear()
-    try:
-        edc = lookup_fails(httpx.ConnectError("connection refused"))
-        r = await client.delete(
-            f"/provider/assets/{ASSET}", headers=_user_headers("ds-participant-admin")
-        )
-    finally:
-        get_settings.cache_clear()
-    assert r.status_code == 403
-    assert edc.deleted == []
-
-
-@pytest.mark.asyncio
 async def test_an_edc_outage_does_not_lock_out_the_operator_or_the_syncs(
     client, lookup_fails
 ):
@@ -739,7 +699,7 @@ async def test_an_edc_outage_does_not_lock_out_the_operator_or_the_syncs(
     """
     edc = lookup_fails(httpx.ConnectError("connection refused"))
     r = await client.delete(
-        f"/provider/assets/{ASSET}", headers=_user_headers("ds-admin")
+        f"/provider/assets/{ASSET}", headers=_user_headers("platform-admin")
     )
     assert r.status_code != 403
     assert edc.deleted == [ASSET]

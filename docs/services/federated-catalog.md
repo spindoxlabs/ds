@@ -129,7 +129,8 @@ true, or the service secret still at its dev default.
 | in | [ds-portal](portal.md) | `GET /catalog`, `GET /catalog/{id}`, forwarding the signed-in user's token |
 
 The portal forwards the *user's* token, so `catalog.read` must be reachable from that user's
-groups — `ds-member` and every operator bundle carry it.
+platform role or one of their organisation groups — `ds-member` and every operator bundle carry
+it. A realm-level group does not count.
 
 ## Running it
 

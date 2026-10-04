@@ -39,8 +39,9 @@ def get_did_resolver() -> DidResolver:
 # ── Authorization guards ────────────────────────────────────────────────────
 #
 # One unified guard (ds_auth.require_permission) authorizes BOTH service tokens
-# (via the `scope` claim) and user tokens (via Keycloak groups). ``{service}.admin``
-# is a superset, so an admin service token or an admin-group user both satisfy the
+# (via the `scope` claim) and user tokens (via an allowlisted realm role, or a group
+# inside the organisation concerned, ADR-0023). ``{service}.admin`` is a superset, so
+# an admin service token or a platform-admin user both satisfy the
 # finer permissions below.
 
 require_admin_scope = require_permission("identity-registry.admin")

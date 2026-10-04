@@ -78,7 +78,7 @@ async def _subject_sets(client, *, enabled: bool):
 
 #: The deployment operator — the only person who may register consent, and the
 #: only caller who may send the evidenced override.
-OPERATOR = make_user_headers(["ds-admin"])
+OPERATOR = make_user_headers(roles=["platform-admin"])
 
 
 async def _service_provisions(client, *, enabled: bool = True, **extra):

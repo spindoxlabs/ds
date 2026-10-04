@@ -188,8 +188,9 @@ caller from the verified token, never from the body:
 
 **A plain service token is refused** (`403`), and so is a participant operator's seat.
 `connector.consent.provision` left the `ds-participant-admin` bundle and every plain service
-client: a realm group and a shared service client are bound to no connector, so either could
-write at any connector for anyone's members. A service that registered consent moves to its
+client: the bundle was then held through a realm group, and a shared service client is bound
+to no connector, so either could write at any connector for anyone's members. (Realm groups
+now grant nothing at all, ADR-0023.) A service that registered consent moves to its
 organisation's client — see
 [Operations · upgrading past connector schema 0012](../deployment/operations.md#upgrading-past-connector-schema-0012-consent-is-registered-by-an-organisation-client).
 The operator is kept for one act no organisation token may perform: the evidenced
@@ -478,8 +479,11 @@ not only the code**; the code is a summary of it.
 | any other service token | nothing — it names no participant; see below |
 
 A participant's own organisation client may publish its own catalogue. `ds-participant-admin`
-is a realm group and a realm group is bound to no connector, which is why the person case is
-checked against the owners registry rather than taken on trust.
+is held inside an organisation, and an organisation is bound to no connector, which is why the
+person case is checked against the owners registry rather than taken on trust. A person with
+no organisation holds no provider permission at all unless they are the platform administrator
+([ADR-0023](../decisions/ADR-0023-a-persons-authority-has-two-levels.md)), so the
+no-organisations exemption no longer decides anything for a person.
 
 A plain service token names no participant, so there is nothing to bind it to. The control
 is that the identity which publishes holds nothing else: `svc-ds-publisher` carries

@@ -32,6 +32,7 @@ referent and nothing measures it. ADR-0004 states the boundary.
 | [ADR-0020](ADR-0020-each-withdrawal-is-its-own-record.md) | Each withdrawal is its own record, and the member's is the one presented |
 | [ADR-0021](ADR-0021-an-organisation-lists-its-own-members-decisions.md) | An organisation lists its own members' decisions, every state, bounded as the per-subject read-back |
 | [ADR-0022](ADR-0022-a-holder-reads-the-keys-it-serves.md) | A holder reads the data keys it serves, and their history, as keys only |
+| [ADR-0023](ADR-0023-a-persons-authority-has-two-levels.md) | A person's authority has two levels: an allowlisted realm role (platform) or an organisation's own group (that organisation) |
 
 ADR-0007 and ADR-0008 were extracted from prose in the root agent guide; ADR-0009 to
 ADR-0011 from comment blocks in `Taskfile.yml` and `.github/workflows/`. Where the rule

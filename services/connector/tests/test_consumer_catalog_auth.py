@@ -137,7 +137,9 @@ async def test_catalog_refuses_a_user_holding_no_consumer_credential(consumer_ap
     """
     client, _ = consumer_app
     r = await client.post(
-        "/consumer/catalog", json=BODY, headers=make_user_headers(["ds-member"])
+        "/consumer/catalog",
+        json=BODY,
+        headers=make_user_headers(organizations={"example-org": ["ds-member"]}),
     )
     assert r.status_code == 403
 

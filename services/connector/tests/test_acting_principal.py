@@ -37,7 +37,7 @@ def _human(**extra) -> Principal:
         "name": "Provider User",
         "given_name": "Provider",
         "family_name": "User",
-        "groups": ["ds-participant-admin"],
+        "organization": {"example-org": {"groups": ["/ds-participant-admin"]}},
         **extra,
     }
     return Principal.from_claims(claims)
@@ -109,7 +109,7 @@ def _user_headers(sub: str) -> dict:
             iss=ISSUER,
             email="operator@example.test",
             preferred_username="operator@example.test",
-            groups=["ds-participant-admin"],
+            organization={"example-org": {"groups": ["/ds-participant-admin"]}},
         ),
         "secret",
         algorithm="HS256",

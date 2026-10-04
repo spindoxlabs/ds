@@ -346,14 +346,13 @@ class E2ESettings(BaseSettings):
     provider_email: str = "provider@example.test"
     provider_password: str = "provider"
     # A second participant's operator, holding `ds-participant-admin` **only inside
-    # the `grid-operator` organisation** and no realm groups at all. It is the one
-    # dev seat that can demonstrate a cross-owner refusal: every other operator
-    # carries a realm-level grant, which is deployment-wide by design.
+    # the `grid-operator` organisation**. It demonstrates a cross-owner refusal
+    # against an asset `example-org` owns.
     grid_operator_email: str = "gridops@example.test"
     grid_operator_password: str = "gridops"
-    # A seat whose only realm group is `legacy-provider-admin` — a deliberately
-    # foreign-looking name that is **not** a ds bundle and therefore grants nothing
-    # on its own. Its authority exists only if the Layer B alias map translated it,
+    # A seat whose only group is `legacy-provider-admin`, inside `example-org` — a
+    # deliberately foreign-looking name that is **not** a ds bundle and therefore
+    # grants nothing on its own. Its authority exists only if the Layer B alias map translated it,
     # which is what makes this an assertion about the wiring rather than about the
     # bundle table.
     legacy_operator_email: str = "legacy@example.test"

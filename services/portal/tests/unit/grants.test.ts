@@ -20,15 +20,25 @@ describe('extractGrants (via hasGrant)', () => {
 		expect(hasGrant(s, 'connector.provider.read')).toBe(false);
 	});
 
-	it('grants the expansion of a bundle group', () => {
-		const s = session({ groups: ['ds-participant-admin'] });
+	it('grants the expansion of an organisation bundle group', () => {
+		const s = session({ organization: { 'example-org': { groups: ['/ds-participant-admin'] } } });
 		expect(hasGrant(s, 'connector.provider.read')).toBe(true);
 		expect(hasGrant(s, 'connector.provider.write')).toBe(true);
 	});
 
-	it('honours the .admin superset rule for a realm/client role', () => {
-		const s = session({ realm_access: { roles: ['connector.admin'] } });
+	it('honours the .admin superset rule for the platform-admin realm role', () => {
+		const s = session({ realm_access: { roles: ['platform-admin'] } });
 		expect(hasGrant(s, 'connector.provider.write')).toBe(true);
+	});
+
+	it('grants nothing for a realm group, or for a role on another client', () => {
+		const s = session({
+			groups: ['ds-participant-admin', '/ds-admin', 'connector.admin'],
+			realm_access: { roles: ['connector.admin', 'ds-admin'] },
+			resource_access: { 'other-app': { roles: ['platform-admin', 'connector.admin'] } },
+		});
+		expect(hasGrant(s, 'connector.provider.read')).toBe(false);
+		expect(hasGrant(s, 'connector.admin')).toBe(false);
 	});
 
 	it('grants an org-scoped bundle group from the organization claim', () => {
@@ -52,14 +62,26 @@ describe('extractGrants with a Layer B alias map', () => {
 		process.env.PORTAL_OIDC_GROUP_ALIASES = JSON.stringify({ 'celine-manager': 'ds-participant-admin' });
 		vi.resetModules();
 		const { hasGrant: fresh } = await import('../../src/lib/server/auth');
-		expect(fresh(session({ groups: ['celine-manager'] }), 'connector.provider.write')).toBe(true);
+		const org = { organization: { 'example-org': { groups: ['/celine-manager'] } } };
+		expect(fresh(session(org), 'connector.provider.write')).toBe(true);
+		// …and only as an organisation group: a realm group of that name grants nothing.
+		expect(fresh(session({ groups: ['celine-manager'] }), 'connector.provider.write')).toBe(false);
+	});
+
+	it('ignores an alias whose target is a platform bundle', async () => {
+		process.env.PORTAL_OIDC_GROUP_ALIASES = JSON.stringify({ 'host-admins': 'ds-admin' });
+		vi.resetModules();
+		const { hasGrant: fresh } = await import('../../src/lib/server/auth');
+		const org = { organization: { 'example-org': { groups: ['/host-admins'] } } };
+		expect(fresh(session(org), 'connector.admin')).toBe(false);
 	});
 
 	it('ignores an alias whose target is a capability, not a bundle', async () => {
 		process.env.PORTAL_OIDC_GROUP_ALIASES = JSON.stringify({ 'celine-manager': 'connector.provider.write' });
 		vi.resetModules();
 		const { hasGrant: fresh } = await import('../../src/lib/server/auth');
-		// The alias is dropped; the group falls through as itself and grants nothing.
-		expect(fresh(session({ groups: ['celine-manager'] }), 'connector.provider.write')).toBe(false);
+		// The alias is dropped, and an unknown organisation group grants nothing.
+		const org = { organization: { 'example-org': { groups: ['/celine-manager'] } } };
+		expect(fresh(session(org), 'connector.provider.write')).toBe(false);
 	});
 });

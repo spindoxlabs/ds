@@ -1,12 +1,14 @@
 // GENERATED FILE — DO NOT EDIT.
 //
-// Source: libs/ds-auth/src/ds_auth/bundles.py
+// Source: libs/ds-auth/src/ds_auth/bundles.py (+ the claim reading in
+// ds_auth.jwt / ds_auth.principal, rendered by ds_auth/bundles_export.py)
 // Regenerate: task -d libs/ds-auth bundles:generate
 //
-// The role bundles a user token's groups are expanded through, mirroring
-// `ds_auth.bundles` exactly. The portal gates its UI on the result; the backend
-// re-authorizes every request against the same table, so a stale copy here shows
-// the wrong buttons rather than granting anything.
+// The two levels a user token's authority comes from, mirroring `ds_auth`
+// exactly: allowlisted realm roles (platform-wide) and each organisation's own
+// groups (that organisation only). The portal gates its UI on the result; the
+// backend re-authorizes every request against the same table, so a stale copy
+// here shows the wrong buttons rather than granting anything.
 
 
 export const ROLE_BUNDLES: Record<string, string[]> = {
@@ -53,53 +55,192 @@ export const MACHINE_IDENTITY_PERMISSIONS: string[] = [
 	'connector.webhook',
 ];
 
-/**
- * Expand role bundles into capabilities — the TypeScript twin of
- * `ds_auth.bundles.expand_bundles`. Four rules, in order: a Layer B alias is
- * translated first (a foreign IdP's group name becomes the ds bundle a
- * deployment mapped it to); a known bundle expands; a machine-identity
- * permission is dropped (never grantable to a human, however the group is
- * named); anything else passes through verbatim, so a realm still carrying the
- * old scope-named groups keeps working.
- */
-export function expandBundles(
-	groups: Iterable<string>,
-	aliases: Record<string, string> = {},
-): string[] {
+export const PLATFORM_ADMIN_ROLE = 'platform-admin';
+
+export const PLATFORM_BUNDLES: string[] = [
+	'ds-admin',
+	'ds-onboarding-operator',
+];
+
+export const ORGANISATION_BUNDLES: string[] = [
+	'ds-member',
+	'ds-participant-admin',
+	'ds-participant-viewer',
+];
+
+export const REALM_ROLE_BUNDLES: Record<string, string> = {
+	'ds-onboarding-operator': 'ds-onboarding-operator',
+	'platform-admin': 'ds-admin',
+};
+
+export const ORGANISATION_PERMISSIONS: string[] = [
+	'catalog.read',
+	'connector.consent.holder.read',
+	'connector.disclosure.record',
+	'connector.history.read',
+	'connector.ingestion.record',
+	'connector.provider.read',
+	'connector.provider.write',
+	'connector.registry.invalidate',
+	'identity-registry.membership.read',
+	'identity-registry.read',
+	'provenance.read',
+];
+
+type Claims = Record<string, unknown>;
+
+function orderedUnique(values: Iterable<string>): string[] {
 	const seen = new Set<string>();
-	const result: string[] = [];
-	const machine = new Set(MACHINE_IDENTITY_PERMISSIONS);
-
-	const add = (permission: string) => {
-		if (permission && !seen.has(permission)) {
-			seen.add(permission);
-			result.push(permission);
-		}
-	};
-
-	for (const raw of groups) {
-		if (typeof raw !== 'string' || !raw) continue;
-		// Rule 0: translate a foreign name before anything else looks at it.
-		const group = aliases[raw] ?? raw;
-		const capabilities = ROLE_BUNDLES[group];
-		if (capabilities) {
-			for (const capability of capabilities) add(capability);
-		} else if (machine.has(group)) {
-			continue;
-		} else {
-			add(group);
+	const out: string[] = [];
+	for (const v of values) {
+		if (v && !seen.has(v)) {
+			seen.add(v);
+			out.push(v);
 		}
 	}
+	return out;
+}
 
-	return result;
+/**
+ * `realm_access.roles` — and nowhere else. Never `groups`, never a top-level
+ * `roles`, never `resource_access.<client>.roles`. Twin of
+ * `ds_auth.jwt.extract_realm_roles`.
+ */
+export function realmRoles(claims: Claims): string[] {
+	const access = claims.realm_access;
+	if (!access || typeof access !== 'object' || Array.isArray(access)) return [];
+	const roles = (access as Record<string, unknown>).roles;
+	if (!Array.isArray(roles)) return [];
+	return orderedUnique(roles.filter((r): r is string => typeof r === 'string'));
+}
+
+/** The organisation aliases in the `organization` claim. */
+export function organisationAliases(claims: Claims): string[] {
+	const orgs = claims.organization;
+	if (!orgs || typeof orgs !== 'object' || Array.isArray(orgs)) return [];
+	return Object.entries(orgs as Record<string, unknown>)
+		.filter(([, data]) => !!data && typeof data === 'object' && !Array.isArray(data))
+		.map(([alias]) => alias);
+}
+
+/**
+ * The groups held **within** one organisation, leading slash stripped. Twin of
+ * `ds_auth.models.Organization.groups`. `null` when not a member.
+ */
+export function organisationGroups(claims: Claims, alias: string): string[] | null {
+	const orgs = claims.organization;
+	if (!orgs || typeof orgs !== 'object' || Array.isArray(orgs)) return null;
+	if (!Object.prototype.hasOwnProperty.call(orgs, alias)) return null;
+	const data = (orgs as Record<string, unknown>)[alias];
+	if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+	const groups = (data as Record<string, unknown>).groups;
+	if (!Array.isArray(groups)) return [];
+	return groups
+		.filter((g): g is string => typeof g === 'string' && g.trim() !== '')
+		.map((g) => g.replace(/^\/+/, ''));
+}
+
+/**
+ * What allowlisted realm roles grant, deployment-wide. Twin of
+ * `ds_auth.bundles.platform_authority`: a role not in `REALM_ROLE_BUNDLES`
+ * grants nothing, and there is no pass-through at this level.
+ */
+export function platformAuthority(claims: Claims): string[] {
+	const out: string[] = [];
+	for (const role of realmRoles(claims)) {
+		const bundle = REALM_ROLE_BUNDLES[role];
+		if (bundle) out.push(...ROLE_BUNDLES[bundle]);
+	}
+	return orderedUnique(out);
+}
+
+/**
+ * What one organisation's own groups grant, within it. Twin of
+ * `ds_auth.bundles.organisation_authority`: a Layer B alias first, then an
+ * organisation bundle expands, then a name in `ORGANISATION_PERMISSIONS` grants
+ * itself — anything else (a platform bundle, a `{service}.admin` superset, a
+ * machine identity, an unknown name) grants nothing.
+ */
+export function organisationAuthority(
+	claims: Claims,
+	alias: string,
+	aliases: Record<string, string> = {},
+): string[] {
+	const groups = organisationGroups(claims, alias);
+	if (!groups) return [];
+	const orgBundles = new Set(ORGANISATION_BUNDLES);
+	const orgPermissions = new Set(ORGANISATION_PERMISSIONS);
+	const out: string[] = [];
+	for (const raw of groups) {
+		if (!raw) continue;
+		const group = Object.prototype.hasOwnProperty.call(aliases, raw) ? aliases[raw] : raw;
+		if (orgBundles.has(group)) out.push(...ROLE_BUNDLES[group]);
+		else if (orgPermissions.has(group)) out.push(group);
+	}
+	return orderedUnique(out);
+}
+
+/**
+ * The grant set a route-level check reads: platform authority plus what each
+ * organisation grants within itself. Twin of `ds_auth.Principal.authority` for a
+ * user. The organisation part can never hold a superset or a platform-only
+ * permission, so it never adds up to a platform grant.
+ */
+export function userAuthority(claims: Claims, aliases: Record<string, string> = {}): string[] {
+	const out = [...platformAuthority(claims)];
+	for (const alias of organisationAliases(claims)) {
+		out.push(...organisationAuthority(claims, alias, aliases));
+	}
+	return orderedUnique(out);
+}
+
+/** Twin of `ds_auth.permissions.grant_satisfies`: `{service}.admin` is a superset. */
+export function grantSatisfies(grant: string, required: string): boolean {
+	if (grant === required) return true;
+	if (grant.endsWith('.admin')) {
+		const service = grant.slice(0, -'.admin'.length);
+		return required.startsWith(`${service}.`);
+	}
+	return false;
+}
+
+/** Twin of `ds_auth.permissions.has_permission`. */
+export function hasPermission(grants: Iterable<string>, required: Iterable<string>): boolean {
+	const held = [...grants];
+	for (const r of required) {
+		if (held.some((g) => grantSatisfies(g, r))) return true;
+	}
+	return false;
+}
+
+/**
+ * Does this person hold a required permission **for one organisation**? Twin of
+ * `ds_auth.Principal.grants_in`: platform authority holds everywhere; otherwise
+ * only `alias`'s own groups count, and only for a member.
+ */
+export function grantsIn(
+	claims: Claims,
+	alias: string,
+	required: string[],
+	aliases: Record<string, string> = {},
+): boolean {
+	return hasPermission(
+		[...platformAuthority(claims), ...organisationAuthority(claims, alias, aliases)],
+		required,
+	);
+}
+
+/** A person holding the `platform-admin` realm role. */
+export function isPlatformAdmin(claims: Claims): boolean {
+	return realmRoles(claims).includes(PLATFORM_ADMIN_ROLE);
 }
 
 /**
  * Parse and **validate** a Layer B alias map from its JSON env form — the twin
- * of `ds_auth.bundles.parse_group_aliases`. Aliases may only name bundles, never
- * capabilities, so deployment configuration cannot become a permission table:
- * an entry whose target is not a known bundle is dropped (and warned), and
- * malformed JSON yields an empty map rather than a silently different one.
+ * of `ds_auth.bundles.parse_group_aliases`. An alias may only name an
+ * **organisation** bundle: never a capability, never a platform bundle (only a
+ * realm role grants one). Anything else is dropped (and logged), and malformed
+ * JSON yields an empty map rather than a silently different one.
  */
 export function parseGroupAliases(raw: string | null | undefined): Record<string, string> {
 	if (!raw || !raw.trim()) return {};
@@ -116,16 +257,17 @@ export function parseGroupAliases(raw: string | null | undefined): Record<string
 		return {};
 	}
 
+	const orgBundles = new Set(ORGANISATION_BUNDLES);
 	const aliases: Record<string, string> = {};
 	for (const [foreign, target] of Object.entries(parsed as Record<string, unknown>)) {
 		if (typeof target !== 'string') {
 			console.error(`[ds-portal] ignoring non-string alias entry ${foreign} -> ${String(target)}`);
 			continue;
 		}
-		if (!(target in ROLE_BUNDLES)) {
+		if (!orgBundles.has(target)) {
 			console.error(
-				`[ds-portal] ignoring alias ${foreign} -> ${target}: not a role bundle. ` +
-					`An alias may only name a bundle (${Object.keys(ROLE_BUNDLES).sort().join(', ')}).`,
+				`[ds-portal] ignoring alias ${foreign} -> ${target}: not an organisation role bundle. ` +
+					`An alias may only name one of ${[...ORGANISATION_BUNDLES].sort().join(', ')}.`,
 			);
 			continue;
 		}

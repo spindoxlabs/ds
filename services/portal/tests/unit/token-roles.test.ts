@@ -11,19 +11,38 @@ describe('parseTokenRoles — only realm objects that exist', () => {
 		expect(parseTokenRoles(token({ resource_access: { 'ds-portal': { roles: ['admin'] } } })).isAdmin).toBe(false);
 	});
 
-	it('still treats ds-admin and connector.admin as admin', () => {
-		expect(parseTokenRoles(token({ realm_access: { roles: ['ds-admin'] } })).isAdmin).toBe(true);
-		expect(parseTokenRoles(token({ groups: ['connector.admin'] })).isAdmin).toBe(true);
+	it('treats the platform-admin realm role as admin, and nothing else', () => {
+		expect(parseTokenRoles(token({ realm_access: { roles: ['platform-admin'] } })).isAdmin).toBe(true);
+		// The retired names: a realm role `ds-admin`, a realm group, an org group.
+		expect(parseTokenRoles(token({ realm_access: { roles: ['ds-admin'] } })).isAdmin).toBe(false);
+		expect(parseTokenRoles(token({ groups: ['connector.admin', '/ds-admin'] })).isAdmin).toBe(false);
+		const orgAdmin = { organization: { 'example-org': { groups: ['/ds-admin', '/connector.admin'] } } };
+		expect(parseTokenRoles(token(orgAdmin)).isAdmin).toBe(false);
 	});
 
-	it('treats a real dataset.admin / provider grant as a dataset admin', () => {
-		expect(parseTokenRoles(token({ groups: ['dataset.admin'] })).isDatasetAdmin).toBe(true);
-		expect(parseTokenRoles(token({ groups: ['ds-participant-admin'] })).isDatasetAdmin).toBe(true);
+	it('treats an organisation provider grant as a dataset admin — and not a realm one', () => {
+		const org = { organization: { 'example-org': { groups: ['/ds-participant-admin'] } } };
+		expect(parseTokenRoles(token(org)).isDatasetAdmin).toBe(true);
+		expect(parseTokenRoles(token({ realm_access: { roles: ['dataset.admin'] } })).isDatasetAdmin).toBe(false);
+		expect(parseTokenRoles(token({ groups: ['ds-participant-admin'] })).isDatasetAdmin).toBe(false);
 	});
 
 	it('a plain member is neither', () => {
-		const r = parseTokenRoles(token({ groups: ['ds-member'] }));
+		const r = parseTokenRoles(token({ organization: { 'example-org': { groups: ['/ds-member'] } } }));
 		expect(r.isAdmin).toBe(false);
 		expect(r.isDatasetAdmin).toBe(false);
+	});
+
+	it('names the organisations it may publish for — authority, not membership', () => {
+		const r = parseTokenRoles(
+			token({
+				organization: {
+					'example-org': { groups: ['/ds-participant-viewer'] },
+					'grid-operator': { groups: ['/ds-participant-admin'] },
+				},
+			}),
+		);
+		expect(r.organizations.sort()).toEqual(['example-org', 'grid-operator']);
+		expect(r.writableOrganizations).toEqual(['grid-operator']);
 	});
 });

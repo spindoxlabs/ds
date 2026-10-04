@@ -44,16 +44,23 @@ understand about this service.
 
 | Axis | Comes from | Answers | Guards |
 |---|---|---|---|
-| **Keycloak groups and roles** | the access token: realm `groups` and `organization.<alias>.groups` | *may this operator act?* | `requireAdmin`, `requireProvider`, `requireGrant` |
+| **Platform roles and organisation groups** | the access token: allowlisted realm roles in `realm_access.roles` (platform-wide) and `organization.<alias>.groups` (that organisation only) | *may this operator act, and for whom?* | `requireAdmin`, `requireProvider`, `requireGrant`, `hasGrantIn` |
 | **Verifiable credentials** | the identity registry, resolved per session by email | *is this person a data subject / a consumer?* | `requireDataSubject`, `requireConsumer` |
 
 They do not substitute for one another. A platform admin is **not** a data subject and cannot
-reach `/my-data`; a data subject with no Keycloak group cannot reach `/provider`. That is
+reach `/my-data`; a data subject with no platform role and no organisation group cannot reach
+`/provider`. That is
 deliberate: consent belongs to the person, not to an administrator.
 
-Groups are expanded into capabilities through `services/portal/src/lib/server/bundles.generated.ts`, which is
-generated from [`libs/ds-auth`](libs/ds-auth.md)'s role-bundle table by
-`task auth:bundles:generate`. Do not hand-edit it — a test asserts it matches a fresh render.
+Roles and groups are read and expanded into capabilities by
+`services/portal/src/lib/server/bundles.generated.ts`, which is generated from
+[`libs/ds-auth`](libs/ds-auth.md) — the role-bundle table **and** the way a token is read — by
+`task auth:bundles:generate`. Do not hand-edit it — a test asserts it matches a fresh render,
+and a shared case table holds the portal and the API to the same decisions. A realm-level
+group, or a role on any other client, grants nothing in either
+([ADR-0023](../decisions/ADR-0023-a-persons-authority-has-two-levels.md)). The provider asset
+page offers a write only for the organisations where `connector.provider.write` holds *within*
+the organisation, which is what the connector's owner perimeter checks.
 
 **All of this is UI gating.** Every backend re-verifies and re-authorises. A guard here
 decides what to render, never what is permitted.
@@ -134,5 +141,5 @@ Reach it at `http://portal.dataspaces.localhost`, not `localhost:30004` — the 
 bypasses the auth wall and the `/api/*` proxy prefixes the footer links use.
 
 The UI journeys log in as real dev-realm users and are chosen to separate the two authority
-axes: `operator` and `provider` carry Keycloak groups, `consumer` and `subject` carry
+axes: `operator` carries a platform realm role and `provider` an organisation group, `consumer` and `subject` carry
 credentials, and `dual` carries both credential roles at once.

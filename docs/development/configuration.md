@@ -145,9 +145,11 @@ These are consumed by compose, Task or the client declaration — never by appli
 
 ## Group aliases — mapping a foreign realm
 
-If a Keycloak realm cannot use ds's five group names, do not rename anything. Each service
-accepts `*_OIDC_GROUP_ALIASES` — a JSON map of foreign group name → ds **bundle** name. An alias
-may only ever name a bundle, never a raw capability; anything else is dropped and logged.
+If a Keycloak realm's organisations cannot use ds's organisation group names, do not rename
+anything. Each service accepts `*_OIDC_GROUP_ALIASES` — a JSON map of foreign organisation-group
+name → ds **organisation bundle** name, applied to groups inside an organisation only. An alias
+may never name a platform bundle (those come only from an allowlisted realm role, ADR-0023) or a
+raw capability; anything else is dropped and logged.
 
 The same idea applies to organisations: `CONNECTOR_OWNER_ALIASES` maps a foreign organisation
 alias onto a ds owner id.

@@ -1,0 +1,347 @@
+{
+  "_comment": [
+    "One table, decided by two suites: libs/ds-auth/tests/test_two_levels.py (Python, ds_auth.Principal)",
+    "and services/portal/tests/unit/two-levels.test.ts (the generated TypeScript twin). Expectations are",
+    "written by hand: they are the specification both readers are held to, not a capture of either.",
+    "Every case is a USER token (the portal never sees a service token). 'platform' and 'authority' are",
+    "compared as sets. 'operator' is connector.admin held by name, the portal's isAdmin.",
+    "Claim shapes follow what Keycloak 26 emits: realm_access.roles in the access token, organisation",
+    "groups as paths with a leading slash under organization.<alias>.groups."
+  ],
+  "cases": [
+    {
+      "name": "an organisation's own admins member is not a platform admin",
+      "claims": {
+        "sub": "u-org-admin", "azp": "oauth2_proxy", "preferred_username": "org-admin",
+        "email": "org-admin@example.org",
+        "realm_access": {"roles": ["default-roles-example", "offline_access", "uma_authorization"]},
+        "organization": {"example-rec": {"type": ["rec"], "groups": ["/admins"]}}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"connector.admin": false, "identity-registry.admin": false, "catalog.read": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "a ds participant admin of one organisation acts for that organisation only",
+      "claims": {
+        "sub": "u-provider", "azp": "oauth2_proxy", "preferred_username": "provider",
+        "email": "provider@example.org",
+        "realm_access": {"roles": ["offline_access"]},
+        "organization": {"example-rec": {"groups": ["/ds-participant-admin"]}}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [
+          "connector.provider.read", "connector.provider.write", "connector.history.read",
+          "connector.registry.invalidate", "connector.ingestion.record", "connector.disclosure.record",
+          "catalog.read", "provenance.read", "identity-registry.read", "identity-registry.membership.read"
+        ],
+        "grants": {
+          "connector.provider.write": true, "connector.admin": false,
+          "identity-registry.organizations.read": false, "connector.internal": false
+        },
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": true},
+          {"alias": "example-dso", "perm": "connector.provider.write", "result": false},
+          {"alias": "example-dso", "perm": "connector.provider.read", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "the platform-admin realm role holds everywhere, member or not",
+      "claims": {
+        "sub": "u-admin", "azp": "oauth2_proxy", "preferred_username": "admin",
+        "email": "admin@example.org",
+        "realm_access": {"roles": ["platform-admin"]}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": true,
+        "operator": true,
+        "platform": [
+          "identity-registry.admin", "connector.admin", "provenance.read", "provenance.write", "catalog.read"
+        ],
+        "authority": [
+          "identity-registry.admin", "connector.admin", "provenance.read", "provenance.write", "catalog.read"
+        ],
+        "grants": {
+          "connector.provider.write": true, "identity-registry.organizations.promote": true,
+          "catalog.read": true
+        },
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": true},
+          {"alias": "example-dso", "perm": "connector.consent.holder.read", "result": true}
+        ]
+      }
+    },
+    {
+      "name": "a realm group still present in a token grants nothing",
+      "claims": {
+        "sub": "u-legacy", "azp": "oauth2_proxy", "preferred_username": "legacy-admin",
+        "email": "legacy-admin@example.org",
+        "groups": ["/admins", "admins", "/ds-admin", "ds-admin", "/connector.admin", "ds-participant-admin"],
+        "realm_access": {"roles": ["admin"]}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"connector.admin": false, "connector.provider.read": false, "catalog.read": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "the captured legacy realm /admins token, with an organisation admins seat, grants nothing in ds",
+      "claims": {
+        "sub": "u-legacy-2", "azp": "oauth2_proxy", "preferred_username": "legacy-admin",
+        "email": "legacy-admin@example.org",
+        "groups": ["/admins", "admins"],
+        "realm_access": {"roles": ["admin"]},
+        "organization": {"example-rec": {"type": ["rec"], "groups": ["/admins"]}}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"connector.admin": false, "identity-registry.admin": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.read", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "a role on an unrelated client grants nothing, whatever it is called",
+      "claims": {
+        "sub": "u-client-role", "azp": "oauth2_proxy", "preferred_username": "client-role",
+        "email": "client-role@example.org",
+        "realm_access": {"roles": ["offline_access"]},
+        "resource_access": {
+          "some-other-app": {"roles": ["connector.admin", "ds-admin", "platform-admin"]},
+          "account": {"roles": ["manage-account"]}
+        }
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"connector.admin": false, "identity-registry.admin": false},
+        "grants_in": []
+      }
+    },
+    {
+      "name": "an organisation group named like a platform bundle or a superset grants nothing",
+      "claims": {
+        "sub": "u-org-escalation", "azp": "oauth2_proxy", "preferred_username": "org-escalation",
+        "email": "org-escalation@example.org",
+        "organization": {"example-rec": {"groups": [
+          "/ds-admin", "/ds-onboarding-operator", "/connector.admin", "/identity-registry.admin",
+          "/identity-registry.organizations.promote", "/identity-registry.organizations.write",
+          "/provenance.write", "/connector.internal", "/connector.webhook", "/platform-admin"
+        ]}}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {
+          "connector.admin": false, "identity-registry.admin": false,
+          "identity-registry.organizations.promote": false, "connector.internal": false
+        },
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "a viewer in one organisation and an admin in another writes only to the second",
+      "claims": {
+        "sub": "u-split", "azp": "oauth2_proxy", "preferred_username": "split",
+        "email": "split@example.org",
+        "organization": {
+          "example-rec": {"groups": ["/ds-participant-viewer"]},
+          "example-dso": {"groups": ["/ds-participant-admin"]}
+        }
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [
+          "connector.provider.read", "connector.provider.write", "connector.history.read",
+          "connector.registry.invalidate", "connector.ingestion.record", "connector.disclosure.record",
+          "catalog.read", "provenance.read", "identity-registry.read", "identity-registry.membership.read"
+        ],
+        "grants": {"connector.provider.write": true, "connector.admin": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": false},
+          {"alias": "example-rec", "perm": "connector.provider.read", "result": true},
+          {"alias": "example-dso", "perm": "connector.provider.write", "result": true}
+        ]
+      }
+    },
+    {
+      "name": "a literal organisation permission holds for that organisation only",
+      "claims": {
+        "sub": "u-holder", "azp": "oauth2_proxy", "preferred_username": "holder",
+        "email": "holder@example.org",
+        "organization": {
+          "example-dso": {"groups": ["/connector.consent.holder.read", "/connector.provider.read"]},
+          "example-rec": {"groups": ["/ds-member"]}
+        }
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": ["connector.consent.holder.read", "connector.provider.read", "catalog.read"],
+        "grants": {"connector.consent.holder.read": true, "connector.admin": false},
+        "grants_in": [
+          {"alias": "example-dso", "perm": "connector.consent.holder.read", "result": true},
+          {"alias": "example-rec", "perm": "connector.consent.holder.read", "result": false},
+          {"alias": "example-rec", "perm": "catalog.read", "result": true}
+        ]
+      }
+    },
+    {
+      "name": "the onboarding-operator realm role reviews applications everywhere and cannot promote",
+      "claims": {
+        "sub": "u-onboarding", "azp": "oauth2_proxy", "preferred_username": "onboarding",
+        "email": "onboarding@example.org",
+        "realm_access": {"roles": ["ds-onboarding-operator", "offline_access"]}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [
+          "identity-registry.organizations.read", "identity-registry.organizations.write",
+          "identity-registry.agreements.read", "identity-registry.participants.write",
+          "identity-registry.read"
+        ],
+        "authority": [
+          "identity-registry.organizations.read", "identity-registry.organizations.write",
+          "identity-registry.agreements.read", "identity-registry.participants.write",
+          "identity-registry.read"
+        ],
+        "grants": {
+          "identity-registry.organizations.read": true,
+          "identity-registry.organizations.promote": false,
+          "connector.provider.read": false
+        },
+        "grants_in": [
+          {"alias": "example-rec", "perm": "identity-registry.read", "result": true}
+        ]
+      }
+    },
+    {
+      "name": "a realm role not on the allowlist grants nothing, even when named like a bundle",
+      "claims": {
+        "sub": "u-unlisted", "azp": "oauth2_proxy", "preferred_username": "unlisted",
+        "email": "unlisted@example.org",
+        "realm_access": {"roles": ["ds-admin", "ds-participant-admin", "ds-member", "connector.admin", "admin"]}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"connector.admin": false, "catalog.read": false},
+        "grants_in": []
+      }
+    },
+    {
+      "name": "a Layer B alias translates an organisation group to an organisation bundle, never to a platform one",
+      "claims": {
+        "sub": "u-aliased", "azp": "oauth2_proxy", "preferred_username": "aliased",
+        "email": "aliased@example.org",
+        "organization": {"example-rec": {"groups": ["/legacy-provider-admin", "/host-admins"]}}
+      },
+      "aliases": "{\"legacy-provider-admin\": \"ds-participant-admin\", \"host-admins\": \"ds-admin\", \"host-raw\": \"connector.admin\"}",
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [
+          "connector.provider.read", "connector.provider.write", "connector.history.read",
+          "connector.registry.invalidate", "connector.ingestion.record", "connector.disclosure.record",
+          "catalog.read", "provenance.read", "identity-registry.read", "identity-registry.membership.read"
+        ],
+        "grants": {"connector.provider.write": true, "connector.admin": false, "identity-registry.admin": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "connector.provider.write", "result": true},
+          {"alias": "example-dso", "perm": "connector.provider.write", "result": false}
+        ]
+      }
+    },
+    {
+      "name": "a platform admin who is also an organisation member keeps both, and nothing more",
+      "claims": {
+        "sub": "u-admin-member", "azp": "oauth2_proxy", "preferred_username": "admin-member",
+        "email": "admin-member@example.org",
+        "realm_access": {"roles": ["platform-admin", "offline_access"]},
+        "organization": {"example-rec": {"groups": ["/admins", "/ds-participant-viewer"]}}
+      },
+      "aliases": null,
+      "expect": {
+        "is_platform_admin": true,
+        "operator": true,
+        "platform": [
+          "identity-registry.admin", "connector.admin", "provenance.read", "provenance.write", "catalog.read"
+        ],
+        "authority": [
+          "identity-registry.admin", "connector.admin", "provenance.read", "provenance.write", "catalog.read",
+          "connector.provider.read", "connector.history.read", "identity-registry.read"
+        ],
+        "grants": {"connector.provider.write": true, "identity-registry.organizations.promote": true},
+        "grants_in": [
+          {"alias": "example-dso", "perm": "connector.provider.write", "result": true}
+        ]
+      }
+    },
+    {
+      "name": "malformed claims grant nothing and do not throw",
+      "claims": {
+        "sub": "u-malformed", "azp": "oauth2_proxy", "preferred_username": "malformed",
+        "email": "malformed@example.org",
+        "realm_access": {"roles": "platform-admin"},
+        "organization": {"example-rec": "ds-participant-admin", "example-dso": {"groups": "ds-participant-admin"}}
+      },
+      "aliases": "not json",
+      "expect": {
+        "is_platform_admin": false,
+        "operator": false,
+        "platform": [],
+        "authority": [],
+        "grants": {"catalog.read": false},
+        "grants_in": [
+          {"alias": "example-rec", "perm": "catalog.read", "result": false},
+          {"alias": "example-dso", "perm": "catalog.read", "result": false}
+        ]
+      }
+    }
+  ]
+}

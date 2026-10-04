@@ -22,6 +22,8 @@ import yaml
 
 from ds_auth import (
     MACHINE_IDENTITY_PERMISSIONS,
+    ORGANISATION_BUNDLES,
+    REALM_ROLE_BUNDLES,
     ROLE_BUNDLES,
     SERVICE_ONLY_PERMISSIONS,
     all_bundled_permissions,
@@ -144,10 +146,10 @@ def test_machine_identity_permissions_exist_as_scopes():
 def test_bundle_names_do_not_collide_with_scope_names(bundle: str):
     """A bundle named like a scope would be ambiguous.
 
-    `expand_bundles` passes unknown groups through verbatim, so a name that is
-    *both* a bundle and a scope would expand instead of passing through — and
-    which behaviour applied would depend on the order the two artifacts were
-    edited in.
+    An organisation group may name a permission directly
+    (`ORGANISATION_PERMISSIONS`), so a name that is *both* a bundle and a scope
+    would expand in one place and grant itself in another — and which behaviour
+    applied would depend on the order the two artifacts were edited in.
     """
     assert bundle not in _all_scopes(), (
         f"{bundle} is both a role bundle and a declared scope"
@@ -181,55 +183,71 @@ def _organizations() -> dict:
 
 
 def _held_in_dev() -> set[str]:
-    """Every group a dev user actually holds, by **either** provisioning path.
+    """Every bundle a dev user actually holds, each at the level that grants it.
 
-    Both are real and they differ in latency and scope — a realm group is
-    deployment-wide and applied only at first startup; an org group is scoped to
-    one owner and applied live (`docs/services/keycloak.md`). A seat provisioned
-    by either one counts as held.
+    A platform bundle through a realm role on the allowlist
+    (`REALM_ROLE_BUNDLES`, in `realm-dataspaces-dev.json`); an organisation bundle
+    through a group inside an organisation (`organizations.yaml`). A realm group
+    is not a path to anything, so it is not counted.
     """
     held = {
-        group.lstrip("/")
+        REALM_ROLE_BUNDLES[role]
         for user in _dev_realm().get("users") or []
-        for group in user.get("groups") or []
+        for role in user.get("realmRoles") or []
+        if role in REALM_ROLE_BUNDLES
     }
     for org in _organizations().get("organizations") or []:
         for member in org.get("members") or []:
-            held |= set(member.get("groups") or [])
+            held |= set(member.get("groups") or []) & ORGANISATION_BUNDLES
     return held
 
 
-def test_every_bundle_the_dev_realm_declares_is_held_by_someone():
-    """A declared group with no holder is a seat nobody sits in.
-
-    Only groups that are also **bundles** are checked: the realm import may carry
-    a group that is deliberately not ds vocabulary (`legacy-provider-admin` is
-    there to prove an unknown group passes through `expand_bundles` untouched),
-    and requiring a sitter for that would be requiring the opposite of what it
-    demonstrates.
-    """
-    declared = {g["name"] for g in _dev_realm().get("groups") or []}
-    unheld = (declared & set(ROLE_BUNDLES)) - _held_in_dev()
+def test_every_bundle_is_held_by_some_dev_seat():
+    """A bundle with no holder is a seat nobody sits in."""
+    unheld = set(ROLE_BUNDLES) - _held_in_dev()
     assert not unheld, (
-        f"role bundles declared in the dev realm but held by no dev user: "
-        f"{sorted(unheld)} — give each one a seat in "
-        "`realm-dataspaces-dev.json` (realm-wide) or `organizations.yaml` "
-        "(scoped to one owner), or stop declaring it"
+        f"role bundles held by no dev user at their level: {sorted(unheld)} — a "
+        "platform bundle needs a realm role in `realm-dataspaces-dev.json`, an "
+        "organisation bundle a group in `organizations.yaml`"
     )
 
 
-def test_every_bundle_a_dev_seat_names_is_a_real_bundle():
-    """The inverse: a typo in `organizations.yaml` is silent.
+def test_the_dev_realm_declares_no_realm_group():
+    """A realm group grants nothing, so declaring one is a seat that looks real."""
+    realm = _dev_realm()
+    assert not realm.get("groups"), "realm-dataspaces-dev.json declares realm groups"
+    holders = [u["username"] for u in realm.get("users") or [] if u.get("groups")]
+    assert not holders, f"dev users hold realm groups: {holders}"
 
-    `expand_bundles` passes an unknown group through verbatim, so a misspelled
-    bundle name becomes a permission string that matches nothing, and the seat
-    simply has no authority. `legacy-provider-admin` is the one deliberate
-    non-bundle and is exercised as such.
-    """
+
+def test_every_dev_realm_role_is_on_the_platform_allowlist():
+    """A realm role off the allowlist grants nothing — a typo would be silent."""
+    declared = {r["name"] for r in (_dev_realm().get("roles") or {}).get("realm", [])}
+    held = {
+        role
+        for user in _dev_realm().get("users") or []
+        for role in user.get("realmRoles") or []
+    }
+    off_list = declared - set(REALM_ROLE_BUNDLES)
+    assert not off_list, sorted(off_list)
+    assert held <= declared, sorted(held - declared)
+
+
+def test_every_organisation_seat_names_an_organisation_bundle():
+    """The inverse: a typo in `organizations.yaml` is silent, and so is a platform
+    bundle there — it would grant nothing. `legacy-provider-admin` is the one
+    deliberate non-bundle: the Layer B alias in `.env.local` translates it."""
     deliberate_non_bundles = {"legacy-provider-admin"}
-    unknown = _held_in_dev() - set(ROLE_BUNDLES) - deliberate_non_bundles
+    named = {
+        group
+        for org in _organizations().get("organizations") or []
+        for member in org.get("members") or []
+        for group in member.get("groups") or []
+    }
+    unknown = named - ORGANISATION_BUNDLES - deliberate_non_bundles
     assert not unknown, (
-        f"dev seats name groups that are not role bundles: {sorted(unknown)}"
+        f"organisation seats name groups that are not organisation bundles: "
+        f"{sorted(unknown)}"
     )
 
 

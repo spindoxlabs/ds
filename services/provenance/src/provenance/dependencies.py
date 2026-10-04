@@ -24,8 +24,9 @@ def get_settings_dep() -> Settings:
 # ── Authorization guards ────────────────────────────────────────────────────
 #
 # One unified guard (ds_auth.require_permission) authorizes BOTH service tokens
-# (via the `scope` claim) and user tokens (via Keycloak groups). ``{service}.admin``
-# is a superset of the finer permissions below.
+# (via the `scope` claim) and user tokens (via an allowlisted realm role, or a group
+# inside the organisation concerned, ADR-0023). ``{service}.admin`` is a superset of
+# the finer permissions below.
 
 # **Two guards, and no third that accepts either.** `require_read_or_write_scope`
 # existed until 2026-09-20 and was the mount of every mixed router, which made

@@ -1,117 +1,48 @@
 /**
  * Server-side auth utilities for SvelteKit route guards.
  *
- * Parses Keycloak authority from the session access token. Authority is
- * dual-sourced, matching the backend (libs/ds-auth): a user may carry it as
- * Keycloak roles (realm or client) AND/OR as groups. Groups name a **role
- * bundle** (`ds-participant-admin`, …) which expands into the backend permission
- * vocabulary; a group that is not a bundle passes through as its own capability,
- * so a realm still carrying the old scope-named groups keeps working. The
- * expansion table is generated from `ds_auth.bundles` — never edit it here.
+ * Reads a person's authority from the session access token on **two levels**,
+ * exactly as the backend (`libs/ds-auth`) does — because the reading itself is
+ * generated from `ds_auth` (`bundles.generated.ts`), not written here:
+ *
+ * - **platform**: realm roles from `realm_access.roles`, and only those in the
+ *   allowlist (`platform-admin` → `ds-admin`, …). No other client's
+ *   `resource_access` role, and no realm-level `groups` claim, grants anything;
+ * - **organisation**: each organisation's own groups, valid for that
+ *   organisation only, expanded through the organisation bundles.
  *
  * This is UI gating only — the backend re-verifies and re-authorizes every
  * request against the same table.
  */
 import { error, redirect } from '@sveltejs/kit';
 import type { DsSession as Session } from '../../app.d.ts';
-import { expandBundles } from './bundles.generated';
+import {
+	grantsIn,
+	hasPermission,
+	organisationAliases,
+	userAuthority,
+} from './bundles.generated';
 import { groupAliases } from './aliases';
 
 export interface ServerRoles {
 	isAdmin: boolean;
 	isDatasetAdmin: boolean;
+	/** Every organisation the token names — membership, not authority. */
 	organizations: string[];
+	/**
+	 * The organisations this person may publish for: those where
+	 * `connector.provider.write` holds **within** the organisation (or
+	 * platform-wide). Mirrors the connector's owner perimeter (`grants_in`).
+	 */
+	writableOrganizations: string[];
 }
 
-/**
- * All Keycloak roles: realm roles plus every client's roles under
- * `resource_access` (so authority is not tied to one client id — "dual role").
- */
-function extractRoles(payload: Record<string, unknown>): string[] {
-	const roles: string[] = [];
-	const realm = (payload.realm_access as { roles?: string[] } | undefined)?.roles;
-	if (Array.isArray(realm)) roles.push(...realm);
-	const resource = payload.resource_access as Record<string, { roles?: string[] }> | undefined;
-	if (resource && typeof resource === 'object') {
-		for (const client of Object.values(resource)) {
-			if (Array.isArray(client?.roles)) roles.push(...client.roles);
-		}
-	}
-	return roles;
-}
-
-/**
- * Merge Keycloak groups from realm-level `groups` and org-level
- * `organization.<alias>.groups`, emitted by the KC 26
- * `oidc-organization-membership-mapper`. Mirrors `ds_auth.extract_groups`
- * exactly — including reading only `groups`. An earlier version also read
- * `organization.<alias>.roles`, which `ds_auth` never has: the portal granted on
- * a claim the API would refuse, which is the one direction of drift that shows
- * users buttons that 403.
- */
-function extractGroups(payload: Record<string, unknown>): string[] {
-	const out: string[] = [];
-	const realm = payload.groups;
-	if (Array.isArray(realm)) out.push(...realm.filter((g): g is string => typeof g === 'string'));
-	const orgs = payload.organization;
-	if (orgs && typeof orgs === 'object') {
-		for (const org of Object.values(orgs as Record<string, unknown>)) {
-			if (!org || typeof org !== 'object') continue;
-			const entries = (org as Record<string, unknown>).groups;
-			if (Array.isArray(entries)) out.push(...entries.filter((x): x is string => typeof x === 'string'));
-		}
-	}
-	return out.map((g) => g.replace(/^\/+/, ''));
-}
-
-/**
- * Extract the set of KC organization aliases the user belongs to from the
- * `organization` JWT claim. Works with both legacy (celine-policies) and
- * KC 26+ native organization claim structures.
- */
-function extractOrganizations(payload: Record<string, unknown>): string[] {
-	const orgs = payload.organization;
-	if (!orgs || typeof orgs !== 'object') return [];
-	return Object.keys(orgs as Record<string, unknown>);
-}
-
-/**
- * Every permission-shaped authority a **user** token carries: realm roles, any
- * client's roles, and the expansion of realm and org groups through the role
- * bundles (with Layer B aliases applied first).
- *
- * The raw `scope` claim is deliberately **not** included. `ds_auth`
- * (`Principal.authority`) authorises a *service* on its scopes and a *user* on
- * expanded groups — never both: a user's scope claim is OpenID plumbing
- * (`openid profile email`) plus whatever default client scopes the realm
- * attaches, not the user's authority. Folding it in here let a token gate the UI
- * on a capability the API would refuse to read from a user's scope, which is the
- * one drift direction that shows buttons that 403.
- */
-function extractGrants(payload: Record<string, unknown>): string[] {
-	return [...extractRoles(payload), ...expandBundles(extractGroups(payload), groupAliases())];
-}
-
-/**
- * Does a single held grant satisfy a required permission?
- *
- * Mirrors `ds_auth.permissions.grant_satisfies`: `{service}.admin` is a superset
- * that satisfies any `{service}.*`. Kept deliberately identical — a portal that
- * gates on different rules than the API either hides things the user may do, or
- * offers actions the API will refuse.
- *
- * Note this is the *superset* rule, not `has_exact_permission`. Permissions that
- * mean "I am this machine" (`connector.webhook`, `connector.internal`) are never
- * user-facing, so the portal has no reason to model the exact variant.
- */
-function grantSatisfies(grant: string, required: string): boolean {
-	if (grant === required) return true;
-	if (grant.endsWith('.admin')) {
-		const service = grant.slice(0, -'.admin'.length);
-		return required.startsWith(`${service}.`);
-	}
-	return false;
-}
+const NO_ROLES: ServerRoles = {
+	isAdmin: false,
+	isDatasetAdmin: false,
+	organizations: [],
+	writableOrganizations: [],
+};
 
 /**
  * Does the session hold `permission`?
@@ -119,13 +50,31 @@ function grantSatisfies(grant: string, required: string): boolean {
  * UI gating only — the backend re-authorizes every request. Use it to decide
  * whether to *offer* an action, so a read-only operator sees a queue without
  * buttons that would 403.
+ *
+ * The raw `scope` claim is deliberately **not** consulted: `ds_auth` authorises a
+ * *service* on its scopes and a *user* on platform roles and organisation groups,
+ * never both — a user's scope claim is OpenID plumbing, not authority.
  */
 export function hasGrant(session: Session | null | undefined, ...permissions: string[]): boolean {
 	if (!session?.accessToken) return false;
 	const payload = decodeToken(session.accessToken);
 	if (!payload) return false;
-	const grants = extractGrants(payload);
-	return permissions.some((required) => grants.some((g) => grantSatisfies(g, required)));
+	return hasPermission(userAuthority(payload, groupAliases()), permissions);
+}
+
+/**
+ * Does the session hold `permission` **for one organisation**? The twin of
+ * `Principal.grants_in`, for UI that acts on an owner's resource.
+ */
+export function hasGrantIn(
+	session: Session | null | undefined,
+	alias: string,
+	...permissions: string[]
+): boolean {
+	if (!session?.accessToken) return false;
+	const payload = decodeToken(session.accessToken);
+	if (!payload) return false;
+	return grantsIn(payload, alias, permissions, groupAliases());
 }
 
 /**
@@ -133,7 +82,7 @@ export function hasGrant(session: Session | null | undefined, ...permissions: st
  * redirect.
  *
  * A silent bounce to `/` is indistinguishable from a broken page: the operator
- * who is missing one Keycloak group sees the app "not work" and has nothing to
+ * who is missing one Keycloak role or organisation group sees the app "not work" and has nothing to
  * act on. A 403 naming the permission is something they can take to whoever
  * administers the realm.
  */
@@ -146,7 +95,7 @@ export async function requireGrant(
 		throw error(403, {
 			message:
 				`This page needs the ${permissions.join(' or ')} permission, which your account ` +
-				`does not currently hold. Ask an operator to add the matching Keycloak group.`,
+				`does not currently hold. Ask an operator for the matching role or organisation group.`,
 		});
 	}
 	return session;
@@ -165,36 +114,32 @@ function decodeToken(accessToken: string): Record<string, unknown> | null {
 }
 
 export function parseTokenRoles(accessToken: string | undefined): ServerRoles {
-	if (!accessToken) return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
+	if (!accessToken) return { ...NO_ROLES };
 
 	try {
 		const payload = decodeToken(accessToken);
-		if (!payload) return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
+		if (!payload) return { ...NO_ROLES };
 
-		// Dual-sourced authority: roles (realm + any client) AND expanded groups.
-		const authorities = new Set<string>([
-			...extractRoles(payload),
-			...expandBundles(extractGroups(payload), groupAliases()),
-		]);
+		const aliases = groupAliases();
+		const authority = userAuthority(payload, aliases);
 
-		// Only realm objects that exist are named here. The `admin` client role,
-		// the `ds-portal` client that would carry it, and the `dataspaces.query`
-		// scope were all removed from `clients.yaml` long ago — matching on them was
-		// dead vocabulary that implied a realm shape the deployment does not have.
-		const isAdmin =
-			authorities.has('ds-admin') || // realm role / bundle
-			authorities.has('connector.admin'); // group (backend permission)
+		// The deployment operator: `connector.admin`, which only a platform role
+		// grants (`platform-admin` → `ds-admin`). An organisation group can never
+		// reach it — that is the point of the two levels.
+		const isAdmin = authority.includes('connector.admin');
 		const isDatasetAdmin =
 			isAdmin ||
-			authorities.has('dataset.admin') ||
-			authorities.has('connector.provider.write') ||
-			authorities.has('connector.provider.read');
+			authority.includes('connector.provider.write') ||
+			authority.includes('connector.provider.read');
 
-		const organizations = extractOrganizations(payload);
+		const organizations = organisationAliases(payload);
+		const writableOrganizations = organizations.filter((alias) =>
+			grantsIn(payload, alias, ['connector.provider.write'], aliases),
+		);
 
-		return { isAdmin, isDatasetAdmin, organizations };
+		return { isAdmin, isDatasetAdmin, organizations, writableOrganizations };
 	} catch {
-		return { isAdmin: false, isDatasetAdmin: false, organizations: [] };
+		return { ...NO_ROLES };
 	}
 }
 
@@ -264,8 +209,8 @@ export async function requireAdmin(event: { locals: App.Locals; url: URL }) {
 	if (!roles.isAdmin) {
 		throw error(403, {
 			message:
-				'Operator pages need administrator authority — the `ds-admin` realm role or the ' +
-				'`connector.admin` group. Your account holds neither.',
+				'Operator pages need administrator authority — the `platform-admin` realm role. ' +
+				'Your account does not hold it, and no organisation group can grant it.',
 		});
 	}
 	return { session, roles };
@@ -277,8 +222,8 @@ export async function requireProvider(event: { locals: App.Locals; url: URL }) {
 	if (!roles.isAdmin && !roles.isDatasetAdmin) {
 		throw error(403, {
 			message:
-				'Provider pages need `connector.provider.read` (or `dataset.admin`). Your account ' +
-				'does not hold it — ask an operator to add the matching Keycloak group.',
+				'Provider pages need `connector.provider.read` in one of your organisations. Your ' +
+				'account does not hold it — ask an operator for the matching organisation group.',
 		});
 	}
 	return { session, roles };

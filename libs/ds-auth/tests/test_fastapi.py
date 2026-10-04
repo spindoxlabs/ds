@@ -57,13 +57,39 @@ def test_service_token_scope_allows(client):
     assert client.get("/provider", headers=_auth(tok)).status_code == 200
 
 
-def test_user_token_group_allows(client):
-    tok = _token(email="a@b.test", groups=["/connector.provider.read"])
+def test_user_token_organisation_group_allows(client):
+    tok = _token(
+        email="a@b.test",
+        organization={"acme": {"groups": ["/ds-participant-viewer"]}},
+    )
+    assert client.get("/provider", headers=_auth(tok)).status_code == 200
+
+
+def test_user_token_platform_role_allows(client):
+    tok = _token(email="a@b.test", realm_access={"roles": ["platform-admin"]})
     assert client.get("/provider", headers=_auth(tok)).status_code == 200
 
 
 def test_user_without_group_denied(client):
-    tok = _token(email="a@b.test", groups=["/some.other.group"])
+    tok = _token(email="a@b.test", organization={"acme": {"groups": ["/x.y"]}})
+    assert client.get("/provider", headers=_auth(tok)).status_code == 403
+
+
+def test_a_realm_group_is_denied(client):
+    """A realm-level group grants nothing, however it is named."""
+    tok = _token(
+        email="a@b.test",
+        groups=["/connector.provider.read", "/ds-admin", "admins"],
+        realm_access={"roles": ["admin"]},
+    )
+    assert client.get("/provider", headers=_auth(tok)).status_code == 403
+
+
+def test_a_role_on_another_client_is_denied(client):
+    tok = _token(
+        email="a@b.test",
+        resource_access={"other-app": {"roles": ["connector.admin", "platform-admin"]}},
+    )
     assert client.get("/provider", headers=_auth(tok)).status_code == 403
 
 
@@ -144,9 +170,9 @@ def test_exact_permission_is_not_satisfied_by_admin(exact_client):
     assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 403
 
 
-def test_exact_permission_is_not_satisfied_by_admin_group(exact_client):
+def test_exact_permission_is_not_satisfied_by_platform_admin(exact_client):
     """Same rule for a user token — an admin operator, not just an admin service."""
-    tok = _token(email="admin@b.test", groups=["/connector.admin"])
+    tok = _token(email="admin@b.test", realm_access={"roles": ["platform-admin"]})
     assert exact_client.get("/webhook", headers=_auth(tok)).status_code == 403
 
 

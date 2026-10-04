@@ -17,12 +17,18 @@ from __future__ import annotations
 
 from .bundles import (
     MACHINE_IDENTITY_PERMISSIONS,
+    ORGANISATION_BUNDLES,
+    ORGANISATION_PERMISSIONS,
+    PLATFORM_ADMIN_ROLE,
+    PLATFORM_BUNDLES,
+    REALM_ROLE_BUNDLES,
     ROLE_BUNDLES,
     SERVICE_ONLY_PERMISSIONS,
     all_bundled_permissions,
     bundle_capabilities,
-    expand_bundles,
+    organisation_authority,
     parse_group_aliases,
+    platform_authority,
 )
 from .config import OidcConfig, default_jwks_uri
 from .errors import (
@@ -33,9 +39,8 @@ from .errors import (
     TokenMissing,
 )
 from .jwt import (
-    extract_groups,
     extract_organizations,
-    extract_realm_groups,
+    extract_realm_roles,
     extract_scopes,
     get_bearer_token,
     is_service_account,
@@ -66,7 +71,14 @@ __all__ = [
     "SERVICE_ONLY_PERMISSIONS",
     "all_bundled_permissions",
     "bundle_capabilities",
-    "expand_bundles",
+    # The two levels: platform (realm roles) and organisation (its own groups).
+    "PLATFORM_ADMIN_ROLE",
+    "PLATFORM_BUNDLES",
+    "ORGANISATION_BUNDLES",
+    "ORGANISATION_PERMISSIONS",
+    "REALM_ROLE_BUNDLES",
+    "platform_authority",
+    "organisation_authority",
     # EDC's management-API scopes ds grants, and to whom (`management_api.py`).
     "CONNECTOR_AUDIENCES",
     "CONNECTOR_SERVICE_SCOPES",
@@ -83,9 +95,8 @@ __all__ = [
     "Principal",
     "verify_token",
     "get_bearer_token",
-    "extract_groups",
     "extract_organizations",
-    "extract_realm_groups",
+    "extract_realm_roles",
     "extract_scopes",
     "is_service_account",
     "grant_satisfies",

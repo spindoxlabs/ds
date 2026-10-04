@@ -401,7 +401,7 @@ async def test_nobody_but_the_member_lifts_the_member_s_withdrawal(engine, clien
     assert member_row.id in detail
 
     # The holder's operator, provisioning without the evidenced override.
-    operator = make_user_headers(["ds-admin"])
+    operator = make_user_headers(roles=["platform-admin"])
     body = {
         "subject_id": HOLDERS_MEMBER,
         "offer_id": OFFER,

@@ -74,29 +74,35 @@ except where a route asks for a permission *exactly*. Two permissions are treate
 `connector.internal` and `connector.webhook`, precisely so a platform admin token cannot open
 the machine-to-machine surface.
 
-### Groups — what a human may do
+### Roles and organisation groups — what a human may do
 
-A human's authority arrives as Keycloak **groups**, never roles, and the vocabulary is
-**five names**, not one per endpoint:
+A human's authority arrives on **two levels**, and nothing in between
+([ADR-0023](../decisions/ADR-0023-a-persons-authority-has-two-levels.md)):
 
-| Group | Is |
+| Level | Carried as | Valid | Names |
+|---|---|---|---|
+| **platform** | a **realm role** (`realm_access.roles`) on the allowlist | everywhere | `platform-admin` → `ds-admin`; `ds-onboarding-operator` |
+| **organisation** | a **group inside an organisation** (`organization.<alias>.groups`) | that organisation only | `ds-participant-admin`, `ds-participant-viewer`, `ds-member` |
+
+| Bundle | Is |
 |---|---|
-| `ds-admin` | the deployment operator |
-| `ds-participant-admin` | acts for a participant: publish, sync, manage assets — not register consent, which an organisation's own client does |
-| `ds-participant-viewer` | read-only within a participant |
-| `ds-onboarding-operator` | reviews organisation applications |
-| `ds-member` | an authenticated human who may browse the catalogue |
+| `ds-admin` | the platform administrator — held through the `platform-admin` realm role |
+| `ds-onboarding-operator` | reviews organisation applications, deployment-wide; cannot promote |
+| `ds-participant-admin` | acts for **one** participant: publish, sync, manage assets — not register consent, which an organisation's own client does |
+| `ds-participant-viewer` | read-only within one participant |
+| `ds-member` | may browse the catalogue |
 
 Each names a **role bundle** that ds expands into capabilities in its own code
 ([`libs/ds-auth`](libs/ds-auth.md)). That is the point of five names: adding an endpoint is a
-ds release, not a change request against somebody else's realm. An unrecognised group passes
-through as its own literal capability, so a realm still carrying older group names keeps
-working.
+ds release, not a change request against somebody else's realm.
 
-Realm-level groups carry deployment-wide seats; `organization.<alias>.groups` carries
-participant-scoped ones. If a realm cannot use these names, **map them** rather than renaming
-anything: `*_OIDC_GROUP_ALIASES` translates foreign group names into bundle names, and may
-only ever name a *bundle*, never a raw capability.
+**Everything else grants nothing:** a realm-level group, whatever it is called; a realm role
+off the allowlist; any client's `resource_access` role; and an organisation group naming a
+platform bundle, an `*.admin` superset or anything ds does not know. There is no pass-through.
+
+If a realm's organisations use other group names, **map them** rather than renaming anything:
+`*_OIDC_GROUP_ALIASES` translates a foreign organisation-group name into an *organisation*
+bundle, and may never name a platform bundle or a raw capability.
 
 ## The clients
 
@@ -257,24 +263,26 @@ All passwords equal the username. Realm `dataspaces`. The portal is at
 <http://portal.dataspaces.localhost>; [Signing in](../development/running-the-stack.md#signing-in)
 covers which seat to reach for.
 
-`Authority` below is a *permission* statement, not a list of screens. A seat's Keycloak groups
-and its verifiable credentials are two independent axes, and neither substitutes for the other:
+`Authority` below is a *permission* statement, not a list of screens. A seat's Keycloak realm
+role or organisation groups and its verifiable credentials are two independent axes, and neither substitutes for the other:
 `ds-member` plus a credential is what makes a data subject, which is why an operator seat —
 `ds-admin` included — cannot open a consent screen.
 
 | User | Authority | Exercises |
 |---|---|---|
-| `admin@example.test` | `ds-admin` | platform administration |
-| `provider@example.test` | `ds-participant-admin`, realm **and** org-scoped | both provisioning paths |
+| `admin@example.test` | `ds-admin`, through the realm role `platform-admin` | platform administration |
+| `provider@example.test` | `ds-participant-admin`, a group inside its organisation | both provisioning paths |
 | `consumer@example.test` | `ds-member` + a `ConsumerUser` credential | data consumption |
 | `subject@example.test` | `ds-member` + a `DataSubject` credential | consent management |
 | `dual@example.test` | both credential roles | that roles are additive, not exclusive |
 | `gridops@example.test` | `ds-participant-admin` **org-scoped only** | that a cross-owner write is refused |
-| `onboarding@example.test` | `ds-onboarding-operator`, realm-scoped | reviewing organisation applications without holding admin |
+| `onboarding@example.test` | `ds-onboarding-operator`, a realm role on the allowlist | reviewing organisation applications without holding admin |
 | `viewer@example.test` | `ds-participant-viewer` **org-scoped only** | that a read-only seat cannot write |
 | `legacy@example.test` | `legacy-provider-admin` — **not a bundle**; `ds-participant-admin` only where an alias map translates it | that a foreign IdP's group name is translated, and that the translation is bounded |
 
-Every bundle the realm declares as a group is held by one of these, and
+Every bundle is held by one of these at the level that grants it — a platform bundle through a
+realm role in `realm-dataspaces-dev.json`, an organisation bundle through a group in
+`organizations.yaml` — and the dev realm declares no realm group; and
 `libs/ds-auth/tests/test_vocabulary.py` fails if that stops being true. A bundle
 with no holder is a seat nobody sits in: it is expanded, unit-tested and never
 exercised against a running realm, and nothing fails to say so.

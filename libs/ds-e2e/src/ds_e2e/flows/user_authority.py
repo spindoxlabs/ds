@@ -1,8 +1,10 @@
 """User authority — do a human's role bundles authorise the API, and only that?
 
 Every other flow in this harness authenticates with `client_credentials`, which
-authorises on the `scope` claim. A *human* authorises on `groups`, expanded
-through the role bundles in `ds_auth.bundles` — a different branch of
+authorises on the `scope` claim. A *human* authorises on two levels — an
+allowlisted realm role (platform-wide) and the groups inside each organisation
+(that organisation only), expanded through the role bundles in `ds_auth.bundles`
+(ADR-0023) — a different branch of
 `Principal.authority`, and one that had **no API-level coverage at all**: the unit
 tests prove the expansion in isolation and Playwright proves the UI gates on it,
 but nothing proved a real Keycloak-issued user token reaches (and fails to reach)
@@ -71,7 +73,8 @@ class UserAuthorityFlow(BaseFlow):
             result.fail_step("health", str(exc))
             return result
 
-        # Four seats, from the dev realm's group assignments.
+        # Four seats: `ds-admin` through the `platform-admin` realm role, the rest
+        # through groups inside an organisation (`organizations.yaml`).
         seats: dict[str, dict[str, str]] = {}
         try:
             seats["ds-admin"] = self.http.user_headers(s.admin_email, s.admin_password)
@@ -298,10 +301,10 @@ class UserAuthorityFlow(BaseFlow):
 
         # ── Layer B: a foreign IdP's group name is translated ────────────────
         #
-        # `legacy-provider-admin` is not a ds bundle. Unaliased it falls through to
-        # pass-through and grants only itself, which matches no call site — so this
-        # seat can reach the provider surface **only** if the deployment's alias map
-        # turned it into `ds-participant-admin`.
+        # `legacy-provider-admin` is an organisation group that is not a ds bundle.
+        # Unaliased it grants nothing — so this seat can reach the provider surface
+        # **only** if the deployment's alias map turned it into
+        # `ds-participant-admin`.
         #
         # Paired with a bound: the same seat must still be refused something the
         # bundle does not contain. Translation that granted more than the bundle

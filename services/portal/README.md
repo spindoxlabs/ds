@@ -31,8 +31,9 @@ The portal makes the dataspace accessible without direct API interaction. It pro
 
 ## Routes
 
-Two independent axes decide what a person sees: **Keycloak groups** grant service
-permissions, **verifiable credentials** decide the person-facing roles. They are
+Two independent axes decide what a person sees: **Keycloak authority** — an allowlisted
+realm role (platform-wide) or a group inside an organisation (that organisation only) — grants
+service permissions, **verifiable credentials** decide the person-facing roles. They are
 additive — one human can hold several at once. See [the portal's
 page](https://spindoxlabs.github.io/ds/services/portal/) for the model.
 
@@ -86,7 +87,7 @@ page](https://spindoxlabs.github.io/ds/services/portal/) for the model.
 
 `ConsentBadge.svelte` — displays consent status with visual indicators.
 
-`session.ts` — session helpers over the access token oauth2-proxy forwards. Parses realm roles and Keycloak **groups** (each naming a role bundle) to gate route access.
+`session.ts` — session helpers over the access token oauth2-proxy forwards. Authority is read on two levels — allowlisted realm roles (platform) and each organisation's own groups (that organisation) — by the generated `lib/server/bundles.generated.ts`, to gate route access.
 
 ---
 

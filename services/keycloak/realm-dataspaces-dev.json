@@ -13,12 +13,12 @@
   "roles": {
     "realm": [
       {
-        "name": "ds-admin",
-        "description": "Dataspace platform administrator"
+        "name": "platform-admin",
+        "description": "Platform administrator — the only platform-wide administrative grant (ds_auth.REALM_ROLE_BUNDLES -> ds-admin)"
       },
       {
-        "name": "dataset.admin",
-        "description": "Dataset provider administrator"
+        "name": "ds-onboarding-operator",
+        "description": "Reviews organisation applications deployment-wide; cannot promote (ds_auth.REALM_ROLE_BUNDLES)"
       }
     ]
   },
@@ -303,19 +303,6 @@
       },
       "protocolMappers": [
         {
-          "name": "groups",
-          "protocol": "openid-connect",
-          "protocolMapper": "oidc-group-membership-mapper",
-          "consentRequired": false,
-          "config": {
-            "full.path": "false",
-            "id.token.claim": "true",
-            "access.token.claim": "true",
-            "userinfo.token.claim": "true",
-            "claim.name": "groups"
-          }
-        },
-        {
           "name": "subject",
           "protocol": "openid-connect",
           "protocolMapper": "oidc-sub-mapper",
@@ -328,26 +315,7 @@
       ]
     }
   ],
-  "groups": [
-    {
-      "name": "ds-admin"
-    },
-    {
-      "name": "ds-onboarding-operator"
-    },
-    {
-      "name": "ds-participant-admin"
-    },
-    {
-      "name": "ds-participant-viewer"
-    },
-    {
-      "name": "ds-member"
-    },
-    {
-      "name": "legacy-provider-admin"
-    }
-  ],
+  "groups": [],
   "users": [
     {
       "id": "00000000-0000-4000-a000-000000000001",
@@ -365,12 +333,9 @@
         }
       ],
       "realmRoles": [
-        "ds-admin",
-        "dataset.admin"
+        "platform-admin"
       ],
-      "groups": [
-        "/ds-admin"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000002",
@@ -387,9 +352,7 @@
           "temporary": false
         }
       ],
-      "groups": [
-        "/ds-member"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000003",
@@ -406,12 +369,7 @@
           "temporary": false
         }
       ],
-      "realmRoles": [
-        "dataset.admin"
-      ],
-      "groups": [
-        "/ds-participant-admin"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000004",
@@ -428,9 +386,7 @@
           "temporary": false
         }
       ],
-      "groups": [
-        "/ds-member"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000005",
@@ -447,9 +403,7 @@
           "temporary": false
         }
       ],
-      "groups": [
-        "/ds-member"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000006",
@@ -483,9 +437,7 @@
           "temporary": false
         }
       ],
-      "groups": [
-        "/legacy-provider-admin"
-      ]
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000008",
@@ -502,9 +454,10 @@
           "temporary": false
         }
       ],
-      "groups": [
-        "/ds-onboarding-operator"
-      ]
+      "realmRoles": [
+        "ds-onboarding-operator"
+      ],
+      "groups": []
     },
     {
       "id": "00000000-0000-4000-a000-000000000009",

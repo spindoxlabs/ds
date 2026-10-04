@@ -135,9 +135,10 @@ global:
     # others is a deployment where a caller's authority depends on which service
     # answered the request.
     aliases:
-      # Foreign group name → ds role bundle. Values must be bundle names
-      # (`ds-admin`, `ds-participant-admin`, `ds-participant-viewer`,
-      # `ds-onboarding-operator`, `ds-member`) — never a raw capability. An
+      # Foreign organisation-group name → ds organisation bundle. Values must be
+      # `ds-participant-admin`, `ds-participant-viewer` or `ds-member` — never a
+      # raw capability and never a platform bundle (`ds-admin`,
+      # `ds-onboarding-operator` come only from a realm role, ADR-0023). An
       # unknown target is dropped and logged rather than honoured, so a typo
       # grants nothing instead of granting something else.
       #   {"host-manager": "ds-participant-admin"}

@@ -40,13 +40,14 @@ class OidcConfig:
     # Explicit, LOUD opt-in for local dev without a reachable Keycloak.
     # When True and no issuer is configured, signatures are NOT verified.
     insecure_dev: bool = False
-    # Layer B: a foreign IdP's group names → ds role bundles.
+    # Layer B: a foreign IdP's organisation-group names → ds organisation bundles.
     #
     # Deployment configuration, because it is about *someone else's* naming.
-    # Validated by `ds_auth.parse_group_aliases`, which only lets an alias name a
-    # bundle — never a capability — so the permission table (Layer A) stays in code
-    # where it can be reviewed. Empty means no translation, which is what every
-    # deployment that names its groups the ds way wants.
+    # Validated by `ds_auth.parse_group_aliases`, which only lets an alias name an
+    # organisation bundle — never a capability, never a platform bundle — so the
+    # permission table (Layer A) stays in code where it can be reviewed. Empty
+    # means no translation, which is what every deployment that names its groups
+    # the ds way wants.
     group_aliases: Mapping[str, str] = field(default_factory=dict)
 
     @property

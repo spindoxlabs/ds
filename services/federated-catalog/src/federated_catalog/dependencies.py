@@ -12,7 +12,7 @@ def get_settings_dep() -> Settings:
 # ── Authorization guards ────────────────────────────────────────────────────
 #
 # One unified guard (ds_auth.require_permission) authorizes BOTH service tokens
-# (via the `scope` claim) and user tokens (via Keycloak groups). ``{service}.admin``
-# is a superset.
+# (via the `scope` claim) and user tokens (via an allowlisted realm role, or a group
+# inside the organisation concerned, ADR-0023). ``{service}.admin`` is a superset.
 
 require_read_scope = require_permission("catalog.read")

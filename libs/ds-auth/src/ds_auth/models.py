@@ -24,16 +24,12 @@ class Organization:
     alias: str
     type: str | None = None
     attributes: dict[str, list[str]] = field(default_factory=dict)
-    # The groups held *within this organisation*.
+    # The groups held *within this organisation*, and valid only here.
     #
-    # `extract_groups` flattens realm groups and every organisation's groups into
-    # one list, which is right for "may this caller do X at all" and useless for
-    # "may this caller do X **to this owner's** data". That provenance used to be
-    # discarded here, so the second question could not be asked at any call site —
-    # a caller who was a viewer in one organisation and an administrator in
-    # another appeared, correctly flattened, to be an administrator.
-    #
-    # See :meth:`ds_auth.Principal.grants_in`.
+    # Nothing flattens them across organisations or with realm groups any more:
+    # :meth:`ds_auth.Principal.authority_in` expands them for this organisation
+    # alone, and :meth:`ds_auth.Principal.grants_in` adds only the platform
+    # authority (allowlisted realm roles) on top.
     groups: tuple[str, ...] = ()
 
     def is_type(self, type: str) -> bool:
@@ -67,8 +63,8 @@ class Organization:
 
             raw_groups = data.get("groups")
             if isinstance(raw_groups, list):
-                # Leading slashes stripped to match `extract_groups`, so the same
-                # name compares equal whichever path it arrived by.
+                # Leading slashes stripped: Keycloak emits the group path
+                # (`/ds-participant-admin`), the bundle table names the group.
                 groups = tuple(
                     g.lstrip("/")
                     for g in raw_groups

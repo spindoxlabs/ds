@@ -7,8 +7,8 @@ Python service mounts its guards; none of them re-implements the logic.
 
 It verifies a bearer JWT against a Keycloak realm, normalises the resulting claims into one
 `Principal` regardless of whether the caller is a machine or a person, expands a person's
-Keycloak groups into a capability set through a role-bundle table that lives in code, and
-exposes the FastAPI dependencies routes actually use.
+platform roles and organisation groups into a capability set through a role-bundle table that
+lives in code, and exposes the FastAPI dependencies routes actually use.
 
 Three things ride along with that decision: a client-credentials token provider for outbound
 service-to-service calls, a Verifiable-Credential verifier for the subject-facing surfaces that
@@ -28,7 +28,7 @@ The core is framework-free; only two modules import FastAPI.
 
 | Module | Authenticates | Used by |
 |---|---|---|
-| `jwt.py` + `fastapi.py` | a **service or an operator**, via an OIDC token, on scopes or groups | almost every route |
+| `jwt.py` + `fastapi.py` | a **service or an operator**, via an OIDC token, on scopes or on roles and organisation groups | almost every route |
 | `user_credentials.py` | a **person**, via an ES256 VC-JWT signed by the trust anchor, checked against StatusList2021 | connector `/consent/my/*` and `/consumer/*`; provenance `/prov/my/events` |
 
 The VC verifier lives here rather than in one service because two services verify the same
@@ -60,7 +60,7 @@ Error mapping: missing or invalid token → `401`; valid token without the permi
 ## `Principal` — one caller shape
 
 ```
-subject · is_service · scopes · groups · organizations · realm_groups · claims
+subject · is_service · scopes · realm_roles · organizations · claims
 ```
 
 The load-bearing property is `authority`, and it branches:
@@ -68,12 +68,28 @@ The load-bearing property is `authority`, and it branches:
 | Caller | Authority is |
 |---|---|
 | **service** | its `scope` claim, **verbatim** — a bundle name in a scope claim means nothing |
-| **user** | its groups, **expanded** through the bundle table — a user's `scope` claim confers nothing at all |
+| **user** | `platform_authority` (allowlisted realm roles, expanded) plus, for each organisation, what that organisation's own groups grant within it — a user's `scope` claim confers nothing at all |
 
-`grants_in(alias, *perms)` answers the per-organisation question: it returns false if the
-principal is not a member of that organisation, and otherwise expands *that organisation's*
-groups plus the realm groups. A service principal carries no organisations, so `grants_in` is
-always false for one — a call site that must exempt services checks `is_service` first.
+A person's authority has **two levels**
+([ADR-0023](../../decisions/ADR-0023-a-persons-authority-has-two-levels.md)):
+
+| | `platform_authority` | `authority_in(alias)` |
+|---|---|---|
+| from | `realm_access.roles`, only roles in `REALM_ROLE_BUNDLES` | `organization.<alias>.groups` |
+| expands | a platform bundle (`ds-admin`, `ds-onboarding-operator`) | an organisation bundle, or a name in `ORGANISATION_PERMISSIONS` |
+| valid | everywhere | that organisation only |
+
+The `groups` claim is never read for authority: a realm-level group grants nothing. Nor is any
+client's `resource_access`. `is_platform_admin` is true for a person holding `platform-admin`.
+
+`grants_in(alias, *perms)` answers the per-organisation question: the platform authority, plus
+*that organisation's* own groups for a member — never another organisation's, never a realm
+group. A service principal is never owner-scoped, so `grants_in` is always false for one — a
+call site that must exempt services checks `is_service` first.
+
+`authority`'s organisation part answers "somewhere", not "here". It can only hold
+`ORGANISATION_PERMISSIONS` — no `*.admin` superset, nothing only a platform bundle names — so it
+cannot add up to a platform grant; a perimeter on an owner's resource still asks `grants_in`.
 
 ### How a caller is classified
 
@@ -84,7 +100,7 @@ In order:
 | 1 | `preferred_username` starts with `service-account-` | service |
 | 2 | `gty == "client-credentials"` | service |
 | 3 | `email` present | user |
-| 4 | groups present | user |
+| 4 | a group present, at either level (classification only — it grants nothing) | user |
 | 5 | `preferred_username` present | user |
 | 6 | `client_id` present | service |
 | 7 | `azp` present | service |
@@ -106,34 +122,45 @@ Layer A: ds's own semantics, in code, deliberately **not** deployment configurat
 | `ds-onboarding-operator` | `identity-registry.organizations.read`, `.write`, `.agreements.read`, `.participants.write`, `identity-registry.read` |
 | `ds-member` | `catalog.read` |
 
-`connector.consent.provision` left `ds-participant-admin` on 2026-09-17: a realm group is bound
-to no connector, so a participant operator holding it could register consent at any connector,
+`connector.consent.provision` left `ds-participant-admin` on 2026-09-17: a participant seat is
+bound to no connector, so a participant operator holding it could register consent at any connector,
 for any organisation's members. It is held by organisation clients (`CONNECTOR_SERVICE_SCOPES`)
 and the onboarding service, and reached by a person only through `connector.admin`. The
 connector decides where an organisation may write — see [ds-connector](../connector.md#a-collector-registers-consent).
 `identity-registry.collectors.write`, which manages that relation, is in no bundle either.
 
-Expansion applies four rules per group, in order:
+Each bundle is granted at exactly one level (`PLATFORM_BUNDLES`, `ORGANISATION_BUNDLES`).
 
-0. a **Layer B alias** translates a foreign group name into a ds bundle name;
-1. a known bundle expands into its capabilities;
-2. a machine-identity permission (`connector.internal`, `connector.webhook`) is **dropped** —
-   a group *named* after one grants nothing;
-3. anything else passes through verbatim as its own capability, so a realm carrying older group
-   names keeps working.
+A **realm role** expands only if `REALM_ROLE_BUNDLES` lists it (`platform-admin` → `ds-admin`,
+`ds-onboarding-operator` → itself). Any other role grants nothing; there is no pass-through at
+this level.
+
+An **organisation group** applies three rules, in order:
+
+0. a **Layer B alias** translates a foreign group name into an organisation bundle name;
+1. an organisation bundle expands into its capabilities;
+2. a name in `ORGANISATION_PERMISSIONS` — what the organisation bundles grant, plus
+   `connector.consent.holder.read` (ADR-0022) — grants itself.
+
+Anything else grants nothing: a platform bundle, an `*.admin` superset, a machine identity
+(`connector.internal`, `connector.webhook`), an unknown name.
 
 `SERVICE_ONLY_PERMISSIONS` declares the scopes no bundle is allowed to reach, so a test can
 prove there are no orphans in either direction.
 
 **Layer B** — `parse_group_aliases` — is the only part that is deployment configuration. It
-takes a JSON map of foreign group → ds bundle, and drops anything whose value is not a bundle
-name. An alias can never name a raw capability.
+takes a JSON map of foreign organisation-group name → ds organisation bundle, and drops anything
+whose value is not one. An alias can never name a raw capability or a platform bundle, and it
+never applies to realm roles.
 
 ### The portal's generated twin
 
-`services/portal/src/lib/server/bundles.generated.ts` is rendered from this same table by
+`services/portal/src/lib/server/bundles.generated.ts` is rendered from this same table — and
+from the claim reading above, so the portal reads a token exactly as `Principal` does — by
 `task auth:bundles:generate`, and a test asserts the checked-in file matches a fresh render
-byte for byte. Do not hand-edit it.
+byte for byte. Do not hand-edit it. `libs/ds-auth/tests/parity/authority-cases.json` is one
+case table both suites decide (`tests/test_two_levels.py`,
+`services/portal/tests/unit/two-levels.test.ts`).
 
 ## Verifiable credentials
 

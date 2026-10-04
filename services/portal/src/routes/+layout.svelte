@@ -8,7 +8,7 @@
   const persona = $derived(data.persona);
 
   // Roles are additive, not exclusive: one person can be both a data subject and
-  // a consumer user, and provider comes from Keycloak groups on a separate axis
+  // a consumer user, and provider comes from organisation groups on a separate axis
   // entirely. Every section the user qualifies for is shown.
   const vcRoles = $derived(
     data.userVcRoles?.length ? data.userVcRoles : (data.userVcRole ? [data.userVcRole] : []),

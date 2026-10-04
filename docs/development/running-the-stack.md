@@ -107,8 +107,9 @@ in [the realm reference](../services/keycloak.md#dev-users).
 Which seat to pick depends on what you want to see, because **two independent axes** decide
 what the portal renders, and neither substitutes for the other:
 
-- **Keycloak groups** answer *may this operator act?* — `admin`, `provider`, `onboarding`,
-  `viewer`, `gridops` and `legacy` carry these.
+- **Keycloak realm roles and organisation groups** answer *may this operator act?* — `admin`
+  and `onboarding` carry a platform realm role; `provider`, `viewer`, `gridops` and `legacy`
+  carry groups inside an organisation.
 - **Verifiable credentials**, resolved per session against the identity registry by email,
   answer *is this person a data subject or a consumer?* — `subject`, `consumer` and `dual`
   carry these.

@@ -7,7 +7,8 @@ whether its answer can be believed.
 **The perimeter (items 5 + 6).** `connector.provider.write` said *what* a caller
 may do and never *whose connector*. `POST /provider/sync` acts on the participant
 as a whole, so it had no owner to scope against and carried no perimeter at all —
-and `ds-participant-admin` is a realm group, which is not bound to any connector.
+and `ds-participant-admin` (then a realm group, now a group inside an organisation)
+is not bound to any connector.
 In a realm serving several participants, one participant's operator could publish
 at every other participant's connector. Granting the organisation clients the
 same permission (item 5, self-service publishing) would have widened that to
@@ -38,12 +39,12 @@ def _org_headers(context: str | None = None) -> dict:
     return make_org_headers(context=context, scopes=ORG_SCOPES)
 
 
-def _user_headers(*groups: str, organizations: dict | None = None) -> dict:
+def _user_headers(*realm_roles: str, organizations: dict | None = None) -> dict:
     claims: dict = _claims(
         sub="operator-1",
         email="operator@example.test",
         preferred_username="operator@example.test",
-        groups=list(groups),
+        realm_access={"roles": list(realm_roles)},
     )
     if organizations:
         claims["organization"] = organizations
@@ -156,7 +157,6 @@ async def test_an_operator_of_this_participant_may_publish(client, owners, monke
     r = await client.post(
         "/provider/sync",
         headers=_user_headers(
-            "ds-participant-admin",
             organizations={"example-org": {"groups": ["ds-participant-admin"]}},
         ),
     )
@@ -165,7 +165,8 @@ async def test_an_operator_of_this_participant_may_publish(client, owners, monke
 
 @pytest.mark.asyncio
 async def test_an_operator_of_another_participant_is_refused(client, owners, no_edc):
-    """`ds-participant-admin` is a realm group; this is what binds it to a connector."""
+    """`ds-participant-admin` in another organisation; this is what binds it to a
+    connector."""
     owners(
         {
             "example-org": "did:web:rec.dataspaces.localhost",
@@ -175,7 +176,6 @@ async def test_an_operator_of_another_participant_is_refused(client, owners, no_
     r = await client.post(
         "/provider/sync",
         headers=_user_headers(
-            "ds-participant-admin",
             organizations={"grid-operator": {"groups": ["ds-participant-admin"]}},
         ),
     )
@@ -197,31 +197,35 @@ async def test_a_viewer_of_this_participant_is_refused(client, owners, no_edc):
     r = await client.post(
         "/provider/sync",
         headers=_user_headers(
-            "ds-participant-viewer",
             organizations={"example-org": {"groups": ["ds-participant-viewer"]}},
         ),
     )
     assert r.status_code == 403
 
 
+@pytest.mark.rule("C-17")
 @pytest.mark.asyncio
-async def test_a_deployment_that_models_no_organisations_still_publishes(
-    client, monkeypatch
-):
-    """The same exemption `_own_owner_only` makes, and for the same reason.
+async def test_a_realm_level_participant_seat_does_not_publish(client, monkeypatch):
+    """A realm group named after a participant bundle grants nothing.
 
-    Refusing here breaks every single-owner deployment that never declared a
-    Keycloak organisation, and the way operators "fix" that is by granting
-    `connector.admin` — which crosses every participant and is strictly worse.
+    It used to, deployment-wide, and the perimeter then exempted it for a
+    deployment that models no organisations. A participant seat now exists only
+    inside an organisation, so the request stops at the permission check.
     """
     monkeypatch.setattr(
         "connector.services.provider_service.load_exposed_datasets",
         lambda *_a, **_k: {},
     )
-    r = await client.post(
-        "/provider/sync", headers=_user_headers("ds-participant-admin")
+    claims = _claims(
+        sub="operator-1",
+        email="operator@example.test",
+        groups=["ds-participant-admin"],
     )
-    assert r.status_code == 200
+    token = pyjwt.encode(claims, "secret", algorithm="HS256")
+    r = await client.post(
+        "/provider/sync", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert r.status_code == 403
 
 
 # ── The two unbound classes, stated rather than assumed ──────────────────────

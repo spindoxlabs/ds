@@ -345,12 +345,15 @@ async def test_a_plain_service_token_is_refused(client):
 @pytest.mark.asyncio
 async def test_the_deployment_operator_reads_and_a_participant_seat_does_not(client):
     await _share(client, A, keys=[KEY_A])
-    r = await _keys(client, make_user_headers(["ds-admin"]))
+    r = await _keys(client, make_user_headers(roles=["platform-admin"]))
     assert r.status_code == 200, r.text
     assert [k["key"] for k in r.json()["keys"]] == [KEY_A]
 
     # Not in `ds-participant-admin`: an operator seat is not a key roster.
-    r = await _keys(client, make_user_headers(["ds-participant-admin"]))
+    r = await _keys(
+        client,
+        make_user_headers(organizations={"example-org": ["ds-participant-admin"]}),
+    )
     assert r.status_code == 403
 
 
