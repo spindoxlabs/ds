@@ -44,6 +44,7 @@ from .crypto import (
     require_private_jwk,
 )
 from .did import subject_id_of
+from .did_resolver import outbound_transport
 from .enrolment import CREDENTIAL_SERVICE_TYPE, endpoint_of, service_endpoints
 from .org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from .status_list import SUSPENSION_LIST_ID, allocate_suspendable_index
@@ -373,7 +374,14 @@ async def deliver(
     }
     url = f"{endpoint.rstrip('/')}/credentials"
 
-    async with httpx.AsyncClient(timeout=timeout) as http:
+    # The endpoint comes from the holder's DID document, so it is dialled under
+    # the same address rules as the document itself (`P-8d`) and never redirected.
+    async with httpx.AsyncClient(
+        timeout=timeout,
+        follow_redirects=False,
+        trust_env=False,
+        transport=outbound_transport(),
+    ) as http:
         try:
             response = await http.post(
                 url, json=message, headers={"Authorization": f"Bearer {token}"}

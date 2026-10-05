@@ -23,6 +23,7 @@ from ...dependencies import (
     get_settings_dep,
     require_credential_read,
 )
+from ...rate_limit import public_rate_limit
 from ...schemas.responses import CredentialCheckResponse
 from ...services import issuance
 from ...services.did_resolver import DidResolver, normalize_did_web
@@ -52,7 +53,11 @@ log = logging.getLogger(__name__)
 # but a path catch-all preceding its siblings is how `POST /catalog/search` came
 # to 404 as a missing dataset.
 check_router = APIRouter(prefix="/credentials", tags=["credentials"])
-router = APIRouter(prefix="/credentials", tags=["credentials"])
+router = APIRouter(
+    prefix="/credentials",
+    tags=["credentials"],
+    dependencies=[Depends(public_rate_limit)],
+)
 
 
 @check_router.get("/check", response_model=CredentialCheckResponse)
@@ -229,6 +234,10 @@ async def query_presentations(
     return JSONResponse(content=response, media_type="application/ld+json")
 
 
+class _UntrustedIssuer(SiTokenInvalid):
+    """The token names an issuer this holder does not accept credentials from."""
+
+
 @router.post("/{did:path}/credentials", status_code=201)
 async def store_credentials(
     did: str,
@@ -264,10 +273,24 @@ async def store_credentials(
             status.HTTP_400_BAD_REQUEST, detail="Expected a CredentialMessage"
         )
 
+    async def is_the_trusted_issuer(issuer_did: str, _claims: dict[str, Any]) -> None:
+        # Trust is by issuer DID, so an issuer that is not the configured one is
+        # refused before its document is fetched (`P-8d`), not after.
+        if issuer_did != settings.trust_anchor_did:
+            raise _UntrustedIssuer(f"{issuer_did} is not a trusted issuer")
+
     try:
         issuer = await verify_client_identity(
-            authorization[7:].strip(), audience=did, resolver=resolver
+            authorization[7:].strip(),
+            audience=did,
+            resolver=resolver,
+            admit=is_the_trusted_issuer,
         )
+    except _UntrustedIssuer as exc:
+        log.warning("Refused credential delivery to %s: %s", did, exc)
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail="Not a trusted issuer"
+        ) from exc
     except SiTokenInvalid as exc:
         log.warning("Rejected credential delivery to %s: %s", did, exc)
         raise HTTPException(

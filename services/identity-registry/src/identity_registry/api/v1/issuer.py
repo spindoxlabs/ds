@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...db.models import CredentialRequest, Owner
 from ...dependencies import get_db, get_did_resolver, get_settings_dep
+from ...rate_limit import public_rate_limit
 from ...services import enrolment as enrol_service
 from ...services import issuance
 from ...services.did_resolver import DidResolver
@@ -45,7 +46,9 @@ from ...services.token import SiTokenInvalid, verify_client_identity
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/issuer", tags=["issuer"])
+router = APIRouter(
+    prefix="/issuer", tags=["issuer"], dependencies=[Depends(public_rate_limit)]
+)
 
 DCP_CONTEXT = "https://w3id.org/dspace-dcp/v1.0/dcp.jsonld"
 
@@ -186,10 +189,27 @@ async def request_credentials(
             ),
         )
 
+    async def holds_a_usable_code(_did: str, claims: dict[str, Any]) -> None:
+        # The enrolment code is what admits a client, and it is checked here —
+        # before the client's DID document is fetched — so that only a holder of
+        # a live code for a verified owner can make this service resolve
+        # anything (`P-8d`). It is checked again below, after the signature,
+        # because only then is it known to be *this* client's code.
+        code = claims.get("pre-authorized_code")
+        try:
+            enrolment_token = await enrol_service.resolve_enrolment_token(
+                db, code if isinstance(code, str) else None
+            )
+            owner = await db.get(Owner, enrolment_token.owner_alias)
+        except enrol_service.EnrolmentError as exc:
+            raise SiTokenInvalid(exc.message) from exc
+        if owner is None or owner.status != "verified":
+            raise SiTokenInvalid("enrolment code names no verified owner")
+
     anchor_did = f"did:web:{settings.trust_anchor_domain}"
     try:
         client = await verify_client_identity(
-            token, audience=anchor_did, resolver=resolver
+            token, audience=anchor_did, resolver=resolver, admit=holds_a_usable_code
         )
     except SiTokenInvalid as exc:
         log.warning("Rejected credential request: %s", exc)
@@ -305,14 +325,30 @@ async def request_status(
     token is verified the same way, and its `iss` must be the DID that made the
     request.
 
-    An unknown request and someone else's request answer identically: a `404`
-    that distinguished them would let a holder enumerate other holders' requests.
+    An unknown request and someone else's request answer identically: a
+    difference would let a holder enumerate other holders' requests. Both are
+    the same `401` as a bad token, because both are refused before the caller's
+    DID is resolved — only the DID a request is recorded for is (`P-8d`).
     """
     token = _bearer(authorization)
+
+    async def made_this_request(did: str, _claims: dict[str, Any]) -> None:
+        # Only the DID on record for this request is worth resolving (`P-8d`).
+        recorded = (
+            await db.execute(
+                select(CredentialRequest.issuer_pid).where(
+                    CredentialRequest.issuer_pid == issuer_pid,
+                    CredentialRequest.holder_did == did,
+                )
+            )
+        ).scalar_one_or_none()
+        if recorded is None:
+            raise SiTokenInvalid("no such request for this client")
+
     anchor_did = f"did:web:{settings.trust_anchor_domain}"
     try:
         client = await verify_client_identity(
-            token, audience=anchor_did, resolver=resolver
+            token, audience=anchor_did, resolver=resolver, admit=made_this_request
         )
     except SiTokenInvalid as exc:
         raise _REFUSED from exc

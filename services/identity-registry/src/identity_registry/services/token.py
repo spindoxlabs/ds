@@ -33,6 +33,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -368,12 +369,14 @@ async def verify_presentation_authorization(
     comparison is why real DCP verification has never completed on the DSP leg:
     the shape the specification mandates was rejected 100% of the time.
 
-    Two tokens, checked in order:
+    Two tokens, checked in this order:
 
-    1. the outer Self-Issued ID token, proving the verifier controls ``iss``,
-       verified against the key in ``iss``'s **DID document**;
-    2. the ``token`` claim it carries, proving *this* participant's STS granted
-       that verifier a scope, verified against this participant's **own** key.
+    1. the ``token`` claim, proving *this* participant's STS granted the
+       verifier a scope, verified against this participant's **own** key — no
+       network involved;
+    2. the outer Self-Issued ID token, proving the verifier controls ``iss``,
+       verified against the key in ``iss``'s **DID document**, which is fetched
+       only once step 1 has shown the verifier is one this participant granted.
 
     Returns the granted scopes. Raises :class:`SiTokenInvalid` on any failure,
     without distinguishing which — the endpoint must not be an oracle.
@@ -390,15 +393,12 @@ async def verify_presentation_authorization(
         raise SiTokenInvalid("audience does not name the requested participant")
     check_time_claims(outer.claims, leeway=leeway, what="self-issued token")
 
-    try:
-        document = await resolver.resolve(issuer)
-        jwk = verification_key(document, outer.kid)
-    except DidResolutionError as exc:
-        raise SiTokenInvalid(f"cannot resolve the verifier's key: {exc}") from exc
-
-    if not verify_es256(outer.signing_input, outer.signature, load_public_key(jwk)):
-        raise SiTokenInvalid("bad signature on the self-issued token")
-
+    # **The grant before the verifier's document** (`P-8d`). The grant is checked
+    # against this participant's own key, with no network at all, and it names
+    # the verifier it was minted for — so only a DID this participant's STS has
+    # already granted something to is ever resolved. Checking the outer
+    # signature first meant fetching whatever address the caller wrote in
+    # `iss`, before anything about the caller was known.
     access_token = outer.claims.get("token")
     if not isinstance(access_token, str) or not access_token:
         raise SiTokenInvalid("no access token presented")
@@ -426,6 +426,15 @@ async def verify_presentation_authorization(
     ):
         raise SiTokenInvalid("access token was not signed by this participant")
 
+    try:
+        document = await resolver.resolve(issuer)
+        jwk = verification_key(document, outer.kid)
+    except DidResolutionError as exc:
+        raise SiTokenInvalid(f"cannot resolve the verifier's key: {exc}") from exc
+
+    if not verify_es256(outer.signing_input, outer.signature, load_public_key(jwk)):
+        raise SiTokenInvalid("bad signature on the self-issued token")
+
     scope = grant.claims.get("scope")
     if not isinstance(scope, str) or not scope.strip():
         raise SiTokenInvalid("access token carries no scope")
@@ -433,11 +442,17 @@ async def verify_presentation_authorization(
     return PresentationGrant(verifier_did=issuer, scopes=scope.split())
 
 
+#: A caller's local admission check, run on the **unverified** ``iss`` and claims
+#: before its DID document is fetched. Raises :class:`SiTokenInvalid` to refuse.
+Admission = Callable[[str, dict[str, Any]], Awaitable[None]]
+
+
 async def verify_client_identity(
     token: str,
     *,
     audience: str,
     resolver: DidResolver,
+    admit: Admission,
     leeway: int = DEFAULT_LEEWAY,
 ) -> ClientIdentity:
     """Verify the Self-Issued ID token a client presents to the Issuer Service.
@@ -473,6 +488,14 @@ async def verify_client_identity(
     if audience not in audience_values(decoded.claims):
         raise SiTokenInvalid("audience does not name this issuer")
     check_time_claims(decoded.claims, leeway=leeway, what="self-issued token")
+
+    # **Trust before the fetch** (`P-8d`). The DID is still unproven here, but
+    # whether this caller could be admitted at all is a local question — a known
+    # enrolment code, a request on record, the configured issuer — and a caller
+    # who could not be is refused before its document is fetched. The signature
+    # check below is what proves the claims; this only decides whether proving
+    # them is worth a request to an address the caller chose.
+    await admit(issuer, decoded.claims)
 
     try:
         document = await resolver.resolve(issuer)

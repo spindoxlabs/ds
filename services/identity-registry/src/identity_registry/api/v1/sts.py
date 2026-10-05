@@ -15,13 +15,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Participant
 from ...dependencies import get_db
-from ...services.crypto import verify_sts_secret
+from ...rate_limit import public_rate_limit
+from ...services.crypto import verify_sts_secret_async
 from ...services.did_resolver import normalize_did_web
 from ...services.token import create_si_token
 
 log = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/sts", tags=["sts"])
+router = APIRouter(
+    prefix="/sts", tags=["sts"], dependencies=[Depends(public_rate_limit)]
+)
 
 
 @router.post("/{did:path}/token")
@@ -82,7 +85,7 @@ async def issue_token(
             status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_client"},
         )
-    if not verify_sts_secret(client_secret, expected_secret):
+    if not await verify_sts_secret_async(client_secret, expected_secret):
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             detail={"error": "invalid_client"},

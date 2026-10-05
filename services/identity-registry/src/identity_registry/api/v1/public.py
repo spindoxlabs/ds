@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 from sqlalchemy import select
@@ -8,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from ...config import Settings
 from ...db.models import Did, StatusList
 from ...dependencies import get_db, get_settings_dep
+from ...rate_limit import public_rate_limit
 from ...services import trust_list
 from ...services.crypto import decrypt_private_jwk, require_private_jwk
 from ...services.did import build_did_document
@@ -15,16 +20,20 @@ from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import build_status_list_credential, encode_bitstring
 from ...services.vc import sign_credential
 
+#: Every route in this file answers anyone, so each spends from the caller's
+#: request budget (`P-8e`).
+_PUBLIC = [Depends(public_rate_limit)]
+
 # Two routers, because the two things this file serves belong to different
 # roles once the registry is split (`DID-04`). **DID resolution is the holder's**
 # — a document is served by whichever instance holds that DID's key, which is
 # the corrected reading of rulebook `P-6`. **The StatusList is the issuer's**:
 # one list, published by the trust anchor, and a participant serving its own
 # would be a participant asserting its own credentials are unrevoked.
-did_router = APIRouter(tags=["public"])
-status_router = APIRouter(tags=["public"])
+did_router = APIRouter(tags=["public"], dependencies=_PUBLIC)
+status_router = APIRouter(tags=["public"], dependencies=_PUBLIC)
 #: The trust list. Anchor-only and public — see the route.
-trust_router = APIRouter(tags=["public"])
+trust_router = APIRouter(tags=["public"], dependencies=_PUBLIC)
 
 
 async def _did_document(did: str, db: AsyncSession) -> dict:
@@ -116,6 +125,38 @@ async def resolve_path_did(
     )
 
 
+class _SignedListCache:
+    """Signed status lists, by everything their content depends on.
+
+    Signing is cheap once the key is decrypted, but the list is fetched by every
+    verifier on every credential check, so it is signed once per change instead
+    of once per request (`P-8e`). Entries also age out after
+    `_SIGNED_LIST_TTL_SECONDS`: the JWT carries `nbf`/`exp` from the moment it was
+    signed, and a list re-signed now and then keeps those recent.
+    """
+
+    def __init__(self, *, ttl: float, size: int) -> None:
+        self._ttl = ttl
+        self._size = size
+        self._entries: dict[tuple, tuple[float, str]] = {}
+
+    def get(self, key: tuple) -> str | None:
+        hit = self._entries.get(key)
+        if hit is None or time.monotonic() - hit[0] > self._ttl:
+            return None
+        return hit[1]
+
+    def put(self, key: tuple, jws: str) -> None:
+        self._entries.pop(key, None)
+        self._entries[key] = (time.monotonic(), jws)
+        while len(self._entries) > self._size:
+            self._entries.pop(next(iter(self._entries)))
+
+
+_SIGNED_LIST_TTL_SECONDS = 300.0
+_signed_lists = _SignedListCache(ttl=_SIGNED_LIST_TTL_SECONDS, size=32)
+
+
 @status_router.get("/status/{list_id}")
 async def get_status_list(
     list_id: str,
@@ -159,20 +200,32 @@ async def get_status_list(
     except OrgOnboardingError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
-    signed = sign_credential(
-        credential,
-        decrypt_private_jwk(
-            require_private_jwk(
-                key.private_jwk, kid=key.kid, purpose="sign the public DID proof"
-            ),
-            settings.encryption_key,
-        ),
+    # Served from memory while the list's bits, its purpose, the issuer and the
+    # signing key are all unchanged — any of them changing is a different cache
+    # key, so a revocation or a key rotation is visible on the next request.
+    cache_key = (
+        list_id,
+        sl.purpose,
+        trust_anchor_did,
         key.kid,
+        json.dumps(key.public_jwk, sort_keys=True),
+        hashlib.sha256(bytes(sl.bitstring)).hexdigest(),
     )
-    return PlainTextResponse(
-        content=signed["proof"]["jws"],
-        media_type="application/vc+jwt",
-    )
+    jws = _signed_lists.get(cache_key)
+    if jws is None:
+        signed = sign_credential(
+            credential,
+            decrypt_private_jwk(
+                require_private_jwk(
+                    key.private_jwk, kid=key.kid, purpose="sign the public DID proof"
+                ),
+                settings.encryption_key,
+            ),
+            key.kid,
+        )
+        jws = signed["proof"]["jws"]
+        _signed_lists.put(cache_key, jws)
+    return PlainTextResponse(content=jws, media_type="application/vc+jwt")
 
 
 @trust_router.get("/trust")
