@@ -17,6 +17,7 @@ from __future__ import annotations
 import base64
 import gzip
 import json
+import time
 import zlib
 from urllib.error import URLError
 
@@ -47,6 +48,8 @@ def _int_b64(value: int) -> str:
 
 
 _UNSET = object()
+#: `exp` one hour out — what every credential the registry signs carries.
+_DEFAULT_EXP = object()
 
 
 class Issuer:
@@ -94,8 +97,8 @@ class Issuer:
         kid: str | None = None,
         issuer: str | None = None,
         status: object = _UNSET,
+        exp: object = _DEFAULT_EXP,
     ) -> str:
-        header = {"alg": "ES256", "typ": "JWT", "kid": kid or self.kid}
         vc = {
             "id": "urn:uuid:cred-1",
             "type": types or ["VerifiableCredential", "DataSubjectCredential"],
@@ -110,7 +113,15 @@ class Issuer:
         # and one with an explicit null are different cases, and both are tested.
         if status is not _UNSET:
             vc["credentialStatus"] = status
-        payload = {"iss": issuer or self.did, "sub": subject, "vc": vc}
+        payload: dict = {"iss": issuer or self.did, "sub": subject, "vc": vc}
+        if exp is _DEFAULT_EXP:
+            payload["exp"] = int(time.time()) + 3600
+        elif exp is not None:
+            payload["exp"] = exp
+        return self.sign(payload, kid=kid)
+
+    def sign(self, payload: dict, *, kid: str | None = None) -> str:
+        header = {"alg": "ES256", "typ": "JWT", "kid": kid or self.kid}
         signing_input = f"{_b64(json.dumps(header))}.{_b64(json.dumps(payload))}"
         der = self.key.sign(signing_input.encode(), ec.ECDSA(hashes.SHA256()))
         from cryptography.hazmat.primitives.asymmetric.utils import (
@@ -476,23 +487,57 @@ class FakeRegisters:
     """The registers, over HTTP, counting what was fetched.
 
     Patches `urlopen` in the module under test rather than the reader's own
-    loader, so the `Accept` header and the JSON decode are the production ones.
+    loader, so the `Accept` header and the JWT decode are the production ones.
+
+    **Serves what `GET /status/{id}` serves to a verifier: the register signed
+    as a VC-JWT** by the trust anchor (`signer`, set per test to the `anchor`
+    fixture), with the claims `sign_credential` puts on it. `unsigned=True`
+    serves the bare JSON document instead — the form this reader used to trust.
     """
 
-    def __init__(self, documents: dict[str, dict]):
+    #: Set per test by the autouse `_registers_sign_as_the_anchor` fixture.
+    signer: Issuer | None = None
+
+    def __init__(
+        self,
+        documents: dict[str, dict],
+        *,
+        signer: Issuer | None = None,
+        unsigned: bool = False,
+        claims: dict | None = None,
+    ):
         self.documents = documents
         self.fetches: list[str] = []
+        self.unsigned = unsigned
+        self.claims = claims or {}
+        if signer is not None:
+            self.signer = signer
 
     def __call__(self, request, timeout=None):
         url = request.full_url
         self.fetches.append(url)
-        assert request.get_header("Accept") == "application/json", (
-            "the registry serves a signed JWT unless the Accept header is "
-            "exactly application/json"
+        assert request.get_header("Accept") == "application/vc+jwt", (
+            "the verifier asks for the signed register; the JSON branch of "
+            "/status/{id} is unsigned"
         )
         if url not in self.documents:
             raise URLError(f"{url} is unreachable")
-        body = json.dumps(self.documents[url]).encode()
+        document = self.documents[url]
+        if self.unsigned:
+            body = json.dumps(document).encode()
+        else:
+            assert self.signer is not None
+            now = int(time.time())
+            payload = {
+                "iss": document.get("issuer"),
+                "sub": document["credentialSubject"]["id"],
+                "nbf": now,
+                "exp": now + 3600,
+                "jti": document["id"],
+                "vc": document,
+                **self.claims,
+            }
+            body = self.signer.sign(payload).encode()
 
         class _Response:
             def read(self):
@@ -505,6 +550,17 @@ class FakeRegisters:
                 return False
 
         return _Response()
+
+
+@pytest.fixture(autouse=True)
+def _registers_sign_as_the_anchor(anchor):
+    """Every register is signed by this test's trust anchor, and no register a
+    previous test verified is still cached."""
+    FakeRegisters.signer = anchor
+    user_credentials.reset_status_cache()
+    yield
+    FakeRegisters.signer = None
+    user_credentials.reset_status_cache()
 
 
 @pytest.fixture
@@ -852,3 +908,236 @@ def test_the_bespoke_lookup_map_is_not_a_register(anchor, resolver, tmp_path):
             ),
         )
     assert exc.value.status_code == 503
+
+
+# ── R3: expiry and the status check are required, the register is signed ──
+#
+# Each of these was accepted before: `exp` was honoured only when present, no
+# status source meant no check at all in any environment, and the register was
+# read from the unsigned JSON branch of `GET /status/{id}` and trusted.
+
+
+def test_a_credential_without_an_expiry_is_refused(anchor, resolver):
+    """A credential with no `exp` never lapses — if the register is ever
+    unreadable or skipped, nothing else bounds how long a leaked one works."""
+    with pytest.raises(HTTPException) as exc:
+        verify(anchor.credential(exp=None), resolver)
+    assert exc.value.status_code == 401
+    assert "expiry" in exc.value.detail
+
+
+def test_an_expired_credential_is_refused(anchor, resolver):
+    with pytest.raises(HTTPException) as exc:
+        verify(anchor.credential(exp=int(time.time()) - 10), resolver)
+    assert exc.value.status_code == 401
+    assert "expired" in exc.value.detail
+
+
+@pytest.mark.parametrize("env", ["production", "staging", ""])
+def test_no_status_source_outside_dev_is_a_503(anchor, resolver, monkeypatch, env):
+    """Outside `DS_ENV=dev` a credential whose revocation cannot be checked is
+    not accepted — not even with a valid signature. Unset counts as production."""
+    monkeypatch.setenv("DS_ENV", env)
+    with pytest.raises(HTTPException) as exc:
+        verify(anchor.credential(status=TWO_REGISTERS), resolver)
+    assert exc.value.status_code == 503
+    assert "status" in exc.value.detail
+
+
+def test_no_status_source_is_tolerated_only_in_dev(anchor, resolver, monkeypatch):
+    monkeypatch.setenv("DS_ENV", "dev")
+    assert verify(anchor.credential(status=TWO_REGISTERS), resolver).did == SUBJECT
+
+
+def test_the_status_requirement_can_be_stated_explicitly(anchor, resolver, monkeypatch):
+    monkeypatch.setenv("DS_ENV", "dev")
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            require_credential_status=True,
+        )
+    assert exc.value.status_code == 503
+
+
+def test_an_unsigned_register_is_refused(anchor, resolver, monkeypatch):
+    """The JSON a register used to be read as. Anyone on the path could clear
+    a bit in it and make a revoked credential valid again."""
+    monkeypatch.setattr(
+        user_credentials,
+        "urlopen",
+        FakeRegisters(
+            {
+                REVOCATION_LIST: status_list("revocation"),
+                SUSPENSION_LIST: status_list("suspension"),
+            },
+            unsigned=True,
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 503
+    assert "signed" in exc.value.detail
+
+
+def test_a_register_signed_by_another_key_is_refused(anchor, resolver, monkeypatch):
+    """A cleared bit signed by a stranger claiming to be the anchor."""
+    stranger = Issuer(did=ANCHOR)  # same DID and kid, different key
+    monkeypatch.setattr(
+        user_credentials,
+        "urlopen",
+        FakeRegisters(
+            {
+                REVOCATION_LIST: status_list("revocation"),
+                SUSPENSION_LIST: status_list("suspension"),
+            },
+            signer=stranger,
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 503
+    assert "signature" in exc.value.detail
+
+
+def test_a_register_from_another_issuer_is_refused(anchor, resolver, monkeypatch):
+    monkeypatch.setattr(
+        user_credentials,
+        "urlopen",
+        FakeRegisters(
+            {REVOCATION_LIST: status_list("revocation")},
+            claims={"iss": "did:web:elsewhere.example"},
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 503
+
+
+def test_an_expired_register_is_refused(anchor, resolver, monkeypatch):
+    monkeypatch.setattr(
+        user_credentials,
+        "urlopen",
+        FakeRegisters(
+            {REVOCATION_LIST: status_list("revocation")},
+            claims={"exp": int(time.time()) - 10},
+        ),
+    )
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 503
+    assert "expired" in exc.value.detail
+
+
+@pytest.mark.parametrize("entry_type", ["SomeFutureStatusEntry", None, ""])
+def test_an_unknown_status_entry_type_is_refused(
+    anchor, resolver, registers, entry_type
+):
+    """EDC 0.18.0 logs an unknown type and passes the credential. A credential
+    nobody could check is not one that was checked."""
+    entry = {**ONE_REGISTER, "type": entry_type}
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "not supported" in exc.value.detail
+
+
+def test_a_bitstring_status_entry_is_read(anchor, resolver, registers):
+    entry = {**ONE_REGISTER, "type": "BitstringStatusListEntry"}
+    assert (
+        verify(
+            anchor.credential(status=entry),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        ).did
+        == SUBJECT
+    )
+
+
+def test_a_verified_register_is_reused_across_requests(anchor, resolver, registers):
+    """Cached like EDC's revocation cache — one fetch per register per TTL,
+    rather than one per request."""
+    for _ in range(3):
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert registers.fetches == [REVOCATION_LIST, SUSPENSION_LIST]
+
+
+def test_a_zero_ttl_reads_the_register_every_time(anchor, resolver, registers):
+    for _ in range(2):
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+            status_cache_ttl_seconds=0,
+        )
+    assert registers.fetches == [REVOCATION_LIST, REVOCATION_LIST]
+
+
+def test_a_revocation_is_seen_once_the_cache_is_dropped(anchor, resolver, monkeypatch):
+    """The TTL is the revocation latency, and `reset_status_cache` ends it."""
+    fake = FakeRegisters({REVOCATION_LIST: status_list("revocation")})
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    verify(
+        anchor.credential(status=ONE_REGISTER),
+        resolver,
+        credential_status_url=REVOCATION_LIST,
+    )
+    fake.documents[REVOCATION_LIST] = status_list("revocation", set_bits=(INDEX,))
+    # Still cached: the old answer stands for the TTL.
+    verify(
+        anchor.credential(status=ONE_REGISTER),
+        resolver,
+        credential_status_url=REVOCATION_LIST,
+    )
+    user_credentials.reset_status_cache()
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert "revoked" in exc.value.detail
+
+
+def test_a_failed_fetch_is_not_cached(anchor, resolver, monkeypatch):
+    fake = FakeRegisters({})
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    with pytest.raises(HTTPException):
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    fake.documents[REVOCATION_LIST] = status_list("revocation")
+    assert (
+        verify(
+            anchor.credential(status=ONE_REGISTER),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        ).did
+        == SUBJECT
+    )

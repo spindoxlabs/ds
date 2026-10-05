@@ -3,7 +3,10 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 
+from ds_auth import Principal
 from ds_auth.fastapi import require_permission
+from ds_auth.permissions import has_permission
+from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
@@ -145,3 +148,135 @@ require_keycloak_sync = require_permission(
 require_collectors_write = require_permission(
     "identity-registry.admin", "identity-registry.collectors.write"
 )
+
+
+# ── Whose memberships a caller may touch ─────────────────────────────────────
+#
+# `memberships.write` says a caller may register memberships; it does not say
+# *in which organisation*. Checked alone, any holder could make any DID a member
+# of any organisation — and the connector's "the subject is a member of the
+# organisation this caller speaks for" check (`connector/api/v1/consent.py`
+# `_admit_writer`) reads exactly these rows, so an unscoped write would let one
+# organisation vouch for another's members.
+#
+# The rule, applied by the routes after the permission guard:
+#
+# * `identity-registry.admin` (an operator, `ir-cli`, a platform admin) — any
+#   organisation;
+# * an **organisation's own client** (`svc-ds-connector-<alias>`,
+#   `Principal.organisation_context`) — the owner whose `did` is that context,
+#   and no other. The same mapping `/consent-collectors/check` uses;
+# * a **person** — an organisation in which their own groups grant the
+#   permission (`Principal.grants_in`). No bundle grants `memberships.write`
+#   today, so this only matters if one ever does;
+# * a **plain service token** — refused. It names no organisation, so there is
+#   nothing to scope it to; the connector refuses it on the consent write for
+#   the same reason.
+
+ADMIN_PERMISSION = "identity-registry.admin"
+MEMBERSHIPS_WRITE_PERMISSION = "identity-registry.memberships.write"
+MEMBERSHIP_READ_PERMISSION = "identity-registry.membership.read"
+
+
+async def canonical_organisation(db: AsyncSession, alias: str) -> str:
+    """The owner id *alias* names, or *alias* verbatim when it names no owner."""
+    from .services.org_onboarding import resolve_owner
+
+    owner = await resolve_owner(db, alias)
+    return owner.id if owner else alias
+
+
+async def token_organisation(db: AsyncSession, principal: Principal) -> str | None:
+    """The owner id an organisation client's token speaks for, or ``None``.
+
+    The token's participant context (`sub`, set by the client's hardcoded-claim
+    mapper) is the organisation's DID; the owner carrying that DID is the
+    organisation. ``None`` for any other token, and for a context no single
+    owner carries.
+    """
+    from .services.consent_collectors import owner_for_did
+
+    context = principal.organisation_context
+    if not context:
+        return None
+    owner = await owner_for_did(db, context)
+    return owner.id if owner else None
+
+
+async def _person_grants_in(
+    db: AsyncSession, principal: Principal, organisation: str, *perms: str
+) -> bool:
+    """Does one of this person's organisations, resolved, grant *perms* there?"""
+    for org in principal.organizations:
+        if await canonical_organisation(db, org.alias) != organisation:
+            continue
+        if principal.grants_in(org.alias, *perms):
+            return True
+    return False
+
+
+async def authorize_membership_write(
+    db: AsyncSession, principal: Principal, organisation: str
+) -> None:
+    """Refuse (403) a membership write outside the caller's own organisation.
+
+    *organisation* is already canonical (:func:`canonical_organisation`), so an
+    alias of the caller's own organisation is its own organisation.
+    """
+    if principal.grants(ADMIN_PERMISSION):
+        return
+    if principal.is_organisation:
+        own = await token_organisation(db, principal)
+        if own is not None and own == organisation:
+            return
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"An organisation client may change memberships of its own "
+                f"organisation only: this token speaks for "
+                f"'{own or principal.organisation_context}', not '{organisation}'"
+            ),
+        )
+    if principal.is_service:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "A service token names no organisation, so it may not change "
+                "memberships: use the organisation's own client "
+                "(svc-ds-connector-<alias>) or identity-registry.admin"
+            ),
+        )
+    if await _person_grants_in(
+        db, principal, organisation, MEMBERSHIPS_WRITE_PERMISSION
+    ):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=f"Not permitted to change memberships of '{organisation}'",
+    )
+
+
+async def authorize_membership_check(
+    db: AsyncSession, principal: Principal, organisation: str
+) -> None:
+    """Bound a **person's** `/memberships/check` to their own organisations.
+
+    A service — the connector — is not bounded, by design: it asks whether a
+    subject belongs to a *collector* organisation (consent) or to a recipient
+    (the sharing circle), neither of which is its own. A person's
+    `membership.read` comes from an organisation's groups (`ds-participant-admin`)
+    and, like every organisation grant, holds in that organisation only.
+    """
+    if principal.is_service:
+        return
+    if has_permission(
+        principal.platform_authority,
+        (ADMIN_PERMISSION, MEMBERSHIP_READ_PERMISSION),
+    ):
+        return
+    if await _person_grants_in(db, principal, organisation, MEMBERSHIP_READ_PERMISSION):
+        return
+    raise HTTPException(
+        status_code=403,
+        detail=f"Not permitted to read memberships of '{organisation}'",
+    )

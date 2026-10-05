@@ -124,3 +124,42 @@ def test_the_former_flag_changes_nothing(default_render: list[dict], flagged_ren
     default_keys = sorted(_key(o) for o in default_render)
     flagged_keys = sorted(_key(o) for o in flagged_render)
     assert flagged_keys == default_keys
+
+
+def _container_env(obj: dict) -> dict[str, str]:
+    spec = ((obj.get("spec") or {}).get("template") or {}).get("spec") or {}
+    env: dict[str, str] = {}
+    for container in spec.get("containers") or []:
+        for item in container.get("env") or []:
+            if "value" in item:
+                env[item["name"]] = str(item["value"])
+    return env
+
+
+def test_every_credential_verifier_reads_the_status_registers(
+    default_render: list[dict],
+) -> None:
+    """R3: a service that accepts a user credential reads the anchor's status
+    registers — its ProductionGuard refuses to start without the URL. *Red:*
+    drop `*_CREDENTIAL_STATUS_URL` from a chart's `_env.tpl`."""
+    seen = []
+    for obj in default_render:
+        if obj["kind"] != "Deployment":
+            continue
+        env = _container_env(obj)
+        for prefix in ("CONNECTOR", "PROVENANCE"):
+            if f"{prefix}_TRUST_ANCHOR_DID" in env:
+                seen.append(obj["metadata"]["name"])
+                url = env.get(f"{prefix}_CREDENTIAL_STATUS_URL", "")
+                assert url.startswith("https://") and url.endswith("/status/1"), (
+                    obj["metadata"]["name"],
+                    url,
+                )
+                # Unset is required under DS_ENV=production; only an explicit
+                # value may relax it, and the example sets none — so the
+                # registry that binds the login must be named.
+                assert f"{prefix}_PERSON_TOKEN_REQUIRED" not in env
+                assert env.get(f"{prefix}_IDENTITY_REGISTRY_URL", "").startswith(
+                    "http://ds-identity-registry."
+                )
+    assert seen, "no connector or provenance Deployment rendered"

@@ -693,7 +693,9 @@ async def test_another_client_cannot_read_a_request_status(
         headers={"Authorization": f"Bearer {stranger.si_token(code=None)}"},
     )
     # Identical to an unknown request: distinguishing them enumerates holders.
-    assert r.status_code == 404
+    # Refused before the stranger's DID is resolved (`P-8d`), so it is the same
+    # refusal an unsigned caller gets — which also tells it nothing.
+    assert r.status_code == 401
 
     missing = await client.get(
         "/issuer/requests/does-not-exist",

@@ -208,7 +208,32 @@ class Settings(BaseSettings):
         ),
     )
     credential_status_path: str | None = None
+    # **Required outside dev** (`ProductionGuard`, and `verify_user_vc_jwt` at the
+    # point of use): a verifier that reads no register cannot see a revocation.
+    # An origin, not a register — the credential names the register and the bit.
     credential_status_url: str | None = None
+    credential_status_cache_seconds: float = Field(
+        default=900.0,
+        description=(
+            "How long a verified credential status register is reused. This is "
+            "the revocation latency: a credential revoked now is still accepted "
+            "for up to this long. Defaults to EDC's revocation cache (15 min)."
+        ),
+    )
+    # **The person routes take the person's own login token** (`/consent/my/*`,
+    # `/consent/status`, `/consumer/*` with a credential): the credential alone
+    # is a bearer credential any service that can read it may present. Unset
+    # means required everywhere except DS_ENV=dev; `false` outside dev is the
+    # transition switch for a caller that does not forward the token yet, and
+    # is logged at startup. See `ds_auth.person_binding`.
+    person_token_required: bool | None = Field(
+        default=None,
+        description=(
+            "Require the person's Keycloak login token, bound to the "
+            "credential's subject, on person routes. Unset: required unless "
+            "DS_ENV=dev."
+        ),
+    )
     allow_unknown_participants: bool = False
 
     # Per-owner scoping of provider writes: how to treat a caller carrying **no**

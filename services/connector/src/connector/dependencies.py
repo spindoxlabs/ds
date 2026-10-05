@@ -12,7 +12,8 @@ import httpx
 from ds_auth import Principal
 from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
-from ds_auth.user_credentials import verify_user_vc_jwt
+from ds_auth.person_binding import bind_login_token, person_token_required
+from ds_auth.user_credentials import UserCredential, verify_user_vc_jwt
 from fastapi import Depends, Header, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -812,23 +813,64 @@ def _bind_organisation(principal: Principal, *edc_scopes: str) -> None:
         raise HTTPException(403, f"Missing required scope: {' and '.join(missing)}")
 
 
-def _verify_consumer_vc(x_user_vc: str | None, x_subject_id: str | None) -> str:
-    settings = get_settings()
-    verify_user_vc_jwt(
+async def verify_person(
+    request: Request,
+    x_user_vc: str | None,
+    x_subject_id: str | None,
+    roles: set[str],
+    *,
+    linked_participant: str | None,
+    settings: Settings | None = None,
+) -> UserCredential:
+    """The person a person route acts for: their credential **and** their login.
+
+    One implementation for every route that accepts a user credential, so the
+    two checks cannot drift apart per route:
+
+    1. the credential — signature, issuer, expiry, status register, role and
+       linked participant (`ds_auth.verify_user_vc_jwt`);
+    2. the login token — the person's own Keycloak access token, verified for
+       this service's audience and bound by the identity registry to the
+       subject the credential names (`ds_auth.person_binding`). Required unless
+       `DS_ENV=dev` or `CONNECTOR_PERSON_TOKEN_REQUIRED=false`.
+    """
+    settings = settings or get_settings()
+    credential = verify_user_vc_jwt(
         x_user_vc,
         x_subject_id,
         settings.trust_anchor_did,
-        {"ConsumerUser"},
+        roles,
         trust_list_url=settings.trust_list_url,
         did_web_use_https=settings.did_web_use_https,
-        expected_linked_participant=settings.consumer_participant_did,
+        expected_linked_participant=linked_participant,
         credential_status_path=settings.credential_status_path,
         credential_status_url=settings.credential_status_url,
         insecure_dev=settings.vc_insecure_dev,
+        status_cache_ttl_seconds=settings.credential_status_cache_seconds,
     )
-    # Unreachable when `x_subject_id` is None — the call above raises 401.
-    assert x_subject_id is not None
-    return x_subject_id
+    await bind_login_token(
+        request,
+        get_oidc_config_for(request),
+        credential.subject_id,
+        lookup=getattr(request.app.state, "login_binding", None),
+        required=person_token_required(settings.person_token_required),
+    )
+    return credential
+
+
+async def _verify_consumer_vc(
+    request: Request, x_user_vc: str | None, x_subject_id: str | None
+) -> str:
+    settings = get_settings()
+    credential = await verify_person(
+        request,
+        x_user_vc,
+        x_subject_id,
+        {"ConsumerUser"},
+        linked_participant=settings.consumer_participant_did,
+        settings=settings,
+    )
+    return credential.subject_id
 
 
 def require_consumer_caller(*edc_scopes: str):
@@ -848,7 +890,7 @@ def require_consumer_caller(*edc_scopes: str):
         x_user_vc: str | None = Header(default=None),
     ) -> ConsumerCaller:
         if x_user_vc or x_subject_id:
-            subject = _verify_consumer_vc(x_user_vc, x_subject_id)
+            subject = await _verify_consumer_vc(request, x_user_vc, x_subject_id)
             return ConsumerCaller(subject_id=subject, actor=subject)
         from ds_auth.fastapi import authenticate
 
@@ -908,17 +950,13 @@ async def require_consumer_catalog_caller(
     """
     settings = get_settings()
     if x_user_vc or x_subject_id:
-        credential = verify_user_vc_jwt(
+        credential = await verify_person(
+            request,
             x_user_vc,
             x_subject_id,
-            settings.trust_anchor_did,
             {"ConsumerUser"},
-            trust_list_url=settings.trust_list_url,
-            did_web_use_https=settings.did_web_use_https,
-            expected_linked_participant=settings.consumer_participant_did,
-            credential_status_path=settings.credential_status_path,
-            credential_status_url=settings.credential_status_url,
-            insecure_dev=settings.vc_insecure_dev,
+            linked_participant=settings.consumer_participant_did,
+            settings=settings,
         )
         return CatalogCaller(
             subject_id=credential.subject_id,

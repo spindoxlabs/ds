@@ -224,6 +224,11 @@ SELF_AUTHENTICATED_ROUTES: dict[tuple[str, str, str], str] = {
     # Invite-gated intake: anonymous by design, but an application without a
     # valid invite code is refused. Asserted by `org-onboarding`.
     ("identity-registry", "POST", "/onboarding/applications"): "a valid invite code",
+    # R3: a person's own login token, forwarded by the connector or provenance,
+    # answering which subject that login is bound to. A service token is refused
+    # (403) — it names no person. Exercised by every person-route call that
+    # presents a login, and asserted by `authz-perimeter`'s login-binding step.
+    ("identity-registry", "GET", "/users/me"): "the person's own login token",
 }
 
 # **No service hides a route from its OpenAPI document**, and

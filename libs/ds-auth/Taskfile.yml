@@ -8,13 +8,10 @@ tasks:
     sources: [pyproject.toml]
 
   test:
-    # A test suite is a development context, and it has to say so: since
-    # `DS_ENV` defaults to `production`, a suite that builds the app hits the
-    # ProductionGuard and the whole module fails to *collect*. Declared here for
-    # the same reason compose declares it — this is the dev topology, so it opts
-    # out explicitly rather than relying on the variable being absent.
-    env:
-      DS_ENV: dev
+    # **No `env: DS_ENV: dev` here.** `tests/conftest.py` pins it, on the route
+    # every invocation takes — a bare `pytest` included. A second pin here would
+    # keep `task test` green after the first was deleted, and the two routes
+    # would then disagree (`verify_user_vc_jwt` reads the posture).
     desc: Run the ds-auth test suite
     # `setup` first: without the dev extra there is no pyyaml, and
     # test_vocabulary.py — the check that the bundle table and
@@ -33,8 +30,6 @@ tasks:
       neither the shape of a real Keycloak token nor the result of the realm
       sync has ever been checked. Skips cleanly when no realm is reachable.
     deps: [setup]
-    env:
-      DS_ENV: dev
     cmds:
       - uv run pytest tests/integration -v
 

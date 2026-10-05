@@ -158,3 +158,39 @@ def test_sign_credential_jws_verifiable():
     assert decoded["iss"] == "did:web:trust-anchor.dataspaces.localhost"
     assert decoded["sub"] == "did:web:rec.dataspaces.localhost"
     assert decoded["vc"]["type"] == ["VerifiableCredential", "MembershipCredential"]
+
+
+def _claims_of(signed: dict, kp) -> dict:
+    return jwt.decode(
+        signed["proof"]["jws"],
+        load_private_key(kp.private_jwk).public_key(),
+        algorithms=["ES256"],
+        options={"verify_aud": False},
+    )
+
+
+def test_every_signed_credential_carries_an_expiry():
+    """Verifiers refuse a user credential with no `exp` (`ds_auth`, R3), so the
+    issuer must never sign one. `exp` follows `expirationDate`, and a credential
+    with none — the status register — still gets the signer's default."""
+    kp = generate_key_pair("did:web:trust-anchor.dataspaces.localhost")
+    person = build_data_subject_credential(
+        issuer_did="did:web:trust-anchor.dataspaces.localhost",
+        subject_did="did:web:rec.dataspaces.localhost:users:sub-1",
+        role="DataSubject",
+        credentials_context_url="https://dataspaces.localhost/ns/credentials/v1",
+        dataspace_uri="https://dataspaces.localhost/dataspace",
+        status_list_credential_url="https://trust-anchor.dataspaces.localhost/status/1",
+        suspension_list_credential_url="https://trust-anchor.dataspaces.localhost/status/2",
+        status_list_index=0,
+        ttl_days=30,
+    )
+    claims = _claims_of(sign_credential(person, kp.private_jwk, kp.kid), kp)
+    from datetime import UTC, datetime
+
+    expected = datetime.strptime(person["expirationDate"], "%Y-%m-%dT%H:%M:%SZ")
+    assert claims["exp"] == int(expected.replace(tzinfo=UTC).timestamp())
+
+    no_expiration = {k: v for k, v in person.items() if k != "expirationDate"}
+    no_expiration.pop("proof", None)
+    assert "exp" in _claims_of(sign_credential(no_expiration, kp.private_jwk, kp.kid), kp)

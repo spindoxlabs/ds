@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from ds_auth.fastapi import authenticate, get_oidc_config
+from ds_auth.person_binding import realm_of
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -376,3 +378,58 @@ async def resolve_subject_identities(
             continue
         identities.append(SubjectIdentityResponse(did=mapping.did, username=username))
     return identities
+
+
+
+class OwnSubjectResponse(BaseModel):
+    """The subject DID the presenter's own login is bound to."""
+
+    did: str
+
+
+@router.get("/me", response_model=OwnSubjectResponse)
+async def own_subject(request: Request, db: AsyncSession = Depends(get_db)):
+    """Which subject is the person presenting this login token?
+
+    The question a person route asks before acting on a user credential
+    (`ds_auth.person_binding`): the credential says *which* subject, the login
+    token says *who logged in*, and only this registry stores the link between
+    them — the `keycloak_mappings` row, unique per (realm, Keycloak user id),
+    written when the person was onboarded.
+
+    **Asked with the person's own token, forwarded by the service that received
+    it** — not with a service token. So a service can learn a person's DID only
+    while it holds that person's login, and this route is no directory: a
+    service token is refused, and a login with no mapping is a 404.
+
+    **Keyed on the Keycloak user id, never the email or username.** Both of
+    those move; the user id is the one identifier the IdP does not let people
+    change — `resolve_mapping` calls it the continuity key. The realm is the one
+    this registry's issuer names, which the token's `iss` was just verified
+    against.
+    """
+    principal = await authenticate(request, get_oidc_config(request))
+    if principal.is_service:
+        raise HTTPException(
+            status_code=403,
+            detail="This route answers a person about their own login; a service "
+            "token names no person",
+        )
+    config = get_oidc_config(request)
+    realm = realm_of(config.issuer_url) or realm_of(
+        str(principal.claims.get("iss") or "")
+    )
+    if not realm or not principal.subject:
+        raise HTTPException(status_code=401, detail="The token names no realm and user")
+    result = await db.execute(
+        select(KeycloakMapping.did).where(
+            KeycloakMapping.keycloak_realm == realm,
+            KeycloakMapping.keycloak_user_id == principal.subject,
+        )
+    )
+    did = result.scalar_one_or_none()
+    if did is None:
+        raise HTTPException(
+            status_code=404, detail="This login is bound to no dataspace subject"
+        )
+    return OwnSubjectResponse(did=did)

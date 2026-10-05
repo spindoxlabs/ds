@@ -99,14 +99,8 @@ class SmokeFlow(BaseFlow):
             return result
         consumer_vc, subject_vc = credentials
 
-        consumer_headers = {
-            "X-Subject-Id": s.consumer_subject_id,
-            "X-User-VC": consumer_vc,
-        }
-        subject_headers = {
-            "X-Subject-Id": s.data_subject_id,
-            "X-User-VC": subject_vc,
-        }
+        consumer_headers = self._consumer_person(consumer_vc)
+        subject_headers = self._subject_person(subject_vc)
 
         # 5. Catalog discovery
         catalog_body = {

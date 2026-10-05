@@ -44,7 +44,7 @@ export const load: PageServerLoad = async ({ locals, url }) => {
 	const [offers, shares, timeline] = await Promise.allSettled([
 		getSharingOffers(),
 		getMyDataShares(token, subjectId, vcJws),
-		queryMyEvents({ limit: 10 }, subjectId, vcJws),
+		queryMyEvents({ limit: 10 }, token, subjectId, vcJws),
 	]);
 
 	const problems: Problem[] = [];

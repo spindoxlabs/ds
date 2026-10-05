@@ -65,6 +65,9 @@ def make_vc_headers(
             {
                 "iss": "did:web:trust-anchor.dataspaces.localhost",
                 "sub": subject_did,
+                # Every credential the identity registry signs carries `exp`,
+                # and the verifier refuses one that does not (R3).
+                "exp": int(time.time()) + 3600,
                 "vc": {
                     "issuer": "did:web:trust-anchor.dataspaces.localhost",
                     "credentialSubject": {

@@ -5,7 +5,7 @@ harder question, and the one that produces most real breaches: a caller who is
 fully authenticated, holds a genuine credential, and is entitled to use the API —
 can they reach a record that is not theirs?
 
-Three failure modes, each probed with real credentials issued by the
+Four failure modes, each probed with real credentials issued by the
 identity-registry:
 
 - **Horizontal escalation.** One data subject reading or acting on another
@@ -16,6 +16,9 @@ identity-registry:
   endpoint, and the reverse. Both credentials are valid; only the role
   distinguishes them, and the role is what decides who may consent on whose
   behalf.
+- **Borrowed credential.** A person's genuine credential presented under
+  somebody else's genuine login (R3) — refused, because the registry binds the
+  login to the subject the credential names.
 - **Enumeration.** A record that exists but belongs to someone else must be
   indistinguishable from one that does not exist — otherwise the 403/404
   difference is itself a directory of other people's consents.
@@ -69,11 +72,8 @@ class AuthzPerimeterFlow(BaseFlow):
             result.fail_step("load credentials", str(exc))
             return result
 
-        subject_headers = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
-        consumer_headers = {
-            "X-Subject-Id": s.consumer_subject_id,
-            "X-User-VC": consumer_vc,
-        }
+        subject_headers = self._subject_person(subject_vc)
+        consumer_headers = self._consumer_person(consumer_vc)
 
         # The credentials must actually work, or every negative below would pass
         # for the wrong reason.
@@ -94,6 +94,7 @@ class AuthzPerimeterFlow(BaseFlow):
         )
 
         self._check_header_substitution(result, subject_headers, consumer_headers)
+        self._check_login_binding(result, subject_headers)
         self._check_query_parameter_scoping(result, subject_headers)
         self._check_role_confusion(result, subject_headers, consumer_headers)
         self._check_enumeration(result, subject_headers)
@@ -162,6 +163,41 @@ class AuthzPerimeterFlow(BaseFlow):
             "header substitution",
             "a credential cannot act for a subject other than the one it names",
             probes=len(probes) + 1,
+        )
+
+    def _check_login_binding(
+        self, result: FlowResult, subject_headers: dict[str, str]
+    ) -> None:
+        """A person's credential under somebody else's login is refused (R3).
+
+        The credential is a bearer credential: every service that reads it from
+        the registry holds it. What makes a request the person's is their own
+        login token, bound by the registry's Keycloak mapping to the subject the
+        credential names. Here the subject's genuine credential travels with the
+        **consumer's** genuine login. A presented login is bound in every
+        environment, so this holds on the dev stack too, where a credential
+        alone is still accepted.
+        """
+        s = self.settings
+        borrowed = {
+            "X-Subject-Id": subject_headers["X-Subject-Id"],
+            "X-User-VC": subject_headers["X-User-VC"],
+            **self.http.person_login(s.consumer_email, s.consumer_password),
+        }
+        status, body = self.http.raw(
+            "GET", f"{s.connector_url}/consent/my", headers=borrowed
+        )
+        if status != 403:
+            result.fail_step(
+                "login binding",
+                "a credential was accepted under another person's login",
+                status_code=status,
+                body=body,
+            )
+            return
+        result.pass_step(
+            "login binding",
+            "the subject's credential under the consumer's login is refused (403)",
         )
 
     def _check_query_parameter_scoping(

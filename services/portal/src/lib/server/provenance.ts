@@ -251,21 +251,26 @@ export async function queryEvents(query: EventQuery = {}, token?: string): Promi
 /**
  * A data subject's own history.
  *
- * Authenticated by the subject's verifiable credential, not by a scope — and the
+ * Authenticated by the subject's verifiable credential **and their own login
+ * token** (R3), not by a scope — and the
  * subject is taken from that credential server-side, so there is deliberately no
  * `subject_id` to pass here.
  */
 export async function queryMyEvents(
 	query: Omit<EventQuery, 'subject_id' | 'consumer_did' | 'provider_did' | 'agreement_id'>,
+	token: string,
 	subjectId: string,
 	vcJws?: string | null,
 ): Promise<EventPage> {
 	const params = toSearchParams(query);
 	const headers: Record<string, string> = { 'X-Subject-Id': subjectId };
 	if (vcJws) headers['X-User-VC'] = vcJws;
+	// The person's own login token beside the credential (R3): provenance binds
+	// the two through the identity registry and refuses the credential alone.
 	const raw = await apiFetch<Record<string, unknown>>(
 		provUrl(`/prov/my/events${params.size ? '?' + params : ''}`),
 		{ headers },
+		token,
 	);
 	return toPage(raw, query.limit ?? 50, query.offset ?? 0);
 }

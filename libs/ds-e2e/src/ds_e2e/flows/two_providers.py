@@ -212,7 +212,7 @@ class TwoProvidersFlow(BaseFlow):
         consumer_vc = self._consumer_credential(result)
         if consumer_vc is None:
             return
-        headers = {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
+        headers = self._consumer_person(consumer_vc)
 
         try:
             catalog = (

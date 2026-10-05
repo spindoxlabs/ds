@@ -82,6 +82,10 @@ async def test_production_refuses_to_start_on_the_dev_defaults(monkeypatch):
         # deployment that satisfied the guard by mounting a file it never read.
         "PROVENANCE_TRUST_LIST_URL",
         "PROVENANCE_VC_INSECURE_DEV",
+        # R3: no register read means no revocation seen, and no registry to ask
+        # means no person's login can be bound to their credential.
+        "PROVENANCE_CREDENTIAL_STATUS_URL",
+        "PROVENANCE_IDENTITY_REGISTRY_URL",
     ):
         assert setting in message
 
@@ -100,11 +104,32 @@ async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
     monkeypatch.setenv("PROVENANCE_DID_WEB_USE_HTTPS", "true")
     monkeypatch.setenv("PROVENANCE_VC_INSECURE_DEV", "false")
     monkeypatch.setenv(
+        "PROVENANCE_CREDENTIAL_STATUS_URL", "https://ta.example.org/status/1"
+    )
+    monkeypatch.setenv("PROVENANCE_IDENTITY_REGISTRY_URL", "http://ir.example.org")
+    monkeypatch.setenv(
         "PROVENANCE_DATABASE_URL",
         "postgresql+asyncpg://provenance:Xk3v9-generated@db.example.org:5432/provenance",
     )
 
     await _run_lifespan(monkeypatch)
+
+
+@pytest.mark.asyncio
+async def test_the_registry_is_not_required_once_the_binding_is_switched_off(
+    monkeypatch,
+):
+    """`PROVENANCE_PERSON_TOKEN_REQUIRED=false` is the transition switch for a
+    caller that does not forward the person's token yet. The status register is
+    still required: the switch is about who presents, not about revocation."""
+    monkeypatch.setenv("DS_ENV", "production")
+    monkeypatch.setenv("PROVENANCE_PERSON_TOKEN_REQUIRED", "false")
+
+    with pytest.raises(InsecureProductionConfig) as excinfo:
+        await _run_lifespan(monkeypatch)
+    message = str(excinfo.value)
+    assert "PROVENANCE_CREDENTIAL_STATUS_URL" in message
+    assert "PROVENANCE_IDENTITY_REGISTRY_URL" not in message
 
 
 @pytest.mark.parametrize("env", ["prod", "staging", "test", ""])

@@ -117,7 +117,7 @@ bundle, and may never name a platform bundle or a raw capability.
 | `svc-ds-e2e` | the e2e harness | a broad set, for probing — but **not** `connector.provider.write`, so a flow that publishes has to use an identity that may |
 | `svc-ds-publisher` | whatever drives `POST /provider/sync`: a bring-up script, a CI job, the chart's sync hook | `connector.provider.read`, `connector.provider.write` — and deliberately no `management-api:*` and no `connector.admin`, so it reaches the connector and never an EDC |
 | `svc-ds-provenance` | **nothing** — it exists as an audience only | — |
-| `svc-ds-onboarding` | an application outside this repository | narrow onboarding grants |
+| `svc-ds-onboarding` | an application outside this repository | narrow onboarding grants. Its `memberships.write` no longer registers members: identity-registry bounds a membership write to the caller's own organisation and a plain service token names none (`403`) — an onboarding service writes memberships as its organisation's client |
 | `oauth2_proxy` | the browser login flow | *(declared in the realm import, not by the syncer)* |
 | `svc-ds-connector-<alias>` | an organisation's connector — **for every call it makes** — and its batch jobs | `identity-registry.read`, `.membership.read`, `.credentials.read`, `provenance.write`, `connector.consent.read`, `connector.provider.read`/`.write` (it publishes **its own** catalogue — ADR-0017), plus the `management-api:*` scopes; `sub` = the organisation's participant context. *(created by identity-registry, not by the syncer)* |
 

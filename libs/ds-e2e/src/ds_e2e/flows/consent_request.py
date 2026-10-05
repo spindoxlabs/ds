@@ -70,7 +70,7 @@ class ConsentRequestFlow(BaseFlow):
             result.fail_step("load credentials", str(exc))
             return result
 
-        subject_headers = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
+        subject_headers = self._subject_person(subject_vc)
 
         # ── 1. An ask is raised on the provider ──────────────────────────────
         request_body = {

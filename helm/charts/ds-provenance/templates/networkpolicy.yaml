@@ -17,7 +17,10 @@ chart defaults `/metrics` here remains reachable by nobody.
 ---
 # Egress: Keycloak over TLS. Provenance verifies every JWT against the JWKS
 # endpoint, so without this rule the default-deny baseline (DNS + Postgres only)
-# fails every authenticated request.
+# fails every authenticated request. The trust anchor's DID document and status
+# registers are fetched over the same rule. And the identity registry in the
+# authority namespace: `GET /prov/my/events` asks it whose login a person's token
+# is (R3), and without the rule every subject read is a 503.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -31,6 +34,13 @@ spec:
   policyTypes:
     - Egress
   egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ ((.Values.global).namespaces).authority }}
+      ports:
+        - protocol: TCP
+          port: 30005
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

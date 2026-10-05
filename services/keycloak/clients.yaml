@@ -233,7 +233,12 @@ clients:
       - identity-registry.resolve
       # Issue a data-subject credential on approval, and revoke it on removal.
       - identity-registry.credentials.write
-      # Register and delete the person's organisation membership.
+      # Register and delete the person's organisation membership. **Refused on
+      # this client since 2026-10-05:** identity-registry bounds a membership
+      # write to the caller's own organisation, and a plain service token names
+      # none. Kept until the onboarding service writes memberships as its
+      # organisation's client (`svc-ds-connector-<alias>`), as it already does
+      # for consent; remove it then.
       - identity-registry.memberships.write
       # Bind the person's Keycloak user to their dataspace DID. This writes a
       # mapping row in the registry's own database and nothing else — the

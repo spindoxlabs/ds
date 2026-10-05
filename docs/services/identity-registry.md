@@ -289,6 +289,33 @@ read. A service that decides admission needs the second and must never be given 
 `clients.yaml` refuses `*.admin` to a service client, and these two endpoints are what make
 that possible to honour.
 
+**A membership write is bounded to the caller's own organisation** (2026-10-05).
+`memberships.write` says a caller may register memberships, not in which organisation; checked
+alone, any holder could make any DID a member of any organisation — and the connector's consent
+write trusts these rows when it asks whether a subject belongs to the organisation registering
+their decision (rulebook `D-21`). `POST /admin/memberships` and
+`DELETE /admin/memberships/{did}/{alias}` now resolve the organisation to its owner id and then
+apply one rule (`dependencies.authorize_membership_write`):
+
+| caller | may write memberships of |
+|---|---|
+| `identity-registry.admin` (operator, `ir-cli`, a `platform-admin` person) | any organisation |
+| an organisation's own client, `svc-ds-connector-<alias>` | the owner whose `did` is the token's participant context (`sub`), under any of its names — and no other |
+| a person | an organisation whose own groups grant `memberships.write` (no bundle does today) |
+| a plain service token | nothing — `403`: it names no organisation, as on the connector's consent write |
+
+The organisation is the owner of the token's `sub`, never the client id, and the check runs
+before the DID and duplicate lookups, so a refused caller gets `403` whether or not the DID or
+the row exists. A plain service client holding `memberships.write` (the onboarding grant in
+`clients.yaml`) can therefore no longer register members; an onboarding service registers them
+as its community's organisation client, which must hold `identity-registry.memberships.write`.
+
+`GET /memberships/check` is bounded the same way **for a person**: `membership.read` from an
+organisation's groups (`ds-participant-admin`) answers for that organisation only, so it is not
+an oracle over every other roster. A service — the connector — still asks across organisations
+by design: it checks a *collector's* members on a consent write and a *recipient's* in the
+sharing circle, neither of which is its own.
+
 `GET /participants/resolve` is the same move for the participant registry (2026-09-17). A
 consumer connector asks it before it dials a counterparty (rulebook `C-19`). It takes exactly
 one of `?did=` or `?dsp_address=` and answers for one **active** participant with `did`,

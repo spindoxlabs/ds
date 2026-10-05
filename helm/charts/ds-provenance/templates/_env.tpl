@@ -38,6 +38,21 @@
   value: "true"
 - name: PROVENANCE_VC_INSECURE_DEV
   value: "false"
+- name: PROVENANCE_CREDENTIAL_STATUS_URL
+  value: {{ .Values.trustAnchor.credentialStatusUrl | default (printf "https://%s.%s/status/1" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
+{{- if .Values.trustAnchor.credentialStatusCacheSeconds }}
+- name: PROVENANCE_CREDENTIAL_STATUS_CACHE_SECONDS
+  value: {{ .Values.trustAnchor.credentialStatusCacheSeconds | quote }}
+{{- end }}
+# The registry that binds a person's login to their credential (R3): asked with
+# the person's own token (`GET /users/me`), so no secret is needed for it. The
+# authority namespace's instance holds the Keycloak mappings, as for the connector.
+- name: PROVENANCE_IDENTITY_REGISTRY_URL
+  value: {{ printf "http://ds-identity-registry.%s.svc.cluster.local:30005" ((.Values.global).namespaces).authority | quote }}
+{{- if ne (toString .Values.personTokenRequired) "" }}
+- name: PROVENANCE_PERSON_TOKEN_REQUIRED
+  value: {{ .Values.personTokenRequired | toString | quote }}
+{{- end }}
 {{- include "ds.env.aliases" (dict "ctx" . "prefix" "PROVENANCE_") }}
 {{- include "ds.env.extra" . }}
 {{- end -}}

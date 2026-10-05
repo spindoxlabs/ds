@@ -27,6 +27,8 @@ import base64
 import gzip
 import json
 import logging
+import threading
+import time
 import zlib
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,6 +50,7 @@ from .did_web import (
     assertion_jwk,
     public_key_from_jwk,
 )
+from .production import is_production
 
 log = logging.getLogger(__name__)
 
@@ -89,6 +92,30 @@ def _b64url_decode(value: str) -> bytes:
     return base64.urlsafe_b64decode(value + "=" * (padding % 4))
 
 
+def _es256_verifies(parts: list[str], public_key: Any) -> bool:
+    """Whether a compact JWS's raw ES256 signature verifies against *public_key*.
+
+    One implementation for the two things signed by the trust anchor that this
+    module reads: the user credential and its status register.
+    """
+    signature = _b64url_decode(parts[2])
+    if len(signature) != 64:
+        return False
+    der_signature = encode_dss_signature(
+        int.from_bytes(signature[:32], "big"),
+        int.from_bytes(signature[32:], "big"),
+    )
+    try:
+        public_key.verify(
+            der_signature,
+            f"{parts[0]}.{parts[1]}".encode(),
+            ECDSA(hashes.SHA256()),
+        )
+    except InvalidSignature:
+        return False
+    return True
+
+
 def verify_user_vc_jwt(
     token: str | None,
     expected_subject_id: str | None,
@@ -103,7 +130,18 @@ def verify_user_vc_jwt(
     credential_status_url: str | None = None,
     insecure_dev: bool = False,
     resolver: DidWebResolver | None = None,
+    status_cache_ttl_seconds: float | None = None,
+    require_credential_status: bool | None = None,
 ) -> UserCredential:
+    """Verify a user credential and return who it names.
+
+    ``require_credential_status`` says whether a credential may be accepted with
+    **no** status source configured. ``None`` (the default) reads the posture:
+    required everywhere except ``DS_ENV=dev``. Outside dev a credential whose
+    revocation cannot be checked is a 503, never an accept — a verifier that
+    does not read the register cannot see a revocation, so the issuer's only way
+    to withdraw a credential would silently stop working.
+    """
     if not token:
         raise HTTPException(
             401, "Missing user Verifiable Credential (X-User-VC header)"
@@ -152,11 +190,6 @@ def verify_user_vc_jwt(
         if claimed_issuer != trust_anchor_did:
             raise HTTPException(403, "User VC issuer is not trusted")
 
-        signing_input = f"{parts[0]}.{parts[1]}".encode()
-        signature = _b64url_decode(parts[2])
-        if len(signature) != 64:
-            raise HTTPException(401, "Invalid user Verifiable Credential signature")
-
         resolver = resolver or get_resolver(
             use_https=did_web_use_https, ttl_seconds=did_cache_ttl_seconds
         )
@@ -179,16 +212,8 @@ def verify_user_vc_jwt(
                 503, f"Issuer identity could not be established: {exc}"
             ) from exc
 
-        der_signature = encode_dss_signature(
-            int.from_bytes(signature[:32], "big"),
-            int.from_bytes(signature[32:], "big"),
-        )
-        try:
-            public_key.verify(der_signature, signing_input, ECDSA(hashes.SHA256()))
-        except InvalidSignature as exc:
-            raise HTTPException(
-                401, "Invalid user Verifiable Credential signature"
-            ) from exc
+        if not _es256_verifies(parts, public_key):
+            raise HTTPException(401, "Invalid user Verifiable Credential signature")
 
     subject = vc.get("credentialSubject") or {}
     subject_id = str(subject.get("id") or payload.get("sub") or "")
@@ -218,12 +243,53 @@ def verify_user_vc_jwt(
         raise HTTPException(403, "User VC is not linked to this participant")
     if payload.get("nbf") is not None and float(payload["nbf"]) > now:
         raise HTTPException(401, "User VC is not valid yet")
-    if payload.get("exp") is not None and float(payload["exp"]) <= now:
+    # **`exp` is required, not merely honoured.** A credential with no expiry
+    # never lapses: if the status register is ever unreadable, misconfigured or
+    # skipped, nothing else bounds how long a leaked one stays usable. The
+    # identity-registry sets it on everything it signs (`sign_credential`), so
+    # this refuses only a credential no issuer of ours produced.
+    exp = payload.get("exp")
+    if exp is None:
+        raise HTTPException(401, "User VC has no expiry")
+    try:
+        expires_at = float(exp)
+    except (TypeError, ValueError):
+        raise HTTPException(401, "User VC has an unreadable expiry") from None
+    if expires_at <= now:
         raise HTTPException(401, "User VC has expired")
     if required_roles and role not in required_roles:
         raise HTTPException(403, f"User VC role {role!r} is not allowed")
+
+    if require_credential_status is None:
+        require_credential_status = is_production()
     if credential_status_url or credential_status_path:
-        _verify_credential_status(vc, credential_status_path, credential_status_url)
+        _verify_credential_status(
+            vc,
+            credential_status_path,
+            credential_status_url,
+            issuer=issuer,
+            verify_signature=not insecure_dev,
+            resolver=resolver
+            or get_resolver(
+                use_https=did_web_use_https, ttl_seconds=did_cache_ttl_seconds
+            ),
+            ttl_seconds=status_cache_ttl_seconds,
+        )
+    elif require_credential_status:
+        # Outside dev a credential whose revocation cannot be checked is not a
+        # credential this service may accept. `ProductionGuard` refuses to start
+        # without the setting; this is the same rule at the point of use, for a
+        # caller that builds no guard.
+        log.error(
+            "No credential status source is configured — refusing a user "
+            "credential whose revocation cannot be checked."
+        )
+        raise HTTPException(503, "User credential status checking is not configured")
+    else:
+        log.warning(
+            "Accepting a user Verifiable Credential WITHOUT a revocation check "
+            "(no *_CREDENTIAL_STATUS_URL; DS_ENV=dev). Local development only."
+        )
 
     return UserCredential(
         did=did,
@@ -284,10 +350,46 @@ _STATUS_REFUSAL = {
 }
 
 
+#: The entry types this reader understands. They carry the same three fields
+#: (`statusPurpose`, `statusListIndex`, `statusListCredential`), which is why one
+#: reader serves both. Anything else is **refused**: EDC 0.18.0 logs an unknown
+#: type and passes the credential (`RevocationServiceRegistryImpl`), which is a
+#: credential nobody checked being accepted as one that was.
+_SUPPORTED_ENTRY_TYPES = frozenset({"StatusList2021Entry", "BitstringStatusListEntry"})
+
+#: The credential types a register may be published as.
+_STATUS_LIST_TYPES = frozenset(
+    {"StatusList2021Credential", "BitstringStatusListCredential"}
+)
+
+#: How long a verified register is reused, by default. EDC's
+#: `edc.iam.credential.revocation.cache.validity` defaults to the same 15
+#: minutes. It is the **revocation latency**: a credential revoked now is still
+#: accepted by a process that read the register up to this long ago. Each
+#: service exposes it as `*_CREDENTIAL_STATUS_CACHE_SECONDS`.
+DEFAULT_STATUS_CACHE_SECONDS = 900.0
+
+#: url -> (monotonic expiry, verified register document). Process-wide, like the
+#: DID resolver: two requests naming the same register share one fetch.
+_STATUS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_STATUS_LOCK = threading.Lock()
+
+
+def reset_status_cache() -> None:
+    """Drop every cached register. For tests, and to see a revocation now."""
+    with _STATUS_LOCK:
+        _STATUS_CACHE.clear()
+
+
 def _verify_credential_status(
     vc: dict[str, Any],
     credential_status_path: str | None = None,
     credential_status_url: str | None = None,
+    *,
+    issuer: str | None = None,
+    verify_signature: bool = True,
+    resolver: DidWebResolver | None = None,
+    ttl_seconds: float | None = None,
 ) -> None:
     """Refuse a credential whose bit is set on any register it names.
 
@@ -315,12 +417,22 @@ def _verify_credential_status(
     checked = 0
 
     for entry in entries:
+        entry_type = entry.get("type")
+        if entry_type not in _SUPPORTED_ENTRY_TYPES:
+            raise HTTPException(
+                401, f"User VC credentialStatus type {entry_type!r} is not supported"
+            )
         purpose = str(entry.get("statusPurpose") or "revocation")
         index = _status_list_index(entry)
 
         if credential_status_url:
             document = _fetch_status_list(
-                _status_list_url(entry, credential_status_url), fetched
+                _status_list_url(entry, credential_status_url),
+                fetched,
+                issuer=issuer,
+                verify_signature=verify_signature,
+                resolver=resolver,
+                ttl_seconds=ttl_seconds,
             )
             published = _published_purpose(document)
             # EDC refuses this too, and for the same reason: a register read
@@ -448,26 +560,135 @@ def _status_bit(document: dict[str, Any], index: int) -> bool:
     return bool(bitstring[byte_index] & (1 << (7 - (index % 8))))
 
 
-def _fetch_status_list(url: str, cache: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    """The register at *url*, as JSON.
+def _fetch_status_list(
+    url: str,
+    cache: dict[str, dict[str, Any]],
+    *,
+    issuer: str | None = None,
+    verify_signature: bool = True,
+    resolver: DidWebResolver | None = None,
+    ttl_seconds: float | None = None,
+) -> dict[str, Any]:
+    """The register at *url*, **verified** as the issuer's signed VC-JWT.
 
-    `Accept: application/json` is exact and load-bearing. The identity-registry
-    serves `/status/{id}` as a **signed VC-JWT** by default and takes the JSON
-    branch only for this header — EDC sends `*/*` and parses a JWT, which is the
-    safer default for a caller that asks for nothing in particular.
+    The register is what decides whether a revoked credential is accepted, so an
+    unsigned one is a register anyone on the path can rewrite: clear a bit and
+    the credential is valid again. The identity-registry signs it with the trust
+    anchor's key (`P-8b`), and this reads that form — `Accept:
+    application/vc+jwt`, the JWT branch of `GET /status/{id}` — and verifies it
+    against the key the issuer's DID document publishes, exactly as the user
+    credential itself was verified. It used to ask for the unsigned JSON branch
+    and trust it.
+
+    Verified registers are cached for ``ttl_seconds`` (default
+    :data:`DEFAULT_STATUS_CACHE_SECONDS`), never beyond the register's own
+    ``exp``. Failures are never cached: a register that could not be read is
+    asked again on the next request rather than refusing everyone for the TTL.
     """
     if url in cache:
         return cache[url]
+    now = time.monotonic()
+    with _STATUS_LOCK:
+        hit = _STATUS_CACHE.get(url)
+    if hit is not None and hit[0] > now:
+        cache[url] = hit[1]
+        return hit[1]
+
     try:
-        req = Request(url, headers={"Accept": "application/json"})
+        req = Request(url, headers={"Accept": "application/vc+jwt"})
         with urlopen(req, timeout=5) as response:
-            document = json.loads(response.read().decode())
-    except (HTTPError, URLError, TimeoutError, json.JSONDecodeError) as exc:
+            body = response.read().decode().strip()
+    except (HTTPError, URLError, TimeoutError, UnicodeDecodeError) as exc:
         raise HTTPException(503, "Credential status registry is not available") from exc
-    if not isinstance(document, dict):
-        raise HTTPException(503, "Credential status registry served no credential")
+
+    document, register_exp = _verified_register(
+        body, issuer=issuer, verify_signature=verify_signature, resolver=resolver
+    )
+
+    ttl = DEFAULT_STATUS_CACHE_SECONDS if ttl_seconds is None else ttl_seconds
+    if ttl > 0:
+        # Never past the register's own expiry: a cached register outliving the
+        # signature that vouched for it would be an unsigned one by then.
+        lifetime = min(ttl, max(0.0, register_exp - time.time()))
+        with _STATUS_LOCK:
+            _STATUS_CACHE[url] = (time.monotonic() + lifetime, document)
     cache[url] = document
     return document
+
+
+def _verified_register(
+    body: str,
+    *,
+    issuer: str | None,
+    verify_signature: bool,
+    resolver: DidWebResolver | None,
+) -> tuple[dict[str, Any], float]:
+    """The register credential inside a signed VC-JWT, and the JWT's ``exp``.
+
+    Every failure is a **503**: the credential being checked is not at fault,
+    the register is — and a register that cannot be trusted is not one saying
+    "not revoked".
+    """
+    parts = body.split(".")
+    if len(parts) != 3:
+        # An unsigned JSON register is exactly what this refuses.
+        raise HTTPException(503, "Credential status registry served no signed credential")
+    try:
+        header = json.loads(_b64url_decode(parts[0]))
+        payload = json.loads(_b64url_decode(parts[1]))
+    except Exception as exc:
+        raise HTTPException(503, "Credential status registry served an unreadable credential") from exc
+    if not isinstance(header, dict) or not isinstance(payload, dict):
+        raise HTTPException(503, "Credential status registry served an unreadable credential")
+
+    register_issuer = str(payload.get("iss") or "")
+    # The register must be the user credential's own issuer's — the trust
+    # anchor's. A register signed by somebody else answers for nobody here.
+    if issuer and register_issuer != issuer:
+        raise HTTPException(503, "Credential status register is not the issuer's")
+
+    if verify_signature:
+        if header.get("alg") != "ES256":
+            raise HTTPException(503, "Credential status register uses an unsupported algorithm")
+        if resolver is None:
+            raise HTTPException(503, "Credential status register cannot be verified")
+        try:
+            document = resolver.resolve(register_issuer)
+            public_key = public_key_from_jwk(assertion_jwk(document, header.get("kid")))
+        except DidResolutionError as exc:
+            log.error("cannot verify credential status register: %s", exc)
+            raise HTTPException(
+                503, f"Credential status register issuer could not be established: {exc}"
+            ) from exc
+        if not _es256_verifies(parts, public_key):
+            raise HTTPException(503, "Credential status register signature is invalid")
+    else:
+        log.warning(
+            "Reading a credential status register WITHOUT verifying its signature "
+            "(VC_INSECURE_DEV=true). Local development only."
+        )
+
+    now = time.time()
+    try:
+        register_exp = float(payload["exp"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(503, "Credential status register has no expiry") from None
+    if register_exp <= now:
+        raise HTTPException(503, "Credential status register has expired")
+    nbf = payload.get("nbf")
+    if nbf is not None and float(nbf) > now + 60:
+        raise HTTPException(503, "Credential status register is not valid yet")
+
+    credential = payload.get("vc")
+    if not isinstance(credential, dict):
+        raise HTTPException(503, "Credential status registry served no credential")
+    types = credential.get("type")
+    types = [types] if isinstance(types, str) else (types or [])
+    if not _STATUS_LIST_TYPES.intersection(t for t in types if isinstance(t, str)):
+        raise HTTPException(503, "Credential status registry served no status list")
+    if credential.get("issuer") and credential.get("issuer") != register_issuer:
+        raise HTTPException(503, "Credential status register issuer claim mismatch")
+    return credential, register_exp
 
 
 def _read_status_list(credential_status_path: str | None) -> dict[str, Any]:

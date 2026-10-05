@@ -400,10 +400,9 @@ class FailClosedFlow(BaseFlow):
                         "consumer_id": s.consumer_did,
                         "enabled": False,
                     },
-                    headers={
-                        "X-Subject-Id": s.data_subject_id,
-                        "X-User-VC": self._resolve_user_vc(s.data_subject_email, svc),
-                    },
+                    headers=self._subject_person(
+                        self._resolve_user_vc(s.data_subject_email, svc)
+                    ),
                 )
             except Exception:  # noqa: BLE001 - must not mask the flow's verdict
                 log.warning("fail-closed: could not withdraw the consent it granted")
@@ -501,7 +500,7 @@ class FailClosedFlow(BaseFlow):
                     "consumer_id": s.consumer_did,
                     "enabled": True,
                 },
-                headers={"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc},
+                headers=self._subject_person(subject_vc),
             )
         except Exception as exc:  # noqa: BLE001 — any failure is the same verdict
             result.fail_step(
@@ -629,7 +628,7 @@ class FailClosedFlow(BaseFlow):
                 "consumer credential", f"no credential for {s.consumer_email}"
             )
             return None
-        return {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
+        return self._consumer_person(consumer_vc)
 
     def _establish_baseline(self, result: FlowResult, headers: dict[str, str]) -> bool:
         """A contract agreed with the PDP up, so a refusal later means something."""

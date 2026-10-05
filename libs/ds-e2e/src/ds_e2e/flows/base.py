@@ -112,6 +112,30 @@ class BaseFlow(ABC):
             result.fail_step("load credentials", str(exc))
             return None
 
+    # ── A person, as a person route sees them (R3) ───────────────────────────
+    #
+    # The credential **and** the person's own login: person routes bind the
+    # two through the identity registry and, outside dev, refuse the credential
+    # alone. The login is a marker the HTTP client swaps for a fresh token at
+    # send time (`http.PERSON_LOGIN_HEADER`), so a long flow never presents an
+    # expired one.
+
+    def _subject_person(self, vc: str) -> dict[str, str]:
+        s = self.settings
+        return {
+            "X-Subject-Id": s.data_subject_id,
+            "X-User-VC": vc,
+            **self.http.person_login(s.data_subject_email, s.data_subject_password),
+        }
+
+    def _consumer_person(self, vc: str) -> dict[str, str]:
+        s = self.settings
+        return {
+            "X-Subject-Id": s.consumer_subject_id,
+            "X-User-VC": vc,
+            **self.http.person_login(s.consumer_email, s.consumer_password),
+        }
+
     def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
         s = self.settings
         encoded_email = urllib.parse.quote(email, safe="")

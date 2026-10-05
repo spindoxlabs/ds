@@ -224,11 +224,8 @@ class ConsentWithdrawalFlow(BaseFlow):
         if credentials is None:
             return result
         consumer_vc, subject_vc = credentials
-        consumer_headers = {
-            "X-Subject-Id": s.consumer_subject_id,
-            "X-User-VC": consumer_vc,
-        }
-        subject_headers = {"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc}
+        consumer_headers = self._consumer_person(consumer_vc)
+        subject_headers = self._subject_person(subject_vc)
 
         # Start from no live request, or the negotiation below is answered by a
         # 409 dedup that reads exactly like a refusal (`E2E-06`).
@@ -661,7 +658,7 @@ class ConsentWithdrawalFlow(BaseFlow):
                     "consumer_id": s.consumer_did,
                     "enabled": True,
                 },
-                headers={"X-Subject-Id": s.data_subject_id, "X-User-VC": subject_vc},
+                headers=self._subject_person(subject_vc),
             )
             # And every subject whose consent this flow suspended to make itself
             # observable. Leaving them withdrawn would silently narrow the pool

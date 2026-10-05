@@ -117,6 +117,16 @@ otherwise the connector's default path finds nothing, which is the intended
   value: "true"
 - name: CONNECTOR_VC_INSECURE_DEV
   value: "false"
+- name: CONNECTOR_CREDENTIAL_STATUS_URL
+  value: {{ .Values.trustAnchor.credentialStatusUrl | default (printf "https://%s.%s/status/1" (((.Values.global).hosts).trustAnchor | default "trust-anchor") (.Values.global).baseDomain) | quote }}
+{{- if .Values.trustAnchor.credentialStatusCacheSeconds }}
+- name: CONNECTOR_CREDENTIAL_STATUS_CACHE_SECONDS
+  value: {{ .Values.trustAnchor.credentialStatusCacheSeconds | quote }}
+{{- end }}
+{{- if ne (toString .Values.personTokenRequired) "" }}
+- name: CONNECTOR_PERSON_TOKEN_REQUIRED
+  value: {{ .Values.personTokenRequired | toString | quote }}
+{{- end }}
 - name: CONNECTOR_OIDC_ISSUER_URL
   value: {{ ((.Values.global).keycloak).issuerUrl | quote }}
 - name: CONNECTOR_OIDC_INSECURE_DEV

@@ -20,12 +20,23 @@ class HttpError(Exception):
         super().__init__(f"HTTP {status} from {url}")
 
 
+#: A header a flow puts on a person's request instead of a token: the username
+#: whose **own login token** the client attaches at send time (R3). Person routes
+#: take the person's Keycloak token beside their credential, and that token
+#: lives five minutes in the dev realm — shorter than the longest flows. A flow
+#: that copied a token into its header dict would present an expired one
+#: halfway through; a flow holding this marker never holds a token at all.
+PERSON_LOGIN_HEADER = "X-E2E-Person-Login"
+
+
 class HttpClient:
     def __init__(self, settings: E2ESettings):
         self._settings = settings
         self._client = httpx.Client(timeout=settings.request_timeout)
         self._token: str | None = None
         self._token_expires: float = 0.0
+        self._logins: dict[str, str] = {}
+        self._user_tokens: dict[str, tuple[str, float]] = {}
 
     def close(self) -> None:
         self._client.close()
@@ -96,7 +107,9 @@ class HttpClient:
         caller then asserts on is the document at the end of the chain, which is
         what a consumer gets.
         """
-        resp = self._client.request("GET", url, headers=headers, follow_redirects=True)
+        resp = self._client.request(
+            "GET", url, headers=self._resolve_person(headers), follow_redirects=True
+        )
         media_type = resp.headers.get("content-type", "").split(";")[0].strip()
         if not resp.text:
             return resp.status_code, media_type, None
@@ -244,6 +257,52 @@ class HttpClient:
     def user_headers(self, username: str, password: str) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.user_token(username, password)}"}
 
+    def person_login(self, username: str, password: str) -> dict[str, str]:
+        """Headers that make a request carry *username*'s own login token.
+
+        The token is fetched (and refreshed before it lapses) when the request
+        is sent, not now — see :data:`PERSON_LOGIN_HEADER`.
+        """
+        self._logins[username] = password
+        return {PERSON_LOGIN_HEADER: username}
+
+    def _person_token(self, username: str) -> str:
+        cached = self._user_tokens.get(username)
+        if cached and time.monotonic() < cached[1]:
+            return cached[0]
+        password = self._logins.get(username)
+        if password is None:
+            raise RuntimeError(f"no login registered for {username}")
+        resp = self._client.post(
+            self._settings.keycloak_token_url,
+            data={
+                "grant_type": "password",
+                "client_id": self._settings.user_client_id,
+                "client_secret": self._settings.user_client_secret,
+                "username": username,
+                "password": password,
+                "scope": "openid profile email organization",
+            },
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        token: str = data["access_token"]
+        self._user_tokens[username] = (
+            token,
+            time.monotonic() + max(0, int(data.get("expires_in", 300)) - 30),
+        )
+        return token
+
+    def _resolve_person(self, headers: dict[str, str] | None) -> dict[str, str] | None:
+        """Swap :data:`PERSON_LOGIN_HEADER` for that person's current token."""
+        if not headers or PERSON_LOGIN_HEADER not in headers:
+            return headers
+        resolved = dict(headers)
+        username = resolved.pop(PERSON_LOGIN_HEADER)
+        resolved["Authorization"] = f"Bearer {self._person_token(username)}"
+        return resolved
+
     def _request(
         self,
         method: str,
@@ -253,6 +312,7 @@ class HttpClient:
         raise_for_status: bool = True,
     ) -> Any:
         log.debug("%s %s", method, url)
+        headers = self._resolve_person(headers)
         kwargs: dict[str, Any] = {}
         if body is not None:
             kwargs["json"] = body
@@ -284,6 +344,7 @@ class HttpClient:
         form: dict[str, str] | None = None,
     ) -> tuple[int, Any]:
         log.debug("%s %s (raw)", method, url)
+        headers = self._resolve_person(headers)
         kwargs: dict[str, Any] = {}
         if body is not None:
             kwargs["json"] = body

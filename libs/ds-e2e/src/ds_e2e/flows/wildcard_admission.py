@@ -97,10 +97,9 @@ class WildcardAdmissionFlow(BaseFlow):
             return result
 
         try:
-            self._subject = {
-                "X-Subject-Id": s.data_subject_id,
-                "X-User-VC": self._resolve_user_vc(s.data_subject_email, svc),
-            }
+            self._subject = self._subject_person(
+                self._resolve_user_vc(s.data_subject_email, svc)
+            )
         except Exception as exc:
             result.fail_step("load credentials", str(exc))
             return result

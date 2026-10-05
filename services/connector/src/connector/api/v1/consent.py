@@ -11,7 +11,6 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from ds.governance.dataplane import split_key
-from ds_auth.user_credentials import verify_user_vc_jwt
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import (
     AliasChoices,
@@ -41,6 +40,7 @@ from ...dependencies import (
     require_consent_writer,
     require_internal_scope,
     require_provider_read,
+    verify_person,
 )
 from ...notifications.base import ConsentNotifier
 from ...registry.participants import CollectorAnswer, CollectorLookupError
@@ -453,7 +453,8 @@ class AdminShareRequest(BaseModel):
         return self
 
 
-def _verify_user(
+async def _verify_user(
+    request: Request,
     x_user_vc: str | None,
     x_subject_id: str | None,
     settings: Settings,
@@ -470,23 +471,21 @@ def _verify_user(
 
     Handing back the verified value puts it in the signature instead. No caller
     used the previous return (the claims), so nothing loses anything.
+
+    **The credential is not enough on its own** (R3): it is a bearer credential
+    every service that reads it from the registry can present. `verify_person`
+    also requires the person's own login token, bound to the credential's
+    subject — see `ds_auth.person_binding`.
     """
-    verify_user_vc_jwt(
+    credential = await verify_person(
+        request,
         x_user_vc,
         x_subject_id,
-        settings.trust_anchor_did,
         roles,
-        trust_list_url=settings.trust_list_url,
-        did_web_use_https=settings.did_web_use_https,
-        expected_linked_participant=settings.participant_did,
-        credential_status_path=settings.credential_status_path,
-        credential_status_url=settings.credential_status_url,
-        insecure_dev=settings.vc_insecure_dev,
+        linked_participant=settings.participant_did,
+        settings=settings,
     )
-    # Unreachable when `x_subject_id` is None — the call above raises 401 first.
-    # Asserted rather than cast so the guarantee is checked, not asserted twice.
-    assert x_subject_id is not None
-    return x_subject_id
+    return credential.subject_id
 
 
 # ── Provider-local request seeding ────────────────────────────────────────────
@@ -690,13 +689,14 @@ async def get_consent_status(
     consumer_id: str,
     dataset_id: str,
     subject_id: str,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    x_subject_id = _verify_user(
-        x_user_vc, x_subject_id, settings, {"ConsumerUser", "DataSubject"}
+    x_subject_id = await _verify_user(
+        request, x_user_vc, x_subject_id, settings, {"ConsumerUser", "DataSubject"}
     )
     # The `subject_id` query parameter is caller-supplied; without this check any
     # authenticated holder could enumerate another subject's consent decisions.
@@ -825,6 +825,7 @@ async def list_consent_asks(
 
 @router.get("/my")
 async def list_my_consents(
+    request: Request,
     status: str | None = None,
     dataset_id: str | None = None,
     consumer_id: str | None = None,
@@ -835,8 +836,8 @@ async def list_my_consents(
 ):
     """List all consent records for the authenticated data subject."""
     subject_id = x_subject_id
-    subject_id = _verify_user(
-        x_user_vc, subject_id, settings, {"DataSubject", "ConsumerUser"}
+    subject_id = await _verify_user(
+        request, x_user_vc, subject_id, settings, {"DataSubject", "ConsumerUser"}
     )
 
     consents = await consent_service.list_subject_consents(
@@ -851,6 +852,7 @@ async def list_my_consents(
 
 @router.get("/my/shares")
 async def list_my_data_shares(
+    request: Request,
     consumer_id: str | None = None,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
@@ -867,7 +869,8 @@ async def list_my_data_shares(
     the person's own decision, from the person who made it.
     """
     subject_id = x_subject_id
-    subject_id = _verify_user(x_user_vc, subject_id, settings, {"DataSubject"})
+    subject_id = await _verify_user(
+request, x_user_vc, subject_id, settings, {"DataSubject"})
 
     consents = await consent_service.list_subject_consents(
         session=db,
@@ -893,6 +896,7 @@ async def list_my_data_shares(
 @router.post("/my/shares")
 async def set_my_data_share(
     body: DataSharingSetRequest,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -941,7 +945,8 @@ async def set_my_data_share(
     rather than the code; it is enforced now, and the place to change it is
     `circle`, never this docstring.
     """
-    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = await _verify_user(
+request, x_user_vc, x_subject_id, settings, {"DataSubject"})
 
     if not body.offer_id and not body.dataset_id:
         raise HTTPException(422, "Either offer_id or dataset_id is required")
@@ -2214,13 +2219,14 @@ async def holder_read_key_events(
 @router.get("/my/{consent_id}")
 async def get_my_consent(
     consent_id: str,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    x_subject_id = _verify_user(
-        x_user_vc, x_subject_id, settings, {"DataSubject", "ConsumerUser"}
+    x_subject_id = await _verify_user(
+        request, x_user_vc, x_subject_id, settings, {"DataSubject", "ConsumerUser"}
     )
     consent = await consent_service.get_consent_request(db, consent_id)
     if not consent or consent.subject_id != x_subject_id:
@@ -2239,7 +2245,8 @@ async def approve_consent(
     notifier: ConsentNotifier = Depends(get_notifier),
     prov: ProvBridge | None = Depends(get_prov),
 ):
-    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = await _verify_user(
+request, x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.approve_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -2296,7 +2303,8 @@ async def reject_consent(
     settings: Settings = Depends(get_settings_dep),
     notifier: ConsentNotifier = Depends(get_notifier),
 ):
-    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = await _verify_user(
+request, x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.reject_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -2345,6 +2353,7 @@ async def _terminate_refused_negotiation(request: Request, negotiation_id: str) 
 @router.post("/my/{consent_id}/revoke")
 async def revoke_consent(
     consent_id: str,
+    request: Request,
     x_subject_id: str | None = Header(default=None),
     x_user_vc: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
@@ -2352,7 +2361,8 @@ async def revoke_consent(
     notifier: ConsentNotifier = Depends(get_notifier),
     prov: ProvBridge | None = Depends(get_prov),
 ):
-    x_subject_id = _verify_user(x_user_vc, x_subject_id, settings, {"DataSubject"})
+    x_subject_id = await _verify_user(
+request, x_user_vc, x_subject_id, settings, {"DataSubject"})
     async with db.begin():
         consent = await consent_service.revoke_consent(
             db, consent_id, x_subject_id, notifier=notifier

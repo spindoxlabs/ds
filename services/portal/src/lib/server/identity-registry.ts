@@ -98,12 +98,43 @@ export interface ResolvedIdentity {
 	subjectId: string;
 }
 
-export async function resolveUserByEmail(email: string): Promise<ResolvedIdentity | null> {
-	if (!email) return null;
+/** The Keycloak login a session belongs to: the realm and the user id (`sub`). */
+export interface KeycloakLogin {
+	realm: string;
+	userId: string;
+}
+
+/** The realm an issuer URL names (`…/realms/<name>`), as `ds_auth.person_binding.realm_of`. */
+export function realmOf(issuer: string | null | undefined): string | null {
+	const match = /\/realms\/([^/]+)/.exec(issuer ?? '');
+	return match ? match[1] : null;
+}
+
+/** The query `/users/resolve` takes: the login first, the email only as a fallback. */
+export function resolveQuery(email: string, login?: KeycloakLogin | null): string {
+	const params = new URLSearchParams();
+	// **The Keycloak user id first** — the one identifier an IdP does not let
+	// people change. The registry resolves it before anything else, and it is
+	// the same key the connector and provenance bind a login to (`GET
+	// /users/me`, R3): resolving by email alone could show a person a DID their
+	// login is not bound to, and every person route would then refuse them.
+	if (login?.realm && login.userId) {
+		params.set('realm', login.realm);
+		params.set('user_id', login.userId);
+	}
+	if (email) params.set('email', email.trim().toLowerCase());
+	return params.toString();
+}
+
+export async function resolveUser(
+	email: string,
+	login?: KeycloakLogin | null,
+): Promise<ResolvedIdentity | null> {
+	if (!email && !login) return null;
 	const serviceToken = await getServiceToken();
 	if (!serviceToken) return null;
 
-	const url = `${identityRegistryUrl()}/users/resolve?email=${encodeURIComponent(email.trim().toLowerCase())}`;
+	const url = `${identityRegistryUrl()}/users/resolve?${resolveQuery(email, login)}`;
 	try {
 		const res = await fetch(url, {
 			headers: { Authorization: `Bearer ${serviceToken}` },

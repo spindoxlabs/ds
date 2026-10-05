@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from ds_auth import Principal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...db.models import Did, OrganizationMembership
 from ...dependencies import (
+    authorize_membership_check,
+    authorize_membership_write,
+    canonical_organisation,
     get_db,
     require_admin_scope,
     require_membership_read_scope,
@@ -13,7 +17,6 @@ from ...dependencies import (
 )
 from ...schemas.requests import CreateMembershipRequest
 from ...schemas.responses import MembershipCheckResponse, MembershipResponse
-from ...services.org_onboarding import resolve_owner
 
 router = APIRouter(tags=["memberships"])
 
@@ -44,8 +47,7 @@ async def _canonical_org(db: AsyncSession, alias: str) -> str:
     keeps the literal-string behaviour it has today, so this cannot turn a
     working setup into a 404.
     """
-    owner = await resolve_owner(db, alias)
-    return owner.id if owner else alias
+    return await canonical_organisation(db, alias)
 
 
 def _to_response(m: OrganizationMembership) -> MembershipResponse:
@@ -65,9 +67,18 @@ def _to_response(m: OrganizationMembership) -> MembershipResponse:
 async def create_membership(
     data: CreateMembershipRequest,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_memberships_write),
+    principal: Principal = Depends(require_memberships_write),
 ):
+    """Register a membership — in the caller's own organisation unless admin.
+
+    The permission alone named no organisation, so any holder could make any DID
+    a member of any organisation, and the connector trusts these rows when it
+    asks whether a subject belongs to the organisation registering their consent.
+    :func:`authorize_membership_write` bounds it; the check runs on the
+    canonical owner id, so an alias of the caller's own organisation is its own.
+    """
     organization_alias = await _canonical_org(db, data.organization_alias)
+    await authorize_membership_write(db, principal, organization_alias)
     existing = await db.execute(
         select(OrganizationMembership).where(
             and_(
@@ -125,14 +136,17 @@ async def delete_membership(
     user_did: str,
     organization_alias: str,
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_memberships_write),
+    principal: Principal = Depends(require_memberships_write),
 ):
+    # Authorised before the lookup, so a refused caller learns nothing about
+    # whether the row exists (403, never 404, outside its own organisation).
+    organization = await _canonical_org(db, organization_alias)
+    await authorize_membership_write(db, principal, organization)
     result = await db.execute(
         select(OrganizationMembership).where(
             and_(
                 OrganizationMembership.user_did == user_did,
-                OrganizationMembership.organization_alias
-                == await _canonical_org(db, organization_alias),
+                OrganizationMembership.organization_alias == organization,
             )
         )
     )
@@ -152,14 +166,18 @@ async def check_membership(
     user_did: str = Query(...),
     organization: str = Query(...),
     db: AsyncSession = Depends(get_db),
-    _claims: dict = Depends(require_membership_read_scope),
+    principal: Principal = Depends(require_membership_read_scope),
 ):
+    """One (subject, organisation) answer. A person asks within their own
+    organisations; a service (the connector) asks across organisations by design
+    — see :func:`authorize_membership_check`."""
+    organization = await _canonical_org(db, organization)
+    await authorize_membership_check(db, principal, organization)
     result = await db.execute(
         select(OrganizationMembership).where(
             and_(
                 OrganizationMembership.user_did == user_did,
-                OrganizationMembership.organization_alias
-                == await _canonical_org(db, organization),
+                OrganizationMembership.organization_alias == organization,
                 OrganizationMembership.status == "active",
             )
         )

@@ -238,6 +238,9 @@ services:
       CONNECTOR_CLIENT_SECRET: ${SVC_DS_CONNECTOR_GRID_OPERATOR_SECRET:-svc-ds-connector-grid-operator}
       CONNECTOR_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
       CONNECTOR_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      # R3: the status registers are read, verified as the anchor's signed
+      # VC-JWT, for every user credential. Required outside dev.
+      CONNECTOR_CREDENTIAL_STATUS_URL: http://trust-anchor.dataspaces.localhost/status/1
       CONNECTOR_DID_WEB_USE_HTTPS: "false"
       CONNECTOR_VC_INSECURE_DEV: "false"
     depends_on:
@@ -308,6 +311,10 @@ services:
       PROVENANCE_OIDC_ISSUER_URL: http://keycloak.dataspaces.localhost/realms/dataspaces
       PROVENANCE_TRUST_ANCHOR_DID: did:web:trust-anchor.dataspaces.localhost
       PROVENANCE_TRUST_LIST_URL: http://trust-anchor.dataspaces.localhost/trust
+      PROVENANCE_CREDENTIAL_STATUS_URL: http://trust-anchor.dataspaces.localhost/status/1
+      # R3: the registry that says whose login a person's token is. Asked
+      # with that token, so no client secret is needed for it.
+      PROVENANCE_IDENTITY_REGISTRY_URL: http://172.17.0.1:30005
       PROVENANCE_DID_WEB_USE_HTTPS: "false"
       PROVENANCE_VC_INSECURE_DEV: "false"
     extra_hosts:

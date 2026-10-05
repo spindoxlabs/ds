@@ -64,7 +64,26 @@ class Settings(BaseSettings):
         ),
     )
     credential_status_path: str | None = None
+    # Required outside dev (`ProductionGuard`): a verifier that reads no register
+    # never sees a revocation. Mirrors the connector's setting.
     credential_status_url: str | None = None
+    credential_status_cache_seconds: float = Field(
+        default=900.0,
+        description=(
+            "How long a verified credential status register is reused — the "
+            "revocation latency. Defaults to EDC's revocation cache (15 min)."
+        ),
+    )
+
+    # ── The person's login (R3) ───────────────────────────────────────────────
+    #
+    # `GET /prov/my/events` takes the person's own Keycloak login token beside the
+    # credential, and the identity registry says which subject that login is
+    # bound to (`GET /users/me`, asked with the person's token — this service
+    # needs no credential of its own for it). Unset `person_token_required`
+    # means required everywhere except DS_ENV=dev. See `ds_auth.person_binding`.
+    identity_registry_url: str | None = None
+    person_token_required: bool | None = None
 
 
 _settings: Settings | None = None

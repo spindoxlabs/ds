@@ -99,7 +99,7 @@ class RecipientRestrictionFlow(BaseFlow):
         consumer_vc = self._consumer_credential(result)
         if consumer_vc is None:
             return result
-        headers = {"X-Subject-Id": s.consumer_subject_id, "X-User-VC": consumer_vc}
+        headers = self._consumer_person(consumer_vc)
 
         catalog = self._catalog(result, headers)
         if catalog is None:

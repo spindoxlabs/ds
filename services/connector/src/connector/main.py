@@ -8,7 +8,8 @@ from pathlib import Path
 from ds.governance.models import profile_path_is_missing
 from ds.governance.owners import HttpOwnersRegistry
 from ds_auth import EDC_TOKEN_SCOPE
-from ds_auth.production import ProductionGuard
+from ds_auth.person_binding import IdentityRegistryLoginBinding, person_token_required
+from ds_auth.production import ProductionGuard, is_production
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import FastAPI
@@ -143,6 +144,17 @@ async def lifespan(app: FastAPI):
         "CONNECTOR_VC_INSECURE_DEV",
         settings.vc_insecure_dev,
         "Set CONNECTOR_VC_INSECURE_DEV=false so signatures are verified.",
+    )
+    # R3: a user credential is accepted only after its status register says it
+    # is neither revoked nor suspended. Unset, no register is read and the
+    # issuer's revocation reaches nothing — so it is required, and
+    # `verify_user_vc_jwt` refuses at the point of use as well.
+    guard.require_set(
+        "CONNECTOR_CREDENTIAL_STATUS_URL",
+        settings.credential_status_url,
+        "Point at the trust anchor's status registers, e.g. "
+        "https://<trust-anchor-host>/status/1 — the origin the identity "
+        "registry puts in every credential's statusListCredential.",
     )
     # The organisation client's secret. Every call this connector makes — to
     # its EDC's management API, to identity-registry, provenance and the
@@ -291,6 +303,22 @@ async def lifespan(app: FastAPI):
     app.state.prov = prov
     app.state.notifier = notifier
     app.state.ir_token_provider = ir_token_provider
+
+    # R3: who logged in is bound to whom the credential names by the registry's
+    # Keycloak mapping, asked with the person's own token (`GET /users/me`).
+    app.state.login_binding = (
+        IdentityRegistryLoginBinding(settings.identity_registry_url)
+        if settings.identity_registry_url
+        else None
+    )
+    if is_production() and not person_token_required(settings.person_token_required):
+        log.warning(
+            "CONNECTOR_PERSON_TOKEN_REQUIRED=false outside dev: person routes "
+            "accept a user credential WITHOUT the person's login token. Any "
+            "service that can read the credential can act as that person. This "
+            "is a transition switch for a caller that does not forward the "
+            "token yet — remove it once every caller does."
+        )
 
     # A parked negotiation waits on a person, and a person may never answer.
     # Provider-only: the asks and the negotiations they block are both the

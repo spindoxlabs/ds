@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, Query, Response
+from fastapi import APIRouter, Depends, Header, Query, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -202,6 +202,7 @@ async def list_events(
 
 @subject_router.get("/my/events")
 async def list_my_events(
+    request: Request,
     event_type: Annotated[list[str] | None, Query()] = None,
     dataset_id: str | None = None,
     occurred_after: datetime | None = None,
@@ -223,7 +224,7 @@ async def list_my_events(
     `subject_id` is not a parameter here on purpose: it is taken from the verified
     credential, so it cannot be pointed at somebody else.
     """
-    subject = verified_subject_id(x_user_vc, x_subject_id, settings)
+    subject = await verified_subject_id(request, x_user_vc, x_subject_id, settings)
     return await _page(
         db,
         settings,

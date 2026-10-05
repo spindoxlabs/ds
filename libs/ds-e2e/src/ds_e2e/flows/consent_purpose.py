@@ -84,10 +84,7 @@ class ConsentPurposeFlow(BaseFlow):
         except Exception as exc:
             result.fail_step("load credentials", str(exc))
             return result
-        subject_headers = {
-            "X-Subject-Id": s.data_subject_id,
-            "X-User-VC": subject_vc,
-        }
+        subject_headers = self._subject_person(subject_vc)
 
         # 4. Writes are validated against all three vocabularies.
         if not self._check_write_validation(result, subject_headers):

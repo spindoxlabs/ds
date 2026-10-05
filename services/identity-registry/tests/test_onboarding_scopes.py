@@ -164,19 +164,45 @@ MEMBER_DID = "did:web:users.example.test:someone"
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scope", [MEMBERSHIPS_WRITE, ADMIN])
-async def test_memberships_write_registers_a_membership(client, scope):
+async def test_memberships_write_registers_a_membership(client):
     """404 (unknown DID) proves the guard let the request through — the point
-    here is reachability, not the endpoint's own preconditions."""
-    r = await client.post(
-        "/admin/memberships",
-        headers=h(scope),
+    here is reachability, not the endpoint's own preconditions.
+
+    `memberships.write` is held by an organisation's own client and reaches its
+    own organisation only (`test_membership_scope.py`); `admin` reaches any.
+    """
+    from test_membership_scope import org_client
+
+    await client.post(
+        "/admin/owners",
+        headers=h(ADMIN),
         json={
-            "user_did": f"{MEMBER_DID}-{scope.split('.')[-1]}",
-            "organization_alias": "example-org",
+            "id": "example-org",
+            "name": "Example",
+            "did": "did:web:org.example.test",
         },
     )
-    assert r.status_code != 403, r.text
+    for headers in (
+        org_client("example-org", "did:web:org.example.test", MEMBERSHIPS_WRITE),
+        h(ADMIN),
+    ):
+        r = await client.post(
+            "/admin/memberships",
+            headers=headers,
+            json={"user_did": MEMBER_DID, "organization_alias": "example-org"},
+        )
+        assert r.status_code == 404, r.text
+
+
+@pytest.mark.asyncio
+async def test_memberships_write_on_a_plain_service_token_is_refused(client):
+    """A service token names no organisation, so it may register none."""
+    r = await client.post(
+        "/admin/memberships",
+        headers=h(MEMBERSHIPS_WRITE),
+        json={"user_did": MEMBER_DID, "organization_alias": "example-org"},
+    )
+    assert r.status_code == 403, r.text
 
 
 @pytest.mark.asyncio

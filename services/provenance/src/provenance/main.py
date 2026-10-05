@@ -16,7 +16,8 @@ from .api.v1.events import router as events_router
 from .api.v1.events import subject_router as subject_events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
-from ds_auth.production import ProductionGuard
+from ds_auth.person_binding import IdentityRegistryLoginBinding, person_token_required
+from ds_auth.production import ProductionGuard, is_production
 from ds_obs import configure_logging, install_metrics, install_tracing
 
 log = logging.getLogger(__name__)
@@ -82,7 +83,38 @@ async def lifespan(app: FastAPI):
         settings.vc_insecure_dev,
         "Set PROVENANCE_VC_INSECURE_DEV=false so signatures are verified.",
     )
+    # R3: a revoked or suspended credential is refused only if a register is read.
+    guard.require_set(
+        "PROVENANCE_CREDENTIAL_STATUS_URL",
+        settings.credential_status_url,
+        "Point at the trust anchor's status registers, e.g. "
+        "https://<trust-anchor-host>/status/1.",
+    )
+    # R3: the person's login is bound to the credential by the registry. With
+    # the binding required and no registry to ask, every subject is refused.
+    if person_token_required(settings.person_token_required):
+        guard.require_set(
+            "PROVENANCE_IDENTITY_REGISTRY_URL",
+            settings.identity_registry_url,
+            "Point at the identity registry that holds the Keycloak mappings "
+            "(the trust anchor's), so a person's login can be bound to their "
+            "credential.",
+        )
+    elif is_production():
+        log.warning(
+            "PROVENANCE_PERSON_TOKEN_REQUIRED=false outside dev: /prov/my/events "
+            "accepts a user credential WITHOUT the person's login token. Any "
+            "service that can read the credential can read that person's "
+            "history. A transition switch — remove it once every caller "
+            "forwards the token."
+        )
     guard.enforce()
+
+    app.state.login_binding = (
+        IdentityRegistryLoginBinding(settings.identity_registry_url)
+        if settings.identity_registry_url
+        else None
+    )
 
     await verify_schema()
 

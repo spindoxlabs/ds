@@ -82,6 +82,20 @@ clientId: ""
 trustAnchor:
   did: ""
   trustListUrl: ""
+  # The anchor's credential status registers (R3) — **required**: the service
+  # refuses to start without it, because a verifier that reads no register
+  # never sees a revocation. "" → https://<trustAnchor host>.<baseDomain>/status/1.
+  # It pins the origin; each credential names its own register and bit.
+  credentialStatusUrl: ""
+  # How long a verified register is reused — the revocation latency. "" keeps
+  # the service default (900 s, EDC's revocation cache).
+  credentialStatusCacheSeconds: ""
+
+# The person routes require the person's own Keycloak login token, bound to the
+# credential's subject (R3, ADR-0024). "" leaves it unset, which is **required**
+# under the chart's DS_ENV=production. `false` is the transition switch for a
+# caller that does not forward the person's token yet; the service logs it.
+personTokenRequired: ""
 
 # ── Governance ────────────────────────────────────────────────────────────────
 governance:

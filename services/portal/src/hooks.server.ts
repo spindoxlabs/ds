@@ -18,7 +18,7 @@
  * still resolves to `{ user, accessToken, userDid, userVcRoles, … }`.
  */
 import { env } from '$env/dynamic/private';
-import { resolveUserByEmail } from '$lib/server/identity-registry';
+import { realmOf, resolveUser, type KeycloakLogin } from '$lib/server/identity-registry';
 import { buildPortalGuard } from '$lib/server/production';
 import { buildSignOutUrl } from '$lib/server/signout';
 import { resolveIssuer, verifyAccessToken } from '$lib/server/token';
@@ -52,18 +52,21 @@ const PROXY_CLIENT_ID = env.OAUTH2_PROXY_CLIENT_ID ?? 'oauth2_proxy';
  * freshly issued credential appears without a sign-out.
  */
 const IDENTITY_TTL_MS = 60_000;
-type Identity = Awaited<ReturnType<typeof resolveUserByEmail>>;
+type Identity = Awaited<ReturnType<typeof resolveUser>>;
 const identityCache = new Map<string, { at: number; identity: Identity }>();
 
-async function cachedIdentity(email: string): Promise<Identity> {
-	const hit = identityCache.get(email);
+async function cachedIdentity(email: string, login: KeycloakLogin | null): Promise<Identity> {
+	// Keyed on the login when there is one: two sessions with the same address
+	// and different Keycloak users are two people (a re-created account).
+	const key = login ? `${login.realm}|${login.userId}` : `email|${email}`;
+	const hit = identityCache.get(key);
 	const now = Date.now();
 	if (hit && now - hit.at < IDENTITY_TTL_MS) return hit.identity;
 
-	const identity = await resolveUserByEmail(email);
+	const identity = await resolveUser(email, login);
 	// A failed lookup is cached too, briefly. Without that, a person with no
 	// dataspace identity yet re-queries the registry on every navigation.
-	identityCache.set(email, { at: now, identity });
+	identityCache.set(key, { at: now, identity });
 	return identity;
 }
 
@@ -110,7 +113,9 @@ async function buildSession(request: Request) {
 	if (!claims) return null;
 
 	const email = String(claims.email ?? request.headers.get('x-auth-request-email') ?? '');
-	const identity = email ? await cachedIdentity(email) : null;
+	const realm = realmOf(String(claims.iss ?? ''));
+	const login = realm && claims.sub ? { realm, userId: String(claims.sub) } : null;
+	const identity = email || login ? await cachedIdentity(email, login) : null;
 
 	return {
 		user: {
