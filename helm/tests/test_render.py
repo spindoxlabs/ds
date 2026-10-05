@@ -326,3 +326,75 @@ def test_a_provenance_without_a_pseudonym_key_does_not_render(
         helm_copy,
     )
     assert result.returncode == 0, result.stderr
+
+
+ORG_SYNC = [
+    "--state-values-set",
+    "global.keycloak.sync.enabled=true,"
+    "global.keycloak.sync.organizationsConfigMap=orgs,"
+    "global.keycloak.sync.organisations.example-org.collectsConsent=true,"
+    "global.keycloak.sync.organisations.other-org.collectsConsent=false,"
+    "secrets.organisationClients.other-org.connectorSecret=s,"
+    "secrets.keycloakAdminUsername=a,"
+    "secrets.keycloakAdminPassword=b",
+]
+
+
+def test_org_sync_gets_the_connector_and_collector_secrets(helm_copy: Path) -> None:
+    """ADR-0026: org-sync creates `svc-ds-connector-<alias>` for every declared
+    organisation and `svc-ds-collector-<alias>` for one that collects consent,
+    and under production refuses a client it has no secret for. The helmfile
+    renders both from its secrets and the job reads them. *Red:* drop the
+    `organisations`/`organisationClients` lines from the helmfile, or the
+    `envFrom` from the org-sync container."""
+    objects = _render(helm_copy, *ORG_SYNC)
+    secrets = [
+        o
+        for o in objects
+        if o["kind"] == "Secret"
+        and o["metadata"]["name"].endswith("-organisation-clients")
+    ]
+    assert len(secrets) == 1, [_key(o) for o in secrets]
+    data = secrets[0].get("stringData") or {}
+    assert set(data) == {
+        "SVC_DS_CONNECTOR_EXAMPLE_ORG_SECRET",
+        "SVC_DS_COLLECTOR_EXAMPLE_ORG_SECRET",
+        "SVC_DS_CONNECTOR_OTHER_ORG_SECRET",
+    }, sorted(data)
+    assert all(data.values())
+    name = secrets[0]["metadata"]["name"]
+    readers = [
+        c["name"]
+        for o in objects
+        if o["kind"] == "Deployment"
+        for c in (o["spec"]["template"]["spec"].get("initContainers") or [])
+        + (o["spec"]["template"]["spec"].get("containers") or [])
+        if any(
+            (ref.get("secretRef") or {}).get("name") == name
+            for ref in c.get("envFrom") or []
+        )
+    ]
+    assert readers == ["keycloak-org-sync"], readers
+
+
+def test_a_collector_without_its_secret_does_not_render(helm_copy: Path) -> None:
+    """A declared collector with no collector secret fails the render, naming the
+    key. *Red:* drop the `required` in organisation-client-secret.yaml."""
+    result = _run(
+        [
+            "helmfile",
+            "-e",
+            "example",
+            "template",
+            "--skip-deps",
+            *ORG_SYNC,
+            "--state-values-set",
+            "secrets.organisationClients.example-org.collectorSecret=",
+        ],
+        helm_copy,
+    )
+    assert result.returncode != 0
+    assert (
+        "secrets.organisationClients.example-org.collectorSecret is required"
+        in result.stderr
+    )
