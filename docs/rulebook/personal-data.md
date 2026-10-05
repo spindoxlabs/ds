@@ -245,7 +245,7 @@ requirement.
 |---|---|
 | Identifier | A subject DID, `did:web:<participant>:users:<id>` — in the namespace of the organisation that holds their credentials (`D-22a`), with an opaque `<id>` (`D-22c`) — mapped from a Keycloak user |
 | Credential | `DataSubjectCredential`, issued by the trust anchor |
-| Authentication to subject surfaces | VC-JWT headers (`X-Subject-Id` + `X-User-VC`) verified against the trust-anchor key — **not** the scope-based service guard |
+| Authentication to subject surfaces | VC-JWT headers (`X-Subject-Id` + `X-User-VC`) verified against the trust-anchor key, with `exp` and the anchor's signed status register required, **plus the subject's own Keycloak login token**, bound to the credential's subject by the registry's Keycloak mapping (since 2026-10-05, [ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)). It is **not** the scope-based service guard, and a service token beside the credential is refused outside dev |
 | Role composition | Additive. The same person may hold `DataSubject` and `ConsumerUser` |
 | Community role | A `communityRole` claim on the credential — `consumer`, `prosumer`. Distinct from the `role` claim above, which is the *protocol* role a verifier checks |
 

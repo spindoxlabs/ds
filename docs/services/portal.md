@@ -83,8 +83,11 @@ else forwards the signed-in user's token, or the subject's credential headers.
 - **Bearer** — the user's own access token, forwarded verbatim, for operator and provider
   calls.
 - **Subject credential** — `X-Subject-Id` + `X-User-VC`, selected per VC role, for
-  `/consent/my*`, `/consumer/*` and `/prov/my/events`. The connector and provenance verify the
-  credential themselves; no bearer is sent on these.
+  `/consent/my*`, `/consumer/*` and `/prov/my/events`, **with the user's own access token
+  beside it**. The connector and provenance verify the credential and bind the token to it
+  ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)). The portal
+  resolves the person's DID by the same key, their Keycloak user id in the realm the token
+  names (`/users/resolve?realm=&user_id=`), with the email only as a fallback.
 
 ### Server-side rendering, with one exception
 

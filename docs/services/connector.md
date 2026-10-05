@@ -35,8 +35,11 @@ a **reconcile**, not an append — see [What the sync removes](#what-the-sync-re
 
 **Holds the consent registry.** `/consent/*` is where a data subject grants, rejects or
 revokes sharing of their own rows. Subjects authenticate with a Verifiable Credential
-(`X-Subject-Id` + `X-User-VC`), not a bearer token — the credential *is* the identity, and
-no operator sits in between. Organisations and the onboarding service have their own routes
+(`X-Subject-Id` + `X-User-VC`) **and their own Keycloak login token** (`Authorization:
+Bearer`). The identity registry binds that token to the subject the credential names
+(`GET /users/me`), and outside `DS_ENV=dev` the credential alone, or the credential with a
+service token, is refused ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)).
+No operator sits in between. Organisations and the onboarding service have their own routes
 under the same prefix, guarded by ordinary permissions: `POST /consent/admin/shares` records a
 subject's standing decision (`connector.consent.provision`), and `GET /consent/admin/shares`
 reads back **who currently consents to one sharing offer**, for one named consumer
@@ -347,7 +350,7 @@ Every `/consumer/*` route accepts one of two callers, and no other:
 
 | Caller | Presents | Bound by |
 |---|---|---|
-| a **person** acting for this participant | `X-Subject-Id` + `X-User-VC`, a `ConsumerUser` credential linked to `CONNECTOR_CONSUMER_PARTICIPANT_DID` | the credential |
+| a **person** acting for this participant | `X-Subject-Id` + `X-User-VC`, a `ConsumerUser` credential linked to `CONNECTOR_CONSUMER_PARTICIPANT_DID`, **plus the person's own login token** bound to it (ADR-0024) | the credential |
 | **the organisation itself** — a batch job, the connector's operator tooling | a bearer from the organisation client `svc-ds-connector-<alias>` | its `sub` must be **this** connector's participant context, and its `scope` must hold EDC's scope for the call ds makes on its behalf |
 
 The scope an organisation token must hold is EDC's scope for the management call ds makes,
@@ -568,7 +571,9 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `CONNECTOR_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS. False only in dev, where Caddy serves :80 |
 | `CONNECTOR_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
-| `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 registers. `_URL` pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. `_PATH` is one local register and answers only for the `statusPurpose` it publishes |
+| `CONNECTOR_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 / Bitstring registers. **`_URL` is required outside dev** (guard, and a 503 at the point of use). It pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. The register is read as the anchor's **signed** VC-JWT and verified against the key its DID document publishes; an unsigned register and an unknown entry type are refused. `_PATH` is one local, unsigned register for dev and tests, and answers only for the `statusPurpose` it publishes |
+| `CONNECTOR_CREDENTIAL_STATUS_CACHE_SECONDS` | `900` | how long a verified register is reused, which is the revocation latency (EDC's default) |
+| `CONNECTOR_PERSON_TOKEN_REQUIRED` | unset = required unless `DS_ENV=dev` | the person's login token on person routes (ADR-0024). `false` is a logged transition switch for a caller that does not forward it yet |
 | `CONNECTOR_OWNER_SCOPING_STRICT` | `false` | refuse a provider write from a caller with no org claims |
 | `CONNECTOR_ALLOW_UNKNOWN_PARTICIPANTS` | `false` | accept a DSP peer absent from the registry |
 | `CONNECTOR_OWNER_ALIASES` | — | JSON map: foreign org alias → ds owner id |

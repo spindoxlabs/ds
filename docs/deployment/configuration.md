@@ -248,6 +248,9 @@ Not in `helm/values.yaml`. Settable per release by editing `helm/charts/<chart>/
 | `edc.managementApiVersion` | `ds-connector` | `v5beta` | the management API path segment; `v5` from EDC 0.19 |
 | `connectorServiceName` | `ds-edc`, `ds-federated-catalog` | `""` | empty → this participant's own connector |
 | `credentialTtl.defaultDays` / `maxDays` | `ds-identity-registry` | 365 / 730 | issued-credential lifetime |
+| `trustAnchor.credentialStatusUrl` | `ds-connector`, `ds-provenance` | `""` → `https://<trustAnchor host>.<baseDomain>/status/1` | the anchor's status registers. **Required**: the service refuses to start without it. Read as the anchor's signed VC-JWT; it pins the origin, and each credential names its own register and bit |
+| `trustAnchor.credentialStatusCacheSeconds` | `ds-connector`, `ds-provenance` | `""` (service default 900) | how long a verified register is reused, which is the **revocation latency** |
+| `personTokenRequired` | `ds-connector`, `ds-provenance` | `""` (required) | person routes take the person's own login token, bound to their credential ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)). `false` is a transition switch for a caller that does not forward the token yet, and is logged at startup |
 | `maxLineageDepth` | `ds-provenance` | `20` | |
 | `auth.proxy.enabled` | `ds-portal` | `true` | fronts the portal with oauth2-proxy. **Disabling it does not fall back to a portal login — there is none**, so the portal is left open with client-controlled identity headers |
 | `auth.serviceClientId` | `ds-portal` | `svc-ds-portal` | the portal's own service client |

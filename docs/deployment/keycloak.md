@@ -143,6 +143,25 @@ So the realm needs **one browser-login client**, named as `oauth2_proxy_client:`
 - naming it in `clients.yaml` is what makes the syncer attach an audience mapper per service
   client, so a user's token passes the `aud` check at each service.
 
+**The same token is what a person route requires** ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)).
+`/consent/my/*`, `/consent/status`, `/consumer/*` with a credential and `/prov/my/events` take
+the person's access token beside their credential, verify it for the service's own audience,
+and ask the identity registry (`GET /users/me`, with that token) which subject the login is
+bound to. So, outside `DS_ENV=dev`:
+
+- the token must carry `sub`, the Keycloak user id. It is the binding key, and the registry's
+  `keycloak_mappings` row for (realm, user id) is what onboarding writes
+  (`POST /admin/keycloak/sync`);
+- it must carry the audiences of `svc-ds-connector`, `svc-ds-provenance` **and**
+  `svc-ds-identity-registry`. The mapper above provides all three;
+- a service that acts for a person forwards that person's token. A service token beside the
+  credential is refused (403). If the service's token lacks the ds audiences, it exchanges the
+  person's token for one that carries them (token exchange, RFC 8693) rather than presenting
+  its own.
+
+`*_PERSON_TOKEN_REQUIRED=false` relaxes the requirement for a caller that has not moved yet,
+and the service logs it at startup.
+
 !!! warning "Without the post-logout URI, signing out leaves the SSO session alive"
     Two sessions exist behind the proxy: Keycloak's SSO session and the proxy's cookie. The
     portal signs out by sending the browser to the realm's `end_session` endpoint — naming this

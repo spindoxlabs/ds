@@ -632,14 +632,20 @@ def _verified_register(
     parts = body.split(".")
     if len(parts) != 3:
         # An unsigned JSON register is exactly what this refuses.
-        raise HTTPException(503, "Credential status registry served no signed credential")
+        raise HTTPException(
+            503, "Credential status registry served no signed credential"
+        )
     try:
         header = json.loads(_b64url_decode(parts[0]))
         payload = json.loads(_b64url_decode(parts[1]))
     except Exception as exc:
-        raise HTTPException(503, "Credential status registry served an unreadable credential") from exc
+        raise HTTPException(
+            503, "Credential status registry served an unreadable credential"
+        ) from exc
     if not isinstance(header, dict) or not isinstance(payload, dict):
-        raise HTTPException(503, "Credential status registry served an unreadable credential")
+        raise HTTPException(
+            503, "Credential status registry served an unreadable credential"
+        )
 
     register_issuer = str(payload.get("iss") or "")
     # The register must be the user credential's own issuer's — the trust
@@ -649,7 +655,9 @@ def _verified_register(
 
     if verify_signature:
         if header.get("alg") != "ES256":
-            raise HTTPException(503, "Credential status register uses an unsupported algorithm")
+            raise HTTPException(
+                503, "Credential status register uses an unsupported algorithm"
+            )
         if resolver is None:
             raise HTTPException(503, "Credential status register cannot be verified")
         try:
@@ -658,7 +666,8 @@ def _verified_register(
         except DidResolutionError as exc:
             log.error("cannot verify credential status register: %s", exc)
             raise HTTPException(
-                503, f"Credential status register issuer could not be established: {exc}"
+                503,
+                f"Credential status register issuer could not be established: {exc}",
             ) from exc
         if not _es256_verifies(parts, public_key):
             raise HTTPException(503, "Credential status register signature is invalid")

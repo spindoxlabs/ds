@@ -55,7 +55,10 @@ event graph.
 ### The subject's own view
 
 `GET /prov/my/events` is the one route that does not take a scope. It authenticates with
-`X-Subject-Id` + `X-User-VC` — an ES256 credential issued by the trust anchor — and filters on
+`X-Subject-Id` + `X-User-VC` — an ES256 credential issued by the trust anchor — together with
+the person's own login token, which the identity registry binds to the credential's subject
+(`GET /users/me` with that token, [ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)).
+It filters on
 the subject id **taken from the verified credential**, never from a query parameter. A person
 can read their own history without an operator, and cannot read anyone else's by asking
 nicely.
@@ -126,7 +129,10 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_TRUST_LIST_URL` | — | the dataspace trust list. An issuer not listed **active** is refused (`DSSC-TRF-05`) |
 | `PROVENANCE_DID_WEB_USE_HTTPS` | `true` | resolve did:web over TLS |
 | `PROVENANCE_VC_INSECURE_DEV` | `true` | skip signature verification entirely. **Refused in production** |
-| `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | StatusList2021 registers. `_URL` pins the **origin**; the credential names the register and the bit, so one value covers revocation and suspension. `_PATH` is one local register and answers only for the `statusPurpose` it publishes |
+| `PROVENANCE_CREDENTIAL_STATUS_PATH` / `_URL` | — | as the connector's: **`_URL` is required outside dev**, and the register is read signed and verified. `_PATH` is one local, unsigned register for dev and tests |
+| `PROVENANCE_CREDENTIAL_STATUS_CACHE_SECONDS` | `900` | the revocation latency |
+| `PROVENANCE_IDENTITY_REGISTRY_URL` | — | the registry holding the Keycloak mappings (the anchor's). Required while the login binding is. It is asked with the person's token, so no client secret is needed |
+| `PROVENANCE_PERSON_TOKEN_REQUIRED` | unset = required unless `DS_ENV=dev` | as the connector's |
 
 Under `DS_ENV=production` the service refuses to start if the Keycloak issuer, the trust-anchor
 DID or the trust list is unset, or either `*_INSECURE_DEV` flag is true — what keeps

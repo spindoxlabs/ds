@@ -222,6 +222,13 @@ turns a Keycloak identity into a dataspace DID: *who is this person* is registry
 was delivered to it. `POST /users/identities` turns DIDs back into the usernames the data plane
 joins on.
 
+`GET /users/me` answers **whose login this is**: called with a person's own Keycloak access
+token, it returns the DID that (realm, Keycloak user id) is mapped to, or 404. A service token
+gets a 403, because it names no person. The connector and provenance call it with the token a
+person route was handed, to bind the login to the credential's subject
+([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)). The key is
+the Keycloak user id, never the email.
+
 A person's DID lives in the namespace of the organisation that onboarded them,
 `did:web:<participant>:users:<id>`, and resolves on that participant's own host. **One human
 keeps one identifier** however many organisations hold credentials about them — issuance is per

@@ -193,4 +193,6 @@ def test_every_signed_credential_carries_an_expiry():
 
     no_expiration = {k: v for k, v in person.items() if k != "expirationDate"}
     no_expiration.pop("proof", None)
-    assert "exp" in _claims_of(sign_credential(no_expiration, kp.private_jwk, kp.kid), kp)
+    assert "exp" in _claims_of(
+        sign_credential(no_expiration, kp.private_jwk, kp.kid), kp
+    )

@@ -1,4 +1,4 @@
-"""A person route acts for the person who logged in, not for whoever holds their credential.
+"""A person route acts for the person who logged in, not for a credential holder.
 
 A user credential (``X-User-VC``) is a **bearer** credential: the person holds no
 key and signs nothing (`D-22`, `D-49`), and the services that act for them — the
@@ -76,7 +76,7 @@ class LoginBindingLookup(Protocol):
 
 
 class IdentityRegistryLoginBinding:
-    """Asks the identity registry, which holds the binding, **with the person's own token**.
+    """Asks the identity registry, which holds the binding, with the person's token.
 
     ``GET /users/me`` answers the DID the presented login is bound to, a 404
     when it is bound to none, and refuses a service token. The service forwards

@@ -380,7 +380,6 @@ async def resolve_subject_identities(
     return identities
 
 
-
 class OwnSubjectResponse(BaseModel):
     """The subject DID the presenter's own login is bound to."""
 

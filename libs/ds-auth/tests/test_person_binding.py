@@ -195,5 +195,7 @@ def test_no_registry_while_required_is_a_503():
 def test_a_presented_token_that_does_not_verify_is_a_401_even_when_not_required():
     client = _app(Lookup(), required=False)
     expired = {**PERSON, "exp": int(time.time()) - 600, "iat": int(time.time()) - 900}
-    headers = {"Authorization": f"Bearer {pyjwt.encode(expired, 'secret', algorithm='HS256')}"}
+    headers = {
+        "Authorization": f"Bearer {pyjwt.encode(expired, 'secret', algorithm='HS256')}"
+    }
     assert client.get("/", headers=headers).json()["status"] == 401

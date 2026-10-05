@@ -870,7 +870,8 @@ async def list_my_data_shares(
     """
     subject_id = x_subject_id
     subject_id = await _verify_user(
-request, x_user_vc, subject_id, settings, {"DataSubject"})
+        request, x_user_vc, subject_id, settings, {"DataSubject"}
+    )
 
     consents = await consent_service.list_subject_consents(
         session=db,
@@ -946,7 +947,8 @@ async def set_my_data_share(
     `circle`, never this docstring.
     """
     x_subject_id = await _verify_user(
-request, x_user_vc, x_subject_id, settings, {"DataSubject"})
+        request, x_user_vc, x_subject_id, settings, {"DataSubject"}
+    )
 
     if not body.offer_id and not body.dataset_id:
         raise HTTPException(422, "Either offer_id or dataset_id is required")
@@ -2246,7 +2248,8 @@ async def approve_consent(
     prov: ProvBridge | None = Depends(get_prov),
 ):
     x_subject_id = await _verify_user(
-request, x_user_vc, x_subject_id, settings, {"DataSubject"})
+        request, x_user_vc, x_subject_id, settings, {"DataSubject"}
+    )
     async with db.begin():
         consent = await consent_service.approve_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -2304,7 +2307,8 @@ async def reject_consent(
     notifier: ConsentNotifier = Depends(get_notifier),
 ):
     x_subject_id = await _verify_user(
-request, x_user_vc, x_subject_id, settings, {"DataSubject"})
+        request, x_user_vc, x_subject_id, settings, {"DataSubject"}
+    )
     async with db.begin():
         consent = await consent_service.reject_consent(
             db, consent_id, x_subject_id, notifier=notifier
@@ -2362,7 +2366,8 @@ async def revoke_consent(
     prov: ProvBridge | None = Depends(get_prov),
 ):
     x_subject_id = await _verify_user(
-request, x_user_vc, x_subject_id, settings, {"DataSubject"})
+        request, x_user_vc, x_subject_id, settings, {"DataSubject"}
+    )
     async with db.begin():
         consent = await consent_service.revoke_consent(
             db, consent_id, x_subject_id, notifier=notifier

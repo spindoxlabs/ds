@@ -1,4 +1,4 @@
-"""R3 — a person route acts for the person who logged in, not for whoever holds their credential.
+"""R3 — a person route acts for the person who logged in, not a credential holder.
 
 A user credential is a bearer credential: the person holds no key, and any
 service that can read it from the identity registry can present it. So every
@@ -18,6 +18,7 @@ import time
 import jwt as pyjwt
 import pytest
 import pytest_asyncio
+from ds_auth.person_binding import LoginBindingUnavailable
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -25,7 +26,6 @@ from connector.config import get_settings
 from connector.db.engine import Base
 from connector.dependencies import get_consumer_service, get_db, get_notifier, get_prov
 from connector.main import create_app
-from ds_auth.person_binding import LoginBindingUnavailable
 from tests import make_headers, make_vc_headers
 
 SUBJECT = "did:web:rec.dataspaces.localhost:users:sub-001"
@@ -114,7 +114,9 @@ async def test_a_service_token_with_the_credential_is_refused(
 ):
     """What onboarding's member relay and ds-e2e sent: a service's own token
     plus the person's credential. A service is not the person."""
-    r = await _my(client, {**make_vc_headers(), **make_headers(scope="connector.admin")})
+    r = await _my(
+        client, {**make_vc_headers(), **make_headers(scope="connector.admin")}
+    )
     assert r.status_code == 403
     assert "service token" in r.json()["detail"]
 
@@ -281,7 +283,9 @@ async def test_the_consumer_routes_refuse_a_credential_alone(consumer_client):
 @pytest.mark.rule("D-20", "C-19")
 async def test_the_catalogue_refuses_a_credential_alone(consumer_client):
     body = {"counter_party_address": "http://provider.test/protocol/2025-1"}
-    r = await consumer_client.post("/consumer/catalog", json=body, headers=_consumer_vc())
+    r = await consumer_client.post(
+        "/consumer/catalog", json=body, headers=_consumer_vc()
+    )
     assert r.status_code == 401
     r = await consumer_client.post(
         "/consumer/catalog", json=body, headers={**_consumer_vc(), **person_token()}

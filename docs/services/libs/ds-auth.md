@@ -29,7 +29,8 @@ The core is framework-free; only two modules import FastAPI.
 | Module | Authenticates | Used by |
 |---|---|---|
 | `jwt.py` + `fastapi.py` | a **service or an operator**, via an OIDC token, on scopes or on roles and organisation groups | almost every route |
-| `user_credentials.py` | a **person**, via an ES256 VC-JWT signed by the trust anchor, checked against StatusList2021 | connector `/consent/my/*` and `/consumer/*`; provenance `/prov/my/events` |
+| `user_credentials.py` | a **person's credential**, an ES256 VC-JWT signed by the trust anchor. `exp` is required, and the credential is checked against the anchor's **signed** status registers (StatusList2021 / Bitstring), verified and cached (`DEFAULT_STATUS_CACHE_SECONDS`, 900). A status source is required unless `DS_ENV=dev` | connector `/consent/my/*` and `/consumer/*`; provenance `/prov/my/events` |
+| `person_binding.py` | **the person behind the credential**: their own Keycloak access token, verified for the service's audience and bound to the credential's subject by the identity registry (`GET /users/me`, asked with that token). Required unless `DS_ENV=dev` or `*_PERSON_TOKEN_REQUIRED=false` ([ADR-0024](../../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)) | the same routes |
 
 The VC verifier lives here rather than in one service because two services verify the same
 credential and must agree on what a valid one is.
