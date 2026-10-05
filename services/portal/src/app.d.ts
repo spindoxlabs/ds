@@ -7,7 +7,12 @@
  * every route's `locals.auth()` call site kept working across the switch.
  */
 export interface DsSession {
-	user?: { name?: string | null; email?: string | null };
+	/**
+	 * `id` is the Keycloak user id (the token `sub`): the stable key that records
+	 * who acted. Server-side only — `displaySession` sends the browser the name
+	 * and email alone.
+	 */
+	user?: { id?: string | null; name?: string | null; email?: string | null };
 	/** Non-enumerable, as are the two credential fields below (`R17`). */
 	accessToken?: string;
 	userDid?: string | null;

@@ -69,10 +69,20 @@ export const load: PageServerLoad = async (event) => {
 	}
 };
 
-/** The operator's own identity, recorded as who verified an application. */
-function actor(session: { user?: { email?: string | null; name?: string | null } | null }): string {
-	return session.user?.email ?? session.user?.name ?? 'operator';
+/**
+ * Who acted, as the registry records it: the operator's Keycloak user id (the
+ * token `sub`) — `verified_by` on a decision, `accepted_by` on an acceptance.
+ *
+ * Never the email or the display name: both change, both are personal data the
+ * audit record does not need, and a fallback to a fixed label would attribute a
+ * decision to nobody. A session without an id is refused instead.
+ */
+function actor(session: { user?: { id?: string | null } | null }): string | null {
+	return session.user?.id || null;
 }
+
+const NO_ACTOR =
+	'Your session carries no user id, so this action cannot be attributed to you. Sign out and in again.';
 
 export const actions: Actions = {
 	/**
@@ -104,10 +114,12 @@ export const actions: Actions = {
 		if (!id || !['verified', 'rejected'].includes(status)) {
 			return fail(400, { error: 'A decision needs an application and a status' });
 		}
+		const by = actor(session);
+		if (!by) return fail(403, { error: NO_ACTOR });
 		try {
 			await decideApplication(session.accessToken ?? '', id, {
 				status,
-				verified_by: actor(session),
+				verified_by: by,
 				evidence_ref: String(form.get('evidence_ref') ?? '') || undefined,
 				notes: String(form.get('notes') ?? '') || undefined,
 			});
@@ -125,11 +137,13 @@ export const actions: Actions = {
 		if (!alias || !agreementId || !version) {
 			return fail(400, { error: 'Choose an agreement version to record' });
 		}
+		const by = actor(session);
+		if (!by) return fail(403, { error: NO_ACTOR });
 		try {
 			await recordAgreementAcceptance(session.accessToken ?? '', alias, {
 				agreement_id: agreementId,
 				version,
-				accepted_by: actor(session),
+				accepted_by: by,
 			});
 		} catch (e) {
 			return fail(502, { error: e instanceof Error ? e.message : 'Could not record acceptance' });

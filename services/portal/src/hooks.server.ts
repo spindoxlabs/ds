@@ -124,6 +124,7 @@ async function buildSession(request: Request) {
 	return withCredentials(
 		{
 			user: {
+				id: claims.sub ? String(claims.sub) : null,
 				name: (claims.name as string) ?? (claims.preferred_username as string) ?? email,
 				email,
 			},

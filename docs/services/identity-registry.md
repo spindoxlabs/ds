@@ -88,6 +88,7 @@ and the registry publishes what EDC's IssuerService publishes at v0.18.0 (R3, 20
   left-most bit. Its `id` is the list's own URL, so it is **stable per list**;
   `credentialSubject.id` is `<url>#list`.
 - **Lifetime**: signed for `IDENTITY_REGISTRY_STATUS_LIST_JWT_TTL_SECONDS` (default 86400, a day) as both JWT `exp` and `expirationDate`, re-signed once half of it has passed, so a served copy always outlives a verifier's cache.
+- **Floor**: the lifetime is at least 1800 s — half of it must still cover a verifier's 15-minute cache — and a lower `IDENTITY_REGISTRY_STATUS_LIST_JWT_TTL_SECONDS` is refused when the configuration loads.
 - **The response** to `GET /status/{id}`:
 
   | `Accept` | Answer |
@@ -198,6 +199,12 @@ application → verified owner → agreement acceptance → organization credent
 Each gate refuses to run before its predecessor: a credential needs a verified owner *and* an
 accepted agreement *and* an **enrolled DID**; promotion to participant needs an active
 credential.
+
+`verified_by` (on a decision) and `accepted_by` (on an acceptance) are free-text actor
+references, stored as given and never parsed. The portal's onboarding console sends the
+operator's Keycloak user id (the token `sub`) and refuses to act for a session without one;
+`ir-cli` and the bootstrap pass whatever their caller names. Values recorded before the
+console switched from the operator's email stay as they were.
 
 Alongside it sits the **provisioning bundle** — the config a third party stands its own
 deployment up from. It carries the trust anchor's DID and trusted issuers, the counterparties,

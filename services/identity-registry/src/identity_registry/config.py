@@ -194,10 +194,12 @@ class Settings(BaseSettings):
     #: `expirationDate`). A day: a verifier that keeps reading a stale copy is
     #: refused within the day, and the route re-signs a cached copy once half of
     #: this has passed, so what it serves always outlives a verifier's cache
-    #: (ds-auth 900 s, EDC's revocation cache 15 min by default).
+    #: (ds-auth 900 s, EDC's revocation cache 15 min by default). Floored at
+    #: 1800 s: half of it must still cover a verifier's 15-minute cache, and
+    #: settings below that are refused at load rather than served.
     status_list_jwt_ttl_seconds: int = Field(
         default=86400,
-        gt=0,
+        ge=1800,
         description="Lifetime of the signed status list, in seconds.",
     )
 

@@ -70,11 +70,17 @@ decides what to render, never what is permitted.
 Per request, `hooks.server.ts`:
 
 1. reads the bearer from `x-auth-request-access-token`, falling back to `Authorization`;
-2. base64-decodes the JWT payload and rejects an expired `exp`;
+2. verifies the token (`lib/server/token.ts`): a valid signature against the realm JWKS
+   (`KEYCLOAK_ISSUER_URL`), the expected issuer and an unexpired `exp`; a token failing any
+   check is no session. The audience is not checked;
 3. takes the `email` claim and resolves the person against the identity registry
    (`POST /users/resolve`, the identifiers in a JSON body, never in the URL), cached 60 s
    per login (or email) including negative results;
-4. exposes `{ user, accessToken, userDid, userVcRoles, userVcJwsByRole, userSubjectId }`.
+4. exposes `{ user, accessToken, userDid, userVcRoles, userVcJwsByRole, userSubjectId }`,
+   where `user.id` is the Keycloak user id (the token `sub`). The onboarding console records
+   it, never the email or name, as `verified_by` and `accepted_by`, and refuses those actions
+   for a session without it. It stays on the server: the browser gets `user.name` and
+   `user.email` only.
    `accessToken`, `userVcJws` and `userVcJwsByRole` are **non-enumerable**: server code reads
    them, and no serialisation of the session carries them.
 

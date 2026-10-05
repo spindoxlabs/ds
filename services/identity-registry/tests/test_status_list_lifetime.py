@@ -122,7 +122,20 @@ def test_ordinary_credentials_keep_a_year():
     assert abs(claims["exp"] - (claims["nbf"] + 365 * DAY)) <= 2
 
 
-@pytest.mark.parametrize("value", [0, -1])
-def test_the_lifetime_must_be_positive(value):
+@pytest.mark.parametrize("value", [0, -1, 900, 1799])
+def test_a_lifetime_below_the_floor_is_refused(value):
+    """Half the lifetime is when a cached copy is re-signed, and it must still
+    outlast a verifier's 15-minute cache — so nothing under 1800 s loads."""
     with pytest.raises(ValidationError):
         Settings(status_list_jwt_ttl_seconds=value)
+
+
+def test_a_lifetime_below_the_floor_is_refused_from_the_environment(monkeypatch):
+    monkeypatch.setenv("IDENTITY_REGISTRY_STATUS_LIST_JWT_TTL_SECONDS", "900")
+    with pytest.raises(ValidationError):
+        Settings()
+
+
+def test_the_floor_itself_loads():
+    settings = Settings(status_list_jwt_ttl_seconds=1800)
+    assert settings.status_list_jwt_ttl_seconds == 1800
