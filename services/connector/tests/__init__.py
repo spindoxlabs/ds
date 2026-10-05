@@ -33,6 +33,9 @@ def make_headers(scope: str = "connector.admin") -> dict:
             scope=scope,
             sub="test",
             preferred_username="service-account-svc-ds-test",
+            # Minted for this connector, as Keycloak mints a token whose client
+            # names it: the audience-bound routes check it (ADR-0026).
+            aud="svc-ds-connector",
         ),
         "secret",
         algorithm="HS256",
@@ -162,6 +165,8 @@ def make_org_headers(
             preferred_username=f"service-account-svc-ds-connector-{alias}",
             scope=" ".join(scopes),
             iss="http://keycloak.test/realms/dataspaces",
+            # The organisation client's client-level audiences.
+            aud=["svc-ds-identity-registry", "svc-ds-provenance", "svc-ds-connector"],
         ),
         "secret",
         algorithm="HS256",

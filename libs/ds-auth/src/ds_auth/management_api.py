@@ -60,11 +60,83 @@ EDC_MANAGEMENT_AUDIENCE = "svc-ds-edc"
 #: The prefix of every client identity-registry provisions for an organisation.
 ORGANISATION_CLIENT_PREFIX = "svc-ds-connector-"
 
-#: What a connector needs from ds's other services, held by its organisation's
-#: client. `svc-ds-connector` in `clients.yaml` holds nothing any more — it is the
-#: audience connectors verify — so this is the one list, read by
-#: identity-registry when it provisions an organisation client (its image does
+#: The prefix of an organisation's **collector** client (`svc-ds-collector-<alias>`),
+#: provisioned only for an organisation declared `collects_consent` (ADR-0026).
+#: Same `sub` as the organisation client — the organisation's DID — and so the
+#: same organisation identity (`Principal.organisation_context`), but a separate
+#: secret held by whoever runs that organisation's onboarding, with **no default
+#: scope, no client-level audience and no EDC power**: each grant is an optional
+#: scope that adds exactly one audience, and the receiver checks it.
+COLLECTOR_CLIENT_PREFIX = "svc-ds-collector-"
+
+# ── The ds services' audiences ──────────────────────────────────────────────
+#
+# Every ds service verifies `aud` against its own client id (`OidcConfig.audience`).
+IDENTITY_REGISTRY_AUDIENCE = "svc-ds-identity-registry"
+CONNECTOR_AUDIENCE = "svc-ds-connector"
+PROVENANCE_AUDIENCE = "svc-ds-provenance"
+
+#: Every audience a ds service verifies. A collector token naming more than the
+#: receiver's own is refused there: it was minted for more than one receiver, so
+#: it is replayable at the other one (`ds_auth.audience`).
+DS_SERVICE_AUDIENCES: tuple[str, ...] = (
+    IDENTITY_REGISTRY_AUDIENCE,
+    CONNECTOR_AUDIENCE,
+    PROVENANCE_AUDIENCE,
+    EDC_MANAGEMENT_AUDIENCE,
+)
+
+# ── The organisation-attributable acts ──────────────────────────────────────
+#
+# One audience per scope: each is declared in `services/keycloak/clients.yaml`
+# with `audience:` set to the service that checks it, so requesting the scope is
+# what puts that service in `aud`.
+
+#: Register or delete a member of the caller's own organisation (identity-registry).
+MEMBERSHIPS_WRITE_SCOPE = "identity-registry.memberships.write"
+#: Issue, transition or revoke a data-subject credential linked to the caller's
+#: own organisation (identity-registry).
+CREDENTIALS_WRITE_SCOPE = "identity-registry.credentials.write"
+#: Register a subject's standing decision (connector `POST /consent/admin/shares`,
+#: `POST /consent/request`).
+CONSENT_PROVISION_SCOPE = "connector.consent.provision"
+#: Read back what the caller registered (connector `GET /consent/admin/subject-shares`,
+#: `GET /consent/admin/decisions`). A read never needs the write grant.
+CONSENT_COLLECTOR_READ_SCOPE = "connector.consent.collector.read"
+#: Who consents to an offer (connector `GET /consent/admin/shares`).
+CONSENT_AUDIENCE_SCOPE = "connector.consent.audience"
+#: Record data leaving the platform (connector `POST /admin/disclosure`).
+DISCLOSURE_RECORD_SCOPE = "connector.disclosure.record"
+#: Publish the organisation's own catalogue (connector `POST /provider/sync`, …).
+PROVIDER_WRITE_SCOPE = "connector.provider.write"
+#: Write provenance events (provenance).
+PROVENANCE_WRITE_SCOPE = "provenance.write"
+
+#: The audience each audience-bound scope adds — the value its receiver requires.
+SCOPE_AUDIENCES: dict[str, str] = {
+    MEMBERSHIPS_WRITE_SCOPE: IDENTITY_REGISTRY_AUDIENCE,
+    CREDENTIALS_WRITE_SCOPE: IDENTITY_REGISTRY_AUDIENCE,
+    CONSENT_PROVISION_SCOPE: CONNECTOR_AUDIENCE,
+    CONSENT_COLLECTOR_READ_SCOPE: CONNECTOR_AUDIENCE,
+    CONSENT_AUDIENCE_SCOPE: CONNECTOR_AUDIENCE,
+    DISCLOSURE_RECORD_SCOPE: CONNECTOR_AUDIENCE,
+    PROVIDER_WRITE_SCOPE: CONNECTOR_AUDIENCE,
+    PROVENANCE_WRITE_SCOPE: PROVENANCE_AUDIENCE,
+    EDC_MANAGEMENT_SCOPE: EDC_MANAGEMENT_AUDIENCE,
+}
+
+#: What a connector needs from ds's other services, in **every** token its
+#: organisation's client mints. `svc-ds-connector` in `clients.yaml` holds nothing
+#: any more — it is the audience connectors verify — so this is the one list, read
+#: by identity-registry when it provisions an organisation client (its image does
 #: not ship `clients.yaml`).
+#:
+#: **Nothing here is an act a counterparty could replay.** The connector sends its
+#: default token to identity-registry, provenance and the counterparty's
+#: connector (`GET /consent/pending`). `connector.consent.provision` and
+#: `connector.provider.write` used to be here, so a counterparty that received
+#: that token could register consent at, or publish to, any connector that
+#: accepted this organisation. They are optional now (`ORGANISATION_ACTION_SCOPES`).
 CONNECTOR_SERVICE_SCOPES: tuple[str, ...] = (
     "identity-registry.read",
     "identity-registry.membership.read",
@@ -74,59 +146,88 @@ CONNECTOR_SERVICE_SCOPES: tuple[str, ...] = (
     # A consumer connector asks the provider whether its negotiation is parked
     # on a consent decision (`GET /consent/pending`).
     "connector.consent.read",
-    # The organisation registers its members' consent — at its own connector,
-    # or at a holder that accepts it as a collector (`POST /consent/admin/shares`,
-    # plan `a-collector-registers-consent-at-the-holder`). The holder's
-    # connector decides *where* it may; the scope only says it may ask.
-    "connector.consent.provision",
     # The holder reads the data keys its own data plane serves, per offer, and
     # their history (ADR-0022). Every organisation client holds it; the bound is
     # in the connector, which accepts only its own organisation's client and
     # refuses a collector, as `_own_participant_only` refuses a foreign publish.
     "connector.consent.holder.read",
-    # The organisation publishes **its own** catalogue: `POST /provider/sync`
-    # turns its governance into EDC assets, policies and contract definitions
-    # (plan `a-participant-publishes-and-the-sync-reconciles` item 5; ADR-0014
-    # decision 2, amended). A registered participant that may negotiate for
-    # another's datasets may offer its own.
-    #
-    # **It is bounded, and the bound is not here.** The token names a participant
-    # context in `sub`, and the connector's `_own_participant_only` perimeter
-    # refuses one that is not this connector's. Without that perimeter this line
-    # would let every organisation in a shared realm sync every connector it can
-    # reach; the two are one change.
-    "connector.provider.write",
     # Read-back. A publisher that cannot list what it published cannot tell
     # whether it worked — which is how a live deployment's publishing path stayed
     # broken, and green, for a fortnight.
     "connector.provider.read",
 )
 
+#: What the organisation client may **ask for**, one act at a time (ADR-0026).
+#:
+#: * `connector.consent.provision` — the organisation registers its members'
+#:   consent, at its own connector or at a holder that accepts it as a collector
+#:   (plan `a-collector-registers-consent-at-the-holder`), and
+#:   `connector.consent.collector.read` reads it back;
+#: * `connector.provider.write` — it publishes **its own** catalogue
+#:   (`POST /provider/sync`; ADR-0014 decision 2, amended). Bounded by the
+#:   connector's `_own_participant_only` perimeter, not here.
+ORGANISATION_ACTION_SCOPES: tuple[str, ...] = (
+    CONSENT_PROVISION_SCOPE,
+    CONSENT_COLLECTOR_READ_SCOPE,
+    PROVIDER_WRITE_SCOPE,
+)
+
 #: The services a connector's token must be accepted by — every ds service
 #: verifies `aud`, so a client without these authenticates and is refused.
 CONNECTOR_AUDIENCES: tuple[str, ...] = (
-    "svc-ds-identity-registry",
-    "svc-ds-provenance",
+    IDENTITY_REGISTRY_AUDIENCE,
+    PROVENANCE_AUDIENCE,
     # The counterparty connector — the audience of `GET /consent/pending`.
-    "svc-ds-connector",
+    CONNECTOR_AUDIENCE,
 )
 
 #: In every token the organisation client mints.
 ORGANISATION_CLIENT_DEFAULT_SCOPES: tuple[str, ...] = CONNECTOR_SERVICE_SCOPES
 
-#: Only in a token that asks for them — the connector's EDC token.
+#: Only in a token that asks for them: the connector's EDC token, and the
+#: organisation's own acts.
 ORGANISATION_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
     *MANAGEMENT_API_SCOPES,
     EDC_MANAGEMENT_SCOPE,
+    *ORGANISATION_ACTION_SCOPES,
 )
 
-#: The `scope` parameter of the connector's EDC token request.
-EDC_TOKEN_SCOPE = " ".join(ORGANISATION_CLIENT_OPTIONAL_SCOPES)
+#: The `scope` parameter of the connector's EDC token request. **Stated, not
+#: derived**: it used to join every optional scope, so each new optional grant
+#: would have ridden along in the token the connector hands its EDC.
+EDC_TOKEN_SCOPE = " ".join((*MANAGEMENT_API_SCOPES, EDC_MANAGEMENT_SCOPE))
 
 #: Everything an organisation client holds, default and optional.
 ORGANISATION_CLIENT_SCOPES: tuple[str, ...] = (
     *ORGANISATION_CLIENT_DEFAULT_SCOPES,
     *ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+)
+
+#: A collector client holds no default scope: a token asked for nothing carries
+#: no ds audience and is refused by every ds service.
+COLLECTOR_CLIENT_DEFAULT_SCOPES: tuple[str, ...] = ()
+
+#: Each requested **alone** (one scope, one audience, one receiver). The last four
+#: moved here from the plain `svc-ds-onboarding` client, so no secret is shared
+#: across onboarding operators and every act is attributable to an organisation.
+COLLECTOR_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
+    MEMBERSHIPS_WRITE_SCOPE,
+    CONSENT_PROVISION_SCOPE,
+    CONSENT_COLLECTOR_READ_SCOPE,
+    CREDENTIALS_WRITE_SCOPE,
+    CONSENT_AUDIENCE_SCOPE,
+    DISCLOSURE_RECORD_SCOPE,
+    PROVENANCE_WRITE_SCOPE,
+)
+
+#: The grants the plain `svc-ds-onboarding` client held for acts that belong to an
+#: organisation. Presented by a plain service token they are accepted only under
+#: `DS_ENV=dev`, logged, as a transition (`ds_auth.audience.plain_service_transition`).
+ONBOARDING_TRANSITION_SCOPES: tuple[str, ...] = (
+    CREDENTIALS_WRITE_SCOPE,
+    CONSENT_AUDIENCE_SCOPE,
+    DISCLOSURE_RECORD_SCOPE,
+    PROVENANCE_WRITE_SCOPE,
 )
 
 
@@ -138,6 +239,11 @@ def is_management_api_scope(scope: str) -> bool:
 def organisation_client_id(alias: str) -> str:
     """The client an organisation's connector and agents authenticate as."""
     return f"{ORGANISATION_CLIENT_PREFIX}{alias}"
+
+
+def collector_client_id(alias: str) -> str:
+    """The client an organisation's onboarding authenticates as (ADR-0026)."""
+    return f"{COLLECTOR_CLIENT_PREFIX}{alias}"
 
 
 _ACTION_LEVEL = {"read": 0, "write": 1, "admin": 2}

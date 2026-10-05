@@ -48,9 +48,14 @@ import time
 import urllib.parse
 from typing import Any
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import (
+    CONSENT_PROVISION_SCOPE,
+    WRITE_AND_READ_BACK,
+    legal_basis,
+)
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.flows.organisation_token import (
+    EDC_TOKEN_SCOPE,
     FINAL_NEGOTIATION_STATES,
     FINAL_TRANSFER_STATES,
 )
@@ -85,10 +90,18 @@ class CollectorHolderFlow(BaseFlow):
             return result
         try:
             self.collector = self.http.bearer_headers_for(
-                s.provider_org_client_id, s.provider_org_client_secret
+                s.provider_org_client_id,
+                s.provider_org_client_secret,
+                WRITE_AND_READ_BACK,
             )
+            # Its own `/consumer/*` calls need the EDC token's scopes (R12), and
+            # the refusal "an organisation not on the list" needs the consent
+            # write it asks for, so the relation — not a missing scope — is what
+            # refuses it (ADR-0026).
             self.consumer = self.http.bearer_headers_for(
-                s.consumer_org_client_id, s.consumer_org_client_secret
+                s.consumer_org_client_id,
+                s.consumer_org_client_secret,
+                f"{EDC_TOKEN_SCOPE} {CONSENT_PROVISION_SCOPE}",
             )
         except Exception as exc:
             result.fail_step(
@@ -151,10 +164,18 @@ class CollectorHolderFlow(BaseFlow):
         try:
             s = self.settings
             self.collector = self.http.bearer_headers_for(
-                s.provider_org_client_id, s.provider_org_client_secret
+                s.provider_org_client_id,
+                s.provider_org_client_secret,
+                WRITE_AND_READ_BACK,
             )
+            # Its own `/consumer/*` calls need the EDC token's scopes (R12), and
+            # the refusal "an organisation not on the list" needs the consent
+            # write it asks for, so the relation — not a missing scope — is what
+            # refuses it (ADR-0026).
             self.consumer = self.http.bearer_headers_for(
-                s.consumer_org_client_id, s.consumer_org_client_secret
+                s.consumer_org_client_id,
+                s.consumer_org_client_secret,
+                f"{EDC_TOKEN_SCOPE} {CONSENT_PROVISION_SCOPE}",
             )
         except Exception:
             return

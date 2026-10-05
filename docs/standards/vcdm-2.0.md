@@ -1,5 +1,15 @@
 # VCDM 2.0 and Bitstring Status List — the credential model ds has not moved to yet
 
+!!! info "Status lists moved to Bitstring Status List (R3, 2026-10-05)"
+    The **status half** of this page has moved: the identity-registry issues
+    `BitstringStatusListEntry` and publishes `BitstringStatusListCredential` with a
+    multibase base64url `encodedList` — the combination EDC's IssuerService publishes at
+    v0.18.0 (VC 1.1 envelope, VC-JWT with a `vc` claim). The **data model** is still
+    VCDM 1.1, so ds matches IssuerService rather than either DCP profile exactly (§4a).
+    Credentials issued before R3 carry `StatusList2021Entry` and still verify: they name
+    the same list URL and index, and both EDC's StatusList2021 reader and ds-auth read the
+    new list. The tables below record the pre-R3 position where they say "ds emits".
+
 ds issues Verifiable Credentials and publishes their status. Both of those rest on W3C
 Recommendations that reached that state on **15 May 2025**, and **ds implements the
 generation before each**: the 1.1 data model, and a Community Group draft called
@@ -81,10 +91,11 @@ Two details worth carrying forward:
 | `@context[0]` | `https://www.w3.org/2018/credentials/v1` (`services/vc.py:9`) | `https://www.w3.org/ns/credentials/v2`, and it MUST be first |
 | issuance time | `issuanceDate` (`services/vc.py:70`, `:140`, `:216`) | `validFrom` |
 | expiry | `expirationDate` (`services/vc.py:71`, `:141`, `:217`) | `validUntil` |
-| status entry type | `StatusList2021Entry` (`services/vc.py:16`) | `BitstringStatusListEntry` |
-| status credential type | `StatusList2021Credential` + `credentialSubject.type: StatusList2021` (`services/status_list.py:332`) | `BitstringStatusListCredential` + `credentialSubject.type: BitstringStatusList` |
-| second `@context` on the list | `https://w3id.org/vc/status-list/2021/v1` (`services/status_list.py:342`) | none — the v2 context defines the terms |
-| `encodedList` | GZIP + **standard base64, padded** (`services/status_list.py:93`) | "Multibase-encoded base64url (with no padding) … of the GZIP-compressed bitstring" — i.e. a leading `u` and the URL alphabet |
+| status entry type | ✅ `BitstringStatusListEntry` since R3 (`services/vc.py::STATUS_ENTRY_TYPE`); `StatusList2021Entry` before | `BitstringStatusListEntry` |
+| status credential type | ✅ `BitstringStatusListCredential` + `credentialSubject.type: BitstringStatusList` since R3 (`services/status_list.py::build_status_list_credential`) | `BitstringStatusListCredential` + `credentialSubject.type: BitstringStatusList` |
+| second `@context` on the list | none since R3 — the list carries only the 1.1 context, as IssuerService's does; the Bitstring terms are defined only in the v2 context, so the list is not valid JSON-LD until the data model moves | none — the v2 context defines the terms |
+| `encodedList` | ✅ `"u"` + base64url, no padding, of GZIP since R3; GZIP + standard base64 before | "Multibase-encoded base64url (with no padding) … of the GZIP-compressed bitstring" — i.e. a leading `u` and the URL alphabet |
+| list `id` | ✅ the list URL, stable, since R3; a fresh `urn:uuid` per fetch before | a URL (the spec's examples) |
 | bit order | MSB-first, `7 - (index % 8)` (`services/status_list.py:71`) | ✅ "the first index … is located at the left-most bit" |
 | list size | 16 KB, `BITSTRING_SIZE = 16384` (`services/status_list.py:17`) | ✅ "MUST be at least 16KB" |
 | entries per credential | participants: two, `revocation` + `suspension`, **mirrored on one index** | ✅ multiple entries are explicitly supported; the spec's own examples use distinct indices, which is a choice not a requirement |
@@ -139,10 +150,13 @@ both the conformant multibase form and ds's plain-base64 form. **Migrating the t
 without migrating the encoding would therefore pass every test we can run and still be
 non-conformant to any verifier that is not EDC.**
 
-Also present and unexamined: `edc.iam.credential.revocation.mimetype`, defaulting to
-`application/json`, which governs how the fetched status-list credential is parsed.
-ds serves `application/ld+json`. Nothing suggests a problem — the flows pass — but it
-is a knob a format migration should confirm rather than inherit.
+`edc.iam.credential.revocation.mimetype` defaults to `*/*` (checked in source at
+v0.18.0, `RevocationServiceRegistryExtension`), and `BaseRevocationListService` reads
+the body as a VC-JWT (signature checked against the DID `kid`, list read from `vc`)
+unless the header is exactly `application/json`. Since R3 `/status/{id}` answers the
+signed `application/vc+jwt` by default, the unsigned credential only for an explicit
+`application/json` / `application/ld+json`, and **415** otherwise — IssuerService's
+contract (`StatusListCredentialController`).
 
 ---
 
@@ -157,7 +171,9 @@ one bundle (`specifications/dcp.profiles.md`):
 | `vc11-sl2021/jwt` | VC Data Model 1.1 | StatusList2021 — cited as the **2023 Working Draft** | external proofs using JWT |
 | `vc20-bssl/jwt` | VC Data Model 2.0 | Bitstring Status List | enveloped proofs using JWT/JOSE (`vc-jose-cose`), *"ignore `ttl`, use `validUntil`"* |
 
-**ds implements `vc11-sl2021/jwt`.** "Phase 4" of the reissue plan is, precisely,
+**ds implemented `vc11-sl2021/jwt`** until R3; since then it issues VC 1.1 with
+Bitstring Status List — IssuerService's own (unprofiled) combination, `VC1_0_JWT` with a
+"todo: VC2_0_JOSE" still on its `main`. "Phase 4" of the reissue plan is, precisely,
 moving to `vc20-bssl/jwt` — and framing it that way is worth more than the property
 list in §7, because a counterparty negotiates on the profile alias, not on our
 individual choices. DCP's DSP profile document makes `profiles` a **REQUIRED** array in

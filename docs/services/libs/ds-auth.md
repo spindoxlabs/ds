@@ -29,7 +29,7 @@ The core is framework-free; only two modules import FastAPI.
 | Module | Authenticates | Used by |
 |---|---|---|
 | `jwt.py` + `fastapi.py` | a **service or an operator**, via an OIDC token, on scopes or on roles and organisation groups | almost every route |
-| `user_credentials.py` | a **person's credential**, an ES256 VC-JWT signed by the trust anchor. `exp` is required, and the credential is checked against the anchor's **signed** status registers (StatusList2021 / Bitstring), verified and cached (`DEFAULT_STATUS_CACHE_SECONDS`, 900). A status source is required unless `DS_ENV=dev` | connector `/consent/my/*` and `/consumer/*`; provenance `/prov/my/events` |
+| `user_credentials.py` | a **person's credential**, an ES256 VC-JWT signed by the trust anchor. `exp` is required, and the credential is checked against the anchor's **signed** status registers (`BitstringStatusListEntry`, and `StatusList2021Entry` on credentials issued before R3; `encodedList` as multibase base64url or plain base64), verified and cached (`DEFAULT_STATUS_CACHE_SECONDS`, 900). A status source is required unless `DS_ENV=dev` | connector `/consent/my/*` and `/consumer/*`; provenance `/prov/my/events` |
 | `person_binding.py` | **the person behind the credential**: their own Keycloak access token, verified for the service's audience and bound to the credential's subject by the identity registry (`GET /users/me`, asked with that token). Required unless `DS_ENV=dev` or `*_PERSON_TOKEN_REQUIRED=false` ([ADR-0024](../../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)) | the same routes |
 
 The VC verifier lives here rather than in one service because two services verify the same
@@ -92,6 +92,40 @@ call site that must exempt services checks `is_service` first.
 `ORGANISATION_PERMISSIONS` — no `*.admin` superset, nothing only a platform bundle names — so it
 cannot add up to a platform grant; a perimeter on an owner's resource still asks `grants_in`.
 
+### An organisation's own clients
+
+`organisation_context` is the organisation's DID (`sub`) for a token from either of an
+organisation's clients, and `None` for any other token. `organisation_client_kind` says which
+client minted the token. It is decided by the client id, never by `sub`:
+
+| client | kind | holds |
+|---|---|---|
+| `svc-ds-connector-<alias>` | `connector` | `ORGANISATION_CLIENT_DEFAULT_SCOPES`; optional: `MANAGEMENT_API_SCOPES`, `edc.management`, `ORGANISATION_ACTION_SCOPES` |
+| `svc-ds-collector-<alias>` | `collector` | nothing by default; optional: `COLLECTOR_CLIENT_OPTIONAL_SCOPES` |
+
+`EDC_TOKEN_SCOPE` lists the 7 management scopes and `edc.management` explicitly. It no longer
+means "every optional scope", which would put the organisation's acts into the token the
+connector hands its EDC.
+
+### One audience per scope (`ds_auth.audience`)
+
+`SCOPE_AUDIENCES` maps each organisation-attributable scope to the one audience it adds
+([ADR-0026](../../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
+A receiver applies the following on those routes:
+
+- `audience_bound(perimeter)` / `check_audience_bound`: a service token must name the
+  service's own audience (`OidcConfig.audience`) in `aud`. A collector token must name no
+  other ds service (`DS_SERVICE_AUDIENCES`), which is the one-scope-per-token rule. A person
+  is not checked here. A service without a configured audience refuses.
+- `transition_bound(act, perimeter)`: the audience check, then
+  `plain_service_transition`. A plain service token, meaning one that is not an
+  organisation's client, doing an organisation's act is refused unless `DS_ENV=dev`. In dev
+  a warning names the client. This covers the grants that moved from `svc-ds-onboarding`
+  (`ONBOARDING_TRANSITION_SCOPES`).
+
+Both helpers are `require_permission` perimeters, so the guarded route still publishes its
+permission for the e2e route sweep.
+
 ### How a caller is classified
 
 In order:
@@ -125,8 +159,10 @@ Layer A: ds's own semantics, in code, deliberately **not** deployment configurat
 
 `connector.consent.provision` left `ds-participant-admin` on 2026-09-17: a participant seat is
 bound to no connector, so a participant operator holding it could register consent at any connector,
-for any organisation's members. It is held by organisation clients (`CONNECTOR_SERVICE_SCOPES`)
-and the onboarding service, and reached by a person only through `connector.admin`. The
+for any organisation's members. An organisation's own clients request it as an optional scope
+(`ORGANISATION_ACTION_SCOPES`, `COLLECTOR_CLIENT_OPTIONAL_SCOPES`), and a person reaches it only
+through `connector.admin`. Its read-back, `connector.consent.collector.read`, has the same
+holders. The
 connector decides where an organisation may write — see [ds-connector](../connector.md#a-collector-registers-consent).
 `identity-registry.collectors.write`, which manages that relation, is in no bundle either.
 

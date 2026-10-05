@@ -15,6 +15,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    false,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -204,6 +205,13 @@ class Owner(Base):
     url: Mapped[str | None] = mapped_column(Text, nullable=True)
     aliases: Mapped[list] = mapped_column(JsonType, nullable=False, default=list)
     organization_config: Mapped[dict | None] = mapped_column(JsonType, nullable=True)
+    #: A declared governance flag (ADR-0026): this organisation collects its
+    #: members' consent, so promotion also provisions its collector client
+    #: (`svc-ds-collector-<alias>`). Set from `owners.yaml`, never inferred from
+    #: consent-collector rows — a holder collecting for itself has none.
+    collects_consent: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default=false()
+    )
     # ── Gaia-X-shaped legal identity (Block D) ────────────────────────
     # Shape-compatible with gx:LegalParticipant; not full GXDCH compliance.
     registration_number: Mapped[str | None] = mapped_column(Text, nullable=True)

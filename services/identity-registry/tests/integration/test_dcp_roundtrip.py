@@ -179,7 +179,7 @@ def test_the_status_list_is_served_signed_by_default(holder, dcp_exchange):
         "the status list came back as something other than a compact JWS — an "
         "unsigned revocation list can be rewritten in transit"
     )
-    assert "StatusList2021Credential" in _claims(body)["vc"]["type"]
+    assert "BitstringStatusListCredential" in _claims(body)["vc"]["type"]
 
 
 def test_the_status_list_is_json_only_when_asked_for_exactly_that(holder, dcp_exchange):
@@ -187,7 +187,7 @@ def test_the_status_list_is_json_only_when_asked_for_exactly_that(holder, dcp_ex
     url = _status_list_url(holder, dcp_exchange)
     response = httpx.get(url, headers={"Accept": "application/json"}, timeout=10)
     assert response.status_code == 200
-    assert "StatusList2021Credential" in response.json()["type"]
+    assert "BitstringStatusListCredential" in response.json()["type"]
 
 
 # ── Refusals, across the process boundary ───────────────────────────────────

@@ -32,7 +32,7 @@ def test_membership_credential_structure():
     # suspending its holder would set a bit no verifier fetches.
     purposes = {e["statusPurpose"]: e for e in vc["credentialStatus"]}
     assert set(purposes) == {"revocation", "suspension"}
-    assert all(e["type"] == "StatusList2021Entry" for e in vc["credentialStatus"])
+    assert all(e["type"] == "BitstringStatusListEntry" for e in vc["credentialStatus"])
     assert all(e["statusListIndex"] == "0" for e in vc["credentialStatus"])
     assert purposes["revocation"]["statusListCredential"].endswith("/status/1")
     assert purposes["suspension"]["statusListCredential"].endswith("/status/2")
@@ -64,7 +64,7 @@ def test_data_subject_credential_names_both_registers():
     )
     purposes = {e["statusPurpose"]: e for e in vc["credentialStatus"]}
     assert set(purposes) == {"revocation", "suspension"}
-    assert all(e["type"] == "StatusList2021Entry" for e in vc["credentialStatus"])
+    assert all(e["type"] == "BitstringStatusListEntry" for e in vc["credentialStatus"])
     assert all(e["statusListIndex"] == "3" for e in vc["credentialStatus"])
     assert purposes["revocation"]["statusListCredential"].endswith("/status/1")
     assert purposes["suspension"]["statusListCredential"].endswith("/status/2")

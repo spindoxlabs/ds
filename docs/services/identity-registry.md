@@ -70,9 +70,37 @@ Fernet key derived from `IDENTITY_REGISTRY_ENCRYPTION_KEY` and a per-row salt, a
 | `DataSubjectCredential` | this person is a data subject (or a consumer user) linked to this participant |
 | `OrganizationCredential` | this organisation is verified and has accepted an agreement |
 
-Revocation is a StatusList2021 bitstring published at `GET /status/{list_id}` — public by
+Revocation is a **Bitstring Status List** published at `GET /status/{list_id}` — public by
 necessity, because a verifier that cannot fetch it cannot tell a live credential from a
 revoked one.
+
+### Status lists
+
+DCP v1.0 issuance makes Bitstring Status List a MUST (`credential.issuance.protocol.md:359`),
+and the registry publishes what EDC's IssuerService publishes at v0.18.0 (R3, 2026-10-05):
+
+- **Entries**: every credential carries `BitstringStatusListEntry` entries
+  (`statusPurpose`, `statusListIndex` as a string, `statusListCredential`; no `statusSize`,
+  so 1 — the only size EDC accepts).
+- **The list**: a `BitstringStatusListCredential` (VC 1.1 envelope, `issuanceDate` = the
+  row's `updated_at`), `credentialSubject.type: BitstringStatusList`, `encodedList` =
+  `"u"` + base64url without padding of the GZIP-compressed 16 KB bitstring, index 0 the
+  left-most bit. Its `id` is the list's own URL, so it is **stable per list**;
+  `credentialSubject.id` is `<url>#list`.
+- **The response** to `GET /status/{id}`:
+
+  | `Accept` | Answer |
+  |---|---|
+  | none, `*/*`, `application/*`, `application/vc+jwt`, or a list naming any of them | the list signed by the trust anchor as a VC-JWT (`vc` claim, `kid = did#key`), `application/vc+jwt` — what EDC (`edc.iam.credential.revocation.mimetype`, default `*/*`) and ds-auth (`application/vc+jwt`) read |
+  | `application/json` or `application/ld+json`, nothing signed acceptable | the unsigned credential — opt-in only |
+  | anything else | **415**, as IssuerService answers |
+
+**Credentials issued before R3** carry `StatusList2021Entry` entries. They name the same
+URL and index, and are still checked correctly: EDC's `StatusList2021RevocationService`
+reads the list's `encodedList` and `statusPurpose` through the same `BitString.Parser`,
+which handles the `u` header, and ds-auth reads both entry types against either list
+form (and the plain-base64 and zlib forms published earlier). Nothing has to be
+re-issued; they age out with their `expirationDate`.
 
 **There are two registers, and the difference between them is a state.** `/status/1` is
 published with `statusPurpose: revocation` and `/status/2` with `statusPurpose: suspension`.
@@ -216,7 +244,7 @@ rotates the key. That URL has to be *routed*: the anchor's Caddy site block in d
 mechanism that fails exactly like one that works, which is why the `dcp-trust` e2e flow follows
 the entry to its metadata rather than asserting the entry is present.
 
-**Identity mapping, in two halves** (`DID-11` step 2). `GET /users/resolve` — at the **anchor** —
+**Identity mapping, in two halves** (`DID-11` step 2). `POST /users/resolve` — at the **anchor** —
 turns a Keycloak identity into a dataspace DID: *who is this person* is registry data.
 `GET /users/{did}/credentials` — at the **participant** — answers *what do they hold*, from what
 was delivered to it. `POST /users/identities` turns DIDs back into the usernames the data plane
@@ -240,6 +268,14 @@ half. Custody, unlike the identifier, follows each credential.
 `POST /admin/credentials/data-subject` takes. A person with no mapping is a **404**: the
 registry does not invent an identifier. A `subject_id` that is itself a DID is refused with a
 **422** rather than concatenated into a nested one, which is how one person used to become two.
+
+**`POST /users/resolve`** (JSON body `{realm,user_id,username,email}`) replaces the query
+form, so an email or a username never becomes part of a URL that access logs, proxies and
+traces record. The cascade is unchanged: `(realm, user_id)`, then `username`, then `email`;
+the body rejects unknown fields. GET is deprecated
+(`IDENTITY_REGISTRY_USERS_RESOLVE_GET[_UNTIL]`, **410** after 2027-01-31 outside dev); while
+it is served it logs which identifiers were sent, never their values, and answers with
+`Deprecation` and `Sunset` headers.
 
 **`derive` is deprecated, and the registry derives nothing.** `GET /users/resolve?derive=true`
 used to answer an unmapped person with `email-` and a keyed HMAC of their email. That generator
@@ -307,15 +343,51 @@ apply one rule (`dependencies.authorize_membership_write`):
 | caller | may write memberships of |
 |---|---|
 | `identity-registry.admin` (operator, `ir-cli`, a `platform-admin` person) | any organisation |
-| an organisation's own client, `svc-ds-connector-<alias>` | the owner whose `did` is the token's participant context (`sub`), under any of its names — and no other |
-| a person | an organisation whose own groups grant `memberships.write` (no bundle does today) |
+| an organisation's own client — its collector client `svc-ds-collector-<alias>`, which holds the grant | the owner whose `did` is the token's participant context (`sub`), under any of its names — and no other, and only while that owner is `verified` |
+| a person | an organisation whose own groups grant `memberships.write` (no bundle does today), while it is `verified` |
 | a plain service token | nothing — `403`: it names no organisation, as on the connector's consent write |
 
 The organisation is the owner of the token's `sub`, never the client id, and the check runs
 before the DID and duplicate lookups, so a refused caller gets `403` whether or not the DID or
 the row exists. A plain service client holding `memberships.write` (the onboarding grant in
-`clients.yaml`) can therefore no longer register members; an onboarding service registers them
-as its community's organisation client, which must hold `identity-registry.memberships.write`.
+`clients.yaml`) can therefore no longer register members. An onboarding service registers them
+as the community's **collector client**, `svc-ds-collector-<alias>`, with a token asked for
+`identity-registry.memberships.write` alone
+([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
+
+**Audience-bound** (ADR-0026). The membership and credential writes require
+`svc-ds-identity-registry` in a service token's `aud`, checked on the route. A collector
+token that also names another ds service is refused, because it was asked for more than one
+act. Requesting the scope adds the audience (`audience:` in `clients.yaml`).
+
+**A suspended organisation does not act** (ADR-0026). Its own clients may not write its
+memberships or issue or revoke its members' credentials. `GET /memberships/check` answers
+`member: false` for its rows, which stay for reinstatement. `/consent-collectors/check` does
+not accept it, not even as collecting for itself. A name that resolves to no owner keeps the
+literal behaviour. An administrator is unbounded and can still remove a suspended
+organisation's rows.
+
+**Credential writes are bounded to the caller's organisation** (ADR-0026).
+`identity-registry.credentials.write` moved from the plain `svc-ds-onboarding` client to each
+organisation's collector client. An organisation token may issue or transition a data-subject
+credential only when `linked_participant_did` (the custodian) is its own DID. It may revoke
+(`DELETE /admin/credentials/{id}`) only a credential whose `credentialSubject.linkedParticipant`
+is its own DID. That route's request names no organisation, so the credential supplies it, and
+an unknown id gets the same `403`. A plain service token on these routes is accepted
+**only under `DS_ENV=dev`**, with a warning in the log, as a transition.
+
+**The collector client and its flag.** `organizations.yaml` (`collects_consent: true`, for
+`org-sync`) and `owners.yaml` (`collects_consent`, stored as `Owner.collects_consent`,
+migration `0019`, for the promotion bundle) declare which organisations collect consent. For
+each one, identity-registry ensures `svc-ds-collector-<alias>`:
+
+- `sub` is the organisation's DID;
+- it has no default scope, no client-level audience and no `management-api:*` scope;
+- its optional scopes are `ds_auth.COLLECTOR_CLIENT_OPTIONAL_SCOPES`;
+- its secret is `SVC_DS_COLLECTOR_<ALIAS>_SECRET`.
+
+The bundle carries its credentials as `keycloak.collector`. Turning the flag off disables the
+client; `org-sync` never deletes it.
 
 `GET /memberships/check` is bounded the same way **for a person**: `membership.read` from an
 organisation's groups (`ds-participant-admin`) answers for that organisation only, so it is not
@@ -466,6 +538,10 @@ database-touching command verifies the schema revision first, and every command 
 | `status` | `export`, `check-indices` |
 | `keycloak` | `org-sync`, `map-user`, `unmap-user` |
 | `collector` | `add`, `revoke`, `list` — which organisations a holder accepts consent from |
+| `did` | `sweep`, `retire` — stop serving a DID whose held credentials are all revoked |
+
+`ir-cli did sweep` / `did retire` retire a DID whose held credentials are all revoked in the
+issuer's register (P-29); periodic, exit 1 on an unreadable register.
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
 reports each entry's outcome, rolling back only the failures.

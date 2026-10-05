@@ -60,13 +60,15 @@ def test_build_status_list_credential():
     bs = create_bitstring()
     encoded = encode_bitstring(bs)
     cred = build_status_list_credential(
-        list_id="1",
+        list_url="https://ta.example/status/1",
         issuer_did="did:web:trust-anchor.dataspaces.localhost",
         encoded_list=encoded,
     )
-    assert "StatusList2021Credential" in cred["type"]
-    assert cred["credentialSubject"]["type"] == "StatusList2021"
+    assert "BitstringStatusListCredential" in cred["type"]
+    assert cred["credentialSubject"]["type"] == "BitstringStatusList"
     assert cred["credentialSubject"]["statusPurpose"] == "revocation"
+    assert cred["id"] == "https://ta.example/status/1"
+    assert cred["issuanceDate"].endswith("Z")
 
 
 # ── The encoding a verifier actually reads ──────────────────────────────────
@@ -74,7 +76,8 @@ def test_build_status_list_credential():
 
 @pytest.mark.rule("P-8b")
 def test_encoded_list_is_gzip_not_zlib():
-    """StatusList2021 says GZIP, and EDC's `BitString` uses `GZIPInputStream`.
+    """Bitstring Status List says GZIP, and EDC's `BitString` uses
+    `GZIPInputStream`.
 
     The round-trip tests above all passed while this was a raw zlib stream,
     because `decode_bitstring` used zlib too — the module agreed with itself and
@@ -82,16 +85,29 @@ def test_encoded_list_is_gzip_not_zlib():
     credential, so every revocation check failed closed and said nothing.
 
     This asserts against the wire format, not against our own decoder, which is
-    the only kind of assertion that could have caught it.
+    the only kind of assertion that could have caught it: multibase base64url
+    (`u`, no padding) of a GZIP stream.
     """
     import base64
     import gzip
 
     from identity_registry.services.status_list import encode_bitstring
 
-    raw = base64.b64decode(encode_bitstring(bytes(64)))
+    encoded = encode_bitstring(bytes(64))
+    assert encoded.startswith("u") and "=" not in encoded
+    raw = base64.urlsafe_b64decode(encoded[1:] + "===")
     assert raw[:2] == b"\x1f\x8b", "encodedList must be GZIP (magic 1f 8b)"
     assert gzip.decompress(raw) == bytes(64)
+
+
+@pytest.mark.rule("P-8b")
+def test_decode_still_reads_a_statuslist2021_base64_list():
+    """The StatusList2021 form (plain base64 of GZIP) published before R3."""
+    import base64
+    import gzip
+
+    legacy = base64.b64encode(gzip.compress(set_bit(bytes(32), 3))).decode()
+    assert get_bit(decode_bitstring(legacy), 3)
 
 
 @pytest.mark.rule("P-8b")
@@ -134,7 +150,7 @@ async def test_status_list_is_served_signed_by_default(client, db_session):
     payload = jsonlib.loads(
         base64.urlsafe_b64decode(r.text.split(".")[1] + "===").decode()
     )
-    assert "StatusList2021Credential" in payload["vc"]["type"]
+    assert "BitstringStatusListCredential" in payload["vc"]["type"]
     assert payload["iss"].startswith("did:web:")
 
 
@@ -148,7 +164,7 @@ async def test_status_list_json_is_opt_in(client, db_session):
 
     r = await client.get("/status/2", headers={"Accept": "application/json"})
     assert r.status_code == 200
-    assert "StatusList2021Credential" in r.json()["type"]
+    assert "BitstringStatusListCredential" in r.json()["type"]
 
 
 async def _bootstrap_trust_anchor(db_session) -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
@@ -14,7 +15,11 @@ from ...db.models import Did, StatusList
 from ...dependencies import get_db, get_settings_dep
 from ...rate_limit import public_rate_limit
 from ...services import trust_list
-from ...services.crypto import decrypt_private_jwk, require_private_jwk
+from ...services.crypto import (
+    decrypt_private_jwk,
+    generate_credential_id,
+    require_private_jwk,
+)
 from ...services.did import build_did_document
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.status_list import build_status_list_credential, encode_bitstring
@@ -157,6 +162,64 @@ _SIGNED_LIST_TTL_SECONDS = 300.0
 _signed_lists = _SignedListCache(ttl=_SIGNED_LIST_TTL_SECONDS, size=32)
 
 
+#: Media types the signed list answers. `*/*` is what EDC sends by default
+#: (`edc.iam.credential.revocation.mimetype`), and an absent Accept means the
+#: same thing.
+_JWT_MEDIA = frozenset(
+    {"application/vc+jwt", "application/jwt", "*/*", "application/*"}
+)
+#: The unsigned form, served **only** when asked for by name.
+_JSON_MEDIA = ("application/json", "application/ld+json")
+
+
+def _status_media(accept: str | None) -> str | None:
+    """Which representation of the list a caller asked for, or None for 415.
+
+    EDC's IssuerService answers `application/vc+jwt`, `application/json` and
+    `*/*` and refuses everything else with **415** (`StatusListCredentialController`,
+    IdentityHub v0.18.0). This is the same contract, read as a list rather than
+    one exact string, so a header naming several types (EDC joins its configured
+    types with commas) is not refused for listing a supported one: the signed
+    form wins whenever it is acceptable, the unsigned form is served only when
+    nothing signed is, and a header naming neither gets a 415 rather than a body
+    the caller did not ask for. A range with `q=0` is "not acceptable" and is
+    skipped.
+    """
+    if accept is None or not accept.strip():
+        return "application/vc+jwt"
+    ranges: list[str] = []
+    for item in accept.lower().split(","):
+        media, *params = (part.strip() for part in item.split(";"))
+        if not media:
+            continue
+        if any(_is_q_zero(p) for p in params):
+            continue
+        ranges.append(media)
+    if any(media in _JWT_MEDIA for media in ranges):
+        return "application/vc+jwt"
+    for media in ranges:
+        if media in _JSON_MEDIA:
+            return media
+    return None
+
+
+def _is_q_zero(param: str) -> bool:
+    name, _, value = param.partition("=")
+    if name.strip() != "q":
+        return False
+    try:
+        return float(value.strip()) == 0.0
+    except ValueError:
+        return False
+
+
+def _valid_from(sl: StatusList) -> datetime | None:
+    stamp = sl.updated_at
+    if stamp is not None and stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=UTC)
+    return stamp
+
+
 @status_router.get("/status/{list_id}")
 async def get_status_list(
     list_id: str,
@@ -164,20 +227,33 @@ async def get_status_list(
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    """The revocation list, **signed**, as a VC-JWT.
+    """The status list, as a **signed** `BitstringStatusListCredential` VC-JWT.
 
     A verifier fetches this to decide whether a credential it was shown is still
     valid, so an unsigned list is a list anyone on the path can rewrite: clear a
-    bit and a revoked credential is accepted again. It was served as plain
-    JSON-LD with no proof of any kind.
+    bit and a revoked credential is accepted again.
 
-    EDC — and any implementation following it — sends `Accept: */*` and treats
-    the body as a JWT (`BaseRevocationListService.parseStatusListCredentialResponse`
-    takes the JSON branch **only** when the accept header is exactly
-    `application/json`). So the JWT is the default and JSON is opt-in, which is
-    also the safer way round: a caller that asks for no particular format gets
-    the verifiable one.
+    - `Accept: application/vc+jwt`, `*/*`, or none → the signed VC-JWT. EDC
+      treats the body as a JWT unless its accept header is exactly
+      `application/json` (`BaseRevocationListService`), and ds-auth asks for
+      `application/vc+jwt`.
+    - `Accept: application/json` (or `application/ld+json`) and nothing signed
+      → the unsigned credential, opt-in only.
+    - anything else → **415**, as EDC's IssuerService answers.
+
+    The same list answers credentials whose entries say `StatusList2021Entry`
+    (issued before R3): same URL, same index, same bit order and GZIP payload,
+    and both EDC's StatusList2021 reader and ds-auth read the multibase
+    encoding.
     """
+    media = _status_media(request.headers.get("accept"))
+    if media is None:
+        raise HTTPException(
+            status_code=415,
+            detail="Supported media types are: application/vc+jwt, "
+            "application/json, */*",
+        )
+
     result = await db.execute(select(StatusList).where(StatusList.id == list_id))
     sl = result.scalar_one_or_none()
     if not sl:
@@ -185,15 +261,15 @@ async def get_status_list(
 
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
     credential = build_status_list_credential(
-        list_id=list_id,
+        list_url=settings.status_list_url(list_id),
         issuer_did=trust_anchor_did,
         encoded_list=encode_bitstring(sl.bitstring),
         purpose=sl.purpose,
+        valid_from=_valid_from(sl),
     )
 
-    accept = (request.headers.get("accept") or "").lower()
-    if "application/json" in accept and "*/*" not in accept:
-        return JSONResponse(content=credential, media_type="application/ld+json")
+    if media != "application/vc+jwt":
+        return JSONResponse(content=credential, media_type=media)
 
     try:
         key = await get_trust_anchor_key(db, settings)
@@ -205,6 +281,8 @@ async def get_status_list(
     # key, so a revocation or a key rotation is visible on the next request.
     cache_key = (
         list_id,
+        credential["id"],
+        credential["issuanceDate"],
         sl.purpose,
         trust_anchor_did,
         key.kid,
@@ -222,6 +300,7 @@ async def get_status_list(
                 settings.encryption_key,
             ),
             key.kid,
+            jti=generate_credential_id(),
         )
         jws = signed["proof"]["jws"]
         _signed_lists.put(cache_key, jws)

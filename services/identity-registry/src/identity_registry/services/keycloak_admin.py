@@ -43,6 +43,14 @@ class OrganizationSpec(BaseModel, extra="ignore"):
     #: tokens carry this value as `sub` — the caller EDC's v5 management API
     #: binds to a participant context. Absent: the organisation has no client.
     participant_context_id: str | None = None
+    #: A declared governance flag, set by the anchor operator: this organisation
+    #: collects its members' consent (onboarding). With a participant context it
+    #: also gets its **collector client** (`svc-ds-collector-<alias>`, ADR-0026):
+    #: `sub` = the same DID, no default scope, no EDC power, and the
+    #: organisation's onboarding acts as optional scopes, each with one audience.
+    #: Secret: `SVC_DS_COLLECTOR_<ALIAS>_SECRET`. Turning it off disables the
+    #: client rather than deleting it.
+    collects_consent: bool = False
 
     @property
     def display_name(self) -> str:
@@ -68,6 +76,10 @@ class SyncReport(BaseModel):
     clients_with_other_secret: list[str] = Field(default_factory=list)
     #: Organisation clients not provisioned, with the reason.
     client_errors: list[str] = Field(default_factory=list)
+    #: Collector clients ensured, and those disabled because the organisation no
+    #: longer declares `collects_consent`.
+    collector_clients_ensured: list[str] = Field(default_factory=list)
+    collector_clients_disabled: list[str] = Field(default_factory=list)
 
     @property
     def has_warnings(self) -> bool:
@@ -398,6 +410,24 @@ class KeycloakAdminClient:
                 },
             )
 
+    async def set_service_client_enabled(self, client_id: str, enabled: bool) -> bool:
+        """Enable or disable *client_id*. Returns whether the client exists.
+
+        Disabling rather than deleting: a client that comes back keeps its id and
+        its secret, and a disabled client mints no token.
+        """
+        existing = await self._request(
+            "GET", "/clients", params={"clientId": client_id}
+        )
+        if not existing:
+            return False
+        rep = existing[0]
+        if bool(rep.get("enabled", True)) != enabled:
+            await self._request(
+                "PUT", f"/clients/{rep['id']}", {**rep, "enabled": enabled}
+            )
+        return True
+
     async def rotate_service_client_secret(self, client_id: str) -> str:
         """Issue a new secret, invalidating the previous one."""
         existing = await self._request(
@@ -572,6 +602,44 @@ async def ensure_organisation_client(
     return client_id, held
 
 
+async def ensure_collector_client(
+    kc: KeycloakAdminClient,
+    *,
+    alias: str,
+    name: str,
+    participant_context_id: str,
+    secret: str | None = None,
+) -> tuple[str, str]:
+    """Ensure `svc-ds-collector-<alias>` (ADR-0026). Returns (client id, secret).
+
+    The organisation's onboarding identity: `sub` = the organisation's DID (the
+    same mapper as the organisation client, so the same organisation to every
+    receiver), **no default scope and no client-level audience** — a token asked
+    for nothing is accepted by no ds service — and the organisation's acts as
+    optional scopes, each adding exactly one audience. No `management-api:*`, so
+    whoever holds this secret holds no EDC power. A disabled client (the flag was
+    turned off once) is enabled again.
+    """
+    from ds_auth import (
+        COLLECTOR_CLIENT_DEFAULT_SCOPES,
+        COLLECTOR_CLIENT_OPTIONAL_SCOPES,
+        collector_client_id,
+    )
+
+    client_id = collector_client_id(alias)
+    held = await kc.ensure_service_client(
+        client_id,
+        name=f"ds collector — {name}",
+        scopes=list(COLLECTOR_CLIENT_DEFAULT_SCOPES),
+        optional_scopes=list(COLLECTOR_CLIENT_OPTIONAL_SCOPES),
+        audiences=[],
+        subject=participant_context_id,
+        secret=secret,
+    )
+    await kc.set_service_client_enabled(client_id, True)
+    return client_id, held
+
+
 async def sync_organizations(
     config: OrganizationsConfig,
     kc: KeycloakAdminClient,
@@ -587,6 +655,9 @@ async def sync_organizations(
             await _sync_organisation_client(
                 spec, kc, report, environ=environ, production=production
             )
+        await _sync_collector_client(
+            spec, kc, report, environ=environ, production=production
+        )
 
         org, created = await kc.ensure_organization(spec)
         org_id = org["id"]
@@ -601,13 +672,20 @@ async def sync_organizations(
             user = await kc.find_user_by_email(member.email)
             if not user:
                 report.missing_users.append(member.email)
-                log.warning("User %s not found in KC, skipping", member.email)
+                # Never the email: a log line is not where personal data goes
+                # (R21). The operator gets the addresses from the report.
+                log.warning(
+                    "A member of organization %s is not in KC, skipping "
+                    "(%d missing so far; see the sync report)",
+                    spec.alias,
+                    len(report.missing_users),
+                )
                 continue
 
             user_id = user["id"]
             if await kc.add_org_member(org_id, user_id):
                 report.members_added.append(f"{spec.alias}/{member.email}")
-                log.info("Added %s to organization %s", member.email, spec.alias)
+                log.info("Added user %s to organization %s", user_id, spec.alias)
 
             for group_name in member.groups:
                 group = await kc.ensure_org_group(org_id, group_name)
@@ -616,9 +694,9 @@ async def sync_organizations(
                     f"{spec.alias}/{member.email}/{group_name}"
                 )
                 log.info(
-                    "Assigned group %s to %s in org %s",
+                    "Assigned group %s to user %s in org %s",
                     group_name,
-                    member.email,
+                    user_id,
                     spec.alias,
                 )
 
@@ -653,6 +731,59 @@ async def _sync_organisation_client(
         secret=secret,
     )
     report.clients_ensured.append(client_id)
+    if held != secret:
+        report.clients_with_other_secret.append(client_id)
+        log.warning(
+            "%s exists with a different secret; left unchanged (%s is applied "
+            "only when the client is created)",
+            client_id,
+            secret_env_name(client_id),
+        )
+
+
+async def _sync_collector_client(
+    spec: OrganizationSpec,
+    kc: KeycloakAdminClient,
+    report: SyncReport,
+    *,
+    environ: Mapping[str, str] | None,
+    production: bool | None,
+) -> None:
+    """The collector client follows the declared flag: ensured, or disabled."""
+    from ds_auth import collector_client_id
+
+    client_id = collector_client_id(spec.alias)
+    if not spec.collects_consent:
+        if await kc.set_service_client_enabled(client_id, False):
+            report.collector_clients_disabled.append(client_id)
+            log.warning(
+                "%s disabled: %s no longer declares collects_consent",
+                client_id,
+                spec.alias,
+            )
+        return
+    if not spec.participant_context_id:
+        report.client_errors.append(
+            f"{client_id}: {spec.alias} declares collects_consent but no "
+            "participant_context_id, so there is no DID to name as sub"
+        )
+        return
+    try:
+        secret = organisation_client_secret(
+            client_id, environ=environ, production=production
+        )
+    except OrganisationClientSecretError as exc:
+        report.client_errors.append(str(exc))
+        log.error("%s — client not provisioned", exc)
+        return
+    _, held = await ensure_collector_client(
+        kc,
+        alias=spec.alias,
+        name=spec.display_name,
+        participant_context_id=spec.participant_context_id,
+        secret=secret,
+    )
+    report.collector_clients_ensured.append(client_id)
     if held != secret:
         report.clients_with_other_secret.append(client_id)
         log.warning(

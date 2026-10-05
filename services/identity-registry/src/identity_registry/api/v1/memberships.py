@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...db.models import Did, OrganizationMembership
+from ...db.models import Did, OrganizationMembership, Owner
 from ...dependencies import (
     authorize_membership_check,
     authorize_membership_write,
@@ -173,6 +173,13 @@ async def check_membership(
     — see :func:`authorize_membership_check`."""
     organization = await _canonical_org(db, organization)
     await authorize_membership_check(db, principal, organization)
+    # A suspended (or any non-verified) organisation speaks for nobody's members:
+    # its rows stay, for reinstatement, and are not counted while it is not
+    # verified (ADR-0026). A name that resolves to no owner keeps the literal
+    # behaviour, as `_canonical_org` does.
+    owner = await db.get(Owner, organization)
+    if owner is not None and owner.status != "verified":
+        return MembershipCheckResponse(member=False)
     result = await db.execute(
         select(OrganizationMembership).where(
             and_(

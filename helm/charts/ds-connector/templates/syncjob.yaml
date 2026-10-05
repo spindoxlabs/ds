@@ -72,6 +72,14 @@ spec:
                 secretKeyRef:
                   name: {{ include "ds.secretName" . }}
                   key: {{ if .Values.sync.clientId }}PUBLISHER_CLIENT_SECRET{{ else }}CONNECTOR_CLIENT_SECRET{{ end }}
+            {{- if not .Values.sync.clientId }}
+            # The organisation client holds `connector.provider.write` as an
+            # **optional** scope (ADR-0026): a token that does not ask for it
+            # carries neither the grant nor its audience. `svc-ds-publisher`
+            # holds it as a default and asks for nothing.
+            - name: SYNC_SCOPE
+              value: "connector.provider.write"
+            {{- end }}
             - name: SYNC_CONNECTOR_URL
               value: "http://{{ include "ds.fullname" . }}:{{ .Values.service.port }}"
             - name: SYNC_TIMEOUT

@@ -68,10 +68,12 @@ Verifiable Credentials, and exchange follows DCP.**
 | Key type | EC P-256, `ES256` |
 | Credential format | W3C VC **1.1**, JWT-serialised, signed by the trust anchor key |
 | Credential exchange | Decentralized Claims Protocol — self-issued token to `/sts/{did}/token`, presentation query to `/credentials/{did}/presentations/query` |
-| Revocation | StatusList2021, published at `GET /status/{list_id}` |
+| Revocation | Bitstring Status List v1.0 (since R3, 2026-10-05; StatusList2021 before), published at `GET /status/{list_id}` |
 
-Together those two are DCP's **`vc11-sl2021/jwt`** profile, and both of its halves are
-superseded: VCDM 2.0 and Bitstring Status List v1.0 have been W3C Recommendations since
+Until R3 those two were DCP's **`vc11-sl2021/jwt`** profile. The status half has since
+moved to Bitstring Status List, which DCP issuance makes a MUST — VC 1.1 with Bitstring is
+what EDC's IssuerService itself publishes, and credentials issued before still verify.
+Both halves of the old profile are superseded: VCDM 2.0 and Bitstring Status List v1.0 have been W3C Recommendations since
 15 May 2025, while StatusList2021 never got past a 2023 First Public Working Draft. The
 successor profile is `vc20-bssl/jwt`. The position is deliberate and its cost is
 measured in [Standards · VCDM 2.0 and Bitstring Status List](../standards/vcdm-2.0.md) —
@@ -92,7 +94,7 @@ and a consumer user acting for an organisation. Nothing may assume one role per 
 | P-7 | A DID's private key never leaves the instance that generated it, and is encrypted at rest. **The trust anchor holds no private key but its own, and a natural person has none** | **Enforced** — Fernet, one `IDENTITY_REGISTRY_ENCRYPTION_KEY` per instance; checked at every startup and by `ir-cli key custody-check`, which exits non-zero on a private key for a DID this instance does not publish |
 | P-8 | A presentation query is answered only to a **verifier** that proves control of its own DID *and* presents an access token this participant's STS granted it. The grant's scope bounds what the presentation may contain (`DSSC-IAM-13`, proof of control) | **Enforced** |
 | P-8a | The verifier's signature is checked against the key in **its own DID document**, resolved over did:web — never against a key this registry happens to hold | **Enforced** |
-| P-8b | The revocation list is served signed, by the trust anchor, GZIP-encoded as StatusList2021 requires | **Enforced** |
+| P-8b | The revocation list is served signed, by the trust anchor, as a `BitstringStatusListCredential` with a GZIP, multibase base64url `encodedList` | **Enforced** |
 | P-8c | **The same rule applies to a credential's issuer.** A service verifying a user Verifiable Credential resolves the issuer's DID document and reads the key out of it — never a key it was handed or mounted — and refuses an issuer the dataspace trust list does not carry as **active** | **Enforced** — `ds_auth.did_web`, used by the connector and ds-provenance. It was a mounted `*.public.jwk.json` until `DID-17`, which made rotating the anchor's key a lockstep redeploy of every service holding a copy. Resolution proves *who signed*; the list proves the dataspace still stands behind them, and one without the other answers half the question |
 | P-8d | **A counterparty's DID document is fetched only when the caller could be admitted, and only within bounds.** Whatever can be decided locally is decided before the fetch: a presentation query's grant is checked against this participant's own key, a credential request's enrolment code against the register, a status request against the requests on record, a delivery's issuer against the configured one. The fetch then dials only a public address — checked on the address actually connected to — follows no redirect, has one deadline and a size limit, and uses HTTPS. Under `DS_ENV=dev`, and only there, private and loopback addresses and plain HTTP are admitted, because the local topology resolves `*.localhost` and compose service names to them; link-local addresses are refused in every posture. The same address rules apply to delivering credentials to the Storage API endpoint a holder's document publishes | **Enforced** — `services/did_resolver.py`, `services/identity-registry/tests/test_public_route_bounds.py` |
 | P-8e | **The routes anyone can reach cost the same however often they are called.** Key derivation happens once per stored key per process, a verified STS secret is not re-hashed, the signed status list is signed once per change to its bits, issuer or key, and each client address has a request budget on the public routes (`429` with `Retry-After` once spent). The budget is per replica; a shared quota belongs at the edge | **Enforced** — `services/identity-registry/tests/test_public_route_bounds.py` |

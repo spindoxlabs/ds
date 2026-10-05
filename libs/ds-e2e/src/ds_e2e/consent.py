@@ -45,10 +45,25 @@ def legal_basis(submission_ref: str, *, source: str = "ds-e2e") -> dict[str, Any
 HOLDER_DECIDES = "collector"
 
 
+#: The organisation's acts are **optional** scopes since ADR-0026: a token that
+#: does not ask for one carries neither the grant nor its audience. Restated from
+#: `ds_auth` (this library does not depend on it); `libs/ds-auth`'s
+#: `test_management_api_scopes.py` pins the names.
+CONSENT_PROVISION_SCOPE = "connector.consent.provision"
+CONSENT_COLLECTOR_READ_SCOPE = "connector.consent.collector.read"
+#: A flow that registers consent and reads it back with one organisation-client
+#: token. Allowed for the *connector* client, whose audiences are client-level;
+#: a collector client asks for one scope per token.
+WRITE_AND_READ_BACK = f"{CONSENT_PROVISION_SCOPE} {CONSENT_COLLECTOR_READ_SCOPE}"
+
+
 def holder_headers(http: Any, settings: Any) -> dict[str, str]:
     """The provider organisation's own client — the one consent writer the
-    provider connector accepts for its own members."""
+    provider connector accepts for its own members — asked for the consent
+    write, which it no longer carries by default."""
     headers: dict[str, str] = http.bearer_headers_for(
-        settings.provider_org_client_id, settings.provider_org_client_secret
+        settings.provider_org_client_id,
+        settings.provider_org_client_secret,
+        CONSENT_PROVISION_SCOPE,
     )
     return headers

@@ -215,6 +215,10 @@ class TestOneOrganisationIsOneMembership:
         "name": "Example Organization",
         "did": "did:web:rec.dataspaces.localhost",
         "aliases": ["example", "ex-org"],
+        # A suspended (or pending) organisation's rows are not counted
+        # (ADR-0026), so the spelling tests need a verified one.
+        "status": "verified",
+        "verified_by": "test",
     }
 
     async def _owner(self, client, admin_headers):

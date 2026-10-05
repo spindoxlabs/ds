@@ -117,6 +117,11 @@ def _all_refused(settings: E2ESettings) -> dict[tuple[str, str], int]:
         ("", "consumer/negotiate"): 401,
         (org, "consent/my"): 401,
         (org, "consent/my/shares"): 401,
+        # ADR-0026: the default token is refused the organisation's acts, and a
+        # collector token is refused where its scope does not send it.
+        (other, "consent/admin/shares"): 403,
+        (other, "provider/sync"): 403,
+        (other, "admin/memberships"): 401,
     }
 
 
@@ -146,6 +151,21 @@ def test_every_refusal_is_recognised(settings):
         (("", "consumer/negotiate"), 403, "no credential"),
         (("Bearer org", "consent/my"), 200, "never a person's consents"),
         (("Bearer org", "consent/my/shares"), 403, "never a person's consents"),
+        (
+            ("Bearer other", "consent/admin/shares"),
+            200,
+            "the organisation's acts are asked for",
+        ),
+        (
+            ("Bearer other", "provider/sync"),
+            200,
+            "the organisation's acts are asked for",
+        ),
+        (
+            ("Bearer other", "admin/memberships"),
+            201,
+            "a collector token is good only where its scope sends it",
+        ),
     ],
 )
 def test_anything_but_the_exact_refusal_fails(settings, key, status, step):

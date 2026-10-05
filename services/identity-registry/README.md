@@ -28,7 +28,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | STS | OAuth2 `client_credentials` grant at `POST /sts/{did}/token` — signs ES256 Self-Issued JWTs for DCP authentication |
 | Credential Service (DCP) | `POST /credentials/{did}/presentations/query` — builds Verifiable Presentations for DCP negotiation |
 | Participant registry | Manages participants with roles, scopes, DSP addresses |
-| StatusList2021 | W3C StatusList2021 revocation at `GET /status/{list-id}` |
+| Bitstring Status List | W3C Bitstring Status List revocation and suspension at `GET /status/{list-id}` (StatusList2021 entries on older credentials still resolve) |
 | Key management | Key rotation, key deactivation. Private keys never leave the service. |
 
 ---
@@ -39,7 +39,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 
 - `keys` — EC P-256 key pairs (JSONB for private_jwk/public_jwk), owner_did, kid, active flag, rotation tracking
 - `dids` — DID records with type (participant/user), service_endpoints (JSONB), FK to keys
-- `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/suspended/revoked), StatusList2021 index
+- `credentials` — VCs (JSONB credential_json), type, issuer/subject DIDs, status (active/suspended/revoked), status-list index
 - `participants` — participant registry with DID (FK), role, allowed_scopes (JSONB), dsp_address, sts_client_secret
 - `keycloak_mappings` — DID-to-Keycloak user mappings (realm, user_id, email, subject_id)
 - `owners` — owner registry + Gaia-X legal identity, verification lifecycle, current agreement + capacity (Block D)
@@ -47,7 +47,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 - `agreements` — service-agreement definitions (id + version, capacity, per-locale text path + SHA-256) (Block D)
 - `agreement_acceptances` — an org's acceptance of an agreement version (capacity, locale, text SHA-256) (Block D)
 - `organization_memberships` — user-DID → owner-alias memberships (no role: it is a credential claim)
-- `status_lists` — StatusList2021 bitstrings (LargeBinary), purpose: `1` is `revocation` (terminal), `2` is `suspension` (cleared on reinstatement)
+- `status_lists` — status-list bitstrings (LargeBinary), purpose: `1` is `revocation` (terminal), `2` is `suspension` (cleared on reinstatement)
 
 ---
 
@@ -58,7 +58,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 (async) / PostgreSQL / Alembic / `cryptogra
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/dids/{did}/did.json` | Resolve DID document (`application/did+ld+json`) |
-| `GET` | `/status/{list-id}` | StatusList2021 credential (`application/ld+json`) |
+| `GET` | `/status/{list-id}` | `BitstringStatusListCredential`, signed VC-JWT by default; unsigned only for `Accept: application/json`; 415 for other types |
 | `GET` | `/health` | Liveness check |
 | `POST` | `/onboarding/applications` | Apply to join, **requires a valid invite code**. Not open self-registration — an unauthenticated write on the service holding every private key would be. Every refusal is identical, so the route is not an oracle |
 
@@ -126,7 +126,7 @@ Entry point: `ir-cli = "identity_registry.cli.main:run"`
 | `ir-cli credential revoke` | Revoke a credential |
 | `ir-cli credential list` | List all credentials |
 | `ir-cli key rotate` | Rotate key for a DID |
-| `ir-cli status export` | Export StatusList2021 as JSON |
+| `ir-cli status export` | Export the status lists as JSON |
 | `ir-cli org register/verify/agreement/issue-credential/promote` | Organisation onboarding lifecycle (Block D) |
 | `ir-cli org apply --file owners.yaml` | Walk that whole lifecycle per `owners.yaml` entry carrying a `dataspace:` block — idempotent, reports every failure in one pass, `--dry-run` available |
 | `ir-cli org apply … --governance g.yaml --verified-by who` | The same command against a **deployment's** owners.yaml, which has no `dataspace:` block on any entry: `--governance` selects the owners an exposed dataset names, `--verified-by`/`--evidence-ref` supply the run's evidence, and the chain stops at a verified owner holding its `did` — no agreement, no credential, no promotion |

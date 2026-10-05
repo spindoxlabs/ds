@@ -236,7 +236,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ds-identity-registry",
-        description="DID lifecycle, VC issuance, participant registry, StatusList2021",
+        description="DID lifecycle, VC issuance, participant registry, status lists",
         version="0.1.0",
         lifespan=lifespan,
     )

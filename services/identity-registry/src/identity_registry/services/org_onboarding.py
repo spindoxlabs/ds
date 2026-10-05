@@ -711,7 +711,8 @@ DEFAULT_SCOPES = ["dataspaces.query"]
 #: lookup keys, so `org apply` alone leaves the same owner row `owner import`
 #: would — governance `ownership[].name` resolves by alias, so dropping them
 #: would publish datasets nobody can resolve an owner for.
-_ENTRY_OWNER_FIELDS = ("type", "url")
+#: `collects_consent` is the declared flag behind the collector client (ADR-0026).
+_ENTRY_OWNER_FIELDS = ("type", "url", "collects_consent")
 
 
 @dataclass(slots=True)

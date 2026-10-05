@@ -408,17 +408,3 @@ class ConsentRequestFlow(BaseFlow):
             events=sorted(expected),
         )
 
-    def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
-        s = self.settings
-        encoded = urllib.parse.quote(email, safe="")
-        resp = (
-            self.http.get(
-                f"{s.identity_registry_url}/users/resolve?email={encoded}",
-                headers=headers,
-            )
-            or {}
-        )
-        vc_jws = resp.get("vc_jws") or ""
-        if not vc_jws:
-            raise RuntimeError(f"No VC found for user {email}")
-        return vc_jws

@@ -231,12 +231,16 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # governance act about two organisations: reachable by a human through
         # `identity-registry.admin` only, like promotion.
         "identity-registry.collectors.write",
-        # Register a subject's consent decision at a connector. Held by
-        # organisation clients (`management_api.CONNECTOR_SERVICE_SCOPES`) only —
-        # the connector refuses any other service token — and reachable by a
-        # human only through `connector.admin`. Out of `ds-participant-admin`
-        # since 2026-09-17.
+        # Register a subject's consent decision at a connector. Requested by an
+        # organisation's own clients only (`management_api.ORGANISATION_ACTION_SCOPES`
+        # and the collector client, ADR-0026) — the connector refuses any other
+        # service token — and reachable by a human only through
+        # `connector.admin`. Out of `ds-participant-admin` since 2026-09-17.
         "connector.consent.provision",
+        # Read back what the caller registered (`GET /consent/admin/subject-shares`,
+        # `/decisions`), without a write grant (ADR-0026). Same holders as
+        # `.provision`; a human reaches it through `connector.admin` only.
+        "connector.consent.collector.read",
         # "Who consents to this offer" — the cross-subject read behind
         # `GET /consent/admin/shares`. Held by onboarding, and reachable by a
         # human, but only through `connector.admin` in `ds-admin` — deliberately

@@ -244,6 +244,17 @@ class E2ESettings(BaseSettings):
         "svc-ds-connector-example-org",
         validation_alias="SVC_DS_CONNECTOR_EXAMPLE_ORG_SECRET",
     )
+    #: The community's collector client (ADR-0026): its onboarding identity,
+    #: provisioned by `org-sync` because `organizations.yaml` declares
+    #: `collects_consent`. No default scope; each act is asked for alone.
+    provider_collector_client_id: str = Field(
+        "svc-ds-collector-example-org",
+        validation_alias="E2E_PROVIDER_COLLECTOR_CLIENT_ID",
+    )
+    provider_collector_client_secret: str = Field(
+        "svc-ds-collector-example-org",
+        validation_alias="SVC_DS_COLLECTOR_EXAMPLE_ORG_SECRET",
+    )
     #: The grid operator's own organisation client — the holder reading the keys
     #: its connector serves (`holder-keys`, ADR-0022).
     grid_operator_org_client_id: str = Field(

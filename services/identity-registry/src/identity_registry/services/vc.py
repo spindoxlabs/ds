@@ -10,10 +10,24 @@ W3C_CREDENTIALS_V1 = "https://www.w3.org/2018/credentials/v1"
 JWS_2020_V1 = "https://w3id.org/security/suites/jws-2020/v1"
 
 
+#: The entry type every credential this registry issues carries (R3). DCP v1.0
+#: issuance makes Bitstring Status List a MUST, and it is the only type EDC's
+#: IssuerService emits. Entries issued earlier say `StatusList2021Entry`; they
+#: name the same URL and index, and stay readable — see `docs/services/
+#: identity-registry.md` ("Status lists").
+STATUS_ENTRY_TYPE = "BitstringStatusListEntry"
+
+
 def _status_entry(url: str, index: int, purpose: str) -> dict[str, Any]:
+    """One `BitstringStatusListEntry`.
+
+    `statusSize` is left out: it defaults to 1, which is the only size EDC's
+    `BitstringStatusListRevocationService` accepts. `statusListIndex` is a
+    string, as the specification requires; EDC parses it with `parseInt`.
+    """
     return {
         "id": f"{url}#{index}",
-        "type": "StatusList2021Entry",
+        "type": STATUS_ENTRY_TYPE,
         "statusPurpose": purpose,
         "statusListIndex": str(index),
         "statusListCredential": url,
@@ -210,7 +224,7 @@ def build_organization_credential(
     fields nest ``countryCode`` (ISO 3166-2) and ``registrationType`` uses the
     Gaia-X enum. Not full GXDCH compliance — no notarised LRN, no SHACL.
     Mirrors ``build_membership_credential`` (same contexts, same
-    ``StatusList2021Entry`` block).
+    ``BitstringStatusListEntry`` block).
     """
     cred_id = credential_id or generate_credential_id()
     now = datetime.now(UTC)
@@ -259,7 +273,15 @@ def sign_credential(
     vc: dict[str, Any],
     issuer_private_jwk: dict,
     kid: str,
+    *,
+    jti: str | None = None,
 ) -> dict[str, Any]:
+    """Sign *vc* as a VC 1.1 JWT (`vc` claim).
+
+    `jti` defaults to the credential's `id`. A credential whose `id` is stable
+    across signings — the status list, whose `id` is its URL — passes a fresh
+    one, so two tokens are never the same token.
+    """
     private_key = load_private_key(issuer_private_jwk)
 
     now = int(time.time())
@@ -269,7 +291,7 @@ def sign_credential(
         "sub": vc["credentialSubject"]["id"],
         "nbf": now,
         "exp": now + 365 * 86400,
-        "jti": vc["id"],
+        "jti": jti or vc["id"],
         "vc": vc,
     }
 

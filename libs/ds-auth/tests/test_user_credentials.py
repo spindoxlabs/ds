@@ -416,20 +416,23 @@ def test_only_did_web_is_supported():
         did_web_url("did:key:z6Mk")
 
 
-# ── credentialStatus: the registers, read as StatusList2021 ───────
+# ── credentialStatus: the registers (Bitstring Status List; StatusList2021) ──
 #
 # Every credential the identity-registry issues names **two** registers —
 # revocation and suspension, on the index they share — so that a superseded
 # credential can be retired without being revoked (`P-27`).
 #
 # These fixtures build the document `GET /status/{id}` actually serves: a
-# StatusList2021 credential whose `credentialSubject` carries a `statusPurpose`
-# and a gzipped, base64 `encodedList`. The suite used to write a bespoke
-# `{"credentials": {<id>: {"status": …}}}` map by hand instead — a shape no
-# issuer emits — so the reader and the fixture agreed with each other and with
-# nothing else, and every deployment that wired the URL from its provisioning
-# bundle 401'd every credential it was shown (ds#32). A fixture that is not the
-# document the registry serves is not evidence about anything.
+# BitstringStatusListCredential (StatusList2021 before R3) whose
+# `credentialSubject` carries a `statusPurpose` and a GZIP `encodedList`.
+# `TWO_REGISTERS` are entries as issued before R3 (`StatusList2021Entry`) and
+# `BITSTRING_REGISTERS` as issued since; both name the same lists. The suite
+# used to write a bespoke `{"credentials": {<id>: {"status": …}}}` map by hand
+# instead — a shape no issuer emits — so the reader and the fixture agreed with
+# each other and with nothing else, and every deployment that wired the URL
+# from its provisioning bundle 401'd every credential it was shown (ds#32). A
+# fixture that is not the document the registry serves is not evidence about
+# anything.
 
 STATUS_HOST = "https://trust-anchor.example"
 REVOCATION_LIST = f"{STATUS_HOST}/status/1"
@@ -455,15 +458,47 @@ TWO_REGISTERS = [
 
 ONE_REGISTER = TWO_REGISTERS[0]
 
+BITSTRING_REGISTERS = [{**e, "type": "BitstringStatusListEntry"} for e in TWO_REGISTERS]
+
 #: 16KB, the size `identity_registry.services.status_list` publishes.
 BITSTRING_SIZE = 16384
 
 
-def status_list(purpose: str = "revocation", *, set_bits: tuple[int, ...] = ()) -> dict:
-    """The document `/status/{id}` serves, built the way the registry builds it."""
+def _bits(set_bits: tuple[int, ...]) -> bytes:
     bits = bytearray(BITSTRING_SIZE)
     for index in set_bits:
         bits[index // 8] |= 1 << (7 - (index % 8))
+    return bytes(bits)
+
+
+def status_list(purpose: str = "revocation", *, set_bits: tuple[int, ...] = ()) -> dict:
+    """The document `/status/{id}` serves, built the way the registry builds it.
+
+    A `BitstringStatusListCredential` since R3: VC 1.1 envelope, stable `id`
+    (the list URL), `encodedList` multibase base64url (`u`, no padding) of a GZIP
+    stream — the shape EDC's IssuerService publishes at v0.18.0.
+    """
+    url = REVOCATION_LIST if purpose == "revocation" else SUSPENSION_LIST
+    encoded = base64.urlsafe_b64encode(gzip.compress(_bits(set_bits), mtime=0))
+    return {
+        "@context": ["https://www.w3.org/2018/credentials/v1"],
+        "id": url,
+        "type": ["VerifiableCredential", "BitstringStatusListCredential"],
+        "issuer": ANCHOR,
+        "issuanceDate": "2026-01-01T00:00:00Z",
+        "credentialSubject": {
+            "id": f"{url}#list",
+            "type": "BitstringStatusList",
+            "statusPurpose": purpose,
+            "encodedList": "u" + encoded.decode().rstrip("="),
+        },
+    }
+
+
+def status_list_2021(
+    purpose: str = "revocation", *, set_bits: tuple[int, ...] = ()
+) -> dict:
+    """The document `/status/{id}` served before R3: StatusList2021, base64."""
     return {
         "@context": [
             "https://www.w3.org/2018/credentials/v1",
@@ -477,7 +512,7 @@ def status_list(purpose: str = "revocation", *, set_bits: tuple[int, ...] = ()) 
             "type": "StatusList2021",
             "statusPurpose": purpose,
             "encodedList": base64.b64encode(
-                gzip.compress(bytes(bits), mtime=0)
+                gzip.compress(_bits(set_bits), mtime=0)
             ).decode(),
         },
     }
@@ -1141,6 +1176,86 @@ def test_a_failed_fetch_is_not_cached(anchor, resolver, monkeypatch):
         ).did
         == SUBJECT
     )
+
+
+# ── R3: Bitstring Status List, and the credentials issued before it ─────────
+
+
+@pytest.mark.parametrize(
+    ("revoked", "suspended", "detail"),
+    [((INDEX,), (), "revoked"), ((), (INDEX,), "suspended")],
+)
+def test_a_bitstring_entry_is_refused_by_the_bit_on_a_bitstring_list(
+    anchor, resolver, monkeypatch, revoked, suspended, detail
+):
+    """What the identity-registry issues and serves since R3, end to end."""
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list("revocation", set_bits=revoked),
+            SUSPENSION_LIST: status_list("suspension", set_bits=suspended),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=BITSTRING_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert detail in exc.value.detail
+
+
+def test_a_clear_bitstring_list_accepts_a_bitstring_entry(anchor, resolver, registers):
+    credential = verify(
+        anchor.credential(status=BITSTRING_REGISTERS),
+        resolver,
+        credential_status_url=REVOCATION_LIST,
+    )
+    assert credential.did == SUBJECT
+
+
+def test_a_statuslist2021_entry_is_read_against_a_bitstring_list(
+    anchor, resolver, monkeypatch
+):
+    """The transition: a credential issued before R3 names the same URL and
+    index, and the register at that URL is now a Bitstring list. Revocation must
+    still reach it."""
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list("revocation", set_bits=(INDEX,)),
+            SUSPENSION_LIST: status_list("suspension"),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=TWO_REGISTERS),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "revoked" in exc.value.detail
+
+
+@pytest.mark.parametrize("entries", [TWO_REGISTERS, BITSTRING_REGISTERS])
+def test_a_statuslist2021_list_is_still_read(anchor, resolver, monkeypatch, entries):
+    """A register still published in the pre-R3 form (plain base64)."""
+    fake = FakeRegisters(
+        {
+            REVOCATION_LIST: status_list_2021("revocation", set_bits=(INDEX,)),
+            SUSPENSION_LIST: status_list_2021("suspension"),
+        }
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    with pytest.raises(HTTPException) as exc:
+        verify(
+            anchor.credential(status=entries),
+            resolver,
+            credential_status_url=REVOCATION_LIST,
+        )
+    assert exc.value.status_code == 401
+    assert "revoked" in exc.value.detail
 
 
 # ── A holder asking about a credential it keeps (`status_bit_set`) ───────────

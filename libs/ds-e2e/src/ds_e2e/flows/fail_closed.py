@@ -608,14 +608,7 @@ class FailClosedFlow(BaseFlow):
     def _consumer_headers(self, result: FlowResult) -> dict[str, str] | None:
         s = self.settings
         try:
-            email = urllib.parse.quote(s.consumer_email, safe="")
-            body = (
-                self.http.get(
-                    f"{s.identity_registry_url}/users/resolve?email={email}",
-                    headers=self.http.bearer_headers(),
-                )
-                or {}
-            )
+            body = self._resolve_user(s.consumer_email, self.http.bearer_headers())
             consumer_vc = body.get("vc_jws")
         except Exception as exc:
             result.fail_step(

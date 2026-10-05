@@ -118,20 +118,6 @@ class _ChainFlow(BaseFlow):
             or {}
         )
 
-    def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
-        encoded = urllib.parse.quote(email, safe="")
-        resp = (
-            self.http.get(
-                f"{self.settings.identity_registry_url}/users/resolve?email={encoded}",
-                headers=headers,
-            )
-            or {}
-        )
-        vc_jws = resp.get("vc_jws") or ""
-        if not vc_jws:
-            raise RuntimeError(f"No VC found for user {email}")
-        return vc_jws
-
     def _subject_headers(
         self, result: FlowResult, svc: dict[str, str]
     ) -> dict[str, str] | None:

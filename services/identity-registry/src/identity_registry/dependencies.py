@@ -4,9 +4,10 @@ import logging
 from collections.abc import AsyncGenerator
 
 from ds_auth import Principal
+from ds_auth.audience import audience_bound, transition_bound
 from ds_auth.fastapi import require_permission
 from ds_auth.permissions import has_permission
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .config import Settings, get_settings
@@ -119,8 +120,18 @@ require_participants_write = require_permission(
 #
 # These name the three. `clients.yaml` refuses `*.admin` to a service client in
 # a comment; this is what makes that possible to honour.
-require_credentials_write = require_permission(
-    "identity-registry.admin", "identity-registry.credentials.write"
+#
+# `credentials.write` and `memberships.write` are **audience-bound** (ADR-0026):
+# a service token must have been minted for this registry (`aud`), and a
+# collector client's token for nothing else. The issuance grant is also one the
+# plain `svc-ds-onboarding` client held for acts that belong to an organisation:
+# presented by a plain service it is accepted only under `DS_ENV=dev`, logged.
+# An organisation's own token is bound to credentials linked to its organisation
+# (`require_credentials_write` below).
+_require_credentials_write_scope = require_permission(
+    "identity-registry.admin",
+    "identity-registry.credentials.write",
+    perimeter=transition_bound("credential issuance or revocation"),
 )
 # One (subject, type) question at a time — `GET /credentials/check`. Deliberately
 # not `identity-registry.read`, and deliberately not the `admin` that guards
@@ -133,7 +144,9 @@ require_credential_read = require_permission(
     "identity-registry.admin", "identity-registry.credentials.read"
 )
 require_memberships_write = require_permission(
-    "identity-registry.admin", "identity-registry.memberships.write"
+    "identity-registry.admin",
+    "identity-registry.memberships.write",
+    perimeter=audience_bound(),
 )
 require_keycloak_sync = require_permission(
     "identity-registry.admin", "identity-registry.keycloak.sync"
@@ -163,12 +176,15 @@ require_collectors_write = require_permission(
 #
 # * `identity-registry.admin` (an operator, `ir-cli`, a platform admin) — any
 #   organisation;
-# * an **organisation's own client** (`svc-ds-connector-<alias>`,
-#   `Principal.organisation_context`) — the owner whose `did` is that context,
-#   and no other. The same mapping `/consent-collectors/check` uses;
+# * an **organisation's own client** — its collector client
+#   (`svc-ds-collector-<alias>`, the one that holds the grant, ADR-0026) or any
+#   client carrying its DID as `sub` (`Principal.organisation_context`) — the
+#   owner whose `did` is that context, and no other, and only while that owner is
+#   **verified**: a suspended organisation writes no memberships. The same
+#   mapping `/consent-collectors/check` uses;
 # * a **person** — an organisation in which their own groups grant the
-#   permission (`Principal.grants_in`). No bundle grants `memberships.write`
-#   today, so this only matters if one ever does;
+#   permission (`Principal.grants_in`), and which is verified. No bundle grants
+#   `memberships.write` today, so this only matters if one ever does;
 # * a **plain service token** — refused. It names no organisation, so there is
 #   nothing to scope it to; the connector refuses it on the consent write for
 #   the same reason.
@@ -186,8 +202,8 @@ async def canonical_organisation(db: AsyncSession, alias: str) -> str:
     return owner.id if owner else alias
 
 
-async def token_organisation(db: AsyncSession, principal: Principal) -> str | None:
-    """The owner id an organisation client's token speaks for, or ``None``.
+async def token_owner(db: AsyncSession, principal: Principal):
+    """The :class:`Owner` an organisation client's token speaks for, or ``None``.
 
     The token's participant context (`sub`, set by the client's hardcoded-claim
     mapper) is the organisation's DID; the owner carrying that DID is the
@@ -199,8 +215,24 @@ async def token_organisation(db: AsyncSession, principal: Principal) -> str | No
     context = principal.organisation_context
     if not context:
         return None
-    owner = await owner_for_did(db, context)
+    return await owner_for_did(db, context)
+
+
+async def token_organisation(db: AsyncSession, principal: Principal) -> str | None:
+    """The owner id an organisation client's token speaks for, or ``None``."""
+    owner = await token_owner(db, principal)
     return owner.id if owner else None
+
+
+VERIFIED = "verified"
+
+
+async def _organisation_status(db: AsyncSession, organisation: str) -> str | None:
+    """The status of the owner whose id is *organisation*, or ``None`` if none is."""
+    from .db.models import Owner
+
+    owner = await db.get(Owner, organisation)
+    return owner.status if owner is not None else None
 
 
 async def _person_grants_in(
@@ -226,8 +258,17 @@ async def authorize_membership_write(
     if principal.grants(ADMIN_PERMISSION):
         return
     if principal.is_organisation:
-        own = await token_organisation(db, principal)
+        owner = await token_owner(db, principal)
+        own = owner.id if owner is not None else None
         if own is not None and own == organisation:
+            if owner.status != VERIFIED:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        f"Organisation '{own}' is {owner.status}, not verified: "
+                        "it may not change memberships"
+                    ),
+                )
             return
         raise HTTPException(
             status_code=403,
@@ -242,13 +283,22 @@ async def authorize_membership_write(
             status_code=403,
             detail=(
                 "A service token names no organisation, so it may not change "
-                "memberships: use the organisation's own client "
-                "(svc-ds-connector-<alias>) or identity-registry.admin"
+                "memberships: use the organisation's collector client "
+                "(svc-ds-collector-<alias>) or identity-registry.admin"
             ),
         )
     if await _person_grants_in(
         db, principal, organisation, MEMBERSHIPS_WRITE_PERMISSION
     ):
+        status = await _organisation_status(db, organisation)
+        if status is not None and status != VERIFIED:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    f"Organisation '{organisation}' is {status}, not verified: "
+                    "its memberships may not change"
+                ),
+            )
         return
     raise HTTPException(
         status_code=403,
@@ -280,3 +330,89 @@ async def authorize_membership_check(
         status_code=403,
         detail=f"Not permitted to read memberships of '{organisation}'",
     )
+
+
+# ── Whose credentials a caller may issue or revoke (ADR-0026) ────────────────
+#
+# `credentials.write` says a caller may issue a data-subject credential; it does
+# not say for which organisation's members. Since the grant moved from the plain
+# `svc-ds-onboarding` client to each organisation's collector client, the
+# organisation is the token's: its `sub` (the organisation's DID) names the
+# owner, and the credential must be **linked** to that organisation —
+#
+# * issue / transition (`POST /admin/credentials/data-subject[/transition]`): the
+#   request's `linked_participant_did` — the custodian, in whose namespace the
+#   person's DID lives — must be the organisation's DID;
+# * revoke (`DELETE /admin/credentials/{cred_id}`), whose request names no
+#   organisation: the credential's own `credentialSubject.linkedParticipant`
+#   must be. A credential that is not found, or not linked to the caller, is the
+#   same 403, so the route is not an oracle for credential ids.
+#
+# The owner must be verified. An administrator is unbounded; a plain service
+# token went through the dev-only transition in the permission's perimeter.
+
+
+async def authorize_credential_write(
+    db: AsyncSession, principal: Principal, request: Request
+) -> None:
+    """Refuse (403) an organisation's credential write outside its organisation."""
+    if principal.grants(ADMIN_PERMISSION) or not principal.is_organisation:
+        return
+    owner = await token_owner(db, principal)
+    context = principal.organisation_context
+    if owner is None:
+        raise HTTPException(
+            status_code=403,
+            detail=f"'{context}' is not the DID of exactly one registered organisation",
+        )
+    if owner.status != VERIFIED:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Organisation '{owner.id}' is {owner.status}, not verified: it may "
+                "not issue or revoke credentials"
+            ),
+        )
+
+    cred_id = request.path_params.get("cred_id")
+    if cred_id is not None:
+        from .db.models import Credential
+
+        cred = await db.get(Credential, cred_id)
+        subject = ((cred.credential_json or {}) if cred else {}).get(
+            "credentialSubject"
+        ) or {}
+        if cred is None or subject.get("linkedParticipant") != context:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "An organisation may revoke only a credential linked to "
+                    f"itself ('{owner.id}')"
+                ),
+            )
+        return
+
+    try:
+        body = await request.json()
+    except Exception:  # noqa: BLE001 — the route's own validation answers it
+        body = None
+    linked = body.get("linked_participant_did") if isinstance(body, dict) else None
+    if linked != context:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "An organisation may issue credentials only for its own members: "
+                f"linked_participant_did must be its DID ('{context}'), "
+                f"not {linked!r}"
+            ),
+        )
+
+
+async def require_credentials_write(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    principal: Principal = Depends(_require_credentials_write_scope),
+) -> Principal:
+    """`credentials.write` (audience-bound), bound to the caller's organisation."""
+    await authorize_credential_write(db, principal, request)
+    return principal

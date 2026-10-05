@@ -296,6 +296,8 @@ class OrganisationTokenFlow(BaseFlow):
                     "refused on /consumer/negotiate",
                 )
 
+        self._check_acts_are_asked_for(result)
+
         status, _ = self.http.raw("POST", negotiate, body=negotiate_body)
         if status != 401:
             result.fail_step(
@@ -698,3 +700,98 @@ class OrganisationTokenFlow(BaseFlow):
             revoked=revoked,
         )
         return True
+
+    # ── ADR-0026: the organisation's acts are asked for, one audience each ──
+
+    def _check_acts_are_asked_for(self, result: FlowResult) -> None:
+        """The default token registers no consent and publishes nothing; a
+        collector token is good only at the service its one scope names."""
+        s = self.settings
+        share = {
+            "subject_id": s.data_subject_id,
+            "offer_id": s.sharing_offer_id,
+            "enabled": False,
+            "decided_by": "collector",
+        }
+        try:
+            default = self.http.bearer_headers_for(
+                s.provider_org_client_id, s.provider_org_client_secret
+            )
+        except Exception as exc:
+            result.fail_step("the organisation's acts are asked for", str(exc))
+            return
+        statuses = {
+            "POST /consent/admin/shares": self.http.raw(
+                "POST",
+                f"{s.connector_url}/consent/admin/shares",
+                body=share,
+                headers=default,
+            )[0],
+            "POST /provider/sync": self.http.raw(
+                "POST", f"{s.connector_url}/provider/sync", body={}, headers=default
+            )[0],
+        }
+        if any(code != 403 for code in statuses.values()):
+            result.fail_step(
+                "the organisation's acts are asked for",
+                "the organisation's default token — the one its connector sends to "
+                "every counterparty — registered consent or published",
+                statuses=statuses,
+            )
+        else:
+            result.pass_step(
+                "the organisation's acts are asked for",
+                "the default organisation token is refused the consent write and "
+                "the publish (optional scopes)",
+                statuses=statuses,
+            )
+
+        # The collector client: one scope, one audience, one receiver.
+        try:
+            for_connector = self.http.bearer_headers_for(
+                s.provider_collector_client_id,
+                s.provider_collector_client_secret,
+                "connector.consent.provision",
+            )
+            for_registry = self.http.bearer_headers_for(
+                s.provider_collector_client_id,
+                s.provider_collector_client_secret,
+                "identity-registry.memberships.write",
+            )
+        except Exception as exc:
+            result.fail_step(
+                "a collector token is good only where its scope sends it",
+                f"the collector client could not authenticate — run "
+                f"`ir-cli keycloak org-sync`: {exc}",
+            )
+            return
+        member = {
+            "user_did": s.data_subject_id,
+            "organization_alias": "example-org",
+        }
+        crossed = {
+            "consent token at identity-registry": self.http.raw(
+                "POST",
+                f"{s.identity_registry_url}/admin/memberships",
+                body=member,
+                headers=for_connector,
+            )[0],
+            "membership token at the connector": self.http.raw(
+                "POST",
+                f"{s.connector_url}/consent/admin/shares",
+                body=share,
+                headers=for_registry,
+            )[0],
+        }
+        if any(code not in (401, 403) for code in crossed.values()):
+            result.fail_step(
+                "a collector token is good only where its scope sends it",
+                "a collector token was accepted by a service its scope does not name",
+                statuses=crossed,
+            )
+        else:
+            result.pass_step(
+                "a collector token is good only where its scope sends it",
+                "replayed at the other service, each collector token is refused",
+                statuses=crossed,
+            )

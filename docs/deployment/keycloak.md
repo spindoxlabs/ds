@@ -194,6 +194,57 @@ organisation. It is not, and must never become, the source for *disclosure* deci
 data may be shared is keyed on the data subject's DID and answered by the identity registry. The
 two membership systems never query each other, deliberately.
 
+### Organisation clients and collector clients
+
+Each organisation gets one or two clients. Neither is declared in `clients.yaml`:
+identity-registry creates them with `ir-cli keycloak org-sync` or at promotion (posture A).
+A host realm declares them itself (posture B).
+
+| client | when | `sub` | default scopes | optional scopes |
+|---|---|---|---|---|
+| `svc-ds-connector-<alias>` | `participant_context_id` set | the organisation's DID | the connector's service grants (`ds_auth.ORGANISATION_CLIENT_DEFAULT_SCOPES`) | the 7 `management-api:*`, `edc.management`, `connector.consent.provision`, `connector.consent.collector.read`, `connector.provider.write` |
+| `svc-ds-collector-<alias>` | also `collects_consent: true` | the organisation's DID | **none** | `identity-registry.memberships.write`, `identity-registry.credentials.write`, `connector.consent.provision`, `connector.consent.collector.read`, `connector.consent.audience`, `connector.disclosure.record`, `provenance.write` |
+
+The collector client is the organisation's **onboarding** identity
+([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
+It has no client-level audience and no EDC scope. Every optional scope above carries **one
+audience** (`audience:` in `clients.yaml`), and the receiving service requires it. A caller
+therefore asks for **one scope per token**; a collector token that names two ds services is
+refused. Its secret is `SVC_DS_COLLECTOR_<ALIAS>_SECRET`, with the same rules as the
+connector client's secret: the client id under `DS_ENV=dev`, and required and different
+from the client id anywhere else. Give it to whoever runs that organisation's onboarding.
+Do not share it with the connector, and do not give that party the connector's secret.
+
+For a host realm (posture B), declare the collector client in your own client file:
+
+```yaml
+- client_id: svc-ds-collector-example-rec
+  service_account_enabled: true
+  scopes_prefix: null
+  default_scopes: []
+  optional_scopes:
+    - identity-registry.memberships.write
+    - identity-registry.credentials.write
+    - connector.consent.provision
+    - connector.consent.collector.read
+    - connector.consent.audience
+    - connector.disclosure.record
+    - provenance.write
+  hardcoded_claims:
+    sub: did:web:rec.example.org
+```
+
+On the organisation client, move `connector.consent.provision` and `connector.provider.write`
+to `optional_scopes`, and add `connector.consent.collector.read` there. The scope audiences
+need celine-policies with scope-level audiences, which `edc.management` already requires.
+
+!!! warning "`svc-ds-onboarding` is being retired"
+    Its credential issuance, offer-audience read, disclosure and provenance grants now belong
+    to each organisation's collector client. On those routes this plain client is accepted
+    **only under `DS_ENV=dev`**, with a warning in the log, and refused elsewhere. Its
+    membership grant is already refused. Remove those grants from the realm once the
+    onboarding service calls as the collector client.
+
 ## 6. Optional sync from the charts
 
 ```yaml

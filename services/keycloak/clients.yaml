@@ -66,8 +66,16 @@ scopes:
   # What an external onboarding application actually does. Without these it had
   # to hold `identity-registry.admin` — a superset over DID and key management —
   # to issue a credential, register a membership and set one Keycloak attribute.
+  #
+  # **One audience per scope** (ADR-0026) on every grant an organisation's
+  # collector client (`svc-ds-collector-<alias>`) may ask for: the client has no
+  # audience of its own, so requesting the scope is what makes its receiver accept
+  # the token, and the receiver refuses a collector token naming another ds
+  # service too. `audience` needs celine-policies with scope-level audiences
+  # (its REQ-0017), as `edc.management` below does.
   - name: identity-registry.credentials.write
     description: Issue and revoke a data-subject credential
+    audience: svc-ds-identity-registry
   # One (subject, type) question, not the roster. `GET /admin/credentials`
   # enumerates what a person holds and stays on `.admin`; this answers whether
   # they hold one named thing, which is what a sharing offer's `admitted_by`
@@ -76,6 +84,7 @@ scopes:
     description: Check whether a subject holds a valid credential of a given type
   - name: identity-registry.memberships.write
     description: Register or delete an organisation membership
+    audience: svc-ds-identity-registry
   # Records the Keycloak user ↔ DID mapping. It used to also push a
   # `dataspace_did` attribute onto the Keycloak user; nothing read it, and it was
   # the only write this endpoint made into a realm ds may not own.
@@ -95,6 +104,7 @@ scopes:
     description: Read provider assets, policies, contracts, transfers, authorizations
   - name: connector.provider.write
     description: Mutate provider config (sync, delete assets/policies/contracts)
+    audience: svc-ds-connector
   - name: connector.history.read
     description: Read EDC negotiation, agreement and transfer history
   # Drop the cached participant list. Deliberately its own grant rather than
@@ -113,10 +123,17 @@ scopes:
     description: Internal API (agreement/transfer/consent checks, audit, JWKS)
   - name: connector.webhook
     description: Accept EDC webhook events (transfer-process, contract-negotiation)
-  # Held by organisation clients (an accepted collector, or the holder's own)
-  # and by the onboarding service — never by a participant operator's bundle.
+  # Requested by an organisation's own clients (an accepted collector, or the
+  # holder's own) — optional on both, never a default (ADR-0026) — and never in a
+  # participant operator's bundle.
   - name: connector.consent.provision
     description: Register a subject's standing sharing decision (POST /consent/admin/shares)
+    audience: svc-ds-connector
+  # The read-back of what the caller registered, so a read never needs a token
+  # that can write (ADR-0026).
+  - name: connector.consent.collector.read
+    description: Read back registered decisions (GET /consent/admin/subject-shares, /decisions)
+    audience: svc-ds-connector
   # Keycloak's client-scope description is VARCHAR(255) and the realm API
   # answers 500 rather than a validation error when it overflows — keep these
   # one short line each. The rationale lives in dependencies.py.
@@ -124,6 +141,7 @@ scopes:
     description: Is a negotiation awaiting a consent decision (GET /consent/pending)
   - name: connector.consent.audience
     description: Who consents to a sharing offer (GET /consent/admin/shares)
+    audience: svc-ds-connector
   # The holder reading the keys its own data plane serves, keys only (ADR-0022).
   # Held by organisation clients; the connector accepts only its own one.
   - name: connector.consent.holder.read
@@ -132,12 +150,14 @@ scopes:
     description: Record a DSO/offline data handover (POST /admin/ingestion)
   - name: connector.disclosure.record
     description: Record data leaving the platform (POST /admin/disclosure)
+    audience: svc-ds-connector
 
   # Provenance
   - name: provenance.read
     description: Query provenance lineage and audit log
   - name: provenance.write
     description: Write provenance events and audit log entries
+    audience: svc-ds-provenance
 
   # Federated Catalog
   - name: catalog.read
@@ -212,6 +232,16 @@ clients:
   # deployment this repository cannot test. That ds and the domain platform can
   # share one realm is the whole point of *this file*: it is the one the host
   # realm mounts as an overlay when ds is a guest rather than the realm's owner.
+  #
+  # **Being retired (ADR-0026).** The grants below that act for one organisation
+  # — `credentials.write`, `memberships.write`, `connector.consent.audience`,
+  # `connector.disclosure.record`, `provenance.write` — moved to that
+  # organisation's collector client, `svc-ds-collector-<alias>`, which
+  # identity-registry provisions for an organisation declared `collects_consent`.
+  # Presented by this plain client they are accepted only under `DS_ENV=dev`,
+  # logged, as a transition (`memberships.write` not at all). They are removed
+  # from this entry **last**, once the onboarding service calls as the collector
+  # client. `organizations.read`, `resolve` and `keycloak.sync` stay for now.
   - client_id: svc-ds-onboarding
     name: Dataspace Onboarding
     secret: ${SVC_DS_ONBOARDING_SECRET:-svc-ds-onboarding}

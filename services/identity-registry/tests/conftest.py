@@ -87,6 +87,9 @@ def make_headers(scope: str = "identity-registry.admin") -> dict:
             "scope": scope,
             "sub": "test",
             "preferred_username": "service-account-svc-ds-identity-registry",
+            # Minted for this registry, as Keycloak mints it: the audience-bound
+            # routes (memberships, credentials — ADR-0026) check it.
+            "aud": "svc-ds-identity-registry",
             "iat": now,
             "exp": now + 300,
         },

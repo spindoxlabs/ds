@@ -178,9 +178,11 @@ keycloak:
     # `organizationsConfigMap` below is different: `deployment.yaml` mounts it.
     organizationsConfigMap: ""
     # A Secret whose keys are `SVC_DS_CONNECTOR_<ALIAS>_SECRET`, one per entry of
-    # organizations.yaml with a `participant_context_id`. `org-sync` creates each
-    # organisation client with that secret, and under `DS_ENV=production` refuses
-    # (exit 1) one it has no secret for. Empty → no such client can be created.
+    # organizations.yaml with a `participant_context_id`, and
+    # `SVC_DS_COLLECTOR_<ALIAS>_SECRET` for each that also declares
+    # `collects_consent` (its collector client, ADR-0026). `org-sync` creates each
+    # client with its secret, and under `DS_ENV=production` refuses (exit 1) one
+    # it has no secret for. Empty → no such client can be created.
     organisationClientSecrets: ""
   # Runtime writes into the realm (promotion creating a participant's connector
   # client). Empty → falls back to `sync.enabled`, i.e. guest by default. See the

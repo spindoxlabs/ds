@@ -47,7 +47,9 @@ reads back **who currently consents to one sharing offer**, for one named consum
 must not carry bulk subject enumeration with it, which is why `.audience` is in no bundle and
 is reached by a person only through `connector.admin`. What a writer can read back is only its
 own members' decisions: one subject at a time with `GET /consent/admin/subject-shares`, or
-listed per offer, every state, with `GET /consent/admin/decisions`.
+listed per offer, every state, with `GET /consent/admin/decisions`. Both read-backs require
+their own scope, `connector.consent.collector.read`, and the write grant no longer opens them
+([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
 
 **Registers consent another organisation collected.** A person consents where they are a
 member; the organisation holding their data runs this connector. An **accepted collector** —
@@ -185,8 +187,8 @@ caller from the verified token, never from the body:
 
 | Caller | Token | Speaks for | `decided_by` |
 |---|---|---|---|
-| an **accepted collector** | another organisation's client (`svc-ds-connector-<alias>`, `sub` ≠ this participant) holding `connector.consent.provision` | its own organisation | stated: `subject` (relayed) or `collector` |
-| this participant's **own organisation** | its own organisation client — this is where an onboarding service belongs | this participant | stated, as above |
+| an **accepted collector** | another organisation's client, `sub` ≠ this participant: its collector client `svc-ds-collector-<alias>` (ADR-0026) or its `svc-ds-connector-<alias>`, with a token asked for `connector.consent.provision` | its own organisation | stated: `subject` (relayed) or `collector` |
+| this participant's **own organisation** | its own organisation's client, collector or connector — this is where an onboarding service belongs | this participant | stated, as above |
 | the **deployment operator** | a **person** holding `connector.admin` | this participant | `operator` |
 
 **A plain service token is refused** (`403`), and so is a participant operator's seat.
@@ -231,6 +233,24 @@ What is recorded:
 together with (`requires_offers`) that the subject has not granted here. An offer that resolves
 to no dataset at this connector is a `422`, here and on the member's own route alike — see
 "The consent wildcard" above.
+
+**The organisation asks for each act, and the token names this connector**
+([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
+`connector.consent.provision`, `connector.consent.collector.read` and `connector.provider.write`
+are optional on the organisation client. The default token, which the connector sends to
+every counterparty, carries none of them. Each of these scopes, and also
+`connector.consent.audience` and `connector.disclosure.record`, adds the audience
+`svc-ds-connector`. The guards require it in a service token's `aud`, and they refuse a
+collector token that also names another ds service. A collector client is never the
+connector: it is refused on `/provider/*` writes, on the holder key list and on `/consumer/*`.
+
+The offer-audience read (`GET /consent/admin/shares`) and disclosure records
+(`POST /admin/disclosure`) moved from the plain `svc-ds-onboarding` client to the collector
+client. Neither request names an organisation, so the token's `sub` supplies it. It must be
+this connector's own organisation, or a collector accepted here, which is the write's
+admission. A plain service token on these two routes is accepted **only under
+`DS_ENV=dev`**, with a warning in the log. An accepted collector reads the offer's whole
+audience here, including subjects another collector registered; this is a stated residual.
 
 `GET /consent/admin/subject-shares?subject_id=…` is the read-back: one subject's decisions and
 outstanding asks here, for the organisation that speaks for them, under the same two checks. It

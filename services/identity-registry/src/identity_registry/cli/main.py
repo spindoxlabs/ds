@@ -1069,7 +1069,10 @@ def keycloak_org_sync(
 
     An entry with `participant_context_id` also gets its client,
     `svc-ds-connector-<alias>`, whose secret is `SVC_DS_CONNECTOR_<ALIAS>_SECRET`
-    (the client id in dev; required under DS_ENV=production). Idempotent.
+    (the client id in dev; required under DS_ENV=production). One that also
+    declares `collects_consent: true` gets its collector client,
+    `svc-ds-collector-<alias>` (`SVC_DS_COLLECTOR_<ALIAS>_SECRET`, ADR-0026);
+    without the flag an existing collector client is disabled. Idempotent.
     """
     from ..services.keycloak_admin import (
         KeycloakAdminClient,
@@ -1115,6 +1118,14 @@ def keycloak_org_sync(
         typer.echo(f"WARNING: user not found in Keycloak: {email}", err=True)
     for client_id in report.clients_ensured:
         typer.echo(f"Organisation client ensured: {client_id}")
+    for client_id in report.collector_clients_ensured:
+        typer.echo(f"Collector client ensured: {client_id}")
+    for client_id in report.collector_clients_disabled:
+        typer.echo(
+            f"WARNING: {client_id} disabled — its organisation no longer declares "
+            "collects_consent",
+            err=True,
+        )
     for client_id in report.clients_with_other_secret:
         typer.echo(
             f"WARNING: {client_id} exists with a different secret; left unchanged",
@@ -1485,6 +1496,8 @@ def owner_import(
                     existing.did = entry.get("did", existing.did)
                     existing.url = entry.get("url", existing.url)
                     existing.aliases = entry.get("aliases", existing.aliases)
+                    if "collects_consent" in entry:
+                        existing.collects_consent = bool(entry["collects_consent"])
                     org = entry.get("organization")
                     if org is not None:
                         existing.organization_config = org
@@ -1518,6 +1531,7 @@ def owner_import(
                         url=entry.get("url"),
                         aliases=entry.get("aliases", []),
                         organization_config=entry.get("organization"),
+                        collects_consent=bool(entry.get("collects_consent", False)),
                         **verification,
                     )
                     session.add(owner)

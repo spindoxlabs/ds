@@ -42,6 +42,8 @@ token = httpx.post(
         "grant_type": "client_credentials",
         "client_id": os.environ["SYNC_CLIENT_ID"],
         "client_secret": os.environ["SYNC_CLIENT_SECRET"],
+        # The organisation client must ask for the publish grant (ADR-0026).
+        **({"scope": os.environ["SYNC_SCOPE"]} if os.environ.get("SYNC_SCOPE") else {}),
     },
     timeout=30,
 )

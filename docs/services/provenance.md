@@ -75,7 +75,14 @@ nicely.
 
 ### Ingestion, traced
 
-1. **Authorise.** `provenance.write` for a write, `provenance.read` or `.write` for a read.
+1. **Authorise.** `provenance.write` for a write, `provenance.read` for a read. A write
+   is **audience-bound**: a service token must name `svc-ds-provenance` in `aud`, and a
+   collector token (`svc-ds-collector-<alias>`) that also names another ds service is
+   refused. A plain service token, meaning one that is not an organisation's client, may
+   write only under `DS_ENV=dev`, with a warning in the log. `provenance.write` moved from
+   the plain onboarding client to the organisation's collector client
+   ([ADR-0026](../decisions/ADR-0026-an-organisation-acts-through-its-collector-client-one-audience-per-scope.md)).
+   A connector writes with its organisation client's default token, which names this audience.
 2. **Validate.** The request resolves against a discriminated union on `event_type`; an
    unknown type or a missing required field is a `422` before any handler runs.
 3. **One transaction** wraps the whole ingest.

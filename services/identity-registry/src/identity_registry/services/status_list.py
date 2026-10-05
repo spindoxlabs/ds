@@ -12,7 +12,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..db.models import Credential, StatusList
-from .crypto import generate_credential_id
 
 BITSTRING_SIZE = 16384  # 16KB = 131072 bits
 BITSTRING_CAPACITY = BITSTRING_SIZE * 8
@@ -22,13 +21,13 @@ BITSTRING_CAPACITY = BITSTRING_SIZE * 8
 # A **revocation** bit is terminal: set once, never cleared, because the
 # credential it refers to is finished. A **suspension** bit is a *state* — set
 # while the holder is suspended, cleared when they are reinstated. That is the
-# whole difference between suspension and deactivation, and StatusList2021
-# carries it in `statusPurpose`.
+# whole difference between suspension and deactivation, and Bitstring Status
+# List (like StatusList2021 before it) carries it in `statusPurpose`.
 #
-# A verifier enforces it. EDC 0.16's `StatusList2021RevocationService` refuses
-# an entry whose `statusPurpose` does not match the fetched list's
-# (`"Credential's statusPurpose value must match the status list's purpose"`),
-# and `RevocationServiceRegistryImpl` checks **every** `credentialStatus` entry a
+# A verifier enforces it. EDC's `BitstringStatusListRevocationService` (and
+# `StatusList2021RevocationService`, for entries issued before R3) refuses an
+# entry whose `statusPurpose` does not match the fetched list's (v0.18.0), and
+# `RevocationServiceRegistryImpl` checks **every** `credentialStatus` entry a
 # credential carries, failing with the purpose it found set
 # (`"Credential status is '%s', status at index %d is '1'"`). So a credential
 # naming both registers is rejected while either bit is set, and the rejection
@@ -91,29 +90,41 @@ def get_bit(bitstring: bytes, index: int) -> bool:
 
 
 def encode_bitstring(bitstring: bytes) -> str:
-    """GZIP, per StatusList2021 — **not** zlib.
+    """Multibase base64url (`u` header, no padding) of the GZIP-compressed list.
 
-    The specification says the encoded list is a GZIP-compressed bitstring, and
-    every verifier reads it that way (EDC's `BitString` uses `GZIPInputStream`).
-    This emitted a raw zlib stream: same DEFLATE payload, different two-byte
-    header, so no conformant verifier could decompress it and every revocation
-    check failed — closed, and silently, because a status list that cannot be
-    read is indistinguishable from a credential that is revoked.
+    That is the Bitstring Status List encoding (W3C `vc-bitstring-status-list`
+    §"Bitstring Encoding"), and it is what EDC's IssuerService publishes
+    (`BitString.Writer.writeMultibase`). EDC's `BitString.Parser` reads it by the
+    `u` header, and reads a header-less list as plain base64 — so every verifier
+    that read the StatusList2021 form reads this one.
 
-    Nothing caught it because both halves of this module agreed with each other:
-    `decode_bitstring` used `zlib` too, so every test round-tripped perfectly.
+    **GZIP, never zlib.** This once emitted a raw zlib stream: same DEFLATE
+    payload, different two-byte header, so no conformant verifier could
+    decompress it and every revocation check failed — closed, and silently,
+    because a status list that cannot be read is indistinguishable from a
+    credential that is revoked. Nothing caught it because `decode_bitstring`
+    used zlib too and every test round-tripped perfectly.
     """
-    return base64.b64encode(gzip.compress(bitstring, mtime=0)).decode()
+    compressed = gzip.compress(bitstring, mtime=0)
+    return "u" + base64.urlsafe_b64encode(compressed).decode().rstrip("=")
 
 
 def decode_bitstring(encoded: str) -> bytes:
-    """Read GZIP, and still accept zlib.
+    """Read every encoding this registry has ever published.
 
-    The fallback is for lists published before the fix — they are already
-    referenced by issued credentials, and refusing them would revoke everything
-    at once. New lists are always GZIP.
+    - `u…` — multibase base64url, the Bitstring Status List form (current).
+    - plain base64 of a GZIP stream — the StatusList2021 form (before R3).
+    - plain base64 of a zlib stream — before the GZIP fix.
+
+    The older forms stay readable because issued credentials and exported
+    snapshots already reference them. A GZIP stream always base64-encodes to
+    `H4sI…`, so the `u` header cannot be mistaken for a legacy list.
     """
-    compressed = base64.b64decode(encoded)
+    if encoded.startswith("u"):
+        body = encoded[1:]
+        compressed = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+    else:
+        compressed = base64.b64decode(encoded)
     try:
         return gzip.decompress(compressed)
     except (OSError, EOFError):
@@ -331,22 +342,44 @@ async def find_duplicate_indices(db: AsyncSession) -> list[DuplicateIndex]:
 
 def build_status_list_credential(
     *,
-    list_id: str,
+    list_url: str,
     issuer_did: str,
     encoded_list: str,
     purpose: str = "revocation",
+    valid_from: datetime | None = None,
 ) -> dict[str, Any]:
+    """The register as a `BitstringStatusListCredential` (R3).
+
+    DCP v1.0 issuance says revocation MUST use Bitstring Status List
+    (`credential.issuance.protocol.md:359`), and EDC's IssuerService publishes
+    exactly this shape at v0.18.0: a **VC 1.1** credential (`issuanceDate`),
+    signed as a VC-JWT with a `vc` claim (`BitstringStatusListManager`, still
+    `VC1_0_JWT` with a "todo: VC2_0_JOSE"). A VCDM 2.0 envelope would not be
+    readable by EDC's verifier at the pin, which takes the list from `vc`.
+
+    **The `id` is the list's own URL, stable per list.** It used to be a fresh
+    `urn:uuid` on every build, so the same register was a different credential
+    on every fetch — nothing could cache it, pin it, or say which list a
+    revocation was published in. The URL is what `statusListCredential` in every
+    holder credential names, so the two now agree (the spec's own examples do
+    the same).
+
+    `valid_from` is when this version of the register took effect (the row's
+    `updated_at`), so it is stable too until a bit changes. `ttl` is left out:
+    DCP's profile note says to ignore it in favour of validity dates.
+    """
+    issued = (valid_from or datetime.now(UTC)).replace(microsecond=0)
+    if issued.tzinfo is None:
+        issued = issued.replace(tzinfo=UTC)
     return {
-        "@context": [
-            "https://www.w3.org/2018/credentials/v1",
-            "https://w3id.org/vc/status-list/2021/v1",
-        ],
-        "id": generate_credential_id(),
-        "type": ["VerifiableCredential", "StatusList2021Credential"],
+        "@context": ["https://www.w3.org/2018/credentials/v1"],
+        "id": list_url,
+        "type": ["VerifiableCredential", "BitstringStatusListCredential"],
         "issuer": issuer_did,
+        "issuanceDate": issued.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "credentialSubject": {
-            "id": f"urn:status-list:{list_id}",
-            "type": "StatusList2021",
+            "id": f"{list_url}#list",
+            "type": "BitstringStatusList",
             "statusPurpose": purpose,
             "encodedList": encoded_list,
         },

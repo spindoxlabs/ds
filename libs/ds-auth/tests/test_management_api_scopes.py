@@ -204,21 +204,30 @@ def test_an_organisation_client_may_ask_to_register_consent():
     """Plan `a-collector-registers-consent-at-the-holder`: the organisation's own
     client is the consent writer — at its own connector, or at a holder that
     accepts it as a collector. Which connector accepts it is the connector's
-    decision; the scope only lets it ask."""
-    from ds_auth import CONNECTOR_SERVICE_SCOPES, ORGANISATION_CLIENT_SCOPES
+    decision; the scope only lets it ask — and since ADR-0026 it must **ask**:
+    the grant is optional, so the default token the connector sends to every
+    counterparty does not carry it."""
+    from ds_auth import (
+        CONNECTOR_SERVICE_SCOPES,
+        ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+        ORGANISATION_CLIENT_SCOPES,
+    )
 
-    assert "connector.consent.provision" in CONNECTOR_SERVICE_SCOPES
+    assert "connector.consent.provision" not in CONNECTOR_SERVICE_SCOPES
+    assert "connector.consent.provision" in ORGANISATION_CLIENT_OPTIONAL_SCOPES
     assert "connector.consent.provision" in ORGANISATION_CLIENT_SCOPES
     # Never the cross-subject read beside it.
     assert "connector.consent.audience" not in ORGANISATION_CLIENT_SCOPES
 
 
-def test_the_edc_scopes_are_optional_and_the_service_scopes_default():
+def test_the_edc_scopes_and_the_acts_are_optional_and_the_service_scopes_default():
     """The organisation client's split: what every token carries, and what only
-    the connector's EDC token asks for."""
+    a token that asks for it does — the connector's EDC token, and the
+    organisation's own acts (ADR-0026)."""
     from ds_auth import (
         CONNECTOR_SERVICE_SCOPES,
         EDC_MANAGEMENT_SCOPE,
+        ORGANISATION_ACTION_SCOPES,
         ORGANISATION_CLIENT_DEFAULT_SCOPES,
         ORGANISATION_CLIENT_OPTIONAL_SCOPES,
         ORGANISATION_CLIENT_SCOPES,
@@ -228,14 +237,98 @@ def test_the_edc_scopes_are_optional_and_the_service_scopes_default():
     assert not any(
         is_management_api_scope(s) for s in ORGANISATION_CLIENT_DEFAULT_SCOPES
     )
+    assert set(ORGANISATION_ACTION_SCOPES) == {
+        "connector.consent.provision",
+        "connector.consent.collector.read",
+        "connector.provider.write",
+    }
+    assert not set(ORGANISATION_ACTION_SCOPES) & set(ORGANISATION_CLIENT_DEFAULT_SCOPES)
     assert set(ORGANISATION_CLIENT_OPTIONAL_SCOPES) == {
         *MANAGEMENT_API_SCOPES,
         EDC_MANAGEMENT_SCOPE,
+        *ORGANISATION_ACTION_SCOPES,
     }
     assert set(ORGANISATION_CLIENT_SCOPES) == {
         *ORGANISATION_CLIENT_DEFAULT_SCOPES,
         *ORGANISATION_CLIENT_OPTIONAL_SCOPES,
     }
+    # Nothing a counterparty could replay rides in the default token.
+    assert "connector.provider.write" not in ORGANISATION_CLIENT_DEFAULT_SCOPES
+    assert "identity-registry.memberships.write" not in ORGANISATION_CLIENT_SCOPES
+
+
+def test_the_edc_token_scope_is_stated_not_every_optional_scope():
+    """It used to join every optional scope; with the organisation's acts now
+    optional too it would have carried consent and publishing into the token the
+    connector hands its EDC. Pinned byte-for-byte, so no connector or EDC image
+    change rides on this one."""
+    from ds_auth import EDC_MANAGEMENT_SCOPE, EDC_TOKEN_SCOPE
+
+    assert EDC_TOKEN_SCOPE == " ".join((*MANAGEMENT_API_SCOPES, EDC_MANAGEMENT_SCOPE))
+    assert EDC_TOKEN_SCOPE == (
+        "management-api:assets:write management-api:policies:write "
+        "management-api:contractdefinitions:write management-api:catalog:read "
+        "management-api:negotiations:write management-api:agreements:read "
+        "management-api:transfers:write edc.management"
+    )
+    for act in (
+        "connector.consent.provision",
+        "connector.provider.write",
+        "connector.consent.collector.read",
+        "identity-registry.memberships.write",
+    ):
+        assert act not in EDC_TOKEN_SCOPE.split()
+
+
+def test_the_collector_client_holds_no_default_and_no_edc_scope():
+    """ADR-0026: whoever holds a collector secret holds no EDC power, and a token
+    asked for nothing is accepted by no ds service."""
+    from ds_auth import (
+        COLLECTOR_CLIENT_DEFAULT_SCOPES,
+        COLLECTOR_CLIENT_OPTIONAL_SCOPES,
+        EDC_MANAGEMENT_SCOPE,
+        collector_client_id,
+    )
+
+    assert COLLECTOR_CLIENT_DEFAULT_SCOPES == ()
+    assert not any(is_management_api_scope(s) for s in COLLECTOR_CLIENT_OPTIONAL_SCOPES)
+    assert EDC_MANAGEMENT_SCOPE not in COLLECTOR_CLIENT_OPTIONAL_SCOPES
+    assert set(COLLECTOR_CLIENT_OPTIONAL_SCOPES) == {
+        "identity-registry.memberships.write",
+        "identity-registry.credentials.write",
+        "connector.consent.provision",
+        "connector.consent.collector.read",
+        "connector.consent.audience",
+        "connector.disclosure.record",
+        "provenance.write",
+    }
+    assert collector_client_id("example-rec") == "svc-ds-collector-example-rec"
+
+
+def test_every_audience_bound_scope_is_declared_with_its_audience():
+    """One audience per scope: requesting the scope is what makes its receiver
+    accept the token. Declared in the file that crosses."""
+    from ds_auth import SCOPE_AUDIENCES
+
+    scopes = {
+        s["name"]: s for s in _load(KEYCLOAK / "clients.yaml").get("scopes") or []
+    }
+    for scope, audience in SCOPE_AUDIENCES.items():
+        assert scope in scopes, f"{scope} is not declared"
+        assert scopes[scope].get("audience") == audience, scope
+
+
+@pytest.mark.parametrize("path", _files(), ids=lambda p: p.name)
+def test_no_declared_client_takes_the_collector_client_prefix(path):
+    """identity-registry owns that name space too (org-sync, the bundle)."""
+    from ds_auth import COLLECTOR_CLIENT_PREFIX
+
+    clashing = [
+        c["client_id"]
+        for c in _load(path).get("clients") or []
+        if c["client_id"].startswith(COLLECTOR_CLIENT_PREFIX)
+    ]
+    assert clashing == []
 
 
 def test_the_edc_scope_carries_the_management_audience():
@@ -265,3 +358,22 @@ def test_the_e2e_flow_requests_the_same_edc_scope():
         and any(getattr(t, "id", None) == "EDC_TOKEN_SCOPE" for t in node.targets)
     )
     assert value.split() == EDC_TOKEN_SCOPE.split()
+
+
+def test_the_e2e_flows_request_the_same_consent_scopes():
+    """ds-e2e restates the organisation's consent scopes (ADR-0026)."""
+    import ast as _ast
+
+    from ds_auth import CONSENT_COLLECTOR_READ_SCOPE, CONSENT_PROVISION_SCOPE
+
+    module = REPO / "libs" / "ds-e2e" / "src" / "ds_e2e" / "consent.py"
+    tree = _ast.parse(module.read_text(encoding="utf-8"))
+    values = {
+        t.id: _ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, _ast.Assign) and isinstance(node.value, _ast.Constant)
+        for t in node.targets
+        if isinstance(t, _ast.Name)
+    }
+    assert values["CONSENT_PROVISION_SCOPE"] == CONSENT_PROVISION_SCOPE
+    assert values["CONSENT_COLLECTOR_READ_SCOPE"] == CONSENT_COLLECTOR_READ_SCOPE

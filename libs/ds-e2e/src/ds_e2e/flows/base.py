@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import urllib.parse
 from abc import ABC, abstractmethod
 from typing import Any
 
@@ -136,16 +135,24 @@ class BaseFlow(ABC):
             **self.http.person_login(s.consumer_email, s.consumer_password),
         }
 
-    def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
-        s = self.settings
-        encoded_email = urllib.parse.quote(email, safe="")
-        resp = (
-            self.http.get(
-                f"{s.identity_registry_url}/users/resolve?email={encoded_email}",
-                headers=headers,
-            )
-            or {}
+    def _resolve_user(self, email: str, headers: dict[str, str]) -> dict[str, Any]:
+        """The registry's ``/users/resolve`` answer for ``email``, or ``{}``.
+
+        ``POST`` with the email in a JSON body, never ``GET ?email=``: a query
+        string is recorded by every access log, proxy and trace on the path,
+        and the registry withdraws the GET form (410 outside dev after its
+        sunset). Every flow resolves a person through here so none of them
+        puts an email back into a URL.
+        """
+        resp = self.http.post(
+            f"{self.settings.identity_registry_url}/users/resolve",
+            {"email": email},
+            headers=headers,
         )
+        return resp if isinstance(resp, dict) else {}
+
+    def _resolve_user_vc(self, email: str, headers: dict[str, str]) -> str:
+        resp = self._resolve_user(email, headers)
         vc_jws = resp.get("vc_jws") or ""
         if not vc_jws:
             raise RuntimeError(f"No VC found for user {email}")

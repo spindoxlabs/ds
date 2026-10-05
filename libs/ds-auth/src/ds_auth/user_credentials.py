@@ -319,11 +319,18 @@ def _credential_type(vc: dict[str, Any]) -> str | None:
 
 # ── The credential status registers ───────────────────────────────
 #
-# StatusList2021, read the way the specification defines it: a credential names
-# one register per `statusPurpose`, each entry naming the list credential to
-# fetch and the **bit index** inside it that refers to this credential. The
-# register publishes a gzipped, base64 bitstring; the bit at that index is the
-# answer.
+# Bitstring Status List (and StatusList2021, its predecessor), read the way the
+# specifications define it: a credential names one register per `statusPurpose`,
+# each entry naming the list credential to fetch and the **bit index** inside it
+# that refers to this credential. The register publishes a GZIP-compressed
+# bitstring — multibase base64url (`u…`) for Bitstring Status List, plain base64
+# in StatusList2021 lists — and the bit at that index, counted from the left, is
+# the answer.
+#
+# The identity-registry issues `BitstringStatusListEntry` since R3 and serves
+# its registers as `BitstringStatusListCredential`. Credentials issued before
+# carry `StatusList2021Entry` naming the **same** register URL and index, so both
+# entry types are read against whichever list type the register now publishes.
 #
 # This used to read its source as a bespoke `{"credentials": {<id>: {"status":
 # …}}}` lookup map, which no issuer anywhere emits — least of all ours. The
@@ -584,7 +591,11 @@ def _published_purpose(document: dict[str, Any]) -> str:
 def _status_bit(document: dict[str, Any], index: int) -> bool:
     """The bit at *index* of the register's `encodedList`.
 
-    GZIP per the specification, with the zlib fallback the identity-registry's
+    Multibase base64url (`u` header, Bitstring Status List) or plain base64
+    (StatusList2021), told apart by the header exactly as EDC's
+    `BitString.Parser` does — a GZIP stream in plain base64 always starts
+    `H4sI`, so the two cannot be confused. GZIP per both
+    specifications, with the zlib fallback the identity-registry's
     `status_list.decode_bitstring` documents: lists published before that
     encoding was fixed are already referenced by issued credentials, and
     refusing them would revoke everyone at once.
@@ -594,7 +605,11 @@ def _status_bit(document: dict[str, Any], index: int) -> bool:
     if not isinstance(encoded, str) or not encoded:
         raise HTTPException(503, "Credential status register publishes no encodedList")
     try:
-        compressed = base64.b64decode(encoded)
+        if encoded.startswith("u"):
+            body = encoded[1:]
+            compressed = base64.urlsafe_b64decode(body + "=" * (-len(body) % 4))
+        else:
+            compressed = base64.b64decode(encoded)
         try:
             bitstring = gzip.decompress(compressed)
         except (OSError, EOFError):

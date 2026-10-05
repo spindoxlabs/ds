@@ -180,6 +180,8 @@ async def test_memberships_write_registers_a_membership(client):
             "id": "example-org",
             "name": "Example",
             "did": "did:web:org.example.test",
+            "status": "verified",
+            "verified_by": "test",
         },
     )
     for headers in (

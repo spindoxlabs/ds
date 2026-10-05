@@ -90,15 +90,19 @@ def test_an_organisation_client_holds_the_connector_grants_and_the_edc_scopes():
     """The organisation's client is its connector's client, plus EDC's
     management-API scopes for its own participant context — the list
     `ds_auth` owns and `clients.yaml` declares, nothing added here. The EDC half
-    (with `edc.management`, which adds the EDC audience) is held optional."""
-    from ds_auth import EDC_MANAGEMENT_SCOPE
+    (with `edc.management`, which adds the EDC audience) is held optional, and so
+    are the organisation's own acts — consent registration, its read-back and
+    publishing (ADR-0026)."""
+    from ds_auth import EDC_MANAGEMENT_SCOPE, ORGANISATION_ACTION_SCOPES
 
     assert ORGANISATION_CLIENT_SCOPES == [
         *CONNECTOR_SCOPES,
         *MANAGEMENT_API_SCOPES,
         EDC_MANAGEMENT_SCOPE,
+        *ORGANISATION_ACTION_SCOPES,
     ]
     assert [s for s in CONNECTOR_SCOPES if is_management_api_scope(s)] == []
+    assert not set(ORGANISATION_ACTION_SCOPES) & set(CONNECTOR_SCOPES)
 
 
 def test_the_bundle_and_org_sync_name_the_same_client():

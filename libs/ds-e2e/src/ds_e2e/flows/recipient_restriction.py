@@ -128,14 +128,7 @@ class RecipientRestrictionFlow(BaseFlow):
         s = self.settings
         try:
             self.http.acquire_service_token()
-            email = urllib.parse.quote(s.consumer_email, safe="")
-            body = (
-                self.http.get(
-                    f"{s.identity_registry_url}/users/resolve?email={email}",
-                    headers=self.http.bearer_headers(),
-                )
-                or {}
-            )
+            body = self._resolve_user(s.consumer_email, self.http.bearer_headers())
         except Exception as exc:  # noqa: BLE001 — any failure is the same verdict
             result.fail_step("consumer credential", str(exc))
             return None

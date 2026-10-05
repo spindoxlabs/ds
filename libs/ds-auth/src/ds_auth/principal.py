@@ -12,7 +12,11 @@ from .jwt import (
     extract_scopes,
     is_service_account,
 )
-from .management_api import ORGANISATION_CLIENT_PREFIX, scope_satisfies
+from .management_api import (
+    COLLECTOR_CLIENT_PREFIX,
+    ORGANISATION_CLIENT_PREFIX,
+    scope_satisfies,
+)
 from .models import Organization
 from .permissions import has_exact_permission, has_permission
 
@@ -73,24 +77,62 @@ class Principal:
         return str(value) if value else None
 
     @property
+    def organisation_client_kind(self) -> str | None:
+        """Which of an organisation's clients minted this token, if any.
+
+        ``"connector"``, ``"collector"``, or ``None`` for anything else.
+
+        Both carry the organisation's DID as `sub` and so the same
+        :attr:`organisation_context`. They differ in what they may ask for: the
+        connector client (`svc-ds-connector-<alias>`) holds the connector's
+        service grants and EDC's management scopes; the collector client
+        (`svc-ds-collector-<alias>`, ADR-0026) holds no default scope and only
+        the organisation's onboarding acts, each an optional scope with its own
+        audience. A route that must not be reached by one of them asks this.
+        """
+        if not self.is_service:
+            return None
+        client = self.client_id or ""
+        if client.startswith(ORGANISATION_CLIENT_PREFIX):
+            return "connector"
+        if client.startswith(COLLECTOR_CLIENT_PREFIX):
+            return "collector"
+        return None
+
+    @property
     def organisation_context(self) -> str | None:
         """The participant context an **organisation actor** acts as, or ``None``.
 
-        An organisation's client (`svc-ds-connector-<alias>`) carries the
-        organisation's participant context as `sub` (a hardcoded-claim mapper) —
-        the value EDC's v5 management API binds a caller to. A token from such a
-        client is the organisation acting as itself: its connector, or a batch
-        job the organisation runs. Not a person, and never a person's proxy.
+        An organisation's client (`svc-ds-connector-<alias>`, or its collector
+        client `svc-ds-collector-<alias>`) carries the organisation's
+        participant context as `sub` (a hardcoded-claim mapper) — the value
+        EDC's v5 management API binds a caller to. A token from such a client is
+        the organisation acting as itself: its connector, its onboarding, or a
+        batch job the organisation runs. Not a person, and never a person's proxy.
 
         Classified by the client, not by the `sub`: a caller deciding *what* a
         token may do must not let the token's own claims choose its class. Whose
         participant it may act for is the caller's check — compare this value
         with its own context.
         """
-        client = self.client_id or ""
-        if self.is_service and client.startswith(ORGANISATION_CLIENT_PREFIX):
+        if self.organisation_client_kind is not None:
             return self.subject or None
         return None
+
+    @property
+    def is_collector(self) -> bool:
+        """An organisation's collector client (`svc-ds-collector-<alias>`)."""
+        return self.organisation_client_kind == "collector"
+
+    @property
+    def audiences(self) -> tuple[str, ...]:
+        """The token's `aud`, as a tuple (a string `aud` is one audience)."""
+        aud = self.claims.get("aud") if isinstance(self.claims, dict) else None
+        if isinstance(aud, str):
+            return (aud,) if aud else ()
+        if isinstance(aud, (list, tuple)):
+            return tuple(str(a) for a in aud if a)
+        return ()
 
     @property
     def is_organisation(self) -> bool:

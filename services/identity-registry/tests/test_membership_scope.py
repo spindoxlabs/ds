@@ -9,8 +9,10 @@ organisation vouch for another's members.
 The rule (`dependencies.authorize_membership_write`):
 
 * `identity-registry.admin` — any organisation;
-* an organisation's own client (`svc-ds-connector-<alias>`, `sub` = its DID) —
-  the owner carrying that DID, by any of its names, and nothing else;
+* an organisation's own client (`sub` = its DID) — since ADR-0026 its collector
+  client, `svc-ds-collector-<alias>`, with a token minted for this registry —
+  the owner carrying that DID, by any of its names, and nothing else, and only
+  while that owner is verified;
 * a plain service token — refused: it names no organisation.
 
 And a person's `/memberships/check` holds in their own organisations only; a
@@ -35,6 +37,8 @@ REC = {
     "name": "Example REC",
     "did": "did:web:rec.example.org",
     "aliases": ["ex-rec"],
+    "status": "verified",
+    "verified_by": "test",
 }
 DSO = {
     "id": "example-dso",
@@ -42,6 +46,8 @@ DSO = {
     "name": "Example DSO",
     "did": "did:web:dso.example.org",
     "aliases": [],
+    "status": "verified",
+    "verified_by": "test",
 }
 MEMBER = "did:web:users.example.org:ex-00001"
 
@@ -54,17 +60,33 @@ def _token(claims: dict) -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-def org_client(alias: str, did: str, scope: str = WRITE) -> dict:
-    """A token from `svc-ds-connector-<alias>`, shaped as Keycloak mints it."""
-    client_id = f"svc-ds-connector-{alias}"
-    return _token(
-        {
-            "scope": scope,
-            "sub": did,
-            "azp": client_id,
-            "preferred_username": f"service-account-{client_id}",
-        }
-    )
+IR = "svc-ds-identity-registry"
+
+
+def org_client(
+    alias: str,
+    did: str,
+    scope: str = WRITE,
+    *,
+    kind: str = "collector",
+    aud: object = IR,
+) -> dict:
+    """A token from the organisation's client, shaped as Keycloak mints it.
+
+    The collector client (`svc-ds-collector-<alias>`, ADR-0026) by default: it
+    is the one holding `memberships.write`, and requesting the scope puts this
+    registry in `aud`.
+    """
+    client_id = f"svc-ds-{kind}-{alias}"
+    claims = {
+        "scope": scope,
+        "sub": did,
+        "azp": client_id,
+        "preferred_username": f"service-account-{client_id}",
+    }
+    if aud is not None:
+        claims["aud"] = aud
+    return _token(claims)
 
 
 def person(organizations: dict[str, list[str]], roles: list[str] = ()) -> dict:

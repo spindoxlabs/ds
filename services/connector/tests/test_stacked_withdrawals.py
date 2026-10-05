@@ -50,7 +50,9 @@ OFFER = "test-flexibility"
 DATASET = "datasets.silver.meters"
 WHY = "Membership ended in example-rec"
 
-PROVISION = ("connector.consent.provision",)
+# The write and its read-back, each its own scope since ADR-0026; these tests
+# write and read with one token. `test_collector_scopes.py` keeps them apart.
+PROVISION = ("connector.consent.provision", "connector.consent.collector.read")
 EVIDENCE = {
     "source": "community-portal",
     "consent_text_version": "1.0",

@@ -30,7 +30,7 @@ import logging
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from ds_e2e.consent import legal_basis
+from ds_e2e.consent import WRITE_AND_READ_BACK, legal_basis
 from ds_e2e.flows.base import BaseFlow
 from ds_e2e.models import FlowResult
 
@@ -64,7 +64,9 @@ class HolderKeysFlow(BaseFlow):
 
         try:
             self.collector = self.http.bearer_headers_for(
-                s.provider_org_client_id, s.provider_org_client_secret
+                s.provider_org_client_id,
+                s.provider_org_client_secret,
+                WRITE_AND_READ_BACK,
             )
             self.holder = self.http.bearer_headers_for(
                 s.grid_operator_org_client_id, s.grid_operator_org_client_secret
@@ -137,7 +139,9 @@ class HolderKeysFlow(BaseFlow):
         try:
             s = self.settings
             self.collector = self.http.bearer_headers_for(
-                s.provider_org_client_id, s.provider_org_client_secret
+                s.provider_org_client_id,
+                s.provider_org_client_secret,
+                WRITE_AND_READ_BACK,
             )
         except Exception:
             return

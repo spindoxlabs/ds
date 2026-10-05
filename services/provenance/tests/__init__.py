@@ -33,6 +33,9 @@ def make_headers(scope: str = "provenance.write provenance.read") -> dict:
             "scope": scope,
             "sub": "test",
             "preferred_username": "service-account-svc-ds-provenance",
+            # Minted for this service: the write routes are audience-bound
+            # (ADR-0026).
+            "aud": "svc-ds-provenance",
             "iat": now,
             "exp": now + 300,
         },

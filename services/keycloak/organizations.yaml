@@ -11,6 +11,11 @@ realm: dataspaces
 # participant's DID — the value the classic runtime already stamped on every
 # stored entity. Secret: `SVC_DS_CONNECTOR_<ALIAS>_SECRET`, the client id in dev.
 #
+# `collects_consent: true` (a declared governance flag) also ensures the
+# organisation's **collector client**, `svc-ds-collector-<alias>`: its onboarding
+# identity, with the same `sub` and only optional, audience-bound scopes
+# (ADR-0026). Without the flag an existing collector client is disabled.
+#
 # `groups:` are **organisation role bundles** (`ds_auth.ORGANISATION_BUNDLES`:
 # ds-participant-admin, ds-participant-viewer, ds-member), valid only inside the
 # organisation that holds them: an operator for one participant is not an operator
@@ -23,6 +28,11 @@ organizations:
   - alias: example-org
     name: Example Organization
     participant_context_id: did:web:rec.dataspaces.localhost
+    # The community collects its members' consent: the sync also ensures its
+    # collector client, `svc-ds-collector-example-org` (`sub` = the DID above,
+    # no default scope, no EDC scope; secret `SVC_DS_COLLECTOR_EXAMPLE_ORG_SECRET`,
+    # the client id in dev). ADR-0026.
+    collects_consent: true
     domains: []
     attributes:
       type: ["dso"]

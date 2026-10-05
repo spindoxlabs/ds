@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 
+from ds_auth.audience import transition_bound
 from ds_auth.fastapi import require_permission
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -47,4 +48,12 @@ def get_settings_dep() -> Settings:
 # `tests/test_auth.py::test_every_route_declares_exactly_one_scope_and_it_matches_the_verb`
 # is what keeps the next route from being added without one.
 require_read_scope = require_permission("provenance.read")
-require_write_scope = require_permission("provenance.write")
+# **Audience-bound, and an organisation's act** (ADR-0026). A service token must
+# have been minted for this service (`aud`), and a collector client's for nothing
+# else. `provenance.write` moved from the plain onboarding client to each
+# organisation's collector client; presented by a plain service token it is
+# accepted only under `DS_ENV=dev`, logged. A connector writes with its
+# organisation client's default token, which names this audience.
+require_write_scope = require_permission(
+    "provenance.write", perimeter=transition_bound("a provenance write")
+)

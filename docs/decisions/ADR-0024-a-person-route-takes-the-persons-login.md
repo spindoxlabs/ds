@@ -65,7 +65,11 @@ the login token on the request it is serving.
    unknown `credentialStatus` type; EDC logs and passes an unknown type. Verified
    registers are cached for `*_CREDENTIAL_STATUS_CACHE_SECONDS`, 900 s by default, the same
    as EDC's `edc.iam.credential.revocation.cache.validity`. That value is the revocation
-   latency.
+   latency. The register is a `BitstringStatusListCredential` and new credentials carry
+   `BitstringStatusListEntry` (DCP v1.0 issuance MUST, and what EDC's IssuerService
+   publishes); `StatusList2021Entry`, on credentials issued before, is read against the
+   same register, so they verify through the transition. `/status/{id}` answers the
+   signed VC-JWT by default, JSON only when asked for by name, and 415 otherwise.
 
 ## Alternatives rejected
 

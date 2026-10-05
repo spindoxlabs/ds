@@ -39,6 +39,7 @@ from ...services.did import refuse_dev_only_did
 from ...services.enrolment import EnrolmentError
 from ...services.keycloak_admin import (
     KeycloakAdminClient,
+    ensure_collector_client,
     ensure_organisation_client,
 )
 from ...services.registry_notify import invalidate_participant_caches
@@ -514,6 +515,8 @@ async def generate_provisioning_bundle(
 
     keycloak_client_id = None
     keycloak_secret = None
+    collector_client_id = None
+    collector_secret = None
     if (
         settings.keycloak_mutate
         and settings.keycloak_admin_url
@@ -546,6 +549,17 @@ async def generate_provisioning_bundle(
                 name=owner.name or alias,
                 participant_context_id=owner.did,
             )
+            # The organisation's onboarding identity, only for an organisation
+            # declared to collect its members' consent (ADR-0026). Its secret
+            # goes to whoever runs that organisation's onboarding, which is why
+            # it is a separate block of the bundle.
+            if owner.collects_consent:
+                collector_client_id, collector_secret = await ensure_collector_client(
+                    client,
+                    alias=alias,
+                    name=owner.name or alias,
+                    participant_context_id=owner.did,
+                )
         except Exception as exc:  # noqa: BLE001 — surfaced to the operator
             raise HTTPException(
                 status_code=502,
@@ -561,6 +575,8 @@ async def generate_provisioning_bundle(
             owner,
             keycloak_client_id=keycloak_client_id,
             keycloak_client_secret=keycloak_secret,
+            collector_client_id=collector_client_id,
+            collector_client_secret=collector_secret,
         )
     except provisioning.ProvisioningError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc

@@ -14,9 +14,10 @@ that cache (`registry_notify`).
 
 Three properties, each easy to lose:
 
-- **A holder always collects for itself.** Its own organisation registering its
-  own members' consent is not a relation anybody has to write down, and a check
-  asked about the pair `(X, X)` says so.
+- **A holder always collects for itself** — while it is a verified
+  organisation. Its own organisation registering its own members' consent is
+  not a relation anybody has to write down, and a check asked about the pair
+  `(X, X)` says so; a suspended or unknown holder is not accepted (ADR-0026).
 - **Revocation marks, never deletes.** A consent row names the collector that
   registered it; a relation that vanished would leave that evidence unexplained.
 - **The answer names the collector's owner.** The connector checks membership
@@ -74,6 +75,16 @@ async def check(
     owner = await owner_for_did(db, collector_did)
     owner_id = owner.id if owner is not None else None
     if holder_did == collector_did:
+        if owner is None or owner.status != "verified":
+            # Collecting for itself is implicit, never a free pass: a suspended
+            # holder speaks for nobody's members, its own included (ADR-0026).
+            return CollectorCheck(
+                holder_did,
+                collector_did,
+                False,
+                owner_id,
+                "the holder is not a verified organisation",
+            )
         return CollectorCheck(
             holder_did, collector_did, True, owner_id, "a holder collects for itself"
         )

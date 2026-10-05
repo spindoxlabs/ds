@@ -84,3 +84,59 @@ def test_an_edc_scope_is_not_a_ds_permission():
     principal = Principal.from_claims(_claims(scope="management-api:admin"))
     assert not principal.grants("connector.consumer.read")
     assert not principal.grants("connector.admin")
+
+
+# ── The collector client (ADR-0026) ──────────────────────────────────────────
+
+
+def _collector(**over) -> dict:
+    fields = {
+        "azp": "svc-ds-collector-example-rec",
+        "preferred_username": "service-account-svc-ds-collector-example-rec",
+        "scope": "identity-registry.memberships.write",
+        **over,
+    }
+    return _claims(**fields)
+
+
+def test_a_collector_client_token_is_the_same_organisation():
+    """Same `sub` mapper, same organisation: a receiver binds it exactly as it
+    binds the organisation client — it differs only in what it may ask for."""
+    principal = Principal.from_claims(_collector())
+    assert principal.is_organisation
+    assert principal.organisation_context == DID
+    assert principal.organisation_client_kind == "collector"
+    assert principal.is_collector
+    assert principal.actor == f"org:{DID}"
+
+
+def test_the_organisation_client_is_not_a_collector():
+    principal = Principal.from_claims(_claims())
+    assert principal.organisation_client_kind == "connector"
+    assert not principal.is_collector
+
+
+def test_a_person_on_a_collector_named_client_is_no_organisation():
+    """Classified by a *service* token's client only."""
+    principal = Principal.from_claims(
+        _collector(
+            preferred_username="someone@example.test", email="someone@example.test"
+        )
+    )
+    assert not principal.is_service
+    assert principal.organisation_client_kind is None
+    assert not principal.is_organisation
+
+
+@pytest.mark.parametrize(
+    "aud,expected",
+    [
+        ("svc-ds-connector", ("svc-ds-connector",)),
+        (["svc-ds-connector", "account"], ("svc-ds-connector", "account")),
+        (None, ()),
+        ("", ()),
+    ],
+)
+def test_audiences_reads_a_string_or_a_list(aud, expected):
+    claims = _claims() if aud is None else _claims(aud=aud)
+    assert Principal.from_claims(claims).audiences == expected

@@ -10,6 +10,7 @@ from functools import lru_cache
 
 import httpx
 from ds_auth import Principal
+from ds_auth.audience import audience_bound, transition_bound
 from ds_auth.errors import PermissionDenied
 from ds_auth.fastapi import require_exact_permission, require_permission
 from ds_auth.person_binding import bind_login_token, person_token_required
@@ -454,6 +455,12 @@ async def _own_participant_only(principal: Principal, request: Request) -> bool:
       implicit, because it is the one class this perimeter does not narrow.
     """
     settings = get_settings()
+    if principal.is_collector:
+        # Defence in depth: the collector client holds no provider grant, and a
+        # publish is the connector client's act (ADR-0026).
+        raise PermissionDenied(
+            "a collector client registers consent; it does not publish"
+        )
     if principal.is_organisation:
         if principal.organisation_context == settings.participant_context_id:
             return True
@@ -497,12 +504,20 @@ async def _own_participant_only(principal: Principal, request: Request) -> bool:
 
 # The governance sync acts on the participant as a whole — it publishes every
 # owner's datasets at once — so it is scoped by *participant*, not by owner.
+#
+# **Audience-bound** (ADR-0026): `connector.provider.write` is optional on the
+# organisation client and adds `aud=svc-ds-connector`; a service token not
+# minted for this connector's audience is refused before the perimeter runs.
 require_provider_write = require_permission(
-    "connector.provider.write", "connector.admin", perimeter=_own_participant_only
+    "connector.provider.write",
+    "connector.admin",
+    perimeter=audience_bound(_own_participant_only),
 )
 # Owner-scoped variant. Used where the target carries an owner.
 require_provider_write_own = require_permission(
-    "connector.provider.write", "connector.admin", perimeter=_own_owner_only
+    "connector.provider.write",
+    "connector.admin",
+    perimeter=audience_bound(_own_owner_only),
 )
 require_history_read = require_permission("connector.history.read", "connector.admin")
 # Machine identity, not administrative authority — so the admin superset must
@@ -523,8 +538,18 @@ require_webhook = require_exact_permission("connector.webhook")
 #
 # Who may *write* is narrower than who holds the permission since plan
 # `a-collector-registers-consent-at-the-holder`: see `require_consent_writer`.
+#
+# **Optional on every organisation client, and audience-bound** (ADR-0026): the
+# connector's default token, which it sends to every counterparty, no longer
+# carries it, and a token asked for it must name this connector's audience.
 require_consent_provision = require_permission(
-    "connector.consent.provision", "connector.admin"
+    "connector.consent.provision", "connector.admin", perimeter=audience_bound()
+)
+# The read-back of what a writer registered (`GET /consent/admin/subject-shares`,
+# `GET /consent/admin/decisions`): its own scope, so a read never needs a token
+# that can write. The same writer classification applies (`require_consent_reader`).
+require_consent_collector_read = require_permission(
+    "connector.consent.collector.read", "connector.admin", perimeter=audience_bound()
 )
 
 
@@ -542,10 +567,12 @@ class ConsentWriter:
     maintainer's follow-up, 2026-09-17). Three kinds, and nothing else:
 
     - ``collector`` — **another** organisation's own client (`sub` = its
-      participant context). The one exception to "an organisation token is bound
-      to its own participant", and only for the consent write and its per-subject
-      read-back. Whether that organisation is accepted *here* is the identity
-      registry's relation, checked by the route.
+      participant context): its collector client (`svc-ds-collector-<alias>`,
+      ADR-0026) or its connector client. The one exception to "an
+      organisation token is bound to its own participant", and only for the
+      consent write and its per-subject read-back. Whether that organisation
+      is accepted *here* is the identity registry's relation, checked by the
+      route.
     - ``participant`` — this connector's own organisation client: the holder
       registering consent it collected itself. This is where an onboarding
       service belongs — it runs as its organisation's client.
@@ -589,16 +616,7 @@ class ConsentWriter:
         return acting_principal(self.principal, on_behalf_of=self.organisation)
 
 
-async def require_consent_writer(
-    principal: Principal = Depends(require_consent_provision),
-) -> ConsentWriter:
-    """Classify an authenticated consent writer, refusing a plain service.
-
-    The permission check comes first (`connector.consent.provision`, or the
-    `connector.admin` superset), so a token without it is a 403 before anything
-    is classified — and the route still publishes the permission it needs,
-    which is what the e2e route sweep reads.
-    """
+def _classify_writer(principal: Principal) -> ConsentWriter:
     settings = get_settings()
     if principal.is_organisation:
         context = principal.organisation_context or ""
@@ -612,11 +630,36 @@ async def require_consent_writer(
         raise HTTPException(
             403,
             "consent is registered by an organisation's own client "
-            "(svc-ds-connector-<alias>) — a service token names no organisation",
+            "(svc-ds-collector-<alias> or svc-ds-connector-<alias>) — a service "
+            "token names no organisation",
         )
     return ConsentWriter(
         kind=WRITER_OPERATOR, organisation=settings.participant_did, principal=principal
     )
+
+
+async def require_consent_writer(
+    principal: Principal = Depends(require_consent_provision),
+) -> ConsentWriter:
+    """Classify an authenticated consent writer, refusing a plain service.
+
+    The permission check comes first (`connector.consent.provision`, or the
+    `connector.admin` superset), so a token without it is a 403 before anything
+    is classified — and the route still publishes the permission it needs,
+    which is what the e2e route sweep reads.
+    """
+    return _classify_writer(principal)
+
+
+async def require_consent_reader(
+    principal: Principal = Depends(require_consent_collector_read),
+) -> ConsentWriter:
+    """The writer classification, on the read-back's own scope (ADR-0026).
+
+    The two read-backs used to require the *write* grant, so reading what one
+    registered took a token that could register more.
+    """
+    return _classify_writer(principal)
 
 
 # "Is this negotiation waiting on a consent decision, and since when" — the
@@ -649,8 +692,16 @@ require_consent_read = require_permission("connector.consent.read", "connector.a
 # purpose. This one is offer-keyed on the published plane and reachable by a
 # `ds-admin` human. Merging them would put the internal surface behind an
 # admin-reachable grant.
+#
+# **Moved to the collector client** (ADR-0026). Audience-bound, and a plain
+# service token (the old `svc-ds-onboarding` holder) is accepted only under
+# `DS_ENV=dev`. Which organisation may read here — its own connector's, or an
+# accepted collector's — is decided by the route's guard
+# (`api/v1/consent.py`, `require_audience_reader`), since the request names none.
 require_consent_audience = require_permission(
-    "connector.consent.audience", "connector.admin"
+    "connector.consent.audience",
+    "connector.admin",
+    perimeter=transition_bound("the offer audience read"),
 )
 _require_consent_holder_read = require_permission(
     "connector.consent.holder.read", "connector.admin"
@@ -678,7 +729,7 @@ async def require_consent_holder(
     organisation, the same reason it may not register consent.
     """
     settings = get_settings()
-    if principal.is_organisation:
+    if principal.is_organisation and not principal.is_collector:
         if principal.organisation_context == settings.participant_context_id:
             return principal
         raise HTTPException(
@@ -686,6 +737,12 @@ async def require_consent_holder(
             "only this connector's own organisation reads the keys it serves — a "
             "collector reads the decisions it registered at "
             "GET /consent/admin/decisions",
+        )
+    if principal.is_collector:
+        raise HTTPException(
+            403,
+            "a collector client reads the decisions it registered at "
+            "GET /consent/admin/decisions, never the holder's key list",
         )
     if principal.is_service:
         raise HTTPException(
@@ -727,9 +784,30 @@ require_ingestion_record = require_permission(
 # that discloses after a CSV export has no business recording inbound handovers
 # — nor the reverse. Granting one to get the other is how a scope stops meaning
 # anything.
-require_disclosure_record = require_permission(
-    "connector.disclosure.record", "connector.admin"
+#
+# **Moved to the collector client** (ADR-0026): audience-bound, a plain service
+# token accepted only under `DS_ENV=dev`. The request names no organisation, so
+# the organisation is the token's `sub`: this connector's own, or an accepted
+# collector here — the same admission as the consent write.
+_require_disclosure_record_scope = require_permission(
+    "connector.disclosure.record",
+    "connector.admin",
+    perimeter=transition_bound("a disclosure record"),
 )
+
+
+async def require_disclosure_record(
+    request: Request,
+    principal: Principal = Depends(_require_disclosure_record_scope),
+) -> Principal:
+    """`connector.disclosure.record`, bound to an organisation accepted here."""
+    if principal.is_organisation:
+        from .api.v1.consent import _admit_organisation
+
+        writer = _classify_writer(principal)
+        if writer.kind == WRITER_COLLECTOR:
+            await _admit_organisation(request, get_settings(), writer)
+    return principal
 
 
 # `/consumer/catalog` — a service driving the consumer side. A *person* browsing
@@ -796,7 +874,7 @@ class ConsumerCaller:
 def _bind_organisation(principal: Principal, *edc_scopes: str) -> None:
     """Refuse an organisation token that is not this participant's, or lacks a scope."""
     settings = get_settings()
-    if not principal.is_organisation:
+    if not principal.is_organisation or principal.is_collector:
         raise HTTPException(
             403,
             "this route takes a ConsumerUser credential, or the token of this "

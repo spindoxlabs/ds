@@ -55,8 +55,12 @@ def test_the_onboarding_client_is_refused_and_the_org_client_writes(refusal):
         result, ONBOARDING, {"id": "o", "dataset_count": 1}
     )
     assert _step(result, "a plain service does not register consent").status == "PASS"
+    # The organisation client asks for the consent write: it is optional on the
+    # client since ADR-0026.
     http.bearer_headers_for.assert_called_with(
-        flow.settings.provider_org_client_id, flow.settings.provider_org_client_secret
+        flow.settings.provider_org_client_id,
+        flow.settings.provider_org_client_secret,
+        "connector.consent.provision",
     )
     [(_, refused), (headers, written)] = calls
     assert "decided_by" not in refused

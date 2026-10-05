@@ -41,8 +41,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from ds_auth import (
+    COLLECTOR_CLIENT_OPTIONAL_SCOPES,
+    CONNECTOR_SERVICE_SCOPES,
+    organisation_client_id,
+)
 from ds_auth import CONNECTOR_AUDIENCES as _CONNECTOR_AUDIENCES
-from ds_auth import CONNECTOR_SERVICE_SCOPES, organisation_client_id
+from ds_auth import ORGANISATION_CLIENT_DEFAULT_SCOPES as _ORG_DEFAULT_SCOPES
+from ds_auth import ORGANISATION_CLIENT_OPTIONAL_SCOPES as _ORG_OPTIONAL_SCOPES
 from ds_auth import ORGANISATION_CLIENT_SCOPES as _ORGANISATION_CLIENT_SCOPES
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -97,6 +103,8 @@ async def build_bundle(
     *,
     keycloak_client_id: str | None = None,
     keycloak_client_secret: str | None = None,
+    collector_client_id: str | None = None,
+    collector_client_secret: str | None = None,
     enrolment_ttl_days: int = 14,
 ) -> dict[str, Any]:
     """Assemble the bundle, including a fresh enrolment code.
@@ -196,7 +204,20 @@ async def build_bundle(
             "client_id": keycloak_client_id,
             "client_secret": keycloak_client_secret,
             "scopes": ORGANISATION_CLIENT_SCOPES,
+            # Which of them a token carries without asking, and which a caller
+            # must request with `scope=` (the EDC token, and the organisation's
+            # own acts — ADR-0026).
+            "default_scopes": list(_ORG_DEFAULT_SCOPES),
+            "optional_scopes": list(_ORG_OPTIONAL_SCOPES),
         }
+        if collector_client_id:
+            # For whoever runs this organisation's onboarding — not the
+            # connector. No default scope: request one optional scope per token.
+            bundle["keycloak"]["collector"] = {
+                "client_id": collector_client_id,
+                "client_secret": collector_client_secret,
+                "optional_scopes": list(COLLECTOR_CLIENT_OPTIONAL_SCOPES),
+            }
 
     return bundle
 

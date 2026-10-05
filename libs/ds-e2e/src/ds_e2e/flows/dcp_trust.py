@@ -71,6 +71,18 @@ def _decode_segment(segment: str) -> dict[str, Any]:
     return decoded
 
 
+def decode_encoded_list(encoded: str) -> bytes:
+    """The compressed bitstring of a status list credential's `encodedList`.
+
+    Bitstring Status List encodes it as multibase base64url without padding —
+    a leading ``u`` — and StatusList2021 as plain base64. Both are read, so the
+    check holds across the identity registry's switch from one to the other.
+    """
+    if encoded.startswith("u"):
+        return base64.urlsafe_b64decode(encoded[1:] + "===")
+    return base64.b64decode(encoded)
+
+
 class DcpTrustFlow(BaseFlow):
     name = "dcp-trust"
     description = (
@@ -618,10 +630,16 @@ class DcpTrustFlow(BaseFlow):
             )
             return
 
-        # GZIP, per StatusList2021 — a zlib stream has the same DEFLATE payload
-        # and a different header, so it decompresses for nobody and every
-        # revocation check fails closed without saying so.
-        raw = base64.b64decode(encoded_list)
+        # GZIP, per StatusList2021 and Bitstring Status List — a zlib stream has
+        # the same DEFLATE payload and a different header, so it decompresses
+        # for nobody and every revocation check fails closed without saying so.
+        try:
+            raw = decode_encoded_list(encoded_list)
+        except ValueError as exc:
+            result.fail_step(
+                "status list", f"the encoded bitstring is not base64: {exc}"
+            )
+            return
         if raw[:2] != b"\x1f\x8b":
             result.fail_step(
                 "status list",

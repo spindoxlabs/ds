@@ -193,3 +193,41 @@ def test_every_credential_verifier_reads_the_status_registers(
                     "http://ds-identity-registry."
                 )
     assert seen, "no connector or provenance Deployment rendered"
+
+
+@pytest.fixture(scope="session")
+def provider_with_governance_render(helm_copy: Path) -> list[dict]:
+    """The example with governance mounted on its provider — the only shape in
+    which the connector's sync job renders."""
+    return _render(
+        helm_copy,
+        "--state-values-set",
+        "participants[0].connector.governanceConfigMap=gov",
+    )
+
+
+def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
+    provider_with_governance_render: list[dict],
+) -> None:
+    """ADR-0026: `connector.provider.write` is optional on the organisation
+    client, so the hook that publishes with it must request it, or the sync is a
+    403 and the release fails. *Red:* drop `SYNC_SCOPE` from `syncjob.yaml`."""
+    jobs = [
+        obj
+        for obj in provider_with_governance_render
+        if obj["kind"] == "Job" and "SYNC_CLIENT_ID" in _container_env(obj)
+    ]
+    assert jobs, "no connector sync job rendered"
+    for job in jobs:
+        env = _container_env(job)
+        script = " ".join(
+            " ".join(c.get("command") or [])
+            for c in job["spec"]["template"]["spec"]["containers"]
+        )
+        assert "SYNC_SCOPE" in script, job["metadata"]["name"]
+        if env["SYNC_CLIENT_ID"].startswith("svc-ds-connector-"):
+            assert env.get("SYNC_SCOPE") == "connector.provider.write", job[
+                "metadata"
+            ]["name"]
+        else:
+            assert "SYNC_SCOPE" not in env, job["metadata"]["name"]

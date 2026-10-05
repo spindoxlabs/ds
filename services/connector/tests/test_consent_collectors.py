@@ -40,7 +40,9 @@ STRANGER = "did:web:stranger.example.org"
 MEMBER = "did:web:collector.example.org:users:member-001"
 HOLDERS_MEMBER = "did:web:rec.dataspaces.localhost:users:sub-001"
 
-PROVISION = ("connector.consent.provision",)
+# The write and its read-back, each its own scope since ADR-0026; these tests
+# write and read with one token. `test_collector_scopes.py` keeps them apart.
+PROVISION = ("connector.consent.provision", "connector.consent.collector.read")
 EVIDENCE = {
     "source": "community-portal",
     "consent_text_version": "1.0",

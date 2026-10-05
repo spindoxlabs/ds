@@ -11,6 +11,7 @@ from typing import Literal
 from urllib.parse import urlparse
 
 from ds.governance.dataplane import split_key
+from ds_auth import Principal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import (
     AliasChoices,
@@ -28,6 +29,7 @@ from ...db.models import ConsentKeyEventORM, ConsentRequestORM
 from ...dependencies import (
     WRITER_COLLECTOR,
     ConsentWriter,
+    _classify_writer,
     get_db,
     get_notifier,
     get_participant_registry,
@@ -37,6 +39,7 @@ from ...dependencies import (
     require_consent_holder,
     require_consent_provision,
     require_consent_read,
+    require_consent_reader,
     require_consent_writer,
     require_internal_scope,
     require_provider_read,
@@ -1432,7 +1435,8 @@ class SubjectShare(ConsentResponse):
 async def admin_read_subject_shares(
     request: Request,
     subject_id: str = Query(..., min_length=1),
-    writer: ConsentWriter = Depends(require_consent_writer),
+    # The read-back's own scope, `connector.consent.collector.read` (ADR-0026).
+    writer: ConsentWriter = Depends(require_consent_reader),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
@@ -1546,12 +1550,37 @@ class OfferAudience(BaseModel):
     datasets: list[OfferAudienceDataset]
 
 
+async def require_audience_reader(
+    request: Request,
+    principal: Principal = Depends(require_consent_audience),
+) -> Principal:
+    """Who may read an offer's audience here (ADR-0026).
+
+    `connector.consent.audience` moved from the plain onboarding client to each
+    organisation's collector client, and the request names no organisation, so
+    the organisation is the token's `sub`: this connector's own organisation
+    reads, and another organisation reads only as a collector **accepted here**
+    (`_admit_organisation`, the same admission as the consent write). A plain
+    service token passed the dev-only transition in the permission's perimeter;
+    a person passes on the permission, as before.
+
+    Residual, stated: an accepted collector reads the offer's whole audience at
+    this connector, including subjects another collector registered — no worse
+    than the plain client it replaces, which read it at every connector.
+    """
+    if principal.is_organisation:
+        writer = _classify_writer(principal)
+        if writer.kind == WRITER_COLLECTOR:
+            await _admit_organisation(request, get_settings_dep(), writer)
+    return principal
+
+
 @router.get("/admin/shares", response_model=OfferAudience)
 async def admin_read_offer_audience(
     request: Request,
     offer_id: str = Query(..., min_length=1),
     consumer_id: str = Query(..., min_length=1),
-    _claims: dict = Depends(require_consent_audience),
+    _claims: dict = Depends(require_audience_reader),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
@@ -1786,7 +1815,8 @@ async def admin_read_offer_decisions(
     offer_id: str = Query(..., min_length=1),
     limit: int = Query(DECISIONS_PAGE_DEFAULT, ge=1, le=DECISIONS_PAGE_MAX),
     cursor: str | None = Query(None, min_length=1),
-    writer: ConsentWriter = Depends(require_consent_writer),
+    # The read-back's own scope, `connector.consent.collector.read` (ADR-0026).
+    writer: ConsentWriter = Depends(require_consent_reader),
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):

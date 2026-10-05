@@ -14,6 +14,9 @@ owners:
     status: verified
     verified_by: dev-seed
     evidence_ref: "owners.dev.yaml"
+    # The community collects its members' consent, so promotion also provisions
+    # its collector client, `svc-ds-collector-example-org` (ADR-0026).
+    collects_consent: true
     organization:
       create: true
       role: community
