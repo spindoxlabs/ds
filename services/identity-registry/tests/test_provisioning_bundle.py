@@ -412,10 +412,19 @@ async def test_owning_posture_provisions_the_client(
             return cls()
 
         async def ensure_service_client(
-            self, client_id, *, name, scopes, audiences=None, subject=None, secret=None
+            self,
+            client_id,
+            *,
+            name,
+            scopes,
+            optional_scopes=None,
+            audiences=None,
+            subject=None,
+            secret=None,
         ):
             created["client_id"] = client_id
             created["scopes"] = scopes
+            created["optional_scopes"] = optional_scopes or []
             created["audiences"] = audiences
             created["subject"] = subject
             created["secret"] = secret
@@ -438,9 +447,12 @@ async def test_owning_posture_provisions_the_client(
     # It is the organisation's client: EDC's management-API scopes for its own
     # participant context, named by `sub` = its DID, and a secret Keycloak
     # generates (the bundle carries it, nobody chose it).
-    from ds_auth import MANAGEMENT_API_SCOPES
+    from ds_auth import EDC_MANAGEMENT_SCOPE, MANAGEMENT_API_SCOPES
 
-    assert set(MANAGEMENT_API_SCOPES) <= set(created["scopes"])
+    # Optional, never default: only the connector's EDC token carries them.
+    assert set(MANAGEMENT_API_SCOPES) <= set(created["optional_scopes"])
+    assert EDC_MANAGEMENT_SCOPE in created["optional_scopes"]
+    assert not set(MANAGEMENT_API_SCOPES) & set(created["scopes"])
     assert created["subject"] == DID
     assert created["secret"] is None
 

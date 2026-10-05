@@ -181,7 +181,8 @@ client for it, `svc-ds-connector-<alias>`:
 
 | | |
 |---|---|
-| grants | `ds_auth.ORGANISATION_CLIENT_SCOPES`: the connector's service grants (`CONNECTOR_SERVICE_SCOPES`) plus `MANAGEMENT_API_SCOPES` — never `management-api:admin`, never a `*` resource |
+| grants | **default** `ORGANISATION_CLIENT_DEFAULT_SCOPES` (the connector's service grants); **optional** `ORGANISATION_CLIENT_OPTIONAL_SCOPES`: `MANAGEMENT_API_SCOPES` and `edc.management` — never `management-api:admin`, never a `*` resource |
+| EDC token | requested with `scope=EDC_TOKEN_SCOPE`: the optional scopes, so it holds the management scopes and the audience `svc-ds-edc` that `edc.management` adds and the EDC management context requires (`ManagementAudienceFilter`, `ds.management.audience`). Every other token of the client carries neither |
 | `sub` | a hardcoded-claim mapper (`participant-context-sub`) set to the organisation's participant context, which ds sets to its DID. Keycloak's own `sub` is the service account's UUID |
 | audiences | `ds_auth.CONNECTOR_AUDIENCES`: `svc-ds-identity-registry`, `svc-ds-provenance`, `svc-ds-connector` (a counterparty connector) |
 | created by | `ir-cli keycloak org-sync`, for each entry of `organizations.yaml` with a `participant_context_id`; and the provisioning bundle, for a promoted third party |
@@ -189,9 +190,10 @@ client for it, `svc-ds-connector-<alias>`:
 
 **One credential per connector, and one client per organisation** (the maintainer,
 2026-09-17). The connector authenticates as this client to its EDC and to every ds service
-(`CONNECTOR_CLIENT_ID` / `CONNECTOR_CLIENT_SECRET`). The organisation's batch jobs use the same
-client to call the connector's `/consumer/*` routes, where the token must name the connector's
-own context and hold the EDC scope of the call (see
+(`CONNECTOR_CLIENT_ID` / `CONNECTOR_CLIENT_SECRET`); its EDC calls use the EDC token above.
+The organisation's batch jobs use the same client to call the connector's `/consumer/*` routes,
+requesting `EDC_TOKEN_SCOPE`, because the token must name the connector's own context and hold
+the EDC scope of the call (see
 [connector](connector.md#who-may-drive-the-consumer-side)). `svc-ds-connector` remains only as
 the audience.
 

@@ -168,17 +168,21 @@ class HttpClient:
     def bearer_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.acquire_service_token()}"}
 
-    def token_for(self, client_id: str, client_secret: str) -> str:
+    def token_for(
+        self, client_id: str, client_secret: str, scope: str | None = None
+    ) -> str:
         """Fetch an uncached client-credentials token for an arbitrary client.
 
         Used when a flow needs a scope the default service client does not hold
-        (e.g. the org-onboarding flow needs identity-registry.admin)."""
+        (e.g. the org-onboarding flow needs identity-registry.admin). `scope`
+        requests optional client scopes on top of the client's defaults."""
         resp = self._client.post(
             self._settings.keycloak_token_url,
             data={
                 "grant_type": "client_credentials",
                 "client_id": client_id,
                 "client_secret": client_secret,
+                **({"scope": scope} if scope else {}),
             },
             headers={"Content-Type": "application/x-www-form-urlencoded"},
         )
@@ -186,8 +190,12 @@ class HttpClient:
         token: str = resp.json()["access_token"]
         return token
 
-    def bearer_headers_for(self, client_id: str, client_secret: str) -> dict[str, str]:
-        return {"Authorization": f"Bearer {self.token_for(client_id, client_secret)}"}
+    def bearer_headers_for(
+        self, client_id: str, client_secret: str, scope: str | None = None
+    ) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.token_for(client_id, client_secret, scope)}"
+        }
 
     def publisher_headers(self) -> dict[str, str]:
         """The driver's identity for `POST /provider/sync`.

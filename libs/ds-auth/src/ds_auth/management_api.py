@@ -11,10 +11,15 @@ clients only** (``svc-ds-connector-<alias>``, provisioned by identity-registry
 with a ``sub`` mapper naming the organisation's participant context). Two
 properties of EDC make the list a security boundary rather than a convenience:
 
-* **EDC's OAuth2 filter never checks ``aud``.** Any token of the realm whose
-  ``sub`` names a participant context and whose ``scope`` matches passes, so a
-  client holding one of these scopes can act on that context's management API.
-  Who holds them is decided here and in the realm, nowhere else.
+* **EDC's OAuth2 filter never checks ``aud``** (0.18.0: issuer, expiry, ``sub``
+  and ``scope`` only). Any token of the realm whose ``sub`` names a participant
+  context and whose ``scope`` matches passes. So these scopes are **optional**
+  on an organisation client, requested only for the connector's EDC calls
+  (``EDC_TOKEN_SCOPE``), together with ``EDC_MANAGEMENT_SCOPE``, which adds the
+  audience ``EDC_MANAGEMENT_AUDIENCE``; ds's ``ManagementAudienceFilter`` in the
+  EDC runtime refuses a management call without it. The token the connector
+  sends to every other service carries neither: each token is good only where
+  it is sent.
 * **``admin`` is cross-tenant elevation** and makes ``sub`` irrelevant
   (``ServicePrincipalAuthenticationFilter``). No ds client is ever granted it,
   and neither is a ``*`` resource.
@@ -44,6 +49,13 @@ MANAGEMENT_API_SCOPES: tuple[str, ...] = (
     "management-api:agreements:read",
     "management-api:transfers:write",
 )
+
+#: Grants nothing: requesting it adds `EDC_MANAGEMENT_AUDIENCE` to the token
+#: (an audience mapper on the scope, `services/keycloak/clients.yaml`).
+EDC_MANAGEMENT_SCOPE = "edc.management"
+
+#: The audience the EDC management context requires (`ds.management.audience`).
+EDC_MANAGEMENT_AUDIENCE = "svc-ds-edc"
 
 #: The prefix of every client identity-registry provisions for an organisation.
 ORGANISATION_CLIENT_PREFIX = "svc-ds-connector-"
@@ -99,10 +111,22 @@ CONNECTOR_AUDIENCES: tuple[str, ...] = (
     "svc-ds-connector",
 )
 
-#: Everything an organisation client holds.
-ORGANISATION_CLIENT_SCOPES: tuple[str, ...] = (
-    *CONNECTOR_SERVICE_SCOPES,
+#: In every token the organisation client mints.
+ORGANISATION_CLIENT_DEFAULT_SCOPES: tuple[str, ...] = CONNECTOR_SERVICE_SCOPES
+
+#: Only in a token that asks for them — the connector's EDC token.
+ORGANISATION_CLIENT_OPTIONAL_SCOPES: tuple[str, ...] = (
     *MANAGEMENT_API_SCOPES,
+    EDC_MANAGEMENT_SCOPE,
+)
+
+#: The `scope` parameter of the connector's EDC token request.
+EDC_TOKEN_SCOPE = " ".join(ORGANISATION_CLIENT_OPTIONAL_SCOPES)
+
+#: Everything an organisation client holds, default and optional.
+ORGANISATION_CLIENT_SCOPES: tuple[str, ...] = (
+    *ORGANISATION_CLIENT_DEFAULT_SCOPES,
+    *ORGANISATION_CLIENT_OPTIONAL_SCOPES,
 )
 
 

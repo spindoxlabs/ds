@@ -205,6 +205,9 @@ SERVICE_ONLY_PERMISSIONS: frozenset[str] = frozenset(
         # Consumer connector → provider connector. Participant-to-participant,
         # never a person.
         "connector.consent.read",
+        # The organisation client's EDC token: grants nothing, adds the EDC
+        # management audience (`management_api.EDC_MANAGEMENT_SCOPE`).
+        "edc.management",
         # Federated catalogue → consumer connector. A person reaching
         # POST /consumer/catalog authenticates with a ConsumerUser VC-JWT, not
         # with a group, so no bundle expands to this.

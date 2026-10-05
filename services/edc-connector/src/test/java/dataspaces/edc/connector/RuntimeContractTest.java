@@ -230,6 +230,14 @@ class RuntimeContractTest {
                 }
             }, problems);
         }
+        // The management audience (ManagementAudienceFilter): every participant
+        // config states it. The chart is the deployment's to render (its configmap
+        // must set it too, or the runtime refuses to boot) — not asserted here yet.
+        for (String participant : PARTICIPANTS) {
+            if (!"svc-ds-edc".equals(valueOf(participant, "ds.management.audience"))) {
+                problems.add(participant + ": ds.management.audience is not svc-ds-edc");
+            }
+        }
         var chart = chartValues();
         checkManagementSettings(CHART_CONFIGMAP, key -> chart.getOrDefault(key, ""), problems);
         if (!problems.isEmpty()) {

@@ -236,6 +236,15 @@ public class DataspacesExtension implements ServiceExtension {
         // terminate one but cannot clear `pending`. On the management context,
         // so the v5 OAuth2 filters authenticate the caller; the controller
         // declares its scope and asks EDC's ownership question itself.
+        // ── The management context requires its own audience ─────────────────
+        // EDC's OAuth2 filter checks issuer, expiry, `sub` and `scope`, never
+        // `aud`; this filter adds that. Required: with no value, refuse to boot
+        // rather than run the management API without it.
+        webService.registerResource(
+            ApiContext.MANAGEMENT,
+            new ManagementAudienceFilter(managementAudience(context), context.getMonitor())
+        );
+
         webService.registerResource(
             ApiContext.MANAGEMENT,
             new NegotiationResumeController(
@@ -518,6 +527,24 @@ public class DataspacesExtension implements ServiceExtension {
         return new Oauth2InternalAuth(
             oauth2Client, tokenUrl, clientId, clientSecret, context.getMonitor()
         );
+    }
+
+    /**
+     * The audience every management-API token must carry
+     * ({@code ds.management.audience}, env {@code DS_MANAGEMENT_AUDIENCE}): the one
+     * the optional {@code edc.management} scope adds ({@code svc-ds-edc}).
+     */
+    static String managementAudience(ServiceExtensionContext context) {
+        String audience = setting(context, "ds.management.audience");
+        if (audience.isEmpty()) {
+            throw new EdcException(
+                "ds.management.audience is not configured. Set DS_MANAGEMENT_AUDIENCE to the "
+                    + "audience the `edc.management` scope adds (svc-ds-edc): EDC's own "
+                    + "management OAuth2 filter checks no audience, and ds will not run the "
+                    + "management API without that check."
+            );
+        }
+        return audience;
     }
 
     /**

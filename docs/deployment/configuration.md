@@ -244,7 +244,7 @@ Not in `helm/values.yaml`. Settable per release by editing `helm/charts/<chart>/
 | `migration.mode` | Python services | `initContainer` | |
 | `sqlSchemaAutocreate` | `ds-edc` | `true` | the EDC creates its own schema at boot — see [Prerequisites](prerequisites.md#one-database-and-one-role-per-service) |
 | `didWebUseHttps` | `ds-edc` | `true` | **do not change.** Kept as a value only to make the invariant visible |
-| `ports.*` | `ds-edc` | api 19191 · control 19192 · management 19193 · protocol 19194 | management is in-cluster only, and must stay so: EDC does not check a management token's audience ([ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)) |
+| `ports.*` | `ds-edc` | api 19191 · control 19192 · management 19193 · protocol 19194 | management is in-cluster only, and must stay so ([ADR-0014](../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)); the runtime also requires `ds.management.audience` (`svc-ds-edc`) and refuses to boot without it |
 | `edc.managementApiVersion` | `ds-connector` | `v5beta` | the management API path segment; `v5` from EDC 0.19 |
 | `connectorServiceName` | `ds-edc`, `ds-federated-catalog` | `""` | empty → this participant's own connector |
 | `credentialTtl.defaultDays` / `maxDays` | `ds-identity-registry` | 365 / 730 | issued-credential lifetime |

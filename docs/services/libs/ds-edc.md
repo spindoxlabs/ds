@@ -55,9 +55,11 @@ answers `401`, the source is told to drop its cached token (when it has an `inva
 method) and the request is sent once more.
 
 EDC checks the token's signature, issuer, `sub` (the participant context) and `scope`
-(`management-api:<resource>:read|write`). It never checks the audience, so anyone holding the
-token can call the management API wherever its port can be reached. For how the platform deals
-with that, see [ADR-0014](../../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md).
+(`management-api:<resource>:read|write`). EDC itself checks no audience; ds's
+`ManagementAudienceFilter` in the runtime requires `ds.management.audience` (`svc-ds-edc`),
+which only a token requested with `EDC_TOKEN_SCOPE` carries (see
+[organisation clients](../keycloak.md#organisation-clients)). The port stays in-cluster as
+well ([ADR-0014](../../decisions/ADR-0014-management-api-v5-and-the-organisation-actor.md)).
 
 | Area | Methods |
 |---|---|

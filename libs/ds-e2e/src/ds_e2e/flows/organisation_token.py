@@ -17,18 +17,19 @@ and then asks what that token must **not** reach:
 - no token at all — `401`;
 - a person's consents (`/consent/my/*`) — `401`: the organisation token is not a
   subject credential (`D-20`);
-- this organisation's EDC management API from the host — **unreachable**. EDC
-  never checks a management token's audience, so an unpublished port is the
-  control, and this is the live half of `test_management_port_isolation.py`.
+- this organisation's own token **without** its optional EDC scopes — `403` on a
+  route that needs EDC's scope: only a token requested for EDC
+  (`EDC_TOKEN_SCOPE`) carries them;
+- this organisation's EDC management API from the host — **unreachable**, the
+  live half of `test_management_port_isolation.py`.
 
 It also asserts the act is attributable (`XCT-09`): the consumer's provenance
 holds the principal that acted, with the client id that acted.
 
-**Not asserted live: a genuine organisation token that lacks one EDC scope.**
-Every organisation client carries its seven management scopes as default
-scopes, and a `client_credentials` request cannot drop a default scope, so the
-dev realm holds no such token. The connector's unit suite covers it
-(`services/connector/tests/test_organisation_actor.py`).
+The management scopes are **optional** on an organisation client: a token holds
+them only when asked for (`EDC_TOKEN_SCOPE`, with `edc.management`, which adds
+the audience EDC's management context requires). So the job asks for them, and
+the flow can mint the token that lacks them and watch it refused.
 
 Target: the REC's `datasets.gold.om_weather_features` — membership-gated, not
 consent-gated, served by the mock data plane only (the data step always asks the
@@ -63,6 +64,14 @@ PURPOSE = "GridMonitoring"
 REASON = "e2e-organisation-token"
 #: How long provenance may take to materialise a fire-and-forget event.
 PROVENANCE_WAIT_S = 15.0
+#: `ds_auth.EDC_TOKEN_SCOPE` — this library does not depend on ds-auth;
+#: `libs/ds-auth/tests/test_management_api_scopes.py` holds the two equal.
+EDC_TOKEN_SCOPE = (
+    "management-api:assets:write management-api:policies:write "
+    "management-api:contractdefinitions:write management-api:catalog:read "
+    "management-api:negotiations:write management-api:agreements:read "
+    "management-api:transfers:write edc.management"
+)
 
 
 def _edc_runs_in_docker() -> bool:
@@ -123,7 +132,7 @@ class OrganisationTokenFlow(BaseFlow):
 
         try:
             token = self.http.token_for(
-                s.consumer_org_client_id, s.consumer_org_client_secret
+                s.consumer_org_client_id, s.consumer_org_client_secret, EDC_TOKEN_SCOPE
             )
         except Exception as exc:
             result.fail_step(
@@ -171,7 +180,7 @@ class OrganisationTokenFlow(BaseFlow):
         s = self.settings
         try:
             token = self.http.token_for(
-                s.consumer_org_client_id, s.consumer_org_client_secret
+                s.consumer_org_client_id, s.consumer_org_client_secret, EDC_TOKEN_SCOPE
             )
         except Exception:
             return
@@ -200,7 +209,7 @@ class OrganisationTokenFlow(BaseFlow):
         # participant's.
         try:
             other = self.http.bearer_headers_for(
-                s.provider_org_client_id, s.provider_org_client_secret
+                s.provider_org_client_id, s.provider_org_client_secret, EDC_TOKEN_SCOPE
             )
         except Exception as exc:
             result.fail_step("another participant's token", str(exc))
@@ -232,6 +241,33 @@ class OrganisationTokenFlow(BaseFlow):
                     f"{s.provider_org_client_id} is refused on the consumer's "
                     "routes: its `sub` is another participant",
                     statuses=refused,
+                )
+
+        # This organisation's own token, as minted for any other service: its
+        # defaults only, so no EDC scope.
+        try:
+            plain = self.http.bearer_headers_for(
+                s.consumer_org_client_id, s.consumer_org_client_secret
+            )
+        except Exception as exc:
+            result.fail_step("the EDC scopes are only in an EDC token", str(exc))
+            plain = None
+        if plain is not None:
+            status, body = self.http.raw(
+                "POST", negotiate, body=negotiate_body, headers=plain
+            )
+            if status != 403:
+                result.fail_step(
+                    "the EDC scopes are only in an EDC token",
+                    "the organisation's default token started a negotiation path",
+                    status_code=status,
+                    body=body,
+                )
+            else:
+                result.pass_step(
+                    "the EDC scopes are only in an EDC token",
+                    "the organisation's token without its optional EDC scopes is "
+                    "refused on /consumer/negotiate",
                 )
 
         # A realm token that is not an organisation's. `svc-ds-e2e` holds

@@ -167,6 +167,7 @@ class KeycloakAdminClient:
         *,
         name: str,
         scopes: list[str],
+        optional_scopes: list[str] | None = None,
         audiences: list[str] | None = None,
         subject: str | None = None,
         secret: str | None = None,
@@ -212,6 +213,7 @@ class KeycloakAdminClient:
                 "standardFlowEnabled": False,
                 "directAccessGrantsEnabled": False,
                 "defaultClientScopes": scopes,
+                "optionalClientScopes": list(optional_scopes or []),
             }
             if secret:
                 body["secret"] = secret
@@ -224,7 +226,10 @@ class KeycloakAdminClient:
             raise RuntimeError(f"Keycloak client {client_id} could not be created")
 
         uuid = existing[0]["id"]
-        await self._ensure_default_scopes(uuid, scopes)
+        await self._ensure_default_scopes(
+            uuid, scopes, also_owned=optional_scopes or []
+        )
+        await self._ensure_optional_scopes(uuid, optional_scopes or [])
         await self._ensure_audience_mappers(uuid, audiences or [])
         if subject:
             await self._ensure_subject_mapper(uuid, subject)
@@ -233,8 +238,12 @@ class KeycloakAdminClient:
             current = await self._request("POST", f"/clients/{uuid}/client-secret")
         return str((current or {}).get("value", ""))
 
-    async def _ensure_default_scopes(self, uuid: str, scopes: list[str]) -> None:
-        """Add the missing default scopes; drop any unlisted `management-api` one.
+    async def _ensure_default_scopes(
+        self, uuid: str, scopes: list[str], *, also_owned: list[str] = ()
+    ) -> None:
+        """Add the missing default scopes; drop any unlisted `management-api` one,
+        and any of `also_owned` (the client's optional scopes) found as a default —
+        which is how a client provisioned before they moved is corrected.
 
         Keycloak ignores an unknown scope name on client creation without a word,
         and assigns nothing on a client that already exists. A scope the realm
@@ -262,11 +271,48 @@ class KeycloakAdminClient:
                     "PUT", f"/clients/{uuid}/default-client-scopes/{ids[scope]}"
                 )
 
+        owned = set(also_owned)
+        for name_, scope_id in have.items():
+            if not name_ or name_ in wanted:
+                continue
+            if is_management_api_scope(name_) or name_ in owned:
+                await self._request(
+                    "DELETE",
+                    f"/clients/{uuid}/default-client-scopes/{scope_id}",
+                    tolerate=(404,),
+                )
+
+    async def _ensure_optional_scopes(self, uuid: str, scopes: list[str]) -> None:
+        """Add the missing optional scopes; drop any unlisted `management-api` one.
+
+        Optional: in a token only when the client asks for them by `scope`. An
+        organisation client's EDC scopes are optional so the token its connector
+        sends to other services and organisations does not carry them.
+        """
+        current = (
+            await self._request("GET", f"/clients/{uuid}/optional-client-scopes") or []
+        )
+        have = {s.get("name"): s.get("id") for s in current}
+        wanted = set(scopes)
+        missing = [s for s in scopes if s not in have]
+        if missing:
+            realm_scopes = await self._request("GET", "/client-scopes") or []
+            ids = {s.get("name"): s.get("id") for s in realm_scopes}
+            undeclared = [s for s in missing if s not in ids]
+            if undeclared:
+                raise RuntimeError(
+                    f"the realm declares no client scope {undeclared} — sync "
+                    "services/keycloak/clients.yaml before provisioning clients"
+                )
+            for scope in missing:
+                await self._request(
+                    "PUT", f"/clients/{uuid}/optional-client-scopes/{ids[scope]}"
+                )
         for name_, scope_id in have.items():
             if name_ and is_management_api_scope(name_) and name_ not in wanted:
                 await self._request(
                     "DELETE",
-                    f"/clients/{uuid}/default-client-scopes/{scope_id}",
+                    f"/clients/{uuid}/optional-client-scopes/{scope_id}",
                     tolerate=(404,),
                 )
 
@@ -505,15 +551,20 @@ async def ensure_organisation_client(
     Returns (client id, the secret Keycloak holds). The one definition of an
     organisation client, shared by `org-sync` and the provisioning bundle.
     """
-    from ds_auth import organisation_client_id
+    from ds_auth import (
+        ORGANISATION_CLIENT_DEFAULT_SCOPES,
+        ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+        organisation_client_id,
+    )
 
-    from .provisioning import CONNECTOR_AUDIENCES, ORGANISATION_CLIENT_SCOPES
+    from .provisioning import CONNECTOR_AUDIENCES
 
     client_id = organisation_client_id(alias)
     held = await kc.ensure_service_client(
         client_id,
         name=f"ds connector — {name}",
-        scopes=list(ORGANISATION_CLIENT_SCOPES),
+        scopes=list(ORGANISATION_CLIENT_DEFAULT_SCOPES),
+        optional_scopes=list(ORGANISATION_CLIENT_OPTIONAL_SCOPES),
         audiences=list(CONNECTOR_AUDIENCES),
         subject=participant_context_id,
         secret=secret,

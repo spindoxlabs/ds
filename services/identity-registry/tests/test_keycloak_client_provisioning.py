@@ -35,6 +35,7 @@ class _FakeKeycloak:
         existing_mappers=None,
         realm_scopes=(),
         assigned=(),
+        optional=(),
         exists=True,
         secret="s3cret",
     ):
@@ -44,6 +45,7 @@ class _FakeKeycloak:
         self._existing_mappers = existing_mappers or []
         self.realm_scopes = {name: f"id-{name}" for name in realm_scopes}
         self.assigned = {name: f"id-{name}" for name in assigned}
+        self.optional = {name: f"id-{name}" for name in optional}
         self.exists = exists
         self.secret = secret
 
@@ -57,6 +59,13 @@ class _FakeKeycloak:
                 {
                     name: f"id-{name}"
                     for name in json_body.get("defaultClientScopes", [])
+                    if name in self.realm_scopes
+                }
+            )
+            self.optional.update(
+                {
+                    name: f"id-{name}"
+                    for name in json_body.get("optionalClientScopes", [])
                     if name in self.realm_scopes
                 }
             )
@@ -76,6 +85,18 @@ class _FakeKeycloak:
         if method == "DELETE" and "/default-client-scopes/" in path:
             scope_id = path.rsplit("/", 1)[1]
             self.assigned.pop(scope_id.removeprefix("id-"), None)
+            self.deleted.append(path)
+            return None
+        if method == "GET" and path.endswith("/optional-client-scopes"):
+            return [{"name": n, "id": i} for n, i in self.optional.items()]
+        if method == "PUT" and "/optional-client-scopes/" in path:
+            scope_id = path.rsplit("/", 1)[1]
+            self.optional[scope_id.removeprefix("id-")] = scope_id
+            self.put.append((path, json_body))
+            return None
+        if method == "DELETE" and "/optional-client-scopes/" in path:
+            scope_id = path.rsplit("/", 1)[1]
+            self.optional.pop(scope_id.removeprefix("id-"), None)
             self.deleted.append(path)
             return None
         if method == "GET" and path.endswith("/protocol-mappers/models"):
@@ -346,3 +367,43 @@ async def test_a_configured_secret_never_rewrites_an_existing_client():
     assert held == "live"
     assert not any(p == "/clients" for p, _ in fake.posted)
     assert not any(p.endswith("/client-secret") for p, _ in fake.posted)
+
+
+# ── The EDC scopes are optional ────────────────────────────────────────
+
+EDC_SCOPES = ["management-api:assets:write", "edc.management"]
+
+
+@pytest.mark.asyncio
+async def test_optional_scopes_are_assigned_as_optional_not_default():
+    """Only a token that asks for them carries them — the connector's EDC token,
+    never the one it sends to other services and organisations."""
+    fake = _FakeKeycloak(realm_scopes=["identity-registry.read", *EDC_SCOPES])
+    await _client_with(fake).ensure_service_client(
+        "svc-ds-connector-acme",
+        name="ds connector — Acme",
+        scopes=["identity-registry.read"],
+        optional_scopes=EDC_SCOPES,
+    )
+
+    assert set(fake.assigned) == {"identity-registry.read"}
+    assert set(fake.optional) == set(EDC_SCOPES)
+
+
+@pytest.mark.asyncio
+async def test_a_client_holding_them_as_default_is_moved_to_optional():
+    """A client provisioned before the change: the EDC scopes leave its defaults
+    and become optional; its other defaults stay."""
+    fake = _FakeKeycloak(
+        realm_scopes=["identity-registry.read", "basic", *EDC_SCOPES],
+        assigned=["identity-registry.read", "basic", *EDC_SCOPES],
+    )
+    await _client_with(fake).ensure_service_client(
+        "svc-ds-connector-acme",
+        name="ds connector — Acme",
+        scopes=["identity-registry.read"],
+        optional_scopes=EDC_SCOPES,
+    )
+
+    assert set(fake.assigned) == {"identity-registry.read", "basic"}
+    assert set(fake.optional) == set(EDC_SCOPES)

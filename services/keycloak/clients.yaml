@@ -151,9 +151,11 @@ scopes:
   # mapper naming the organisation's participant context. The sync cannot add
   # that mapper, and a client holding these scopes without it is refused by EDC.
   #
-  # EDC checks the token's `sub` and `scope`, **never its `aud`**: whoever holds
-  # one of these scopes can act on that participant's management API. Declared
-  # in the file that crosses because an organisation client needs them in any
+  # EDC checks the token's `sub` and `scope`, **never its `aud`**. So they are
+  # granted **optional**, requested only for the connector's EDC calls together
+  # with `edc.management` below, whose audience `svc-ds-edc` ds's
+  # `ManagementAudienceFilter` requires on the management context. Declared in
+  # the file that crosses because an organisation client needs them in any
   # realm. No `management-api:admin` and no `*` resource, ever — `admin` ignores
   # `sub` altogether. `libs/ds-auth/tests/test_management_api_scopes.py` holds
   # all of this.
@@ -171,6 +173,13 @@ scopes:
     description: EDC management API - read contract agreements
   - name: management-api:transfers:write
     description: EDC management API - start, read and terminate transfers
+  # Grants nothing. Requested with the scopes above, it adds the audience the EDC
+  # management context requires, so only a token asked for EDC is accepted there
+  # (`ds_auth.EDC_MANAGEMENT_SCOPE`). `audience` needs celine-policies with
+  # scope-level audiences (its REQ-0017).
+  - name: edc.management
+    description: Request a token for this participant's EDC management API (audience svc-ds-edc; grants nothing)
+    audience: svc-ds-edc
 
 # =============================================================================
 # CLIENTS

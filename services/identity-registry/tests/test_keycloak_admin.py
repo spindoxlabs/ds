@@ -12,6 +12,10 @@ from pathlib import Path
 
 import httpx
 import pytest
+from ds_auth import (
+    ORGANISATION_CLIENT_DEFAULT_SCOPES,
+    ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+)
 
 from identity_registry.services.keycloak_admin import (
     KeycloakAdminClient,
@@ -135,6 +139,11 @@ class FakeKeycloak:
                     for n in body.get("defaultClientScopes", [])
                     if n in self.realm_scopes
                 },
+                "optional": {
+                    n
+                    for n in body.get("optionalClientScopes", [])
+                    if n in self.realm_scopes
+                },
                 "mappers": [],
             }
             return httpx.Response(201)
@@ -148,6 +157,20 @@ class FakeKeycloak:
                 )
             if tail[0] == "default-client-scopes" and method == "PUT":
                 client["scopes"].add(tail[1].removeprefix("sid-"))
+                return httpx.Response(204)
+            if tail[0] == "default-client-scopes" and method == "DELETE":
+                client["scopes"].discard(tail[1].removeprefix("sid-"))
+                return httpx.Response(204)
+            if tail == ["optional-client-scopes"] and method == "GET":
+                return httpx.Response(
+                    200,
+                    json=[
+                        {"name": n, "id": f"sid-{n}"}
+                        for n in client.setdefault("optional", set())
+                    ],
+                )
+            if tail[0] == "optional-client-scopes" and method == "PUT":
+                client.setdefault("optional", set()).add(tail[1].removeprefix("sid-"))
                 return httpx.Response(204)
             if tail == ["protocol-mappers", "models"] and method == "GET":
                 return httpx.Response(200, json=client["mappers"])
@@ -442,7 +465,8 @@ class TestOrganisationClients:
         assert list(fake.clients) == [CLIENT_ID]
         client = fake.clients[CLIENT_ID]
         assert client["secret"] == CLIENT_ID
-        assert client["scopes"] == set(ORGANISATION_CLIENT_SCOPES)
+        assert client["scopes"] == set(ORGANISATION_CLIENT_DEFAULT_SCOPES)
+        assert client["optional"] == set(ORGANISATION_CLIENT_OPTIONAL_SCOPES)
         assert _sub_values(client) == [REC_DID]
         audiences = {
             m["config"]["included.client.audience"]
@@ -519,7 +543,9 @@ class TestOrganisationClients:
         assert report.clients_with_other_secret == [CLIENT_ID]
         assert report.has_warnings
         # Grants and `sub` are repaired all the same.
-        assert fake.clients[CLIENT_ID]["scopes"] == set(ORGANISATION_CLIENT_SCOPES)
+        assert fake.clients[CLIENT_ID]["scopes"] == set(
+            ORGANISATION_CLIENT_DEFAULT_SCOPES
+        )
         assert _sub_values(fake.clients[CLIENT_ID]) == [REC_DID]
         await kc.aclose()
 

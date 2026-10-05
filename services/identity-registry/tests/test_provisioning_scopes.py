@@ -89,8 +89,15 @@ def test_a_provisioned_connector_never_holds_an_admin_grant():
 def test_an_organisation_client_holds_the_connector_grants_and_the_edc_scopes():
     """The organisation's client is its connector's client, plus EDC's
     management-API scopes for its own participant context — the list
-    `ds_auth` owns and `clients.yaml` declares, nothing added here."""
-    assert ORGANISATION_CLIENT_SCOPES == [*CONNECTOR_SCOPES, *MANAGEMENT_API_SCOPES]
+    `ds_auth` owns and `clients.yaml` declares, nothing added here. The EDC half
+    (with `edc.management`, which adds the EDC audience) is held optional."""
+    from ds_auth import EDC_MANAGEMENT_SCOPE
+
+    assert ORGANISATION_CLIENT_SCOPES == [
+        *CONNECTOR_SCOPES,
+        *MANAGEMENT_API_SCOPES,
+        EDC_MANAGEMENT_SCOPE,
+    ]
     assert [s for s in CONNECTOR_SCOPES if is_management_api_scope(s)] == []
 
 

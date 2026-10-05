@@ -211,3 +211,57 @@ def test_an_organisation_client_may_ask_to_register_consent():
     assert "connector.consent.provision" in ORGANISATION_CLIENT_SCOPES
     # Never the cross-subject read beside it.
     assert "connector.consent.audience" not in ORGANISATION_CLIENT_SCOPES
+
+
+def test_the_edc_scopes_are_optional_and_the_service_scopes_default():
+    """The organisation client's split: what every token carries, and what only
+    the connector's EDC token asks for."""
+    from ds_auth import (
+        CONNECTOR_SERVICE_SCOPES,
+        EDC_MANAGEMENT_SCOPE,
+        ORGANISATION_CLIENT_DEFAULT_SCOPES,
+        ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+        ORGANISATION_CLIENT_SCOPES,
+    )
+
+    assert set(ORGANISATION_CLIENT_DEFAULT_SCOPES) == set(CONNECTOR_SERVICE_SCOPES)
+    assert not any(
+        is_management_api_scope(s) for s in ORGANISATION_CLIENT_DEFAULT_SCOPES
+    )
+    assert set(ORGANISATION_CLIENT_OPTIONAL_SCOPES) == {
+        *MANAGEMENT_API_SCOPES,
+        EDC_MANAGEMENT_SCOPE,
+    }
+    assert set(ORGANISATION_CLIENT_SCOPES) == {
+        *ORGANISATION_CLIENT_DEFAULT_SCOPES,
+        *ORGANISATION_CLIENT_OPTIONAL_SCOPES,
+    }
+
+
+def test_the_edc_scope_carries_the_management_audience():
+    """Declared in the file that crosses, with the audience the EDC filter requires."""
+    from ds_auth import EDC_MANAGEMENT_AUDIENCE, EDC_MANAGEMENT_SCOPE
+
+    scopes = {
+        s["name"]: s for s in _load(KEYCLOAK / "clients.yaml").get("scopes") or []
+    }
+    assert scopes[EDC_MANAGEMENT_SCOPE].get("audience") == EDC_MANAGEMENT_AUDIENCE
+
+
+def test_the_e2e_flow_requests_the_same_edc_scope():
+    """ds-e2e does not depend on ds-auth, so it restates the scope string."""
+    import ast as _ast
+
+    from ds_auth import EDC_TOKEN_SCOPE
+
+    flow = (
+        REPO / "libs" / "ds-e2e" / "src" / "ds_e2e" / "flows" / "organisation_token.py"
+    )
+    tree = _ast.parse(flow.read_text(encoding="utf-8"))
+    value = next(
+        _ast.literal_eval(node.value)
+        for node in tree.body
+        if isinstance(node, _ast.Assign)
+        and any(getattr(t, "id", None) == "EDC_TOKEN_SCOPE" for t in node.targets)
+    )
+    assert value.split() == EDC_TOKEN_SCOPE.split()

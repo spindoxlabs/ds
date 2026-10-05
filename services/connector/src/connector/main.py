@@ -7,6 +7,7 @@ from pathlib import Path
 
 from ds.governance.models import profile_path_is_missing
 from ds.governance.owners import HttpOwnersRegistry
+from ds_auth import EDC_TOKEN_SCOPE
 from ds_auth.production import ProductionGuard
 from ds_auth.service_token import ServiceTokenProvider
 from ds_obs import configure_logging, install_metrics, install_tracing
@@ -202,11 +203,22 @@ async def lifespan(app: FastAPI):
         client_secret=settings.client_secret,
     )
 
+    # The same client, but its **EDC token** is a separate one: requested with the
+    # optional management-API scopes and `edc.management`, which adds the audience
+    # the EDC management context requires. The token above, for every other
+    # service, carries neither: each token is good only where it is sent.
+    edc_token_provider = ServiceTokenProvider(
+        token_url=settings.keycloak_token_url,
+        client_id=settings.client_id,
+        client_secret=settings.client_secret,
+        scope=EDC_TOKEN_SCOPE,
+    )
+
     # One EDC runtime per participant, so one client whatever the roles.
     edc = EdcManagementClient(
         settings.edc_management_url,
         settings.participant_context_id,
-        token_source=org_token_provider,
+        token_source=edc_token_provider,
         api_version=settings.edc_management_api_version,
     )
     provider_edc = edc if settings.is_provider else None

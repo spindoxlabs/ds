@@ -32,10 +32,19 @@ log = logging.getLogger(__name__)
 class ServiceTokenProvider:
     """Acquires and caches a Keycloak service token via client_credentials grant."""
 
-    def __init__(self, token_url: str, client_id: str, client_secret: str):
+    def __init__(
+        self,
+        token_url: str,
+        client_id: str,
+        client_secret: str,
+        scope: str | None = None,
+    ):
+        """`scope` requests optional client scopes on top of the client's defaults
+        (the connector's EDC token, `EDC_TOKEN_SCOPE`); None asks for the defaults."""
         self._token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
+        self._scope = scope
         self._token: str | None = None
         self._expires_at: float = 0.0
 
@@ -55,6 +64,7 @@ class ServiceTokenProvider:
                     "grant_type": "client_credentials",
                     "client_id": self._client_id,
                     "client_secret": self._client_secret,
+                    **({"scope": self._scope} if self._scope else {}),
                 },
             )
             resp.raise_for_status()
