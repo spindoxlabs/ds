@@ -45,6 +45,11 @@ data:
     # `iss` is compared as a string; Keycloak never ends it with a slash.
     edc.iam.oauth2.issuer={{ required "global.keycloak.issuerUrl is required" ((.Values.global).keycloak).issuerUrl | trimSuffix "/" }}
     edc.iam.oauth2.jwks.url={{ ((.Values.global).keycloak).jwksUrl | default (printf "%s/protocol/openid-connect/certs" (((.Values.global).keycloak).issuerUrl | trimSuffix "/")) }}
+    # EDC's management OAuth2 filter checks no audience; ds's
+    # ManagementAudienceFilter requires this one, which only the connector's EDC
+    # token carries (the optional `edc.management` scope adds it). Required: the
+    # runtime refuses to boot without it (R12).
+    ds.management.audience={{ required "managementAudience is required" .Values.managementAudience }}
     # v5 refuses a request whose `protocol` is not an enabled dataspace profile.
     # All: the runtime registers exactly one (DSP 2025-1), and naming it here would
     # be a second copy of the pin `ds_edc.DATASPACE_PROTOCOL`.

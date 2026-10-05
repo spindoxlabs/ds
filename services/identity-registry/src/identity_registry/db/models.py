@@ -10,6 +10,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     LargeBinary,
     String,
@@ -17,6 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     false,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -158,8 +160,18 @@ class KeycloakMapping(Base):
         # is the identifier an IdP lets people change. The data plane resolves both
         # DIDs to the same username, so a revocation against one leaves the other
         # disclosing. See migration 0010.
-        UniqueConstraint(
-            "keycloak_realm", "keycloak_user_id", name="uq_keycloak_mappings_realm_user"
+        #
+        # **One current binding**, since 2026-10-05 (ADR-0028): a login moves to
+        # the person's new DID when they join another organisation, and the row
+        # it leaves is kept with `released_at` set — history, never answered by
+        # a lookup. So the pair is unique among the rows not released.
+        Index(
+            "uq_keycloak_mappings_realm_user_current",
+            "keycloak_realm",
+            "keycloak_user_id",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
         ),
     )
 
@@ -181,6 +193,17 @@ class KeycloakMapping(Base):
     synced_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # When the login moved to another DID (ADR-0028). A released row binds
+    # nothing: no lookup answers it and no sync revives it. It stays because
+    # it records which login acted as this DID, until when.
+    released_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+#: The rows that bind a login now; every lookup by login, username, email or
+#: DID for a person's acts reads through this.
+KEYCLOAK_MAPPING_CURRENT = KeycloakMapping.released_at.is_(None)
 
 
 class Owner(Base):

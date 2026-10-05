@@ -17,7 +17,7 @@ from ds.governance import (
     subject_column,
 )
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -87,6 +87,10 @@ class QueryAuditRequest(BaseModel):
     #: A PEP that sends something else is not refused (see :func:`audit_query`),
     #: but only the DIDs are recorded.
     authorized_subject_ids: list[str] | None = None
+    #: The ``decision_ref`` of the data-plane allow that served this read,
+    #: echoed by the PEP (ADR-0027). Opaque to the PEP; a SHA-256 hex digest
+    #: here, refused (422) when it is not one — a malformed link is no link.
+    decision_ref: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 @router.get("/agreements/{agreement_id}/status")
@@ -381,7 +385,28 @@ async def dataplane_authorize(
         "purpose": requested,
         "datasets": datasets,
         "cache": ttl,
+        # The release link (ADR-0027): which keys this allow serves, under which
+        # agreement, as a digest the holder's ledger can recompute. None on a
+        # deny, which releases nothing.
+        "decision_ref": None if denied else _decision_ref(body.agreement_id, datasets),
     }
+
+
+def _decision_ref(agreement_id: str, datasets: list[dict]) -> str:
+    """`key_records.decision_ref` over every key the allowed row filters serve."""
+    from ...services.key_records import decision_ref
+
+    keys: set[str] = set()
+    for verdict in datasets:
+        row_filter = verdict.get("row_filter")
+        if row_filter is None:
+            continue
+        keys.update(
+            row_filter.keys
+            if isinstance(row_filter, DataplaneRowFilter)
+            else row_filter.get("keys") or ()
+        )
+    return decision_ref(agreement_id, keys)
 
 
 async def _admitted_wildcard_offers(
@@ -1028,6 +1053,7 @@ async def audit_query(
             authorized_subject_ids=_subject_dids_only(
                 req.authorized_subject_ids, req.dataset_id
             ),
+            decision_ref=req.decision_ref,
         )
     return {"status": "accepted"}
 

@@ -156,6 +156,15 @@ The role, normalised and validated at render time. A chart that let an unknown
 role through would defer the failure to a CrashLoopBackOff, where the reason is
 one `kubectl logs` away instead of in the diff.
 */}}
+{{/*
+The Secret org-sync reads the organisation clients' secrets from: the one named
+by `keycloak.sync.organisationClientSecrets` when set (an existing Secret), else
+the one this chart renders from `keycloak.sync.organisations`.
+*/}}
+{{- define "ir.organisationClientSecretName" -}}
+{{- .Values.keycloak.sync.organisationClientSecrets | default (printf "%s-organisation-clients" (include "ds.fullname" .)) -}}
+{{- end -}}
+
 {{- define "ir.role" -}}
 {{- $role := .Values.role | default "trust-anchor" -}}
 {{- if not (has $role (list "trust-anchor" "participant")) -}}

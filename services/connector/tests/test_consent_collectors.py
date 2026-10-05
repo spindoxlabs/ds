@@ -835,15 +835,17 @@ async def test_the_reason_is_returned_by_no_read(client, monkeypatch, granted_fi
 
     monkeypatch.setattr(consent_route, "check_collector", _two)
     second = collector_headers(context="did:web:second.example.org", alias="second")
-    for reader in (headers, second):
+    # The organisation that withdrew reads its own cell back; another one that
+    # speaks for the same member does not get the cell at all (2026-10-05,
+    # `test_member_moves.py`). Neither gets the reason.
+    for reader, listed in ((headers, 1), (second, 0)):
         back = await client.get(
             "/consent/admin/subject-shares",
             params={"subject_id": MEMBER},
             headers=reader,
         )
         assert back.status_code == 200, back.text
-        [share] = back.json()
-        assert share["status"] == "revoked"
+        assert [s["status"] for s in back.json()] == ["revoked"] * listed
         assert WHY not in back.text
 
 

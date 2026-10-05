@@ -805,6 +805,8 @@ async def _dataspace_query(
         # unfiltered allow has no list of subjects, and an empty list would read
         # as "authorised for nobody".
         authorized_subject_ids=(list(verdict.row_filter.subject_dids) if verdict.row_filter is not None else None),
+        # The release link (ds ADR-0027): echoed verbatim, opaque to this PEP.
+        decision_ref=decision.decision_ref,
     )
     return _page(rows, body)
 
@@ -1067,6 +1069,7 @@ async def _audit_query(
     transfer_id: str | None,
     row_count: int,
     authorized_subject_ids: list[str] | None,
+    decision_ref: str | None = None,
 ) -> None:
     """Record the disclosure, before it becomes one.
 
@@ -1097,6 +1100,8 @@ async def _audit_query(
         "row_count": row_count,
         "authorized_subject_ids": authorized_subject_ids,
     }
+    if decision_ref is not None:
+        payload["decision_ref"] = decision_ref
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             response = await client.post(url, json=payload, headers=await _internal_headers())

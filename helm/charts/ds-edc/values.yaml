@@ -111,6 +111,14 @@ connectorPort: 30001
 # every negotiation is much harder to diagnose.
 connectorClientId: svc-edc
 
+# The audience every management-API token must carry (`ds.management.audience`).
+# EDC's own OAuth2 filter checks none; ds's ManagementAudienceFilter refuses a
+# token without this one, and the runtime refuses to boot when it is unset. It
+# is the audience the optional `edc.management` scope adds in the realm
+# (services/keycloak/clients.yaml) — change both together or every management
+# call is a 401.
+managementAudience: svc-ds-edc
+
 ingress:
   enabled: true
 

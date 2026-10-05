@@ -104,6 +104,8 @@ class KeycloakMappingResponse(BaseModel):
     keycloak_user_id: str
     email: str | None
     subject_id: str
+    #: Set when the login moved to another DID (ADR-0028): this row is history.
+    released_at: datetime | None = None
 
 
 class KeycloakMappingDeleteResponse(BaseModel):

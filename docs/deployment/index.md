@@ -25,7 +25,7 @@ impossible to produce by omission.
 |---|---|---|
 | `ds-common` | *(library chart — helpers only)* | shared |
 | `ds-namespaces` | — | labelled namespaces |
-| `ds-identity-registry` | `services/identity-registry` | authority — **once per dataspace** |
+| `ds-identity-registry` | `services/identity-registry` | **one `trust-anchor` release per dataspace** (issuance, the participant, owner and membership registries) **and one `participant` release per organisation** (each REC and DSO: its DID documents, its members' DID documents, STS, credential store), each with its own database and key |
 | `ds-edc` | `services/edc-connector` | participant |
 | `ds-connector` | `services/connector` | participant |
 | `ds-provenance` | `services/provenance` | participant |

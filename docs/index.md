@@ -86,4 +86,4 @@ Human and service authorisation inside a participant runs on OIDC through Keyclo
 mechanisms, deliberately separate.
 
 **Every act is recorded as PROV-O.** Catalogue views, negotiations, transfers, queries,
-consent decisions — sixteen event types, materialised into a lineage graph you can traverse.
+consent decisions — seventeen event types, materialised into a lineage graph you can traverse.

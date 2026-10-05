@@ -140,7 +140,13 @@ async def test_a_revoked_credential_does_not_suppress_a_reissue(client, db_sessi
     This is what makes the plan's transition possible at all: retiring a
     credential and issuing its successor has to produce a second row, or a role
     change would be a no-op that reported success.
+
+    The person keeps another role's credential: since 2026-10-05 a DID whose
+    credentials are **all** revoked is spent and is not issued again
+    (ADR-0028, `test_member_moves.py`), so this is the live-DID case.
     """
+    other = await _issue(client, role="ConsumerUser")
+    assert other.status_code == 201, other.text
     first = await _issue(client)
     cred_id = first.json()["credentialId"]
 
@@ -150,4 +156,5 @@ async def test_a_revoked_credential_does_not_suppress_a_reissue(client, db_sessi
     second = await _issue(client)
     assert second.status_code == 201, second.text
     assert second.json()["credentialId"] != cred_id
-    assert len(await _credentials(db_session)) == 2
+    assert second.json()["subjectDid"] == first.json()["subjectDid"]
+    assert len(await _credentials(db_session)) == 3

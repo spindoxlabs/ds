@@ -46,11 +46,13 @@ from __future__ import annotations
 import logging
 import time
 import urllib.parse
+import uuid
 from typing import Any
 
 from ds_e2e.consent import (
     CONSENT_PROVISION_SCOPE,
     WRITE_AND_READ_BACK,
+    key_assertion,
     legal_basis,
 )
 from ds_e2e.flows.base import BaseFlow
@@ -256,6 +258,11 @@ class CollectorHolderFlow(BaseFlow):
             body["legal_basis"] = legal_basis(REASON, source="e2e-community-portal")
         if keys is not None:
             body["keys"] = keys
+            if enabled:
+                # ADR-0027: the collector asserts whose keys these are.
+                body["legal_basis"]["key_assertion"] = key_assertion(
+                    str(uuid.uuid5(uuid.NAMESPACE_URL, f"{subject}|{offer}"))
+                )
         return self.http.raw(
             "POST",
             f"{s.grid_operator_connector_url}/consent/admin/shares",

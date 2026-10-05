@@ -10,6 +10,14 @@
     secretKeyRef:
       name: {{ include "ds.secretName" . }}
       key: DB_PASSWORD
+# The key of the keyed pseudonym every person id is hashed as in the record's
+# chain (ADR-0025). Set once per store and never rotated: a new key fails the
+# verification of every existing record.
+- name: PROVENANCE_SUBJECT_PSEUDONYM_KEY
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "ds.secretName" . }}
+      key: PROVENANCE_SUBJECT_PSEUDONYM_KEY
 - name: PROVENANCE_DATABASE_URL
   value: {{ include "ds.postgres.url" (dict "ctx" . "database" (include "ds.db.provenance" .) "driver" "asyncpg") | quote }}
 # The `@context` IRI on every JSON-LD response. Unset, it stayed at the dev

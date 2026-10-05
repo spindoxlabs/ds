@@ -99,6 +99,17 @@ class Settings(BaseSettings):
     at_rest_keys: str = Field(default=DEV_AT_REST_KEY)
     key_index_secret: str = Field(default=DEV_KEY_INDEX_SECRET)
 
+    # ── Key records retention (ADR-0027) ─────────────────────────────────────
+    #
+    # How long the key ledger, the key owners, the key assertions and the
+    # holder's lifted suspensions are kept after the key stopped being carried
+    # (`python -m connector.db.retention purge`). Default ten years — the
+    # Italian ordinary limitation period (art. 2946 c.c.) — **pending legal
+    # counsel**. They outlive an erased decision row on the basis of GDPR
+    # Art. 17(3)(e) (the establishment, exercise or defence of legal claims).
+    # Nothing deletes them automatically; the purge refuses anything younger.
+    key_record_retention_days: int = Field(default=3650, ge=1)
+
     # The counterparty connector's base URL, for the one off-DSP-path read a
     # consumer makes: "is this negotiation of mine waiting on a person?" (§6.6).
     # Empty disables it and the consumer simply shows REQUESTED.

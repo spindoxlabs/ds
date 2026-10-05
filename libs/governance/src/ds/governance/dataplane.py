@@ -211,6 +211,16 @@ class DataplaneDecision(BaseModel):
     purpose: list[str] = Field(default_factory=list)
     datasets: list[DatasetVerdict] = Field(default_factory=list)
     cache: DecisionCache | None = None
+    #: **The release link** (ADR-0027): an opaque reference to the key set this
+    #: allow serves, for the PEP to echo into its own audit record and into the
+    #: ``QueryExecuted`` event it reports (``POST /internal/audit/query``). The
+    #: connector computes it as
+    #: ``sha256_hex(agreement_id + "\n" + "\n".join(sorted(set(key_index))))``
+    #: over the keyed blind index of every key in the allowed row filters, so an
+    #: auditor holding the holder's key ledger can recompute it without the keys.
+    #: ``None`` on a deny — nothing was released. A PEP treats it as an opaque
+    #: string. Added with a default, so the PEP is upgraded first.
+    decision_ref: str | None = None
 
     @property
     def allowed(self) -> bool:

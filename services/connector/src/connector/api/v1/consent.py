@@ -6,12 +6,15 @@ import asyncio
 import base64
 import inspect
 import logging
-from datetime import datetime
+import re
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from urllib.parse import urlparse
 
 from ds.governance.dataplane import split_key
 from ds_auth import Principal
+from ds_auth.production import is_production
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import (
     AliasChoices,
@@ -22,10 +25,12 @@ from pydantic import (
     model_validator,
 )
 from sqlalchemy import and_, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import ConsentKeyEventORM, ConsentRequestORM
+from ...db.sealed import blind_index
 from ...dependencies import (
     WRITER_COLLECTOR,
     ConsentWriter,
@@ -47,14 +52,14 @@ from ...dependencies import (
 )
 from ...notifications.base import ConsentNotifier
 from ...registry.participants import CollectorAnswer, CollectorLookupError
-from ...services import circle, consent_service
+from ...services import circle, consent_service, key_records
 from ...services import consent_vocabulary as vocab
 from ...services.membership_check import (
     Membership,
     check_subject_membership,
     resolve_dataset_owner,
 )
-from ...services.prov_bridge import ProvBridge
+from ...services.prov_bridge import ProvBridge, acting_principal
 from .internal import _admitted_wildcard_offers
 
 log = logging.getLogger(__name__)
@@ -87,6 +92,18 @@ async def _emit_consent_events(
         return
     for consent in consents:
         if consent.status == "granted":
+            digest = key_records.keys_digest(consent.subject_keys)
+            ref = key_records.assertion_ref(
+                (consent.legal_basis or {}).get("key_assertion")
+            )
+            # A grant whose keys or assertion changed is a new fact on the
+            # record (ADR-0027): the id carries both, so a re-registration that
+            # changes either is chained, and an identical re-run stays a duplicate.
+            suffix = (
+                ":" + key_records.sha256_hex(f"{digest}|{ref}")[:16]
+                if digest or ref
+                else ""
+            )
             await prov.consent_granted(
                 subject_id=consent.subject_id,
                 dataset_id=consent.dataset_id,
@@ -96,9 +113,11 @@ async def _emit_consent_events(
                 recipient=consent.recipient,
                 recipient_role=consent.recipient_role,
                 legal_basis=consent.legal_basis,
-                event_id=f"consent-granted:{consent.id}",
+                event_id=f"consent-granted:{consent.id}{suffix}",
                 **_decision_kwargs(consent, acted_by),
                 keys_supplied=keys_supplied,
+                keys_digest=digest,
+                assertion_ref=ref,
             )
         elif consent.status == "revoked":
             await prov.consent_revoked(
@@ -231,6 +250,96 @@ class DataSharingSetRequest(BaseModel):
     offer_id: str | None = None
 
 
+_HEX64 = re.compile(r"^[0-9a-f]{64}$")
+
+#: How far a collector's clock may run ahead of this connector's before its
+#: ``verified_at`` reads as a moment that has not happened yet.
+VERIFIED_AT_SKEW = timedelta(minutes=2)
+
+
+def _hex64(value: str) -> str:
+    if not isinstance(value, str) or not _HEX64.match(value):
+        raise ValueError("must be a lowercase hex SHA-256 digest (64 characters)")
+    return value
+
+
+class KeyEvidence(BaseModel):
+    """One piece of evidence the collector holds, by the digest of its file."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["utility_bill", "id_document", "other"]
+    #: SHA-256 of the file's bytes, as the collector stored it. A digest of a
+    #: document reveals nothing without the document; it proves which one.
+    sha256: str
+
+    @field_validator("sha256")
+    @classmethod
+    def _digest(cls, v: str) -> str:
+        return _hex64(v)
+
+
+class KeyAssertion(BaseModel):
+    """The collector's assertion that the keys it sends are its member's (ADR-0027).
+
+    **Codes and hashes only** — no fiscal code, no POD, no hash of either (both
+    are low-entropy and a hash of one is brute-forced), no name, no email.
+    ``extra="forbid"``, like the evidence record it sits in.
+
+    The collector (a REC) asserts, under the responsibility statement whose
+    version is ``terms`` and whose exact text hashes to ``terms_sha256``, that
+    it verified the member holds these keys — by an uploaded document or by an
+    offline check of which it keeps evidence — at ``verified_at``, through the
+    operator it alone can name from ``verified_by``. A plain "offline" check
+    with no evidence digest is not an assertion this connector accepts.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    terms: str = Field(min_length=1, max_length=100)
+    terms_sha256: str
+    method: Literal["uploaded-document", "offline-with-evidence"]
+    #: The collector's own verification record, by id (a UUID).
+    verification_ref: str
+    #: HMAC-SHA256 of the verifying operator's id under a key only the
+    #: collector holds — a pseudonym the collector can resolve and nobody else.
+    verified_by: str
+    verified_at: datetime
+    evidence: list[KeyEvidence] = Field(min_length=1, max_length=16)
+
+    @field_validator("terms")
+    @classmethod
+    def _terms_is_a_code(cls, v: str) -> str:
+        if "@" in v or any(c.isspace() for c in v):
+            raise ValueError("must be a version code such as 'rec-pod-assertion/1'")
+        return v
+
+    @field_validator("terms_sha256", "verified_by")
+    @classmethod
+    def _digests(cls, v: str) -> str:
+        return _hex64(v)
+
+    @field_validator("verification_ref")
+    @classmethod
+    def _uuid(cls, v: str) -> str:
+        try:
+            return str(uuid.UUID(v))
+        except (ValueError, AttributeError, TypeError) as exc:
+            raise ValueError(
+                "must be the collector's verification id (a UUID)"
+            ) from exc
+
+    @field_validator("verified_at")
+    @classmethod
+    def _verified_in_the_past(cls, v: datetime) -> datetime:
+        if v.tzinfo is None:
+            raise ValueError("must carry a timezone (ISO-8601, UTC)")
+        v = v.astimezone(UTC)
+        if v > datetime.now(UTC) + VERIFIED_AT_SKEW:
+            raise ValueError("is in the future: a verification is asserted once made")
+        return v
+
+
 class AdminShareLegalBasis(BaseModel):
     """Evidence a service records when provisioning consent on a subject's behalf.
 
@@ -268,6 +377,10 @@ class AdminShareLegalBasis(BaseModel):
     locale: str | None = None
     accepted_at: str | None = None
     submission_ref: str | None = None
+    #: The collector's assertion that the ``keys`` sent with this grant are the
+    #: subject's (ADR-0027). Required by the holder's offer governance, and by
+    #: default for a ``pod:`` key outside ``DS_ENV=dev``.
+    key_assertion: KeyAssertion | None = None
 
     @field_validator("source", "consent_text_version", "rendered_text_sha256")
     @classmethod
@@ -1091,6 +1204,11 @@ def _offer_legal_basis_record(
         "user_visible_hash": vocab.offer_user_visible_hash(offer),
         "accepted_at": sent.get("accepted_at"),
         "submission_ref": sent.get("submission_ref"),
+        **(
+            {"key_assertion": caller.key_assertion.model_dump(mode="json")}
+            if caller is not None and caller.key_assertion is not None
+            else {}
+        ),
         **({"collector": collector} if collector else {}),
         # Present only on the exceptional path, and then it is the most important
         # thing in the record: this consent came back over a withdrawal the person
@@ -1102,6 +1220,45 @@ def _offer_legal_basis_record(
             else {}
         ),
     }
+
+
+def _key_assertion_admitted(offer, body: AdminShareRequest) -> dict | None:
+    """The key assertion this registration carries, as stored — or a 422.
+
+    ADR-0027. The holder's offer governance says whether an assertion is
+    required for the keys and which verification methods it accepts; an offer
+    that says nothing requires one for a ``pod:`` key outside ``DS_ENV=dev``.
+    An assertion asserts the keys sent with it, so one sent without keys is
+    refused rather than filed against nothing.
+    """
+    if not body.enabled:
+        return None
+    sent = body.legal_basis.key_assertion if body.legal_basis else None
+    if sent is not None and not body.keys:
+        raise HTTPException(
+            422,
+            "key_assertion asserts the keys sent with it; this registration sends "
+            "no keys",
+        )
+    if not body.keys:
+        return None
+    policy = key_records.assertion_policy(offer, body.keys, dev=not is_production())
+    if sent is None:
+        if policy.required:
+            raise HTTPException(
+                422,
+                f"offer '{offer.id}' requires a key_assertion in legal_basis for "
+                f"the keys it registers ({policy.source}): who verified that the "
+                "keys are the subject's, how, when and on what evidence",
+            )
+        return None
+    if sent.method not in policy.methods:
+        raise HTTPException(
+            422,
+            f"key_assertion.method '{sent.method}' is not accepted for offer "
+            f"'{offer.id}' (accepted: {', '.join(policy.methods)})",
+        )
+    return sent.model_dump(mode="json")
 
 
 async def check_collector(
@@ -1320,6 +1477,8 @@ async def admin_provision_share(
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+    assertion = _key_assertion_admitted(offer, body)
+
     await _admit_writer(request, settings, writer, body.subject_id)
 
     override = body.override_subject_withdrawal
@@ -1338,9 +1497,25 @@ async def admin_provision_share(
     else:
         decided_by = "operator"
 
+    lifted: list[key_records.LiftedSuspension] = []
     try:
         consents = []
         async with db.begin():
+            if body.enabled and body.keys:
+                # Who holds each key here, and whether the holder suspended it,
+                # is settled before any row is written (ADR-0027): a refusal
+                # rolls the whole registration back.
+                if assertion is not None:
+                    await key_records.record_assertion(
+                        db, assertion, writer.collector_did
+                    )
+                lifted = await key_records.claim_keys(
+                    db,
+                    subject_id=body.subject_id,
+                    keys=list(body.keys),
+                    collector=writer.collector_did,
+                    assertion=assertion,
+                )
             for dataset_id in dataset_ids:
                 consents.append(
                     await consent_service.set_subject_data_sharing(
@@ -1379,6 +1554,16 @@ async def admin_provision_share(
             }
     except vocab.VocabularyError as exc:
         raise HTTPException(422, str(exc)) from exc
+    except (key_records.KeyHeldElsewhere, key_records.KeySuspendedByHolder) as exc:
+        raise HTTPException(409, str(exc)) from exc
+    except IntegrityError as exc:
+        # Two registrations racing for one key: the partial unique index on
+        # the active owner is the backstop for the check above.
+        raise HTTPException(
+            409,
+            "key already held by another subject at this holder (a concurrent "
+            "registration claimed it first)",
+        ) from exc
     except consent_service.ConsentWithdrawalStands as exc:
         # 409, not 403: the caller holds the permission this route requires and is
         # not being told it may not provision. It is being told the cell already
@@ -1406,6 +1591,16 @@ async def admin_provision_share(
         acted_by=writer.acted_by,
         keys_supplied=bool(body.keys) if body.enabled else None,
     )
+    if prov is not None:
+        for lift in lifted:
+            await prov.key_suspension(
+                action="lifted",
+                subject_id=lift.subject_id,
+                keys_digest=lift.keys_digest,
+                assertion_ref=lift.assertion_ref,
+                collector=writer.collector_did,
+                acted_by=writer.acted_by,
+            )
     return [
         RegisteredConsentResponse(
             **ConsentResponse.model_validate(c).model_dump(),
@@ -1428,6 +1623,10 @@ class SubjectShare(ConsentResponse):
     speaks for them — with the data keys it registered, and nothing it did not."""
 
     keys: list[str] = []
+    #: Those of ``keys`` the holder has suspended (ADR-0027): registered, and not
+    #: served until a key_assertion verified after the suspension re-asserts
+    #: them. Returned, like ``keys``, only to the organisation that registered them.
+    suspended_keys: list[str] = []
     missing_prerequisites: list[str] = []
 
 
@@ -1457,12 +1656,34 @@ async def admin_read_subject_shares(
     outstanding against the subject here (`D-18`: a member cannot see a holder's
     asks, so their organisation is where they surface), and — for the rows that
     hold them — the data keys, which only the registering organisation gets back.
+
+    **Only the cells the calling organisation collected** (2026-10-05), as
+    ``GET /consent/admin/decisions`` lists them (:func:`consent_service.
+    collected_by`): a member's own decision there is listed, another
+    organisation's cell is not, not even as a state. Membership is checked
+    *now*, and a DID can carry history from an organisation the person has
+    left; without this the next organisation read that history, every dataset,
+    purpose and consumer of it. The asks stay listed (`D-18`): they are open
+    questions to the person, which nobody collected. The deployment operator
+    reads every cell.
     """
     await _admit_writer(request, settings, writer, subject_id)
 
     rows = await consent_service.list_subject_consents(
         session=db, subject_id=subject_id
     )
+    if writer.is_organisation_token:
+        ours = {
+            (row.dataset_id, row.offer_id, row.consumer_id)
+            for row in rows
+            if consent_service.collected_by(row, writer.organisation)
+        }
+        rows = [
+            row
+            for row in rows
+            if row.status == "pending"
+            or (row.dataset_id, row.offer_id, row.consumer_id) in ours
+        ]
     latest: dict[tuple[str, str | None, str], ConsentRequestORM] = {}
     # Newest decision first, then each cell's presented decision first within
     # it: a subject's standing withdrawal under a newer one by anybody else is
@@ -1480,12 +1701,17 @@ async def admin_read_subject_shares(
     for row in rows:
         by_dataset.setdefault(row.dataset_id, []).append(row)
 
+    suspended = await key_records.suspended_key_indexes(db)
     shares = []
     for row in latest.values():
+        keys = _keys_for(writer, row)
         shares.append(
             SubjectShare(
                 **ConsentResponse.model_validate(row).model_dump(),
-                keys=_keys_for(writer, row),
+                keys=keys,
+                suspended_keys=[
+                    key for key in keys if suspended and blind_index(key) in suspended
+                ],
                 missing_prerequisites=(
                     consent_service.missing_prerequisites(
                         await consent_service.subject_rows_for(
@@ -2156,7 +2382,14 @@ class HolderKeyEvent(BaseModel):
     consumer_id: str
     key: str
     event: Literal["added", "removed"]
-    cause: Literal["grant", "withdrawal", "key_change", "backfill"]
+    cause: Literal[
+        "grant",
+        "withdrawal",
+        "key_change",
+        "backfill",
+        "holder_suspension",
+        "suspension_lifted",
+    ]
     at: datetime
     decided_by: str | None = None
     collector: str | None = None
@@ -2245,6 +2478,93 @@ async def holder_read_key_events(
         next_cursor=_encode_parts(page[-1].at.isoformat(), page[-1].id)
         if more
         else None,
+    )
+
+
+class HolderKeySuspensionRequest(BaseModel):
+    """A holder taking one of its keys out of the served set (ADR-0027)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    #: Why. One reason today: the key changed hands (a supply point taken over
+    #: by a new customer of record).
+    reason: Literal["holder_change"]
+
+    @field_validator("key")
+    @classmethod
+    def _typed_key(cls, key: str) -> str:
+        split_key(key)
+        return key
+
+
+class HolderKeySuspension(BaseModel):
+    key: str
+    suspended_at: datetime
+    reason: str
+    #: Decisions here that carried the key when it was suspended.
+    grants_affected: int
+    already_suspended: bool
+
+
+@router.post("/admin/holder/keys/suspend", response_model=HolderKeySuspension)
+async def holder_suspend_key(
+    body: HolderKeySuspensionRequest,
+    principal: Principal = Depends(require_consent_holder),
+    db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
+    prov: ProvBridge | None = Depends(get_prov),
+):
+    """The holder stops serving one of its keys until the collector re-asserts it.
+
+    ADR-0027. A holder that learns a key changed hands — a supply point taken
+    over by a new customer — cannot tell from its own records whether the
+    collector's assertion still holds. This takes the key out of the set its
+    data plane serves, for every decision carrying it, writes a
+    ``holder_suspension`` entry per decision into the key ledger and a
+    ``KeySuspended`` event into provenance, and shows the key as suspended in
+    the collector's read-back. It changes no decision.
+
+    **Lifted only by a grant whose ``key_assertion.verified_at`` is later than
+    the suspension** — the collector verifying again after the holder spoke.
+
+    **The holder only, and only its writers**: this connector's own
+    organisation client, or the deployment operator (``connector.admin``). A
+    person who may only *read* the keys (``connector.consent.holder.read``) is
+    refused, and so is every caller ``require_consent_holder`` refuses.
+    Idempotent while the key stays suspended.
+    """
+    own_client = (
+        principal.is_organisation
+        and not principal.is_collector
+        and principal.organisation_context == settings.participant_context_id
+    )
+    if not own_client and not principal.grants("connector.admin"):
+        raise HTTPException(
+            403,
+            "a key is suspended by the holder's own organisation client or the "
+            "deployment operator; connector.consent.holder.read only reads",
+        )
+    acted_by = acting_principal(principal, on_behalf_of=settings.participant_did)
+    async with db.begin():
+        result = await key_records.suspend_key(
+            db, key=body.key, reason=body.reason, acted_by=acted_by
+        )
+    if prov is not None and not result.already_suspended:
+        await prov.key_suspension(
+            action="suspended",
+            subject_id=result.subject_id,
+            keys_digest=result.keys_digest,
+            reason=result.reason,
+            grants_affected=result.grants_affected,
+            acted_by=acted_by,
+        )
+    return HolderKeySuspension(
+        key=body.key,
+        suspended_at=result.suspended_at,
+        reason=result.reason,
+        grants_affected=result.grants_affected,
+        already_suspended=result.already_suspended,
     )
 
 

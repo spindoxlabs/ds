@@ -233,17 +233,6 @@ async def test_a_write_only_caller_can_still_write(raw_client):
     )
     assert entity.status_code == 201, entity.text
 
-    audit = await raw_client.post(
-        "/audit/log",
-        json={
-            "dataset_id": "datasets.gold.weather",
-            "consumer_id": "did:web:example.org",
-            "row_count": 1,
-        },
-        headers=write,
-    )
-    assert audit.status_code == 201, audit.text
-
 
 @pytest.mark.rule("L-13")
 def test_every_route_declares_exactly_one_scope_and_it_matches_the_verb():

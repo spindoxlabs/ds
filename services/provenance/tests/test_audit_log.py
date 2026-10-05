@@ -1,13 +1,13 @@
 """The compliance access log — rulebook `L-12`.
 
-`GET /audit/log` and `/audit/log/summary` have always read a table nothing wrote:
-`POST /audit/log` exists and no component in the platform calls it. Both surfaces
-answered truthfully about an empty table, which is indistinguishable from a
-dataspace in which nobody ever queried anything.
+`GET /audit/log` and `/audit/log/summary` used to read a table nothing wrote: a
+direct-write route existed and no component in the platform called it. Both
+surfaces answered truthfully about an empty table, which is indistinguishable
+from a dataspace in which nobody ever queried anything.
 
 The event that already arrives *is* the query audit — the connector's PEP route
 is `POST /internal/audit/query` and it emits `QueryExecuted` — so the log row is
-derived from it. `POST /audit/log` stays for a data plane that reports directly.
+derived from it, and that is the only way a row is written.
 """
 
 from __future__ import annotations
@@ -100,15 +100,18 @@ async def test_a_query_with_no_consumer_writes_no_row(client):
     assert (await client.get("/audit/log")).json() == []
 
 
+@pytest.mark.rule("L-12")
 @pytest.mark.asyncio
-async def test_the_direct_write_route_still_works(client):
+async def test_the_log_has_no_direct_write_route(client):
+    """A row comes from a chained `QueryExecuted` event or not at all, so it
+    always names its caller and sits behind the hash chain."""
     entry = {
         "consumer_id": "did:web:external.test",
         "dataset_id": "urn:dataset:meters",
         "rows_returned": 3,
     }
-    assert (await client.post("/audit/log", json=entry)).status_code == 201
-    assert len((await client.get("/audit/log")).json()) == 1
+    assert (await client.post("/audit/log", json=entry)).status_code == 405
+    assert (await client.get("/audit/log")).json() == []
 
 
 @pytest.mark.asyncio

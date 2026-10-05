@@ -32,7 +32,16 @@ class ProvenanceClient:
             r.raise_for_status()
             return r.json()
         except Exception as exc:
-            log.warning("Failed to emit provenance event: %s", exc)
+            # ERROR, not WARNING (ADR-0027): the event is the record — a lost
+            # `QueryExecuted` is a release nobody can account for, and a lost
+            # `ConsentGranted` a grant the chain never saw. The type and id, never
+            # the payload, which may carry pseudonymous person ids.
+            log.error(
+                "Failed to emit provenance event %s (%s): %s",
+                event.get("event_type"),
+                event.get("event_id"),
+                exc,
+            )
             return None
 
     # This client writes; it does not read. `get_lineage` was the only read

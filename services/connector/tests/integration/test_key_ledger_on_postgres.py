@@ -8,8 +8,9 @@ Postgres and the migration can show:
 - **the listener on Postgres** — a withdrawal through the service appends its
   `removed` entry in the same transaction;
 - **the constraints** — the event and cause vocabularies are enforced, and
-  deleting a decision row deletes its history (`ON DELETE CASCADE`), which is how
-  erasure reaches the ledger.
+  deleting a decision row keeps its history with the reference nulled
+  (`ON DELETE SET NULL` since `0016`, ADR-0027: the ledger is retained for the
+  key-record retention period, and only `connector.db.retention` purges it).
 """
 
 from __future__ import annotations
@@ -147,12 +148,15 @@ async def test_the_listener_appends_in_the_decision_s_transaction(empty_database
                     {"row": row.id, "ds": DATASET},
                 )
 
-        # Erasing the decision erases its history.
+        # Erasing the decision keeps its history, unattached (ADR-0027).
         async with engine.begin() as conn:
             await conn.execute(
                 sa.text("DELETE FROM consent_requests WHERE id = :row"),
                 {"row": row.id},
             )
-        assert await _events(engine) == []
+        assert await _events(engine) == [
+            (None, "pod:EX01", "added", "grant"),
+            (None, "pod:EX01", "removed", "withdrawal"),
+        ]
     finally:
         await engine.dispose()

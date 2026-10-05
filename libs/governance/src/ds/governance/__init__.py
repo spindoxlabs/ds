@@ -28,6 +28,8 @@ from .dataplane import (
 from .sharing import (
     CONSENT_BASIS,
     DPV_LEGAL_BASES,
+    KEY_ASSERTION_METHODS,
+    KeyAssertionPolicy,
     OfferCoverage,
     OfferRecipients,
     ProcessorCategory,
@@ -81,6 +83,8 @@ __all__ = [
     "unresolved_purposes",
     "CONSENT_BASIS",
     "DPV_LEGAL_BASES",
+    "KEY_ASSERTION_METHODS",
+    "KeyAssertionPolicy",
     "OfferCoverage",
     "OfferRecipients",
     "ProcessorCategory",

@@ -3,6 +3,9 @@
 **Date:** 2026-10-01
 **Status:** accepted, implemented 2026-10-01
 **Refines:** ADR-0015 (the collector registers at the holder) and ADR-0021 (the collector's list)
+**Amended:** 2026-10-05 by [ADR-0027](ADR-0027-the-collector-asserts-whose-keys-it-registers.md) —
+the ledger is no longer erased with its decision row (decision 5): the reference is nulled and
+the entry kept for the key-record retention period
 **Rules affected:** `D-20` (amended: the holder's own organisation may read the data keys on
 its own connector's rows, as keys only)
 
@@ -91,7 +94,8 @@ EDC and DSP have no consent concept (ADR-0015). There is nothing to reuse.
      after one of them withdraws, so the history can show a `deauthorised` for a key the
      current list still has. The current list is authoritative, and the history says so.
    - It is retained as long as the consent records it mirrors, and erased with them
-     (`ON DELETE CASCADE` on `consent_id`).
+     (`ON DELETE CASCADE` on `consent_id`). *Superseded by ADR-0027: `ON DELETE SET NULL`, and
+     kept for the key-record retention period.*
    - **It starts when it ships.** At migration (`0014`), each granted row with keys seeds one
      `added` entry per key at its `decided_at`, with cause `backfill`. Withdrawals made before
      then cannot be recovered, because the rows no longer hold their keys. The route says

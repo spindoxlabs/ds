@@ -262,7 +262,11 @@ A person's DID lives in the namespace of the organisation that onboarded them,
 `did:web:<participant>:users:<id>`, and resolves on that participant's own host. **One human
 keeps one identifier** however many organisations hold credentials about them — issuance is per
 role, so deriving it per call would split a dual-role person's consent records and provenance in
-half. Custody, unlike the identifier, follows each credential.
+half. Custody, unlike the identifier, follows each credential. **The identifier is reused only
+while it holds a credential not revoked:** a person released by one organisation and onboarded
+by another gets a new DID in that organisation's namespace, and a DID whose credentials are all
+revoked is never issued again (`409`; send a new subject id)
+([ADR-0028](../decisions/ADR-0028-a-member-who-moves-gets-a-new-did-and-takes-the-login.md)).
 
 `/users/resolve` returns both halves under separate names and they are not interchangeable:
 `did` is the DID, `subject_id` is the `<id>` inside it — the value
@@ -407,6 +411,12 @@ an organisation token (`dependencies.authorize_keycloak_sync`) may write a mappi
 - the DID is not already bound to **another** login. Re-syncing the same (realm, user id),
   to correct the email or username, is allowed. Rebinding is the operator's act
   (`DELETE /admin/keycloak/mappings/{did}`, then a sync as administrator).
+
+**A login moves to a member's new DID** ([ADR-0028](../decisions/ADR-0028-a-member-who-moves-gets-a-new-did-and-takes-the-login.md)).
+When the login is bound to a DID whose credentials are **all revoked** (the person was
+released) and the new DID passes the checks above, the sync rebinds it. The old row stays with
+`released_at` set: the operator reads it as history, and no lookup or later sync answers or
+revives it. While the old DID holds any credential not revoked, the sync is a `409`.
 
 An unknown DID gets the same `403` as another organisation's, before any lookup. The plain
 `svc-ds-onboarding` is accepted only under `DS_ENV=dev`, with a warning; `identity-registry.admin`

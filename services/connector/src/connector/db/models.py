@@ -14,6 +14,7 @@ from sqlalchemy import (
     String,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON
@@ -293,7 +294,20 @@ class EdrEntryORM(Base):
 #: the decision started or stopped carrying the key while granted; the cause says
 #: which act moved it. Declared once, like `CONSENT_STATUSES`.
 KEY_EVENTS: tuple[str, ...] = ("added", "removed")
-KEY_EVENT_CAUSES: tuple[str, ...] = ("grant", "withdrawal", "key_change", "backfill")
+#: `holder_suspension` / `suspension_lifted` are the holder's own act on a key
+#: (ADR-0027) and say nothing about the decision: the decision still carries the
+#: key, the data plane does not serve it while it is suspended.
+KEY_EVENT_CAUSES: tuple[str, ...] = (
+    "grant",
+    "withdrawal",
+    "key_change",
+    "backfill",
+    "holder_suspension",
+    "suspension_lifted",
+)
+#: The causes that move what a decision *carries*. The two holder causes above
+#: are not among them, so "is this key still carried by a grant" reads past them.
+DECISION_KEY_CAUSES: tuple[str, ...] = ("grant", "withdrawal", "key_change", "backfill")
 
 
 class ConsentKeyEventORM(Base):
@@ -307,9 +321,15 @@ class ConsentKeyEventORM(Base):
     to remember it.
 
     **No subject id.** The holder reads keys, never who stands behind them.
-    `consent_id` ties the entry to its decision row, so erasing the row erases
-    its history with it (`ON DELETE CASCADE`), and it is never returned by a
-    route.
+    `consent_id` ties the entry to its decision row and is never returned by a
+    route. **Erasing the row does not erase its history** (ADR-0027, amending
+    ADR-0022): the reference becomes null (`ON DELETE SET NULL`) and the entry is
+    kept for the key-record retention period, the evidence of what was released
+    on whose assertion (GDPR Art. 17(3)(e)); `connector.db.retention` purges it
+    after that period and not before.
+
+    ``assertion_ref`` names the collector's key assertion the decision carried
+    when the entry was written (`consent_key_assertions`).
     """
 
     __tablename__ = "consent_key_events"
@@ -326,8 +346,8 @@ class ConsentKeyEventORM(Base):
     )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
-    consent_id: Mapped[str] = mapped_column(
-        String, ForeignKey("consent_requests.id", ondelete="CASCADE"), nullable=False
+    consent_id: Mapped[str | None] = mapped_column(
+        String, ForeignKey("consent_requests.id", ondelete="SET NULL"), nullable=True
     )
     offer_id: Mapped[str | None] = mapped_column(Text)
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
@@ -342,6 +362,7 @@ class ConsentKeyEventORM(Base):
     decided_by: Mapped[str | None] = mapped_column(Text)
     collector: Mapped[str | None] = mapped_column(Text)
     at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assertion_ref: Mapped[str | None] = mapped_column(String(64))
     # Only so the unit of work inserts the decision row before its entries: a
     # bare foreign key does not order a flush, and Postgres enforces it. Never
     # read — `lazy="raise"` makes an accidental load an error, not a query.
@@ -351,6 +372,97 @@ class ConsentKeyEventORM(Base):
     def _index_key(self, _name: str, value: str) -> str:
         self.key_index = blind_index(value)
         return value
+
+
+class ConsentKeyAssertionORM(Base):
+    """A collector's assertion that the keys it registered are its member's (ADR-0027).
+
+    The same record is stored inside the decision's ``legal_basis`` and carried
+    by its ``ConsentGranted`` event; this copy is keyed by ``assertion_ref`` (the
+    SHA-256 of its canonical JSON) so the key ledger and the key owners can
+    point at it, and so it **outlives an erased decision row** for the
+    key-record retention period. Codes and hashes only — no fiscal code, no POD,
+    no name (the model that admits it is ``extra="forbid"``).
+    """
+
+    __tablename__ = "consent_key_assertions"
+
+    assertion_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    assertion: Mapped[dict] = mapped_column(JSON, nullable=False)
+    collector: Mapped[str | None] = mapped_column(Text)
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+
+
+class ConsentKeyOwnerORM(Base):
+    """Which subject a ``pod:`` key belongs to at this holder (ADR-0027).
+
+    **One active owner per key**: a partial unique index on ``key_index`` where
+    ``released_at`` is null. A second subject registering the same key is a
+    ``409``; the same subject re-registering it is not. The row is released when
+    the last grant carrying the key ends, and kept for the key-record retention
+    period after that. Keyed by the blind index, never the key.
+    """
+
+    __tablename__ = "consent_key_owners"
+    __table_args__ = (
+        Index(
+            "ux_consent_key_owners_active",
+            "key_index",
+            unique=True,
+            postgresql_where=text("released_at IS NULL"),
+            sqlite_where=text("released_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    key_index: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    subject_id: Mapped[str] = mapped_column(Text, nullable=False)
+    collector: Mapped[str | None] = mapped_column(Text)
+    since: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    assertion_ref: Mapped[str | None] = mapped_column(String(64))
+    released_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+#: Why a holder may suspend a key. One reason today; a new one is a decision.
+KEY_SUSPENSION_REASONS: tuple[str, ...] = ("holder_change",)
+
+
+class ConsentKeySuspensionORM(Base):
+    """A holder took a key out of the set its data plane serves (ADR-0027).
+
+    Active while ``lifted_at`` is null — at most one per key (partial unique
+    index). Lifted only by a grant whose ``key_assertion.verified_at`` is later
+    than ``suspended_at``; ``lifted_by_assertion_ref`` names that assertion.
+    """
+
+    __tablename__ = "consent_key_suspensions"
+    __table_args__ = (
+        CheckConstraint(
+            "reason IN ({})".format(
+                ", ".join(f"'{r}'" for r in KEY_SUSPENSION_REASONS)
+            ),
+            name="ck_consent_key_suspension_reason",
+        ),
+        Index(
+            "ux_consent_key_suspensions_active",
+            "key_index",
+            unique=True,
+            postgresql_where=text("lifted_at IS NULL"),
+            sqlite_where=text("lifted_at IS NULL"),
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=_uuid)
+    key_index: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    suspended_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    acted_by: Mapped[dict | None] = mapped_column(JSON)
+    lifted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    lifted_by_assertion_ref: Mapped[str | None] = mapped_column(String(64))
 
 
 # The ledger's writer listens on every flush; importing it here is what makes it

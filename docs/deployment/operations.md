@@ -289,8 +289,9 @@ curl -sf https://provider.$BASE_DOMAIN/.well-known/did.json | jq .id
 
 Check, in order: DNS resolves to the ingress controller; the certificate is issued
 (`kubectl get certificate -A`); exactly one Ingress per host carries the cluster-issuer
-annotation; the `ExternalName` Service pointing at the authority registry exists in the
-participant namespace.
+annotation; the participant's own identity-registry release
+(`ds-identity-registry-<participant>`) is running in the participant namespace — the DID
+document is served by it, not by the trust anchor.
 
 ### A service cannot reach Keycloak or another service
 

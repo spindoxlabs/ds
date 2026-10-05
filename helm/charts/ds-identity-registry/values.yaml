@@ -177,12 +177,19 @@ keycloak:
     # file into, and the key only implied a capability the chart does not have.
     # `organizationsConfigMap` below is different: `deployment.yaml` mounts it.
     organizationsConfigMap: ""
-    # A Secret whose keys are `SVC_DS_CONNECTOR_<ALIAS>_SECRET`, one per entry of
-    # organizations.yaml with a `participant_context_id`, and
-    # `SVC_DS_COLLECTOR_<ALIAS>_SECRET` for each that also declares
-    # `collects_consent` (its collector client, ADR-0026). `org-sync` creates each
-    # client with its secret, and under `DS_ENV=production` refuses (exit 1) one
-    # it has no secret for. Empty → no such client can be created.
+    # The organisations of organizations.yaml that get a client, by alias: each
+    # with a `participant_context_id`, and `collectsConsent: true` for each that
+    # declares `collects_consent` (ADR-0026). The chart renders their secrets
+    # from `secrets.organisationClients.<alias>` into its own Secret:
+    # `SVC_DS_CONNECTOR_<ALIAS>_SECRET` for every one, and
+    # `SVC_DS_COLLECTOR_<ALIAS>_SECRET` for a collector — each `required`.
+    # `org-sync` creates each client with its secret, and under
+    # `DS_ENV=production` refuses (exit 1) one it has no secret for. Keep this
+    # in step with the ConfigMap's organizations.yaml.
+    #   {example-org: {collectsConsent: true}}
+    organisations: {}
+    # The name of an EXISTING Secret with those keys instead. Set, the chart
+    # renders none and `organisations` only documents the intent.
     organisationClientSecrets: ""
   # Runtime writes into the realm (promotion creating a participant's connector
   # client). Empty → falls back to `sync.enabled`, i.e. guest by default. See the
@@ -215,6 +222,10 @@ secrets:
   # presents to this instance's STS. Its own to choose — the trust anchor mints
   # none (`D-51`), which is why it is a per-release secret and not derived.
   participantStsSecret: ""
+  # `keycloak.sync.organisations` only: per alias, the organisation client's
+  # secret and, for a consent collector, the collector client's.
+  #   {example-org: {connectorSecret: ..., collectorSecret: ...}}
+  organisationClients: {}
 
 # ── Global fallbacks ──────────────────────────────────────────────────────────
 # Real values come from helm/values.yaml via helmfile. These exist so the chart

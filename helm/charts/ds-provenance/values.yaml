@@ -68,6 +68,10 @@ migration:
 secrets:
   dbUser: "" # defaults to the database name (owner role)
   dbPassword: ""
+  # HMAC key of the person-id pseudonym in the record's hash chain (ADR-0025).
+  # Required. Set once per store, never rotated: changing it breaks the
+  # verification of every existing record. openssl rand -hex 32
+  subjectPseudonymKey: ""
 
 global:
   baseDomain: ds.example.org

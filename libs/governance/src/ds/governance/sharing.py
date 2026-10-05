@@ -154,6 +154,56 @@ class OfferRecipients(BaseModel):
         return data
 
 
+#: How a collector may have verified that a key belongs to the subject it names
+#: (``AdminShareLegalBasis.key_assertion.method`` on the connector). A plain
+#: "offline" check is deliberately absent: an assertion is accepted only with a
+#: digest of the evidence the collector holds (ADR-0027).
+KEY_ASSERTION_METHODS = ("uploaded-document", "offline-with-evidence")
+
+
+class KeyAssertionPolicy(BaseModel):
+    """What the holder demands of a collector that registers keys under this offer.
+
+    A collector that sends a subject's data keys (``pod:…``) asserts that those
+    keys are the subject's. The holder decides whether it accepts a key without
+    that assertion, and which verification methods it accepts (ADR-0027).
+
+    Declared in YAML as a mapping, or as the shorthand ``key_assertion: required``
+    (every method accepted). **Not a user-visible fact**: it says what the
+    collector must prove to the holder, never what the person agreed to, so it is
+    absent from :meth:`SharingOffer.user_visible_facts`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    required: bool = True
+    methods: list[str] = Field(default_factory=lambda: list(KEY_ASSERTION_METHODS))
+
+    @model_validator(mode="before")
+    @classmethod
+    def _shorthand(cls, data: Any) -> Any:
+        if data == "required":
+            return {"required": True}
+        if data == "optional":
+            return {"required": False}
+        return data
+
+    @model_validator(mode="after")
+    def _known_methods(self) -> KeyAssertionPolicy:
+        unknown = sorted(set(self.methods) - set(KEY_ASSERTION_METHODS))
+        if unknown:
+            raise ValueError(
+                f"key_assertion.methods names {unknown}; accepted values are "
+                f"{list(KEY_ASSERTION_METHODS)}"
+            )
+        if self.required and not self.methods:
+            raise ValueError(
+                "key_assertion is required but accepts no method, so no grant "
+                "carrying a key could ever be registered"
+            )
+        return self
+
+
 class SharingOffer(BaseModel):
     """One consentable bundle.
 
@@ -189,6 +239,11 @@ class SharingOffer(BaseModel):
     #: what the person agreed to, so adding one does not ask anybody again
     #: (plan `a-collector-registers-consent-at-the-holder`, 2026-09-17).
     requires_offers: list[str] = Field(default_factory=list)
+    #: What a collector must assert about the data keys it registers under this
+    #: offer (ADR-0027). ``None`` — undeclared — leaves the decision to the
+    #: holder's connector, which requires an assertion for a ``pod:`` key outside
+    #: ``DS_ENV=dev``. Not a user-visible fact.
+    key_assertion: KeyAssertionPolicy | None = None
 
     @property
     def requires_consent(self) -> bool:

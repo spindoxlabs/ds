@@ -386,6 +386,7 @@ class ProvBridge:
         row_count: int | None = None,
         authorized_subject_ids: list[str] | None = None,
         event_id: str | None = None,
+        decision_ref: str | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -401,6 +402,9 @@ class ProvBridge:
                 "transfer_id": transfer_id,
                 "row_count": row_count,
                 "authorized_subject_ids": authorized_subject_ids,
+                # Only when the PEP echoed one, so an event from a PEP that
+                # predates it keeps the payload (and derived id) it had.
+                **({"decision_ref": decision_ref} if decision_ref else {}),
             }
         )
 
@@ -453,6 +457,8 @@ class ProvBridge:
         collector: str | None = None,
         keys_supplied: bool | None = None,
         acted_by: dict | None = None,
+        keys_digest: str | None = None,
+        assertion_ref: str | None = None,
     ) -> None:
         await self._prov.emit_event(
             {
@@ -468,6 +474,40 @@ class ProvBridge:
                 "recipient_role": recipient_role,
                 "legal_basis": legal_basis,
                 **_decision_context(decided_by, collector, keys_supplied, acted_by),
+                # ADR-0027 — digests only, and only when there is something to
+                # digest, so a keyless grant's payload is what it always was.
+                **({"keys_digest": keys_digest} if keys_digest else {}),
+                **({"assertion_ref": assertion_ref} if assertion_ref else {}),
+            }
+        )
+
+    async def key_suspension(
+        self,
+        *,
+        action: str,
+        keys_digest: str,
+        subject_id: str | None = None,
+        reason: str | None = None,
+        grants_affected: int | None = None,
+        assertion_ref: str | None = None,
+        collector: str | None = None,
+        acted_by: dict | None = None,
+    ) -> None:
+        """The holder took a key out of its served set, or a newer assertion put
+        it back (ADR-0027). Never the key: its digest."""
+        await self._prov.emit_event(
+            {
+                "event_type": "KeySuspension",
+                "occurred_at": _now(),
+                "action": action,
+                "provider_did": _did(self._participant_id),
+                "subject_id": _did(subject_id),
+                "keys_digest": keys_digest,
+                "reason": reason,
+                "grants_affected": grants_affected,
+                "assertion_ref": assertion_ref,
+                "collector": collector,
+                "acted_by": acted_by,
             }
         )
 

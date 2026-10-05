@@ -36,6 +36,15 @@ sharing_offers:
     consent_text_version: "1.0"
     revocable: true
     retention: P1Y
+    # The community registers each member's supply point (`pod:` key) with the
+    # decision. The grid operator releases a supply point's readings on the
+    # community's assertion that it is the member's — so the assertion is
+    # required, and a check of which the community keeps no evidence digest is
+    # not accepted (ADR-0027). `key_assertion: required` is the shorthand for
+    # both methods.
+    key_assertion:
+      required: true
+      methods: [uploaded-document, offline-with-evidence]
 
   # A named recipient studies the readings for flexibility. Admitted only
   # together with the release above: withdrawing that withdraws this too.
@@ -58,3 +67,4 @@ sharing_offers:
     consent_text_version: "1.0"
     revocable: true
     retention: P1Y
+    key_assertion: required

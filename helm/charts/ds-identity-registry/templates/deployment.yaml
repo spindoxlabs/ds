@@ -143,11 +143,14 @@ spec:
                 --keycloak-url "$KEYCLOAK_ADMIN_URL" \
                 --admin-user "$KEYCLOAK_ADMIN_USERNAME" \
                 --admin-password "$KEYCLOAK_ADMIN_PASSWORD"
-          {{- with .Values.keycloak.sync.organisationClientSecrets }}
-          # One `SVC_DS_CONNECTOR_<ALIAS>_SECRET` per organisation client.
+          {{- if or .Values.keycloak.sync.organisationClientSecrets .Values.keycloak.sync.organisations }}
+          # One `SVC_DS_CONNECTOR_<ALIAS>_SECRET` per organisation client, and
+          # `SVC_DS_COLLECTOR_<ALIAS>_SECRET` per organisation that declares
+          # `collects_consent` (its collector client, ADR-0026). Rendered by
+          # organisation-client-secret.yaml unless an existing Secret is named.
           envFrom:
             - secretRef:
-                name: {{ . }}
+                name: {{ include "ir.organisationClientSecretName" . }}
           {{- end }}
           env:
             {{- include "ir.env" . | nindent 12 }}

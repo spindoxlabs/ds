@@ -21,7 +21,7 @@ readable by another participant — there is no federation here, deliberately.
 
 ## What it does
 
-**Ingests sixteen event types** on `POST /prov/events`, each validated against its own model.
+**Ingests seventeen event types** on `POST /prov/events`, each validated against its own model.
 The connector emits all of them; the dataset API's query audit reaches here indirectly,
 forwarded by the connector.
 
@@ -30,14 +30,29 @@ forwarded by the connector.
 | Discovery | `CataloguePublished`, `CatalogueWithdrawn`, `CatalogViewed` |
 | Contracting | `AccessRequested`, `NegotiationStarted`, `NegotiationFinalized`, `NegotiationTerminated`, `ContractAgreementSigned` |
 | Exchange | `TransferStarted`, `DataTransferCompleted`, `QueryExecuted`, `AccessRevoked` |
-| Personal data | `ConsentGranted`, `ConsentRevoked`, `DataIngested`, `DataDisclosed` |
+| Personal data | `ConsentGranted`, `ConsentRevoked`, `KeySuspension`, `DataIngested`, `DataDisclosed` |
 
 **Materialises each into a graph.** One handler per event type creates or updates the nodes
 and edges the event implies, in a single transaction with the stored payload. Seven PROV-O
-relations are produced across all sixteen: `wasGeneratedBy`, `wasAttributedTo`,
+relations are produced across all seventeen: `wasGeneratedBy`, `wasAttributedTo`,
 `wasDerivedFrom`, `wasAssociatedWith`, `used`, `invalidated`, `actedOnBehalfOf`.
 `services/provenance/tests/test_relation_vocabulary.py` sweeps the materialisers and fails on any term the
 relations schema or the JSON-LD context does not also carry.
+
+**Carries the references that tie a release to an assertion** ([ADR-0027](../decisions/ADR-0027-the-collector-asserts-whose-keys-it-registers.md)),
+as SHA-256 hex digests the schema refuses in any other shape:
+
+| Event | Field | Is |
+|---|---|---|
+| `ConsentGranted` | `keys_digest` | `sha256_hex("\n".join(sorted(set(key_index))))` over the keyed blind indexes of the keys the grant carries — never the keys |
+| `ConsentGranted` | `assertion_ref` | `sha256_hex(canonical(legal_basis.key_assertion))`, canonical = sorted-keys compact JSON; the assertion itself is inside `legal_basis` |
+| `QueryExecuted` | `decision_ref` | the data-plane allow's release link, echoed by the data plane beside `agreement_id` |
+| `KeySuspension` | `keys_digest`, `action`, `reason` / `assertion_ref` | a holder suspending one key (`holder_change`), or a newer assertion lifting it |
+
+All of them are inside the chained payload (`L-17`), so the connector's row or ledger edited
+after the fact no longer matches the record. **Deploy this service before a connector that
+sends them**: an older provenance ignores a field it does not know, and refuses an event type
+it does not know.
 
 **Answers three kinds of question.**
 
@@ -125,8 +140,8 @@ reordered row fails at its sequence number. Removing the **newest** rows is visi
 against a head recorded somewhere else, so an operator records `head` outside the store.
 
 The chain covers the event record. The graph and `access_log` are projections of it and are
-not chained, though the API cannot change them either. `POST /audit/log` writes an
-`access_log` row directly and is outside the chain.
+not chained, though the API cannot change them either. `access_log` has no write route: every
+row comes from a chained `QueryExecuted` event.
 
 ### Retention of person ids
 
@@ -221,7 +236,7 @@ later event names it as what it is; and `external_meta` is **merged**, so
 `NegotiationStarted` recorded on the same node. A `None` on the incoming side means *this
 event does not know* and never overwrites a value.
 
-`access_log` is written from `QueryExecuted` as well as through `POST /audit/log`: the query
+`access_log` is written only from `QueryExecuted`, with no direct write route: the query
 audit already reaches the connector's PEP route and is forwarded here, so the compliance log
 needs no second caller.
 

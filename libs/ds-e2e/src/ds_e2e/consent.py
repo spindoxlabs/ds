@@ -34,6 +34,39 @@ def legal_basis(submission_ref: str, *, source: str = "ds-e2e") -> dict[str, Any
     }
 
 
+#: The responsibility statement a flow's collector asserts under (ADR-0027).
+KEY_ASSERTION_TERMS = "e2e-pod-assertion/1"
+KEY_ASSERTION_TEXT = (
+    "End-to-end verification: the collector asserts that each key it registers "
+    "belongs to the member it registers it for, on the evidence digested here."
+)
+
+
+def key_assertion(verification_ref: str) -> dict[str, Any]:
+    """A complete key assertion, as a collector sending keys must supply it.
+
+    Codes and digests only — real digests over strings this harness stands
+    behind, never a token value. ``verified_at`` is now, so it also lifts a
+    suspension the holder made before this call.
+    """
+    from datetime import UTC, datetime
+
+    return {
+        "terms": KEY_ASSERTION_TERMS,
+        "terms_sha256": hashlib.sha256(KEY_ASSERTION_TEXT.encode()).hexdigest(),
+        "method": "uploaded-document",
+        "verification_ref": verification_ref,
+        "verified_by": hashlib.sha256(b"e2e-verifier").hexdigest(),
+        "verified_at": datetime.now(UTC).isoformat(),
+        "evidence": [
+            {
+                "kind": "utility_bill",
+                "sha256": hashlib.sha256(b"e2e-utility-bill").hexdigest(),
+            }
+        ],
+    }
+
+
 #: What a flow registering consent as the provider organisation states.
 #:
 #: Since 2026-09-17 the connector refuses a plain service token on

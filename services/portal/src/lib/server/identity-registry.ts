@@ -110,34 +110,52 @@ export function realmOf(issuer: string | null | undefined): string | null {
 	return match ? match[1] : null;
 }
 
-/** The query `/users/resolve` takes: the login first, the email only as a fallback. */
-export function resolveQuery(email: string, login?: KeycloakLogin | null): string {
-	const params = new URLSearchParams();
+/** What `POST /users/resolve` takes: the login first, the email only as a fallback. */
+export interface ResolveBody {
+	realm?: string;
+	user_id?: string;
+	email?: string;
+}
+
+/**
+ * The JSON body for `POST /users/resolve`. A body, never a query string: an
+ * email in a URL is recorded by every access log, proxy and trace on the path,
+ * and the registry withdraws the `GET ?email=` form after its sunset.
+ */
+export function resolveBody(email: string, login?: KeycloakLogin | null): ResolveBody {
+	const body: ResolveBody = {};
 	// **The Keycloak user id first** — the one identifier an IdP does not let
 	// people change. The registry resolves it before anything else, and it is
 	// the same key the connector and provenance bind a login to (`GET
 	// /users/me`, R3): resolving by email alone could show a person a DID their
 	// login is not bound to, and every person route would then refuse them.
 	if (login?.realm && login.userId) {
-		params.set('realm', login.realm);
-		params.set('user_id', login.userId);
+		body.realm = login.realm;
+		body.user_id = login.userId;
 	}
-	if (email) params.set('email', email.trim().toLowerCase());
-	return params.toString();
+	const normalised = email?.trim().toLowerCase();
+	if (normalised) body.email = normalised;
+	return body;
 }
 
 export async function resolveUser(
 	email: string,
 	login?: KeycloakLogin | null,
 ): Promise<ResolvedIdentity | null> {
-	if (!email && !login) return null;
+	// Nothing to key on: the registry would only answer 422.
+	const body = resolveBody(email, login);
+	if (!body.email && !body.user_id) return null;
 	const serviceToken = await getServiceToken();
 	if (!serviceToken) return null;
 
-	const url = `${identityRegistryUrl()}/users/resolve?${resolveQuery(email, login)}`;
 	try {
-		const res = await fetch(url, {
-			headers: { Authorization: `Bearer ${serviceToken}` },
+		const res = await fetch(`${identityRegistryUrl()}/users/resolve`, {
+			method: 'POST',
+			headers: {
+				Authorization: `Bearer ${serviceToken}`,
+				'Content-Type': 'application/json',
+			},
+			body: JSON.stringify(body),
 		});
 		if (res.status === 404) return null;
 		if (!res.ok) {

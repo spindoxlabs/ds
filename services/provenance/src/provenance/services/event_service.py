@@ -25,6 +25,7 @@ from ..schemas.events import (
     DataTransferCompleted,
     DomainEvent,
     EventIngestResponse,
+    KeySuspension,
     NegotiationFinalized,
     NegotiationStarted,
     NegotiationTerminated,
@@ -97,6 +98,8 @@ async def ingest_event(
         prov_node = await _materialise_consent_granted(session, event)
     elif isinstance(event, ConsentRevoked):
         prov_node = await _materialise_consent_revoked(session, event)
+    elif isinstance(event, KeySuspension):
+        prov_node = await _materialise_key_suspension(session, event)
     elif isinstance(event, DataIngested):
         prov_node = await _materialise_data_ingested(session, event)
     elif isinstance(event, DataDisclosed):
@@ -134,10 +137,9 @@ async def ingest_event(
 async def _record_access_log(session: AsyncSession, event: QueryExecuted) -> None:
     """Project a `QueryExecuted` into the compliance access log.
 
-    `access_log` is the table `GET /audit/log` and `/audit/log/summary` read, and
-    nothing had ever written to it: `POST /audit/log` exists but no component in
-    the platform calls it, so both read surfaces answered honestly about an empty
-    table (rulebook `L-12`).
+    `access_log` is the table `GET /audit/log` and `/audit/log/summary` read. This
+    projection is its only writer: the direct `POST /audit/log`, which no
+    component ever called, was removed (rulebook `L-12`).
 
     The event that already arrives *is* the query audit — the connector's PEP
     route is literally `POST /internal/audit/query`, and it emits `QueryExecuted`.
@@ -621,6 +623,7 @@ async def _materialise_query_executed(
             "subjectId": event.subject_id,
             "rowCount": event.row_count,
             "authorizedSubjectIds": event.authorized_subject_ids,
+            "decisionRef": event.decision_ref,
         },
     )
     dataset = await upsert_node(
@@ -705,6 +708,8 @@ async def _materialise_consent_granted(
             "decidedBy": event.decided_by,
             "collector": event.collector,
             "keysSupplied": event.keys_supplied,
+            "keysDigest": event.keys_digest,
+            "assertionRef": event.assertion_ref,
         },
     )
     dataset = await upsert_node(
@@ -770,6 +775,53 @@ async def _materialise_consent_revoked(
     # revocation invalidates the consent's hold on it.
     await _edge(session, "invalidated", activity.id, dataset.id)
     await _edge(session, "wasAssociatedWith", activity.id, subject.id)
+    await _materialise_collector(session, activity, event.collector)
+    await _materialise_acting_principal(session, activity, event.acted_by)
+    return activity
+
+
+async def _materialise_key_suspension(
+    session: AsyncSession, event: KeySuspension
+) -> ProvNodeORM:
+    """A holder took a key out of its served set, or a newer assertion put it back.
+
+    The key never appears: the activity carries its ``keys_digest``. The subject
+    whose grant carried it is an agent with the ``dataSubject`` role, as on
+    ``AccessRevoked``; the holder is the other agent, and a lift names the
+    collector whose assertion lifted it.
+    """
+    suspended = event.action == "suspended"
+    activity = await upsert_node(
+        session,
+        f"urn:activity:key-suspension:{event.action}:"
+        f"{event.event_id or event.occurred_at.isoformat()}",
+        "Activity",
+        label="Key Suspended" if suspended else "Key Suspension Lifted",
+        started_at=event.occurred_at,
+        ended_at=event.occurred_at,
+        external_meta={
+            "action": event.action,
+            "keysDigest": event.keys_digest,
+            "subjectId": event.subject_id,
+            "reason": event.reason,
+            "grantsAffected": event.grants_affected,
+            "assertionRef": event.assertion_ref,
+        },
+    )
+    if event.provider_did:
+        holder = await upsert_node(
+            session, event.provider_did, "Agent", label=event.provider_did
+        )
+        await session.flush()
+        await _edge(session, "wasAssociatedWith", activity.id, holder.id)
+    if event.subject_id:
+        subject = await upsert_node(
+            session, event.subject_id, "Agent", label=event.subject_id
+        )
+        await session.flush()
+        await _edge(
+            session, "wasAssociatedWith", activity.id, subject.id, role="dataSubject"
+        )
     await _materialise_collector(session, activity, event.collector)
     await _materialise_acting_principal(session, activity, event.acted_by)
     return activity

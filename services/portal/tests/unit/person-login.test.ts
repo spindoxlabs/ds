@@ -9,7 +9,7 @@
  * person route would then refuse them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { realmOf, resolveQuery } from '../../src/lib/server/identity-registry';
+import { realmOf, resolveBody } from '../../src/lib/server/identity-registry';
 import { queryMyEvents } from '../../src/lib/server/provenance';
 
 describe('realmOf', () => {
@@ -24,20 +24,17 @@ describe('realmOf', () => {
 	});
 });
 
-describe('resolveQuery', () => {
+describe('resolveBody', () => {
 	it('asks by the Keycloak user id, with the email only as a fallback', () => {
-		const query = new URLSearchParams(
-			resolveQuery('Subject@Example.test ', { realm: 'dataspaces', userId: 'u-1' }),
-		);
-		expect(query.get('realm')).toBe('dataspaces');
-		expect(query.get('user_id')).toBe('u-1');
-		expect(query.get('email')).toBe('subject@example.test');
+		expect(
+			resolveBody('Subject@Example.test ', { realm: 'dataspaces', userId: 'u-1' }),
+		).toEqual({ realm: 'dataspaces', user_id: 'u-1', email: 'subject@example.test' });
 	});
 
 	it('falls back to the email when there is no login to key on', () => {
-		const query = new URLSearchParams(resolveQuery('subject@example.test', null));
-		expect(query.get('user_id')).toBeNull();
-		expect(query.get('email')).toBe('subject@example.test');
+		expect(resolveBody('subject@example.test', null)).toEqual({
+			email: 'subject@example.test',
+		});
 	});
 });
 

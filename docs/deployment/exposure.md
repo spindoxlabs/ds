@@ -37,17 +37,20 @@ DID resolution and the DSP endpoints share it.
 
 | Path | Backend | Purpose |
 |---|---|---|
-| `/.well-known/did.json` | the authority's identity registry, rewritten to its `/dids/…` route | `did:web` resolution |
+| `/.well-known/did.json` | this participant's **own** identity registry (`ds-identity-registry-<participant>`, the `participant` release) | `did:web` resolution |
+| `/users/*` | the same registry | the DID documents of the people this participant onboarded, `did:web:<participant>:users:<id>` (rulebook `D-22a`) |
+| `/credentials/*`, `/sts/*` | the same registry | its credential service and STS |
 | `/protocol/*` | `ds-edc-<participant>` protocol port | DSP — federation |
-| `/public/*` | `ds-edc-<participant>` data-plane port | EDR pulls by remote consumers |
 
-Everything else on this host 404s.
+Everything else on this host 404s. There is no `/public` route: consumer-pull traffic never
+crosses this host, the EDR names the dataset API directly.
 
-An Ingress can only target a Service in its own namespace, so the DID path reaches the
-authority-namespace registry through an `ExternalName` Service, with `upstream-vhost` set so the
-registry sees its own hostname.
+The registry is in the participant's own namespace, so no cross-namespace bridge is needed.
+The dataspace's single `trust-anchor` registry serves no participant's or person's DID
+document: one anchor per dataspace, one participant registry per organisation (each REC and
+DSO). The routes are in `helm/charts/ds-edc/templates/ingress.yaml`.
 
-### `trust-anchor.<baseDomain>` and `users.<baseDomain>`
+### `trust-anchor.<baseDomain>`, and where people's DIDs resolve
 
 | Host | Path | Behaviour |
 |---|---|---|

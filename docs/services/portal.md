@@ -72,7 +72,8 @@ Per request, `hooks.server.ts`:
 1. reads the bearer from `x-auth-request-access-token`, falling back to `Authorization`;
 2. base64-decodes the JWT payload and rejects an expired `exp`;
 3. takes the `email` claim and resolves the person against the identity registry
-   (`GET /users/resolve?email=`), cached 60 s per email including negative results;
+   (`POST /users/resolve`, the identifiers in a JSON body, never in the URL), cached 60 s
+   per login (or email) including negative results;
 4. exposes `{ user, accessToken, userDid, userVcRoles, userVcJwsByRole, userSubjectId }`.
    `accessToken`, `userVcJws` and `userVcJwsByRole` are **non-enumerable**: server code reads
    them, and no serialisation of the session carries them.
@@ -108,7 +109,7 @@ else forwards the signed-in user's token, or the subject's credential headers.
   beside it**. The connector and provenance verify the credential and bind the token to it
   ([ADR-0024](../decisions/ADR-0024-a-person-route-takes-the-persons-login.md)). The portal
   resolves the person's DID by the same key, their Keycloak user id in the realm the token
-  names (`/users/resolve?realm=&user_id=`), with the email only as a fallback.
+  names (`realm` + `user_id` in the `/users/resolve` body), with the email only as a fallback.
 
 ### Server-side rendering, with one exception
 

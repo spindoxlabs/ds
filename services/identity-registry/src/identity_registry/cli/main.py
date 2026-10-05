@@ -36,8 +36,11 @@ from ..services.crypto import (
 )
 from ..services.issuance import (
     HELD_FOR_ANOTHER_ORGANISATION,
+    SPENT_SUBJECT_ID,
     active_data_subject_credential,
     held_for_another_organisation,
+    is_spent,
+    live_subject_did,
 )
 from ..services.status_list import (
     SUSPENSION_LIST_ID,
@@ -580,7 +583,7 @@ def credential_issue_data_subject(
         # The person lives in their custodian's namespace (`D-50`), and the
         # first organisation to onboard them decides which — the same rule the
         # API applies, in the same helper, so the two cannot drift.
-        from ..services.did import SubjectNamespaceError, subject_did_for, subject_id_of
+        from ..services.did import SubjectNamespaceError, subject_did_for
 
         try:
             subject_did = subject_did_for(linked_participant_did, subject_id)
@@ -590,15 +593,15 @@ def credential_issue_data_subject(
         ta_did = f"did:web:{settings.trust_anchor_domain}"
 
         async with factory() as session:
-            existing_did = (
-                (await session.execute(select(Did.did).where(Did.did_type == "user")))
-                .scalars()
-                .all()
-            )
-            for known in existing_did:
-                if subject_id_of(known) == subject_id:
-                    subject_did = known
-                    break
+            # The DID holding a live credential, else a new one in this
+            # organisation's namespace; a spent one is never revived — the same
+            # rule as the API, in the same helpers (ADR-0028).
+            live = await live_subject_did(session, subject_id)
+            if live is not None:
+                subject_did = live
+            elif await is_spent(session, subject_did):
+                typer.echo(SPENT_SUBJECT_ID, err=True)
+                raise typer.Exit(1)
 
             # Idempotent **per role**, not per subject — the rule and the reason
             # both live in `active_data_subject_credential`, which the HTTP
@@ -1188,6 +1191,13 @@ def keycloak_map_user(
                 select(KeycloakMapping).where(KeycloakMapping.did == did)
             )
             existing = result.scalar_one_or_none()
+            if existing is not None and existing.released_at is not None:
+                typer.echo(
+                    f"{did} was released from its login (ADR-0028); a released "
+                    "binding is history and is not revived",
+                    err=True,
+                )
+                raise typer.Exit(1)
 
             if existing:
                 existing.keycloak_realm = realm
@@ -1711,7 +1721,8 @@ def membership_import(
                 else:
                     kc_result = await session.execute(
                         select(KeycloakMapping).where(
-                            KeycloakMapping.subject_id.contains(user_id)
+                            KeycloakMapping.subject_id.contains(user_id),
+                            KeycloakMapping.released_at.is_(None),
                         )
                     )
                     kc = kc_result.scalar_one_or_none()

@@ -280,6 +280,64 @@ HELD_FOR_ANOTHER_ORGANISATION = (
 )
 
 
+# ── Which DID a person is issued under (2026-10-05) ───────────────
+#
+# One human keeps one DID **while it is in use**: a second role, from the same
+# organisation or another one, is issued under the DID that already holds a live
+# credential, so consent and provenance are not split in half. A DID whose every
+# credential is revoked is **spent**: the person was released, the holder's
+# sweep retires it (`did_retirement.py`, `P-29`), and what was recorded under it
+# stays under it. A person who joins again is issued a **new** DID, in the
+# issuing organisation's namespace (`D-22a`). Reusing the spent one would hand
+# a retired identifier, and its history, to the next organisation.
+
+#: The refusal when the DID a call would mint is a spent one. It names neither
+#: the DID nor the organisation that released it.
+SPENT_SUBJECT_ID = (
+    "This subject id names an identity whose credentials are all revoked. A "
+    "released identity is not issued again: send a new, opaque subject id "
+    "(rulebook D-22c) and the person is issued a new DID."
+)
+
+
+async def _not_revoked(db: AsyncSession, did: str) -> list[Credential] | None:
+    """The DID's credentials not revoked; ``None`` when it has none at all."""
+    rows = (
+        (await db.execute(select(Credential).where(Credential.subject_did == did)))
+        .scalars()
+        .all()
+    )
+    if not rows:
+        return None
+    return [c for c in rows if c.status != "revoked"]
+
+
+async def live_subject_did(db: AsyncSession, subject_id: str) -> str | None:
+    """The DID this person holds a credential under, not revoked, or ``None``.
+
+    Matched on the **subject id inside the DID**, never a ``LIKE`` pattern: the
+    id is caller-supplied, and a pattern would let one containing ``%`` match
+    other people. A suspended credential is live: suspension is reversible
+    (`P-29`). A DID whose credentials are all revoked is not returned, and nor
+    is one in another namespace that holds none, so the caller mints in its own.
+    """
+    dids = (
+        (await db.execute(select(Did.did).where(Did.did_type == "user")))
+        .scalars()
+        .all()
+    )
+    for did in sorted(d for d in dids if subject_id_of(d) == subject_id):
+        if await _not_revoked(db, did):
+            return did
+    return None
+
+
+async def is_spent(db: AsyncSession, did: str) -> bool:
+    """Has *did* held credentials, and are they all revoked now?"""
+    held = await _not_revoked(db, did)
+    return held is not None and not held
+
+
 async def active_data_subject_credential(
     db: AsyncSession, subject_did: str, role: str | None
 ) -> Credential | None:

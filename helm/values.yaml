@@ -125,6 +125,12 @@ global:
       # a subset: the syncer recomputes every client's grants from what it is
       # given, so a missing file strips whatever it granted).
       organizationsConfigMap: "" # ConfigMap holding organizations.yaml
+      # The organisations in that file that get a client, by alias, and which of
+      # them collect consent (`collects_consent`, ADR-0026). The secrets come
+      # from `secrets.organisationClients.<alias>`; the render fails on one
+      # missing. Keep it in step with organizations.yaml.
+      #   {example-org: {collectsConsent: true}}
+      organisations: {}
 
     # ── Layer B — the foreign realm's vocabulary, translated ──────────────────
     # Empty means "the realm speaks ds's names already", which is true when ds

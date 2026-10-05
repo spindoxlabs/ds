@@ -26,8 +26,8 @@ import pytest
 SRC = Path(__file__).resolve().parents[1] / "src" / "connector"
 BRIDGE = SRC / "services" / "prov_bridge.py"
 
-# The sixteen types of `docs/rulebook/provenance-and-logging.md` §"sixteen event
-# types". Duplicated here deliberately: a test that read the rulebook would pass
+# The seventeen types of `docs/rulebook/provenance-and-logging.md` §"seventeen
+# event types". Duplicated here deliberately: a test that read the rulebook would pass
 # whenever somebody edited the rulebook, which is the wrong direction of proof.
 RULEBOOK_EVENT_TYPES = frozenset(
     {
@@ -50,6 +50,9 @@ RULEBOOK_EVENT_TYPES = frozenset(
         "ConsentRevoked",
         "DataIngested",
         "DataDisclosed",
+        # The seventeenth, 2026-10-05 (ADR-0027): a holder suspending one of
+        # its keys, or a newer assertion lifting the suspension.
+        "KeySuspension",
     }
 )
 
@@ -122,8 +125,8 @@ def test_every_emitted_type_is_a_rulebook_type():
     emitted = set(_emitter_methods().values())
     invented = sorted(emitted - RULEBOOK_EVENT_TYPES)
     assert not invented, (
-        f"{invented} is emitted but is not one of the rulebook's sixteen. A "
-        f"seventeenth event type is a rulebook change, not a code change."
+        f"{invented} is emitted but is not one of the rulebook's seventeen. An "
+        f"eighteenth event type is a rulebook change, not a code change."
     )
 
 

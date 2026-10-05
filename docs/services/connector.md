@@ -136,6 +136,22 @@ API asks the connector whether rows may flow.
    are empty; the handler reads the list it knows.
 7. **Combine.** The strictest verdict wins, and every refusal shares one response shape so a
    probe cannot distinguish causes.
+8. **Name the release.** An allow carries `decision_ref` — the release link
+   ([ADR-0027](../decisions/ADR-0027-the-collector-asserts-whose-keys-it-registers.md)):
+
+   ```
+   decision_ref = sha256_hex(agreement_id + "\n" + "\n".join(sorted(set(key_index))))
+   ```
+
+   over every key the allowed row filters serve, where `key_index` is the keyed blind index
+   (`HMAC-SHA256(CONNECTOR_KEY_INDEX_SECRET, key)`) the key ledger stores. An allow that serves
+   no key hashes `agreement_id + "\n"`; a deny carries `null`. The data plane treats it as
+   opaque and echoes it, with `agreement_id`, in its own audit record and in
+   `POST /internal/audit/query`, which forwards both to `QueryExecuted` (a value that is not a
+   SHA-256 hex digest is a `422`). An auditor with the ledger recomputes it for a candidate key
+   set without opening a key. **Upgrade the data plane first**: it parses the decision with
+   `extra="forbid"`. A provenance event the connector cannot deliver — this one or any other —
+   is logged at `ERROR` with its type and id.
 
 The verdict carries a cache TTL (`CONNECTOR_DATAPLANE_DECISION_TTL`, 30 s). That window is a
 security parameter: it is how long a revoked consent can still yield rows.
@@ -254,7 +270,11 @@ audience here, including subjects another collector registered; this is a stated
 
 `GET /consent/admin/subject-shares?subject_id=…` is the read-back: one subject's decisions and
 outstanding asks here, for the organisation that speaks for them, under the same two checks. It
-is the narrow exception to `D-20`.
+is the narrow exception to `D-20`. It lists only the cells the calling organisation **collected**
+(the predicate `GET /consent/admin/decisions` uses), plus the asks: membership is checked now,
+and a DID can carry history from an organisation the person left, which the next one does not
+read ([ADR-0028](../decisions/ADR-0028-a-member-who-moves-gets-a-new-did-and-takes-the-login.md)).
+The deployment operator reads every cell.
 
 `GET /consent/admin/decisions?offer_id=…` is the same read-back as a list, for one offer
 ([ADR-0021](../decisions/ADR-0021-an-organisation-lists-its-own-members-decisions.md)). It
@@ -335,8 +355,10 @@ an empty key list must not read as "nobody consents" when the truth is "no key w
 **The history is a key ledger.** `consent_key_events` is appended by a flush listener
 (`db/key_ledger.py`) in the same transaction as the decision row, for every path that moves a
 row's keys: a grant, a withdrawal (the subject's own revoke by id included), and a new
-registration with other keys. Entries hold no subject id; they reference the decision row and
-are deleted with it. The ledger records **decisions**, not the served set: a key two decisions
+registration with other keys. Entries hold no subject id; they reference the decision row,
+and since migration `0016` they **outlive it**: erasing the row nulls the reference, and the
+entry is kept for the key-record retention period (see below). Each entry names the collector's
+key assertion it was written under (`assertion_ref`). The ledger records **decisions**, not the served set: a key two decisions
 carry stays served after one withdraws, so the current list is the one to act on. Migration
 `0014` seeds one `backfill` entry per key of each grant standing when it runs; withdrawals
 before then cannot be recovered, and every history page says so in `note`.
@@ -345,7 +367,8 @@ before then cannot be recovered, and every history page says so in `note`.
 {
   "offer_id": "…", "datasets": ["…"], "limit": 100, "note": "…", "next_cursor": null,
   "events": [{"dataset_id": "…", "consumer_id": "*", "key": "pod:…",
-              "event": "added | removed", "cause": "grant | withdrawal | key_change | backfill",
+              "event": "added | removed",
+              "cause": "grant | withdrawal | key_change | backfill | holder_suspension | suspension_lifted",
               "at": "…", "decided_by": "subject", "collector": "did:…"}]
 }
 ```
@@ -356,6 +379,111 @@ that is whoever re-sent the keys, while the decision row keeps naming who grante
 Both routes page with an opaque `cursor`, `limit` 1–500 (default 100); the history also takes
 `since`. An unknown offer or one resolving to no dataset here is a `422`, a contract-based offer
 a `409`. The portal shows both at **Provider → Authorised keys**.
+
+### The collector asserts whose keys it registers
+
+A holder releases a key's data on the collector's word that the key is the member's — for a
+`pod:` key, that the supply point is theirs. The platform cannot check that; it records the
+word so that it can be audited and the collector answers for it
+([ADR-0027](../decisions/ADR-0027-the-collector-asserts-whose-keys-it-registers.md), `D-12b`).
+
+**The assertion.** A registration carrying keys may carry `legal_basis.key_assertion`, codes
+and hashes only (`extra="forbid"`):
+
+```json
+{
+  "terms": "rec-pod-assertion/1",
+  "terms_sha256": "<sha256 of the exact responsibility statement accepted>",
+  "method": "uploaded-document | offline-with-evidence",
+  "verification_ref": "<the collector's verification record, a UUID>",
+  "verified_by": "<HMAC-SHA256 of the verifying operator, under the collector's own key>",
+  "verified_at": "<ISO-8601 with timezone, not in the future>",
+  "evidence": [{"kind": "utility_bill | id_document | other", "sha256": "<of the file bytes>"}]
+}
+```
+
+At least one evidence digest is required; a plain offline check is not a method. No fiscal
+code, no supply point and no hash of either. Without keys, an assertion is a `422`.
+
+**What the holder requires.** The offer's governance declares it:
+
+```yaml
+key_assertion:
+  required: true
+  methods: [uploaded-document, offline-with-evidence]
+# or the shorthand:  key_assertion: required
+```
+
+Missing when required, or a method not listed, is a `422`. An offer that declares nothing
+requires it for a `pod:` key outside `DS_ENV=dev`; in dev and for other key types it does not
+(one that is sent is still validated). `governance-grid-operator/sharing-offers.yaml` declares
+it on both of the grid operator's offers.
+
+**One subject per `pod:` key.** A second subject registering a key another holds here is a
+`409` that names neither; the same subject re-registering is fine. The owner
+(`consent_key_owners`, by blind index) is released when the last grant carrying the key ends,
+and kept for the retention period.
+
+**On the record.** The assertion is stored in the row's `legal_basis` and once more, by its
+`assertion_ref`, in `consent_key_assertions`. `ConsentGranted` carries it, `assertion_ref` and
+`keys_digest = sha256_hex("\n".join(sorted(set(key_index))))`; a registration that changes the
+keys or the assertion is a new event, an identical re-run is a duplicate. A newer assertion on
+a standing grant replaces only `legal_basis.key_assertion`.
+
+**The collector's read-back** (`GET /consent/admin/subject-shares`) lists, beside `keys`, the
+`suspended_keys` the holder has suspended.
+
+#### What a community asserts, in plain words
+
+When your community registers a member's decision at a grid operator together with the
+member's supply point, it tells the grid operator: *this supply point is this member's; we
+checked, and we can show how.* The grid operator releases the readings on your word and does
+not check again. So the platform keeps, beside the decision, which statement of responsibility
+you agreed to, how you checked (a document the member uploaded, or an offline check of which
+you kept a copy), when, a code for the operator who checked that only your community can turn
+back into a name, and a fingerprint of each document you relied on — never the document
+itself. Your community answers for the statement being true when it was made. Keep the
+documents as long as the platform keeps the record (ten years by default) so the fingerprints
+can be matched to them. If a supply point changes hands, withdraw the registration; if the
+grid operator learns it first, it suspends the supply point until your community checks again.
+
+### The holder suspends a key
+
+`POST /consent/admin/holder/keys/suspend` `{"key": "pod:…", "reason": "holder_change"}` —
+for this connector's own organisation client or the deployment operator; a person who holds
+only `connector.consent.holder.read` reads and does not suspend, and a collector or a plain
+service token is refused (`403`).
+
+It takes the key out of the served set for every decision carrying it (the row filter, the
+holder's key list and the audience agree, because `get_granted_subjects` drops it), writes a
+`holder_suspension` ledger entry per such decision and a `KeySuspension` provenance event
+(the key's digest, never the key), and changes no decision. The answer is
+`{key, suspended_at, reason, grants_affected, already_suspended}`; repeating it is a no-op.
+
+**Only a newer verification lifts it**: a registration of the key whose
+`key_assertion.verified_at` is later than `suspended_at` — for the same member or, once the
+old registration is withdrawn, a new one. Anything older is a `409`. Lifting writes
+`suspension_lifted` entries and a `KeySuspension` event with `action: lifted`. The suspension
+acts on keys: a dataset filtered by usernames is not narrowed by it.
+
+### The key records are retained, then purged by an operator
+
+The key ledger, the key owners, the key assertions and the lifted suspensions are the
+holder's evidence of what it released and on whose word. They are **not** deleted with a
+consent row and nothing deletes them on a schedule. After
+`CONNECTOR_KEY_RECORD_RETENTION_DAYS` (default 3650 — the Italian ordinary limitation period,
+art. 2946 c.c., **pending legal counsel**) from when a key stopped being carried, an operator
+runs:
+
+```
+python -m connector.db.retention purge          # counts only
+python -m connector.db.retention purge --apply  # deletes
+```
+
+It removes a key's ledger entries once no grant carries the key and its newest entry is older
+than the period, owners released and suspensions lifted before it, and assertions nothing
+remaining references. A key still carried, an active owner and a suspension in force are never
+touched. The basis for keeping them after a subject's erasure is GDPR Art. 17(3)(e).
 
 ### Parking a negotiation
 
@@ -674,6 +802,7 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_DATABASE_URL` | Postgres on `172.17.0.1:35432/connector` | **secret** — embeds credentials |
 | `CONNECTOR_AT_REST_KEYS` | committed dev key | **secret** — Fernet keys, comma-separated, newest first; seals data keys and EDRs |
 | `CONNECTOR_KEY_INDEX_SECRET` | committed dev value | **secret** — HMAC key of the data keys' blind index |
+| `CONNECTOR_KEY_RECORD_RETENTION_DAYS` | `3650` | days the key ledger, owners, assertions and lifted suspensions are kept after a key stopped being carried; read by the purge only (pending legal counsel) |
 
 ### Notifications
 
@@ -697,8 +826,8 @@ Under `DS_ENV=production` a startup guard refuses to boot in any of these cases:
 
 ## Persistence
 
-Five tables in its own database (`connector_rec` / `connector_third_party`), Alembic-managed;
-the service refuses to boot against a schema that is not at head.
+Its own database (`connector_rec` / `connector_third_party`), Alembic-managed; the service
+refuses to boot against a schema that is not at head.
 
 | Table | Holds |
 |---|---|
@@ -707,6 +836,10 @@ the service refuses to boot against a schema that is not at head.
 | `consumer_access_requests` | consumer-side: what was asked for, its negotiation, agreement and transfer |
 | `consumer_transfers` | consumer-side transfer records, so a subject sees only their own |
 | `edr_entries` | consumer-side: the EDR each started transfer's callback delivered, by transfer id, sealed |
+| `consent_key_events` | the holder's key ledger (ADR-0022), with `assertion_ref`; outlives its decision row |
+| `consent_key_assertions` | collectors' key assertions, by `assertion_ref` (ADR-0027) |
+| `consent_key_owners` | the subject holding each `pod:` key here, by blind index; one active per key |
+| `consent_key_suspensions` | the holder's suspensions of a key; one active per key |
 
 ## Running it
 

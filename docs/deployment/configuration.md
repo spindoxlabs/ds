@@ -266,6 +266,31 @@ yourself** — run it in-namespace, or add a dedicated internal Ingress on which
 own `svc-ds-dataset-api` Keycloak client credentials. Every caller of `/internal/*`
 authenticates as itself; there is no shared API key.
 
+### Key assertions, the release link and the key-record retention (connector `0016`)
+
+[ADR-0027](../decisions/ADR-0027-the-collector-asserts-whose-keys-it-registers.md). Four
+things a deployment decides or orders:
+
+- **Which offers require a collector's key assertion.** Declare it on the holder's sharing
+  offers (`key_assertion: required`, or `{required, methods}`). An offer that declares
+  nothing requires one for a `pod:` key outside `DS_ENV=dev` anyway; declaring it makes the
+  holder's choice visible in its own governance.
+- **Upgrade order.** ds-provenance first (it must know `KeySuspension` and the new digest
+  fields), then the data plane (it must accept `decision_ref` in the authorize answer —
+  `extra="forbid"`), then the connector. The collector (the onboarding service) sends the
+  assertion before the holder's connector requires it.
+- **Migration `0016` can stop.** It backfills one owner per `pod:` key a grant carries and
+  refuses to run when a key is carried by two subjects' grants at this holder. Have the
+  collector withdraw the wrong registration, then migrate again. The downgrade deletes ledger
+  entries whose decision row is gone, which the `0015` schema cannot hold.
+- **The retention period.** `CONNECTOR_KEY_RECORD_RETENTION_DAYS` (default `3650`, the Italian
+  ordinary limitation period, **pending legal counsel**). Only the purge reads it, and the
+  chart does not template it: set it in the environment of the purge run. Nothing deletes the
+  key records on a schedule; after the period an operator runs
+  `python -m connector.db.retention purge` in the connector image (a dry run), then again with
+  `--apply`. The basis for keeping them after a subject's erasure is GDPR Art. 17(3)(e); record
+  the period your deployment chose in its own agreement text.
+
 ## Replicas and migrations
 
 Migrations run as an **init container**, one run per pod. With more than one replica, concurrent

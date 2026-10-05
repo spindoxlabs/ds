@@ -21,6 +21,11 @@ what it carries after, so:
 - a granted row whose keys are replaced adds and removes the difference
   (`key_change`);
 - a pending, rejected or keyless row adds nothing.
+
+Each entry names the collector's key assertion the row carried
+(``assertion_ref``, ADR-0027). And a key a decision stopped carrying is a
+candidate for release: after the flush, the owner of every such ``pod:`` key is
+released when no grant carries the key any more (`consent_key_owners`).
 """
 
 from __future__ import annotations
@@ -98,6 +103,7 @@ def entries_for(
 
     batch = uuid.uuid4().hex[:12]
     order = iter(range(10_000))
+    ref = _assertion_ref(row)
 
     def entry(key: str, kind: str) -> ConsentKeyEventORM:
         return ConsentKeyEventORM(
@@ -113,11 +119,22 @@ def entries_for(
             decided_by=decided_by,
             collector=row.collector,
             at=at,
+            assertion_ref=ref,
         )
 
     return [entry(k, "removed") for k in sorted(was - is_)] + [
         entry(k, "added") for k in sorted(is_ - was)
     ]
+
+
+def _assertion_ref(row: ConsentRequestORM) -> str | None:
+    from ..services.key_records import assertion_ref
+
+    return assertion_ref((row.legal_basis or {}).get("key_assertion"))
+
+
+#: `session.info` key: blind indexes a flush removed from some decision.
+_RELEASE_CANDIDATES = "ds_key_release_candidates"
 
 
 @event.listens_for(Session, "before_flush")
@@ -128,4 +145,21 @@ def _record_key_changes(session: Session, _flush_context, _instances) -> None:
         before_status, before_keys = _before(row)
         for entry in entries_for(row, before_status, before_keys):
             session.add(entry)
+            if entry.event == "removed":
+                session.info.setdefault(_RELEASE_CANDIDATES, set()).add(entry.key_index)
         row.key_change_by = None
+
+
+@event.listens_for(Session, "after_flush_postexec")
+def _release_key_owners(session: Session, _flush_context) -> None:
+    """Release the owner of a key once the last grant carrying it has ended.
+
+    After the flush, so the entries just written are what the ledger answers
+    with. A release marks the owner row; nothing is deleted (ADR-0027).
+    """
+    candidates = session.info.pop(_RELEASE_CANDIDATES, None)
+    if not candidates:
+        return
+    from ..services.key_records import release_unless_carried
+
+    release_unless_carried(session, sorted(candidates))

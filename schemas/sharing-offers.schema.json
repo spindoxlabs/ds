@@ -1,5 +1,25 @@
 {
   "$defs": {
+    "KeyAssertionPolicy": {
+      "additionalProperties": false,
+      "description": "What the holder demands of a collector that registers keys under this offer.\n\nA collector that sends a subject's data keys (``pod:…``) asserts that those\nkeys are the subject's. The holder decides whether it accepts a key without\nthat assertion, and which verification methods it accepts (ADR-0027).\n\nDeclared in YAML as a mapping, or as the shorthand ``key_assertion: required``\n(every method accepted). **Not a user-visible fact**: it says what the\ncollector must prove to the holder, never what the person agreed to, so it is\nabsent from :meth:`SharingOffer.user_visible_facts`.",
+      "properties": {
+        "methods": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Methods",
+          "type": "array"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "title": "KeyAssertionPolicy",
+      "type": "object"
+    },
     "OfferCoverage": {
       "description": "How far back and how far forward the sharing reaches.",
       "properties": {
@@ -127,6 +147,17 @@
         "id": {
           "title": "Id",
           "type": "string"
+        },
+        "key_assertion": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/KeyAssertionPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         },
         "legal_basis": {
           "title": "Legal Basis",

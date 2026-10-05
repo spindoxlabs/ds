@@ -658,6 +658,18 @@ async def set_subject_data_sharing(
 
     if enabled:
         if latest and latest.status == "granted":
+            sent_assertion = (legal_basis or {}).get("key_assertion")
+            if (
+                sent_assertion is not None
+                and (latest.legal_basis or {}).get("key_assertion") != sent_assertion
+            ):
+                # A newer assertion for the keys (ADR-0027) — a re-verification,
+                # or the one that lifts a holder's suspension. Only the assertion
+                # is replaced: the consent evidence stays the grant's own.
+                latest.legal_basis = {
+                    **(latest.legal_basis or {}),
+                    "key_assertion": sent_assertion,
+                }
             if keys is not None and list(latest.subject_keys or []) != list(keys):
                 # A new registration updates the keys; nothing else about the
                 # standing decision changes, so no new row.
@@ -1538,6 +1550,19 @@ async def get_granted_subjects(
     rows = await _consent_rows_for(
         session, dataset_id, {consumer_id, WILDCARD_CONSUMER}
     )
+    # The holder's suspended keys are not served (ADR-0027). Read once per
+    # call; a key is compared by its blind index, as the ledger stores it.
+    from .key_records import suspended_key_indexes
+
+    suspended = await suspended_key_indexes(session)
+
+    def served(keys) -> tuple[str, ...]:
+        if not suspended:
+            return tuple(keys or ())
+        from ..db.sealed import blind_index
+
+        return tuple(k for k in keys or () if blind_index(k) not in suspended)
+
     by_subject: dict[str, list[ConsentRequestORM]] = {}
     for row in rows:
         by_subject.setdefault(row.subject_id, []).append(row)
@@ -1563,7 +1588,7 @@ async def get_granted_subjects(
                     decided_at=deciding_row.decided_at
                     if deciding_row is not None
                     else None,
-                    keys=tuple(deciding_row.subject_keys or ())
+                    keys=served(deciding_row.subject_keys)
                     if deciding_row is not None
                     else (),
                 )

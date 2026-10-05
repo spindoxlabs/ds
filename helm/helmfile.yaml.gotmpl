@@ -130,7 +130,11 @@ releases:
           sync:
             enabled: {{ .Values.global.keycloak.sync.enabled }}
             organizationsConfigMap: {{ .Values.global.keycloak.sync.organizationsConfigMap | quote }}
+            organisations:
+              {{- toYaml (.Values.global.keycloak.sync.organisations | default dict) | nindent 14 }}
         secrets:
+          organisationClients:
+            {{- toYaml (.Values.secrets.organisationClients | default dict) | nindent 12 }}
           identityRegistryEncryptionKey: {{ .Values.secrets.identityRegistryEncryptionKey | quote }}
           serviceClientSecret: {{ .Values.secrets.svcDsIdentityRegistrySecret | quote }}
           dbPassword: {{ .Values.secrets.postgres.identity_registry | quote }}
@@ -224,6 +228,7 @@ releases:
         replicaCount: {{ $p.provenance.replicaCount | default 1 }}
         secrets:
           dbPassword: {{ index $root.Values.secrets.postgres (printf "provenance_%s" (replace "-" "_" $p.name)) | quote }}
+          subjectPseudonymKey: {{ $psec.provenanceSubjectPseudonymKey | quote }}
           # No `trustAnchorPublicJwk` here since `DID-17`: provenance verifies
           # `X-User-VC` against the key the anchor's DID document publishes.
           #

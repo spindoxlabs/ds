@@ -770,3 +770,37 @@ def test_user_visible_hash_survives_the_recipient_rename():
         offer.user_visible_hash()
         == "e09e6c9cc32e77b997e01b6bb740980be285cbbe2bde897cb03e300c77090fc9"
     )
+
+
+# ── what a collector must assert about the keys it registers (ADR-0027) ──────
+
+
+@pytest.mark.rule("D-12b")
+def test_key_assertion_shorthand_requires_every_method():
+    offer = _offer(key_assertion="required")
+    assert offer.key_assertion.required is True
+    assert offer.key_assertion.methods == [
+        "uploaded-document",
+        "offline-with-evidence",
+    ]
+
+
+@pytest.mark.rule("D-12b")
+def test_key_assertion_refuses_a_plain_offline_method():
+    with pytest.raises(ValidationError, match="offline"):
+        _offer(key_assertion={"required": True, "methods": ["offline"]})
+
+
+@pytest.mark.rule("D-12b")
+def test_key_assertion_required_with_no_method_is_refused():
+    with pytest.raises(ValidationError, match="accepts no method"):
+        _offer(key_assertion={"required": True, "methods": []})
+
+
+@pytest.mark.rule("D-12b")
+def test_key_assertion_is_not_a_user_visible_fact():
+    """What the collector proves to the holder is not what the person read."""
+    assert (
+        _offer(key_assertion="required").user_visible_hash()
+        == _offer().user_visible_hash()
+    )

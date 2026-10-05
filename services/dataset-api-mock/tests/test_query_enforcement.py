@@ -235,3 +235,21 @@ def test_an_unfiltered_allow_reports_nothing_rather_than_nobody(client, monkeypa
 
     assert _query(client).status_code == 200
     assert audits[0]["authorized_subject_ids"] is None
+
+
+def test_the_pep_echoes_the_release_link(client, monkeypatch, audits):
+    """ds ADR-0027: the allow's `decision_ref` reaches the read report verbatim,
+    beside the agreement it was issued under."""
+    decision = _decision(_rec_allow([SUBJECT])).model_copy(update={"decision_ref": "a" * 64})
+    _answers(monkeypatch, decision)
+
+    assert _query(client).status_code == 200
+    assert audits[0]["decision_ref"] == "a" * 64
+    assert audits[0]["agreement_id"]
+
+
+def test_an_older_control_plane_sends_no_link_and_the_query_still_serves(client, monkeypatch, audits):
+    _answers(monkeypatch, _decision(_rec_allow([SUBJECT])))
+
+    assert _query(client).status_code == 200
+    assert audits[0].get("decision_ref") is None

@@ -11,7 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
-from ...db.models import Credential, KeycloakMapping
+from ...db.models import KEYCLOAK_MAPPING_CURRENT, Credential, KeycloakMapping
 from ...dependencies import (
     get_db,
     get_settings_dep,
@@ -94,6 +94,7 @@ async def resolve_mapping(
             select(KeycloakMapping).where(
                 KeycloakMapping.keycloak_realm == realm,
                 KeycloakMapping.keycloak_user_id == user_id,
+                KEYCLOAK_MAPPING_CURRENT,
             )
         )
         mapping = result.scalar_one_or_none()
@@ -107,7 +108,9 @@ async def resolve_mapping(
         if not value:
             continue
         result = await db.execute(
-            select(KeycloakMapping).where(func.lower(column) == value.strip().lower())
+            select(KeycloakMapping).where(
+                func.lower(column) == value.strip().lower(), KEYCLOAK_MAPPING_CURRENT
+            )
         )
         # `.all()` rather than `scalar_one_or_none()`: a duplicate must be reported,
         # not raised as a 500 from deep inside the ORM.
@@ -452,7 +455,12 @@ async def resolve_subject_identities(
     if not body.dids:
         return []
     result = await db.execute(
-        select(KeycloakMapping).where(KeycloakMapping.did.in_(body.dids))
+        # A released binding answers nothing: the login moved to the person's
+        # new DID (ADR-0028), and resolving the old one to the same username
+        # would serve the new membership's data under the old DID's consents.
+        select(KeycloakMapping).where(
+            KeycloakMapping.did.in_(body.dids), KEYCLOAK_MAPPING_CURRENT
+        )
     )
     identities = []
     for mapping in result.scalars().all():
@@ -510,6 +518,7 @@ async def own_subject(request: Request, db: AsyncSession = Depends(get_db)):
         select(KeycloakMapping.did).where(
             KeycloakMapping.keycloak_realm == realm,
             KeycloakMapping.keycloak_user_id == principal.subject,
+            KEYCLOAK_MAPPING_CURRENT,
         )
     )
     did = result.scalar_one_or_none()

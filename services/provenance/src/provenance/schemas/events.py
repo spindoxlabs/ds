@@ -8,6 +8,12 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, model_validator
 
 
+#: A bare lowercase SHA-256 hex digest, for the R4 references (ADR-0027).
+Sha256Hex = Annotated[
+    str, Field(pattern=r"^[0-9a-f]{64}$", description="SHA-256 hex digest")
+]
+
+
 class ActingPrincipal(BaseModel):
     """Who performed an act that *determined* how data may be processed.
 
@@ -241,6 +247,11 @@ class QueryExecuted(BaseModel):
     transfer_id: str | None = None
     row_count: int | None = None
     authorized_subject_ids: list[str] | None = None
+    #: The release link (ADR-0027): the opaque reference the holder's connector
+    #: returned with the data-plane *allow* that served this query, echoed by the
+    #: PEP. It digests the agreement and the keys served, so the read can be tied
+    #: to the grants whose ``keys_digest`` cover the same keys.
+    decision_ref: Sha256Hex | None = None
 
 
 class AccessRevoked(BaseModel):
@@ -296,6 +307,14 @@ class ConsentGranted(BaseModel):
     decided_by: str | None = None
     collector: str | None = None
     keys_supplied: bool | None = None
+    #: SHA-256 over the sorted keyed blind indexes (``key_index``) of the keys
+    #: the grant carries, newline-joined — never the keys (`L-3`). A later edit
+    #: of the holder's consent row or key ledger shows against it (ADR-0027).
+    keys_digest: Sha256Hex | None = None
+    #: SHA-256 of the canonical (sorted-keys JSON) ``legal_basis.key_assertion``
+    #: — the collector's assertion that the keys are the subject's. The
+    #: assertion itself travels in ``legal_basis``.
+    assertion_ref: Sha256Hex | None = None
     acted_by: ActingPrincipal | None = None
 
 
@@ -316,6 +335,45 @@ class ConsentRevoked(BaseModel):
     decided_by: str | None = None
     collector: str | None = None
     acted_by: ActingPrincipal | None = None
+
+
+class KeySuspension(BaseModel):
+    """The holder took one data key out of its served set, or put it back (ADR-0027).
+
+    ``action="suspended"``: a holder that learns a key changed hands — a supply
+    point taken over by a new customer — suspends it at its own connector
+    (``POST /consent/admin/holder/keys/suspend``); ``reason`` says why and
+    ``grants_affected`` how many decisions here carried it.
+
+    ``action="lifted"``: a collector re-asserted the key with a verification
+    made after the suspension; ``assertion_ref`` names that assertion and
+    ``collector`` the organisation that made it.
+
+    **Never the key**: its ``keys_digest`` (the ``ConsentGranted`` recipe over
+    the one key) and the pseudonymous subject whose grant carried it, if any.
+    One type for both acts, so the suspension and its end read as one story.
+    """
+
+    event_type: Literal["KeySuspension"] = "KeySuspension"
+    event_id: str | None = None
+    occurred_at: datetime
+    action: Literal["suspended", "lifted"]
+    provider_did: str | None = None
+    subject_id: str | None = None
+    keys_digest: Sha256Hex
+    reason: Literal["holder_change"] | None = None
+    grants_affected: int | None = None
+    assertion_ref: Sha256Hex | None = None
+    collector: str | None = None
+    acted_by: ActingPrincipal | None = None
+
+    @model_validator(mode="after")
+    def _says_what_its_action_needs(self) -> KeySuspension:
+        if self.action == "suspended" and self.reason is None:
+            raise ValueError("a suspension states its reason")
+        if self.action == "lifted" and self.assertion_ref is None:
+            raise ValueError("a lift names the assertion that lifted it")
+        return self
 
 
 #: A bare lowercase SHA-256 digest — the shape `consent_service.
@@ -390,6 +448,7 @@ DomainEvent = Annotated[
     | AccessRevoked
     | ConsentGranted
     | ConsentRevoked
+    | KeySuspension
     | DataIngested
     | DataDisclosed,
     Field(discriminator="event_type"),

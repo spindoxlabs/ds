@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
 from ...db.models import (
+    KEYCLOAK_MAPPING_CURRENT,
     Credential,
     Did,
     Key,
@@ -62,14 +63,16 @@ from ...services.did import (
     SubjectNamespaceError,
     build_did_document,
     subject_did_for,
-    subject_id_of,
 )
 from ...services.issuance import (
     HELD_FOR_ANOTHER_ORGANISATION,
+    SPENT_SUBJECT_ID,
     IssuanceError,
     active_data_subject_credential,
     deliver_to_custodian,
     held_for_another_organisation,
+    is_spent,
+    live_subject_did,
 )
 from ...services.org_onboarding import OrgOnboardingError, get_trust_anchor_key
 from ...services.role_transition import (
@@ -90,26 +93,6 @@ from ...services.vc import (
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
-
-
-async def _existing_subject_did(db: AsyncSession, subject_id: str) -> str | None:
-    """The DID this person already has, in whichever namespace it was created.
-
-    Matched on the **subject id inside the DID**, not on a `LIKE` pattern: the
-    id is caller-supplied, and a pattern would let one containing `%` match
-    other people. The `user` rows are a short list — one per person the
-    dataspace knows — so reading them is cheaper than the index a prefix search
-    would need.
-    """
-    rows = (
-        (await db.execute(select(Did.did).where(Did.did_type == "user")))
-        .scalars()
-        .all()
-    )
-    for did in rows:
-        if subject_id_of(did) == subject_id:
-            return did
-    return None
 
 
 async def _get_trust_anchor_key(db: AsyncSession, settings: Settings) -> Key:
@@ -656,14 +639,21 @@ async def issue_data_subject_credential(
     except SubjectNamespaceError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
-    # **One human, one DID, even across organisations.** Roles are additive —
-    # the same person is a data subject about their own consumption and a
-    # consumer user acting for somebody else — and this endpoint is called once
-    # per role. Deriving the DID from *this* call's participant would give that
-    # person two identifiers, splitting their consent records and provenance in
-    # half. So the first call decides where they live and later ones reuse it;
-    # what follows the credential's own participant is **custody**, below.
-    existing = await _existing_subject_did(db, data.subject_id)
+    # **One human, one DID, even across organisations — while it is in use.**
+    # Roles are additive — the same person is a data subject about their own
+    # consumption and a consumer user acting for somebody else — and this
+    # endpoint is called once per role. Deriving the DID from *this* call's
+    # participant would give that person two identifiers, splitting their
+    # consent records and provenance in half. So the DID holding a live
+    # credential decides where they live, and later roles reuse it; what follows
+    # the credential's own participant is **custody**, below.
+    #
+    # **A released person's DID is not reused** (2026-10-05, ADR-0028). Once
+    # every credential under it is revoked, its holder retires it (`P-29`), and
+    # the history under it is the last organisation's. A person joining again
+    # gets a new DID in the issuing organisation's namespace; one this call
+    # would mint and that is itself spent is refused rather than revived.
+    existing = await live_subject_did(db, data.subject_id)
     if existing is not None and existing != subject_did:
         log.info(
             "subject %s already exists as %s; issuing under it rather than %s",
@@ -672,6 +662,8 @@ async def issue_data_subject_credential(
             subject_did,
         )
         subject_did = existing
+    elif existing is None and await is_spent(db, subject_did):
+        raise HTTPException(status_code=409, detail=SPENT_SUBJECT_ID)
 
     # **Already holds one for this role? Re-deliver, do not re-mint** (ds#30).
     # The CLI has always done this and the endpoint an external application
@@ -853,7 +845,9 @@ async def transition_data_subject_role(
     trust_anchor_key = await _get_trust_anchor_key(db, settings)
     trust_anchor_did = f"did:web:{settings.trust_anchor_domain}"
 
-    existing = await _existing_subject_did(db, data.subject_id)
+    # The DID holding a live credential: a released identity has nothing left
+    # to transition, and its credentials stay revoked.
+    existing = await live_subject_did(db, data.subject_id)
     if existing is None:
         raise HTTPException(
             status_code=404,
@@ -1074,6 +1068,20 @@ async def keycloak_sync(
     if not data.did.startswith("did:web:"):
         raise HTTPException(status_code=400, detail="Invalid DID format")
 
+    result = await db.execute(
+        select(KeycloakMapping).where(KeycloakMapping.did == data.did)
+    )
+    mapping = result.scalar_one_or_none()
+    if mapping is not None and mapping.released_at is not None:
+        # A login moved away from this DID; nothing moves it back.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"{data.did} was released from its login; a released binding is "
+                "history and is not revived"
+            ),
+        )
+
     # Before writing: does some *other* DID already answer to this Keycloak user?
     # A second mapping for one identity is how a person ends up with two DIDs whose
     # consent states diverge — the data plane resolves both to the same username
@@ -1083,25 +1091,45 @@ async def keycloak_sync(
             KeycloakMapping.keycloak_realm == data.keycloak_realm,
             KeycloakMapping.keycloak_user_id == data.keycloak_user_id,
             KeycloakMapping.did != data.did,
+            KEYCLOAK_MAPPING_CURRENT,
         )
     )
     existing = clash.scalar_one_or_none()
+    # **A move, not a clash** (ADR-0028): the person was released — every
+    # credential under the old DID is revoked — and joined an organisation that
+    # issued them a new one, which `authorize_keycloak_sync` has just checked is
+    # its own member (or the caller is the operator). The login moves; the old
+    # row stays, released, as the record of which login acted as that DID until
+    # when. While the old DID holds anything not revoked it is still a person
+    # acting somewhere, and two live identities for one login is exactly the
+    # divergence below: still a 409.
+    released = None
     if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"Keycloak user {data.keycloak_user_id} in realm "
-                f"{data.keycloak_realm} is already bound to {existing.did}. "
-                "Rebinding is an explicit operator act, never a side effect of a "
-                "sync — the two identities' consent states would diverge while the "
-                "data plane resolved both to the same person."
-            ),
-        )
+        if not await is_spent(db, existing.did):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Keycloak user {data.keycloak_user_id} in realm "
+                    f"{data.keycloak_realm} is already bound to {existing.did}, "
+                    "which still holds a credential not revoked. Rebinding a live "
+                    "identity is an explicit operator act, never a side effect of "
+                    "a sync — the two identities' consent states would diverge "
+                    "while the data plane resolved both to the same person."
+                ),
+            )
+        released = existing
 
-    result = await db.execute(
-        select(KeycloakMapping).where(KeycloakMapping.did == data.did)
-    )
-    mapping = result.scalar_one_or_none()
+    if released is not None:
+        released.released_at = datetime.now(UTC)
+        # The partial unique index admits the new row only once this one is
+        # out of the current set, so it is written first.
+        await db.flush()
+        # Names the new DID only: the pair is the anchor's record, in its own
+        # table, and is not repeated into logs or the caller's answer (no
+        # cross-organisation link leaves the anchor).
+        log.info(
+            "a login moved to %s; its previous binding is kept, released", data.did
+        )
 
     if mapping:
         mapping.keycloak_realm = data.keycloak_realm
@@ -1295,6 +1323,7 @@ async def get_keycloak_mapping_by_did(
         keycloak_user_id=mapping.keycloak_user_id,
         email=mapping.email,
         subject_id=mapping.subject_id,
+        released_at=mapping.released_at,
     )
 
 
@@ -1320,4 +1349,5 @@ async def get_keycloak_mapping_by_subject(
         keycloak_user_id=mapping.keycloak_user_id,
         email=mapping.email,
         subject_id=mapping.subject_id,
+        released_at=mapping.released_at,
     )

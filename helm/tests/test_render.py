@@ -231,3 +231,98 @@ def test_the_sync_job_asks_the_organisation_client_for_the_publish_grant(
             ]["name"]
         else:
             assert "SYNC_SCOPE" not in env, job["metadata"]["name"]
+
+
+def _chart_of(obj: dict) -> str:
+    labels = (obj.get("metadata") or {}).get("labels") or {}
+    return labels.get("helm.sh/chart", "")
+
+
+def test_every_edc_names_the_management_audience(default_render: list[dict]) -> None:
+    """R12: the runtime refuses to boot without `ds.management.audience`, and the
+    audience is the one the `edc.management` scope adds (`svc-ds-edc`), as in
+    `services/connector/config/*.properties`. *Red:* drop the line from the
+    ds-edc configmap."""
+    configmaps = [
+        obj
+        for obj in default_render
+        if obj["kind"] == "ConfigMap" and _chart_of(obj).startswith("ds-edc-")
+    ]
+    assert configmaps, "no ds-edc ConfigMap rendered"
+    for cm in configmaps:
+        props = (cm.get("data") or {}).get("edc.properties", "").splitlines()
+        assert "ds.management.audience=svc-ds-edc" in [p.strip() for p in props], cm[
+            "metadata"
+        ]["name"]
+
+
+def test_every_provenance_reads_its_pseudonym_key_from_its_secret(
+    default_render: list[dict],
+) -> None:
+    """R19, ADR-0025: the record's hash chain covers a keyed pseudonym of every
+    person id, and the ProductionGuard refuses the dev key under the chart's
+    DS_ENV=production — so the chart must supply one, from the release's Secret.
+    *Red:* drop `PROVENANCE_SUBJECT_PSEUDONYM_KEY` from the provenance
+    `_env.tpl` or `secret.yaml`."""
+    secrets = {
+        obj["metadata"]["name"]: obj
+        for obj in default_render
+        if obj["kind"] == "Secret" and _chart_of(obj).startswith("ds-provenance-")
+    }
+    deployments = [
+        obj
+        for obj in default_render
+        if obj["kind"] == "Deployment" and _chart_of(obj).startswith("ds-provenance-")
+    ]
+    assert deployments, "no ds-provenance Deployment rendered"
+    for dep in deployments:
+        name = dep["metadata"]["name"]
+        refs = [
+            item["valueFrom"]["secretKeyRef"]
+            for c in dep["spec"]["template"]["spec"]["containers"]
+            for item in c.get("env") or []
+            if item["name"] == "PROVENANCE_SUBJECT_PSEUDONYM_KEY"
+            and "secretKeyRef" in (item.get("valueFrom") or {})
+        ]
+        assert refs, f"{name}: PROVENANCE_SUBJECT_PSEUDONYM_KEY not from a Secret"
+        ref = refs[0]
+        secret = secrets.get(ref["name"])
+        assert secret, f"{name}: Secret {ref['name']} not rendered"
+        assert (secret.get("stringData") or {}).get(ref["key"]), (
+            f"{name}: {ref['key']} empty in {ref['name']}"
+        )
+
+
+def test_a_provenance_without_a_pseudonym_key_does_not_render(
+    helm_copy: Path,
+) -> None:
+    """The key is `required`, like the database password: the chart always runs
+    DS_ENV=production, where the service refuses the dev key, so an empty value
+    must fail the render, not the pod. *Red:* drop the `required`."""
+    result = _run(
+        [
+            "helm",
+            "template",
+            "p",
+            "charts/ds-provenance",
+            "--set",
+            "secrets.dbPassword=x",
+        ],
+        helm_copy,
+    )
+    assert result.returncode != 0
+    assert "secrets.subjectPseudonymKey is required" in result.stderr
+    result = _run(
+        [
+            "helm",
+            "template",
+            "p",
+            "charts/ds-provenance",
+            "--set",
+            "secrets.dbPassword=x",
+            "--set",
+            "secrets.subjectPseudonymKey=k",
+        ],
+        helm_copy,
+    )
+    assert result.returncode == 0, result.stderr

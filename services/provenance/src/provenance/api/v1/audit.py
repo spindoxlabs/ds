@@ -1,10 +1,9 @@
 """Compliance audit log routes.
 
-`access_log` records one dataspace-originated query each. It is written from the
-`QueryExecuted` domain event (`services/event_service._record_access_log`) as
-well as directly through `POST /audit/log`, so a deployment whose data plane
-already reports queries to the connector's PEP route gets the compliance log
-without wiring a second caller.
+`access_log` records one dataspace-originated query each. It is written only
+from the chained `QueryExecuted` domain event
+(`services/event_service._record_access_log`), so every row derives from a
+record that names its caller and sits in the hash chain. This router only reads.
 """
 
 from __future__ import annotations
@@ -15,9 +14,9 @@ from fastapi import APIRouter, Depends, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ...dependencies import get_db, require_read_scope, require_write_scope
+from ...dependencies import get_db, require_read_scope
 from ...db.models import AccessLogORM
-from ...schemas.audit import AccessLogEntry, AccessLogRead, AccessLogSummary
+from ...schemas.audit import AccessLogRead, AccessLogSummary
 
 router = APIRouter()
 
@@ -35,23 +34,6 @@ def _mentions_subject(db: AsyncSession, subject_id: str):
         return AccessLogORM.subject_ids.contains([subject_id])
     each = func.json_each(AccessLogORM.subject_ids).table_valued("value")
     return select(1).select_from(each).where(each.c.value == subject_id).exists()
-
-
-@router.post(
-    "/audit/log",
-    status_code=201,
-    response_model=AccessLogRead,
-    dependencies=[Depends(require_write_scope)],
-)
-async def write_log_entry(
-    entry: AccessLogEntry,
-    db: AsyncSession = Depends(get_db),
-):
-    orm = AccessLogORM(**entry.model_dump())
-    async with db.begin():
-        db.add(orm)
-    await db.refresh(orm)
-    return orm
 
 
 @router.get(
