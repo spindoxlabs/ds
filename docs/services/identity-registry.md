@@ -274,21 +274,21 @@ revoked is never issued again (`409`; send a new subject id)
 registry does not invent an identifier. A `subject_id` that is itself a DID is refused with a
 **422** rather than concatenated into a nested one, which is how one person used to become two.
 
-**`POST /users/resolve`** (JSON body `{realm,user_id,username,email}`) replaces the query
-form, so an email or a username never becomes part of a URL that access logs, proxies and
-traces record. The cascade is unchanged: `(realm, user_id)`, then `username`, then `email`;
-the body rejects unknown fields. GET is deprecated
-(`IDENTITY_REGISTRY_USERS_RESOLVE_GET[_UNTIL]`, **410** after 2027-01-31 outside dev); while
-it is served it logs which identifiers were sent, never their values, and answers with
-`Deprecation` and `Sunset` headers.
+**`POST /users/resolve`** (JSON body `{realm,user_id,username,email}`) is the only form, so an
+email or a username never becomes part of a URL that access logs, proxies and traces record.
+The cascade is `(realm, user_id)`, then `username`, then `email`; the body rejects unknown
+fields. The query form, `GET /users/resolve?email=…`, is **gone**: it was to be refused after
+2027-01-31, and was removed on 2026-10-05, ahead of that date, once no caller used it. The path
+has no GET, so one answers **405**, and the OpenAPI contract lists none.
+`IDENTITY_REGISTRY_USERS_RESOLVE_GET[_UNTIL]` went with it; a deployment that still sets either
+can drop it.
 
-**`derive` is deprecated, and the registry derives nothing.** `GET /users/resolve?derive=true`
-used to answer an unmapped person with `email-` and a keyed HMAC of their email. That generator
-is removed: an id derived from an address ties a DID to something the person can change. With
-no mapping, `derive=true` now answers **422** saying what to do instead; with a mapping, and with
-`derive=false`, the parameter changes nothing. DIDs issued as `…:users:email-<24hex>` before the
-removal keep working: the id is stored with the DID and the mapping and was never re-derived,
-so they resolve, verify and are found through their mapping like any other.
+**The registry derives nothing.** `GET /users/resolve?derive=true` used to answer an unmapped
+person with `email-` and a keyed HMAC of their email. That generator was removed first (the
+parameter then answered **422**), and the parameter went with the GET: the body does not accept
+`derive`. DIDs issued as `…:users:email-<24hex>` before the removal keep working: the id is
+stored with the DID and the mapping and was never re-derived, so they resolve, verify and are
+found through their mapping like any other.
 
 **The caller must pass an opaque `subject_id`** — to `POST /admin/credentials/data-subject`
 and to `ir-cli credential issue-data-subject --subject-id` alike. It

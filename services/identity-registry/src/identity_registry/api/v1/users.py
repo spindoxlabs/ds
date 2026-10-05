@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import logging
 from datetime import UTC, datetime
 
 from ds_auth.fastapi import authenticate, get_oidc_config
 from ds_auth.person_binding import realm_of
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,8 +26,6 @@ from ...schemas.responses import (
 from ...services.did import subject_id_of
 
 router = APIRouter(prefix="/users", tags=["users"])
-
-log = logging.getLogger(__name__)
 
 
 def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
@@ -155,6 +152,9 @@ async def resolve_user(
     ``subject_id`` is the person's identifier within their custodian's
     namespace, which is what ``POST /admin/credentials/data-subject`` takes;
     ``did`` is the field that carries the DID (ds#31).
+
+    This is the only form. ``GET /users/resolve`` (the identifiers in the query
+    string) was withdrawn once no caller used it, and answers **405**.
     """
     return await _resolve(
         db,
@@ -165,75 +165,6 @@ async def resolve_user(
     )
 
 
-@router.get("/resolve", response_model=UserResolveResponse, deprecated=True)
-async def resolve_user_by_query(
-    response: Response,
-    email: str | None = Query(None, description="User email address"),
-    realm: str | None = Query(
-        None, description="Keycloak realm — with user_id, the continuity key"
-    ),
-    user_id: str | None = Query(
-        None, description="Keycloak user id — the only identifier that cannot change"
-    ),
-    username: str | None = Query(None, description="Keycloak preferred_username"),
-    derive: bool = Query(
-        False,
-        deprecated=True,
-        description=(
-            "Removed. The registry no longer derives a subject id: with no "
-            "mapping, `derive=true` answers 422. Accepted so existing callers "
-            "sending `derive=false` keep working"
-        ),
-    ),
-    db: AsyncSession = Depends(get_db),
-    settings: Settings = Depends(get_settings_dep),
-    _claims: dict = Depends(require_resolve_scope),
-):
-    """**Deprecated** — use ``POST /users/resolve`` with a JSON body.
-
-    The same lookup, with the identifiers in the query string, where every
-    access log and proxy on the path records them. Kept for a compatibility
-    window (``IDENTITY_REGISTRY_USERS_RESOLVE_GET``, ``…_UNTIL``): served in
-    dev, and elsewhere until the window closes, then a **410**. Each call
-    served logs a warning naming which identifiers were sent, never their
-    values; a successful answer carries ``Deprecation`` and ``Sunset`` headers.
-    """
-    if not settings.users_resolve_get_allowed():
-        raise HTTPException(
-            status_code=410,
-            detail=(
-                "GET /users/resolve is withdrawn: an identifier in a URL is "
-                "logged wherever the request goes. Send POST /users/resolve "
-                "with a JSON body ({realm, user_id, username, email})."
-            ),
-        )
-    sent = [
-        name
-        for name, value in (
-            ("realm", realm),
-            ("user_id", user_id),
-            ("username", username),
-            ("email", email),
-        )
-        if value
-    ]
-    log.warning(
-        "deprecated GET /users/resolve served (identifiers: %s); move the caller "
-        "to POST /users/resolve",
-        ", ".join(sent) or "none",
-    )
-    response.headers["Deprecation"] = "true"
-    response.headers["Sunset"] = settings.users_resolve_get_until.isoformat()
-    return await _resolve(
-        db,
-        realm=realm,
-        user_id=user_id,
-        username=username,
-        email=email,
-        derive=derive,
-    )
-
-
 async def _resolve(
     db: AsyncSession,
     *,
@@ -241,19 +172,15 @@ async def _resolve(
     user_id: str | None,
     username: str | None,
     email: str | None,
-    derive: bool = False,
 ) -> UserResolveResponse:
-    """The lookup both forms of ``/users/resolve`` share.
+    """The lookup behind ``POST /users/resolve``.
 
-    **``derive`` is deprecated** (GET only). It used to answer an unmapped person with
-    ``email-`` and an HMAC of their email. That generator is removed: an
-    identifier derived from the email ties the DID to an address that can
-    change. ``derive=true`` with no mapping now answers **422** naming what to
-    do instead, rather than a 404 a caller could read as "unknown, go ahead"
-    without learning that the behaviour it relied on is gone. With a mapping,
-    and with ``derive=false``, the parameter changes nothing. DIDs issued as
-    ``…:users:email-<24hex>`` before the removal are stored ids like any other
-    and resolve through their mapping; nothing re-derives them.
+    The registry derives no subject id: an unmapped person is a **404**. The
+    ``derive`` parameter that used to ask for one (``email-`` and an HMAC of the
+    email) went with the query-string form; the body does not accept it. DIDs
+    issued as ``…:users:email-<24hex>`` before the derivation was removed are
+    stored ids like any other and resolve through their mapping; nothing
+    re-derives them.
 
     ``subject_id`` is the person's identifier within their custodian's
     namespace, which is what ``POST /admin/credentials/data-subject`` takes;
@@ -284,20 +211,6 @@ async def _resolve(
             ),
         )
     if not mapping:
-        if derive:
-            # Refused exactly where the removed generator used to answer, so a
-            # caller that relied on it learns so here, not from a 404 that reads
-            # as "unknown person, go ahead".
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    "derive=true is no longer supported: the registry does not "
-                    "derive subject ids. No mapping exists for this user; mint an "
-                    "opaque subject id (for example a random UUID), pass it to "
-                    "POST /admin/credentials/data-subject, and record the mapping "
-                    "(POST /admin/keycloak/sync)"
-                ),
-            )
         raise HTTPException(status_code=404, detail="No mapping found for this user")
 
     cred_result = await db.execute(

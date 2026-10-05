@@ -52,9 +52,9 @@ async def _seed(db_session, **overrides) -> None:
 async def test_the_continuity_key_wins_over_a_changed_email(client, db_session):
     """The scenario that used to mint a duplicate: same person, new address."""
     await _seed(db_session)
-    r = await client.get(
-        f"/users/resolve?realm={REALM}&user_id={USER_ID}"
-        "&email=person-a-new@example.test&derive=true",
+    r = await client.post(
+        "/users/resolve",
+        json={"realm": REALM, "user_id": USER_ID, "email": "person-a-new@example.test"},
         headers=RESOLVE,
     )
     assert r.status_code == 200
@@ -65,7 +65,9 @@ async def test_the_continuity_key_wins_over_a_changed_email(client, db_session):
 async def test_username_resolves_when_the_id_is_unknown(client, db_session):
     """The middle rung: no continuity key to hand, but the join key is known."""
     await _seed(db_session)
-    r = await client.get("/users/resolve?username=person-a", headers=RESOLVE)
+    r = await client.post(
+        "/users/resolve", json={"username": "person-a"}, headers=RESOLVE
+    )
     assert r.status_code == 200
     assert r.json()["did"] == DID
 
@@ -74,7 +76,9 @@ async def test_username_resolves_when_the_id_is_unknown(client, db_session):
 async def test_email_still_resolves_for_callers_that_have_only_that(client, db_session):
     """The funnel's case, and the reason the email rung stays."""
     await _seed(db_session)
-    r = await client.get("/users/resolve?email=person-a@example.test", headers=RESOLVE)
+    r = await client.post(
+        "/users/resolve", json={"email": "person-a@example.test"}, headers=RESOLVE
+    )
     assert r.status_code == 200
     assert r.json()["did"] == DID
 
@@ -90,9 +94,13 @@ async def test_a_recycled_identifier_is_quarantined(client, db_session):
     credentials and consent history to somebody else.
     """
     await _seed(db_session)
-    r = await client.get(
-        "/users/resolve?realm=dataspaces&user_id=a-different-user"
-        "&email=person-a@example.test",
+    r = await client.post(
+        "/users/resolve",
+        json={
+            "realm": "dataspaces",
+            "user_id": "a-different-user",
+            "email": "person-a@example.test",
+        },
         headers=RESOLVE,
     )
     assert r.status_code == 409
@@ -105,20 +113,22 @@ async def test_an_unknown_person_is_never_given_an_id_by_the_registry(
     client, db_session
 ):
     """Deriving on an *email* miss is what minted duplicates, and the registry no
-    longer derives at all. Every rung missing is a 404 (the caller mints its own
-    opaque id), and `derive=true` there is a 422 naming that, by any rung."""
+    longer derives at all. Every rung missing is a 404, by any rung: the caller
+    mints its own opaque id."""
     await _seed(db_session)
-    r = await client.get("/users/resolve?email=nobody@example.test", headers=RESOLVE)
-    assert r.status_code == 404
-    for query in ("email=nobody@example.test", "username=unknown-person"):
-        r = await client.get(f"/users/resolve?{query}&derive=true", headers=RESOLVE)
-        assert r.status_code == 422, query
-        assert "no longer supported" in r.json()["detail"]
+    for body in (
+        {"email": "nobody@example.test"},
+        {"username": "unknown-person"},
+        {"realm": REALM, "user_id": "00000000-0000-4000-a000-0000000000ff"},
+    ):
+        r = await client.post("/users/resolve", json=body, headers=RESOLVE)
+        assert r.status_code == 404, body
+        assert "email-" not in r.text, body
 
 
 @pytest.mark.asyncio
 async def test_resolve_needs_some_identifier(client):
-    r = await client.get("/users/resolve", headers=RESOLVE)
+    r = await client.post("/users/resolve", json={}, headers=RESOLVE)
     assert r.status_code == 422
 
 
@@ -169,7 +179,7 @@ async def test_rebinding_the_same_did_updates_its_identifiers(client, db_session
     )
     assert r.status_code == 200
 
-    check = await client.get(
-        f"/users/resolve?realm={REALM}&user_id={USER_ID}", headers=RESOLVE
+    check = await client.post(
+        "/users/resolve", json={"realm": REALM, "user_id": USER_ID}, headers=RESOLVE
     )
     assert check.json()["did"] == DID

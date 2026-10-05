@@ -1,4 +1,4 @@
-"""GET /users/resolve — every credential a user can present, not just the newest.
+"""POST /users/resolve — every credential a user can present, not just the newest.
 
 One human legitimately holds more than one role: the same person can be a data
 subject about their own consumption *and* a consumer user acting for an
@@ -77,7 +77,7 @@ def _now() -> datetime:
 
 
 async def _resolve(client) -> dict:
-    r = await client.get(f"/users/resolve?email={EMAIL}", headers=_headers())
+    r = await client.post("/users/resolve", json={"email": EMAIL}, headers=_headers())
     assert r.status_code == 200
     return r.json()
 
@@ -193,59 +193,23 @@ async def test_user_with_no_credential_still_resolves_its_did(client, db_session
     assert body["role"] is None
 
 
-# ── derive is deprecated: the registry no longer derives subject ids ────────
+# ── The registry derives no subject id ──────────────────────────────────────
 #
 # `derive=true` used to answer an unmapped person with `email-` and an HMAC of
 # their email. The generator is removed: an id derived from an address ties a
 # DID to something that changes, and every caller now mints its own opaque id.
-# The parameter stays so callers sending `derive=false` keep working; `true`
-# is refused exactly where the generator used to answer.
+# The parameter went with the query form; the body refuses it
+# (`test_users_resolve_body.py::test_the_body_takes_no_unknown_field`).
 
 
 @pytest.mark.asyncio
-async def test_derive_true_without_a_mapping_is_refused_with_guidance(client):
-    r = await client.get(
-        "/users/resolve?email=new@example.test&derive=true",
-        headers=_headers(),
-    )
-    assert r.status_code == 422
-    detail = r.json()["detail"]
-    assert "no longer supported" in detail
-    assert "POST /admin/credentials/data-subject" in detail
-    assert "email-" not in r.text, "nothing derived is handed out"
-
-
-@pytest.mark.asyncio
-async def test_without_a_mapping_and_without_derive_it_is_a_404(client):
+async def test_without_a_mapping_it_is_a_404(client):
     """No mapping is not an error: it is how a first-time caller learns to mint."""
-    for query in (
-        "email=unknown@example.test",
-        "email=unknown@example.test&derive=false",
-    ):
-        r = await client.get(f"/users/resolve?{query}", headers=_headers())
-        assert r.status_code == 404, query
-
-
-@pytest.mark.asyncio
-async def test_derive_true_with_a_mapping_answers_the_mapping(client, db_session):
-    """The parameter changes nothing for a person the registry knows."""
-    await _seed_user(db_session)
-
-    r = await client.get(
-        f"/users/resolve?email={EMAIL}&derive=true",
-        headers=_headers(),
+    r = await client.post(
+        "/users/resolve", json={"email": "unknown@example.test"}, headers=_headers()
     )
-    assert r.status_code == 200
-    body = r.json()
-    assert body["did"] == USER_DID
-    assert body["subject_id"] == SUBJECT_ID
-
-
-def test_derive_is_marked_deprecated_in_the_contract(client):
-    schema = client._transport.app.openapi()
-    params = schema["paths"]["/users/resolve"]["get"]["parameters"]
-    [derive] = [p for p in params if p["name"] == "derive"]
-    assert derive.get("deprecated") is True
+    assert r.status_code == 404
+    assert "email-" not in r.text, "nothing derived is handed out"
 
 
 # ── DIDs issued by the removed generator keep working ───────────────────────
@@ -286,12 +250,11 @@ async def test_an_email_derived_did_issued_before_the_removal_still_resolves(
     assert r.status_code == 200, r.text
 
     for query in (
-        "realm=dataspaces&user_id=legacy-user-id",
-        "username=legacy-user",
-        "email=legacy@example.test",
-        "email=legacy@example.test&derive=true",
+        {"realm": "dataspaces", "user_id": "legacy-user-id"},
+        {"username": "legacy-user"},
+        {"email": "legacy@example.test"},
     ):
-        r = await client.get(f"/users/resolve?{query}", headers=_headers())
+        r = await client.post("/users/resolve", json=query, headers=_headers())
         assert r.status_code == 200, (query, r.text)
         body = r.json()
         assert body["did"] == legacy_did, query

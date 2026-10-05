@@ -1,21 +1,16 @@
 """`POST /users/resolve` — the identifiers travel in the body, never in a URL.
 
 An email or a username in a query string is recorded by every access log, proxy
-and trace on the path. The query-string form stays for a compatibility window:
-deprecated, logged without the identifier, and refused once the window closes.
+and trace on the path. The query-string form (`GET`) was withdrawn once no caller
+used it: the path has no GET, so it answers 405 and the contract lists none.
 """
 
 from __future__ import annotations
 
-import logging
-from datetime import date
-
 import pytest
 from conftest import make_headers
 
-from identity_registry.config import Settings
 from identity_registry.db.models import Did, KeycloakMapping
-from identity_registry.dependencies import get_settings_dep
 
 EMAIL = "person-a@example.test"
 USER_DID = "did:web:rec.example.org:users:ex-00001"
@@ -36,11 +31,6 @@ async def mapped(db_session):
         )
     )
     await db_session.commit()
-
-
-def _settings(client, **values) -> None:
-    settings = Settings(database_url="sqlite+aiosqlite:///:memory:", **values)
-    client._transport.app.dependency_overrides[get_settings_dep] = lambda: settings
 
 
 @pytest.mark.parametrize(
@@ -67,6 +57,8 @@ async def test_the_body_answers_like_the_query_did(client, mapped):
 
 
 async def test_the_body_takes_no_unknown_field(client, mapped):
+    """`derive` went with the query form: the registry derives no subject id, and
+    the body refuses the field rather than ignoring it."""
     r = await client.post(
         "/users/resolve", json={"email": EMAIL, "derive": True}, headers=RESOLVE
     )
@@ -82,45 +74,16 @@ async def test_the_body_needs_the_resolve_permission(client, mapped):
     assert r.status_code == 403
 
 
-async def test_the_query_form_is_deprecated_and_logs_no_identifier(
-    client, mapped, caplog
-):
-    caplog.set_level(logging.WARNING)
+async def test_the_query_form_is_gone(client, mapped):
     r = await client.get(f"/users/resolve?email={EMAIL}", headers=RESOLVE)
-    assert r.status_code == 200
-    assert r.headers["Deprecation"] == "true"
-    assert "Sunset" in r.headers
-    assert "deprecated GET /users/resolve" in caplog.text
-    assert "identifiers: email" in caplog.text
-    assert EMAIL not in caplog.text and "person-a" not in caplog.text
-
-
-async def test_the_query_form_can_be_switched_off(client, mapped):
-    _settings(client, users_resolve_get=False)
-    r = await client.get(f"/users/resolve?email={EMAIL}", headers=RESOLVE)
-    assert r.status_code == 410
-    assert "POST /users/resolve" in r.json()["detail"]
+    assert r.status_code == 405
+    assert r.headers["allow"] == "POST"
     # The body form is not affected.
     r = await client.post("/users/resolve", json={"email": EMAIL}, headers=RESOLVE)
     assert r.status_code == 200
 
 
-def test_the_window_is_open_in_dev_whatever_the_date(monkeypatch):
-    monkeypatch.setenv("DS_ENV", "dev")
-    s = Settings(users_resolve_get_until=date(2020, 1, 1))
-    assert s.users_resolve_get_allowed(today=date(2030, 1, 1))
-
-
-def test_outside_dev_the_window_closes_on_its_date(monkeypatch):
-    monkeypatch.setenv("DS_ENV", "production")
-    s = Settings(users_resolve_get_until=date(2027, 1, 31))
-    assert s.users_resolve_get_allowed(today=date(2027, 1, 31))
-    assert not s.users_resolve_get_allowed(today=date(2027, 2, 1))
-
-
-def test_an_explicit_setting_decides_in_any_environment(monkeypatch):
-    monkeypatch.setenv("DS_ENV", "production")
-    after = date(2030, 1, 1)
-    assert Settings(users_resolve_get=True).users_resolve_get_allowed(today=after)
-    monkeypatch.setenv("DS_ENV", "dev")
-    assert not Settings(users_resolve_get=False).users_resolve_get_allowed()
+def test_the_contract_has_no_query_form(client):
+    operations = client._transport.app.openapi()["paths"]["/users/resolve"]
+    assert "get" not in operations
+    assert "post" in operations

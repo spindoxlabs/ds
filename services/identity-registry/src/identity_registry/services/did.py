@@ -103,7 +103,7 @@ def subject_did_for(linked_participant_did: str | None, subject_id: str) -> str:
         )
 
     # **The subject id is validated too, because this line is concatenation.**
-    # `GET /users/resolve` used to return a full DID in `subject_id` when a
+    # `/users/resolve` (then a GET) used to return a full DID in `subject_id` when a
     # Keycloak mapping existed and a short derived id when it did not, and a
     # caller doing what the docstring told it to — read `subject_id`, pass it
     # back for issuance — got
@@ -135,7 +135,7 @@ def subject_did_for(linked_participant_did: str | None, subject_id: str) -> str:
         raise SubjectNamespaceError(
             f"subject_id must be the person's identifier within their "
             f"custodian's namespace, not a qualified identifier — {detail}. Got "
-            f"{subject_id!r}; if this came from GET /users/resolve, that "
+            f"{subject_id!r}; if this came from /users/resolve, that "
             f"response's `did` field is the person's DID and `subject_id` is "
             f"what belongs here (ds#31)"
         )

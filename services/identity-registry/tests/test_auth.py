@@ -129,7 +129,7 @@ async def test_keycloak_mapping_by_subject_without_auth_returns_401(client):
 
 @pytest.mark.asyncio
 async def test_resolve_without_auth_returns_401(client):
-    r = await client.get("/users/resolve?email=test@example.com")
+    r = await client.post("/users/resolve", json={"email": "test@example.com"})
     assert r.status_code == 401
 
 
@@ -137,8 +137,9 @@ async def test_resolve_without_auth_returns_401(client):
 async def test_resolve_with_wrong_scope_returns_403(client):
     # Note: `identity-registry.admin` is a superset that also grants resolve,
     # so a genuinely unrelated scope is used here to assert the 403 path.
-    r = await client.get(
-        "/users/resolve?email=test@example.com",
+    r = await client.post(
+        "/users/resolve",
+        json={"email": "test@example.com"},
         headers=make_headers(scope="some.other.scope"),
     )
     assert r.status_code == 403
@@ -146,8 +147,9 @@ async def test_resolve_with_wrong_scope_returns_403(client):
 
 @pytest.mark.asyncio
 async def test_resolve_with_correct_scope(client):
-    r = await client.get(
-        "/users/resolve?email=nonexistent@example.com",
+    r = await client.post(
+        "/users/resolve",
+        json={"email": "nonexistent@example.com"},
         headers=make_headers(scope="identity-registry.resolve"),
     )
     assert r.status_code == 404

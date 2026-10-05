@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from functools import lru_cache
 
 from pydantic import Field
@@ -150,27 +149,6 @@ class Settings(BaseSettings):
     # `ensure_service_client`. The secret was nonetheless `required` by the
     # chart and registered with the production guard, so a deployment could be
     # refused startup over a credential that authenticated nothing.
-
-    #: `GET /users/resolve?email=…` — the query-string form, kept for a
-    #: compatibility window after `POST /users/resolve` (JSON body) replaced it.
-    #: An identifier in a URL lands in every access log and proxy on the path.
-    #:
-    #: Unset: served in `DS_ENV=dev`, and elsewhere until
-    #: `users_resolve_get_until` (inclusive), then refused with a 410. `true` or
-    #: `false` decides it outright, in any environment; `true` after the window
-    #: is logged at startup. Every GET served logs a deprecation warning that
-    #: names the identifier kinds, never their values.
-    users_resolve_get: bool | None = None
-    users_resolve_get_until: date = date(2027, 1, 31)
-
-    def users_resolve_get_allowed(self, today: date | None = None) -> bool:
-        if self.users_resolve_get is not None:
-            return self.users_resolve_get
-        from ds_auth.production import is_production
-
-        if not is_production():
-            return True
-        return (today or date.today()) <= self.users_resolve_get_until
 
     default_credential_ttl_days: int = 365
     max_credential_ttl_days: int = 730

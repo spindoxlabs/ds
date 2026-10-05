@@ -42,10 +42,10 @@ async def _sync(client, did: str, *, user_id: str = KC_USER):
 
 
 async def _mapping(client, did: str):
-    """The mapping as `GET /users/resolve` sees it, or `None`."""
-    r = await client.get(
+    """The mapping as `POST /users/resolve` sees it, or `None`."""
+    r = await client.post(
         "/users/resolve",
-        params={"realm": REALM, "user_id": KC_USER},
+        json={"realm": REALM, "user_id": KC_USER},
         headers=make_headers(scope="identity-registry.resolve"),
     )
     return r.json() if r.status_code == 200 else None
