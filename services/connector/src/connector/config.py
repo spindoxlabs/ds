@@ -9,6 +9,11 @@ from typing import Literal
 from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: The zero-config dev values of the at-rest keys (`db/sealed.py`). Public,
+#: deliberately weak, and refused outside `DS_ENV=dev` by the production guard.
+DEV_AT_REST_KEY = "Zg55cFGt-6zss_iy2vglPnziJ_DdzgyY5U1_rG-bOxE="
+DEV_KEY_INDEX_SECRET = "insecure-dev-key-index-secret"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -82,6 +87,17 @@ class Settings(BaseSettings):
     edc_callback_secret_file: str | None = None
     # How long a consumer route waits for the EDR after its transfer started.
     edr_wait_timeout: float = 30.0
+
+    # ── At rest (`db/sealed.py`) ─────────────────────────────────────────────
+    #
+    # A subject's data keys and every stored EDR are kept as ciphertext. Fernet
+    # keys, comma-separated: the first seals, all of them open, so a rotation
+    # prepends a key and drops the old one after `python -m connector.db.sealed
+    # reseal`. The index secret keys the HMAC that keeps equality lookups (and a
+    # unique constraint) possible on a sealed key. Both dev values are public and
+    # refused outside `DS_ENV=dev`.
+    at_rest_keys: str = Field(default=DEV_AT_REST_KEY)
+    key_index_secret: str = Field(default=DEV_KEY_INDEX_SECRET)
 
     # The counterparty connector's base URL, for the one off-DSP-path read a
     # consumer makes: "is this negotiation of mine waiting on a person?" (§6.6).

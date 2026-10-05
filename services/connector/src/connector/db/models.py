@@ -15,10 +15,11 @@ from sqlalchemy import (
     Text,
     func,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
 from sqlalchemy.types import JSON
 
 from .engine import Base
+from .sealed import SealedJSON, SealedText, blind_index
 
 
 def _uuid() -> str:
@@ -165,8 +166,9 @@ class ConsentRequestORM(Base):
     # collector back. They are personal data, which is why they live here and
     # nowhere else: never in `legal_basis`, never in provenance (which records
     # only that keys were supplied), never in a log line. A new registration
-    # replaces them; a withdrawal drops them with the grant.
-    subject_keys: Mapped[list | None] = mapped_column(JSON)  # list[str]
+    # replaces them; a withdrawal drops them with the grant. Sealed at rest
+    # (`sealed.py`): the column holds ciphertext, the attribute the list.
+    subject_keys: Mapped[list | None] = mapped_column(SealedJSON)  # list[str]
     requested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -265,7 +267,10 @@ class EdrEntryORM(Base):
     later DPS data plane on the consumer side reads the same event, and a data
     address that is not HTTP-pull does not fit ``endpoint``/``authorization``.
     ``authorization`` is a live bearer for the provider's data plane — treat the
-    table like the vault EDC used to hold it in.
+    table like the vault EDC used to hold it in. That is why ``authorization``
+    and ``data_address`` (which carries the same bearer) are sealed at rest
+    (`sealed.py`); EDC's own cache keeps an EDR in its vault for the same
+    reason (``VaultEndpointDataReferenceCache``).
     """
 
     __tablename__ = "edr_entries"
@@ -276,8 +281,8 @@ class EdrEntryORM(Base):
     asset_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     endpoint: Mapped[str] = mapped_column(Text, nullable=False)
     auth_type: Mapped[str] = mapped_column(Text, nullable=False, default="bearer")
-    authorization: Mapped[str] = mapped_column(Text, nullable=False)
-    data_address: Mapped[dict] = mapped_column(JSON, nullable=False)
+    authorization: Mapped[str] = mapped_column(SealedText, nullable=False)
+    data_address: Mapped[dict] = mapped_column(SealedJSON, nullable=False)
     event_id: Mapped[str | None] = mapped_column(Text, nullable=True)
     received_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -327,7 +332,11 @@ class ConsentKeyEventORM(Base):
     offer_id: Mapped[str | None] = mapped_column(Text)
     dataset_id: Mapped[str] = mapped_column(Text, nullable=False)
     consumer_id: Mapped[str] = mapped_column(Text, nullable=False)
-    key: Mapped[str] = mapped_column(Text, nullable=False)
+    #: The key, sealed (`sealed.py`). Never compared in SQL: a ciphertext is
+    #: randomised. Equality lookups — and any uniqueness rule on a key — go
+    #: through ``key_index``, which is set from it on every assignment.
+    key: Mapped[str] = mapped_column(SealedText, nullable=False)
+    key_index: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     event: Mapped[str] = mapped_column(Text, nullable=False)
     cause: Mapped[str] = mapped_column(Text, nullable=False)
     decided_by: Mapped[str | None] = mapped_column(Text)
@@ -337,6 +346,11 @@ class ConsentKeyEventORM(Base):
     # bare foreign key does not order a flush, and Postgres enforces it. Never
     # read — `lazy="raise"` makes an accidental load an error, not a query.
     decision: Mapped[ConsentRequestORM] = relationship(lazy="raise")
+
+    @validates("key")
+    def _index_key(self, _name: str, value: str) -> str:
+        self.key_index = blind_index(value)
+        return value
 
 
 # The ledger's writer listens on every flush; importing it here is what makes it

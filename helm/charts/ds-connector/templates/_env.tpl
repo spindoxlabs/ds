@@ -75,6 +75,12 @@ the header it sends — the same value the ds-edc chart puts in its vault
 - name: CONNECTOR_EDC_CALLBACK_SECRET
   valueFrom:
     secretKeyRef: {name: {{ include "ds.secretName" . }}, key: EDC_CALLBACK_KEY}
+- name: CONNECTOR_AT_REST_KEYS
+  valueFrom:
+    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: CONNECTOR_AT_REST_KEYS}
+- name: CONNECTOR_KEY_INDEX_SECRET
+  valueFrom:
+    secretKeyRef: {name: {{ include "ds.secretName" . }}, key: CONNECTOR_KEY_INDEX_SECRET}
 - name: DB_USER
   valueFrom:
     secretKeyRef: {name: {{ include "ds.secretName" . }}, key: DB_USER}

@@ -24,8 +24,9 @@ from .api.v1.provider import router as provider_router
 from .api.v1.webhooks import router as webhooks_router
 from .clients.edc_management import EdcManagementClient
 from .clients.provenance import ProvenanceClient
-from .config import get_settings
+from .config import DEV_AT_REST_KEY, DEV_KEY_INDEX_SECRET, get_settings
 from .db.engine import get_session_factory, verify_schema
+from .db.sealed import parse_keys, sealer
 from .notifications.factory import build_notifier
 from .registry.participants import (
     HttpParticipantRegistry,
@@ -178,6 +179,27 @@ async def lifespan(app: FastAPI):
         "Generate with: openssl rand -hex 32, and put the same value in the "
         "EDC's vault under CONNECTOR_EDC_CALLBACK_AUTH_CODE_ID.",
     )
+    # The keys that seal a subject's data keys and every stored EDR at rest
+    # (`db/sealed.py`). The dev values are committed, so a deployment still on
+    # them keeps ciphertext anyone with the repository can open.
+    for name, value, dev in (
+        ("CONNECTOR_AT_REST_KEYS", settings.at_rest_keys, DEV_AT_REST_KEY),
+        ("CONNECTOR_KEY_INDEX_SECRET", settings.key_index_secret, DEV_KEY_INDEX_SECRET),
+    ):
+        if dev in parse_keys(value):
+            guard.add(
+                name,
+                "holds the committed dev value",
+                "Generate a Fernet key for CONNECTOR_AT_REST_KEYS and a random "
+                "CONNECTOR_KEY_INDEX_SECRET (openssl rand -hex 32); losing either "
+                "loses the sealed columns.",
+            )
+    try:
+        sealer.cache_clear()
+        sealer()
+    except ValueError as exc:
+        # Malformed in any environment: nothing could be written or read.
+        raise RuntimeError(str(exc)) from exc
     if settings.is_consumer:
         guard.require_set(
             "CONNECTOR_EDC_CALLBACK_URL",

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI
 from fastapi.responses import JSONResponse
 
-from .config import get_settings
+from .config import DEV_SUBJECT_PSEUDONYM_KEY, get_settings
 from .db.engine import verify_schema
 from .dependencies import require_read_scope, require_write_scope
 from .schemas.context import PROV_CONTEXT
@@ -16,6 +16,7 @@ from .api.v1.events import router as events_router
 from .api.v1.events import subject_router as subject_events_router
 from .api.v1.lineage import router as lineage_router
 from .api.v1.audit import router as audit_router
+from .api.v1.chain import router as chain_router
 from ds_auth.person_binding import IdentityRegistryLoginBinding, person_token_required
 from ds_auth.production import ProductionGuard, is_production
 from ds_obs import configure_logging, install_metrics, install_tracing
@@ -108,6 +109,21 @@ async def lifespan(app: FastAPI):
             "history. A transition switch — remove it once every caller "
             "forwards the token."
         )
+    # The event record's hash chain covers a keyed pseudonym of every person id
+    # (`L-17`). With the published dev key anyone can test a guessed id against
+    # a pseudonymised record.
+    guard.forbid_default(
+        "PROVENANCE_SUBJECT_PSEUDONYM_KEY",
+        settings.subject_pseudonym_key,
+        {DEV_SUBJECT_PSEUDONYM_KEY},
+        "Set PROVENANCE_SUBJECT_PSEUDONYM_KEY to a generated secret, once: "
+        "changing it later breaks the verification of every existing record.",
+    )
+    if settings.person_id_retention_days is None and is_production():
+        log.warning(
+            "PROVENANCE_PERSON_ID_RETENTION_DAYS is unset: person ids in the "
+            "provenance record are kept in clear for the life of the record (L-18)."
+        )
     guard.enforce()
 
     app.state.login_binding = (
@@ -183,6 +199,8 @@ def create_app() -> FastAPI:
         prefix="/prov",
         dependencies=[Depends(require_write_scope)],
     )
+    # One read route; it states its own scope.
+    app.include_router(chain_router, prefix="/prov")
     # Reads only. This was `read or write` because `ProvenanceClient.get_lineage`
     # held `provenance.write` and nothing else — but that method has since been
     # **deleted** ("this client writes; it does not read"), so the caller the

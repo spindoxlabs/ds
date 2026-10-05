@@ -7,7 +7,12 @@ import logging
 
 import pytest
 
-from ds_obs.logging import ProbeAccessFilter, configure_logging
+from ds_obs.logging import (
+    ProbeAccessFilter,
+    QueryRedactingAccessFilter,
+    configure_logging,
+    redact_query,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -150,3 +155,38 @@ def test_uvicorn_shares_our_handler_so_one_format_reaches_the_log(monkeypatch):
         logger = logging.getLogger(name)
         assert logger.handlers == [root_handler]
         assert logger.propagate is False
+
+
+class TestQueryValuesAreNotLogged:
+    """An identifier sent as a query value was in every access line (R21)."""
+
+    def test_the_names_stay_and_the_values_go(self, capsys):
+        configure_logging("ds-test")
+        access = logging.getLogger("uvicorn.access")
+        access.handle(
+            _access_record("/users/resolve?email=person@example.test&derive=false", 200)
+        )
+        out = capsys.readouterr().out
+        assert "person@example.test" not in out
+        assert "/users/resolve?email=…&derive=…" in out
+
+    def test_a_target_without_a_query_is_unchanged(self):
+        record = _access_record("/users/me", 200)
+        QueryRedactingAccessFilter().filter(record)
+        assert record.args[2] == "/users/me"
+
+    def test_a_redacted_probe_is_still_a_probe(self, capsys):
+        configure_logging("ds-test")
+        logging.getLogger("uvicorn.access").handle(_access_record("/health?x=1", 200))
+        assert capsys.readouterr().out == ""
+
+    def test_there_is_no_switch_to_keep_the_values(self, monkeypatch):
+        monkeypatch.setenv("DS_LOG_ACCESS_HEALTH", "true")
+        configure_logging("ds-test")
+        configure_logging("ds-test")
+        filters = logging.getLogger("uvicorn.access").filters
+        assert sum(isinstance(f, QueryRedactingAccessFilter) for f in filters) == 1
+
+    def test_redact_query(self):
+        assert redact_query("/p?a=1&b=&c") == "/p?a=…&b=…&c=…"
+        assert redact_query("/p?a=1#frag") == "/p?a=…"

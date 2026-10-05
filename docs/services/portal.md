@@ -74,6 +74,27 @@ Per request, `hooks.server.ts`:
 3. takes the `email` claim and resolves the person against the identity registry
    (`GET /users/resolve?email=`), cached 60 s per email including negative results;
 4. exposes `{ user, accessToken, userDid, userVcRoles, userVcJwsByRole, userSubjectId }`.
+   `accessToken`, `userVcJws` and `userVcJwsByRole` are **non-enumerable**: server code reads
+   them, and no serialisation of the session carries them.
+
+### What reaches the browser
+
+Page data is rendered into the page and served as `__data.json`, so it is display data only.
+No `load` returns the session. The root layout returns the signed-in user's name and email,
+their DID, their credential roles and the nav persona. The person's token and credentials
+stay on the server, and every call that needs them is made from a `load`, a form action or a
+`+server.ts` endpoint (`R17`). Two checks keep it so:
+`tests/unit/page-data.test.ts` serialises every layout's data with devalue and sweeps every
+server `load` for a returned session, token or credential field. The non-enumerable fields
+are the second layer.
+
+Every response carries a Content-Security-Policy from SvelteKit (`kit.csp`, `mode: 'auto'`,
+so its own inline scripts are hashed or nonced): `default-src 'self'`, `script-src 'self'`,
+`style-src 'self' 'unsafe-inline'` (Svelte style attributes), `img-src 'self' data:`,
+`object-src 'none'`, `base-uri 'self'`, `frame-ancestors 'none'`. `form-action` is not set,
+because sign-in and sign-out are redirected to the SSO host. `hooks.server.ts` adds
+`X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer` and
+`X-Frame-Options: DENY`.
 
 The registry call is the **only** one made with the portal's own service account. Everything
 else forwards the signed-in user's token, or the subject's credential headers.

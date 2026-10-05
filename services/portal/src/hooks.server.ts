@@ -20,6 +20,7 @@
 import { env } from '$env/dynamic/private';
 import { realmOf, resolveUser, type KeycloakLogin } from '$lib/server/identity-registry';
 import { buildPortalGuard } from '$lib/server/production';
+import { SECURITY_HEADERS, withCredentials } from '$lib/server/session';
 import { buildSignOutUrl } from '$lib/server/signout';
 import { resolveIssuer, verifyAccessToken } from '$lib/server/token';
 import { redirect, type Handle } from '@sveltejs/kit';
@@ -117,19 +118,26 @@ async function buildSession(request: Request) {
 	const login = realm && claims.sub ? { realm, userId: String(claims.sub) } : null;
 	const identity = email || login ? await cachedIdentity(email, login) : null;
 
-	return {
-		user: {
-			name: (claims.name as string) ?? (claims.preferred_username as string) ?? email,
-			email,
+	// The token and the credentials are non-enumerable: server code reads them
+	// as before, and a `load` that returns this object serialises without them
+	// (`lib/server/session.ts`, `R17`).
+	return withCredentials(
+		{
+			user: {
+				name: (claims.name as string) ?? (claims.preferred_username as string) ?? email,
+				email,
+			},
+			userDid: identity?.did ?? null,
+			userVcRoles: identity?.roles ?? [],
+			userVcRole: identity?.role ?? null,
+			userSubjectId: identity?.subjectId ?? null,
 		},
-		accessToken,
-		userDid: identity?.did ?? null,
-		userVcRoles: identity?.roles ?? [],
-		userVcJwsByRole: identity?.jwsByRole ?? {},
-		userVcRole: identity?.role ?? null,
-		userVcJws: identity?.vcJws ?? null,
-		userSubjectId: identity?.subjectId ?? null,
-	};
+		{
+			accessToken,
+			userVcJws: identity?.vcJws ?? null,
+			userVcJwsByRole: identity?.jwsByRole ?? {},
+		},
+	);
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
@@ -172,5 +180,15 @@ export const handle: Handle = async ({ event, resolve }) => {
 		return cached;
 	};
 
-	return resolve(event);
+	const response = await resolve(event);
+	// The CSP itself is `kit.csp` (`svelte.config.js`); these are the headers
+	// SvelteKit does not set.
+	for (const [name, value] of Object.entries(SECURITY_HEADERS)) {
+		try {
+			response.headers.set(name, value);
+		} catch {
+			// A `fetch` response passed through as is has immutable headers.
+		}
+	}
+	return response;
 };

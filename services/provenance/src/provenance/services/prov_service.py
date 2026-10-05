@@ -3,8 +3,6 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
-
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -106,21 +104,6 @@ async def create_agent(session: AsyncSession, data: AgentCreate) -> ProvNodeORM:
     )
 
 
-async def soft_delete_node(
-    session: AsyncSession, iri: str, node_type: str | None = None
-) -> ProvNodeORM | None:
-    """Invalidate a node, optionally only if it is of the expected type.
-
-    The type check matters now that all three collections have a `DELETE`: without
-    it `DELETE /prov/agents/<iri>` would happily invalidate an Entity, so a caller
-    could remove a node from a collection it was never allowed to enumerate.
-    """
-    node = await get_node_by_iri(session, iri)
-    if node is None or (node_type is not None and node.node_type != node_type):
-        return None
-    node.invalidated_at = datetime.now(timezone.utc)
-    return node
-
 
 async def list_nodes(
     session: AsyncSession,
@@ -128,6 +111,8 @@ async def list_nodes(
     limit: int = 50,
     offset: int = 0,
 ) -> list[ProvNodeORM]:
+    # `invalidated_at` has no writer since the `DELETE` routes went (`L-17`); a
+    # node a deployment soft-deleted before that stays out of the listings.
     stmt = select(ProvNodeORM).where(ProvNodeORM.invalidated_at.is_(None))
     if node_type:
         stmt = stmt.where(ProvNodeORM.node_type == node_type)

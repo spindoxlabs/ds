@@ -188,6 +188,10 @@ secrets:
   # Unused otherwise, and required when it is set.
   publisherSecret: ""
   edcCallbackKey: "" # EDR callback header value; same as ds-edc secrets.edcCallbackKey
+  # Seal a subject's data keys and every stored EDR at rest. A Fernet key list
+  # (newest first) and the blind-index HMAC secret. Both required.
+  atRestKeys: ""
+  keyIndexSecret: ""
 
 global:
   baseDomain: ds.example.org

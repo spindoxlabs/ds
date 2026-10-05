@@ -19,6 +19,7 @@ from ...dependencies import (
 )
 from ...schemas.context import JSONLDResponse
 from ...schemas.events import DomainEvent, EventIngestResponse
+from ...services.chain import pseudonym
 from ...services.event_service import ingest_event
 from ...services.subject import verified_subject_id
 
@@ -110,7 +111,7 @@ def _filtered(
     stmt,
     *,
     event_type: list[str] | None,
-    subject_id: str | None,
+    subject_id: str | tuple[str, ...] | None,
     dataset_id: str | None,
     consumer_did: str | None,
     provider_did: str | None,
@@ -120,7 +121,9 @@ def _filtered(
 ):
     if event_type:
         stmt = stmt.where(DomainEventORM.event_type.in_(event_type))
-    if subject_id:
+    if isinstance(subject_id, tuple):
+        stmt = stmt.where(DomainEventORM.subject_id.in_(subject_id))
+    elif subject_id:
         stmt = stmt.where(DomainEventORM.subject_id == subject_id)
     if dataset_id:
         stmt = stmt.where(DomainEventORM.data_product_id == dataset_id)
@@ -225,13 +228,15 @@ async def list_my_events(
     credential, so it cannot be pointed at somebody else.
     """
     subject = await verified_subject_id(request, x_user_vc, x_subject_id, settings)
+    # Records past retention name the subject by pseudonym (`L-18`); the subject
+    # still reads them, because the right of access outlives the clear-text id.
     return await _page(
         db,
         settings,
         limit=limit,
         offset=offset,
         event_type=event_type,
-        subject_id=subject,
+        subject_id=(subject, pseudonym(subject, settings.subject_pseudonym_key)),
         dataset_id=dataset_id,
         consumer_did=None,
         provider_did=None,

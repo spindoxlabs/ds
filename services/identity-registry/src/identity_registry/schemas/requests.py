@@ -422,3 +422,24 @@ class RevokeConsentCollectorRequest(ConsentCollectorRequest):
     """Withdraw the acceptance. The reason is required and stays on the row."""
 
     reason: str = Field(min_length=3)
+
+
+class UserResolveRequest(BaseModel):
+    """The identifiers `POST /users/resolve` looks a person up by.
+
+    A body rather than a query string, so an email or a username never becomes
+    part of a URL — the part of a request that access logs, proxies and traces
+    record. Same cascade as before: ``(realm, user_id)`` first, then
+    ``username``, then ``email``.
+    """
+
+    model_config = {"extra": "forbid"}
+
+    realm: str | None = Field(
+        None, description="Keycloak realm — with user_id, the continuity key"
+    )
+    user_id: str | None = Field(
+        None, description="Keycloak user id — the only identifier that cannot change"
+    )
+    username: str | None = Field(None, description="Keycloak preferred_username")
+    email: str | None = Field(None, description="User email address")

@@ -25,6 +25,12 @@ Three env vars, all optional and all read here rather than in each service's
     are the highest-volume, lowest-information lines a service emits, and they
     were burying everything else. Non-2xx probes are always kept — a *failing*
     healthcheck is exactly the line you need.
+
+**Query values never reach an access line.** uvicorn logs the request target
+whole, so a lookup by ``?email=…`` put the address in every line that recorded
+the call. The access logger keeps the parameter *names* and drops their values
+(``/users/resolve?email=…``), always: there is no setting, because a log is not
+where a query belongs.
 """
 
 from __future__ import annotations
@@ -101,6 +107,32 @@ class ProbeAccessFilter(logging.Filter):
             return True
 
 
+def redact_query(target: str) -> str:
+    """``/p?a=1&b=2`` → ``/p?a=…&b=…``: the names stay, the values go."""
+    path, sep, query = target.partition("?")
+    if not sep:
+        return target
+    query = query.split("#", 1)[0]
+    names = [part.split("=", 1)[0] for part in query.split("&") if part]
+    return path + "?" + "&".join(f"{name}=…" for name in names)
+
+
+class QueryRedactingAccessFilter(logging.Filter):
+    """Drop query values from uvicorn access lines (see the module docstring).
+
+    Rewrites the request target in the record's args, so every formatter and
+    handler downstream sees only the redacted form. A record of an unexpected
+    shape is left alone: this filter only ever removes text.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        args = record.args
+        if isinstance(args, tuple) and len(args) >= 3 and isinstance(args[2], str):
+            if "?" in args[2]:
+                record.args = (*args[:2], redact_query(args[2]), *args[3:])
+        return True
+
+
 def configure_logging(service: str, *, level: str | None = None) -> None:
     """Install the platform's logging configuration. Idempotent.
 
@@ -140,7 +172,12 @@ def configure_logging(service: str, *, level: str | None = None) -> None:
         logger.setLevel(resolved)
 
     access = logging.getLogger("uvicorn.access")
-    access.filters = [f for f in access.filters if not isinstance(f, ProbeAccessFilter)]
+    access.filters = [
+        f
+        for f in access.filters
+        if not isinstance(f, ProbeAccessFilter | QueryRedactingAccessFilter)
+    ]
+    access.addFilter(QueryRedactingAccessFilter())
     if not _env_flag("DS_LOG_ACCESS_HEALTH"):
         access.addFilter(ProbeAccessFilter())
 

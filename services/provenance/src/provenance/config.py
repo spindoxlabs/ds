@@ -1,6 +1,9 @@
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+#: Registered with `ProductionGuard` in `main.py`.
+DEV_SUBJECT_PSEUDONYM_KEY = "dev-provenance-subject-pseudonym-key"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -84,6 +87,18 @@ class Settings(BaseSettings):
     # means required everywhere except DS_ENV=dev. See `ds_auth.person_binding`.
     identity_registry_url: str | None = None
     person_token_required: bool | None = None
+
+    # ── The record's integrity and retention (`L-17`, `L-18`) ─────────────────
+    #
+    # The event record is hash-chained over a keyed pseudonym of every person id
+    # (`services/chain.py`). The key is set once per store and **never rotated**:
+    # a new key changes every hash, and the chain no longer verifies. The dev
+    # default is refused outside dev (`ProductionGuard`).
+    subject_pseudonym_key: str = DEV_SUBJECT_PSEUDONYM_KEY
+    # After this many days a record's person ids are replaced by their
+    # pseudonyms (`provenance-admin retention`). Unset keeps them in clear for the
+    # life of the record, and the service says so at startup outside dev.
+    person_id_retention_days: int | None = Field(default=None, ge=1)
 
 
 _settings: Settings | None = None

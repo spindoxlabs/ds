@@ -8,6 +8,7 @@
  */
 export interface DsSession {
 	user?: { name?: string | null; email?: string | null };
+	/** Non-enumerable, as are the two credential fields below (`R17`). */
 	accessToken?: string;
 	userDid?: string | null;
 	/**
@@ -32,9 +33,8 @@ declare global {
 			auth(): Promise<DsSession | null>;
 		}
 
-		interface PageData {
-			session?: DsSession | null;
-		}
+		// No `session` in `PageData`: the session carries the person's token and
+		// credentials, and page data reaches the browser (`lib/server/session.ts`).
 	}
 }
 

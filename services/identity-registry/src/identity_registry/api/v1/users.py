@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
 from ds_auth.fastapi import authenticate, get_oidc_config
 from ds_auth.person_binding import realm_of
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,6 +18,7 @@ from ...dependencies import (
     require_read_scope,
     require_resolve_scope,
 )
+from ...schemas.requests import UserResolveRequest
 from ...schemas.responses import (
     SubjectIdentityResponse,
     UserCredentialResponse,
@@ -25,6 +27,8 @@ from ...schemas.responses import (
 from ...services.did import subject_id_of
 
 router = APIRouter(prefix="/users", tags=["users"])
+
+log = logging.getLogger(__name__)
 
 
 def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
@@ -123,8 +127,44 @@ async def resolve_mapping(
     return None, None
 
 
-@router.get("/resolve", response_model=UserResolveResponse)
-async def resolve_user_by_email(
+@router.post("/resolve", response_model=UserResolveResponse)
+async def resolve_user(
+    body: UserResolveRequest,
+    db: AsyncSession = Depends(get_db),
+    _claims: dict = Depends(require_resolve_scope),
+):
+    """Resolve a user's DID and **every** credential they can present.
+
+    The identifiers travel in the body, never in the URL: an email or a
+    username in a query string is recorded by every access log, proxy and
+    trace on the path. Cascade ``(realm, user_id)`` > ``username`` > ``email``
+    (`resolve_mapping`).
+
+    One human legitimately holds several roles, so this returns all of them and
+    lets the caller select the credential the operation requires. See
+    ``UserResolveResponse`` for why the singular fields remain.
+
+    A person with no mapping is a **404**: the registry does not invent an
+    identifier. A caller enrolling someone for the first time mints an opaque
+    subject id itself (a random UUID is the simple compliant choice, `D-22c`)
+    and passes it to ``POST /admin/credentials/data-subject``.
+
+    ``subject_id`` is the person's identifier within their custodian's
+    namespace, which is what ``POST /admin/credentials/data-subject`` takes;
+    ``did`` is the field that carries the DID (ds#31).
+    """
+    return await _resolve(
+        db,
+        realm=body.realm,
+        user_id=body.user_id,
+        username=body.username,
+        email=body.email,
+    )
+
+
+@router.get("/resolve", response_model=UserResolveResponse, deprecated=True)
+async def resolve_user_by_query(
+    response: Response,
     email: str | None = Query(None, description="User email address"),
     realm: str | None = Query(
         None, description="Keycloak realm — with user_id, the continuity key"
@@ -143,20 +183,66 @@ async def resolve_user_by_email(
         ),
     ),
     db: AsyncSession = Depends(get_db),
+    settings: Settings = Depends(get_settings_dep),
     _claims: dict = Depends(require_resolve_scope),
 ):
-    """Resolve a user's DID and **every** credential they can present.
+    """**Deprecated** — use ``POST /users/resolve`` with a JSON body.
 
-    One human legitimately holds several roles, so this returns all of them and
-    lets the caller select the credential the operation requires. See
-    ``UserResolveResponse`` for why the singular fields remain.
+    The same lookup, with the identifiers in the query string, where every
+    access log and proxy on the path records them. Kept for a compatibility
+    window (``IDENTITY_REGISTRY_USERS_RESOLVE_GET``, ``…_UNTIL``): served in
+    dev, and elsewhere until the window closes, then a **410**. Each call
+    served logs a warning naming which identifiers were sent, never their
+    values; a successful answer carries ``Deprecation`` and ``Sunset`` headers.
+    """
+    if not settings.users_resolve_get_allowed():
+        raise HTTPException(
+            status_code=410,
+            detail=(
+                "GET /users/resolve is withdrawn: an identifier in a URL is "
+                "logged wherever the request goes. Send POST /users/resolve "
+                "with a JSON body ({realm, user_id, username, email})."
+            ),
+        )
+    sent = [
+        name
+        for name, value in (
+            ("realm", realm),
+            ("user_id", user_id),
+            ("username", username),
+            ("email", email),
+        )
+        if value
+    ]
+    log.warning(
+        "deprecated GET /users/resolve served (identifiers: %s); move the caller "
+        "to POST /users/resolve",
+        ", ".join(sent) or "none",
+    )
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = settings.users_resolve_get_until.isoformat()
+    return await _resolve(
+        db,
+        realm=realm,
+        user_id=user_id,
+        username=username,
+        email=email,
+        derive=derive,
+    )
 
-    A person with no mapping is a **404**: the registry does not invent an
-    identifier. A caller enrolling someone for the first time mints an opaque
-    subject id itself (a random UUID is the simple compliant choice, `D-22c`)
-    and passes it to ``POST /admin/credentials/data-subject``.
 
-    **``derive`` is deprecated.** It used to answer an unmapped person with
+async def _resolve(
+    db: AsyncSession,
+    *,
+    realm: str | None,
+    user_id: str | None,
+    username: str | None,
+    email: str | None,
+    derive: bool = False,
+) -> UserResolveResponse:
+    """The lookup both forms of ``/users/resolve`` share.
+
+    **``derive`` is deprecated** (GET only). It used to answer an unmapped person with
     ``email-`` and an HMAC of their email. That generator is removed: an
     identifier derived from the email ties the DID to an address that can
     change. ``derive=true`` with no mapping now answers **422** naming what to

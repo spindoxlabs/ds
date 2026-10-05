@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
+    BigInteger,
     DateTime,
     ForeignKey,
     Index,
@@ -122,6 +123,13 @@ class DomainEventORM(Base):
     # Promoted out of the payload so a data subject's own history can be filtered
     # and indexed like every other dimension. Pseudonymous DID, never a name.
     subject_id: Mapped[str | None] = mapped_column(Text, index=True)
+    # The hash chain (`services/chain.py`, rulebook `L-17`). Null only on a row
+    # written before migration `0004` and not yet backfilled.
+    seq: Mapped[int | None] = mapped_column(BigInteger, unique=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64))
+    record_hash: Mapped[str | None] = mapped_column(String(64))
+    # When retention replaced the row's person ids with their pseudonyms (`L-18`).
+    pseudonymised_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # No `processed` flag. It was written `True` unconditionally by the only
     # writer and read by nothing — a column that describes a queue this service
     # does not have. Ingest is synchronous and transactional: a row exists

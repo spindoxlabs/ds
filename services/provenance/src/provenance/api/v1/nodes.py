@@ -1,8 +1,18 @@
-"""Entities, Activities, Agents CRUD routes."""
+"""Entities, Activities, Agents: create and read.
+
+**Append-only** (`L-17`). There is no update and no delete: a `POST` naming an IRI
+that already exists answers 409 with the node as recorded, exactly as
+`POST /prov/relations` does for an edge. The `DELETE` routes soft-deleted a node
+for any holder of `provenance.write`, which made the record erasable by the
+same principal that writes it. A node changes only through an ingested event,
+and every event is in the hash chain.
+"""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from typing import Any
+
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ...config import Settings
@@ -32,20 +42,41 @@ def _context_url(settings: Settings) -> str:
     return settings.context_url
 
 
+#: Advertised on every create route: re-posting is the commonest non-error outcome.
+CREATE_RESPONSES: dict[int | str, dict[str, Any]] = {
+    409: {"description": "The IRI already exists; the node as recorded is returned"},
+}
+
+
+async def _create(db: AsyncSession, settings: Settings, iri: str, create, data):
+    async with db.begin():
+        existing = await prov_service.get_node_by_iri(db, iri)
+        if existing is None:
+            node = await create(db, data)
+    if existing is not None:
+        return JSONLDResponse(
+            [node_to_jsonld(existing)], _context_url(settings), status_code=409
+        )
+    return JSONLDResponse(
+        [node_to_jsonld(node)], _context_url(settings), status_code=201
+    )
+
+
 # ── Entities ──────────────────────────────────────────────────────────────────
 
 
-@router.post("/entities", status_code=201, dependencies=[Depends(require_write_scope)])
+@router.post(
+    "/entities",
+    status_code=201,
+    responses=CREATE_RESPONSES,
+    dependencies=[Depends(require_write_scope)],
+)
 async def create_entity(
     data: EntityCreate,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    async with db.begin():
-        node = await prov_service.create_entity(db, data)
-    return JSONLDResponse(
-        [node_to_jsonld(node)], _context_url(settings), status_code=201
-    )
+    return await _create(db, settings, data.iri, prov_service.create_entity, data)
 
 
 @router.get("/entities", dependencies=[Depends(require_read_scope)])
@@ -73,33 +104,22 @@ async def get_entity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete(
-    "/entities/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)]
-)
-async def delete_entity(iri: str, db: AsyncSession = Depends(get_db)):
-    async with db.begin():
-        node = await prov_service.soft_delete_node(db, iri, "Entity")
-    if not node:
-        raise HTTPException(404, "Entity not found")
-    return Response(status_code=204)
-
 
 # ── Activities ────────────────────────────────────────────────────────────────
 
 
 @router.post(
-    "/activities", status_code=201, dependencies=[Depends(require_write_scope)]
+    "/activities",
+    status_code=201,
+    responses=CREATE_RESPONSES,
+    dependencies=[Depends(require_write_scope)],
 )
 async def create_activity(
     data: ActivityCreate,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    async with db.begin():
-        node = await prov_service.create_activity(db, data)
-    return JSONLDResponse(
-        [node_to_jsonld(node)], _context_url(settings), status_code=201
-    )
+    return await _create(db, settings, data.iri, prov_service.create_activity, data)
 
 
 @router.get("/activities", dependencies=[Depends(require_read_scope)])
@@ -127,33 +147,22 @@ async def get_activity(
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
 
-@router.delete(
-    "/activities/{iri:path}",
-    status_code=204,
-    dependencies=[Depends(require_write_scope)],
-)
-async def delete_activity(iri: str, db: AsyncSession = Depends(get_db)):
-    async with db.begin():
-        node = await prov_service.soft_delete_node(db, iri, "Activity")
-    if not node:
-        raise HTTPException(404, "Activity not found")
-    return Response(status_code=204)
-
 
 # ── Agents ────────────────────────────────────────────────────────────────────
 
 
-@router.post("/agents", status_code=201, dependencies=[Depends(require_write_scope)])
+@router.post(
+    "/agents",
+    status_code=201,
+    responses=CREATE_RESPONSES,
+    dependencies=[Depends(require_write_scope)],
+)
 async def create_agent(
     data: AgentCreate,
     db: AsyncSession = Depends(get_db),
     settings: Settings = Depends(get_settings_dep),
 ):
-    async with db.begin():
-        node = await prov_service.create_agent(db, data)
-    return JSONLDResponse(
-        [node_to_jsonld(node)], _context_url(settings), status_code=201
-    )
+    return await _create(db, settings, data.iri, prov_service.create_agent, data)
 
 
 @router.get("/agents", dependencies=[Depends(require_read_scope)])
@@ -182,13 +191,3 @@ async def get_agent(
         raise HTTPException(404, "Agent not found")
     return JSONLDResponse([node_to_jsonld(node)], _context_url(settings))
 
-
-@router.delete(
-    "/agents/{iri:path}", status_code=204, dependencies=[Depends(require_write_scope)]
-)
-async def delete_agent(iri: str, db: AsyncSession = Depends(get_db)):
-    async with db.begin():
-        node = await prov_service.soft_delete_node(db, iri, "Agent")
-    if not node:
-        raise HTTPException(404, "Agent not found")
-    return Response(status_code=204)

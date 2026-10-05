@@ -31,6 +31,7 @@ from ..schemas.events import (
     QueryExecuted,
     TransferStarted,
 )
+from . import chain
 from .prov_service import upsert_node
 
 log = logging.getLogger(__name__)
@@ -118,6 +119,8 @@ async def ingest_event(
         consumer_did=getattr(event, "consumer_did", None),
         subject_id=getattr(event, "subject_id", None),
     )
+    # Last, once every column is set: the hash covers them (`L-17`).
+    await chain.append(session, orm)
     session.add(orm)
     await session.flush()
 

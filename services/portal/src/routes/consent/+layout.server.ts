@@ -6,5 +6,5 @@ export const load: LayoutServerLoad = async (event) => {
 	if (!session?.user) {
 		throw redirect(303, `/auth/signin?callbackUrl=${encodeURIComponent(event.url.pathname)}`);
 	}
-	return { session };
+	return {};
 };

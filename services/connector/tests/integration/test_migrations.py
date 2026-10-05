@@ -257,3 +257,76 @@ async def test_0009_rekeys_a_members_offer_decision_and_leaves_asks_alone(
     # offer-scoped standing decision, and neither may be widened into one.
     assert keys["r3"] == "did:web:counterparty"
     assert keys["r4"] == "did:web:counterparty"
+
+
+# ── 0015, data keys and EDRs sealed at rest ──────────────────────────────────
+
+
+async def test_0015_seals_what_was_stored_in_the_clear(empty_database: str) -> None:
+    """Rows written before sealing are sealed by the migration, and read back."""
+    from connector.db.models import ConsentKeyEventORM, ConsentRequestORM, EdrEntryORM
+    from connector.db.sealed import PREFIX, blind_index
+
+    assert _alembic_upgrade(empty_database, "0014").returncode == 0
+    engine = create_async_engine(empty_database)
+    try:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO consent_requests "
+                    "(id, subject_id, consumer_id, dataset_id, status, "
+                    " notification_sent, subject_keys) VALUES "
+                    "('r1', 'did:web:x:users:a', '*', 'datasets.silver.meters', "
+                    " 'granted', false, '[\"pod:ex-pod-00001\"]'),"
+                    "('r2', 'did:web:x:users:b', '*', 'datasets.silver.meters', "
+                    " 'revoked', false, NULL)"
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO consent_key_events (id, consent_id, dataset_id, "
+                    "consumer_id, key, event, cause, at) VALUES ('e1', 'r1', "
+                    "'datasets.silver.meters', '*', 'pod:ex-pod-00001', 'added', "
+                    "'backfill', now())"
+                )
+            )
+            await conn.execute(
+                sa.text(
+                    "INSERT INTO edr_entries (transfer_id, endpoint, auth_type, "
+                    "\"authorization\", data_address) VALUES ('tp-1', 'http://dp', "
+                    "'bearer', 'eyJ.live', '{\"authorization\": \"eyJ.live\"}')"
+                )
+            )
+
+        upgraded = _alembic_upgrade(empty_database)
+        assert upgraded.returncode == 0, upgraded.stderr
+
+        async with engine.connect() as conn:
+            raw = (
+                await conn.execute(
+                    sa.text(
+                        "SELECT (SELECT subject_keys FROM consent_requests "
+                        "WHERE id = 'r1'), (SELECT key FROM consent_key_events), "
+                        '(SELECT "authorization" FROM edr_entries), '
+                        "(SELECT data_address FROM edr_entries)"
+                    )
+                )
+            ).one()
+        assert all(v.startswith(PREFIX) for v in raw)
+        assert not any("ex-pod" in v or "eyJ.live" in v for v in raw)
+
+        from sqlalchemy.ext.asyncio import async_sessionmaker
+
+        async with async_sessionmaker(engine)() as session:
+            assert (await session.get(ConsentRequestORM, "r1")).subject_keys == [
+                "pod:ex-pod-00001"
+            ]
+            assert (await session.get(ConsentRequestORM, "r2")).subject_keys is None
+            event = await session.get(ConsentKeyEventORM, "e1")
+            assert event.key == "pod:ex-pod-00001"
+            assert event.key_index == blind_index("pod:ex-pod-00001")
+            edr = await session.get(EdrEntryORM, "tp-1")
+            assert edr.authorization == "eyJ.live"
+            assert edr.data_address == {"authorization": "eyJ.live"}
+    finally:
+        await engine.dispose()

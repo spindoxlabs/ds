@@ -7,7 +7,7 @@ from ds_auth.production import ProductionGuard
 from ds_obs import configure_logging, install_metrics, install_tracing
 from fastapi import FastAPI
 
-from .config import get_settings, register_database_url
+from .config import get_settings, register_database_url, register_encryption_key
 from .db.engine import verify_schema
 from .roles import (
     APP_PATHS,
@@ -60,13 +60,15 @@ async def lifespan(app: FastAPI):
             "Set IDENTITY_REGISTRY_DID_WEB_USE_HTTPS=true so DID documents are "
             "fetched over TLS.",
         )
-    guard.forbid_default(
-        "IDENTITY_REGISTRY_ENCRYPTION_KEY",
-        settings.encryption_key,
-        {"dev-encryption-key-change-in-production"},
-        "Generate with: python -c 'import secrets;print(secrets.token_urlsafe(32))'. "
-        "Losing this key means losing every stored DID private key.",
-    )
+    register_encryption_key(guard, settings)
+    # R21: the query-string form of `/users/resolve` puts an email in URLs. Kept
+    # on purpose only by a deployment that says so; say so at every start.
+    if guard.is_production and settings.users_resolve_get:
+        log.warning(
+            "IDENTITY_REGISTRY_USERS_RESOLVE_GET=true: GET /users/resolve is served "
+            "outside dev; its identifiers are in every logged URL. Move callers to "
+            "POST /users/resolve"
+        )
     # This service's own outbound credential — the one it actually
     # authenticates with. It ships a dev default equal to the client id and was
     # the only such secret with no guard. (`KEYCLOAK_CLIENT_SECRET` was guarded

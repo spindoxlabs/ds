@@ -9,6 +9,6 @@ import { ADMIN_SECTION_GRANTS, requireGrant } from '$lib/server/auth';
  * decides who may enter the section at all.
  */
 export const load: LayoutServerLoad = async (event) => {
-	const session = await requireGrant(event, ...ADMIN_SECTION_GRANTS);
-	return { session };
+	await requireGrant(event, ...ADMIN_SECTION_GRANTS);
+	return {};
 };

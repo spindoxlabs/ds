@@ -86,6 +86,8 @@ async def test_production_refuses_to_start_on_the_dev_defaults(monkeypatch):
         # means no person's login can be bound to their credential.
         "PROVENANCE_CREDENTIAL_STATUS_URL",
         "PROVENANCE_IDENTITY_REGISTRY_URL",
+        # R19: the key the record's chain pseudonymises person ids under.
+        "PROVENANCE_SUBJECT_PSEUDONYM_KEY",
     ):
         assert setting in message
 
@@ -107,6 +109,7 @@ async def test_production_starts_once_all_of_them_are_supplied(monkeypatch):
         "PROVENANCE_CREDENTIAL_STATUS_URL", "https://ta.example.org/status/1"
     )
     monkeypatch.setenv("PROVENANCE_IDENTITY_REGISTRY_URL", "http://ir.example.org")
+    monkeypatch.setenv("PROVENANCE_SUBJECT_PSEUDONYM_KEY", "k-9f3c-generated")
     monkeypatch.setenv(
         "PROVENANCE_DATABASE_URL",
         "postgresql+asyncpg://provenance:Xk3v9-generated@db.example.org:5432/provenance",

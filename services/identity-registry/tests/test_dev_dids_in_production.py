@@ -55,6 +55,8 @@ def cli_database(tmp_path, monkeypatch):
 
     asyncio.run(_create())
     monkeypatch.setenv("IDENTITY_REGISTRY_DATABASE_URL", url)
+    # And a key of its own: under production `ir-cli` refuses a committed one.
+    monkeypatch.setenv("IDENTITY_REGISTRY_ENCRYPTION_KEY", "a-deployments-own-test-key")
     # `create_all` builds no `alembic_version`; the schema is this test's own.
     monkeypatch.setenv("DB_SKIP_SCHEMA_CHECK", "true")
     get_settings.cache_clear()

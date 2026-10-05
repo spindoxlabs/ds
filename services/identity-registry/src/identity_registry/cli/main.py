@@ -9,7 +9,11 @@ from pathlib import Path
 import typer
 from ds_auth.production import InsecureProductionConfig
 
-from ..config import get_settings, refuse_dev_database_in_production
+from ..config import (
+    get_settings,
+    refuse_dev_database_in_production,
+    refuse_dev_encryption_key_in_production,
+)
 from ..db.engine import get_session_factory, verify_schema
 from ..db.models import (
     Agreement,
@@ -43,6 +47,7 @@ participant_app = typer.Typer(help="Participant management")
 credential_app = typer.Typer(help="Credential management")
 key_app = typer.Typer(help="Key management")
 status_app = typer.Typer(help="Status list management")
+did_app = typer.Typer(help="DID retirement (offboarding)")
 keycloak_app = typer.Typer(help="Keycloak mapping management")
 owner_app = typer.Typer(help="Owner registry management")
 membership_app = typer.Typer(help="Organization membership management")
@@ -57,6 +62,7 @@ app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
 app.add_typer(key_app, name="key")
 app.add_typer(status_app, name="status")
+app.add_typer(did_app, name="did")
 app.add_typer(keycloak_app, name="keycloak")
 app.add_typer(owner_app, name="owner")
 app.add_typer(membership_app, name="membership")
@@ -82,6 +88,8 @@ async def _ensure_db():
     # `DS_ENV=production` the dev default names another deployment's database.
     try:
         refuse_dev_database_in_production("ir-cli")
+        # `ir-cli` seals private keys too (bootstrap, rotation, issuance).
+        refuse_dev_encryption_key_in_production("ir-cli")
     except InsecureProductionConfig as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(1) from exc
@@ -936,6 +944,64 @@ def status_export():
                 typer.echo(json.dumps(data, indent=2))
 
     _run(_export())
+
+
+@did_app.command("retire")
+def did_retire(did: str = typer.Argument(..., help="The DID to stop serving")):
+    """Retire one DID this instance serves: its document stops resolving (404).
+
+    The row stays — consent records and provenance still name it. Idempotent.
+    For an offboarding the issuer has not revoked through the register, or for
+    an organisation retiring its own DID.
+    """
+
+    async def _retire():
+        factory = await _ensure_db()
+        from ..services.did_retirement import retire_did
+
+        async with factory() as session:
+            changed = await retire_did(session, did)
+            await session.commit()
+        if changed is None:
+            typer.echo("No such DID here.", err=True)
+            raise typer.Exit(1)
+        typer.echo("Retired." if changed else "Already retired.")
+
+    _run(_retire())
+
+
+@did_app.command("sweep")
+def did_sweep(
+    dry_run: bool = typer.Option(False, "--dry-run", help="Report, change nothing"),
+):
+    """Retire every DID served here whose credentials are all revoked.
+
+    Reads the issuer's revocation register (the anchor reads its own records).
+    Idempotent, and meant to run periodically. Prints counts only. Exits 1 when a
+    register could not be read, so a run that decided nothing is visible.
+    """
+
+    async def _sweep():
+        factory = await _ensure_db()
+        from ..services.did_retirement import anchor_reader, register_reader, sweep
+
+        settings = get_settings()
+        read = (
+            register_reader(settings)
+            if settings.role == "participant"
+            else anchor_reader
+        )
+        async with factory() as session:
+            result = await sweep(session, settings, read, dry_run=dry_run)
+        verb = "would retire" if dry_run else "retired"
+        typer.echo(
+            f"{result.examined} DID(s) examined, {len(result.retired)} {verb}, "
+            f"{result.unknown} unreadable"
+        )
+        if not result.clean:
+            raise typer.Exit(1)
+
+    _run(_sweep())
 
 
 @status_app.command("check-indices")

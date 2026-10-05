@@ -1141,3 +1141,67 @@ def test_a_failed_fetch_is_not_cached(anchor, resolver, monkeypatch):
         ).did
         == SUBJECT
     )
+
+
+# ── A holder asking about a credential it keeps (`status_bit_set`) ───────────
+
+
+def _held(status) -> dict:
+    return {"credentialStatus": status}
+
+
+def test_a_holder_reads_the_revocation_bit_from_the_configured_origin(
+    anchor, resolver, monkeypatch
+):
+    """The credential names the anchor's public URL; the holder reaches it at
+    the origin it is configured with, and only the path comes from the
+    credential."""
+    reachable = "http://trust-anchor.internal"
+    fake = FakeRegisters(
+        {f"{reachable}/status/1": status_list("revocation", set_bits=(INDEX,))}
+    )
+    monkeypatch.setattr(user_credentials, "urlopen", fake)
+    assert (
+        user_credentials.status_bit_set(
+            _held(TWO_REGISTERS),
+            "revocation",
+            register_origin=reachable,
+            issuer=ANCHOR,
+            resolver=resolver,
+        )
+        is True
+    )
+    assert fake.fetches == [f"{reachable}/status/1"]
+
+
+def test_a_clear_bit_is_false_and_no_entry_is_none(anchor, resolver, registers):
+    held = _held(TWO_REGISTERS)
+    assert (
+        user_credentials.status_bit_set(
+            held, "revocation", register_origin=STATUS_HOST, resolver=resolver
+        )
+        is False
+    )
+    assert (
+        user_credentials.status_bit_set(
+            _held(ONE_REGISTER),
+            "suspension",
+            register_origin=STATUS_HOST,
+            resolver=resolver,
+        )
+        is None
+    )
+
+
+def test_an_unreadable_register_raises_rather_than_answering_clear(
+    anchor, resolver, monkeypatch
+):
+    monkeypatch.setattr(user_credentials, "urlopen", FakeRegisters({}))
+    with pytest.raises(HTTPException) as exc:
+        user_credentials.status_bit_set(
+            _held(TWO_REGISTERS),
+            "revocation",
+            register_origin=STATUS_HOST,
+            resolver=resolver,
+        )
+    assert exc.value.status_code == 503

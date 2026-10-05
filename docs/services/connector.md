@@ -412,6 +412,68 @@ asked for the EDR afterwards, so such a transfer would be useless. A consumer pr
 The callback carries no bearer token, because EDC's callback client sends only the
 configured header. That header is the route's whole authentication.
 
+The stored EDR is **sealed at rest**, as below: EDC's own cache keeps an EDR in its vault
+(`VaultEndpointDataReferenceCache`), and the bearer it carries is as live here as there.
+
+### Data keys and EDRs are sealed at rest
+
+Two kinds of value in this database are worth something to whoever reads a backup or a
+replica: a subject's data keys (`pod:…`, which the data plane filters on) and an EDR (a
+live bearer for a counterparty's data plane). Both are stored as ciphertext
+(`connector.db.sealed`), and nothing that reads them changes:
+
+| Column | Stored as |
+|---|---|
+| `consent_requests.subject_keys` | Fernet ciphertext of the JSON list |
+| `consent_key_events.key` | Fernet ciphertext, plus `key_index` |
+| `edr_entries.authorization`, `edr_entries.data_address` | Fernet ciphertext |
+
+**`key_index` keeps equality lookups.** A ciphertext is randomised, so two seals of one key
+never compare equal. `key_index` is `HMAC-SHA256(CONNECTOR_KEY_INDEX_SECRET, key)`:
+deterministic, so a lookup or a unique constraint on a key goes on that column, and keyed,
+so nobody without the secret can compute the index of a known POD. It is set from the key on
+every write; no write path has to remember it.
+
+**A value no configured key opens is an error**, never the stored text: a data plane handed
+ciphertext as a key would match nothing and report it as a match.
+
+**Rotation.** `CONNECTOR_AT_REST_KEYS` is a list, newest first: the first seals, every one
+opens. Prepend a new key, restart, run `python -m connector.db.sealed reseal`, then drop the
+old key. To change `CONNECTOR_KEY_INDEX_SECRET`, run the same `reseal` before serving traffic:
+until it has run, a lookup by index misses rows indexed with the old secret. Migration `0015`
+sealed the rows already stored, with the keys configured when it ran. It refuses to run
+outside `DS_ENV=dev` while the keys are the committed dev values.
+
+### Reconciling a withdrawal across connectors
+
+An offer can be bound at more than one connector: the collecting organisation's own, and a
+holder of the same subjects' data that it registers at as a collector. A member's
+withdrawal is written to each, one call per connector, and a call can fail. A withdrawal
+that reached one connector leaves the other still serving.
+
+`python -m connector.reconcile` closes that gap. It runs as the collecting organisation
+(`CONNECTOR_CLIENT_ID` / `CONNECTOR_CLIENT_SECRET`), reads `GET /consent/admin/decisions` for
+each `--offer` at every `--connector` given, and compares each subject's decisions:
+
+- **a withdrawal newer than a grant at another connector is propagated there**
+  (`POST /consent/admin/shares`, `enabled: false`). It is relayed as the subject's when the
+  subject withdrew, and as the collector's otherwise, with a fixed cause;
+- **a grant is never propagated.** A grant that reached only one connector, or a subject one
+  connector has no decision about, is flagged and left for the onboarding retry: that side
+  serves less than it may, not more;
+- `--dry-run` writes nothing and flags what it would write.
+
+```bash
+python -m connector.reconcile --offer example-research \
+  --connector https://connector.rec.example.org \
+  --connector https://connector.dso.example.org
+```
+
+Run it periodically. It is idempotent: a reconciled state writes nothing. It logs counts,
+connector hosts and consent ids, never a subject id. It exits `0` when the connectors agree
+or were brought to agree, `1` when something is flagged, a write failed or a connector could
+not be read, and `2` on a configuration error.
+
 ### What the sync removes
 
 `POST /provider/sync` makes EDC match the governance it was given. Everything it publishes
@@ -590,6 +652,8 @@ consumer run the same image on 30001 and 31001 without the probe drifting from t
 | `CONNECTOR_PROVENANCE_URL` | `http://localhost:30000` | where events go |
 | `CONNECTOR_PROVIDER_CONNECTOR_URL` | `""` | consumer side: poll the provider for a parked decision. Empty disables |
 | `CONNECTOR_DATABASE_URL` | Postgres on `172.17.0.1:35432/connector` | **secret** — embeds credentials |
+| `CONNECTOR_AT_REST_KEYS` | committed dev key | **secret** — Fernet keys, comma-separated, newest first; seals data keys and EDRs |
+| `CONNECTOR_KEY_INDEX_SECRET` | committed dev value | **secret** — HMAC key of the data keys' blind index |
 
 ### Notifications
 
@@ -607,6 +671,8 @@ Under `DS_ENV=production` a startup guard refuses to boot in any of these cases:
 - the trust anchor or the trust list is unset;
 - the organisation client's secret still equals its id;
 - the callback secret is still at its dev default;
+- either at-rest key is still the committed dev value (a key list that is not valid Fernet
+  refuses to boot in every environment);
 - the process is a consumer and has no callback URL.
 
 ## Persistence
@@ -620,7 +686,7 @@ the service refuses to boot against a schema that is not at head.
 | `consent_requests` | the consent registry: subject, consumer (or `*`), dataset, purposes, controller, status, who decided, the registering organisation and the subject's data keys |
 | `consumer_access_requests` | consumer-side: what was asked for, its negotiation, agreement and transfer |
 | `consumer_transfers` | consumer-side transfer records, so a subject sees only their own |
-| `edr_entries` | consumer-side: the EDR each started transfer's callback delivered, by transfer id |
+| `edr_entries` | consumer-side: the EDR each started transfer's callback delivered, by transfer id, sealed |
 
 ## Running it
 

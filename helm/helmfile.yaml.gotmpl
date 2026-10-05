@@ -265,6 +265,8 @@ releases:
           # audience only (plan `the-management-api-is-v3-behind-one-key`).
           clientSecret: {{ $psec.organisationClientSecret | quote }}
           edcCallbackKey: {{ $psec.edcCallbackKey | quote }}
+          atRestKeys: {{ $psec.connectorAtRestKeys | quote }}
+          keyIndexSecret: {{ $psec.connectorKeyIndexSecret | quote }}
 
 {{- if dig "federatedCatalog" "enabled" false $p }}
   {{- /*

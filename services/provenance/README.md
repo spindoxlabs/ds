@@ -56,9 +56,9 @@ The consent/ingestion/disclosure events (Block C) carry **codes, DIDs and hashes
 
 Domain event ingest is idempotent via `event_id`.
 
-### CRUD
+### Read, and nothing else
 
-`GET`, `PUT`, `PATCH`, `DELETE` on `/prov/entities/{iri}`, `/prov/activities/{iri}`, `/prov/agents/{iri}`. Delete is soft — sets `invalidated_at`.
+`GET` on `/prov/entities/{iri}`, `/prov/activities/{iri}`, `/prov/agents/{iri}`. The record is append-only: there is no `PUT`, `PATCH` or `DELETE`, and a `POST` naming an existing IRI answers `409` with the node unchanged. Every stored event is hash-chained; `GET /prov/chain/verify` and `provenance-admin verify` recompute the chain. See `docs/services/provenance.md`.
 
 ### Collection queries
 

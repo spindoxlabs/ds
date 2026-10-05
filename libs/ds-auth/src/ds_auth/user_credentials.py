@@ -469,6 +469,59 @@ def _verify_credential_status(
         )
 
 
+def status_bit_set(
+    vc: dict[str, Any],
+    purpose: str,
+    *,
+    register_origin: str,
+    issuer: str | None = None,
+    resolver: DidWebResolver | None = None,
+    verify_signature: bool = True,
+    ttl_seconds: float | None = None,
+) -> bool | None:
+    """Whether the register *vc* names for *purpose* has its bit set.
+
+    ``None`` when the credential names no register for that purpose. The
+    register is read exactly as `_verify_credential_status` reads one — the
+    issuer's signed VC-JWT, verified, cached — from *register_origin* (scheme
+    and host this caller is configured to reach) and the path the credential
+    names. For a **holder** asking about a credential it keeps, rather than a
+    verifier admitting one: the same failures raise the same ``HTTPException``,
+    and a caller treats any of them as "unknown", never as "not set".
+    """
+    status = vc.get("credentialStatus")
+    raw = status if isinstance(status, list) else [status]
+    entries = [
+        e
+        for e in raw
+        if isinstance(e, dict)
+        and e.get("type") in _SUPPORTED_ENTRY_TYPES
+        and str(e.get("statusPurpose") or "revocation") == purpose
+    ]
+    if not entries:
+        return None
+    origin = urlsplit(register_origin)
+    fetched: dict[str, dict[str, Any]] = {}
+    for entry in entries:
+        named = urlsplit(str(entry.get("statusListCredential") or ""))
+        if not named.path:
+            raise HTTPException(503, "Credential names no status register")
+        url = named._replace(scheme=origin.scheme, netloc=origin.netloc).geturl()
+        document = _fetch_status_list(
+            url,
+            fetched,
+            issuer=issuer,
+            verify_signature=verify_signature,
+            resolver=resolver,
+            ttl_seconds=ttl_seconds,
+        )
+        if _published_purpose(document) != purpose:
+            raise HTTPException(503, "Credential names a register of another purpose")
+        if _status_bit(document, _status_list_index(entry)):
+            return True
+    return False
+
+
 def _status_list_index(entry: dict[str, Any]) -> int:
     """The bit this credential occupies. A string per the specification, and an
     integer in the wild; both are accepted and nothing else is.

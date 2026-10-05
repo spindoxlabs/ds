@@ -46,9 +46,19 @@ relations schema or the JSON-LD context does not also carry.
 | `GET /prov/events` | operators — a filtered, paged event query with `hydra:*` counters |
 | `GET /prov/my/events` | **a data subject, authenticated by their own credential** — their own history and nobody else's |
 | `GET /prov/lineage/{iri}` | anyone with read access — a bounded breadth-first walk upstream, downstream or both |
+| `GET /prov/chain/verify` | operators (`provenance.read`) — whether the event record is intact, and its head hash |
 
 **Keeps a compliance access log** (`/audit/log`) with a per-dataset summary, separate from the
 event graph.
+
+**Keeps the event record append-only and tamper-evident** (`L-17`). Every stored event is
+hash-chained onto the one before it, and `GET /prov/chain/verify` recomputes the chain. No
+route changes or deletes anything: nodes are created and read, and a `POST` naming an IRI that
+already exists answers `409` with the node as recorded.
+
+**Lets person ids age out** (`L-18`). After `PROVENANCE_PERSON_ID_RETENTION_DAYS`, the
+retention job replaces the person ids in a record with their keyed pseudonyms. The record
+stays, the chain still verifies, and the subject still reads it.
 
 ## How it works
 
@@ -79,7 +89,51 @@ nicely.
 6. **Store the payload verbatim**, alongside five normalised columns (`agreement_id`,
    `data_product_id`, `provider_did`, `consumer_did`, `subject_id`) that reconcile the
    different names the same concept carries across event types.
-7. **Respond** `201 created` with the event id and the activity node it produced.
+7. **Chain** the row onto the head of the record (below), under a lock, in the same
+   transaction.
+8. **Respond** `201 created` with the event id and the activity node it produced.
+
+### The hash chain
+
+Each `domain_events` row carries `seq`, `prev_hash` and `record_hash`:
+
+```text
+record_hash = sha256(prev_hash + "\n" + canonical(row))
+```
+
+`canonical` is sorted-key JSON over every column except the row's own id and the server
+receive time: `seq`, `event_id`, `event_type`, `occurred_at`, the payload, the activity node and
+the five normalised columns. The first row's `prev_hash` is 64 zeros. There is one chain per
+store, and appends are serialised by a Postgres advisory lock.
+
+**Person ids enter the hash as pseudonyms.** Before hashing, `subject_id`, `user_did` and
+`authorized_subject_ids` are replaced with `pseud:<HMAC-SHA256(key, id)>` under
+`PROVENANCE_SUBJECT_PSEUDONYM_KEY`. Retention later writes the same pseudonym into the row,
+so a pseudonymised row hashes as it did when it was written. A row given another person's
+pseudonym does not.
+
+`GET /prov/chain/verify` (and `provenance-admin verify`, exit 1 on failure) returns `ok`,
+`records`, `pseudonymised`, `unchained`, `firstFailure` and `head`. A changed, removed or
+reordered row fails at its sequence number. Removing the **newest** rows is visible only
+against a head recorded somewhere else, so an operator records `head` outside the store.
+
+The chain covers the event record. The graph and `access_log` are projections of it and are
+not chained, though the API cannot change them either. `POST /audit/log` writes an
+`access_log` row directly and is outside the chain.
+
+### Retention of person ids
+
+`provenance-admin retention` (for a scheduled job) takes every record older than
+`PROVENANCE_PERSON_ID_RETENTION_DAYS`, by `occurred_at`. It replaces the person ids in the
+payload, the `subject_id` column, the activity node's `external_meta` and the matching
+`access_log` rows with their pseudonyms, and sets `pseudonymised_at`. An agent node named by
+a person id is renamed to the pseudonym once no newer record names that id in clear. If the
+person comes back later, the new node is merged into the pseudonymous one. Nothing is deleted,
+and the run logs counts and the cutoff, never an id. `GET /prov/my/events` matches the
+subject's id and its pseudonym, so a subject's history does not shrink.
+
+`acted_by.subject` is not a person id for this purpose. It names the operator or client that
+decided something (`L-5`) and stays attributable.
 
 ### No PII, by construction
 
@@ -133,9 +187,12 @@ Every edge points backwards in time, so `direction` selects which way the walk f
 | `PROVENANCE_CREDENTIAL_STATUS_CACHE_SECONDS` | `900` | the revocation latency |
 | `PROVENANCE_IDENTITY_REGISTRY_URL` | — | the registry holding the Keycloak mappings (the anchor's). Required while the login binding is. It is asked with the person's token, so no client secret is needed |
 | `PROVENANCE_PERSON_TOKEN_REQUIRED` | unset = required unless `DS_ENV=dev` | as the connector's |
+| `PROVENANCE_SUBJECT_PSEUDONYM_KEY` | a dev constant | **secret**. The key person ids are pseudonymised under, in the chain and at retention. Set once per store and **never rotated**: a new key fails the verification of every existing record. The dev value is refused in production |
+| `PROVENANCE_PERSON_ID_RETENTION_DAYS` | unset | days after which a record's person ids are pseudonymised. Unset keeps them in clear, and the service warns at startup outside dev |
 
 Under `DS_ENV=production` the service refuses to start if the Keycloak issuer, the trust-anchor
-DID or the trust list is unset, or either `*_INSECURE_DEV` flag is true — what keeps
+DID or the trust list is unset, if the pseudonym key is the dev value, or if either
+`*_INSECURE_DEV` flag is true — what keeps
 `GET /prov/my/events` from trusting an unsigned credential, or one from an issuer this
 dataspace no longer accredits.
 
@@ -147,7 +204,7 @@ Four tables, Alembic-managed.
 |---|---|
 | `prov_nodes` | Entity / Activity / Agent, keyed by IRI, with an `external_meta` blob |
 | `prov_relations` | the edges, unique on `(relation_type, subject, object)` |
-| `domain_events` | the verbatim event payload plus the five normalised dimensions and an indexed `subject_id` |
+| `domain_events` | the verbatim event payload plus the five normalised dimensions and an indexed `subject_id`; `seq`, `prev_hash`, `record_hash` (the chain) and `pseudonymised_at` |
 | `access_log` | the compliance audit log: consumer, dataset, agreement, rows returned, duration |
 
 Two properties worth knowing, both of which used to be the opposite: a node's **type follows
@@ -175,7 +232,8 @@ needs no second caller.
 |---|---|
 | `task provider:provenance:run` | uvicorn on `:30000` against the provider database |
 | `task consumer:provenance:run` | uvicorn on `:31000` against the consumer database |
-| `task db:migrate:provenance` | `alembic upgrade head` against both |
+| `task db:migrate:provenance` | `alembic upgrade head` against both. Migration `0004` chains the existing rows, so it runs with the store's pseudonym key |
+| `provenance-admin verify` / `backfill` / `retention` | in the image: check the chain, chain rows the migration missed, apply retention |
 | `task e2e:lineage` | the live lineage flow |
 
 Ports: **30000** provider, **31000** consumer.

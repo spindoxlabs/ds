@@ -2,6 +2,7 @@
 
 Three collections, three different surfaces: entities could be read one at a time
 and deleted, activities could be read but not deleted, agents could be neither.
+All three are now created and read, and none is deleted (`L-17`).
 And all three listings took an unbounded `limit`/`offset` while `GET /prov/events`
 next door has always capped them.
 """
@@ -38,35 +39,25 @@ async def test_the_agent_listing_is_still_reachable(client):
 
 
 @pytest.mark.asyncio
+@pytest.mark.rule("L-17")
 @pytest.mark.parametrize(
     "collection,payload",
     [
-        ("activities", {"iri": "urn:activity:removable", "label": "Removable"}),
-        ("agents", {"iri": "did:web:removable.test", "label": "Removable"}),
+        ("entities", {"iri": "urn:dataset:kept", "label": "Kept"}),
+        ("activities", {"iri": "urn:activity:kept", "label": "Kept"}),
+        ("agents", {"iri": "did:web:kept.test", "label": "Kept"}),
     ],
 )
-async def test_every_collection_can_be_deleted_from(client, collection, payload):
+async def test_no_collection_can_be_deleted_from(client, collection, payload):
+    """The record is append-only. The `DELETE` routes soft-deleted a node for any
+    holder of `provenance.write`; they are gone, and the node stays listed."""
     await client.post(f"/prov/{collection}", json=payload)
 
     assert (
         await client.delete(f"/prov/{collection}/{_q(payload['iri'])}")
-    ).status_code == 204
+    ).status_code == 405
     listed = (await client.get(f"/prov/{collection}")).json()["@graph"]
-    assert payload["iri"] not in [n["@id"] for n in listed]
-
-
-@pytest.mark.asyncio
-async def test_a_delete_cannot_reach_across_collections(client):
-    """Without a type check a caller could invalidate an Entity through the agent
-    route — removing a node from a collection it may not even enumerate."""
-    await client.post("/prov/entities", json={"iri": "urn:dataset:protected"})
-
-    assert (
-        await client.delete(f"/prov/agents/{_q('urn:dataset:protected')}")
-    ).status_code == 404
-    assert (
-        await client.get(f"/prov/entities/{_q('urn:dataset:protected')}")
-    ).status_code == 200
+    assert payload["iri"] in [n["@id"] for n in listed]
 
 
 @pytest.mark.asyncio

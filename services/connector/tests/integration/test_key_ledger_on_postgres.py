@@ -48,10 +48,13 @@ def _alembic_upgrade(database_url: str, target: str = "head"):
 
 
 async def _events(engine) -> list[tuple]:
+    """The ledger, with each key opened: the column holds it sealed."""
+    from connector.db.sealed import sealer
+
     async with engine.connect() as conn:
         return [
-            tuple(row)
-            for row in await conn.execute(
+            (consent_id, sealer().open(key), event, cause)
+            for consent_id, key, event, cause in await conn.execute(
                 sa.text(
                     "SELECT consent_id, key, event, cause FROM consent_key_events "
                     "ORDER BY at, id"
@@ -137,8 +140,8 @@ async def test_the_listener_appends_in_the_decision_s_transaction(empty_database
                 await conn.execute(
                     sa.text(
                         "INSERT INTO consent_key_events (id, consent_id, dataset_id, "
-                        "consumer_id, key, event, cause, at) VALUES "
-                        "('x', :row, :ds, '*', 'pod:EX01', 'forgotten', 'grant', "
+                        "consumer_id, key, key_index, event, cause, at) VALUES "
+                        "('x', :row, :ds, '*', 'pod:EX01', 'ix', 'forgotten', 'grant', "
                         "now())"
                     ),
                     {"row": row.id, "ds": DATASET},

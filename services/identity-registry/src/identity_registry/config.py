@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from functools import lru_cache
 
 from pydantic import Field
@@ -35,7 +36,7 @@ class Settings(BaseSettings):
     debug: bool = False
 
     encryption_key: str = Field(
-        default="dev-encryption-key-change-in-production",
+        default="dev-encryption-key-change-in-production",  # DEV_ENCRYPTION_KEY
         description="Fernet key for encrypting private keys at rest",
     )
 
@@ -149,6 +150,27 @@ class Settings(BaseSettings):
     # `ensure_service_client`. The secret was nonetheless `required` by the
     # chart and registered with the production guard, so a deployment could be
     # refused startup over a credential that authenticated nothing.
+
+    #: `GET /users/resolve?email=…` — the query-string form, kept for a
+    #: compatibility window after `POST /users/resolve` (JSON body) replaced it.
+    #: An identifier in a URL lands in every access log and proxy on the path.
+    #:
+    #: Unset: served in `DS_ENV=dev`, and elsewhere until
+    #: `users_resolve_get_until` (inclusive), then refused with a 410. `true` or
+    #: `false` decides it outright, in any environment; `true` after the window
+    #: is logged at startup. Every GET served logs a deprecation warning that
+    #: names the identifier kinds, never their values.
+    users_resolve_get: bool | None = None
+    users_resolve_get_until: date = date(2027, 1, 31)
+
+    def users_resolve_get_allowed(self, today: date | None = None) -> bool:
+        if self.users_resolve_get is not None:
+            return self.users_resolve_get
+        from ds_auth.production import is_production
+
+        if not is_production():
+            return True
+        return (today or date.today()) <= self.users_resolve_get_until
 
     default_credential_ttl_days: int = 365
     max_credential_ttl_days: int = 730
@@ -394,6 +416,49 @@ def register_database_url(guard, settings: Settings) -> None:
             settings.database_url,
             "Give this deployment's database role a generated password.",
         )
+
+
+#: The value every committed dev stack starts with. Each compose participant
+#: overrides it with a `dev-<participant>-encryption-key` of its own, so the
+#: guard refuses the whole `dev-` family, not only this one string.
+DEV_ENCRYPTION_KEY = "dev-encryption-key-change-in-production"
+
+
+def register_encryption_key(guard, settings: Settings) -> None:
+    """Refuse a committed or placeholder ``IDENTITY_REGISTRY_ENCRYPTION_KEY``.
+
+    The key seals every private key this instance holds. The compose files
+    ship one `dev-…` value per participant and `.env.example` a `CHANGE_ME`;
+    all of them are public, so outside `DS_ENV=dev` each is a refusal.
+    """
+    remediation = (
+        "Generate with: python -c 'import secrets;print(secrets.token_urlsafe(32))'. "
+        "Losing this key means losing every stored DID private key."
+    )
+    guard.forbid_default(
+        "IDENTITY_REGISTRY_ENCRYPTION_KEY",
+        settings.encryption_key,
+        {DEV_ENCRYPTION_KEY, "CHANGE_ME"},
+        remediation,
+    )
+    value = settings.encryption_key.strip().lower()
+    if value.startswith("dev-") and settings.encryption_key != DEV_ENCRYPTION_KEY:
+        guard.add(
+            "IDENTITY_REGISTRY_ENCRYPTION_KEY",
+            "is a committed dev value (`dev-…`)",
+            remediation,
+        )
+
+
+def refuse_dev_encryption_key_in_production(entry_point: str) -> None:
+    """`register_encryption_key` for `ir-cli`, which seals keys as well."""
+    from ds_auth.production import ProductionGuard, is_production
+
+    if not is_production():
+        return
+    guard = ProductionGuard(entry_point)
+    register_encryption_key(guard, get_settings())
+    guard.enforce()
 
 
 def refuse_dev_database_in_production(entry_point: str) -> None:

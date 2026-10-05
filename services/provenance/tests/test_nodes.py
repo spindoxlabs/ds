@@ -24,17 +24,18 @@ async def test_create_entity(client):
 
 
 @pytest.mark.asyncio
-async def test_create_entity_duplicate_returns_existing(client):
-    payload = {
-        "iri": "https://rec.dataspaces.localhost/datasets/meters_15m_dup",
-        "label": "Meter Readings 15m",
-    }
-    r1 = await client.post("/prov/entities", json=payload)
+@pytest.mark.rule("L-17")
+async def test_create_entity_duplicate_returns_existing_unchanged(client):
+    """Create-only: a second `POST` is a 409 with the node as recorded, and it
+    changes nothing. It used to overwrite the label of whatever it named."""
+    iri = "https://rec.dataspaces.localhost/datasets/meters_15m_dup"
+    r1 = await client.post("/prov/entities", json={"iri": iri, "label": "Meter Readings 15m"})
     assert r1.status_code == 201
-    r2 = await client.post("/prov/entities", json=payload)
-    # upsert — same IRI returns existing node
-    assert r2.status_code in (200, 201)
-    assert r1.json()["@graph"][0]["@id"] == r2.json()["@graph"][0]["@id"]
+    r2 = await client.post("/prov/entities", json={"iri": iri, "label": "Rewritten"})
+    assert r2.status_code == 409
+    assert r2.json()["@graph"][0]["@id"] == iri
+    stored = await client.get(f"/prov/entities/{urllib.parse.quote(iri, safe='')}")
+    assert stored.json()["@graph"][0]["prov:label"] == "Meter Readings 15m"
 
 
 @pytest.mark.asyncio
@@ -74,11 +75,3 @@ async def test_list_entities(client):
     assert iri in iris
 
 
-@pytest.mark.asyncio
-async def test_soft_delete_entity(client):
-    iri = "https://rec.dataspaces.localhost/datasets/to_delete"
-    await client.post("/prov/entities", json={"iri": iri})
-
-    encoded = urllib.parse.quote(iri, safe="")
-    delete = await client.delete(f"/prov/entities/{encoded}")
-    assert delete.status_code == 204
