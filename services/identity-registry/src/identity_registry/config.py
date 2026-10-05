@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 #: The zero-config dev database: ds's compose Postgres on the Docker bridge,
@@ -150,8 +150,45 @@ class Settings(BaseSettings):
     # chart and registered with the production guard, so a deployment could be
     # refused startup over a credential that authenticated nothing.
 
+    #: An organisation's and a participant's credentials. Nothing renews them,
+    #: so they keep the long lifetime; a person's credential has its own pair
+    #: below.
     default_credential_ttl_days: int = 365
     max_credential_ttl_days: int = 730
+
+    # ── A person's credential: short-lived, renewed by the registry ────────
+    #
+    # A `DataSubjectCredential` lives a month and `ir-cli credential renew`
+    # (a daily job) issues its successor before it expires, so the person never
+    # notices: the portal reads the newest live credential at each login. A copy
+    # that leaked, or one a release missed, is good for weeks rather than a
+    # year. `services/renewal.py` holds the rules.
+    data_subject_credential_ttl_days: int = Field(
+        default=30,
+        gt=0,
+        description="Lifetime of a person's credential, in days.",
+    )
+    max_data_subject_credential_ttl_days: int = Field(
+        default=90,
+        gt=0,
+        description="Cap on a requested lifetime for a person's credential.",
+    )
+    #: Renew once this many days or fewer remain. Must stay below the lifetime,
+    #: or a fresh successor would itself be due and every run would issue again.
+    data_subject_credential_renewal_window_days: int = Field(
+        default=10,
+        gt=0,
+        description="Renew a person's credential when at most this many days remain.",
+    )
+    #: How long after expiry the daily job still renews the credential of a
+    #: person who is still a member. Older ones need `--subject` (an operator).
+    data_subject_credential_renewal_grace_days: int = Field(
+        default=30,
+        ge=0,
+        description=(
+            "Days after expiry the daily job still renews a live member's credential."
+        ),
+    )
 
     #: How long a signed status list is valid (its JWT `exp` and its
     #: `expirationDate`). A day: a verifier that keeps reading a stale copy is
@@ -319,6 +356,31 @@ class Settings(BaseSettings):
             "authenticates to itself is not the anchor's decision."
         ),
     )
+
+    @model_validator(mode="after")
+    def _renewal_window_fits_the_lifetime(self) -> Settings:
+        """A window as long as the lifetime makes every successor due at birth.
+
+        The job would then issue on every run, burning a status-list index per
+        person per day, which no index is ever recovered from. Refused at load.
+        """
+        if (
+            self.data_subject_credential_renewal_window_days
+            >= self.data_subject_credential_ttl_days
+        ):
+            raise ValueError(
+                "IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_RENEWAL_WINDOW_DAYS must "
+                "be shorter than IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_TTL_DAYS"
+            )
+        if (
+            self.max_data_subject_credential_ttl_days
+            < self.data_subject_credential_ttl_days
+        ):
+            raise ValueError(
+                "IDENTITY_REGISTRY_MAX_DATA_SUBJECT_CREDENTIAL_TTL_DAYS must not be "
+                "below IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_TTL_DAYS"
+            )
+        return self
 
     @property
     def trust_anchor_did(self) -> str:

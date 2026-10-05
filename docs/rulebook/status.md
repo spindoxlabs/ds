@@ -2,7 +2,7 @@
 
 **Generated. Do not edit.** `task rulebook:status` rewrites this file from `docs/blueprints/`, `docs/rulebook/`, the coverage manifest and the test sources. It is committed so that drift shows up in a diff.
 
-Generated 2026-10-05 from `82abe54-dirty`.
+Generated 2026-10-05 from `49a8119-dirty`.
 
 This page measures **linkage**, not correctness. A rule is *evidenced* when a test node names it — not when that node passes. Whether the suite is green is the runner's answer; see `docs/development/testing.md`. What this page can say, and no hand-written status can, is whether a claim has a runnable referent at all.
 
@@ -16,11 +16,11 @@ This page measures **linkage**, not correctness. A rule is *evidenced* when a te
 | …answered by a **named rule** | 39 |
 | …answered **at page level only** | 120 |
 | …**unassessed** | 531 |
-| Rulebook rules | 165 |
-| …claiming enforcement (`Enforced` / `Partly enforced`) | 133 |
-| …of those, **evidenced by a test that names them** | 133 |
+| Rulebook rules | 166 |
+| …claiming enforcement (`Enforced` / `Partly enforced`) | 134 |
+| …of those, **evidenced by a test that names them** | 134 |
 | …of those, **unevidenced** | 0 |
-| Test nodes declaring a rule | 1139 |
+| Test nodes declaring a rule | 1166 |
 | Structural problems | 0 |
 
 **100% of the rules that claim enforcement can name a test.** That number is the one to move.
@@ -182,6 +182,7 @@ None. Every rule claiming enforcement names at least one test node.
 | `D-22c` | Declared | · consistent | — | — |
 | `D-54` | Enforced | ✅ evidenced | unit×3 | `services/connector/tests/test_circle_admission.py::test_the_claim_and_value_reach_the_registry`, `services/connector/tests/test_circle_admission.py::test_a_negative_claim_answer_does_not_admit`, `services/connector/tests/test_circle_admission.py::test_a_malformed_spec_admits_nobody` |
 | `D-55` | Enforced | ✅ evidenced | unit×6 | `services/identity-registry/tests/test_credential_check.py::test_a_matching_claim_is_held`, `services/identity-registry/tests/test_credential_check.py::test_a_different_claim_value_is_not_held`, `services/identity-registry/tests/test_credential_check.py::test_a_credential_without_the_claim_is_not_held` +3 more |
+| `D-56` | Enforced | ✅ evidenced | integration×3, unit×24 | `services/identity-registry/tests/integration/test_credential_renewal_pg.py::test_a_renewal_waits_for_a_release_holding_the_membership`, `services/identity-registry/tests/integration/test_credential_renewal_pg.py::test_two_runs_racing_on_one_predecessor_issue_one_successor`, `services/identity-registry/tests/integration/test_credential_renewal_pg.py::test_a_full_run_on_postgres` +24 more |
 
 ### `policies.md`
 

@@ -69,8 +69,10 @@ from ...services.issuance import (
     SPENT_SUBJECT_ID,
     IssuanceError,
     active_data_subject_credential,
+    data_subject_ttl_days,
     deliver_to_custodian,
     held_for_another_organisation,
+    held_for_another_organisation_by_role,
     is_spent,
     live_subject_did,
 )
@@ -674,6 +676,14 @@ async def issue_data_subject_credential(
     # re-run has to repair is a credential the anchor issued and the custodian
     # never received, and the holder's Storage API is idempotent on credential
     # id, which is what makes re-delivering free.
+    # Checked over every active credential for the role, expired included,
+    # before the unexpired one is looked up: a lapsed credential is still the
+    # other organisation's.
+    if await held_for_another_organisation_by_role(
+        db, subject_did, data.role, data.linked_participant_did
+    ):
+        raise HTTPException(status_code=409, detail=HELD_FOR_ANOTHER_ORGANISATION)
+    # Unexpired only: with none, a fresh credential is issued below.
     existing_cred = await active_data_subject_credential(db, subject_did, data.role)
     if existing_cred is not None:
         # **Only to the organisation it is linked to.** The same role from a
@@ -691,10 +701,9 @@ async def issue_data_subject_credential(
 
     status_list_url = settings.status_list_url()
 
-    ttl = min(
-        data.ttl_days or settings.default_credential_ttl_days,
-        settings.max_credential_ttl_days,
-    )
+    # A person's lifetime, not an organisation's: a month, renewed by
+    # `ir-cli credential renew` (`services/renewal.py`).
+    ttl = data_subject_ttl_days(settings, data.ttl_days)
 
     if not did_record:
         # **No keypair** (`D-49`). This generated one for every person onboarded

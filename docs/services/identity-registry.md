@@ -290,6 +290,46 @@ parameter then answered **422**), and the parameter went with the GET: the body 
 stored with the DID and the mapping and was never re-derived, so they resolve, verify and are
 found through their mapping like any other.
 
+### A person's credential is renewed
+
+A `DataSubjectCredential` lives **30 days** and the registry renews it, so the person never
+notices ([rulebook `D-56`](../rulebook/personal-data.md), `services/renewal.py`):
+
+- **Daily, `ir-cli credential renew`.** Every credential with ten days or fewer left gets a
+  **successor**: same subject, DID, role, `linkedParticipant` and claims, a new id and a new
+  status-list index, delivered exactly as a first issuance is — to the linked organisation's
+  custodian and nobody else.
+- **The predecessor is not revoked.** It expires on its own, so a copy a verifier or the
+  portal cached keeps working. For those days the person holds two live credentials for one
+  role, and everything that retires a person's credentials retires both: `DELETE /admin/dids`,
+  a role transition (it suspends both), and a release, which revokes what `/users/resolve`
+  lists and reads it back.
+- **Only from a live predecessor, for a live member.** Not revoked, not suspended; a DID not
+  spent or deactivated (a released identity is never revived, ADR-0028); the linked
+  organisation verified, not suspended; the IR membership (DID, organisation) still standing.
+  All of it is re-checked **in the transaction that inserts the successor**, with the rows
+  locked, so a release that removes the membership while a renewal runs either makes the
+  renewal wait and refuse, or finds the successor on its read-back and revokes it.
+- **Expired is recoverable.** The daily run renews a credential that expired within the grace
+  period (30 days) for a person who passes every other check; `--subject <did>` does it at any
+  age — the operator's recovery. An issuance call (a re-approval) never re-delivers an expired
+  credential: with no unexpired one for the role it issues a fresh 30-day credential, and the
+  cross-organisation `409` still counts an expired one.
+- **Idempotent.** Only the newest live credential of each (DID, role, organisation) is a
+  candidate, so a second run the same day issues nothing. A failed renewal leaves the
+  predecessor untouched; a successor whose delivery failed is re-delivered by the next runs.
+
+**`/users/resolve` and `GET /users/{did}/credentials` list the newest first** (latest
+`issued_at`, then latest expiry), and the singular `vc_jws` is the newest presentable one, so
+the portal presents the successor from the first login after a renewal. `roles` lists each role
+once.
+
+**A credential id stored outside the registry is the first one issued, not the current one.**
+`POST /admin/credentials/data-subject` answers with the id it minted (or the newest it holds),
+and a caller that records that id — an onboarding service does — holds the *first-issued* id
+once a renewal has run. To act on a person's credentials, read them from `/users/resolve`
+at the time; to revoke all of them, revoke every id it lists, then read it back.
+
 **The caller must pass an opaque `subject_id`** — to `POST /admin/credentials/data-subject`
 and to `ir-cli credential issue-data-subject --subject-id` alike. It
 becomes the `<id>` of the person's DID verbatim, travels in every consent record, provenance
@@ -514,8 +554,12 @@ prefixed form does not work.
 | `IDENTITY_REGISTRY_ENCRYPTION_KEY` | `dev-encryption-key-change-in-production` | **secret** — encrypts every DID private key at rest, and derives subject ids. Losing it makes stored keys unrecoverable |
 | `IDENTITY_REGISTRY_TRUST_ANCHOR_DOMAIN` | `trust-anchor.dataspaces.localhost` | the trust anchor's DID domain and status-list host |
 | `IDENTITY_REGISTRY_IDENTITY_REGISTRY_PUBLIC_URL` | *(derived from the domain)* | externally reachable URL written into provisioning bundles. The doubled prefix is correct — the field is `identity_registry_public_url` |
-| `IDENTITY_REGISTRY_DEFAULT_CREDENTIAL_TTL_DAYS` | `365` | issued-credential lifetime |
-| `IDENTITY_REGISTRY_MAX_CREDENTIAL_TTL_DAYS` | `730` | cap on a requested lifetime |
+| `IDENTITY_REGISTRY_DEFAULT_CREDENTIAL_TTL_DAYS` | `365` | lifetime of an organisation's and a participant's credentials (nothing renews them) |
+| `IDENTITY_REGISTRY_MAX_CREDENTIAL_TTL_DAYS` | `730` | cap on a requested lifetime for those |
+| `IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_TTL_DAYS` | `30` | lifetime of a person's `DataSubjectCredential` — every issuance path: the admin API, `ir-cli`, a role transition, a renewal |
+| `IDENTITY_REGISTRY_MAX_DATA_SUBJECT_CREDENTIAL_TTL_DAYS` | `90` | cap on an explicit `ttl_days` for a person |
+| `IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_RENEWAL_WINDOW_DAYS` | `10` | `credential renew` issues the successor once this many days or fewer remain. Must be shorter than the lifetime, or the service refuses to start |
+| `IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_RENEWAL_GRACE_DAYS` | `30` | the daily run also renews a credential that expired up to this many days ago, for a person still a member |
 | `IDENTITY_REGISTRY_CREDENTIALS_CONTEXT_URL` | `https://dataspaces.localhost/ns/credentials/v1` | JSON-LD context in issued VCs |
 | `IDENTITY_REGISTRY_DATASPACE_URI` | `https://dataspaces.localhost/dataspace` | the `memberOf` value in issued VCs |
 
@@ -579,7 +623,7 @@ database-touching command verifies the schema revision first, and every command 
 |---|---|
 | *(top level)* | `bootstrap` — create the trust-anchor key pair and DID |
 | `participant` | `init`, `add`, `list`, `remove` |
-| `credential` | `issue-membership`, `issue-data-subject`, `revoke`, `list` |
+| `credential` | `issue-membership`, `issue-data-subject`, `renew`, `revoke`, `list` (also reachable as `credentials`) |
 | `owner` | `add`, `list`, `remove`, `import` |
 | `membership` | `add`, `list`, `remove`, `import` |
 | `agreement` | `import`, `list` |
@@ -592,6 +636,12 @@ database-touching command verifies the schema revision first, and every command 
 
 `ir-cli did sweep` / `did retire` retire a DID whose held credentials are all revoked in the
 issuer's register (P-29); periodic, exit 1 on an unreadable register.
+
+`ir-cli credential renew [--subject <did>] [--dry-run]` renews people's credentials
+([rulebook `D-56`](../rulebook/personal-data.md)); a daily job on the trust anchor, described
+under [A person's credential is renewed](#a-persons-credential-is-renewed). It prints one JSON
+report — counts per DID, never an email — and **exits 1 if any renewal or delivery failed**,
+which is the alert. `--dry-run` reports `would_renew` and writes nothing.
 
 `ir-cli org apply` composes the whole onboarding chain from a single `owners.yaml` entry and
 reports each entry's outcome, rolling back only the failures.

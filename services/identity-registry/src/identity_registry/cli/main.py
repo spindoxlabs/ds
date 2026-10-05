@@ -38,7 +38,8 @@ from ..services.issuance import (
     HELD_FOR_ANOTHER_ORGANISATION,
     SPENT_SUBJECT_ID,
     active_data_subject_credential,
-    held_for_another_organisation,
+    data_subject_ttl_days,
+    held_for_another_organisation_by_role,
     is_spent,
     live_subject_did,
 )
@@ -67,6 +68,8 @@ collector_app = typer.Typer(
 
 app.add_typer(participant_app, name="participant")
 app.add_typer(credential_app, name="credential")
+# `ir-cli credentials renew` reads naturally in a CronJob; one group, two names.
+app.add_typer(credential_app, name="credentials", hidden=True)
 app.add_typer(key_app, name="key")
 app.add_typer(status_app, name="status")
 app.add_typer(did_app, name="did")
@@ -470,12 +473,18 @@ def credential_issue_membership(
     subject_did: str = typer.Option(..., help="Subject DID"),
     role: str = typer.Option("consumer"),
     scope: list[str] = typer.Option(["dataspaces.query"]),
-    ttl_days: int = typer.Option(365),
+    ttl_days: int = typer.Option(
+        None, help="Days (default IDENTITY_REGISTRY_DEFAULT_CREDENTIAL_TTL_DAYS)"
+    ),
 ):
     """Issue a MembershipCredential."""
 
     async def _issue():
         settings = get_settings()
+        ttl = min(
+            ttl_days or settings.default_credential_ttl_days,
+            settings.max_credential_ttl_days,
+        )
         factory = await _ensure_db()
         from sqlalchemy import select
 
@@ -508,7 +517,7 @@ def credential_issue_membership(
                 ),
                 status_list_index=sl_index,
                 credential_id=cred_id,
-                ttl_days=ttl_days,
+                ttl_days=ttl,
             )
             ta_raw_jwk = decrypt_private_jwk(
                 ta_key.private_jwk, settings.encryption_key
@@ -522,7 +531,7 @@ def credential_issue_membership(
                 subject_did=subject_did,
                 credential_json=signed_vc,
                 status_list_index=sl_index,
-                expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
+                expires_at=datetime.now(UTC) + timedelta(days=ttl),
             )
             session.add(cred)
             await session.commit()
@@ -571,12 +580,17 @@ def credential_issue_data_subject(
     ),
     role: str = typer.Option(None),
     linked_participant_did: str = typer.Option(None),
-    ttl_days: int = typer.Option(365),
+    ttl_days: int = typer.Option(
+        None,
+        help="Days (default IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_TTL_DAYS)",
+    ),
 ):
     """Issue a DataSubjectCredential."""
 
     async def _issue():
         settings = get_settings()
+        # A person's lifetime — a month, renewed by `credential renew`.
+        ttl = data_subject_ttl_days(settings, ttl_days)
         factory = await _ensure_db()
         from sqlalchemy import select
 
@@ -608,8 +622,8 @@ def credential_issue_data_subject(
             # endpoint now calls too. They had one behaviour and two
             # implementations, and only this one had it (ds#30).
             cred = await active_data_subject_credential(session, subject_did, role)
-            if cred is not None and held_for_another_organisation(
-                cred, linked_participant_did
+            if await held_for_another_organisation_by_role(
+                session, subject_did, role, linked_participant_did
             ):
                 typer.echo(HELD_FOR_ANOTHER_ORGANISATION, err=True)
                 raise typer.Exit(1)
@@ -673,7 +687,7 @@ def credential_issue_data_subject(
                 ),
                 status_list_index=sl_index,
                 credential_id=cred_id,
-                ttl_days=ttl_days,
+                ttl_days=ttl,
             )
             ta_raw_jwk = decrypt_private_jwk(
                 ta_key.private_jwk, settings.encryption_key
@@ -687,7 +701,7 @@ def credential_issue_data_subject(
                 subject_did=subject_did,
                 credential_json=signed_vc,
                 status_list_index=sl_index,
-                expires_at=datetime.now(UTC) + timedelta(days=ttl_days),
+                expires_at=datetime.now(UTC) + timedelta(days=ttl),
             )
             session.add(cred)
             await session.commit()
@@ -829,6 +843,57 @@ def credential_list():
                 )
 
     _run(_list())
+
+
+@credential_app.command("renew")
+def credential_renew(
+    subject: str = typer.Option(
+        None,
+        "--subject",
+        help=(
+            "Only this person's DID. Also renews a credential however long ago "
+            "it expired, if the person still passes every other check "
+            "(operator recovery)."
+        ),
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Report what would be renewed; write nothing."
+    ),
+):
+    """Renew people's credentials before they expire — run daily.
+
+    Issues the successor of every `DataSubjectCredential` with at most
+    `IDENTITY_REGISTRY_DATA_SUBJECT_CREDENTIAL_RENEWAL_WINDOW_DAYS` left, and of
+    one that expired within `…_RENEWAL_GRACE_DAYS`, while the person is still a
+    member of a verified organisation. The predecessor is left to expire.
+    Delivered to the linked organisation's custodian only.
+
+    Prints one JSON report on stdout: counts per DID, never an email. **Exits
+    1 if any renewal or delivery failed**, so the job's failure is the alert;
+    a failed one is retried by the next run.
+    """
+
+    async def _renew():
+        settings = get_settings()
+        if settings.role != "trust-anchor":
+            typer.echo(
+                "credential renew runs on the trust anchor, which issues and "
+                "records people's credentials",
+                err=True,
+            )
+            raise typer.Exit(2)
+        factory = await _ensure_db()
+        from ..services.renewal import renew_due
+
+        async with factory() as session:
+            report = await renew_due(
+                session, settings, subject_did=subject, dry_run=dry_run
+            )
+        typer.echo(json.dumps(report.as_dict(), indent=2))
+        if report.failed:
+            raise typer.Exit(1)
+
+    _run(_renew())
 
 
 @key_app.command("rotate")
@@ -1912,7 +1977,10 @@ def org_agreement(
 @org_app.command("issue-credential")
 def org_issue_credential(
     alias: str = typer.Option(..., help="Owner alias"),
-    ttl_days: int = typer.Option(365, help="Credential TTL in days"),
+    ttl_days: int = typer.Option(
+        None,
+        help="Days (default IDENTITY_REGISTRY_DEFAULT_CREDENTIAL_TTL_DAYS)",
+    ),
     scope: list[str] = typer.Option(["dataspaces.query"], help="Allowed scopes"),
 ):
     """Issue an OrganizationCredential (gate: verified + current agreement)."""

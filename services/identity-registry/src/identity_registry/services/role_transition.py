@@ -36,7 +36,8 @@ from ..db.models import Credential
 from .crypto import decrypt_private_jwk, generate_credential_id, require_private_jwk
 from .issuance import (
     HELD_FOR_ANOTHER_ORGANISATION,
-    active_data_subject_credential,
+    active_data_subject_credentials,
+    data_subject_ttl_days,
     held_for_another_organisation,
 )
 from .org_onboarding import suspension_index
@@ -104,7 +105,11 @@ async def transition_community_role(
     one per protocol role (`DataSubject`, `ConsumerUser`), and a role change
     concerns one of them, not all of them.
     """
-    predecessor = await active_data_subject_credential(db, subject_did, vc_role)
+    # The newest live credential is the one superseded; any older one still
+    # live is a renewal's predecessor waiting to expire (`services/renewal.py`)
+    # and makes the same claim, so it is suspended with it.
+    held = await active_data_subject_credentials(db, subject_did, vc_role)
+    predecessor = held[0] if held else None
     if predecessor is None:
         raise RoleTransitionError(
             f"{subject_did} holds no active DataSubjectCredential with "
@@ -131,19 +136,29 @@ async def transition_community_role(
     # register can only be revoked, and revoking it would assert the attestation
     # was withdrawn. Every credential issued since `P-27` names both registers;
     # one issued before it must be reissued before its holder is transitionable.
-    index = suspension_index(predecessor.credential_json)
-    if index is None:
-        raise RoleTransitionError(
-            f"Credential {predecessor.id} names no suspension register, so no "
-            "verifier would see it superseded. It predates `P-27`; reissue it "
-            "before changing this person's role.",
-            status_code=409,
+    overlap = [
+        c
+        for c in held[1:]
+        if not held_for_another_organisation(
+            c,
+            ((predecessor.credential_json or {}).get("credentialSubject") or {}).get(
+                "linkedParticipant"
+            ),
         )
+    ]
+    indices: list[int] = []
+    for superseded in [predecessor, *overlap]:
+        index = suspension_index(superseded.credential_json)
+        if index is None:
+            raise RoleTransitionError(
+                f"Credential {superseded.id} names no suspension register, so no "
+                "verifier would see it superseded. It predates `P-27`; reissue it "
+                "before changing this person's role.",
+                status_code=409,
+            )
+        indices.append(index)
 
-    ttl = min(
-        ttl_days or settings.default_credential_ttl_days,
-        settings.max_credential_ttl_days,
-    )
+    ttl = data_subject_ttl_days(settings, ttl_days)
 
     # The successor carries the predecessor's claims unless the caller replaces
     # them. A transition changes the community role; it is not an opportunity to
@@ -202,8 +217,9 @@ async def transition_community_role(
     # The suspension, in the same transaction as the issuance. Neither order is
     # safe on its own: suspending first leaves the person with nothing if
     # signing fails, issuing first leaves two live credentials disagreeing.
-    await suspend_status_list_index(db, index)
-    predecessor.status = "suspended"
+    for index, superseded in zip(indices, [predecessor, *overlap], strict=True):
+        await suspend_status_list_index(db, index)
+        superseded.status = "suspended"
 
     await db.flush()
     log.info(

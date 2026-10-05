@@ -356,6 +356,47 @@ async def active_data_subject_credential(
     status-list index on every call (ds#30). An index is not recoverable, so the
     endpoint an external application calls on demand exhausted register capacity
     at a rate set by page visits.
+
+    **The newest one**, when a renewal left two live for a while, and **never
+    an expired one.** An expired credential is not presentable, so re-delivering
+    it answers a re-approval with something every verifier refuses; with none
+    unexpired the caller issues a fresh one. Expired rows stay `active` until
+    they are revoked, so `active_data_subject_credentials` still lists them for
+    every path that retires a person's credentials.
+    """
+    now = datetime.now(UTC)
+    for cred in await active_data_subject_credentials(db, subject_did, role):
+        expires = as_utc(cred.expires_at)
+        if expires is None or expires > now:
+            return cred
+    return None
+
+
+async def held_for_another_organisation_by_role(
+    db: AsyncSession, subject_did: str, role: str | None, linked: str | None
+) -> bool:
+    """Does another organisation hold this person's credential for *role*?
+
+    Every active one counts, expired included: a lapsed credential that nobody
+    revoked is still that organisation's, and a second organisation issuing the
+    same role beside it is the cross-organisation case the `409` refuses.
+    """
+    return any(
+        held_for_another_organisation(c, linked)
+        for c in await active_data_subject_credentials(db, subject_did, role)
+    )
+
+
+async def active_data_subject_credentials(
+    db: AsyncSession, subject_did: str, role: str | None
+) -> list[Credential]:
+    """Every live `DataSubjectCredential` for this role, **newest first**.
+
+    More than one is normal for a few days: a renewal (`services/renewal.py`)
+    issues the successor and leaves the predecessor to expire on its own, so a
+    copy somebody cached keeps working. Anything that retires "the" credential
+    for a role therefore retires all of them, and anything that hands one out
+    hands out the newest.
     """
     rows = (
         (
@@ -370,10 +411,42 @@ async def active_data_subject_credential(
         .scalars()
         .all()
     )
-    for cred in rows:
-        if credential_role(cred.credential_json) == role:
-            return cred
-    return None
+    return sorted(
+        (c for c in rows if credential_role(c.credential_json) == role),
+        key=newest_first,
+        reverse=True,
+    )
+
+
+def as_utc(value: datetime | None) -> datetime | None:
+    """SQLite hands back naive datetimes; stored values are UTC by convention."""
+    if value is None or value.tzinfo is not None:
+        return value
+    return value.replace(tzinfo=UTC)
+
+
+_NEVER = datetime.min.replace(tzinfo=UTC)
+
+
+def newest_first(cred: Credential) -> tuple[datetime, datetime]:
+    """Sort key (use with ``reverse=True``): latest expiry, then latest issuance.
+
+    Expiry leads because a successor always expires after its predecessor,
+    while `issued_at` is a server default that some databases keep to the
+    second, so two rows written in one run can tie on it.
+    """
+    return (as_utc(cred.expires_at) or _NEVER, as_utc(cred.issued_at) or _NEVER)
+
+
+def data_subject_ttl_days(settings: Settings, requested: int | None = None) -> int:
+    """A person's credential lifetime: the request, else the default, capped.
+
+    One function for every path that issues to a person — the admin API, the
+    CLI, a role transition and a renewal — so none of them keeps a year-long
+    default after the lifetime moved to a month.
+    """
+    days = requested or settings.data_subject_credential_ttl_days
+    return max(1, min(days, settings.max_data_subject_credential_ttl_days))
 
 
 async def _membership_credentials(

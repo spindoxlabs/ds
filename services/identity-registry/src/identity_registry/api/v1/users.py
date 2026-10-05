@@ -43,6 +43,11 @@ def _is_expired(expires_at: datetime | None, now: datetime) -> bool:
     return expires_at <= now
 
 
+def _roles(credentials: list[UserCredentialResponse]) -> list[str]:
+    """Each role once, in credential order — a renewal's overlap is one role."""
+    return list(dict.fromkeys(c.role for c in credentials if c.role))
+
+
 def _to_credential_response(credential: Credential) -> UserCredentialResponse:
     cred_json = credential.credential_json or {}
     subject = cred_json.get("credentialSubject") or {}
@@ -155,6 +160,12 @@ async def resolve_user(
 
     This is the only form. ``GET /users/resolve`` (the identifiers in the query
     string) was withdrawn once no caller used it, and answers **405**.
+
+    **Newest first.** A person's credential is renewed before it expires
+    (rulebook ``D-56``): the successor and its predecessor are both live until
+    the predecessor expires, both are listed, and the successor comes first.
+    A credential id a caller stored at issuance is the **first-issued** one,
+    not the current one; read the current ones here.
     """
     return await _resolve(
         db,
@@ -213,13 +224,18 @@ async def _resolve(
     if not mapping:
         raise HTTPException(status_code=404, detail="No mapping found for this user")
 
+    # **Newest first**, and the order is the contract: after a renewal a person
+    # holds the successor and its predecessor for a few days, both live, and
+    # the portal presents the first credential of each role it finds. The
+    # expiry breaks a tie on `issued_at`, which some databases keep to the
+    # second; a successor always expires later.
     cred_result = await db.execute(
         select(Credential)
         .where(
             Credential.subject_did == mapping.did,
             Credential.status == "active",
         )
-        .order_by(Credential.issued_at.desc())
+        .order_by(Credential.issued_at.desc(), Credential.expires_at.desc())
     )
 
     # An expired credential is not presentable — the verifier rejects it — so
@@ -251,7 +267,7 @@ async def _resolve(
     return UserResolveResponse(
         did=mapping.did,
         subject_id=subject_id_of(mapping.did) or mapping.subject_id,
-        roles=[c.role for c in credentials if c.role],
+        roles=_roles(credentials),
         credentials=credentials,
         role=newest.role if newest else None,
         vc_jws=newest.vc_jws if newest else None,
@@ -314,7 +330,9 @@ async def credentials_held_for(
                 .where(
                     Credential.subject_did == subject_did, Credential.status == "active"
                 )
-                .order_by(Credential.issued_at.desc())
+                # Newest first, as `/users/resolve`: a renewal's successor
+                # before the predecessor it leaves to expire.
+                .order_by(Credential.issued_at.desc(), Credential.expires_at.desc())
             )
         )
         .scalars()
@@ -330,7 +348,7 @@ async def credentials_held_for(
     return UserResolveResponse(
         did=subject_did,
         subject_id=subject_id,
-        roles=[c.role for c in credentials if c.role],
+        roles=_roles(credentials),
         credentials=credentials,
         role=newest.role if newest else None,
         vc_jws=newest.vc_jws if newest else None,
