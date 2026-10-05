@@ -138,22 +138,30 @@ class _SignedListCache:
     of once per request (`P-8e`). Entries also age out after
     `_SIGNED_LIST_TTL_SECONDS`: the JWT carries `nbf`/`exp` from the moment it was
     signed, and a list re-signed now and then keeps those recent.
+
+    **An entry is never served past half its lifetime.** The JWT's `exp` is
+    stored with it, and once less than half of the signed lifetime is left the
+    list is signed again — so a verifier that caches what it was served (ds-auth
+    900 s, EDC 15 min) never holds a list that expires while cached.
     """
 
     def __init__(self, *, ttl: float, size: int) -> None:
         self._ttl = ttl
         self._size = size
-        self._entries: dict[tuple, tuple[float, str]] = {}
+        self._entries: dict[tuple, tuple[float, str, float, float]] = {}
 
     def get(self, key: tuple) -> str | None:
         hit = self._entries.get(key)
         if hit is None or time.monotonic() - hit[0] > self._ttl:
             return None
-        return hit[1]
+        _, jws, exp, lifetime = hit
+        if exp - time.time() < lifetime / 2:
+            return None
+        return jws
 
-    def put(self, key: tuple, jws: str) -> None:
+    def put(self, key: tuple, jws: str, *, exp: float, lifetime: float) -> None:
         self._entries.pop(key, None)
-        self._entries[key] = (time.monotonic(), jws)
+        self._entries[key] = (time.monotonic(), jws, exp, lifetime)
         while len(self._entries) > self._size:
             self._entries.pop(next(iter(self._entries)))
 
@@ -267,6 +275,15 @@ async def get_status_list(
         purpose=sl.purpose,
         valid_from=_valid_from(sl),
     )
+    # A day by default, stated in the credential too: EDC's revocation service
+    # at v0.18.0 validates the JWT with no `exp` rule and evicts a cached list by
+    # its `expirationDate` (`BaseRevocationListService.getCredential`); ds-auth
+    # reads the JWT `exp`. `sign_credential` takes `exp` from this date.
+    lifetime = settings.status_list_jwt_ttl_seconds
+    expires = int(time.time()) + lifetime
+    credential["expirationDate"] = datetime.fromtimestamp(expires, UTC).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
     if media != "application/vc+jwt":
         return JSONResponse(content=credential, media_type=media)
@@ -285,6 +302,7 @@ async def get_status_list(
         credential["issuanceDate"],
         sl.purpose,
         trust_anchor_did,
+        lifetime,
         key.kid,
         json.dumps(key.public_jwk, sort_keys=True),
         hashlib.sha256(bytes(sl.bitstring)).hexdigest(),
@@ -301,9 +319,10 @@ async def get_status_list(
             ),
             key.kid,
             jti=generate_credential_id(),
+            ttl_seconds=lifetime,
         )
         jws = signed["proof"]["jws"]
-        _signed_lists.put(cache_key, jws)
+        _signed_lists.put(cache_key, jws, exp=expires, lifetime=lifetime)
     return PlainTextResponse(content=jws, media_type="application/vc+jwt")
 
 

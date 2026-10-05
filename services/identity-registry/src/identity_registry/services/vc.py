@@ -269,18 +269,28 @@ def build_organization_credential(
     }
 
 
+#: A signed credential's lifetime when neither the caller nor the credential's
+#: `expirationDate` states one.
+DEFAULT_JWT_TTL_SECONDS = 365 * 86400
+
+
 def sign_credential(
     vc: dict[str, Any],
     issuer_private_jwk: dict,
     kid: str,
     *,
     jti: str | None = None,
+    ttl_seconds: int = DEFAULT_JWT_TTL_SECONDS,
 ) -> dict[str, Any]:
     """Sign *vc* as a VC 1.1 JWT (`vc` claim).
 
     `jti` defaults to the credential's `id`. A credential whose `id` is stable
     across signings — the status list, whose `id` is its URL — passes a fresh
     one, so two tokens are never the same token.
+
+    `exp` is `ttl_seconds` from now (a year unless the caller says otherwise;
+    the status list signs for a day), and a credential's own `expirationDate`
+    takes precedence over both.
     """
     private_key = load_private_key(issuer_private_jwk)
 
@@ -290,7 +300,7 @@ def sign_credential(
         "iss": vc["issuer"],
         "sub": vc["credentialSubject"]["id"],
         "nbf": now,
-        "exp": now + 365 * 86400,
+        "exp": now + ttl_seconds,
         "jti": jti or vc["id"],
         "vc": vc,
     }

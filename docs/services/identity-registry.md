@@ -87,6 +87,7 @@ and the registry publishes what EDC's IssuerService publishes at v0.18.0 (R3, 20
   `"u"` + base64url without padding of the GZIP-compressed 16 KB bitstring, index 0 the
   left-most bit. Its `id` is the list's own URL, so it is **stable per list**;
   `credentialSubject.id` is `<url>#list`.
+- **Lifetime**: signed for `IDENTITY_REGISTRY_STATUS_LIST_JWT_TTL_SECONDS` (default 86400, a day) as both JWT `exp` and `expirationDate`, re-signed once half of it has passed, so a served copy always outlives a verifier's cache.
 - **The response** to `GET /status/{id}`:
 
   | `Accept` | Answer |

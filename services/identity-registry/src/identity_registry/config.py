@@ -175,6 +175,17 @@ class Settings(BaseSettings):
     default_credential_ttl_days: int = 365
     max_credential_ttl_days: int = 730
 
+    #: How long a signed status list is valid (its JWT `exp` and its
+    #: `expirationDate`). A day: a verifier that keeps reading a stale copy is
+    #: refused within the day, and the route re-signs a cached copy once half of
+    #: this has passed, so what it serves always outlives a verifier's cache
+    #: (ds-auth 900 s, EDC's revocation cache 15 min by default).
+    status_list_jwt_ttl_seconds: int = Field(
+        default=86400,
+        gt=0,
+        description="Lifetime of the signed status list, in seconds.",
+    )
+
     trust_anchor_domain: str = Field(
         default="trust-anchor.dataspaces.localhost",
         description="Domain for the trust-anchor DID",
